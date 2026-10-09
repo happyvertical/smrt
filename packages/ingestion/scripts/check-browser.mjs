@@ -17,8 +17,8 @@ const consumer = await mkdtemp(join(tmpdir(), 'ingestion-browser-types-'));
 try {
   await mkdir(join(consumer, 'node_modules', '@happyvertical'), { recursive: true });
   await symlink(resolve('.'), join(consumer, 'node_modules', '@happyvertical', 'smrt-ingestion'), 'dir');
-  await writeFile(join(consumer, 'index.ts'), `import type { GenerationOutput, ProposalCatalogEntry, PreviewGeneratedInput, ActionResult, ExecutionCeiling, IntakeValues, PlanReview, PreviewPlanInput, PreviewProposalInput, ProposalReview, ResultReference, ReviewInput } from '@happyvertical/smrt-ingestion/dto';
-export type BrowserMessages = [GenerationOutput, ProposalCatalogEntry, PreviewGeneratedInput, ActionResult, ExecutionCeiling, IntakeValues, PlanReview, PreviewPlanInput, PreviewProposalInput, ProposalReview, ResultReference, ReviewInput];
+  await writeFile(join(consumer, 'index.ts'), `import type { IntakeReviewHost, ItemReviewView, LogicalSplitInput, ReviewPage, GenerationOutput, ProposalCatalogEntry, PreviewGeneratedInput, ActionResult, ExecutionCeiling, IntakeValues, PlanReview, PreviewPlanInput, PreviewProposalInput, ProposalReview, ResultReference, ReviewInput } from '@happyvertical/smrt-ingestion/dto';
+export type BrowserMessages = [IntakeReviewHost, ItemReviewView, LogicalSplitInput, ReviewPage, GenerationOutput, ProposalCatalogEntry, PreviewGeneratedInput, ActionResult, ExecutionCeiling, IntakeValues, PlanReview, PreviewPlanInput, PreviewProposalInput, ProposalReview, ResultReference, ReviewInput];
 const decision: ReviewInput['decision'] = 'approve';
 document.body.dataset.decision = decision;
 `);

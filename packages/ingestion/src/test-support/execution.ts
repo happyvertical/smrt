@@ -23,6 +23,7 @@ import {
   DOCUMENT,
   referenceHandlers,
 } from '../../reference/handlers.js';
+import { loadReviewSummary } from '../../reference/review-summary.js';
 import { continueIntakeReview, intakeBindingDigest } from '../execution.js';
 import type {
   IntakeExecutionOptions,
@@ -309,6 +310,118 @@ export function executionSuite(
         decision: 'approve',
       });
     }
+    it.each([
+      'state',
+      'off-page denial',
+    ] as const)('summarizes all review pages: %s', async (mode) => {
+      const input = await proposal();
+      await approve(input.review);
+      expect((await service.applyAction(input.actionId)).state).toBe(
+        'succeeded',
+      );
+      const target = await (await Contents.create({ db })).create({
+        _meta_type: DOCUMENT,
+        tenantId: tenant,
+        context: 'private',
+        title: 'Later target',
+        body: 'Body',
+        status: 'draft',
+      });
+      const waitingId = await service.createAction(
+        input.itemId,
+        'later-attachment',
+        {},
+      );
+      await service.previewProposal({
+        ...input,
+        actionId: waitingId,
+        expectedRevision: 0,
+        requestId: 'later-preview',
+        handlerId: ATTACH,
+        handlerVersion: '1',
+        args: { contentId: target.id!, evidenceId: input.evidenceId },
+      });
+      // Pagination-only fixture: clone a real completed action/result with valid
+      // scoped proposal/execution links. No duplicate domain effects are needed.
+      const templates = await Promise.all(
+        ['intake_actions', 'intake_proposals', 'intake_executions'].map(
+          async (table) => ({
+            table,
+            row: (
+              await db.query(
+                `SELECT * FROM ${table} WHERE ${table === 'intake_actions' ? 'id' : 'action_id'}=?`,
+                input.actionId,
+              )
+            ).rows[0] as Record<string, unknown>,
+          }),
+        ),
+      );
+      await db.transaction!(async (tx) => {
+        for (let index = 0; index < 20; index++) {
+          const actionId = `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
+          for (const { table, row } of templates) {
+            const copy = {
+              ...row,
+              id: table === 'intake_actions' ? actionId : randomUUID(),
+              slug: randomUUID(),
+            };
+            if (table === 'intake_actions')
+              Object.assign(copy, { action_key: `page-fixture-${index}` });
+            else Object.assign(copy, { action_id: actionId });
+            if (table === 'intake_executions')
+              Object.assign(copy, {
+                idempotency_key: `page-execution-${index}`,
+              });
+            const columns = Object.keys(copy);
+            await tx.query(
+              `INSERT INTO ${table} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`,
+              ...columns.map((key) => {
+                const value = (copy as Record<string, unknown>)[key];
+                return value instanceof Date
+                  ? value.toISOString()
+                  : value && typeof value === 'object'
+                    ? JSON.stringify(value)
+                    : value;
+              }),
+            );
+          }
+        }
+      });
+      expect(
+        Number(
+          (
+            await db.query(
+              'SELECT COUNT(*) AS n FROM intake_actions WHERE item_id=?',
+              input.itemId,
+            )
+          ).rows[0].n,
+        ),
+      ).toBe(22);
+      const first = await service.listReviews(input.itemId);
+      expect(first.actions).toHaveLength(20);
+      expect(
+        first.actions.every((action) => action.review.state === 'succeeded'),
+      ).toBe(true);
+      expect(first.nextCursor).toBeTruthy();
+      const item = await service.getItem(input.itemId);
+      if (mode === 'off-page denial') {
+        target.context = 'revoked';
+        await target.save();
+        await expect(loadReviewSummary(service, item)).rejects.toThrow();
+      } else {
+        const summary = await loadReviewSummary(service, item);
+        expect(summary.state).toBe('partially_completed');
+        expect(summary.reviews.actions).toHaveLength(20);
+        const later = await loadReviewSummary(service, item, first.nextCursor);
+        expect(later.state).toBe('partially_completed');
+        expect(later.reviews.actions).toHaveLength(2);
+        expect(
+          later.reviews.actions.find(
+            (action) => action.review.actionId === waitingId,
+          )?.review.state,
+        ).toBe('waiting_review');
+      }
+    });
     async function configurePlan(
       onStepFailure: 'abort' | 'continue' = 'abort',
     ) {
@@ -399,6 +512,221 @@ export function executionSuite(
       handlers.push(plan);
       return plan;
     }
+    it.each([
+      ['operation', false],
+      ['parent', false],
+      ['operation', true],
+      ['parent', true],
+    ] as const)('reloads %s target drift with completed=%s without losing unrelated reviews', async (level, completed) => {
+      const target = await (await Contents.create({ db })).create({
+        _meta_type: DOCUMENT,
+        tenantId: tenant,
+        context: 'private',
+        title: 'Target before change',
+        body: 'Retained target',
+        status: 'draft',
+      });
+      const handler = level === 'parent' ? await configurePlan() : undefined;
+      if (handler)
+        handler.preview = async (args, context) => ({
+          normalizedArgs: args,
+          display: args,
+          targetPreconditions: [
+            {
+              model: DOCUMENT,
+              id: target.id!,
+              revision: (
+                await assertReferenceTarget({
+                  db: context.db,
+                  scope: context.scope,
+                  itemId: context.itemId,
+                  model: DOCUMENT,
+                  id: target.id!,
+                })
+              ).revision,
+            },
+          ],
+        });
+      const input = await ready();
+      const unrelatedId = await service.createAction(
+        input.itemId,
+        'unrelated',
+        {},
+      );
+      const unrelated = await service.previewProposal({
+        ...input,
+        actionId: unrelatedId,
+        handlerId: CREATE,
+        handlerVersion: '1',
+        expectedRevision: 0,
+        requestId: 'unrelated',
+        args: { title: 'Unrelated private draft', body: 'Body' },
+      });
+      const actionId = handler
+        ? undefined
+        : await service.createAction(input.itemId, 'target', {});
+      const args = handler
+        ? { title: 'Plan draft', evidenceId: input.evidenceId }
+        : { contentId: target.id!, evidenceId: input.evidenceId };
+      const plan = handler
+        ? await service.previewPlan({
+            ...input,
+            planKey: 'target-plan',
+            handlerId: handler.id,
+            handlerVersion: '1',
+            expectedRevision: 0,
+            requestId: 'target-preview',
+            args,
+          })
+        : undefined;
+      const reviews = plan
+        ? plan.steps
+        : [
+            await service.previewProposal({
+              ...input,
+              actionId: actionId!,
+              handlerId: ATTACH,
+              handlerVersion: '1',
+              expectedRevision: 0,
+              requestId: 'target-preview',
+              args,
+            }),
+          ];
+      for (const review of reviews) await approve(review);
+      const results = completed
+        ? plan
+          ? await service.applyPlan(plan.id)
+          : [await service.applyAction(reviews[0].actionId)]
+        : [];
+      const oldRevision = target.updated_at;
+      target.title = 'Target after legitimate update';
+      await target.save();
+      expect(target.updated_at).not.toEqual(oldRevision);
+      const reloaded = await new IngestionService(options).listReviews(
+        input.itemId,
+      );
+      expect(
+        reloaded.actions.find((entry) => entry.review.actionId === unrelatedId)
+          ?.review,
+      ).toEqual(unrelated);
+      for (const [index, review] of reviews.entries()) {
+        const entry = reloaded.actions.find(
+          (row) => row.review.actionId === review.actionId,
+        )!;
+        if (completed) {
+          expect(entry.review.state).toBe('succeeded');
+          expect(entry.result).toEqual(results[index]);
+          if (plan) expect(entry.plan?.id).toBe(plan.id);
+        } else {
+          expect(entry).toEqual({
+            review: {
+              ...review,
+              reviewVersion: review.reviewVersion,
+              display: {},
+              state: 'stale',
+            },
+            attemptId: input.attemptId,
+            handlerId: plan && index === 0 ? CREATE : ATTACH,
+            handlerVersion: '1',
+            ...(plan
+              ? {
+                  stalePlan: {
+                    id: plan.id,
+                    key: plan.key,
+                    revision: plan.revision,
+                    handlerId: handler!.id,
+                    handlerVersion: handler!.version,
+                  },
+                }
+              : {}),
+          });
+        }
+      }
+      if (handler) {
+        const authorize = config.authorize;
+        config.authorize = async (request) => {
+          const grant = await authorize(request);
+          return {
+            ...grant,
+            allowed: grant.allowed && request.handlerId !== handler.id,
+          };
+        };
+        await expect(service.listReviews(input.itemId)).rejects.toThrow();
+        config.authorize = authorize;
+      }
+      if (!completed) {
+        await expect(service.applyAction(reviews[0].actionId)).rejects.toThrow(
+          /[Pp]review changed/,
+        );
+        const recovery = reloaded.actions.find(
+          (entry) => entry.stalePlan,
+        )?.stalePlan;
+        const currentAttempt = (
+          await service.getCompletedAnalysis(input.itemId)
+        ).attemptId;
+        let refreshedPlanId: string | undefined;
+        const fresh = plan
+          ? (
+              await service
+                .previewPlan({
+                  ...input,
+                  planKey: recovery!.key,
+                  attemptId: currentAttempt,
+                  handlerId: recovery!.handlerId,
+                  handlerVersion: recovery!.handlerVersion,
+                  expectedRevision: recovery!.revision,
+                  requestId: 'fresh-target',
+                  args,
+                })
+                .then((result) => {
+                  refreshedPlanId = result.id;
+                  return result;
+                })
+            ).steps
+          : [
+              await service.previewProposal({
+                ...input,
+                actionId: actionId!,
+                handlerId: ATTACH,
+                handlerVersion: '1',
+                expectedRevision: reviews[0].revision,
+                requestId: 'fresh-target',
+                args,
+              }),
+            ];
+        expect(fresh.map((review) => review.actionId)).toEqual(
+          reviews.map((review) => review.actionId),
+        );
+        for (const [index, review] of fresh.entries()) {
+          expect(review.state).toBe('waiting_review');
+          expect(review.bindingHash).not.toBe(reviews[index].bindingHash);
+          await expect(service.applyAction(review.actionId)).rejects.toThrow();
+          await approve(review);
+        }
+        const applied = plan
+          ? await service.applyPlan(refreshedPlanId!)
+          : [await service.applyAction(actionId!)];
+        expect(applied.every((result) => result.state === 'succeeded')).toBe(
+          true,
+        );
+      }
+      target.context = 'revoked';
+      await target.save();
+      await expect(service.listReviews(input.itemId)).rejects.toThrow(
+        'Target unavailable',
+      );
+      clock = new Date(clock.getTime() + 1000001);
+      const expired = await service.listReviews(input.itemId);
+      expect(
+        expired.actions.every(
+          (entry) =>
+            entry.review.state === 'expired' &&
+            !entry.args &&
+            !entry.result &&
+            !entry.stalePlan,
+        ),
+      ).toBe(true);
+    });
     it('commits one real draft under concurrent repeated apply and stable replay', async () => {
       const handler = handlers[0] as OperationHandler;
       const preview = handler.preview;

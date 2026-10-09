@@ -29,7 +29,10 @@ Validation: `pnpm test`, `pnpm test:postgres`, `pnpm test:providers`, `pnpm type
 The PostgreSQL command provisions a real database and fails if unavailable.
 Build includes browser import validation. The provider lane exercises local SDK
 adapters and process isolation, without claiming live remote recognition quality.
-The component/e2e/evaluation
-commands are reserved by ADR 0004 and fail explicitly until their owning children
-supply real suites.
+`src/svelte` owns transport-neutral review components and browser-safe host callbacks.
+See [REVIEW.md](REVIEW.md) for authenticated hosts, bounded saved-review reloads,
+assignment ownership, logical split re-extraction and the maintained browser proof.
+UI validation additionally requires `pnpm test:components` and `pnpm test:e2e`;
+`typecheck` includes Svelte and `build` includes the types-first `/svelte` entry.
+The evaluation command remains reserved for #3677 and fails explicitly.
 See ../../docs/test-matrix/3670-ingestion-foundation.md for behavior coverage.

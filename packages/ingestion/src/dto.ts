@@ -72,3 +72,5 @@ export interface AnalysisOutput {
 }
 
 export type * from './proposal-dto.js';
+
+export type * from './review-dto.js';

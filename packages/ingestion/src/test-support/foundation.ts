@@ -16,7 +16,12 @@ import {
   planForeignKeyCreation,
   SchemaGenerator,
 } from '@happyvertical/smrt-core/schema';
+import {
+  SmrtJobCollection,
+  SmrtJobEventCollection,
+} from '@happyvertical/smrt-jobs';
 import { createTaskRunner } from '@happyvertical/smrt-jobs/runner';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as models from '../models.js';
@@ -1056,6 +1061,30 @@ export function foundationSuite(
             expect((await service.getItem(id)).processingState).toBe(
               'completed',
             ),
+          { timeout: 10000, interval: 30 },
+        );
+        const jobs = await SmrtJobCollection.create({ db });
+        const events = await SmrtJobEventCollection.create({ db });
+        await vi.waitFor(
+          async () => {
+            await withTenant({ tenantId: tenant }, async () => {
+              const page = await events.listTerminalOutcomes({
+                tenantId: tenant,
+                queues: ['ingestion'],
+              });
+              expect(page.outcomes).toHaveLength(1);
+              expect(page.outcomes[0]).toMatchObject({
+                tenantId: tenant,
+                status: 'completed',
+                objectType: options.jobTarget.objectType,
+                method: options.jobTarget.method,
+                attempts: 1,
+              });
+              expect(
+                (await jobs.get({ id: page.outcomes[0].jobId }))?.status,
+              ).toBe('completed');
+            });
+          },
           { timeout: 10000, interval: 30 },
         );
         expect(

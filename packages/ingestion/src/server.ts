@@ -30,6 +30,7 @@ import type {
   CompletedAnalysisSnapshot,
   PreviewGeneratedInput,
 } from './proposal-dto.js';
+import type { LogicalSplitInput } from './review-dto.js';
 
 /** Authenticated host context. Never construct this from transport JSON. */
 export interface IngestionScope {
@@ -217,6 +218,12 @@ export class IngestionService {
   }
   async reconcileAction(actionId: string) {
     return (await this.execution()).reconcileAction(actionId);
+  }
+  async listReviews(
+    itemId: string,
+    input: { cursor?: string; limit?: number } = {},
+  ) {
+    return (await this.execution()).listReviews(itemId, input);
   }
   async getAction(actionId: string) {
     return (await this.execution()).getAction(actionId);
@@ -897,86 +904,230 @@ export class IngestionService {
     configuration: Record<string, unknown>,
     requestKey: string,
   ): Promise<{ id: string; revision: number }> {
+    const frozen = structuredClone(configuration);
+    if (
+      Object.hasOwn(frozen, 'humanCorrection') &&
+      frozen.stage !== 'interpret'
+    )
+      throw new Error('Human corrections require authenticated split revision');
+    return this.tx((db) => this.appendAnalysis(db, itemId, frozen, requestKey));
+  }
+  private async appendAnalysis(
+    db: DatabaseInterface,
+    itemId: string,
+    configuration: Record<string, unknown>,
+    requestKey: string,
+  ): Promise<{ id: string; revision: number }> {
     nonempty(requestKey);
     const configDigest = digest(configuration);
-    return this.tx(async (db) => {
-      await this.lock(db, itemId);
-      const item = await this.item(itemId, 'process', db);
-      if (item.receipt_state !== 'ready' || item.cancelled)
-        throw new Error('Intake not processable');
-      const previous = await this.rows(db, 'intake_analyses', 'item_id=?', [
-        itemId,
-      ]);
-      const replay = previous.find(
-        (a) => object(a.data).requestKey === requestKey,
-      );
-      if (replay) {
-        if (object(replay.data).configDigest !== configDigest)
-          throw new Error('Analysis request conflict');
-        return { id: String(replay.id), revision: Number(replay.revision) };
-      }
-      const evidence = await this.rows(
-        db,
-        'intake_evidence',
-        "item_id=? AND state='durable'",
-        [itemId],
-      );
-      await db.query(
-        "UPDATE intake_analysis_attempts SET state='superseded' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state IN ('queued','running')",
-        this.scope.tenantId,
-        this.scope.confidentialScopeId,
-        itemId,
-      );
-      await db.query(
-        "UPDATE intake_analyses SET state='superseded' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state IN ('queued','running')",
-        this.scope.tenantId,
-        this.scope.confidentialScopeId,
-        itemId,
-      );
-      const revision = Number(item.analysis_revision) + 1;
-      await db.query(
-        "UPDATE intake_dispatches SET state='completed' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND revision<? AND state<>'completed'",
-        this.scope.tenantId,
-        this.scope.confidentialScopeId,
-        itemId,
-        revision,
-      );
-      const inputs = evidence
-        .map((e) => ({ id: e.id, hash: e.content_hash }))
-        .sort((a, b) => String(a.id).localeCompare(String(b.id)));
-      const [analysis] = await this.insert(db, 'intake_analyses', {
-        item_id: itemId,
-        revision,
-        fence: 0,
-        attempt_number: 0,
-        current_attempt_id: null,
-        state: 'queued',
-        input_digest: digest({ inputs, configuration }),
-        data: canonical({ inputs, configuration, requestKey, configDigest }),
-      });
-      await db.query(
-        "UPDATE intake_items SET analysis_revision=?,processing_state='queued' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
-        revision,
-        this.scope.tenantId,
-        this.scope.confidentialScopeId,
-        itemId,
-      );
-      await this.insert(
-        db,
-        'intake_dispatches',
-        {
-          item_id: itemId,
-          stage: 'analyze',
-          revision,
-          state: 'pending',
-          job_id: '',
-          deliveries: 0,
-          data: '{}',
-        },
-        'tenant_id,item_id,stage,revision',
-      );
-      return { id: String(analysis.id), revision };
+    await this.lock(db, itemId);
+    const item = await this.item(itemId, 'process', db);
+    if (item.receipt_state !== 'ready' || item.cancelled)
+      throw new Error('Intake not processable');
+    const previous = await this.rows(db, 'intake_analyses', 'item_id=?', [
+      itemId,
+    ]);
+    const replay = previous.find(
+      (a) => object(a.data).requestKey === requestKey,
+    );
+    if (replay) {
+      if (object(replay.data).configDigest !== configDigest)
+        throw new Error('Analysis request conflict');
+      return { id: String(replay.id), revision: Number(replay.revision) };
+    }
+    const evidence = await this.rows(
+      db,
+      'intake_evidence',
+      "item_id=? AND state='durable'",
+      [itemId],
+    );
+    await db.query(
+      "UPDATE intake_analysis_attempts SET state='superseded' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state IN ('queued','running')",
+      this.scope.tenantId,
+      this.scope.confidentialScopeId,
+      itemId,
+    );
+    await db.query(
+      "UPDATE intake_analyses SET state='superseded' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state IN ('queued','running')",
+      this.scope.tenantId,
+      this.scope.confidentialScopeId,
+      itemId,
+    );
+    const revision = Number(item.analysis_revision) + 1;
+    await db.query(
+      "UPDATE intake_dispatches SET state='completed' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND revision<? AND state<>'completed'",
+      this.scope.tenantId,
+      this.scope.confidentialScopeId,
+      itemId,
+      revision,
+    );
+    const inputs = evidence
+      .map((e) => ({ id: e.id, hash: e.content_hash }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const [analysis] = await this.insert(db, 'intake_analyses', {
+      item_id: itemId,
+      revision,
+      fence: 0,
+      attempt_number: 0,
+      current_attempt_id: null,
+      state: 'queued',
+      input_digest: digest({ inputs, configuration }),
+      data: canonical({ inputs, configuration, requestKey, configDigest }),
     });
+    await db.query(
+      "UPDATE intake_items SET analysis_revision=?,processing_state='queued' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+      revision,
+      this.scope.tenantId,
+      this.scope.confidentialScopeId,
+      itemId,
+    );
+    await this.insert(
+      db,
+      'intake_dispatches',
+      {
+        item_id: itemId,
+        stage: 'analyze',
+        revision,
+        state: 'pending',
+        job_id: '',
+        deliveries: 0,
+        data: '{}',
+      },
+      'tenant_id,item_id,stage,revision',
+    );
+    return { id: String(analysis.id), revision };
+  }
+
+  /** Record an authenticated split correction and queue fresh extraction, never copy model output. */
+  async reviseLogicalSplit(
+    input: LogicalSplitInput,
+  ): Promise<{ id: string; revision: number }> {
+    const frozen = structuredClone(input);
+    nonempty(frozen.requestId);
+    integer(frozen.expectedRevision);
+    if (
+      !Array.isArray(frozen.groups) ||
+      !frozen.groups.length ||
+      frozen.groups.length > 100 ||
+      frozen.groups.some(
+        (group) =>
+          !Array.isArray(group) ||
+          !group.length ||
+          group.length > 1000 ||
+          group.some((page) => !Number.isSafeInteger(page) || page < 1),
+      )
+    )
+      throw new Error('Invalid logical split');
+    const pages = frozen.groups.flat();
+    if (pages.length > 1000 || new Set(pages).size !== pages.length)
+      throw new Error('Invalid logical split');
+    const requestKey = `split:${frozen.requestId}`;
+    const correction = {
+      ...frozen,
+      actorId: this.scope.actorId,
+      kind: 'logical_split',
+    };
+    const replay = await this.tx(async (db) => {
+      await this.lock(db, frozen.itemId);
+      await this.item(frozen.itemId, 'process', db);
+      const found = (
+        await this.rows(db, 'intake_analyses', 'item_id=?', [frozen.itemId])
+      ).find((row) => object(row.data).requestKey === requestKey);
+      if (!found) return null;
+      if (
+        digest(object(object(found.data).configuration).humanCorrection) !==
+        digest(correction)
+      )
+        throw new Error('Split request conflict');
+      return { id: String(found.id), revision: Number(found.revision) };
+    });
+    if (replay) {
+      // Idempotency acknowledges only an intent the current reviewer may still access.
+      await (await this.proposals())[generationSnapshotRead](
+        frozen.itemId,
+        (work) => this.tx(work),
+        (db) =>
+          this.completedAnalysisSnapshot(
+            db,
+            frozen.itemId,
+            frozen.attemptId,
+            false,
+          ),
+        undefined,
+        true,
+      );
+      return replay;
+    }
+    let result: { id: string; revision: number } | undefined;
+    await (await this.proposals())[generationSnapshotRead](
+      frozen.itemId,
+      (work) => this.tx(work),
+      (db) =>
+        this.completedAnalysisSnapshot(
+          db,
+          frozen.itemId,
+          frozen.attemptId,
+          true,
+        ),
+      async (db, current) => {
+        if (current.revision !== frozen.expectedRevision)
+          throw new Error('Stale logical split');
+        const pin = object(object(current.configuration.proposals).source);
+        const source = await this.completedAnalysisSnapshot(
+          db,
+          frozen.itemId,
+          String(pin.attemptId),
+          false,
+        );
+        for (const key of [
+          'attemptId',
+          'revision',
+          'inputDigest',
+          'outputDigest',
+          'evidenceDigest',
+        ] as const)
+          if (pin[key] !== source[key]) throw new Error('Split source changed');
+        const extraction = source.result.output.results;
+        if (!Array.isArray(extraction))
+          throw new Error('Split source unavailable');
+        const evidence = extraction.find(
+          (value) => object(object(value).evidence).id === frozen.evidenceId,
+        );
+        if (!evidence) throw new Error('Split evidence unavailable');
+        const observed = new Set<number>();
+        for (const value of object(evidence).segments as unknown[]) {
+          const location = object(object(value).location);
+          if (location.kind === 'page') observed.add(Number(location.page));
+          if (location.kind === 'pages') {
+            const from = Number(location.startPage),
+              to = Number(location.endPage);
+            if (
+              !Number.isSafeInteger(from) ||
+              !Number.isSafeInteger(to) ||
+              to - from > 1000
+            )
+              throw new Error('Invalid source range');
+            for (let page = from; page <= to; page++) observed.add(page);
+          }
+        }
+        if (
+          !observed.size ||
+          pages.length !== observed.size ||
+          pages.some((page) => !observed.has(page))
+        )
+          throw new Error('Split must cover observed pages exactly');
+        // Re-extraction retains the supported immediate-predecessor interpretation pin.
+        result = await this.appendAnalysis(
+          db,
+          frozen.itemId,
+          { ...source.configuration, humanCorrection: correction },
+          requestKey,
+        );
+      },
+      true,
+    );
+    if (!result) throw new Error('Split unavailable');
+    return result;
   }
   /** Allocate a fenced attempt; active leases cannot be stolen before expiry. */
   async claimAnalysis(
@@ -1279,6 +1430,8 @@ export class IngestionService {
       source.result.provider !== 'smrt-ingestion-extraction' ||
       source.configuration.stage === 'interpret' ||
       source.revision !== generation.revision - 1 ||
+      digest(configuration.humanCorrection ?? null) !==
+        digest(source.configuration.humanCorrection ?? null) ||
       digest(
         generation.evidence.map((entry) => ({
           id: entry.id,
@@ -1911,4 +2064,5 @@ export class IngestionService {
 }
 
 export * from './extraction.js';
+export { GenerationSnapshotStaleError } from './proposal-errors.js';
 export * from './sources/index.js';

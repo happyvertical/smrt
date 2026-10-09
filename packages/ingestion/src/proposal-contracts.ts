@@ -46,6 +46,8 @@ export interface GenerativeProposalInput {
     candidates: ProposalCandidate[];
   }>;
   instructions: string;
+  /** Authenticated human correction carried through fresh extraction; never model authority. */
+  humanCorrection?: IntakeValues;
 }
 /** Inject only trusted SDK-bound adapters. Generative output is always untrusted. */
 export interface ProposalGenerator {

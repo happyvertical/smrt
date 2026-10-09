@@ -34,6 +34,7 @@ import type {
   ProposalCandidate,
   ProposalCatalogEntry,
 } from './proposal-dto.js';
+import { GenerationSnapshotStaleError } from './proposal-errors.js';
 import {
   record,
   safeUsage,
@@ -207,7 +208,17 @@ export class IngestionProposalService {
     const discover: DiscoveryGate =
       scope?.authorize ??
       ((id, version, work) =>
-        this.execution.withDiscoveryContext(itemId, id, version, work));
+        this.execution.withDiscoveryContext(itemId, id, version, (context) =>
+          work(context, (model, targetId) =>
+            this.options.execution!.assertTarget({
+              db: context.db,
+              scope: context.scope,
+              itemId,
+              model,
+              id: targetId,
+            }),
+          ),
+        ));
     const entries: Array<{
       handler: ProposalCatalogEntry;
       policyVersions: string[];
@@ -339,6 +350,13 @@ export class IngestionProposalService {
       throw new Error('Extraction source required');
     return {
       stage: 'interpret',
+      ...(source.configuration.humanCorrection
+        ? {
+            humanCorrection: structuredClone(
+              source.configuration.humanCorrection,
+            ),
+          }
+        : {}),
       proposals: {
         source: pin(source),
         configurationVersion: this.config.version,
@@ -525,7 +543,20 @@ export class IngestionProposalService {
           output.warnings.push('candidate_set_truncated');
         output.offered.push({ handler, candidates: candidates.items });
       }
-      const input = { evidence, offered: output.offered, instructions };
+      const humanCorrection = generation.configuration.humanCorrection;
+      if (
+        digest(humanCorrection ?? null) !==
+        digest(source.configuration.humanCorrection ?? null)
+      )
+        throw new StageFailure('integrity');
+      const input = {
+        evidence,
+        offered: output.offered,
+        instructions,
+        ...(humanCorrection
+          ? { humanCorrection: structuredClone(record(humanCorrection)) }
+          : {}),
+      };
       if (
         bytes(input) >
           Math.min(
@@ -571,6 +602,21 @@ export class IngestionProposalService {
             generation.revision,
           ),
         );
+        if (humanCorrection) {
+          const correction = record(humanCorrection);
+          if (
+            correction.kind !== 'logical_split' ||
+            !output.splits.some(
+              (split) =>
+                split.evidenceId === correction.evidenceId &&
+                digest(split.groups) === digest(correction.groups),
+            )
+          ) {
+            output.outcome = 'needs_review';
+            output.suggestions = [];
+            output.warnings.push('human_split_not_respected');
+          }
+        }
         output.provenance.usage = safeUsage(generated.usage);
         if (this.config.decision && output.suggestions.length)
           await this.decide(lease, output, input);
@@ -835,15 +881,30 @@ export class IngestionProposalService {
     itemId: string,
     run: TransactionRunner<CompletedAnalysisSnapshot>,
     read: (db: DatabaseInterface) => Promise<CompletedAnalysisSnapshot>,
+    afterRead?: (
+      db: DatabaseInterface,
+      snapshot: CompletedAnalysisSnapshot,
+    ) => Promise<void>,
+    requireReview = false,
   ): Promise<CompletedAnalysisSnapshot> {
     return this.execution[discoveryTransaction](
       run,
       itemId,
       async (db, authorize) => {
         const current = await read(db);
+        if (requireReview) {
+          const offered = record(current.result.output.proposals).offered;
+          if (!Array.isArray(offered) || !offered.length)
+            throw new Error('Review catalogue unavailable');
+        }
         await this.authorizeCompletedSnapshot(current, authorize);
+        if (afterRead) {
+          await afterRead(db, current);
+          await this.authorizeCompletedSnapshot(current, authorize);
+        }
         return current;
       },
+      requireReview,
     );
   }
   /** Internal stage read gate; the foundation owns current snapshot/digest checks. */
@@ -869,6 +930,7 @@ export class IngestionProposalService {
         digest(output.source)
     )
       throw new Error('Generation visibility changed');
+    let stale = false;
     for (const entry of output.offered) {
       if (
         !catalog.some(
@@ -879,18 +941,18 @@ export class IngestionProposalService {
       await authorize(
         entry.handler.id,
         entry.handler.version,
-        async (context) => {
+        async (context, currentTarget) => {
           if (!this.allowedProviders(context))
             throw new Error('Provider unavailable');
-          for (const candidate of entry.candidates)
-            await context.assertTarget(
-              candidate.model,
-              candidate.id,
-              candidate.revision,
-            );
+          for (const candidate of entry.candidates) {
+            const current = await currentTarget(candidate.model, candidate.id);
+            if (current.revision !== candidate.revision) stale = true;
+          }
         },
       );
     }
+    // Never classify an authorization/catalog/provider denial as mere staleness.
+    if (stale) throw new GenerationSnapshotStaleError();
   }
   async preview(input: PreviewGeneratedInput): Promise<GeneratedPreview[]> {
     if (
