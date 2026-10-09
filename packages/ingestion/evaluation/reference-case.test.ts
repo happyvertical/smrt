@@ -8,17 +8,70 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test } from 'vitest';
+import { Contents } from '@happyvertical/smrt-content';
+import { expect, test, vi } from 'vitest';
 import { ATTACH, CREATE } from '../reference/handlers.js';
+import { ReferenceReviewHost } from '../reference/review-host.js';
 import { extractAnalysis } from '../src/extraction.js';
 import { extractWithProviders } from '../src/extraction-providers.js';
+import { recoverProjection } from './case-observation.js';
 import { runReferenceCase } from './reference-case.js';
+import { scoreCases } from './scoring.mjs';
+import { evaluationDatabase } from './test-database.js';
 
 test.each([
   'none',
   'draft',
   'attachment',
-] as const)('maintained case %s freezes identity and proves scripted review/effect/replay', async (kind) => {
+  'draft-preview-failure',
+  'draft-duplicate-effect',
+  'draft-reload-failure',
+  'draft-cleanup-failure',
+] as const)('maintained case %s freezes identity and proves scripted review/effect/replay', async (caseKind) => {
+  const kind = caseKind.startsWith('draft-') ? 'draft' : caseKind;
+  const fault = caseKind.startsWith('draft-');
+  const database = await evaluationDatabase();
+  if (caseKind === 'draft-cleanup-failure') {
+    const provision = ReferenceReviewHost.provision;
+    vi.spyOn(ReferenceReviewHost, 'provision').mockImplementationOnce(
+      async (...args) => {
+        const host = await provision(...args);
+        const close = host.db.close!.bind(host.db);
+        vi.spyOn(host.db, 'close').mockImplementationOnce(async () => {
+          await close();
+          throw Error('SECRET_MUST_NOT_PERSIST');
+        });
+        return host;
+      },
+    );
+  }
+  if (caseKind === 'draft-preview-failure')
+    vi.spyOn(ReferenceReviewHost.prototype, 'preview').mockRejectedValueOnce(
+      Error('SECRET_MUST_NOT_PERSIST'),
+    );
+  if (caseKind === 'draft-duplicate-effect') {
+    const original = ReferenceReviewHost.prototype.preview;
+    vi.spyOn(ReferenceReviewHost.prototype, 'preview').mockImplementationOnce(
+      async function (this: ReferenceReviewHost, ...args) {
+        const result = await original.apply(this, args);
+        vi.spyOn(Contents.prototype, 'count')
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(2);
+        return result;
+      },
+    );
+  }
+  if (caseKind === 'draft-reload-failure') {
+    const original = ReferenceReviewHost.prototype.load;
+    let calls = 0;
+    vi.spyOn(ReferenceReviewHost.prototype, 'load').mockImplementation(
+      async function (this: ReferenceReviewHost, ...args) {
+        if (++calls === 2) throw Error('SECRET_MUST_NOT_PERSIST');
+        return original.apply(this, args);
+      },
+    );
+  }
+
   const root = mkdtempSync(join(tmpdir(), 'evaluation-case-'));
   const corpus = join(root, 'corpus'),
     artifacts = join(root, 'artifacts');
@@ -65,6 +118,7 @@ test.each([
       modelWasInvoked: () => invoked,
       reviewSuggestion: () => 'approve',
       hostOptions: {
+        database: database.database,
         proposalPolicy: {
           version: 'case-policy1',
           providers: ['fixture'],
@@ -153,6 +207,19 @@ test.each([
             ),
         },
       },
+    }).catch((error) => {
+      if (caseKind !== 'draft-cleanup-failure') throw error;
+      const receipt = JSON.parse(
+        readFileSync(
+          join(artifacts, 'case-contract', 'case-result.json'),
+          'utf8',
+        ),
+      );
+      const recovered = recoverProjection(artifacts, 'case-contract');
+      expect(recovered?.postProjectionFailure).toBe('artifact_or_cleanup');
+      return { ...receipt, prediction: recovered } as Awaited<
+        ReturnType<typeof runReferenceCase>
+      >;
     });
     expect(result.prediction).toMatchObject({
       status: 'completed',
@@ -160,9 +227,59 @@ test.each([
       modelInvoked: true,
     });
     expect(result.view.reviews.actions).toEqual([]);
-    expect(result.effects).toHaveLength(kind === 'none' ? 0 : 1);
-    if (kind !== 'none')
-      expect(result.reloaded.reviews.actions[0].review.state).toBe('succeeded');
+    if (!fault) expect(result.effects).toHaveLength(kind === 'none' ? 0 : 1);
+    if (fault) {
+      expect(result.prediction.actions).toHaveLength(1);
+      const raw = readFileSync(
+        join(artifacts, 'case-contract', 'projected-prediction.json'),
+        'utf8',
+      );
+      expect(JSON.parse(raw).actions).toHaveLength(1);
+      expect(JSON.stringify(result)).not.toContain('SECRET_MUST_NOT_PERSIST');
+      expect(result).toMatchObject({
+        prediction: {
+          reviewOutcome: {
+            status:
+              caseKind === 'draft-cleanup-failure' ? 'completed' : 'failed',
+          },
+        },
+      });
+      const recovered = recoverProjection(artifacts, 'case-contract');
+      expect(recovered?.actions).toEqual(result.prediction.actions);
+      expect(recovered?.reviewOutcome).toEqual(result.prediction.reviewOutcome);
+      const score = scoreCases(
+        [
+          {
+            id: 'case-contract',
+            group: 'fault-family',
+            partition: 'heldout',
+            category: 'draft',
+            sources: [],
+            expected: [
+              {
+                kind: 'draft',
+                handler: CREATE,
+                fields: { title: 'Different oracle', body: 'Different' },
+              },
+            ],
+          },
+        ],
+        [recovered],
+        { provider: 'fixture', model: 'fixture', runDigest: 'a'.repeat(64) },
+      );
+      expect(score.metrics.draftPrecision.denominator).toBe(1);
+      expect(score.metrics.requiredFields.successes).toBe(0);
+      if (caseKind === 'draft-duplicate-effect')
+        expect(score.safety.gateStatus).toBe('fail');
+      if (caseKind === 'draft-duplicate-effect')
+        expect(result).toMatchObject({
+          prediction: { safety: { duplicateEffects: 1 } },
+        });
+    }
+    if (kind !== 'none' && !fault)
+      expect(result.reloaded?.reviews.actions[0].review.state).toBe(
+        'succeeded',
+      );
     expect(result.identityDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(
       JSON.parse(
@@ -173,6 +290,8 @@ test.each([
       ).itemId,
     ).toBe(result.itemId);
   } finally {
+    vi.restoreAllMocks();
+    await database.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

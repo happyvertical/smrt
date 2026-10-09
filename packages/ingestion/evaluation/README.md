@@ -247,3 +247,11 @@ its own self-referential commit identity in the profile.
 The [2026-10-09 measured report](../../../docs/evaluation/3677-measured-evaluation.md) includes a portable hashed evidence export and offline score reproduction. Four accuracy gates failed; measured safety is unknown. Feedback was 0/4 baseline and 0/4 treatment. Supported-reference acceptance and automation remain disabled. Conservative exposure was $4.71927; actual charges are unknown. The completed run must not be repeated under its consumed release.
 
 The [adoption checklist](../../../docs/evaluation/3677-adoption.md) covers production migrations, trusted sources/providers, handler authoring, review, retention/recovery and explicit release limits.
+
+Projected predictions are flushed to `projected-prediction.json` before any
+scripted preview/review/effect. `case-observations.json` records bounded stages and
+reasons separately; exception text is never persisted. Later receipt/cleanup
+failures recover the original offers, keeping precision denominators independent
+of review success. Explicit duplicate-effect observations fail safety even when
+other counters remain unknown. The historical measured export predates this fix;
+its documented limitation and original scores remain unchanged.

@@ -9,6 +9,7 @@ import {
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BudgetLedger } from './budget.mjs';
+import { recoverProjection } from './case-observation.js';
 import { readFrozenSource } from './case-source.js';
 import { sha256 } from './corpus.mjs';
 import { feedbackCases } from './feedback-cases.mjs';
@@ -204,14 +205,16 @@ export async function runApprovedEvaluation(paths: RunPaths) {
         });
       } catch {
         // Do not retain exception text, credentials, or an inferred structural success.
-        predictions.push({
-          id: row.id,
-          status: 'provider_failure',
-          actions: [],
-          abstained: false,
-          charge: { kind: 'unknown' },
-          failure: 'bounded_case_failed_no_retry',
-        });
+        predictions.push(
+          recoverProjection(heldoutRoot, row.id) ?? {
+            id: row.id,
+            status: 'provider_failure',
+            actions: [],
+            abstained: false,
+            charge: { kind: 'unknown' },
+            failure: 'bounded_case_failed_no_retry',
+          },
+        );
       }
       writeFileSync(
         join(outputRoot, `prediction-${row.id}.json`),

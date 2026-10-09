@@ -12,6 +12,12 @@ import {
 import type { ProposalGenerator } from '../src/proposal-contracts.js';
 import type { GeneratedSuggestion } from '../src/proposal-dto.js';
 import {
+  type CaseObservations,
+  type ReviewStage,
+  retainObservations,
+  retainProjection,
+} from './case-observation.js';
+import {
   caseUploadRequest,
   type FrozenCaseSource,
   opaqueCaptureId,
@@ -222,95 +228,151 @@ export async function runReferenceCase(input: {
             actions: [],
             abstained: false,
           };
+    retainProjection(root, { ...prediction, latencyMs: suggestionLatencyMs });
+    const observations: CaseObservations = {
+      reviewOutcome: { status: 'not_requested', stage: 'not_started' },
+      safety: {},
+    };
+    retainObservations(root, observations);
+    let stage: ReviewStage = 'not_started';
+    let reason: NonNullable<CaseObservations['reviewOutcome']['reason']> =
+      'operation_failed';
+    let reloaded: typeof view | null = null;
     const effects: Array<Record<string, unknown>> = [];
-    if (view.reviews.actions.length)
-      throw Error('Unexpected action before scripted review');
-    if (
-      input.reviewSuggestion &&
-      view.generation &&
-      view.analysis &&
-      identity
-    ) {
-      for (const [index, suggestion] of view.generation.suggestions.entries()) {
-        if (suggestion.disposition !== 'ready_for_review') continue;
-        const previews = await host.preview(EVALUATION_SCOPE, {
-          itemId: received.itemId,
-          attemptId: view.analysis.attemptId,
-          index,
-          requestId: `evaluation-preview:${index}`,
-        });
-        if (previews.length !== 1 || previews[0].kind !== 'operation')
-          throw Error('Unexpected reference preview');
-        const review = previews[0].review;
-        const decision = input.reviewSuggestion(suggestion, identity);
-        await host.decide(
-          { ...EVALUATION_SCOPE, actorId: 'reviewer' },
-          {
-            actionId: review.actionId,
-            expectedRevision: review.revision,
-            expectedReviewVersion: review.reviewVersion,
-            bindingHash: review.bindingHash,
-            requestId: `evaluation-review:${index}`,
-            decision,
-            reason:
-              'Scripted authenticated evaluation review; agent-authored frozen oracle, not observed human review',
-          },
-        );
-        if (decision === 'approve') {
-          const { service } = await host.service(EVALUATION_SCOPE);
-          const applied = await service.applyAction(review.actionId);
-          const domainSnapshot = async () => {
-            const record = await contents.get({
-              id: String(applied.result?.contentId),
-            });
-            if (!record) throw Error('Reference effect content missing');
-            return {
-              contents: await contents.count({
-                where: {
-                  tenantId: EVALUATION_SCOPE.tenantId,
-                  context: EVALUATION_SCOPE.confidentialScopeId,
-                },
-              }),
-              content: await host.result(EVALUATION_SCOPE, record.id!),
-              assets: (await record.getAssets())
-                .map((asset) => asset.id)
-                .sort(),
-            };
-          };
-          const domainBeforeReplay = await domainSnapshot();
-          const replay = await service.applyAction(review.actionId);
-          const domainAfterReplay = await domainSnapshot();
-          if (
-            JSON.stringify(domainBeforeReplay) !==
-            JSON.stringify(domainAfterReplay)
-          )
-            throw Error('Duplicate reference domain effect');
-          if (
-            applied.state !== 'succeeded' ||
-            JSON.stringify(applied) !== JSON.stringify(replay)
-          )
-            throw Error('Reference effect or idempotent replay failed');
-          effects.push({
-            index,
-            decision,
-            applied,
-            replay,
-            reviewer: 'scripted-authenticated',
-            domain: domainAfterReplay,
-          });
-        } else
-          effects.push({ index, decision, reviewer: 'scripted-authenticated' });
+    try {
+      if (view.reviews.actions.length) {
+        reason = 'unexpected_preexisting_action';
+        throw Error('Unexpected action before scripted review');
       }
+      if (
+        input.reviewSuggestion &&
+        view.generation &&
+        view.analysis &&
+        identity
+      ) {
+        for (const [
+          index,
+          suggestion,
+        ] of view.generation.suggestions.entries()) {
+          if (suggestion.disposition !== 'ready_for_review') continue;
+          stage = 'preview';
+          const previews = await host.preview(EVALUATION_SCOPE, {
+            itemId: received.itemId,
+            attemptId: view.analysis.attemptId,
+            index,
+            requestId: `evaluation-preview:${index}`,
+          });
+          if (previews.length !== 1 || previews[0].kind !== 'operation') {
+            reason = 'unexpected_preview';
+            throw Error('Unexpected reference preview');
+          }
+          const review = previews[0].review;
+          stage = 'decision';
+          const decision = input.reviewSuggestion(suggestion, identity);
+          await host.decide(
+            { ...EVALUATION_SCOPE, actorId: 'reviewer' },
+            {
+              actionId: review.actionId,
+              expectedRevision: review.revision,
+              expectedReviewVersion: review.reviewVersion,
+              bindingHash: review.bindingHash,
+              requestId: `evaluation-review:${index}`,
+              decision,
+              reason:
+                'Scripted authenticated evaluation review; agent-authored frozen oracle, not observed human review',
+            },
+          );
+          if (decision === 'approve') {
+            stage = 'apply';
+            const { service } = await host.service(EVALUATION_SCOPE);
+            const applied = await service.applyAction(review.actionId);
+            const effect: Record<string, unknown> = {
+              index,
+              decision,
+              applied,
+              reviewer: 'scripted-authenticated',
+            };
+            effects.push(effect);
+            stage = 'effect_verification';
+            const domainSnapshot = async () => {
+              const record = await contents.get({
+                id: String(applied.result?.contentId),
+              });
+              if (!record) throw Error('Reference effect content missing');
+              return {
+                contents: await contents.count({
+                  where: {
+                    tenantId: EVALUATION_SCOPE.tenantId,
+                    context: EVALUATION_SCOPE.confidentialScopeId,
+                  },
+                }),
+                content: await host.result(EVALUATION_SCOPE, record.id!),
+                assets: (await record.getAssets())
+                  .map((asset) => asset.id)
+                  .sort(),
+              };
+            };
+            const domainBeforeReplay = await domainSnapshot();
+            stage = 'replay';
+            const replay = await service.applyAction(review.actionId);
+            stage = 'effect_verification';
+            const domainAfterReplay = await domainSnapshot();
+            if (
+              JSON.stringify(domainBeforeReplay) !==
+              JSON.stringify(domainAfterReplay)
+            ) {
+              observations.safety.duplicateEffects =
+                (observations.safety.duplicateEffects ?? 0) + 1;
+              retainObservations(root, observations);
+              reason = 'duplicate_effect';
+              throw Error('Duplicate reference domain effect');
+            }
+            if (
+              applied.state !== 'succeeded' ||
+              JSON.stringify(applied) !== JSON.stringify(replay)
+            ) {
+              reason = 'effect_mismatch';
+              throw Error('Reference effect or idempotent replay failed');
+            }
+            Object.assign(effect, {
+              index,
+              decision,
+              applied,
+              replay,
+              reviewer: 'scripted-authenticated',
+              domain: domainAfterReplay,
+            });
+          } else
+            effects.push({
+              index,
+              decision,
+              reviewer: 'scripted-authenticated',
+            });
+        }
+      }
+      stage = 'reload';
+      reloaded = await host.load(EVALUATION_SCOPE, received.itemId);
+      observations.reviewOutcome = {
+        status: input.reviewSuggestion ? 'completed' : 'not_requested',
+        stage,
+      };
+    } catch {
+      observations.reviewOutcome = { status: 'failed', stage, reason };
     }
+    retainObservations(root, observations);
     const receipt = {
-      prediction: { ...prediction, latencyMs: suggestionLatencyMs },
+      prediction: {
+        ...prediction,
+        latencyMs: suggestionLatencyMs,
+        ...observations,
+      },
       itemId: received.itemId,
       identityDigest,
       view,
       effects,
       scriptedReviewAndEffectMs:
         performance.now() - started - suggestionLatencyMs,
-      reloaded: await host.load(EVALUATION_SCOPE, received.itemId),
+      reloaded,
       automaticActionEligible: false,
     };
     writeFileSync(join(root, 'case-result.json'), JSON.stringify(receipt), {

@@ -83,3 +83,14 @@ public test-database admin convention; no grants, runtime behavior or timeouts
 changed. The fresh focused and full PostgreSQL lanes validate that correction.
 
 Measured acceptance: draft precision 97.70% and draft recall 85% passed; fields 61%, attachment precision 90%, attachment recall 27% and abstention 58% failed. All 300 measured safety observations remain unknown. 347 unknown-charge calls retain $4.71927 exposure, not a verified invoice. Feedback 0/4→0/4 establishes no paid benefit. No rescoring, exclusions, added inference or automation claim.
+
+Accepted review finding ef2f56dd81bc35325e70cddf2ed214b4bff2ce33b9769623f14a4129fa3729da:
+post-projection preview/replay/reload exceptions erased raw offers and duplicate
+observations. Four baseline-sensitive deterministic cases reproduced the defect.
+The fix retains raw projections before review, separates bounded failure stages,
+recovers later artifact/cleanup failures, and counts known safety violations while
+other observations remain unknown. Final round2 checks passed:62 tooling cases (including SQLite fault injection),
+7 PostgreSQL reference cases,6 native-provider cases, owning types/build and
+static/knowledge gates. Four targeted baseline assertions failed before the fix;
+all now pass, including precision-denominator and explicit safety-counter checks. Historical paid artifacts/scores stay unchanged; this
+is not a paid recognition-quality improvement or a claim of observed paid loss.

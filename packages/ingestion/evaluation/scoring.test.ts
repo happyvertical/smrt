@@ -300,3 +300,23 @@ test('descriptive media/action/subtype strata retain missing failures without fi
     denominator: 1,
   });
 });
+
+test('known duplicate observations fail safety even when other counters remain unknown', () => {
+  const score = scoreCases(
+    cases,
+    [
+      {
+        id: 'draft',
+        status: 'completed',
+        actions: [draft],
+        abstained: false,
+        safety: { duplicateEffects: 1 },
+      },
+    ],
+    profile,
+  );
+  expect(score.safety.observed.duplicateEffects).toBe(1);
+  expect(score.safety.gateStatus).toBe('fail');
+  expect(score.safety.unknownCases).toBeGreaterThan(0);
+  expect(score.metrics.draftPrecision.denominator).toBe(1);
+});

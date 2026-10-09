@@ -303,7 +303,12 @@ export function scoreCases(
       )
     )
       safetyUnknown++;
-    else for (const key of safetyKeys) safety[key] += prediction.safety[key];
+    for (const key of safetyKeys)
+      if (
+        Number.isSafeInteger(prediction?.safety?.[key]) &&
+        prediction.safety[key] >= 0
+      )
+        safety[key] += prediction.safety[key];
     if (finite(prediction?.latencyMs)) latency.push(prediction.latencyMs);
     if (
       Number.isSafeInteger(prediction?.correctionEdits) &&

@@ -145,3 +145,29 @@ JS
 ```
 
 Rendered sources can be reconstructed using the pinned toolchain and generator in [the evaluation guide](../../packages/ingestion/evaluation/README.md); the manifest hashes bind the measured bytes. Do not rerun inference or reuse the opened heldout families as unseen evidence. Future improvements require a separately preregistered evaluation and budget.
+
+## Frozen execution revision limitation
+
+Review found a reachable evaluator defect in execution revision
+`cabd661b2ef836faf1227eb57a05a29f258c0905`: an exception after raw prediction
+projection (during preview, decision, apply, replay verification or final reload)
+could replace that prediction with an empty generic failure, discarding offered
+actions from precision denominators and explicit duplicate-effect observations.
+The original scorer also discarded a known safety counter when other counters
+were unknown. This limits what the frozen report can establish; offline score
+reproduction reproduces the original accounting, not proof that this path was
+complete.
+
+The actual 20 outer generic exceptions in this run correspond to the preregistered
+corrupt-source cases. Post-generation offer loss was not established as an
+observed event in this paid run. The other failed owning-pipeline dispositions
+and all unknown safety observations remain exactly as recorded. No failed row was
+reclassified, excluded or rescored, and the paid evidence archive and scores are
+unchanged.
+
+A subsequent deterministic regression fix retains the raw projection before
+review, records bounded review/effect/reload outcomes separately, recovers it
+after later artifact/cleanup errors, and counts known positive safety observations
+without claiming missing counters are zero. Its fault-injection tests are
+correctness evidence for later tooling, not an improvement to this paid result.
+No paid rerun occurred.
