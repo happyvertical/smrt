@@ -27,6 +27,9 @@ submission never run inside ingestion database transactions.
 
 Validation: `pnpm test`, `pnpm test:postgres`, `pnpm test:providers`, `pnpm typecheck`, `pnpm build`.
 The PostgreSQL command provisions a real database and fails if unavailable.
+Fixture teardown uses `src/test-support/postgres-cleanup.ts`: only owned
+exec_/ing_/ext_/sources_ names, normal DROP, bounded 55006-only retry. Never
+force-terminate backends, grant signal privileges, or ignore leaked sessions.
 Build includes browser import validation. The provider lane exercises local SDK
 adapters and process isolation, without claiming live remote recognition quality.
 `src/svelte` owns transport-neutral review components and browser-safe host callbacks.
