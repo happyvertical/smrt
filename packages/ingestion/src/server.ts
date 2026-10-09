@@ -2097,6 +2097,6 @@ export class IngestionService {
 }
 
 export * from './extraction.js';
-export { GenerationSnapshotStaleError } from './proposal-errors.js';
 export type * from './feedback-contracts.js';
+export { GenerationSnapshotStaleError } from './proposal-errors.js';
 export * from './sources/index.js';

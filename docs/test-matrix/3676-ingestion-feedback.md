@@ -3,7 +3,8 @@
 High risk: confidential example disclosure and learned authority expansion. Existing
 ledger only; schema migration N/A unless an explicit implementation need is found.
 No paid providers. The table defines required coverage. Checkpoint execution is
-recorded below; complete final release validation remains pending.
+recorded below; complete final release validation remains pending the tracked
+PostgreSQL fixture cleanup repair #3704.
 
 | Behavior/invariant | Reachable trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level/command |
 |---|---|---|---|---|---|---|---|---|
@@ -64,7 +65,9 @@ case also passes on PostgreSQL. The first Chromium run failed all five scenarios
 at the unchanged initial upload visibility wait: traces show pending upload I/O
 and a busy inbox, without a server error. Concurrent filesystem-bound UI database
 validation was active. This is preserved diagnostic evidence, not a browser pass;
-the identical browser command must rerun after that workload completes.
+the identical browser command was subsequently rerun. The first run log remains;
+its original traces were overwritten by the next Playwright output cleanup. Later
+failed runs have archived traces, and the current browser run passes all five cases.
 
 ## SDK transport correction and browser synchronization
 
@@ -94,3 +97,37 @@ with a new completed, reviewable attempt, while the prior browser trace still
 had the split request pending at its display assertion. The canonical UI parent
 owns a second adjacent response wait; neither correction changes runtime limits
 or browser timeout settings.
+
+## Integrated 0.55.6 checkpoint (review pending)
+
+The UI dependency is checkpoint `678310a2` on actual main `5722179`, including
+current-target reload, pagination reauthorization and jobs terminal-outcome
+compatibility. Feedback rebased without a runtime edit: the exact inherited delta
+matches the parent, with only a canonical type-export ordering correction added.
+The frozen feedback corpus and all feedback-only source files remain unchanged.
+
+| Gate | Executed result | Scope and limit |
+|---|---|---|
+| Complete SQLite ingestion + components | 268 + 28 passed on `636289a` | Carried complete run; subsequent inherited UI/jobs interactions have owning evidence and fresh affected coverage |
+| Integrated affected SQLite | 25 passed, 83 filtered | All 22 feedback cases plus current-target recovery and completed-sibling visibility; filtered cases are not new passes |
+| Integrated components | 32 passed | Includes feedback binding and pagination reauthorization/context fencing |
+| Integrated local providers | 22 passed | Actual SDK HTTP example serialization; no live provider-quality claim |
+| Integrated Chromium | 5 passed | Real upload, feedback/stale binding, correction/apply, scope denial, originals and split re-extraction; original timeouts |
+| Root build / typecheck | 73 / 143 tasks passed | Fresh aligned 0.55.6 tree |
+| Root lint, format, audit policy, AGENTS chain | Passed | Export-order correction is mechanical and preserves the server surface |
+| Complete integrated PostgreSQL | 230 passed, 1 failed | The sole failure is extraction fixture `afterEach` forced database drop, SQLSTATE 42501; this is not a green suite |
+
+An earlier complete PostgreSQL command recorded 226 passes and one foundation
+fixture teardown failure with the same SQLSTATE. Its unchanged targeted diagnostic
+passed, but the final complete run reproduced the cleanup defect in a different
+fixture. Both failures and backend-role observations are preserved. The dedicated
+runtime role remains non-superuser with no RLS bypass; no signal privilege or
+application timeout was changed. Supporting #3704 owns reuse of the existing
+bounded normal-DROP cleanup helper. A clean complete PostgreSQL terminal command
+is required after that repair before feedback review/publication.
+
+Broader root runtime results are carried only for unchanged dependency behavior,
+not reported as fresh tests. The jobs base change is explicitly excluded from
+byte-equivalence claims and has its own current runner/event and PostgreSQL
+proof. Packed-consumer/freshness checks and normal checkpoint hooks are recorded
+in the external evidence manifest; final dependency reconciliation remains required.

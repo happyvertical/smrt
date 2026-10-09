@@ -35,10 +35,12 @@ revoked/deleted, wrong-tenant and wrong-confidential-scope examples. Exact repea
 requests are replay/idempotency controls and are not counted as held-out examples.
 
 The held-out test passed through the actual ingestion retrieval/proposal service
-on SQLite (`feedback-second.log`, five-case run, 43.42 seconds) and PostgreSQL
-(`feedback-all-postgres-checkpoint.log`, 20 passing cases and one separate
-retention failure subsequently fixed by its focused regression). Complete final
-suite results remain pending; this checkpoint is not release validation.
+in the complete 268-case SQLite run and the integrated 25-case affected SQLite
+run. It also passed within the complete integrated PostgreSQL run (230 passing
+cases, one extraction fixture teardown failure). That command is not a green
+release gate: #3704 tracks the forced-DROP cleanup defect, and a complete clean
+PostgreSQL run remains required. No matcher, corpus or expected label was tuned
+after these results.
 
 ## Limits, drift and selection bias
 
