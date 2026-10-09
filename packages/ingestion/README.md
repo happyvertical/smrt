@@ -146,3 +146,6 @@ raw-body reading. The callback must verify signature, delivery time/replay windo
 and account ownership, then return trusted binding and durable delivery identity.
 No vendor implementation or hardware driver is selected. All adapters invoke
 only receipt preservation, never domain writes, AI tools or external actions.
+
+See [PROPOSALS.md](PROPOSALS.md) for bounded application catalog discovery, durable
+interpretation revisions, optional typed decisions and explicit generated preview.
