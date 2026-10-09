@@ -31,6 +31,38 @@ spelled literally; `models` and `nav[].model` take identifiers. Write
 `static options = { ... } as const` so `visibility` stays a literal type.
 The emitted `options` are keyed by qualified model name.
 
+## Host metadata: group, section, nav detail, alternatives (#3604)
+
+Everything a catalog host (the planner, a future `smrt cookbook apply`) needs
+to present a recipe lives on the recipe, so it reads the manifest or knowledge
+artifact instead of importing runtime code. All are optional and additive:
+
+| Static | Shape | Meaning |
+| --- | --- | --- |
+| `group` | `{ id, label, summary? }` | Recipes with the same `group.id` share one card; the first declaration of an id supplies `label` and `summary`. Declaration order is the sub-switch order. |
+| `section` | `{ id, label, icon?, description? }` | Navigation section the recipe suggests for its `nav` entries. The host owns sections and the user may rename them, so keep `id` stable; the same `id` shares a section. |
+| `requiresAny` | `string[][]` | At least one id of each inner list must be on (`[['products.simple', 'products.clothing']]`); adding the recipe with none on adds the first. |
+| `nav[].icon` / `description` | string | Shell icon name and one friendly line for a business owner. |
+| `nav[].noun` | string | What "New" creates when the label is not countable ("Stock levels" -> `stock entry`). |
+| `nav[].key` | slug | Fixed key for the layout id `item:<pkg>:<Model>:<key>`. Required for a second entry over the same model and for a `filter`. |
+| `nav[].filter` | `{ field, value }` | Narrows the entry to rows where `field` equals `value` (Ingredients over Products: `productType` = `material`). Needs a `key`. |
+| `options.<Model>.fields.<f>.required` | boolean | The form refuses to save without a value. |
+
+Child models (line items) are simply listed in `models` without a `nav` entry.
+Validation: `group`/`section` take only their keys, slug ids, non-empty
+strings; `requiresAny` ids follow the recipe-id format and cannot name the
+recipe itself; each (model, key) pair appears once in `nav`; a `filter.field`
+must be a field the model declares (checked in core on the merged manifest,
+`assertRecipeOptions`).
+
+Not part of the recipe declaration (still planner-local): the planner's
+cross-package `forms` and `extends` (form records spanning profiles, variants
+and SKUs).
+
+User-facing field text for the recipes comes from `@field({ description })` on
+the models (the glossary seed), so a package that declares a recipe carries the
+descriptions of every field the recipe shows.
+
 ## How the scanner collects it
 
 The scanner class pass finds classes by decorator, which a recipe lacks, so

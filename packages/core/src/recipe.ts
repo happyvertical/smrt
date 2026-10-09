@@ -23,6 +23,7 @@
  *   static models = [Order];
  *   static nav = [{ label: 'Sales Orders', model: Order }];
  *   static requires = ['commerce.customers'];
+ *   static section = { id: 'sales', label: 'Sales', icon: 'shoppingBag' };
  *   static options = {
  *     Order: { fields: { status: { default: 'draft', locked: true } } },
  *   };
@@ -47,6 +48,37 @@ export type SmrtRecipeModel = abstract new (...args: never[]) => object;
 export interface SmrtRecipeNavEntry {
   label: string;
   model: SmrtRecipeModel;
+  /** A shell icon name (`users`, `calendar`...) drawn on the entry's row. */
+  icon?: string;
+  /** One friendly line for a business owner, shown on the section card. */
+  description?: string;
+  /**
+   * Fixed key making the entry's layout id `item:<pkg>:<Model>:<key>`. Needed
+   * for a second entry over the same model, and for a `filter`.
+   */
+  key?: string;
+  /** What "New" creates when the label is not a countable noun. */
+  noun?: string;
+  /**
+   * Narrow the entry to rows whose `field` equals `value`; new rows from the
+   * view carry the value. Needs a `key`.
+   */
+  filter?: { field: string; value: string };
+}
+
+/** Recipes sharing a `group.id` share one card in a host. */
+export interface SmrtRecipeGroup {
+  id: string;
+  label: string;
+  summary?: string;
+}
+
+/** The navigation section a recipe suggests; same `id` shares a section. */
+export interface SmrtRecipeSection {
+  id: string;
+  label: string;
+  icon?: string;
+  description?: string;
 }
 
 /**
@@ -78,6 +110,22 @@ export abstract class SmrtRecipe {
   static nav: readonly SmrtRecipeNavEntry[] = [];
   /** Ids of recipes needed first; they may live in other packages. */
   static requires: readonly string[] = [];
+  /**
+   * Alternatives: at least one id of each inner list must be on. Adding the
+   * recipe with none on adds the first of the list.
+   */
+  static requiresAny: readonly (readonly string[])[] = [];
+  /**
+   * Card the recipe is a sub-switch of in a host such as the planner. Recipes
+   * with the same `group.id` share it; the first declaration supplies the
+   * card's `label` and `summary`.
+   */
+  static group?: SmrtRecipeGroup;
+  /**
+   * Navigation section the recipe suggests its `nav` entries sit under. The
+   * host owns sections and the user may rename them, so keep `id` stable.
+   */
+  static section?: SmrtRecipeSection;
   /** Curation hints keyed by model class name. */
   static options: Readonly<Record<string, SmrtRecipeModelOptions>> = {};
   /**
