@@ -125,6 +125,7 @@ export {
   type HttpTranscriberOptions,
 } from './dictation-transcribe.js';
 export { default as ErrorSummary } from './ErrorSummary.svelte';
+export { default as FieldLabel } from './FieldLabel.svelte';
 export { default as Fieldset } from './Fieldset.svelte';
 export { default as FilePicker } from './FilePicker.svelte';
 export { default as Form } from './Form.svelte';
@@ -138,6 +139,14 @@ export {
 } from './form-group-context.js';
 // Form retry (#3291): also published Svelte-free at `@happyvertical/smrt-ui/form-retry`.
 export * from './form-retry/index.js';
+export {
+  canCaptureHandsFree,
+  type HandsFreeCapture,
+  type HandsFreeCaptureFactory,
+  type HandsFreeCaptureOptions,
+  type HandsFreeUtterance,
+  type HandsFreeVadOptions,
+} from './hands-free-capture.js';
 export { default as Input } from './Input.svelte';
 export { default as InputGroup } from './InputGroup.svelte';
 export { insertTextAtCursor } from './insert-text.js';

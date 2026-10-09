@@ -1,4 +1,5 @@
 <script lang="ts">
+import { FieldLabel } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { importOptional } from '@happyvertical/smrt-ui/utils/import-optional.js';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
@@ -47,6 +48,10 @@ let {
   required = false,
   onchange,
 }: Props = $props();
+
+// Unique per instance: the control stays labelled even if `name` repeats on a page.
+const uid = $props.id();
+const labelId = `${uid}-label`;
 
 const app = useAppState();
 const stt = useSTT();
@@ -346,10 +351,7 @@ function handleNativeChange(e: Event) {
 
 <div class="smrt-datetime" class:listening={isHolding} class:parsing={isParsing}>
   {#if label}
-    <label for={name} class="smrt-label">
-      {label}
-      {#if required}<span class="required">*</span>{/if}
-    </label>
+    <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
 
   <div class="input-wrapper">
@@ -358,6 +360,7 @@ function handleNativeChange(e: Event) {
       <input
         bind:this={inputEl}
         id={name}
+        aria-labelledby={label ? labelId : undefined}
         name={name}
         type="text"
         placeholder={placeholder}
@@ -423,6 +426,7 @@ function handleNativeChange(e: Event) {
       <input
         bind:this={inputEl}
         id={name}
+        aria-labelledby={label ? labelId : undefined}
         name={name}
         type={includeTime ? 'datetime-local' : 'date'}
         value={value}
@@ -453,17 +457,6 @@ function handleNativeChange(e: Event) {
     min-width: 0;
     gap: var(--smrt-spacing-1, 4px);
     position: relative;
-  }
-
-  .smrt-label {
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-body-medium-weight, 500);
-    color: var(--smrt-color-on-surface, #374151);
-  }
-
-  .smrt-label .required {
-    color: var(--smrt-color-error, #ba1a1a);
-    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .input-wrapper {

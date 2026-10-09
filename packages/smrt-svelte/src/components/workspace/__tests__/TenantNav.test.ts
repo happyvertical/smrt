@@ -280,7 +280,9 @@ describe('TenantNav', () => {
         expect(action).toHaveAttribute('href', '/home/settings');
         expect(action).toHaveAttribute('title', 'Home settings');
         expect(action?.closest('a[href="/home"]')).toBeNull();
-        expect(action?.textContent?.trim()).toBe('\u2699');
+        // Default icon is an SVG gear (no text glyph) when no iconComponent is given.
+        expect(action?.textContent?.trim()).toBe('');
+        expect(action?.querySelector('svg path')).not.toBeNull();
       } finally {
         unmount(component);
       }

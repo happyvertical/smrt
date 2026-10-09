@@ -48,9 +48,10 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+// Export collections
+export { CommentCollection } from './collections/Comments';
 export { DevelopmentRequestHistoryCollection } from './collections/DevelopmentRequestHistories';
 export { DevelopmentRequestCollection } from './collections/DevelopmentRequests';
-// Export collections
 export { IssueCollection } from './collections/Issues';
 export { ProjectIntegrationAuditCollection } from './collections/ProjectIntegrationAudits';
 export { ProjectIntegrationCollection } from './collections/ProjectIntegrations';

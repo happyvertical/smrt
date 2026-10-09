@@ -7,7 +7,8 @@
  * adapter lazily, once, the first time someone starts dictating: nothing
  * loads and no microphone prompt appears until then. Defaults to the
  * browser's own speech recognition (`browser-speech`), which needs no
- * download; an unsupported browser rejects with
+ * download; an on-device model is never downloaded by dictation (see
+ * `LocalSpeechSTTAdapter.prepare`). An unsupported browser rejects with
  * `CapabilityNotAvailableError`, which `Dictation` reports in plain words.
  *
  * @example
@@ -30,7 +31,12 @@ export function createSttDictationSource(
   return () => {
     adapter ??= (async () => {
       const created = await getSTT(options);
-      await created.ensureInitialized();
+      // An adapter that needs a download is never loaded here: dictation must
+      // not start one. It checks its own model when started, and the host
+      // loads it explicitly (after asking).
+      if (!created.getCapabilities().requiresDownload) {
+        await created.ensureInitialized();
+      }
       return created;
     })().catch((error: unknown) => {
       // Let a later tap try again (for example after a permission change).

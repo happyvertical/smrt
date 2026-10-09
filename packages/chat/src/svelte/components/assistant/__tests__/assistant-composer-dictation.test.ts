@@ -237,3 +237,85 @@ describe('AssistantComposer recording fallback', () => {
     );
   });
 });
+
+describe('AssistantComposer hands-free dictation', () => {
+  /** A microphone that cuts speech into utterances; the test speaks. */
+  function mockHandsFree() {
+    let options:
+      | {
+          onUtterance(u: {
+            pcm: Float32Array;
+            sampleRate: number;
+            durationMs: number;
+            reason: 'silence' | 'max' | 'flush';
+          }): void;
+        }
+      | undefined;
+    const capture = {
+      start: vi.fn(async () => {}),
+      stop: vi.fn(),
+      cancel: vi.fn(),
+    };
+    return {
+      capture,
+      factory: vi.fn((o: NonNullable<typeof options>) => {
+        options = o;
+        return capture;
+      }),
+      say() {
+        options?.onUtterance({
+          pcm: new Float32Array([0.1]),
+          sampleRate: 16_000,
+          durationMs: 800,
+          reason: 'silence',
+        });
+      },
+    };
+  }
+
+  it('keeps listening between sentences and puts each one at the cursor; the microphone button ends it', async () => {
+    const speech = mockSpeech();
+    const heard: string[] = ['add milk', 'and eggs'];
+    const source: DictationSpeechSource = {
+      ...speech.source,
+      transcribePcm: vi.fn(async () => heard.shift() ?? ''),
+    };
+    const mic = mockHandsFree();
+    render(AssistantComposer, {
+      props: {
+        onsend: vi.fn(),
+        onupload: vi.fn(),
+        dictation: () => source,
+        dictationMode: 'hands-free',
+        handsFreeCapture: mic.factory,
+      },
+    });
+    const field = screen.getByLabelText('Message') as HTMLTextAreaElement;
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Speak instead of typing' }),
+    );
+    const stop = await screen.findByRole('button', { name: 'Stop listening' });
+    expect(stop).toHaveAttribute('data-dictation-mode', 'hands-free');
+    expect(speech.source.start).not.toHaveBeenCalled();
+    expect(screen.getByRole('status')).toHaveTextContent('Listening');
+    expect(screen.getByRole('status')).not.toHaveTextContent(/Just talk/);
+    expect(stop).toHaveAttribute('title', expect.stringMatching(/Just talk/));
+
+    mic.say();
+    await vi.waitFor(() => expect(field.value).toBe('add milk'));
+    mic.say();
+    await vi.waitFor(() => expect(field.value).toBe('add milk and eggs'));
+    // Still on after two sentences.
+    expect(
+      screen.getByRole('button', { name: 'Stop listening' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+
+    await userEvent.click(stop);
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Speak instead of typing' }),
+      ).toHaveAttribute('aria-pressed', 'false'),
+    );
+    expect(mic.capture.stop).toHaveBeenCalledTimes(1);
+  });
+});

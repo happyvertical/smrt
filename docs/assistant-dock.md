@@ -588,6 +588,26 @@ index, next to `ui-surfaces.md`.
 
 ## Host extension points
 
+### One conversation: `conversations="single"`
+
+By default the dock shows a conversation list and lets the person start new
+ones (`conversations="multiple"`). For an app where people should not have to
+know about separate conversations, pass `conversations="single"`:
+
+```svelte
+<AssistantDock {transport} {registry} conversations="single" />
+```
+
+There is no list, no Conversations toggle, and no choose or start screens. Once
+the thread list loads, the dock opens the transport's most recent thread
+(newest `lastMessageAt`; a thread nobody has written to counts as newest), or
+creates one silently when there is none, and opens the composer, focusing it
+while `visible`. A failure to list, create, or open shows inline with a "Try
+again" button. Once the conversation has messages, an icon-only "Clear
+conversation" button starts a fresh thread (transports with `createThread`
+only). A transport swap re-runs the same open-or-create step for the new
+context.
+
 ### Rendering a message's `toolCallData` (#2988)
 
 `AssistantMessage.toolCallData` is host-defined, so the dock doesn't render

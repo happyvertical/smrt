@@ -1,18 +1,33 @@
 import {
   applyShellLayout,
+  createShellSection,
+  deleteShellSection,
   hideShellEntry,
   isShellLayoutEmpty,
   moveShellItem,
   moveShellSection,
   normalizeShellLayout,
+  placeShellItem,
+  renameShellItem,
+  renameShellSection,
+  resetShellItemPlacement,
   resolveShellNavModel,
+  resolveShellPlacements,
   SHELL_LAYOUT_VERSION,
   type ShellLayout,
   type ShellNavModelSection,
   setShellLayoutPanel,
+  setShellSectionIcon,
+  setShellSectionTitleVisible,
   showShellEntry,
 } from './layout.js';
 import { resolveShellConfig } from './settings.js';
+import {
+  isShellSlot,
+  type ShellPlacementItem,
+  type ShellRegion,
+  type ShellSlot,
+} from './slots.js';
 import type {
   PanelEdge,
   ShellNavGroup,
@@ -30,6 +45,16 @@ export interface ShellLayoutControllerOptions {
   panels: () => ShellPanelDefaults | undefined;
   /** The layout currently in force (host-owned, or stored by the shell). */
   layout: () => ShellLayout | null | undefined;
+  /**
+   * The movable shell items (dock toggles, host items) with their default
+   * slots. Omit when the shell has none.
+   */
+  items?: () => ShellPlacementItem[];
+  /**
+   * Whether in-place layout editing is offered (the host opted in). Omit for
+   * "not offered": `editing` stays false and `setEditing(true)` is refused.
+   */
+  editable?: () => boolean;
   /** Store the next layout (and notify the host). */
   commit: (layout: ShellLayout) => void;
 }
@@ -44,6 +69,25 @@ export interface ShellLayoutPanelView {
   initial: 'collapsed' | 'expanded';
 }
 
+/** One movable shell item as an editor presents it. */
+export interface ShellPlacementView {
+  id: string;
+  label: string;
+  /** The slot the item lives in unless the user moved it. */
+  defaultSlot: ShellSlot;
+  /** The slot the layout puts it in (before any hidden-region fallback). */
+  slot: ShellSlot;
+  /** The user moved it away from its default slot. */
+  moved: boolean;
+}
+
+const REGION_EDGE: Record<ShellRegion, PanelEdge> = {
+  header: 'top',
+  footer: 'bottom',
+  leftSidebar: 'left',
+  rightSidebar: 'right',
+};
+
 /**
  * The layout API: the same changes the `ShellLayoutEditor` makes, as plain
  * calls an assistant (or any host code) can make. Obtain it with
@@ -52,7 +96,30 @@ export interface ShellLayoutPanelView {
  * in that state), so a caller can report accurately.
  */
 export class ShellLayoutController {
+  private editingState = $state(false);
+
   constructor(private readonly options: ShellLayoutControllerOptions) {}
+
+  /** Whether in-place layout editing is offered by the host. */
+  get editable(): boolean {
+    return this.options.editable?.() ?? false;
+  }
+
+  /** Whether the shell is in layout edit mode (always false if not `editable`). */
+  get editing(): boolean {
+    return this.editable && this.editingState;
+  }
+
+  /**
+   * Enter or leave layout edit mode. Returns whether the mode changed; entering
+   * is refused (`false`) when the host did not opt in.
+   */
+  setEditing(editing: boolean): boolean {
+    if (editing && !this.editable) return false;
+    if (this.editingState === editing) return false;
+    this.editingState = editing;
+    return true;
+  }
 
   /** The layout in force, normalized. */
   get layout(): ShellLayout {
@@ -98,6 +165,52 @@ export class ShellLayoutController {
           (config.initial === 'expanded' ? 'expanded' : 'collapsed'),
       };
     });
+  }
+
+  /** The movable shell items with their default and current slots. */
+  get placementItems(): ShellPlacementView[] {
+    const items = this.options.items?.() ?? [];
+    const placed = resolveShellPlacements(items, this.layout);
+    const slotOf = new Map<string, ShellSlot>();
+    for (const [slot, ids] of Object.entries(placed)) {
+      for (const id of ids) slotOf.set(id, slot as ShellSlot);
+    }
+    const seen = new Set<string>();
+    const out: ShellPlacementView[] = [];
+    for (const item of items) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      const slot = slotOf.get(item.id) ?? item.slot;
+      out.push({
+        id: item.id,
+        label: item.label,
+        defaultSlot: item.slot,
+        slot,
+        moved: slot !== item.slot,
+      });
+    }
+    return out;
+  }
+
+  /** Items per slot in display order (every slot present, possibly empty). */
+  get placements(): Record<ShellSlot, ShellPlacementView[]> {
+    const views = new Map(this.placementItems.map((view) => [view.id, view]));
+    const placed = resolveShellPlacements(
+      this.options.items?.() ?? [],
+      this.layout,
+    );
+    return Object.fromEntries(
+      Object.entries(placed).map(([slot, ids]) => [
+        slot,
+        ids.flatMap((id) => views.get(id) ?? []),
+      ]),
+    ) as Record<ShellSlot, ShellPlacementView[]>;
+  }
+
+  /** Whether a region is shown (its edge is available and not hidden). */
+  isRegionVisible(region: ShellRegion): boolean {
+    const edge = REGION_EDGE[region];
+    return this.panels.find((panel) => panel.edge === edge)?.visible ?? false;
   }
 
   /** Whether a customization is in force. */
@@ -174,6 +287,109 @@ export class ShellLayoutController {
     return this.apply(
       setShellLayoutPanel(this.layout, edge, patch, this.options.panels()),
     );
+  }
+
+  /**
+   * Rename a section (host or custom). A blank label restores the host's
+   * suggested heading (custom sections ignore blank labels).
+   */
+  renameSection(sectionId: string, label: string): boolean {
+    return this.apply(
+      renameShellSection(
+        this.options.nav(),
+        this.options.groups(),
+        this.layout,
+        sectionId,
+        label,
+      ),
+    );
+  }
+
+  /**
+   * Rename a navigation item (by its id). `null` or a blank label restores
+   * the host's label. Returns whether the layout changed.
+   */
+  renameItem(itemId: string, label: string | null): boolean {
+    return this.apply(
+      renameShellItem(
+        this.options.nav(),
+        this.options.groups(),
+        this.layout,
+        itemId,
+        label,
+      ),
+    );
+  }
+
+  /**
+   * Set a section's icon (a shell or host icon name). `null` or blank
+   * restores the host's suggested icon.
+   */
+  setSectionIcon(sectionId: string, icon: string | null): boolean {
+    return this.apply(
+      setShellSectionIcon(
+        this.options.nav(),
+        this.options.groups(),
+        this.layout,
+        sectionId,
+        icon,
+      ),
+    );
+  }
+
+  /** Show or hide a section's title; hidden titles render its items flat. */
+  setSectionTitleVisible(sectionId: string, visible: boolean): boolean {
+    return this.apply(
+      setShellSectionTitleVisible(
+        this.options.nav(),
+        this.options.groups(),
+        this.layout,
+        sectionId,
+        visible,
+      ),
+    );
+  }
+
+  /** Create an empty custom section; returns its id, or `null` when blank. */
+  createSection(label: string): string | null {
+    const before = this.layout.customSections?.length ?? 0;
+    const next = createShellSection(
+      this.options.nav(),
+      this.options.groups(),
+      this.layout,
+      label,
+    );
+    if (!this.apply(next)) return null;
+    // Read the id from the proposed layout: with a controlled `layout` prop
+    // the host may not have applied it yet.
+    const list = next.customSections ?? [];
+    return list.length > before ? (list[list.length - 1]?.id ?? null) : null;
+  }
+
+  /** Delete a custom section; its items return to their default sections. */
+  deleteSection(sectionId: string): boolean {
+    return this.apply(deleteShellSection(this.layout, sectionId));
+  }
+
+  /**
+   * Move a shell item (`dock:<tool>`, `slot:<slot>`, or a host item id) to
+   * `slot`. Unknown ids and slots are no-ops. If the slot's region is hidden
+   * the item still renders, via the slot's fallback chain.
+   */
+  placeItem(itemId: string, slot: ShellSlot): boolean {
+    if (!isShellSlot(slot)) return false;
+    const item = this.placementItems.find((view) => view.id === itemId);
+    if (!item) return false;
+    // Placing an item where it already is must not reorder it.
+    if (item.slot === slot) return false;
+    return this.apply(
+      placeShellItem(this.layout, itemId, slot, item.defaultSlot),
+    );
+  }
+
+  /** Return a shell item to its default slot. */
+  resetItem(itemId: string): boolean {
+    return this.apply(resetShellItemPlacement(this.layout, itemId));
   }
 
   /** Drop every customization. */

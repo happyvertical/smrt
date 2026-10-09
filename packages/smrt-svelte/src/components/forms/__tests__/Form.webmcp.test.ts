@@ -475,14 +475,14 @@ describe('Form WebMCP staged-edit intent', () => {
       screen.getByRole('button', { name: 'Apply valid changes' }),
     );
 
-    expect(screen.getByRole('textbox', { name: 'Full name*' })).toHaveValue(
+    expect(screen.getByRole('textbox', { name: 'Full name' })).toHaveValue(
       'Ada',
     );
     expect(screen.getByRole('checkbox', { name: 'Enabled*' })).toBeChecked();
-    expect(screen.getByRole('combobox', { name: 'Choice*' })).toHaveValue(
+    expect(screen.getByRole('combobox', { name: 'Choice' })).toHaveValue(
       'second',
     );
-    expect(screen.getByRole('textbox', { name: 'Notes*' })).toHaveValue(
+    expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveValue(
       'Existing',
     );
     expect(textChanged).not.toHaveBeenCalled();

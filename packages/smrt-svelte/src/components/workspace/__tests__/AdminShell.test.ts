@@ -87,6 +87,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         tenantFooter: textSnippet('Dana account'),
         children: textSnippet('main'),
@@ -125,6 +126,7 @@ describe('AdminShell', () => {
       target: container,
       props: {
         state,
+        edgeToggles: { left: true },
         title: 'Workshop',
         homeHref: '/app',
         tenantRail: textSnippet('compact navigation'),
@@ -173,6 +175,7 @@ describe('AdminShell', () => {
       target: container,
       props: {
         state,
+        edgeToggles: { left: true },
         tenantFooter: textSnippet('full account'),
         tenantRailFooter: textSnippet('compact account'),
         children: textSnippet('main'),
@@ -224,6 +227,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         account: textSnippet('Dana account'),
         appBar: textSnippet('Custom title'),
@@ -275,6 +279,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         systemBar: textSnippet('custom status'),
         systemPanel: textSnippet('status detail'),
         children: textSnippet('main'),
@@ -294,6 +299,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         systemBar: textSnippet('custom status'),
         children: textSnippet('main'),
       },
@@ -314,7 +320,7 @@ describe('AdminShell', () => {
   it('keeps the default bottom toggle when neither system slot is supplied', async () => {
     const component = mount(AdminShell, {
       target: container,
-      props: { children: textSnippet('main') },
+      props: { edgeToggles: true, children: textSnippet('main') },
     });
     try {
       await tick();
@@ -336,6 +342,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         title: 'Shop',
         homeHref: '/home',
@@ -365,6 +372,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         title: 'Shop',
         logoSrc: '/shop.svg',
         logoAlt: 'Shop mark',
@@ -395,6 +403,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         title: 'Shop',
         homeHref: '/',
         brand,
@@ -414,6 +423,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         title: 'Ops',
         children: textSnippet('main work'),
       },
@@ -425,7 +435,12 @@ describe('AdminShell', () => {
       expect(container.querySelector('main')?.textContent).toContain(
         'main work',
       );
-      expect(container.querySelector('[role="navigation"]')).not.toBeNull();
+      // The left sidebar is a labelled complementary region; it only contains a
+      // navigation landmark when it actually renders navigation (aria-allowed-role).
+      const left = container.querySelector('#smrt-admin-shell-left-panel');
+      expect(left?.tagName).toBe('ASIDE');
+      expect(left?.getAttribute('role')).toBeNull();
+      expect(left?.getAttribute('aria-label')).toBeTruthy();
     } finally {
       unmount(component);
     }
@@ -441,6 +456,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         children: textSnippet('main work'),
       },
     });
@@ -466,6 +482,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
       },
@@ -491,6 +508,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
         focusRail: textSnippet('focus rail'),
@@ -527,6 +545,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
         focusPanel: activeToolSnippet(),
@@ -554,6 +573,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
         focusPanel: createRawSnippet(() => ({
@@ -592,6 +612,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
         focusPanel: textSnippet('focus panel'),
@@ -619,6 +640,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
         tenantRail: textSnippet('tenant rail'),
@@ -654,6 +676,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
         tenantPanel: textSnippet('tenant navigation'),
@@ -693,6 +716,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
       },
@@ -721,6 +745,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
       },
@@ -743,6 +768,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         title: 'Ops',
         children: textSnippet('main work'),
       },
@@ -805,6 +831,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         title: 'Ops',
         topLeftCorner: textSnippet('corner'),
         children: textSnippet('main work'),
@@ -831,6 +858,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         title: 'Ops',
         topRightCorner: textSnippet('right corner'),
         children: textSnippet('main work'),

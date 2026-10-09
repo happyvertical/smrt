@@ -268,7 +268,7 @@ test('a top-hidden default phone shell keeps its header and one supported menu o
   await expect(
     page
       .locator('.smrt-admin-shell__edge--left')
-      .getByRole('button', { name: 'Collapse Tenant' }),
+      .getByRole('button', { name: 'Collapse Left sidebar' }),
   ).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(menu).toBeFocused();
@@ -286,7 +286,7 @@ test('narrow navigation opens, restores focus and excludes closed drawer control
   await menu.click();
   await expect(drawer).not.toHaveAttribute('inert');
   await expect(
-    drawer.getByRole('button', { name: 'Collapse Tenant' }),
+    drawer.getByRole('button', { name: 'Collapse Left sidebar' }),
   ).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(drawer).toHaveAttribute('inert', '');
@@ -300,7 +300,7 @@ test('narrow navigation opens, restores focus and excludes closed drawer control
   await menu.click();
   await expect(drawer).toBeVisible();
   await expect(
-    drawer.getByRole('button', { name: 'Collapse Tenant' }),
+    drawer.getByRole('button', { name: 'Collapse Left sidebar' }),
   ).toBeFocused();
 });
 
@@ -310,7 +310,7 @@ test('supplied tenant navigation keeps its collapse control and touch rail targe
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/?left=expanded');
   const drawer = page.locator('.smrt-admin-shell__edge--left');
-  await drawer.getByRole('button', { name: 'Collapse Tenant' }).click();
+  await drawer.getByRole('button', { name: 'Collapse Left sidebar' }).click();
   await expect(drawer).toHaveAttribute('data-state', 'collapsed');
   const bounds = await drawer.boundingBox();
   for (const link of await drawer.getByRole('link').all()) {
@@ -320,7 +320,7 @@ test('supplied tenant navigation keeps its collapse control and touch rail targe
     expect(box!.x + box!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width);
   }
   await expect(
-    page.locator('footer').getByRole('button', { name: /^System/ }),
+    page.locator('footer').getByRole('button', { name: /^Footer/ }),
   ).toBeVisible();
 });
 
@@ -349,7 +349,7 @@ test('sidebar-only chrome keeps brand and account access across rail states', as
   );
   await page.keyboard.press('Escape');
 
-  await rail.getByRole('button', { name: 'Expand Tenant' }).click();
+  await rail.getByRole('button', { name: 'Expand Left sidebar' }).click();
   await expect(
     rail.locator('.smrt-admin-shell__brand:not(.compact)'),
   ).toContainText('Mobile shell fixture');
