@@ -56,7 +56,8 @@ export class Account extends SmrtHierarchical {
    * Whether the account is active
    */
   @field({
-    description: 'Turn this off to stop using the account without deleting it.',
+    description:
+      'Whether the account is in use; deactivate it instead of deleting it.',
   })
   active: boolean = true;
 

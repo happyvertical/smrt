@@ -42,13 +42,13 @@ export class JournalEntry extends SmrtObject {
   /**
    * Debit amount (left side)
    */
-  @field({ description: 'The amount debited. Leave zero on a credit.' })
+  @field({ description: 'The amount debited. Zero on a credit entry.' })
   debit: number = 0.0;
 
   /**
    * Credit amount (right side)
    */
-  @field({ description: 'The amount credited. Leave zero on a debit.' })
+  @field({ description: 'The amount credited. Zero on a debit entry.' })
   credit: number = 0.0;
 
   /**

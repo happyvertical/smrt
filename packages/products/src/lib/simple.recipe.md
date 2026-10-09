@@ -8,13 +8,13 @@ one list, with the price next to it, and change it whenever it moves.
 
 ### Add a simple product
 
-1. In the menu, choose **Products**, then **New simple product**.
+1. Create a new product.
 2. Give it a **{field:name}**, for example "Ceramic mug".
-3. Enter the **{field:price}** in dollars and cents.
+3. Enter the **{field:price}** in minor units (cents).
 4. Add a **{field:description}** so anyone reading the list knows what it is.
-5. Save. The product is now on your list, marked Simple.
+5. Save. The product is now on your list.
 
 ### Change a price
 
-1. Open **Products** and find the product.
-2. Choose Edit, change the **{field:price}** and save.
+1. Find the product.
+2. Change the **{field:price}** and save.

@@ -7,7 +7,7 @@ to a customer, lists its line items and shows how long the price is good for.
 
 ### Write an estimate
 
-1. Choose **New** above the list.
+1. Create a new estimate.
 2. Pick the **{field:customerId}** the quote is for.
 3. Add the line items, then check the **{field:totalAmount}**.
 4. Set **{field:expiryDate}** to the last day the price is good for.

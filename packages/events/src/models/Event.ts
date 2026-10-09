@@ -65,7 +65,7 @@ export class Event extends SmrtHierarchical {
    * range. `startDate` is the first day (local midnight in `timeZone`) and
    * `endDate`, when set, is the exclusive end (midnight after the last day).
    */
-  @field({ description: 'Turn this on for an event that lasts all day.' })
+  @field({ description: 'Whether the event lasts all day.' })
   allDay: boolean = false;
   /**
    * IANA time zone the event is scheduled in (for example

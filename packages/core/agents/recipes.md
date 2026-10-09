@@ -33,7 +33,7 @@ The emitted `options` are keyed by qualified model name.
 
 ## Host metadata: group, section, nav detail, alternatives (#3604)
 
-Everything a catalog host (the planner, a future `smrt cookbook apply`) needs
+Everything a catalog host (an app shell, an agent, a CLI) needs
 to present a recipe lives on the recipe, so it reads the manifest or knowledge
 artifact instead of importing runtime code. All are optional and additive:
 
@@ -55,7 +55,7 @@ recipe itself; each (model, key) pair appears once in `nav`; a `filter.field`
 must be a field the model declares (checked in core on the merged manifest,
 `assertRecipeOptions`).
 
-Not part of the recipe declaration (still planner-local): the planner's
+Not part of the recipe declaration (still host-local): a host's
 cross-package `forms` and `extends` (form records spanning profiles, variants
 and SKUs).
 

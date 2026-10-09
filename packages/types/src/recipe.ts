@@ -75,8 +75,8 @@ export interface RecipeNavEntry {
 }
 
 /**
- * Recipes with the same `group.id` share one card in a host such as the
- * planner: the card is on while any of its recipes is, each recipe being a
+ * Recipes with the same `group.id` share one card in a host such as an app
+ * shell: the card is on while any of its recipes is, each recipe being a
  * sub-switch in declaration order. `label` and `summary` are the card's, and
  * the first declaration of an id supplies them.
  */

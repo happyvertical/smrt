@@ -198,7 +198,7 @@ export class Payment extends SmrtObject {
   /**
    * Internal reference number
    */
-  @field({ description: 'Your own note, such as a check number.' })
+  @field({ description: 'A reference note, such as a check number.' })
   reference: string = '';
 
   /**

@@ -1,25 +1,26 @@
 ## Overview
 
-Inventory keeps count of how many of each product you have. Once it is on, the
-product forms ask for a quantity, and the product list shows what is in stock.
-Stock is counted at your main warehouse until you add other places.
+Inventory keeps count of how many of each product you have. Each count is a
+stock level: an item, the place it is kept and how many are on hand. Stock can
+sit in more than one place, and every change is recorded as a stock movement so
+there is a trail.
 
 ## Tasks
 
 ### Count what you have
 
-1. Open **Products** and choose New, or Edit on an existing product.
-2. Enter a quantity: one box for a simple product, or one in each box of the
-   grid for clothing, so each size and color has its own count.
-3. Save. The **Stock** column on the product list shows the total.
+1. Create a stock level for the item and the place it is kept.
+2. Set **{field:qty}** to how many you have on hand.
+3. Set **{field:state}** if the stock is not available to sell, for example
+   allocated or on quality hold.
 
 ### Correct a count
 
-1. Open **Stock levels** in the Inventory section of the menu.
-2. Find the item, then set **{field:qty}** to what you really have.
+1. Find the stock level for the item.
+2. Set **{field:qty}** to what you really have. Record why as a stock movement.
 
 ### Keep stock in more than one place
 
-1. Open **Locations** in the Inventory section of the menu.
-2. Add a place with a **{field:code}** and a **{field:name}**, and say what
+1. Add a location with a **{field:code}** and a **{field:name}**, and say what
    sort it is in **{field:kind}**.
+2. Create stock levels against that location.

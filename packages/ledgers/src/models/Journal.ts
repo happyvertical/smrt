@@ -64,7 +64,7 @@ export class Journal extends SmrtObject {
    * Journal status: draft, posted, voided
    */
   @field({
-    description: 'draft while you work on it, posted once final, or voided.',
+    description: 'draft until final, then posted, or voided.',
   })
   status: JournalStatus = 'draft';
 

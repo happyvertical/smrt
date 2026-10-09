@@ -141,7 +141,7 @@ export class Fulfillment extends SmrtObject {
   /**
    * When the shipment was sent
    */
-  @field({ description: 'When it left you.' })
+  @field({ description: 'When it was dispatched.' })
   shippedAt: Date | null = null;
 
   /**

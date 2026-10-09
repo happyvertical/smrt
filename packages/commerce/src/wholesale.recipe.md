@@ -8,7 +8,7 @@ retail sales stay apart.
 
 ### Take a wholesale order
 
-1. Choose **New** above the list.
+1. Create a new wholesale order.
 2. Pick the **{field:customerId}** placing the order.
 3. Add the line items and check the **{field:totalAmount}**.
 4. Set the **{field:dueDate}** for payment and save.

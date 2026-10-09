@@ -116,7 +116,7 @@ export abstract class SmrtRecipe {
    */
   static requiresAny: readonly (readonly string[])[] = [];
   /**
-   * Card the recipe is a sub-switch of in a host such as the planner. Recipes
+   * Card the recipe is a sub-switch of in a host such as an app shell. Recipes
    * with the same `group.id` share it; the first declaration supplies the
    * card's `label` and `summary`.
    */

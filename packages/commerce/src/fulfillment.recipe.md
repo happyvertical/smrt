@@ -7,7 +7,7 @@ order and lists which line items are in it, so an order can go out in parts.
 
 ### Ship an order
 
-1. Open **Shipments** and choose **New**.
+1. Create a new shipment.
 2. Pick the order in **{field:contractId}** and choose the
    **{field:fulfillmentType}**.
 3. Enter the **{field:carrier}** and **{field:trackingNumber}**.

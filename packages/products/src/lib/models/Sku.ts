@@ -71,8 +71,7 @@ export class Sku extends SmrtObject {
    */
   @field({
     required: true,
-    description:
-      'The product this item is a version of. Set for you when you save the product.',
+    description: 'The product this item is a version of.',
   })
   productId: string = '';
 
@@ -85,7 +84,7 @@ export class Sku extends SmrtObject {
   @field({
     required: true,
     description:
-      'The short code that identifies this exact size and color. Made for you from the product name.',
+      'The short code that identifies this exact item, such as a UPC or part number.',
   })
   code: string = '';
 
@@ -105,7 +104,7 @@ export class Sku extends SmrtObject {
    */
   @field({
     description:
-      'Which size and color this item is. Set for you from the grid.',
+      'Which attribute values, such as size and color, this item has, stored as JSON.',
   })
   attributes: string = '{}';
 

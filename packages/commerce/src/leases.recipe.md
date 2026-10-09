@@ -7,7 +7,7 @@ Each lease keeps its own line items and dates.
 
 ### Record a lease
 
-1. Open **Leases** and choose **New**.
+1. Create a new lease.
 2. Pick the **{field:customerId}** renting from you.
 3. Set the **{field:issueDate}** it starts and the **{field:expiryDate}** it ends.
 4. Add a line item for each thing rented, then save.

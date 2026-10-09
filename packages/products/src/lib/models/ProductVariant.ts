@@ -62,8 +62,7 @@ export class ProductVariant extends SmrtObject {
    */
   @field({
     required: true,
-    description:
-      'The product this choice belongs to. Set for you when you save the product.',
+    description: 'The product this choice belongs to.',
   })
   productId: string = '';
 
@@ -86,7 +85,10 @@ export class ProductVariant extends SmrtObject {
    * collides with the SQL `VALUES` keyword on several engines. Use
    * {@link getValues} / {@link setValues} to round-trip the array form.
    */
-  @field({ description: 'The values on offer for it, for example S, M and L.' })
+  @field({
+    description:
+      'The values on offer, for example S, M and L, stored as a JSON list.',
+  })
   allowedValues: string = '[]';
 
   /** Sort order for displaying multiple axes in a consistent column order. */

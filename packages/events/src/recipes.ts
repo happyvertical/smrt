@@ -1,6 +1,6 @@
 /**
  * Declared recipes for smrt-events (#3590, #3604): user-facing units of
- * functionality an app, agent or planner can pick instead of the whole package.
+ * functionality an app or agent can pick instead of the whole package.
  * The scanner reads these statics into the `recipes` array of `manifest.json`
  * and `smrt-knowledge.json`; nothing here runs at that point.
  *
@@ -45,8 +45,7 @@ export class CalendarRecipe extends SmrtRecipe {
       label: 'Event types',
       model: EventType,
       icon: 'tag',
-      description:
-        'The kinds of events you run, with their usual length and price.',
+      description: 'The kinds of events you run, such as workshops or classes.',
     },
     {
       label: 'Event series',

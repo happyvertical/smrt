@@ -76,13 +76,13 @@ export class PipelineStage extends SmrtObject {
 
   /** Terminal flag: moving an opportunity here closes it as `won`. */
   @field({
-    description: 'Turn this on for the stage that means the deal is won.',
+    description: 'Whether reaching this stage closes the deal as won.',
   })
   isWon: boolean = false;
 
   /** Terminal flag: moving an opportunity here closes it as `lost`. */
   @field({
-    description: 'Turn this on for the stage that means the deal is lost.',
+    description: 'Whether reaching this stage closes the deal as lost.',
   })
   isLost: boolean = false;
 

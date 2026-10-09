@@ -1,32 +1,28 @@
 ## Overview
 
 Clothing is for products that come in sizes and colors. You describe the product
-once, say which sizes and colors you offer, and the grid shows one item for each
-combination, so a shirt in three sizes and two colors becomes six items you can
-sell and count separately.
+once, say which sizes and colors you offer, and each combination becomes its own
+item you can sell and count separately: a shirt in three sizes and two colors is
+six items.
 
 ## Tasks
 
 ### Add a clothing item
 
-1. In the menu, choose **Products**, then **New clothing item**.
-2. Give it a **{field:name}** and a **{field:price}**.
-3. Under Sizes, type each size and press Enter. XS to XL are filled in for you;
-   remove the ones you do not make.
-4. Under Colors, type each color and press Enter.
-5. Check the grid. Every box is one item you will sell. Save.
+1. Create a product with a **{field:name}** and a **{field:price}**.
+2. Add a variant axis for sizes and list the values you offer, for example XS to
+   XL. Leave out the ones you do not make.
+3. Add a variant axis for colors the same way.
+4. Create an item (SKU) for each size and color combination, with its own code
+   and its size and color attributes.
 
 ### Add a size or a color later
 
-1. Open **Products** and choose Edit on the item.
-2. Type the new size or color in its list and press Enter. A new row or column
-   appears in the grid.
-3. Save. Items you already had keep their codes, and only the new ones are
-   added.
+1. Add the new value to the size or color axis of the product.
+2. Create items for the new combinations. Items you already had keep their
+   codes.
 
 ### Stop selling a size
 
-1. Open the item and choose Edit.
-2. Remove the size from the Sizes list with its remove button or the Backspace
-   key.
-3. Save. The items for that size are removed from the product.
+1. Remove the size from the product's size axis.
+2. Remove the items for that size.

@@ -8,14 +8,14 @@ record calls, notes and follow-ups.
 
 ### Capture a lead
 
-1. Open **Leads** and choose **New**.
+1. Create a new lead.
 2. Enter the **{field:name}**, **{field:email}** and **{field:phone}**.
 3. Keep **{field:status}** up to date as you qualify them.
 
 ### Work an opportunity
 
-1. Open **Pipelines** and add a pipeline, then its stages in order.
-2. Open **Opportunities**, choose **New** and pick the **{field:leadId}**.
+1. Create a pipeline, then add its stages in order.
+2. Create a new opportunity and pick the **{field:leadId}**.
 3. Choose the **{field:pipelineId}** and **{field:stageId}**, and enter the
    **{field:expectedValueCents}** and **{field:expectedCloseAt}**.
 4. Move the **{field:stageId}** along as the deal progresses.

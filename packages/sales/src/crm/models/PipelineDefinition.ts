@@ -58,11 +58,14 @@ export class PipelineDefinition extends SmrtObject {
    * Marks the tenant's default pipeline. Informational for pickers/UI; the
    * seeded default pipeline sets it `true`.
    */
-  @field({ description: 'Turn this on to use it for new deals.' })
+  @field({ description: 'Whether this is the default pipeline for new deals.' })
   isDefault: boolean = false;
 
   /** `active` pipelines accept new opportunities; `archived` are read-only history. */
-  @field({ description: 'Whether the pipeline is in use.' })
+  @field({
+    description:
+      'Whether the pipeline is active (accepts new deals) or archived.',
+  })
   status: PipelineStatus = 'active';
 
   /**

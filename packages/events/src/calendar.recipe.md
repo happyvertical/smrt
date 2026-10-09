@@ -7,7 +7,7 @@ series, and lists who takes part.
 
 ### Schedule an event
 
-1. Open **Events** and choose **New**.
+1. Create a new event.
 2. Enter the **{field:name}**, the **{field:startDate}** and the
    **{field:endDate}**.
 3. Pick the **{field:typeId}**, and the **{field:seriesId}** if it repeats.

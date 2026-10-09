@@ -1,6 +1,6 @@
 /**
  * Declared recipes for smrt-commerce (#3590, #3604): user-facing units of
- * functionality an app, agent or planner can pick instead of the whole package.
+ * functionality an app or agent can pick instead of the whole package.
  * The scanner reads these statics into the `recipes` array of `manifest.json`
  * and `smrt-knowledge.json`; nothing here runs at that point.
  *
@@ -201,8 +201,7 @@ export class EstimatesRecipe extends SmrtRecipe {
       label: 'Estimates',
       model: Estimate,
       icon: 'fileText',
-      description:
-        'Quotes you have sent, ready to turn into orders when accepted.',
+      description: 'Price quotes you have sent to customers.',
     },
   ];
   static requires = ['commerce.customers'];
