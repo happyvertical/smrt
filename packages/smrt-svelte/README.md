@@ -634,9 +634,39 @@ keys the shell renders exactly as before.
 - **Migration guide** (first-generation `WorkspaceShell`/`RoleShell` →
   `AdminShell`; adoption is additive and non-breaking):
   [`src/components/workspace/MIGRATION.md`](./src/components/workspace/MIGRATION.md)
-- **Playground demos**: `playground/src/routes/admin-shell` exercises all four
+- **Playground demos**: `playground/src/routes/command-palette` shows the palette in the header slot;
+  `playground/src/routes/admin-shell` exercises all four
   scopes, focus tools, and activities; `admin-shell-activity-feed` and
   `admin-shell-system-feed` show live feeds.
+
+### Command palette and global search
+
+`@happyvertical/smrt-svelte/command-palette` is a keyboard-first "find anything"
+dialog (Ctrl/Cmd+K) with a provider contract. Anything can register rows: the
+shell navigation, "New invoice" commands and cross-model record search derived
+from the manifest, or your own commands.
+
+```ts
+import {
+  CommandPalette,
+  createCommandPalette,
+  createModelProviders,
+  createNavigationProvider,
+} from '@happyvertical/smrt-svelte/command-palette';
+
+const palette = createCommandPalette({
+  navigate: goto,
+  providers: [
+    createNavigationProvider({ nav, groups }),
+    ...createModelProviders({ manifest, pagesBasePath: '/app' }),
+  ],
+});
+```
+
+Render `<CommandPalette {palette} />` as an `AppShell` `slotItems` entry
+(usually `header.center`). See
+[`agents/command-palette.md`](./agents/command-palette.md) for the provider
+contract, accessibility behavior, and the record-search limits.
 
 ## Exports
 
@@ -655,6 +685,7 @@ importable, even if it appears in `dist/`.
 | `@happyvertical/smrt-svelte/workspace` | AdminShell, ShellState, tenant nav, focus tools, settings, activities, and system/app panels |
 | `@happyvertical/smrt-svelte/app` | `AppShell` (Provider + themes + AdminShell + nav/dock slots, `dockToggles` buttons and host `slots` for the header/footer/sidebar regions), `OwnerSetupForm` (first-run owner setup), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp` |
 | `@happyvertical/smrt-svelte/app/runtime-diagnostics` | Svelte-free diagnostics WebMCP registration and its tool name/endpoint constants, importable from server routes |
+| `@happyvertical/smrt-svelte/command-palette` | Global search and command palette: `CommandPalette` (shell-slot trigger plus dialog), `createCommandPalette`, the provider contract, and the navigation and manifest-driven model providers |
 | `@happyvertical/smrt-svelte/workspace/legacy` | Opt-in ToolsDock compatibility surface for applications migrating to AdminShell |
 | `@happyvertical/smrt-svelte/workspace/server` | Server-side workspace helpers (Node only) |
 | `@happyvertical/smrt-svelte/workspace/live` | `systemFeed` — the AdminShell system scope (jobs/schedules/dispatch) polled from an app status endpoint; deliberately carries no `smrt-web` dependency |
