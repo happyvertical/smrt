@@ -32,6 +32,7 @@ export function createSDKProposalGenerator(
             content: JSON.stringify({
               evidence: input.evidence,
               offered: input.offered,
+              ...(input.examples ? { examples: input.examples } : {}),
             }),
           },
         ],

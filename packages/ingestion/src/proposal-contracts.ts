@@ -46,6 +46,8 @@ export interface GenerativeProposalInput {
     candidates: ProposalCandidate[];
   }>;
   instructions: string;
+  /** Bounded, currently eligible examples; neither evidence nor authority. */
+  examples?: import('./feedback-dto.js').FeedbackSelection;
   /** Authenticated human correction carried through fresh extraction; never model authority. */
   humanCorrection?: IntakeValues;
 }

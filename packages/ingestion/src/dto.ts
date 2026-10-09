@@ -71,6 +71,6 @@ export interface AnalysisOutput {
   confidence?: number;
 }
 
+export type * from './feedback-dto.js';
 export type * from './proposal-dto.js';
-
 export type * from './review-dto.js';

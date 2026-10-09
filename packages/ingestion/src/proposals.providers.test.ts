@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { getAI } from '@happyvertical/ai';
 import { executeDecision } from '@happyvertical/smrt-core';
 import { describe, expect, it } from 'vitest';
+import type { FeedbackSelection } from './feedback-dto.js';
 import {
   createSDKProposalDecisionClient,
   createSDKProposalGenerator,
@@ -32,9 +33,31 @@ const input = {
   ],
   offered: [],
 };
+const feedback: FeedbackSelection = {
+  version: 'feedback1',
+  configurationDigest: 'c'.repeat(64),
+  examples: [
+    {
+      feedbackId: 'feedback-1',
+      digest: 'd'.repeat(64),
+      itemId: 'training-item',
+      actionId: 'training-action',
+      revision: 2,
+      handlerId: 'draft',
+      handlerVersion: '1',
+      judgment: 'incorrect',
+      query: 'Résumé invoice',
+      args: { title: 'Reviewed correction' },
+      model: identity,
+      promptVersion: 'prompt1',
+      configurationVersion: 'configuration1',
+    },
+  ],
+};
 describe('real AI SDK transport against local HTTP fixture (not model quality)', () => {
   it.each([
     'stop',
+    'feedback',
     'length',
     'tool_calls',
     'missing',
@@ -72,7 +95,11 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
                 ? {}
                 : {
                     finish_reason:
-                      mode === 'model' || mode === 'malformed' ? 'stop' : mode,
+                      mode === 'model' ||
+                      mode === 'malformed' ||
+                      mode === 'feedback'
+                        ? 'stop'
+                        : mode,
                   }),
             },
           ],
@@ -97,11 +124,20 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
         { ...identity, apiKey: 'host-secret-never-persist' } as typeof identity,
         { maxTokens: 100, timeoutMs: 2000 },
       );
-      const result = generator.generate(input, {
+      const requestInput = {
+        ...input,
+        ...(mode === 'feedback' ? { examples: feedback } : {}),
+      };
+      const result = generator.generate(requestInput, {
         signal: new AbortController().signal,
         maxOutputBytes: 10000,
       });
-      if (mode === 'stop' || mode === 'missing' || mode === 'unknown') {
+      if (
+        mode === 'stop' ||
+        mode === 'missing' ||
+        mode === 'unknown' ||
+        mode === 'feedback'
+      ) {
         expect(await result).toEqual({
           output: { outcome: 'no_action', suggestions: [], splits: [] },
           completion: 'unknown',
@@ -115,6 +151,7 @@ describe('real AI SDK transport against local HTTP fixture (not model quality)',
             content: JSON.stringify({
               evidence: input.evidence,
               offered: input.offered,
+              ...(mode === 'feedback' ? { examples: feedback } : {}),
             }),
           },
         ]);

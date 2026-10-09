@@ -125,11 +125,7 @@ export interface IntakeReviewHost {
   }): Promise<void>;
   split(input: LogicalSplitInput): Promise<void>;
   /** Explicit correctness judgment only; never called implicitly after review or apply. */
-  feedback?: (input: {
-    itemId: string;
-    actionId?: string;
-    judgment: 'correct' | 'incorrect';
-    comment: string;
-    requestId: string;
-  }) => Promise<void>;
+  feedback?: (
+    input: import('./feedback-dto.js').RecordFeedbackInput,
+  ) => Promise<import('./feedback-dto.js').FeedbackReceipt | void>;
 }

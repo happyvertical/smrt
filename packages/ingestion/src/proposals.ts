@@ -20,6 +20,7 @@ import {
   type TransactionRunner,
 } from './execution-internal.js';
 import { type ExtractionResult, providerIdentity } from './extraction-types.js';
+import { IntakeFeedbackService } from './feedback.js';
 import type {
   GenerationStageConfiguration,
   ProposalConfiguration,
@@ -259,6 +260,40 @@ export class IngestionProposalService {
   async listHandlers(itemId: string): Promise<ProposalCatalogEntry[]> {
     return (await this.catalog(itemId)).map(({ handler }) => handler);
   }
+  /** Public retrieval derives catalog/candidates and compatibility on the server. */
+  async retrieveFeedback(
+    input: import('./feedback-dto.js').RetrieveFeedbackInput,
+  ): Promise<import('./feedback-dto.js').FeedbackSelection> {
+    if (
+      Object.keys(input).some((key) => !['itemId', 'query'].includes(key)) ||
+      typeof input.query !== 'string' ||
+      input.query.length > this.config.limits.maxQueryLength
+    )
+      throw new Error('Feedback query unavailable');
+    const catalog = await this.catalog(input.itemId);
+    const offered: GenerationOutput['offered'] = [];
+    for (const { handler } of catalog) {
+      const page = await this.findCandidates({
+        itemId: input.itemId,
+        query: input.query,
+        handlerId: handler.id,
+        handlerVersion: handler.version,
+      });
+      offered.push({ handler, candidates: page.items });
+    }
+    return new IntakeFeedbackService(this.options, this.execution).retrieve({
+      itemId: input.itemId,
+      query: input.query,
+      offered,
+      promptVersion: this.config.promptVersion,
+      configurationVersion: this.config.version,
+      model: this.identity,
+      providers: [
+        this.identity.provider,
+        ...(this.decisionIdentity ? [this.decisionIdentity.provider] : []),
+      ],
+    });
+  }
   async findCandidates(input: {
     itemId: string;
     handlerId: string;
@@ -410,6 +445,7 @@ export class IngestionProposalService {
     lease: AnalysisLease,
     catalogDigest: string,
     offered: GenerationOutput['offered'] = [],
+    feedback?: GenerationOutput['provenance']['feedback'],
   ) {
     await this.service.getGenerationInput(lease);
     const catalog = await this.catalog(lease.itemId);
@@ -436,8 +472,38 @@ export class IngestionProposalService {
             );
         },
       );
+    await this.feedbackGate(lease.itemId, offered, feedback);
     await this.service.getAnalysisInput(lease);
     return maxInputBytes;
+  }
+  private async feedbackGate(
+    itemId: string,
+    offered: GenerationOutput['offered'],
+    feedback: GenerationOutput['provenance']['feedback'],
+    db?: DatabaseInterface,
+  ) {
+    if (!feedback) return;
+    if (!this.options.feedback)
+      throw new Error('Feedback configuration unavailable');
+    await new IntakeFeedbackService(
+      this.options,
+      this.execution,
+    ).assertSelection(
+      {
+        itemId,
+        query: feedback.query,
+        offered,
+        promptVersion: this.config.promptVersion,
+        configurationVersion: this.config.version,
+        model: this.identity,
+        providers: [
+          this.identity.provider,
+          ...(this.decisionIdentity ? [this.decisionIdentity.provider] : []),
+        ],
+      },
+      feedback.selection,
+      db,
+    );
   }
   private async deadline<T>(
     work: (signal: AbortSignal) => Promise<T>,
@@ -543,6 +609,42 @@ export class IngestionProposalService {
           output.warnings.push('candidate_set_truncated');
         output.offered.push({ handler, candidates: candidates.items });
       }
+      let feedbackSelection:
+        | import('./feedback-dto.js').FeedbackSelection
+        | undefined;
+      if (
+        this.options.feedback &&
+        !generation.configuration.humanCorrection &&
+        query.trim() &&
+        output.offered.length
+      ) {
+        const feedbackQuery = query.slice(0, 4096);
+        feedbackSelection = await new IntakeFeedbackService(
+          this.options,
+          this.execution,
+        ).retrieve({
+          itemId: lease.itemId,
+          query: feedbackQuery,
+          offered: output.offered,
+          promptVersion: this.config.promptVersion,
+          configurationVersion: this.config.version,
+          model: this.identity,
+          providers: [
+            this.identity.provider,
+            ...(this.decisionIdentity ? [this.decisionIdentity.provider] : []),
+          ],
+        });
+        output.provenance.feedback = {
+          query: feedbackQuery,
+          selection: {
+            version: feedbackSelection.version,
+            configurationDigest: feedbackSelection.configurationDigest,
+            examples: feedbackSelection.examples.map(
+              ({ feedbackId, digest }) => ({ feedbackId, digest }),
+            ),
+          },
+        };
+      }
       const humanCorrection = generation.configuration.humanCorrection;
       if (
         digest(humanCorrection ?? null) !==
@@ -553,6 +655,7 @@ export class IngestionProposalService {
         evidence,
         offered: output.offered,
         instructions,
+        ...(feedbackSelection ? { examples: feedbackSelection } : {}),
         ...(humanCorrection
           ? { humanCorrection: structuredClone(record(humanCorrection)) }
           : {}),
@@ -575,7 +678,16 @@ export class IngestionProposalService {
         output.outcome = 'unknown';
         output.warnings.push('no_supported_interpretation');
       } else {
-        await this.live(lease, expected.catalogDigest, output.offered);
+        if (
+          bytes(input) >
+          (await this.live(
+            lease,
+            expected.catalogDigest,
+            output.offered,
+            output.provenance.feedback,
+          ))
+        )
+          throw new StageFailure('limit');
         const generated = await this.deadline(async (signal) => {
           try {
             return await this.config.generator.generate(
@@ -586,7 +698,12 @@ export class IngestionProposalService {
             throw new StageFailure('unavailable');
           }
         });
-        await this.live(lease, expected.catalogDigest, output.offered);
+        await this.live(
+          lease,
+          expected.catalogDigest,
+          output.offered,
+          output.provenance.feedback,
+        );
         if (!['complete', 'unknown'].includes(generated.completion))
           throw new StageFailure('malformed_output');
         if (generated.completion === 'unknown')
@@ -663,7 +780,12 @@ export class IngestionProposalService {
       if (bytes(publication()) > maxBytes)
         return this.service.failAnalysis(lease, 'limit');
     }
-    await this.live(lease, expected.catalogDigest, output.offered);
+    await this.live(
+      lease,
+      expected.catalogDigest,
+      output.offered,
+      output.provenance.feedback,
+    );
     return this.service.completeAnalysis(lease, publication());
   }
   private async decide(
@@ -739,6 +861,7 @@ export class IngestionProposalService {
         lease,
         output.provenance.catalogDigest,
         output.offered,
+        output.provenance.feedback,
       );
       if (requestBytes > maxInputBytes) throw new StageFailure('limit');
     };
@@ -768,7 +891,12 @@ export class IngestionProposalService {
         },
       );
     });
-    await this.live(lease, output.provenance.catalogDigest, output.offered);
+    await this.live(
+      lease,
+      output.provenance.catalogDigest,
+      output.offered,
+      output.provenance.feedback,
+    );
     if (
       result.provenance.provider !== this.decisionIdentity!.provider ||
       result.provenance.model !== this.decisionIdentity!.model
@@ -898,9 +1026,24 @@ export class IngestionProposalService {
             throw new Error('Review catalogue unavailable');
         }
         await this.authorizeCompletedSnapshot(current, authorize);
+        const feedbackOutput = record(
+          current.result.output.proposals,
+        ) as unknown as GenerationOutput;
+        await this.feedbackGate(
+          itemId,
+          feedbackOutput.offered,
+          feedbackOutput.provenance.feedback,
+          db,
+        );
         if (afterRead) {
           await afterRead(db, current);
           await this.authorizeCompletedSnapshot(current, authorize);
+          await this.feedbackGate(
+            itemId,
+            feedbackOutput.offered,
+            feedbackOutput.provenance.feedback,
+            db,
+          );
         }
         return current;
       },

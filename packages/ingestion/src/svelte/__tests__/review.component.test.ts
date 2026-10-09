@@ -1020,6 +1020,44 @@ describe('intake review host boundary', () => {
     expect(screen.getByText('Confidence unavailable')).toBeTruthy();
     expect(screen.queryByText(/INTERNAL_/)).toBeNull();
   });
+  it('binds explicit correctness to the displayed action revision and never submits approval', async () => {
+    const callbacks = host();
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const editor = (await screen.findByRole('textbox', {
+      name: 'Exact arguments (JSON)',
+    })) as HTMLTextAreaElement;
+    const saved = editor.value;
+    await fireEvent.input(editor, {
+      target: { value: '{"title":"Unsaved correction"}' },
+    });
+    expect(
+      (screen.getByRole('button', { name: /^Correct$/ }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: /^Incorrect$/ }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(callbacks.feedback).not.toHaveBeenCalled();
+    await fireEvent.input(editor, { target: { value: saved } });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: /^Incorrect$/ }),
+    );
+    await waitFor(() =>
+      expect(callbacks.feedback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          itemId: 'item',
+          actionId: 'action',
+          expectedRevision: 2,
+          expectedReviewVersion: 4,
+          bindingHash: 'binding',
+          judgment: 'incorrect',
+        }),
+      ),
+    );
+    expect(callbacks.decide).not.toHaveBeenCalled();
+    expect(callbacks.apply).not.toHaveBeenCalled();
+  });
   it('filters and assigns using the host assignment version', async () => {
     const callbacks = host();
     render(IntakeInbox, { host: callbacks });

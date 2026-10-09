@@ -32,6 +32,11 @@ import {
   discoveryTransaction,
   type TransactionRunner,
 } from './execution-internal.js';
+import {
+  type FeedbackActionContext,
+  feedbackActionTransaction,
+  feedbackDiscoveryContext,
+} from './feedback-internal.js';
 import { intersect, resolveIntakePolicy } from './policy.js';
 import type { ReviewAction, ReviewPage } from './review-dto.js';
 import type { IngestionOptions } from './server.js';
@@ -558,6 +563,7 @@ export class IntakeExecutionService {
     handlerVersion: string,
     work: (context: HandlerContext) => Promise<T>,
     requireReview = false,
+    revalidate?: (context: HandlerContext) => Promise<void>,
   ): Promise<T> {
     const review = async () => {
       const item = await this.item(db, itemId, true);
@@ -630,7 +636,7 @@ export class IntakeExecutionService {
     if (requireReview) await review();
     const result = await authorize(work);
     // A long database callback may cross retention or a current-grant boundary.
-    await authorize(async () => {});
+    await authorize(revalidate ?? (async () => {}));
     if (requireReview) await review();
     return result;
   }
@@ -640,6 +646,7 @@ export class IntakeExecutionService {
     actionId: string,
     lock = false,
     expired = false,
+    proposalId?: string,
   ): Promise<Bound> {
     const [found] = await this.rows(db, 'intake_actions', 'id=?', [actionId]);
     if (!found) throw new Error('Intake unavailable');
@@ -648,8 +655,8 @@ export class IntakeExecutionService {
     const [proposal] = await this.rows(
       db,
       'intake_proposals',
-      'action_id=? AND revision=?',
-      [actionId, action.proposal_revision],
+      proposalId ? 'action_id=? AND id=?' : 'action_id=? AND revision=?',
+      [actionId, proposalId ?? action.proposal_revision],
     );
     if (!proposal) throw new Error('Proposal unavailable');
     const binding = object(object(proposal.data).binding) as unknown as Binding;
@@ -675,6 +682,214 @@ export class IntakeExecutionService {
         : bound.binding.display,
       state: String(bound.action.state),
     };
+  }
+  /** Same-executor current review/evidence/target gate for the owning feedback ledger. */
+  /** Join an existing owning transaction; its outer boundary restores retention after rollback. */
+  [feedbackDiscoveryContext]<T>(
+    db: DatabaseInterface | undefined,
+    itemId: string,
+    handlerId: string,
+    handlerVersion: string,
+    work: (context: HandlerContext) => Promise<T>,
+    revalidate?: (context: HandlerContext) => Promise<void>,
+  ): Promise<T> {
+    const run = (executor: DatabaseInterface) =>
+      this.discoveryContext(
+        executor,
+        itemId,
+        handlerId,
+        handlerVersion,
+        work,
+        false,
+        revalidate,
+      );
+    return db ? run(db) : this.tx(run);
+  }
+  [feedbackActionTransaction]<T>(
+    actionId: string,
+    reviewer: boolean,
+    work: (value: FeedbackActionContext) => Promise<T>,
+    executor?: DatabaseInterface,
+    requiredProviders?: string[],
+    proposalId?: string,
+  ): Promise<T> {
+    const operation = async (db: DatabaseInterface) => {
+      const load = async () => {
+        const bound = await this.bound(db, actionId, true, false, proposalId);
+        const { context, permissions } = await this.access(
+          db,
+          bound.item,
+          bound.handler,
+          reviewer ? 'review' : 'read',
+        );
+        if (
+          requiredProviders?.some(
+            (provider) => !context.policy.providers.includes(provider),
+          )
+        )
+          throw new Error('Feedback source provider unavailable');
+        await this.verifyEvidence(db, bound);
+        for (const target of bound.binding.targetPreconditions)
+          await context.assertTarget(
+            target.model,
+            target.id,
+            bound.action.state === 'succeeded' ? undefined : target.revision,
+          );
+        if (bound.binding.plan) {
+          const plans = await this.rows(
+            db,
+            'intake_plans',
+            'item_id=? AND plan_key=?',
+            [bound.item.id, bound.binding.plan.key],
+          );
+          const plan = plans.sort(
+            (a, b) => Number(b.revision) - Number(a.revision),
+          )[0];
+          if (!plan || plan.digest !== bound.binding.plan.digest)
+            throw new Error('Plan superseded');
+          const data = object(plan.data);
+          await this.discoveryContext(
+            db,
+            String(bound.item.id),
+            String(data.handlerId),
+            String(data.handlerVersion),
+            async (parent) => {
+              for (const target of object(data.preview)
+                .targetPreconditions as Binding['targetPreconditions'])
+                await parent.assertTarget(
+                  target.model,
+                  target.id,
+                  bound.action.state === 'succeeded'
+                    ? undefined
+                    : target.revision,
+                );
+            },
+            reviewer,
+          );
+        }
+        const [analysis] = await this.rows(db, 'intake_analyses', 'id=?', [
+          bound.proposal.analysis_id,
+        ]);
+        const [attempt] = await this.rows(
+          db,
+          'intake_analysis_attempts',
+          'id=?',
+          [bound.proposal.analysis_attempt_id],
+        );
+        if (!analysis || !attempt || analysis.current_attempt_id !== attempt.id)
+          throw new Error('Stale feedback source');
+        const data = object(attempt.data);
+        const result = {
+          status: data.status,
+          provider: data.provider,
+          model: data.model,
+          version: data.version,
+          output: data.output,
+          usage: data.usage,
+          ...(Object.hasOwn(data, 'error') ? { error: data.error } : {}),
+          ...(Object.hasOwn(data, 'confidence')
+            ? { confidence: data.confidence }
+            : {}),
+        };
+        if (intakeBindingDigest(result) !== attempt.output_digest)
+          throw new Error('Analysis output integrity');
+        const input = object(analysis.data);
+        if (
+          intakeBindingDigest({
+            inputs: input.inputs,
+            configuration: input.configuration,
+          }) !== analysis.input_digest
+        )
+          throw new Error('Analysis input integrity');
+        if (!this.retained(bound.item)) throw new Error('Feedback unavailable');
+        return {
+          db,
+          context,
+          permissions,
+          review: this.review(bound),
+          itemId: String(bound.item.id),
+          attemptId: String(attempt.id),
+          args: structuredClone(bound.binding.args),
+          analysis: input,
+          result,
+          handlerId: bound.handler.id,
+          handlerVersion: bound.handler.version,
+        };
+      };
+      const before = await load();
+      const result = await work(before);
+      const after = await load();
+      if (
+        intakeBindingDigest(before.review) !== intakeBindingDigest(after.review)
+      )
+        throw new Error('Feedback binding changed');
+      if (
+        after.permissions.some(
+          (permission) => !before.permissions.includes(permission),
+        )
+      )
+        throw new Error('Feedback cannot widen permissions');
+      const prior = before.context.policy,
+        next = after.context.policy;
+      for (const key of [
+        'handlers',
+        'operations',
+        'reviewers',
+        'providers',
+        'access',
+        'automaticHandlers',
+      ] as const)
+        if (next[key].some((value) => !prior[key].includes(value)))
+          throw new Error('Feedback cannot widen policy');
+      for (const key of [
+        'maxAttempts',
+        'maxSteps',
+        'maxBytes',
+        'approvalMs',
+        'leaseMs',
+        'retentionMs',
+      ] as const)
+        if (next[key] > prior[key])
+          throw new Error('Feedback cannot widen policy');
+      if (
+        (prior.requireReview && !next.requireReview) ||
+        next.minimumCertainty < prior.minimumCertainty ||
+        (!prior.consequentialAutomation && next.consequentialAutomation)
+      )
+        throw new Error('Feedback cannot widen policy');
+      return result;
+    };
+    return executor ? operation(executor) : this.tx(operation);
+  }
+  private async feedbackLineage(
+    db: DatabaseInterface,
+    bound: Bound,
+  ): Promise<void> {
+    const [attempt] = await this.rows(db, 'intake_analysis_attempts', 'id=?', [
+      bound.proposal.analysis_attempt_id,
+    ]);
+    if (!attempt) throw new Error('Analysis unavailable');
+    const output = object(object(attempt.data).output);
+    if (!output.proposals) return;
+    const generation = object(output.proposals);
+    const feedback = object(generation.provenance).feedback;
+    if (!feedback) return;
+    const references = object(object(feedback).selection).examples;
+    if (!Array.isArray(references))
+      throw new Error('Feedback lineage unavailable');
+    // An empty selection carries no learned source authority. Optional capture
+    // denial or a changed memory budget must not block an ordinary action.
+    if (references.length === 0) return;
+    if (!this.options.feedback)
+      throw new Error('Feedback configuration unavailable');
+    // Do not call public action readers from this gate. The internal loader
+    // stays ungated; one feedback owner bounds recursive example lineage.
+    const { IntakeFeedbackService } = await import('./feedback.js');
+    await new IntakeFeedbackService(this.options, this).assertActionLineage(
+      String(bound.action.id),
+      db,
+      String(bound.proposal.id),
+    );
   }
   async getAction(actionId: string): Promise<ProposalReview> {
     return this.tx(async (db) => {
@@ -706,6 +921,13 @@ export class IntakeExecutionService {
       const bound = await this.bound(db, actionId);
       await this.access(db, bound.item, bound.handler, 'read');
       if (!this.retained(bound.item)) return expiredReview();
+      try {
+        await this.feedbackLineage(db, bound);
+      } catch (error) {
+        if (bound.action.state !== 'succeeded') throw error;
+        await this.successful(db, bound.action, bound.item);
+        return { ...this.review(bound), display: {} };
+      }
       return this.review(bound);
     });
   }
@@ -928,6 +1150,27 @@ export class IntakeExecutionService {
             review: { ...actions[index].review, display: {}, state: 'expired' },
           };
       }
+      // Refresh learned eligibility after all page callbacks and before disclosure.
+      // A durable result survives invalidated learning; copied proposal payload does not.
+      for (let index = 0; index < actions.length; index++) {
+        const entry = actions[index];
+        if (
+          !entry.review.proposalId ||
+          entry.review.state === 'expired' ||
+          entry.review.state === 'stale'
+        )
+          continue;
+        const bound = await this.bound(db, entry.review.actionId);
+        try {
+          await this.feedbackLineage(db, bound);
+        } catch (error) {
+          if (bound.action.state !== 'succeeded') throw error;
+          actions[index] = {
+            review: { ...entry.review, display: {} },
+            result: await this.successful(db, bound.action, bound.item),
+          };
+        }
+      }
       return {
         actions,
         ...(generationStale ? { generationStale: true } : {}),
@@ -1121,6 +1364,10 @@ export class IntakeExecutionService {
     if (replay) {
       if (object(replay.data).requestHash !== requestHash)
         throw new Error('Proposal request conflict');
+      await this.feedbackLineage(
+        db,
+        await this.bound(db, input.actionId, false, false, String(replay.id)),
+      );
       return {
         actionId: input.actionId,
         proposalId: String(replay.id),
@@ -1178,6 +1425,10 @@ export class IntakeExecutionService {
       this.scope.tenantId,
       this.scope.confidentialScopeId,
     );
+    await this.feedbackLineage(
+      db,
+      await this.bound(db, input.actionId, false, false, String(proposal.id)),
+    );
     return {
       actionId: String(action.id),
       proposalId: String(proposal.id),
@@ -1197,6 +1448,85 @@ export class IntakeExecutionService {
       return this.publish(db, item, frozen, binding);
     });
   }
+  /** Capture owner facts in the same transaction; these are never correctness labels. */
+  private async feedbackEvent(
+    db: DatabaseInterface,
+    bound: Bound,
+    eventId: string,
+    kind: 'action_decision' | 'downstream_outcome',
+  ): Promise<void> {
+    if (!this.options.feedback || !this.retained(bound.item)) return;
+    if (
+      !(await this.options.feedback.authorize({
+        db,
+        scope: this.scope,
+        itemId: String(bound.item.id),
+        operation: 'capture',
+      }))
+    )
+      return;
+    const table =
+      kind === 'action_decision'
+        ? 'intake_review_decisions'
+        : 'intake_executions';
+    const [event] = await this.rows(db, table, 'id=? AND action_id=?', [
+      eventId,
+      bound.action.id,
+    ]);
+    if (!event) throw new Error('Feedback event unavailable');
+    const eventData = object(event.data),
+      signal = kind === 'action_decision' ? event.decision : event.state;
+    const key = `event:${kind}:${eventId}:${String(signal)}`;
+    const [replay] = await this.rows(
+      db,
+      'intake_feedback',
+      'item_id=? AND request_key=?',
+      [bound.item.id, key],
+    );
+    if (replay) return;
+    const [attempt] = await this.rows(db, 'intake_analysis_attempts', 'id=?', [
+      bound.proposal.analysis_attempt_id,
+    ]);
+    const provenance = object(attempt.data),
+      generation = object(object(provenance.output).proposals ?? {});
+    const body = {
+      version: 1,
+      eventId,
+      actionId: bound.action.id,
+      proposalId: bound.proposal.id,
+      revision: Number(bound.proposal.revision),
+      bindingHash: bound.proposal.binding_hash,
+      attemptId: attempt.id,
+      attemptDigest: attempt.output_digest,
+      evidence: bound.binding.evidence,
+      handlerId: bound.handler.id,
+      handlerVersion: bound.handler.version,
+      signal,
+      reviewer: kind === 'action_decision' ? eventData.reviewer : null,
+      observedBy: this.scope.actorId,
+      principalId: eventData.principalId ?? null,
+      reason: kind === 'action_decision' ? (eventData.reason ?? '') : '',
+      resultDigest: event.result_digest ?? null,
+      model: {
+        provider: provenance.provider,
+        model: provenance.model,
+        version: provenance.version,
+      },
+      generationProvenance: generation.provenance ?? null,
+    };
+    const data = { ...body, digest: intakeBindingDigest(body) };
+    // Optional memory projection cannot veto the authoritative event. Storage
+    // failures still propagate; explicit record/observe retain their own limits.
+    if (Buffer.byteLength(canonical(data)) > this.options.feedback.maxBytes)
+      return;
+    await this.insert(db, 'intake_feedback', {
+      item_id: bound.item.id,
+      request_key: key,
+      supersedes_id: null,
+      kind,
+      data: canonical(data),
+    });
+  }
   async submitDecision(input: ReviewInput): Promise<ProposalReview> {
     const frozen = JSON.parse(canonical(input)) as ReviewInput;
     id(frozen.requestId);
@@ -1213,6 +1543,7 @@ export class IntakeExecutionService {
         bound.handler,
         'review',
       );
+      await this.feedbackLineage(db, bound);
       const decisions = await this.rows(
         db,
         'intake_review_decisions',
@@ -1246,7 +1577,7 @@ export class IntakeExecutionService {
           this.now().getTime() + policy.approvalMs,
         ),
       ).toISOString();
-      await this.insert(db, 'intake_review_decisions', {
+      const decisionEvent = await this.insert(db, 'intake_review_decisions', {
         item_id: bound.item.id,
         action_id: bound.action.id,
         proposal_id: bound.proposal.id,
@@ -1264,6 +1595,12 @@ export class IntakeExecutionService {
           kind: 'human',
         }),
       });
+      await this.feedbackEvent(
+        db,
+        bound,
+        String(decisionEvent.id),
+        'action_decision',
+      );
       if (frozen.decision === 'correct') {
         if (bound.binding.plan)
           throw new Error('Plan correction requires re-expansion');
@@ -1281,8 +1618,10 @@ export class IntakeExecutionService {
           dependencies: bound.binding.dependencies,
         };
         const binding = await this.buildBinding(db, bound.item, corrected);
+        await this.feedbackLineage(db, bound);
         return this.publish(db, bound.item, corrected, binding);
       }
+      await this.feedbackLineage(db, bound);
       const state = {
         approve: 'authorized',
         reject: 'rejected',
@@ -1343,6 +1682,7 @@ export class IntakeExecutionService {
     }
   }
   private async approved(db: DatabaseInterface, bound: Bound): Promise<number> {
+    await this.feedbackLineage(db, bound);
     await this.verifyEvidence(db, bound);
     if (bound.binding.plan) {
       const plans = await this.rows(
@@ -1489,6 +1829,7 @@ export class IntakeExecutionService {
         !this.config.evaluateAutomatic
       )
         throw new Error('Automatic eligibility revoked');
+      await this.feedbackLineage(db, bound);
       const evaluated = await this.config.evaluateAutomatic({
         bindingHash: String(bound.proposal.binding_hash),
         handlerId: bound.handler.id,
@@ -1513,6 +1854,7 @@ export class IntakeExecutionService {
     if (time(object(decision.data).expiresAt) <= this.now().getTime())
       throw new Error('Approval required');
     await this.verifyEvidence(db, bound);
+    await this.feedbackLineage(db, bound);
     return Math.min(time(decisionData.expiresAt), time(bound.item.expires_at));
   }
   private async arguments(
@@ -1714,6 +2056,12 @@ export class IntakeExecutionService {
       this.scope.tenantId,
       this.scope.confidentialScopeId,
     );
+    await this.feedbackEvent(
+      db,
+      bound,
+      String(execution.id),
+      'downstream_outcome',
+    );
     return {
       state: 'succeeded',
       actionId: String(bound.action.id),
@@ -1775,6 +2123,12 @@ export class IntakeExecutionService {
           this.scope.tenantId,
           this.scope.confidentialScopeId,
         );
+        await this.feedbackEvent(
+          db,
+          bound,
+          String(execution.id),
+          'downstream_outcome',
+        );
         return { state: 'outcome_unknown', actionId };
       }
       if (!['authorized', 'failed'].includes(String(bound.action.state)))
@@ -1791,6 +2145,7 @@ export class IntakeExecutionService {
           )
             throw new Error('Execution budget exceeded');
           const args = await this.arguments(db, bound, context);
+          await this.feedbackLineage(db, bound);
           const attemptNumber = Number(bound.action.execution_attempt) + 1;
           const fence = Number(bound.action.fence) + 1;
           const execution = await this.insert(db, 'intake_executions', {
@@ -1876,6 +2231,12 @@ export class IntakeExecutionService {
               execution.id,
               this.scope.tenantId,
               this.scope.confidentialScopeId,
+            );
+            await this.feedbackEvent(
+              db,
+              bound,
+              String(execution.id),
+              'downstream_outcome',
             );
             await db.query(
               "UPDATE intake_actions SET state='failed' WHERE id=? AND tenant_id=? AND confidential_scope_id=?",
@@ -1985,6 +2346,12 @@ export class IntakeExecutionService {
           this.scope.tenantId,
           this.scope.confidentialScopeId,
         );
+        await this.feedbackEvent(
+          db,
+          { ...bound, item },
+          String(execution.id),
+          'downstream_outcome',
+        );
         return {
           state: 'outcome_unknown',
           actionId,
@@ -2077,6 +2444,12 @@ export class IntakeExecutionService {
         this.scope.tenantId,
         this.scope.confidentialScopeId,
       );
+      await this.feedbackEvent(
+        db,
+        { ...bound, item },
+        String(execution.id),
+        'downstream_outcome',
+      );
       return {
         state,
         actionId,
@@ -2105,6 +2478,7 @@ export class IntakeExecutionService {
         !this.config.evaluateAutomatic
       )
         throw new Error('Automatic execution unavailable');
+      await this.feedbackLineage(db, bound);
       const evaluated = await this.config.evaluateAutomatic({
         bindingHash: String(bound.proposal.binding_hash),
         handlerId: bound.handler.id,
@@ -2124,6 +2498,7 @@ export class IntakeExecutionService {
           )
       )
         throw new Error('Automatic execution unavailable');
+      await this.feedbackLineage(db, bound);
       await this.verifyEvidence(db, bound);
       if (!this.retained(bound.item))
         throw new RetentionExpired(
@@ -2228,9 +2603,11 @@ export class IntakeExecutionService {
           revision: Number(replay.revision),
           digest: String(replay.digest),
           steps: await Promise.all(
-            steps.map(async (step) =>
-              this.review(await this.bound(db, step.actionId)),
-            ),
+            steps.map(async (step) => {
+              const bound = await this.bound(db, step.actionId);
+              await this.feedbackLineage(db, bound);
+              return this.review(bound);
+            }),
           ),
         };
       }
@@ -2409,6 +2786,17 @@ export class IntakeExecutionService {
           })),
         }),
       });
+      for (const review of reviews)
+        await this.feedbackLineage(
+          db,
+          await this.bound(
+            db,
+            review.actionId,
+            false,
+            false,
+            review.proposalId,
+          ),
+        );
       return {
         id: String(plan.id),
         key: frozen.planKey,

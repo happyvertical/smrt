@@ -25,6 +25,16 @@ export default defineConfig({
         const app: ReferenceReviewHost =
           await module.ReferenceReviewHost.provision(
             await mkdtemp(join(tmpdir(), 'review-')),
+            {
+              feedback: {
+                version: 'browser-feedback1',
+                maxExamples: 5,
+                maxScan: 50,
+                maxBytes: 8000,
+                minimumSimilarity: 0.2,
+                authorize: async () => true,
+              },
+            },
           );
         const host = async () => app;
         server.middlewares.use(async (req, res, next) => {
@@ -219,6 +229,17 @@ export default defineConfig({
                 'handlerVersion',
                 'args',
               ],
+              feedback: [
+                'itemId',
+                'actionId',
+                'expectedRevision',
+                'expectedReviewVersion',
+                'bindingHash',
+                'judgment',
+                'comment',
+                'requestId',
+                'supersedesId',
+              ],
               revoke: [],
             };
             const operation = url.pathname.slice('/api/'.length);
@@ -258,6 +279,9 @@ export default defineConfig({
                 break;
               case 'editAction':
                 result = await service.previewProposal(input);
+                break;
+              case 'feedback':
+                result = await service.recordFeedback(input);
                 break;
               case 'revoke':
                 await app.revoke(scope.actorId);

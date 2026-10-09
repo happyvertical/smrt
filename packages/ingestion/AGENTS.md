@@ -33,6 +33,8 @@ force-terminate backends, grant signal privileges, or ignore leaked sessions.
 Build includes browser import validation. The provider lane exercises local SDK
 adapters and process isolation, without claiming live remote recognition quality.
 `src/svelte` owns transport-neutral review components and browser-safe host callbacks.
+See [FEEDBACK.md](FEEDBACK.md) for revision-bound explicit feedback, scoped example retrieval,
+provider-boundary revalidation and authorized routing policy adoption.
 See [REVIEW.md](REVIEW.md) for authenticated hosts, bounded saved-review reloads,
 assignment ownership, logical split re-extraction and the maintained browser proof.
 UI validation additionally requires `pnpm test:components` and `pnpm test:e2e`;

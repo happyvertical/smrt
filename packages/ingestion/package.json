@@ -12,7 +12,8 @@
     "CLAUDE.md",
     "EXTRACTION.md",
     "PROPOSALS.md",
-    "REVIEW.md"
+    "REVIEW.md",
+    "FEEDBACK.md"
   ],
   "exports": {
     ".": {
