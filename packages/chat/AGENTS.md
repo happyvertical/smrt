@@ -97,6 +97,22 @@ fail-closed `allowedTools` offer/execution gates; RBAC, tenant, redaction,
 bounded query results, and audit authority remain in the authenticated
 `PrincipalRun` supplied by `@happyvertical/smrt-agents`.
 
+## Runtime report tools (#3711)
+
+`createRuntimeReportTools()` (`runtime-report-tools.ts`) returns four
+`PrincipalTool`s for the persona `extraTools` seam: `reports.runtime.sources`,
+`reports.runtime.define` (`preview` / `apply`), `reports.runtime.list`, and
+`reports.runtime.run`. The model supplies only a declarative
+`RuntimeReportSpec` from `@happyvertical/smrt-reports`; sources are a
+server-owned allow-list gated by `run.assertOperation(collection, 'read')`, and
+field policy, `readPermission`, and tenancy are enforced by the compiler against
+the live run on every compile and every stored-report run. `apply` needs the
+`specHash` of the previewed spec plus an app-owned `confirmation` host that
+resolves only after a human approved that exact spec; with no host the tools are
+propose-only and a model-supplied `confirmed` flag is ignored. Saving also needs
+`create` on the `RuntimeReport` collection. Contract and authority model:
+[`packages/reports/agents/runtime-reports.md`](../reports/agents/runtime-reports.md).
+
 ## Conversational Harness (L3, #1891)
 
 The `AgentSession` runtime depends on personas, agents, and users. Keep those

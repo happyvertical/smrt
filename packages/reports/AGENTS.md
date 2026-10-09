@@ -16,6 +16,7 @@ Materialized aggregate report models for SMRT.
 | adapter | Transport-neutral report descriptor, canonical materialized-row reads, and stable `id` row identity |
 | lifecycle | Tenant-safe freshness, run, lock, failure, and manual refresh preview/apply surfaces |
 | views | Policy-revalidated saved views, snapshot-bound exports, bounded job handoff, and artifact metadata validation |
+| runtime reports | Declarative `RuntimeReportSpec` stored as data (`RuntimeReport`), compiled per principal with field-policy, RBAC and tenant checks; see [agents/runtime-reports.md](agents/runtime-reports.md) |
 
 ## Adapter contract
 
@@ -63,6 +64,18 @@ Materialized aggregate report models for SMRT.
   boundaries must call the validators, including the host's immutable-snapshot
   assertion; application hosts own authorization, audit records, durable
   storage, download tokens, and queue execution.
+
+## Runtime reports (#3711)
+
+A runtime report is data, not code: `parseRuntimeReportSpec()` accepts a closed
+grammar (no SQL, expressions, joins, tables, or tenants), and
+`compileRuntimeReportSpec()` resolves it against a server-owned source
+allow-list, the ObjectRegistry field policy, the live principal's permissions,
+and an explicit fail-closed tenant predicate. Stored `RuntimeReport` specs are
+re-compiled for the running principal on every run, and result rows are never
+persisted. Assistant tools are in `@happyvertical/smrt-chat`. The full
+contract, authority model, and deferred work are in
+[agents/runtime-reports.md](agents/runtime-reports.md).
 
 ## Conventions
 
