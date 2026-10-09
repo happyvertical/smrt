@@ -110,6 +110,7 @@ export const DEFAULT_CLI_CONFIG: Required<
       useConcurrently: true,
       lockTimeout: '30s',
       statementTimeout: '60s',
+      migrationLockTimeout: '15min',
     },
   },
   schemaContract: {},

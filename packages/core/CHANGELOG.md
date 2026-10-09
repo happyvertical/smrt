@@ -1,5 +1,124 @@
 # @happyvertical/smrt-core
 
+## 0.55.7
+
+### Patch Changes
+
+- ### Features
+  
+  - planner batch — shell layout editing, section menus, browser speech (#3701)
+  - add scoped correctness feedback and routing suggestions (#3706) (ingestion)
+  - add authenticated inbox and review surfaces (#3703) (ingestion)
+  
+  ### Bug Fixes
+  
+  - use bounded ordinary-role fixture cleanup (#3705) (ingestion)
+- @happyvertical/smrt-config@0.55.7
+  - @happyvertical/smrt-scanner@0.55.7
+  - @happyvertical/smrt-types@0.55.7
+
+## 0.55.6
+
+### Patch Changes
+
+- ### Features
+  
+  - persist safe terminal outcomes (#3700) (jobs)
+  - customize audit history presentation (#3694) (svelte)
+  - generate durable, permission-filtered proposals (#3702) (ingestion)
+- @happyvertical/smrt-config@0.55.6
+  - @happyvertical/smrt-scanner@0.55.6
+  - @happyvertical/smrt-types@0.55.6
+
+## 0.55.5
+
+### Patch Changes
+
+- ### Features
+  
+  - preserve upload, email and watch-folder sources (#3698) (ingestion)
+  - enforce reviewed idempotent execution (#3692) (ingestion)
+  - allow hiding the assistant conversation list (#3691) (chat)
+  - add bounded evidence extraction with live authorization (#3689) (ingestion)
+  - add durable intake and processing foundations (#3687) (ingestion)
+  
+  ### Bug Fixes
+  
+  - extract retained JSON source evidence (#3699) (ingestion)
+  - await lazy WebMCP fixture registration (#3690) (svelte)
+  - enforce hardcoded strings through symlinked paths (#3664) (ci)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.102.4 (#3695) (deps)
+  - docs: define intake and execution contracts (#3678) (ingestion)
+- @happyvertical/smrt-config@0.55.5
+  - @happyvertical/smrt-scanner@0.55.5
+  - @happyvertical/smrt-types@0.55.5
+
+## 0.55.4
+
+### Patch Changes
+
+- ### Features
+  
+  - support sidebar account footers (#3647) (smrt-svelte)
+  
+  ### Bug Fixes
+  
+  - browser-safe config entry; model roots stop importing the sql root (#3636) (config)
+  - export decorators and runtime helpers from the browser entry (#3632) (core)
+  
+  ### Other Changes
+  
+  - refactor: move RelationInput to smrt-ui/forms, re-export from smrt-svelte (#3638) (smrt-ui)
+  - ci: retry bounded apt provisioning and skip ONNX deps without installs (#3655)
+  - chore: sync sdk packages to v0.102.3 (#3606) (deps)
+- @happyvertical/smrt-config@0.55.4
+  - @happyvertical/smrt-scanner@0.55.4
+  - @happyvertical/smrt-types@0.55.4
+
+## 0.55.3
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - serialize concurrent db:migrate runs with a PostgreSQL advisory lock (#3640) (cli)
+  - resolve inherited tenant fields in the registration audit (#3630) (tenancy)
+- @happyvertical/smrt-config@0.55.3
+  - @happyvertical/smrt-scanner@0.55.3
+  - @happyvertical/smrt-types@0.55.3
+
+## 0.55.2
+
+### Patch Changes
+
+- ### Features
+  
+  - browser fixture for model package roots (#3621) (#3631) (bundle-gate)
+  - widget hints, display label and selector slots in the manifest (#3611) (core)
+  - user-customizable shell layout with Sortable and ShellLayoutEditor (#3612) (smrt-svelte)
+  - emit enum values for enum- and literal-union-typed fields (#3609) (scanner)
+  - RelationInput searchable relation picker (#3610) (smrt-svelte)
+  - AppShell header dock toggles and useShellDock control API (#3605) (smrt-svelte)
+  - user-facing help for SmrtRecipe (#3597) (core)
+  - optional trailing action icon on ShellNavItem (#3594) (smrt-svelte)
+  - add SmrtRecipe, declared units of app functionality (#3595) (core)
+  - publish the OIDC client landing-URL registration contract (#3570) (users)
+  
+  ### Bug Fixes
+  
+  - preserve tenant profile relationships and enum values (#3619) (core)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.102.2 (#3589) (deps)
+  - docs: ADR 0003 — smrt add declarative package install (#3378) (#3565) (adr)
+- @happyvertical/smrt-config@0.55.2
+  - @happyvertical/smrt-scanner@0.55.2
+  - @happyvertical/smrt-types@0.55.2
+
 ## 0.55.1
 
 ### Patch Changes

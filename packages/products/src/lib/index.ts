@@ -25,6 +25,12 @@ export * from './components/index';
 export * from './generated/index';
 // Models - SMRT domain objects
 export * from './models/index';
+// Declared recipes
+export {
+  ClothingProductsRecipe,
+  IngredientsRecipe,
+  SimpleProductsRecipe,
+} from './recipes';
 // Stores - Svelte 5 rune-based state management
 export * from './stores/index';
 // Utilities

@@ -17,6 +17,7 @@ import {
   matchingOption,
   prepareTextControlValue,
 } from './control-value-validation.js';
+import FieldLabel from './FieldLabel.svelte';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
   /** Array of options to select from. */
@@ -334,7 +335,7 @@ useControlRegistration(() => {
 <div bind:this={rootEl} class="combobox {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
-  <label for={inputId}>{label}</label>
+  <FieldLabel for={inputId} {label} {required} />
   <!-- The form posts the committed value (an option id), never the label the person sees. -->
   {#if name}<input type="hidden" {name} {value} {disabled} />{/if}
   <input bind:this={inputEl} id={inputId} role="combobox" autocomplete="off" {placeholder} {disabled} required={required && !value} aria-required={required ? 'true' : undefined} value={query}
@@ -346,8 +347,8 @@ useControlRegistration(() => {
   {#if status !== undefined}<div class="sr-status" role="status" aria-live="polite">{open ? status : ''}</div>{/if}
 </div>
 <style>
-  .combobox { position: relative; display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }
-  label { font: var(--smrt-typography-label-large-font); } input { box-sizing: border-box; width: 100%; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: inherit; }
+  .combobox { position: relative; display: grid; gap: 0; color: var(--smrt-color-on-surface); }
+  input { box-sizing: border-box; width: 100%; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: inherit; }
   input:focus { outline: 2px solid var(--smrt-color-primary); outline-offset: 1px; } .options { position: absolute; z-index: var(--smrt-z-index-dropdown); top: 100%; left: 0; right: 0; display: grid; padding: var(--smrt-spacing-1); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface-container); box-shadow: var(--smrt-elevation-2); }
   .options button { padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 0; border-radius: var(--smrt-radius-extra-small); background: transparent; color: var(--smrt-color-on-surface); text-align: left; } .options button.active { background: var(--smrt-color-secondary-container); }
   .options.empty { padding: var(--smrt-spacing-2) var(--smrt-spacing-3); color: var(--smrt-color-on-surface-variant); }

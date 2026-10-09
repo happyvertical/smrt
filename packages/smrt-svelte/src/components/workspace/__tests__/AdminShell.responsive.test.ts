@@ -85,6 +85,7 @@ describe('AdminShell header and viewport', () => {
     const shell = createShellState({ config });
     render(AdminShell, {
       props: {
+        edgeToggles: true,
         state: shell,
         header: createRawSnippet<[{ viewport: string }]>((ctx) => ({
           render: () => `<span>Header ${ctx().viewport}</span>`,
@@ -113,7 +114,11 @@ describe('AdminShell header and viewport', () => {
   it('follows viewport classes: tablet collapses the nav, desktop reopens it', async () => {
     const shell = createShellState({ config });
     render(AdminShell, {
-      props: { state: shell, children: html('<p>page</p>') },
+      props: {
+        state: shell,
+        edgeToggles: true,
+        children: html('<p>page</p>'),
+      },
     });
     await settle();
     setWidth(900);
@@ -136,6 +141,7 @@ describe('AdminShell on a phone', () => {
     const shell = createShellState({ config });
     const result = render(AdminShell, {
       props: {
+        edgeToggles: true,
         state: shell,
         header: html('<span>desktop header</span>'),
         phoneTopBar: createRawSnippet<[{ hidden: boolean }]>((ctx) => ({
@@ -246,6 +252,7 @@ describe('AdminShell on a phone', () => {
     });
     render(AdminShell, {
       props: {
+        edgeToggles: true,
         state: sheetShell,
         focusPanel: html('<p>chat</p>'),
         phone: { scrim: true },
@@ -308,6 +315,7 @@ describe('AdminShell resizable edges', () => {
     });
     const view = render(AdminShell, {
       props: {
+        edgeToggles: true,
         state: shell,
         focusPanel: html('<p>chat</p>'),
         children: html('<p>page</p>'),
@@ -679,6 +687,7 @@ describe('AdminShell backward compatibility', () => {
     const shell = createShellState();
     render(AdminShell, {
       props: {
+        edgeToggles: true,
         state: shell,
         systemBar: html('<span>system chips</span>'),
         children: html('<p>page</p>'),

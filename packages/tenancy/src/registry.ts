@@ -557,6 +557,37 @@ function resolveSelectorClass(selector: string) {
   return matches.length === 1 ? matches[0] : undefined;
 }
 
+type RegisteredSmrtClass = NonNullable<ReturnType<typeof resolveSelectorClass>>;
+
+/**
+ * Whether the class or one of its registered ancestors declares `fieldName`.
+ *
+ * A class's own field map holds only its own decorator fields until its
+ * manifest entry loads; an STI child registered first (a bundled server) has
+ * its inherited tenant field on the registered parent only (#3623). Walk the
+ * constructor's prototype chain through public registry lookups — read-only,
+ * unlike `getInheritanceChain()`, which caches whatever partial chain exists
+ * at registration time.
+ */
+function declaresFieldInChain(
+  registered: RegisteredSmrtClass,
+  fieldName: string,
+): boolean {
+  if (registered.fields.has(fieldName)) return true;
+  if (registered.inheritedFields?.has(fieldName)) return true;
+  const visited = new Set<unknown>([registered.constructor]);
+  let ctor: unknown = Object.getPrototypeOf(registered.constructor);
+  while (typeof ctor === 'function' && !visited.has(ctor)) {
+    visited.add(ctor);
+    const ancestor = ObjectRegistry.getClassByConstructor(
+      ctor as RegisteredSmrtClass['constructor'],
+    );
+    if (ancestor?.fields.has(fieldName)) return true;
+    ctor = Object.getPrototypeOf(ctor);
+  }
+  return false;
+}
+
 function auditSelector(
   selector: string,
   config: TenantScopedConfig,
@@ -566,7 +597,7 @@ function auditSelector(
   const className = registered.qualifiedName || registered.name;
   const findings: TenantRegistrationFinding[] = [];
 
-  if (!registered.fields.has(config.field)) {
+  if (!declaresFieldInChain(registered, config.field)) {
     findings.push({
       selector,
       className,

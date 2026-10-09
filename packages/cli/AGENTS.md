@@ -11,7 +11,7 @@ smrt doctor --db             # Add the live-schema parity section (see below)
 smrt db:status               # Pending schema changes + failed migration classification (+ tenant natural-key findings: a missing tenant-led unique exits 1, a surviving legacy global unique warns until `db:migrate --drop-legacy-natural-key`: src/commands/tenant-natural-keys.ts)
 smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:orphans              # agents/db-orphans.md
-smrt db:migrate              # agents/type-drift.md
+smrt db:migrate              # agents/type-drift.md, agents/db-migrate-concurrency.md
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate --apply-unblocked / --null-orphans # agents/db-migrate-partial-apply.md

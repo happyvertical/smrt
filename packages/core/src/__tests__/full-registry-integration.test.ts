@@ -267,12 +267,14 @@ describe('Issue #1008: Full registry integration (high object counts)', () => {
     expect(acyclicEdgesChecked).toBeGreaterThan(0);
 
     // Only genuine cycle members may be exempt. In the current monorepo the
-    // sole foreign-key cycle is smrt-chat's ChatMessage <-> ChatThread pair,
-    // so every exempt edge must be between those two classes.
+    // approved foreign-key cycles are chat's message/thread pair and ingestion's
+    // analysis/current-attempt pair (ADR 0004). Reject every other cyclic edge.
     for (const edge of exemptCycleEdges) {
       expect(
         edge === 'ChatMessage -> ChatThread' ||
-          edge === 'ChatThread -> ChatMessage',
+          edge === 'ChatThread -> ChatMessage' ||
+          edge === 'IntakeAnalysis -> IntakeAnalysisAttempt' ||
+          edge === 'IntakeAnalysisAttempt -> IntakeAnalysis',
       ).toBe(true);
     }
   });

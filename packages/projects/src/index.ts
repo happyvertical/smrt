@@ -48,9 +48,10 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+// Export collections
+export { CommentCollection } from './collections/Comments';
 export { DevelopmentRequestHistoryCollection } from './collections/DevelopmentRequestHistories';
 export { DevelopmentRequestCollection } from './collections/DevelopmentRequests';
-// Export collections
 export { IssueCollection } from './collections/Issues';
 export { ProjectIntegrationAuditCollection } from './collections/ProjectIntegrationAudits';
 export { ProjectIntegrationCollection } from './collections/ProjectIntegrations';
@@ -98,12 +99,12 @@ export { Repository, type RepositoryOptions } from './models/Repository';
 export * from './models/service-evidence.js';
 export type { ProjectBoardMoveIntent } from './project-board-types.js';
 export { issueIncorporateFeedbackPrompt } from './prompts';
+export { ProjectTrackerRecipe } from './recipes';
 export {
   type RepositoryClientScope,
   withRepositoryClient,
 } from './repository-client-scope';
 export * from './services/index.js';
-
 // Export types
 export type {
   AssistanceClassification,
@@ -156,6 +157,5 @@ export type {
   UpdateIssueInput,
   User,
 } from './types';
-
 // Export UI metadata
 export { PROJECTS_MODULE_META, PROJECTS_UI_SLOTS } from './ui';

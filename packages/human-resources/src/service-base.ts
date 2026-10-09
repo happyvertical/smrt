@@ -5,11 +5,7 @@ import {
   withEmbeddedWriteQueue,
 } from '@happyvertical/smrt-core';
 import { getTenantId, withTenant } from '@happyvertical/smrt-tenancy';
-import {
-  type DatabaseInterface,
-  NestedTransactionError,
-  type TransactionHandle,
-} from '@happyvertical/sql';
+import type { DatabaseInterface, TransactionHandle } from '@happyvertical/sql';
 import {
   type HrActor,
   HrError,
@@ -18,6 +14,10 @@ import {
 } from './types.js';
 
 const logger = createLogger({ level: 'info' });
+
+function isNestedTransactionError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'NestedTransactionError';
+}
 
 /** Collects events inside a transaction; they are delivered after it commits. */
 export type HrEventQueue = (event: HrEvent) => void;
@@ -131,7 +131,9 @@ export abstract class HrService {
         try {
           tx = await begin.call(this.db);
         } catch (error) {
-          if (error instanceof NestedTransactionError) throw unsupported();
+          // Matched by name: the sql root (pg, node:fs) is not importable from
+          // a browser-safe model root, and the SDK sets this name on the class.
+          if (isNestedTransactionError(error)) throw unsupported();
           throw error;
         }
         let value: T;

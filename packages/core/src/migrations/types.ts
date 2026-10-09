@@ -282,5 +282,7 @@ export interface MigrationsConfig {
     lockTimeout?: string;
     /** `statement_timeout` for every PostgreSQL migration statement (default: '60s') */
     statementTimeout?: string;
+    /** Wait for a concurrent `db:migrate` to release the migration lock (default: '15min') */
+    migrationLockTimeout?: string;
   };
 }

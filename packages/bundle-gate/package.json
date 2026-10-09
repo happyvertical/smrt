@@ -36,6 +36,7 @@
     "@happyvertical/smrt-fields": "workspace:*",
     "@happyvertical/smrt-human-resources": "workspace:*",
     "@happyvertical/smrt-images": "workspace:*",
+    "@happyvertical/smrt-ingestion": "workspace:*",
     "@happyvertical/smrt-inventory": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/smrt-languages": "workspace:*",

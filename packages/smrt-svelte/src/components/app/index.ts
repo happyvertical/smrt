@@ -10,6 +10,7 @@ export {
   type ShellLayout,
   ShellLayoutController,
   ShellLayoutEditor,
+  type ShellSectionActionsContext,
   tryUseShellLayout,
   useShellLayout,
 } from '../workspace/index.js';
@@ -30,3 +31,4 @@ export {
   registerRuntimeDiagnosticsWebMcp,
 } from './runtime-diagnostics-webmcp.js';
 export { default as ShellSettingsPage } from './ShellSettingsPage.svelte';
+export type { ShellSlotItem } from './slot-item.js';

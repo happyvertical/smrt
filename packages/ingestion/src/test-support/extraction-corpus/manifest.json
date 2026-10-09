@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "provenance": "Synthetic local fixtures authored for GitHub#3672. No human material or remote provider output.",
+  "purpose": "Format/transport and deterministic boundary contracts; not evaluation/accuracy corpus. Mixed/scanned PDF output contracts use pdfFixture().",
+  "entries": [
+    {
+      "file": "embedded.pdf",
+      "mediaType": "application/pdf",
+      "sha256": "0dcbf6b70db3d383357b96d9068d6c0636ac22355cb061200044bb6d62f6c779",
+      "byteLength": 594,
+      "description": "embedded text; real PDF SDK"
+    },
+    {
+      "file": "fax.tiff",
+      "mediaType": "image/tiff",
+      "sha256": "7f69324161db4d2304b80ebfc70e76ba776d739373104662593189f1c4b42d43",
+      "byteLength": 244,
+      "description": "two tiny TIFF pages; actual decode; injected OCR; not fax quality"
+    },
+    {
+      "file": "scene.jpg",
+      "mediaType": "image/jpeg",
+      "sha256": "a77de6ddea6d82caa04868c37ab1d67fa2b0bfec23d18570331c067f2cdf8300",
+      "byteLength": 1094,
+      "description": "synthetic door scene; camera-format bytes, not a photograph; injected vision"
+    },
+    {
+      "file": "recorded-tone.wav",
+      "mediaType": "audio/wav",
+      "sha256": "d3bf5bc0c4b9101606b941732239b650ec3f38ac28e524e19298a3db88259002",
+      "byteLength": 1644,
+      "description": "recorded synthetic tone; transport only, no speech recognition"
+    },
+    {
+      "file": "email.txt",
+      "mediaType": "text/plain",
+      "sha256": "c2e5b248b819251140ab5ce208dfaa69aeff0a2654b3e8af9a58dfa630feec88",
+      "byteLength": 50,
+      "description": "literal email body with attachment relationships in service suite"
+    },
+    {
+      "file": "corrupt.pdf",
+      "mediaType": "application/pdf",
+      "sha256": "772e9a29dab96090ec0faa9252dd0be80957c6cddfb8c29cd90b84779cf37739",
+      "byteLength": 12,
+      "description": "corrupt input"
+    },
+    {
+      "file": "video.bin",
+      "mediaType": "video/mp4",
+      "sha256": "b940b99475825c6f58f542ff14d223e37be94f69c28ea1f901c75cc1de1ee213",
+      "byteLength": 25,
+      "description": "unsupported type; no video decoder"
+    },
+    {
+      "file": "scanned.pdf",
+      "mediaType": "application/pdf",
+      "sha256": "47b22e3feb084a9e069349c116b0e66788a9dd0f238d4b46131e24a5d95cdefd",
+      "byteLength": 798,
+      "description": "Synthetic raster PDF format fixture; real render, injected OCR; not accuracy"
+    },
+    {
+      "file": "mixed.pdf",
+      "mediaType": "application/pdf",
+      "sha256": "cd948c20f52e2b94111ba28ddc7e3ee541d71ec2615ec8b6081632b178b7fd14",
+      "byteLength": 1074,
+      "description": "Synthetic raster PDF format fixture; real render, injected OCR; not accuracy"
+    }
+  ]
+}

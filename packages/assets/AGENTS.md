@@ -15,6 +15,12 @@ Provider-agnostic asset management with versioning, type classification, and gen
 - **Versioning**: `createNewVersion()` increments version, chains via `primaryVersionId`. `findVersions()` to retrieve history.
 - **Tag integration**: `addTag()`/`removeTag()` use raw `db.upsert()` on `asset_tags` join table (not a SMRT model).
 - **AssetStore**: abstraction for provider-agnostic file I/O (S3, local, etc.).
+  `planFile(asset, opts)` resolves a recoverable URI before bytes are written;
+  persist it before `preserveFile(asset, bytes, opts)`. Preservation adopts equal
+  existing bytes and rejects changed bytes, changed resolver targets and read
+  failures other than not-found. The caller owns receipt fencing/serialization.
+  `removeFile(asset)` removes only bytes for recovery cleanup, including an
+  already-pruned owner record; `remove(asset)` also deletes the owner record.
 - **Ownership rule**: base/domain-owned asset relationships should live on noun join tables such as `content_assets`, `profile_assets`, `event_assets`, `place_assets`, and `product_assets`; keep `AssetAssociation` for generic/provenance links like image derivation.
 
 ## Runtime surface

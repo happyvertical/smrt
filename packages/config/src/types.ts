@@ -225,6 +225,20 @@ export interface MigrationsPostgresConfig {
    * @default '60s'
    */
   statementTimeout?: string;
+
+  /**
+   * How long `smrt db:migrate` waits for a concurrent run to release the
+   * migration lock before giving up.
+   *
+   * Every non-dry-run `db:migrate` on PostgreSQL holds a session advisory
+   * lock for its whole compare-and-apply run, so two processes that migrate
+   * the same database at once run one after the other instead of racing to
+   * apply the same batch. Same accepted forms as
+   * {@link MigrationsPostgresConfig.lockTimeout}; `'0'` waits indefinitely.
+   *
+   * @default '15min'
+   */
+  migrationLockTimeout?: string;
 }
 
 /**

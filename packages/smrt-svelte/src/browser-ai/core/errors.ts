@@ -45,6 +45,23 @@ export class CapabilityNotAvailableError extends BrowserAIError {
 }
 
 /**
+ * Thrown when something needs an on-device model that is not stored on this
+ * device yet and was asked not to download it. `dictationKind` lets smrt-ui's
+ * `Dictation` show "The speech model isn't downloaded yet".
+ */
+export class ModelNotDownloadedError extends BrowserAIError {
+  readonly dictationKind = 'model-missing';
+  constructor(model: string, adapter?: string) {
+    super(
+      `The speech model isn't downloaded yet (${model})`,
+      'MODEL_NOT_DOWNLOADED',
+      adapter,
+    );
+    this.name = 'ModelNotDownloadedError';
+  }
+}
+
+/**
  * Thrown when a model download fails
  */
 export class DownloadError extends BrowserAIError {

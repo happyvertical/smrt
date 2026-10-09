@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-manufacturing",
-  "version": "0.55.1",
+  "version": "0.55.7",
   "smrtJsdoc": "strict",
   "description": "Bills of materials, cost rollup, and production-order operations for the SMRT framework — strictly industry-neutral",
   "type": "module",

@@ -29,7 +29,9 @@ Configuration management with cosmiconfig, secret sanitization, and SSG export.
 
 ## Key Files
 
-- `src/loader.ts` — cosmiconfig integration and file discovery
+- `src/index.ts` — Node entry: `src/shared.ts` plus `loadConfig()`; `src/browser.ts` — `exports['.'].browser` entry, same surface with a `loadConfig()` that rejects (model roots bundle for browsers, #3625)
+- `src/shared.ts` — the config API (get/set/resolve/clear); must stay free of `loader.ts` (cosmiconfig, jiti, node:fs). Loader state is in `src/loader-state.ts`
+- `src/loader.ts` — cosmiconfig integration and file discovery (Node entry only)
 - `src/merge.ts` — deep merge logic, runtime config store
 - `src/export.ts` — sanitization and export formatting (JSON/JS)
 - `src/runtime-profile.ts` — application runtime presets, validation, capabilities, and diagnostics
@@ -37,6 +39,7 @@ Configuration management with cosmiconfig, secret sanitization, and SSG export.
 
 ## Gotchas
 
+- **Keep `shared.ts` browser-safe**: new API goes in `shared.ts` (both entries export it); only Node I/O belongs in `index.ts`/`loader.ts`. `src/browser.test.ts` checks the two entries export the same names.
 - **AI credentials are bound to their source's provider**: a lower-priority key/baseUrl is dropped when another provider wins; redacted base URLs show only the origin. **AI keys come from the environment**: the `ai` block names a variable (`apiKeyEnv`); resolver errors/`toJSON()` never contain keys or URL credentials. Core and the chat dev routes use this resolver; agents share its provider key-name map (`getDefaultAIKeyEnvName`) and keep per-tenant secret lookup; do not add new provider-env parsing elsewhere.
 - **clearCache() is global**: affects all modules sharing the config instance
 - **SSG export defaults to no secrets**: must explicitly set `includeSecrets: true` to include them

@@ -54,10 +54,16 @@ export class InventoryLocation extends SmrtObject {
    * Short stable identifier (`'WH-EAST'`, `'STORE-42'`, `'IN-TRANSIT'`).
    * Together with `tenantId` this is the natural key.
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'A short code for the place stock is kept, for example MAIN.',
+  })
   code: string = '';
 
   /** Display name for UIs. */
+  @field({
+    description: 'What you call the place, for example Main warehouse.',
+  })
   name: string = '';
 
   /**
@@ -65,6 +71,10 @@ export class InventoryLocation extends SmrtObject {
    * `'in_transit'`, `'virtual'`, or anything else your domain needs).
    * The framework never branches on this value.
    */
+  @field({
+    description:
+      'What sort of place it is, for example a warehouse or a shop floor.',
+  })
   kind: InventoryLocationKind = 'warehouse';
 
   /**

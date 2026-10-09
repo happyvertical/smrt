@@ -81,6 +81,36 @@ pnpm add @happyvertical/smrt-ui
   body (`Content-Type` is the recording's type, `?language=&durationMs=`)
   and answers `{ text }`; 413, 503 and 401/403 become "too long", "not set
   up" and "not allowed" messages.
+- Hands-free dictation: `new Dictation({ mode: 'hands-free', handsFreeCapture:
+  createHandsFreeCapture, … })` keeps the microphone on and writes each
+  sentence down when the speaker pauses; one tap on the microphone ends it.
+  `createHandsFreeCapture` comes from `@happyvertical/smrt-ui/forms/hands-free`,
+  the one entry that imports the optional peer `@happyvertical/speech`
+  (>= 0.102.5: on-device voice activity detection with an adaptive noise
+  floor, pre-roll and a 30 s split; no audio leaves the page). It needs a
+  speech source with `transcribePcm` (smrt-svelte's on-device `whisper-local`
+  and `moonshine`); with any of the three missing it is plain press-to-talk.
+  Utterances are written down one at a time in the order spoken
+  (`dictation.queued` counts those waiting); `speaking` and `level` (0 to 1)
+  drive the button: a steady ring while listening, a halo that swells with the
+  voice while speaking, a spinner while writing down, all still under
+  `prefers-reduced-motion`. `vad` tunes `silenceMs` (default 800),
+  `minSpeechMs`, `preRollMs`, `maxUtteranceMs` and `sensitivity`.
+  The help text ("Just talk; I write it down when you pause...") is the
+  microphone's tooltip and `aria-describedby`, not a line in the form;
+  `DictationStatus` keeps a visually hidden polite live region ("Listening",
+  "Hearing you...", "Writing it down...") and shows errors. Its `sending` prop
+  adds the one short visible hint, "Sending...". The chat composer's
+  `sendOnPause` / `sendOnPauseMs` (default 1200) builds send-on-pause on it.
+  Half-duplex: browsers do not reliably cancel `speechSynthesis` from the
+  microphone, so call `dictation.suspend()` while the page reads a reply aloud
+  and `dictation.resume()` after (the chat composer/dock do this from their
+  `speaking` prop). The microphone stays open but nothing is heard (an
+  utterance in progress is discarded, a ~350 ms guard follows `resume()`);
+  `dictation.suspended` drives the dimmed, dashed-outline button and the
+  "Paused while the assistant speaks" tooltip/live region. A custom
+  `HandsFreeCapture` may implement optional `suspend()` / `resume()`;
+  `Dictation` ignores utterances that arrive while suspended either way.
 
 ### Link tabs
 

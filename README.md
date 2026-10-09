@@ -213,6 +213,7 @@ Status legend:
 | [`smrt-assets-local`](./packages/assets-local/README.md) | Preview | Local image metadata and deterministic variant processing. |
 | [`smrt-assets-ergot`](./packages/assets-ergot/README.md) | Preview | Ergot processing, search, workflow, and synchronization adapter. |
 | [`smrt-images`](./packages/images/README.md) | Stable | Image categorization, editing, search, and asset extensions. |
+| [`smrt-ingestion`](./packages/ingestion/README.md) | Experimental | Durable intake, evidence revisions, stage recovery, and action journal foundations. |
 | [`smrt-video`](./packages/video/README.md) | Stable | Video production models, scenes, performers, and workflows. |
 | [`smrt-voice`](./packages/voice/README.md) | Stable | Voice profiles, synthesis, cloning, and word timing. |
 | [`smrt-messages`](./packages/messages/README.md) | Stable | Provider-neutral multi-channel messages and credentials. |

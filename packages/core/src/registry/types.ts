@@ -289,6 +289,12 @@ export interface SmartObjectConfig {
   name?: string;
 
   /**
+   * User-facing model description, emitted into the manifest and knowledge
+   * artifact. Wins over the class JSDoc summary the scanner would otherwise use.
+   */
+  description?: string;
+
+  /**
    * Explicit package name for deterministic qualified registration.
    *
    * Build tools should prefer setting this instead of relying on runtime

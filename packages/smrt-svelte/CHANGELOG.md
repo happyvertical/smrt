@@ -1,5 +1,65 @@
 # @happyvertical/smrt-svelte
 
+## 0.55.7
+
+### Patch Changes
+
+- @happyvertical/smrt-languages@0.55.7
+  - @happyvertical/smrt-mcp-apps@0.55.7
+  - @happyvertical/smrt-web@0.55.7
+  - @happyvertical/smrt-ui@0.55.7
+  - @happyvertical/smrt-types@0.55.7
+
+## 0.55.6
+
+### Patch Changes
+
+- @happyvertical/smrt-languages@0.55.6
+  - @happyvertical/smrt-mcp-apps@0.55.6
+  - @happyvertical/smrt-web@0.55.6
+  - @happyvertical/smrt-ui@0.55.6
+  - @happyvertical/smrt-types@0.55.6
+
+## 0.55.5
+
+### Patch Changes
+
+- @happyvertical/smrt-languages@0.55.5
+  - @happyvertical/smrt-mcp-apps@0.55.5
+  - @happyvertical/smrt-web@0.55.5
+  - @happyvertical/smrt-ui@0.55.5
+  - @happyvertical/smrt-types@0.55.5
+
+## 0.55.4
+
+### Patch Changes
+
+- @happyvertical/smrt-languages@0.55.4
+  - @happyvertical/smrt-mcp-apps@0.55.4
+  - @happyvertical/smrt-web@0.55.4
+  - @happyvertical/smrt-ui@0.55.4
+  - @happyvertical/smrt-types@0.55.4
+
+## 0.55.3
+
+### Patch Changes
+
+- @happyvertical/smrt-languages@0.55.3
+  - @happyvertical/smrt-mcp-apps@0.55.3
+  - @happyvertical/smrt-web@0.55.3
+  - @happyvertical/smrt-ui@0.55.3
+  - @happyvertical/smrt-types@0.55.3
+
+## 0.55.2
+
+### Patch Changes
+
+- @happyvertical/smrt-languages@0.55.2
+  - @happyvertical/smrt-mcp-apps@0.55.2
+  - @happyvertical/smrt-web@0.55.2
+  - @happyvertical/smrt-ui@0.55.2
+  - @happyvertical/smrt-types@0.55.2
+
 ## 0.55.1
 
 ### Patch Changes
