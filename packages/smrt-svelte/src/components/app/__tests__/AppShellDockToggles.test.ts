@@ -52,6 +52,7 @@ describe('AppShell dock toggles', () => {
     await settle();
     expect(toggle().getAttribute('aria-pressed')).toBe('true');
     expect(panel()?.hidden).toBe(false);
+    expect(container.querySelector('.smrt-admin-shell__focus-tool')).toBeNull();
     toggle().click();
     await settle();
     expect(container.querySelector('.smrt-admin-shell__focus-tool')).toBeNull();

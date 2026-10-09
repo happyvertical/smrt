@@ -1176,8 +1176,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {/if}
       <div class="smrt-admin-shell__rail">
         {@render regionEdit('rightSidebar')}
-        {#if shell.config.panels.right.rail === false && !edgeExpanded('right')}
-          <!-- Railless and closed: nothing to show or tab to. -->
+        {#if shell.config.panels.right.rail === false}
+          <!-- Railless: no tool buttons; the host's toggle opens and closes it. -->
         {:else if focusRail}
           {@render focusRail()}
         {:else if shell.focusTools.length > 0}

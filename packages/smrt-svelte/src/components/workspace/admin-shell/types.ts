@@ -82,10 +82,10 @@ export interface ShellPanelConfig {
    */
   keepMounted?: boolean;
   /**
-   * `false`: a side edge has no rail. Closed, it takes no space and renders
-   * nothing (no focus-tool buttons, no edge toggle, nothing to tab to); a
-   * host opens it from elsewhere, e.g. a dock toggle in the header. Edit
-   * mode still shows its region controls. Default `true`.
+   * `false`: a side edge has no rail: no focus-tool buttons or edge toggle,
+   * open or closed, and no space while closed (nothing to tab to). A host
+   * opens and closes it from elsewhere, e.g. a dock toggle in the header.
+   * Edit mode still shows its region controls. Default `true`.
    */
   rail?: boolean;
 }

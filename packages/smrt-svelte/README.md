@@ -506,7 +506,7 @@ keys the shell renders exactly as before.
   focus (unless something inside already has it) and returns it on close;
   Escape or a scrim click closes it, sliding it back out as the scrim fades
   (no motion under `prefers-reduced-motion`). Resizing applies only while docked.
-- **Railless edges**: `rail: false` gives a side edge no rail: closed, it takes
+- **Railless edges**: `rail: false` gives a side edge no rail (no tool buttons, open or closed); closed, it takes
   no space and renders nothing to see or tab to, and opens from elsewhere (a
   header dock toggle, `useShellDock()`). Pair it with `presentation: 'overlay'`
   for a chat that slides over the page.
