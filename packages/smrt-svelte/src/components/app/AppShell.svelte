@@ -536,19 +536,15 @@ $effect(() => {
       if (shell.viewport === 'phone') return;
       for (const edge of ['left', 'right'] as const) {
         if (shell.config.panels[edge].rail === false) continue;
-        if (shell.isEdgeShown(edge) && shell.panels[edge] === 'collapsed') {
-          shell.setPanelState(edge, 'expanded');
-          revealedByEdit.push(edge);
-        }
+        // Opened for now only: nothing is saved, so the user's own panel
+        // state survives edit mode, a reload and a page unload.
+        if (shell.revealPanelTemporarily(edge)) revealedByEdit.push(edge);
       }
     });
     return;
   }
   untrack(() => {
-    for (const edge of revealedByEdit) {
-      if (shell.panels[edge] === 'expanded')
-        shell.setPanelState(edge, 'collapsed');
-    }
+    for (const edge of revealedByEdit) shell.endTemporaryReveal(edge);
     revealedByEdit = [];
   });
 });

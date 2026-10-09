@@ -79,6 +79,8 @@ export class ShellState {
   readonly adapter: ShellSettingsAdapter | null;
 
   settings = $state<ShellSettingsDelta>({});
+  /** Edges opened for now only (never written to the settings). */
+  private revealed = new Set<PanelEdge>();
   panels = $state<Record<PanelEdge, PanelState>>({
     top: 'collapsed',
     left: 'collapsed',
@@ -343,6 +345,7 @@ export class ShellState {
     untrack(() => {
       this.settings = mergeShellSettingsDelta(this.settings, nextDelta);
       for (const edge of PANEL_EDGES) {
+        this.revealed.delete(edge);
         this.panels[edge] = resolveInitialPanelState(
           edge,
           this.config.panels[edge],
@@ -380,6 +383,7 @@ export class ShellState {
         }
         const config = this.config.panels[edge];
         if (config.initial === 'hidden') continue;
+        this.revealed.delete(edge);
         this.panels[edge] = resolveInitialPanelState(
           edge,
           config,
@@ -413,6 +417,7 @@ export class ShellState {
         this.settings = { ...this.settings, panels: rest };
       }
       if (state === 'expanded') this.closeExclusivePeers(edge);
+      this.revealed.delete(edge);
       this.panels[edge] = state;
       this.applyInline();
       void this.persistSettings();
@@ -473,11 +478,38 @@ export class ShellState {
         if (!side && state === 'expanded') state = 'collapsed';
       }
       if (state === 'expanded') this.closeExclusivePeers(edge);
+      this.revealed.delete(edge);
       this.panels[edge] = state;
       this.settings = mergeShellSettingsDelta(this.settings, {
         panels: { [edge]: state },
       });
       void this.persistSettings();
+    });
+  }
+
+  /**
+   * Open a collapsed, shown sidebar for now only: nothing is written to the
+   * settings or the adapter, so a reload (or a page that unloads meanwhile)
+   * finds the user's own state. Returns whether it opened. An explicit
+   * change of that edge (toggle, `setPanelState`, a new starting state)
+   * makes it the user's, and `endTemporaryReveal` then leaves it alone.
+   */
+  revealPanelTemporarily(edge: PanelEdge): boolean {
+    return untrack(() => {
+      if (!this.isEdgeShown(edge) || this.panels[edge] !== 'collapsed') {
+        return false;
+      }
+      this.panels[edge] = 'expanded';
+      this.revealed.add(edge);
+      return true;
+    });
+  }
+
+  /** Close an edge opened by `revealPanelTemporarily`, without saving. */
+  endTemporaryReveal(edge: PanelEdge): void {
+    untrack(() => {
+      if (!this.revealed.delete(edge)) return;
+      if (this.panels[edge] === 'expanded') this.panels[edge] = 'collapsed';
     });
   }
 

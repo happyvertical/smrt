@@ -263,6 +263,37 @@ describe('right sidebar (dock)', () => {
     expect(api().panels.find((p) => p.edge === 'right')?.visible).toBe(false);
   });
 
+  it('does not persist the sidebar edit mode reveals, and restores it on exit', async () => {
+    const user = userEvent.setup();
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const stored = () => localStorage.getItem('smrt-app-shell');
+    const before = stored();
+    mount();
+    await edit(user);
+    expect(
+      document
+        .querySelector('#smrt-admin-shell-right-panel')
+        ?.getAttribute('data-state'),
+    ).toBe('expanded');
+    await tick();
+    expect(stored()).toBe(before);
+    expect(
+      setItem.mock.calls.filter(([key]) => key === 'smrt-app-shell'),
+    ).toHaveLength(0);
+    await edit(user);
+    expect(
+      document
+        .querySelector('#smrt-admin-shell-right-panel')
+        ?.getAttribute('data-state'),
+    ).toBe('collapsed');
+    await tick();
+    expect(stored()).toBe(before);
+    expect(
+      setItem.mock.calls.filter(([key]) => key === 'smrt-app-shell'),
+    ).toHaveLength(0);
+    setItem.mockRestore();
+  });
+
   it('restores the collapsed sidebar when edit mode ends', async () => {
     const user = userEvent.setup();
     mount();
