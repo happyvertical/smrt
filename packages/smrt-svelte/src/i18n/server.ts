@@ -39,6 +39,7 @@ import './strings.import-export.js';
 import './strings.workspace.js';
 import './strings.screens.js';
 import './strings.palette.js';
+import './strings.overview.js';
 import '../mcp-apps/strings.js';
 
 export interface BuildI18nSnapshotOptions {
