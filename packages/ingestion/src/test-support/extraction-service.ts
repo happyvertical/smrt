@@ -10,14 +10,23 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { extractAnalysis } from '../extraction.js';
-import { extractWithProviders } from '../extraction-providers.js';
+import {
+  emptyExtraction,
+  extractWithProviders,
+} from '../extraction-providers.js';
+import type { EvidenceLocation } from '../extraction-types.js';
 import * as models from '../models.js';
 import {
   type AnalysisLease,
   type IngestionOptions,
   IngestionService,
 } from '../server.js';
-import { extractionLimits, scannedPDF } from './extraction-fixtures.js';
+import {
+  extractionLimits,
+  multipageTIFF,
+  recordedToneWAV,
+  scannedPDF,
+} from './extraction-fixtures.js';
 
 export function extractionServiceSuite(dialect: 'sqlite' | 'postgres') {
   describe(`extraction authority and publication on ${dialect}`, () => {
@@ -34,7 +43,10 @@ export function extractionServiceSuite(dialect: 'sqlite' | 'postgres') {
       configurationRevision: 'v1',
       limits: extractionLimits,
     };
-    let receive: (maxOutputBytes?: number, pdf?: boolean) => Promise<void>;
+    let receive: (
+      maxOutputBytes?: number,
+      media?: 'pdf' | 'tiff' | 'audio',
+    ) => Promise<void>;
     beforeEach(async () => {
       root = await mkdtemp(join(tmpdir(), 'ext-'));
       allowed = true;
@@ -89,18 +101,28 @@ export function extractionServiceSuite(dialect: 'sqlite' | 'postgres') {
         now: () => clock,
       };
       service = new IngestionService(options);
-      receive = async (maxOutputBytes = 65536, pdf = false) => {
+      receive = async (maxOutputBytes = 65536, media) => {
         const receipt = await service.receive({
           sourceId: 'email',
           sourceVersion: '1',
           deliveryKey: randomUUID(),
           deliveredAt: clock,
-          parts: pdf
+          parts: media
             ? [
                 {
                   partId: 'scan',
-                  bytes: scannedPDF(true, true),
-                  mediaType: 'application/pdf',
+                  bytes:
+                    media === 'tiff'
+                      ? multipageTIFF()
+                      : media === 'audio'
+                        ? recordedToneWAV()
+                        : scannedPDF(true, true),
+                  mediaType:
+                    media === 'tiff'
+                      ? 'image/tiff'
+                      : media === 'audio'
+                        ? 'audio/wav'
+                        : 'application/pdf',
                 },
               ]
             : [
@@ -163,7 +185,7 @@ export function extractionServiceSuite(dialect: 'sqlite' | 'postgres') {
       'expiry',
       'supersession',
     ] as const)('stops real child OCR requests after first page %s', async (cause) => {
-      await receive(65536, true);
+      await receive(65536, 'pdf');
       let requests = 0;
       const server = createServer(async (request, response) => {
         request.resume();
@@ -224,6 +246,180 @@ export function extractionServiceSuite(dialect: 'sqlite' | 'postgres') {
         server.closeAllConnections();
         server.close();
       }
+    });
+    it('projects custom adapter identities before persistence and rejects missing identity fields', async () => {
+      const secret = 'custom-identity-secret-marker';
+      expect(
+        await extractAnalysis(
+          service,
+          lease,
+          {
+            extract: async (request) => {
+              const result = await extractWithProviders(request, {});
+              const identity = {
+                ...result.segments[0].provenance,
+                apiKey: secret,
+              };
+              result.segments[0].provenance = identity;
+              Object.assign(result.capabilities[0], {
+                apiKey: secret,
+                accessToken: secret,
+              });
+              return result;
+            },
+          },
+          extraction,
+        ),
+      ).toBe(true);
+      const rows = await db.query(
+        'SELECT data FROM intake_analysis_attempts WHERE id=?',
+        lease.attemptId,
+      );
+      expect(JSON.stringify(rows.rows)).not.toContain(secret);
+      expect(JSON.stringify(rows.rows)).not.toContain('apiKey');
+      await receive();
+      for (const target of ['capabilities', 'segments'] as const) {
+        await expect(
+          extractAnalysis(
+            service,
+            lease,
+            {
+              extract: async (request) => {
+                const result = await extractWithProviders(request, {});
+                const identity =
+                  target === 'capabilities'
+                    ? result.capabilities[0]
+                    : result.segments[0].provenance;
+                Object.assign(identity, { model: undefined });
+                return result;
+              },
+            },
+            extraction,
+          ),
+        ).rejects.toThrow();
+      }
+      const unpublished = await db.query(
+        'SELECT output_digest FROM intake_analysis_attempts WHERE id=?',
+        lease.attemptId,
+      );
+      expect(unpublished.rows[0].output_digest).toBe('');
+    });
+    it.each([
+      'pdf',
+      'tiff',
+      'audio',
+    ] as const)('preserves partial %s diagnostics and precise trimmed locations', async (media) => {
+      await receive(2300, media);
+      const missing: EvidenceLocation =
+        media === 'audio'
+          ? { kind: 'time', startMs: 80, endMs: 100 }
+          : { kind: 'page', page: 2 };
+      const removed: EvidenceLocation =
+        media === 'audio'
+          ? { kind: 'time', startMs: 40, endMs: 80 }
+          : { kind: 'page', page: 1 };
+      const kept: EvidenceLocation =
+        media === 'audio'
+          ? { kind: 'time', startMs: 0, endMs: 40 }
+          : { kind: 'page', page: 1 };
+      expect(
+        await extractAnalysis(
+          service,
+          lease,
+          {
+            extract: async (request) => {
+              // Injected partial provider contract, using valid PDF/TIFF/WAV input bytes.
+              const result = emptyExtraction(request);
+              result.status = 'partial';
+              result.errors = [{ category: 'timeout', location: missing }];
+              result.omitted = [missing];
+              result.segments = [
+                {
+                  text: 'kept observation',
+                  location: kept,
+                  provenance: {
+                    provider: 'fixture',
+                    model: 'none',
+                    version: '1',
+                  },
+                  kind: 'text',
+                  confidence: null,
+                  boxes: null,
+                },
+                {
+                  text: 'discarded observation'.repeat(200),
+                  location: removed,
+                  provenance: {
+                    provider: 'fixture',
+                    model: 'none',
+                    version: '1',
+                  },
+                  kind: 'text',
+                  confidence: null,
+                  boxes: null,
+                },
+              ];
+              return result;
+            },
+          },
+          extraction,
+        ),
+      ).toBe(true);
+      const rows = await db.query(
+        'SELECT data FROM intake_analysis_attempts WHERE id=?',
+        lease.attemptId,
+      );
+      const data =
+        typeof rows.rows[0].data === 'string'
+          ? JSON.parse(rows.rows[0].data)
+          : rows.rows[0].data;
+      const [result] = data.output.results;
+      expect(
+        result.segments.map((segment: { text: string }) => segment.text),
+      ).toEqual(['kept observation']);
+      expect(result.errors).toContainEqual({
+        category: 'timeout',
+        location: missing,
+      });
+      expect(result.errors).toContainEqual({
+        category: 'limit',
+        location: { kind: 'source' },
+      });
+      expect(result.omitted).toEqual([missing, removed]);
+      expect(data.output.truncated).toBe(true);
+    });
+    it('omits the whole result when preserved diagnostic metadata cannot fit', async () => {
+      await receive(1600, 'pdf');
+      expect(
+        await extractAnalysis(
+          service,
+          lease,
+          {
+            extract: async (request) => {
+              const result = emptyExtraction(request);
+              result.status = 'partial';
+              result.errors = Array.from({ length: 100 }, () => ({
+                category: 'unavailable' as const,
+                location: { kind: 'page' as const, page: 2 },
+              }));
+              result.omitted = [{ kind: 'page', page: 2 }];
+              return result;
+            },
+          },
+          extraction,
+        ),
+      ).toBe(true);
+      const rows = await db.query(
+        'SELECT data FROM intake_analysis_attempts WHERE id=?',
+        lease.attemptId,
+      );
+      const data =
+        typeof rows.rows[0].data === 'string'
+          ? JSON.parse(rows.rows[0].data)
+          : rows.rows[0].data;
+      expect(data.output.results).toEqual([]);
+      expect(data.output.omittedEvidenceCount).toBe(1);
+      expect(data.error).toBe('limit');
     });
     it('budgets multipart output including metadata and retains fitting earlier work', async () => {
       await receive(2300);

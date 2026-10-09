@@ -125,17 +125,31 @@ describe('real local SDK provider integration (no remote quality claims)', () =>
   });
   it('runs actual installed PDF SDK in packaged disposable process', async () => {
     const create = await builtAdapter();
+    const identity = {
+      provider: 'unpdf',
+      model: 'none',
+      version: 'unknown',
+      apiKey: 'child-identity-secret-marker',
+    };
     const adapter = create({
       nativeMemoryIsolation: 'host-enforced',
       pdf: {
         provider: 'unpdf',
-        identity: { provider: 'unpdf', model: 'none', version: 'unknown' },
+        identity,
       },
     });
     const result = await adapter.extract(
       extractionRequest(embeddedPDF(), 'application/pdf'),
     );
     expect(result.errors).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain(
+      'child-identity-secret-marker',
+    );
+    expect(Object.keys(result.segments[0].provenance).sort()).toEqual([
+      'model',
+      'provider',
+      'version',
+    ]);
     expect(result.segments[0].text).toContain('Retained invoice 42');
   });
   it('terminates a hung actual speech HTTP adapter and reports safe timeout', async () => {

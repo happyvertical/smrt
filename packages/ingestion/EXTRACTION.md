@@ -12,7 +12,10 @@ provider child under an OS/container native-memory ceiling. Node's heap limit
 cannot bound native allocations, and PDF's renderer has no pre-render pixel
 limit. Without that host guarantee, adapter construction refuses to run. A
 configured provider must be pinned, not `auto`; OCR fallback is disabled so
-capability provenance cannot silently change.
+capability provenance cannot silently change. Identity objects are projected onto
+exactly `provider`, `model`, and `version`, each a required nonblank string. Extra
+host fields never enter capability or segment identities, including through
+trusted custom adapter results at the publication boundary.
 
 The adapter forks one disposable Node process per retained part. Deadline or
 cancellation kills it (and its process group on POSIX); provider stdout/stderr
@@ -59,7 +62,10 @@ the complete serialized analysis envelope across all parts, including provenance
 capabilities, usage, and failure metadata. Extraction reserves room for a `limit`
 outcome and retains fitting earlier parts/segments when the aggregate is too
 large. Top-level `truncated` and `omittedEvidenceCount` identify publication
-omissions; per-result omissions identify discarded segments. If the ceiling
+omissions; per-result omissions retain every discarded segment's exact page or
+time location. Existing errors and omitted ranges survive trimming unchanged.
+If those diagnostic records cannot fit, the entire result is omitted rather than
+publishing an incomplete account of its known failures. If the ceiling
 cannot fit the minimum result envelope, no provider runs: `failAnalysis` records
 only a fixed safe category and terminal lifecycle state, with no provider output
 or output digest. That service-owned failure accounting is outside the provider

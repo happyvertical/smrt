@@ -17,7 +17,7 @@ import type {
   ExtractionSegment,
   ProviderIdentity,
 } from './extraction-types.js';
-import { validLimits } from './extraction-types.js';
+import { providerIdentity, validLimits } from './extraction-types.js';
 
 export interface ExtractionProviders {
   pdf?: {
@@ -134,7 +134,7 @@ export async function extractWithProviders(
   ): ExtractionSegment => ({
     text: text(value),
     location,
-    provenance,
+    provenance: providerIdentity(provenance),
     kind,
     confidence: null,
     boxes: null,
@@ -147,6 +147,7 @@ export async function extractWithProviders(
     truncation: 'unknown' | 'reported' = 'unknown',
     usage: 'unknown' | 'reported' = 'unknown',
   ) => {
+    identity = providerIdentity(identity);
     if (
       !result.capabilities.some(
         (c) =>

@@ -17,6 +17,7 @@ import type {
   ExtractionResult,
   ProviderIdentity,
 } from './extraction-types.js';
+import { providerIdentity } from './extraction-types.js';
 import type { AnalysisLease, IngestionService } from './server.js';
 
 export type * from './extraction-types.js';
@@ -59,13 +60,7 @@ export function createSDKExtractionAdapter(
     configuration.speech,
     configuration.vision,
   ]) {
-    if (
-      provider &&
-      Object.values(provider.identity).some(
-        (value) => typeof value !== 'string' || !value.trim(),
-      )
-    )
-      throw new Error('Explicit provider identity required');
+    if (provider) provider.identity = providerIdentity(provider.identity);
   }
   if (
     configuration.pdf?.provider === 'auto' ||
@@ -202,7 +197,7 @@ export function createSDKExtractionAdapter(
   };
 }
 
-function assertExtractionOutput(
+function validateAndNormalizeExtractionOutput(
   result: ExtractionResult,
   request: ExtractionRequest,
 ): void {
@@ -242,6 +237,10 @@ function assertExtractionOutput(
     !Array.isArray(result.capabilities) ||
     result.capabilities.some(
       (capability) =>
+        !capability ||
+        typeof capability.confidence !== 'boolean' ||
+        typeof capability.boxes !== 'boolean' ||
+        !['source', 'page', 'time'].includes(capability.location) ||
         !['unknown', 'reported'].includes(capability.truncation) ||
         !['unknown', 'reported'].includes(capability.usage),
     ) ||
@@ -302,6 +301,17 @@ function assertExtractionOutput(
     Object.values(result.usage).some((value) => !numeric(value))
   )
     throw new Error('Invalid extraction output');
+  // Structural typing permits extra host fields. Never persist them as identity.
+  for (const segment of result.segments)
+    segment.provenance = providerIdentity(segment.provenance);
+  result.capabilities = result.capabilities.map((capability) => ({
+    ...providerIdentity(capability),
+    confidence: capability.confidence,
+    boxes: capability.boxes,
+    location: capability.location,
+    truncation: capability.truncation,
+    usage: capability.usage,
+  }));
 }
 
 /** Current access is rechecked on read and fenced publication by the foundation.
@@ -397,17 +407,19 @@ export async function extractAnalysis(
         await service.getAnalysisInput(lease);
       },
     });
-    assertExtractionOutput(result, request);
+    validateAndNormalizeExtractionOutput(result, request);
     results.push(result);
     if (!fits(publication(true))) {
       limited = true;
       // Preserve earlier parts and the largest prefix of complete segments that fits.
       result.status = 'partial';
       result.truncated = true;
-      result.errors = [{ category: 'limit', location: { kind: 'source' } }];
-      result.omitted = [{ kind: 'source' }];
-      while (result.segments.length && !fits(publication(true)))
-        result.segments.pop();
+      result.errors.push({ category: 'limit', location: { kind: 'source' } });
+      while (result.segments.length && !fits(publication(true))) {
+        const removed = result.segments.pop();
+        if (removed) result.omitted.push(removed.location);
+      }
+      // Diagnostics are indivisible: omit this result rather than erase known gaps.
       if (!fits(publication(true))) results.pop();
     }
     // Revalidation after an external call prevents returning/publishing revoked evidence.

@@ -1,6 +1,9 @@
 import sharp from 'sharp';
 import { describe, expect, it, vi } from 'vitest';
-import { proposeDocumentSplits } from './extraction.js';
+import {
+  createSDKExtractionAdapter,
+  proposeDocumentSplits,
+} from './extraction.js';
 import {
   type ExtractionProviders,
   extractWithProviders,
@@ -47,6 +50,38 @@ function ocr(
   };
 }
 describe('deterministic injected SDK extraction contracts (not quality evaluation)', () => {
+  it('requires every declared identity field and strips extra host credentials', async () => {
+    for (const field of ['provider', 'model', 'version']) {
+      for (const value of [undefined, null, '', '   ', 42]) {
+        expect(() =>
+          createSDKExtractionAdapter({
+            nativeMemoryIsolation: 'host-enforced',
+            ocr: { identity: { ...fixtureIdentity, [field]: value } as never },
+          }),
+        ).toThrow('Explicit provider identity required');
+      }
+    }
+    const identity = { ...fixtureIdentity, apiKey: 'identity-secret-marker' };
+    const result = await extractWithProviders(
+      extractionRequest(await png(), 'image/png'),
+      { ocr: ocr({ identity }) },
+    );
+    expect(result.status).toBe('complete');
+    expect(JSON.stringify(result)).not.toContain('identity-secret-marker');
+    expect(result.segments[0].provenance).toEqual(fixtureIdentity);
+    expect(Object.keys(result.capabilities[0]).sort()).toEqual(
+      [
+        'provider',
+        'model',
+        'version',
+        'confidence',
+        'boxes',
+        'location',
+        'truncation',
+        'usage',
+      ].sort(),
+    );
+  });
   it('retains email body/attachment source identity and raw HTML as text evidence', async () => {
     const request = extractionRequest(
       Buffer.from('<b>message</b>'),

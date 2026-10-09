@@ -34,3 +34,11 @@ whose aggregate exceeds the receipt ceiling, oversized capability metadata, and
 ceilings of 1, 128, and 192 bytes. They verify bounded retained work, terminal
 `limit` accounting, no provider call for insufficient envelopes, consistent
 item/analysis/dispatch projections, and foreign/revoked/stale failure denial.
+
+Round-three regressions seed extra credential fields in structurally typed host
+identities, exercise the packaged PDF child, and verify that custom adapter
+identity extras never reach persisted output on either database. Missing or
+blank required identity fields are rejected. Injected already-partial PDF, TIFF,
+and audio results under small publication ceilings retain existing failure
+categories and omitted ranges plus exact locations of removed segments. When
+diagnostic metadata itself cannot fit, the whole result is explicitly omitted.

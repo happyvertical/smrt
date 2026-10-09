@@ -14,6 +14,23 @@ export interface ProviderIdentity {
   model: string;
   version: string;
 }
+/** Project host/provider objects onto the only persistable identity fields. */
+export function providerIdentity(value: unknown): ProviderIdentity {
+  if (!value || typeof value !== 'object')
+    throw new Error('Explicit provider identity required');
+  const { provider, model, version } = value as Record<string, unknown>;
+  if (
+    [provider, model, version].some(
+      (field) => typeof field !== 'string' || !field.trim(),
+    )
+  )
+    throw new Error('Explicit provider identity required');
+  return {
+    provider: provider as string,
+    model: model as string,
+    version: version as string,
+  };
+}
 export type EvidenceLocation =
   | { kind: 'source' }
   | { kind: 'page'; page: number }
