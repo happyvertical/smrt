@@ -265,7 +265,7 @@ function onmove(move: SortableItemMove<SortableItem>): void {
   .smrt-section-menu__card-link::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
   .smrt-section-menu__card-link:focus-visible { outline: none; }
   .smrt-section-menu__card-link:focus-visible::after { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
-  .smrt-section-menu__card-icon { display: inline-grid; place-items: center; inline-size: 56px; block-size: 56px; border-radius: 50%; background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+  .smrt-section-menu__card-icon { display: inline-grid; place-items: center; inline-size: 56px; block-size: 56px; border-radius: var(--smrt-radius-full, 9999px); background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
   .smrt-section-menu__card-title { font-size: var(--smrt-typography-title-medium-size, 1rem); font-weight: var(--smrt-typography-weight-medium, 500); overflow-wrap: anywhere; }
   .smrt-section-menu__desc { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
   .smrt-section-menu__card-foot { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2); }
