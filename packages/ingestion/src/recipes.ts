@@ -36,6 +36,15 @@ export class IngestionInboxRecipe extends SmrtRecipe {
     description: 'Incoming material and its authenticated review workflow.',
   };
   static models = [IntakeItem, IntakeEvidence];
+  static runtime = 'browser' as const;
+  static surfaces = [
+    {
+      kind: 'route',
+      path: '/ingestion/inbox',
+      export: '@happyvertical/smrt-ingestion/svelte#IntakeInbox',
+      label: 'Ingestion inbox',
+    },
+  ] as const;
   static nav = [
     {
       label: 'Ingestion inbox',
@@ -74,6 +83,15 @@ export class IngestionReviewRecipe extends SmrtRecipe {
     IntakeAction,
     IntakeReviewDecision,
   ];
+  static runtime = 'browser' as const;
+  static surfaces = [
+    {
+      kind: 'route',
+      path: '/ingestion/review',
+      export: '@happyvertical/smrt-ingestion/svelte#IntakeReview',
+      label: 'Ingestion review',
+    },
+  ] as const;
   static nav = [
     {
       label: 'Ingestion review',

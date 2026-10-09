@@ -170,3 +170,8 @@ do not configure a source or provider, expose generic CRUD routes, or enable
 automatic execution. Mount `IntakeInbox` and `IntakeReview` with an
 authenticated `IntakeReviewHost`; [REVIEW.md](REVIEW.md) remains the source of
 truth for its scoped callbacks and freshness checks.
+
+The recipe manifest registers those existing browser components as
+`/ingestion/inbox` and `/ingestion/review` routes for a host to mount. The route
+metadata does not supply a host, source, provider, or demo fixture, and it does
+not change the preview-only status.

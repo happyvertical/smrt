@@ -23,6 +23,17 @@ describe('ingestion recipes', () => {
       icon: 'archive',
       description: 'Incoming material and its authenticated review workflow.',
     });
+    expect(IngestionInboxRecipe.runtime).toBe('browser');
+    expect(IngestionInboxRecipe.surfaces).toEqual([
+      {
+        kind: 'route',
+        path: '/ingestion/inbox',
+        export: '@happyvertical/smrt-ingestion/svelte#IntakeInbox',
+        label: 'Ingestion inbox',
+      },
+    ]);
+    expect(IngestionInboxRecipe.providers).toBeUndefined();
+    expect(IngestionInboxRecipe.demoSeed).toBeUndefined();
     expect(IngestionInboxRecipe.nav).toEqual([
       {
         label: 'Ingestion inbox',
@@ -47,6 +58,17 @@ describe('ingestion recipes', () => {
     ]);
     expect(IngestionReviewRecipe.group).toEqual(IngestionInboxRecipe.group);
     expect(IngestionReviewRecipe.section).toEqual(IngestionInboxRecipe.section);
+    expect(IngestionReviewRecipe.runtime).toBe('browser');
+    expect(IngestionReviewRecipe.surfaces).toEqual([
+      {
+        kind: 'route',
+        path: '/ingestion/review',
+        export: '@happyvertical/smrt-ingestion/svelte#IntakeReview',
+        label: 'Ingestion review',
+      },
+    ]);
+    expect(IngestionReviewRecipe.providers).toBeUndefined();
+    expect(IngestionReviewRecipe.demoSeed).toBeUndefined();
     expect(IngestionReviewRecipe.nav).toEqual([
       {
         label: 'Ingestion review',
