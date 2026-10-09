@@ -101,6 +101,48 @@ export class EmailAccount extends Account {
   }
 
   /**
+   * Read an immutable body/attachment-byte snapshot for an authorized intake host.
+   * Does not sync, acknowledge, mark read or advance mailbox checkpoints.
+   * Metadata-only providers fail explicitly; provider paths are never dereferenced.
+   */
+  async readIntakeMessage(
+    locator: string,
+    maxBytes: number,
+    imapIdentity?: { folder: string; uidValidity: number; uid: string },
+  ) {
+    if (!this.id || !this.isActive || !locator) {
+      throw new Error('Email intake account unavailable');
+    }
+    const client = await this.createClient();
+    try {
+      await client.connect();
+      if (this.providerType === 'imap') {
+        if (
+          !imapIdentity?.folder ||
+          !imapIdentity.uid ||
+          !Number.isSafeInteger(imapIdentity.uidValidity)
+        ) {
+          throw new Error(
+            'IMAP intake requires folder and immutable UID identity',
+          );
+        }
+        const folder = await client.selectFolder(imapIdentity.folder);
+        if (folder.uidValidity !== imapIdentity.uidValidity) {
+          throw new Error('IMAP intake identity changed');
+        }
+      }
+      const message = await client.getMessage(locator);
+      if (this.providerType === 'imap' && message.id !== imapIdentity?.uid) {
+        throw new Error('IMAP intake identity changed');
+      }
+      const { snapshotEmailForIntake } = await import('../intake-snapshot.js');
+      return snapshotEmailForIntake(this.id, message, maxBytes);
+    } finally {
+      await client.disconnect();
+    }
+  }
+
+  /**
    * Sync emails from the email server to the database
    */
   async syncFrom(options: SyncOptions = {}): Promise<SyncResult> {

@@ -77,3 +77,72 @@ for the public handler catalog, required host authorization/target locks, deploy
 migrations and jobs continuation integration. The maintained application reference
 in `reference/handlers.ts` creates draft ContentDocuments and attaches retained
 evidence through public domain APIs; it is not a published runtime adapter.
+
+## Configured source adapters
+
+The server entry exports `createSourceDeliveryHandler`, `EmailSourceAdapter`,
+`WatchFolderSourceAdapter`, and `createVendorWebhookHandler`. Construct a
+`SourceBinding` from authenticated host configuration: enabled flag, scoped
+`IngestionService`, stable source ID/version, captured authority ceiling,
+retention policy, allowed media types and receipt limits. Re-resolve this binding
+when grants/configuration change. Source payloads never supply authority.
+
+The reference POST handler authenticates before reading bytes and requires
+`Idempotency-Key`. JSON accepts exactly `capturedAt` and one of `text`,
+`structured`, or `reference: { owner: 'asset'|'message', id, version }`.
+The host's `snapshotReference` must authorize current ownership and return copied
+bytes; an absent snapshot fails rather than acknowledging a mutable locator.
+Multipart accepts one `file` plus `captureId` (equal to the idempotency key),
+`capturedAt`, `captureSource` (`camera`, `native_picker`, `audio`, `document`), and optional
+lowercase SHA-256 `sha256`. This reuses mobile's durable UUID Idempotency-Key,
+MIME-bearing file part and explicit capture metadata convention. Captures retain
+original bytes and a parent metadata evidence record. Configure both the wire
+limit `maxRequestBytes` and receipt `maxBytes`/`maxParts`; include
+`application/json` in the media allowlist for capture/email metadata. Signature
+checks cover PDF, TIFF, PNG/JPEG/WebP and WAV/Ogg/WebM/MP3/MP4 audio; signature
+acceptance promises preservation, not extraction support or codec validity.
+
+Email is explicitly opt-in per configured account. `EmailSourceAdapter` takes a
+`readMessage` callback compatible with the messages owner's
+`EmailAccount.readIntakeMessage(providerLookup, maxBytes, imapIdentity?)` snapshot.
+The provider lookup is Gmail message ID, POP3 UIDL, or IMAP RFC Message-ID; it
+is separate from the delivery dedupe key. IMAP requires `{ folder, uidValidity,
+uid }`: the method selects the mailbox and verifies UIDVALIDITY and returned UID.
+Ambiguous sender IDs resolving to another UID fail explicitly. That method connects,
+fetches the full message including actual attachment bytes, copies the bytes,
+and disconnects. Metadata-only attachments fail explicitly. It never reads an
+attachment path supplied by a provider. A host lists provider deliveries using a
+stable account-specific locator (for IMAP include folder, UIDVALIDITY and UID),
+an explicit revision, and an opaque resumable checkpoint. Same locator/revision
+with changed bytes conflicts; an explicit new revision creates a new receipt.
+Do not use sender-controlled RFC Message-ID as the sole transport identity.
+`receiveBatch` processes in order and stops at the first failure. The host owns
+durable checkpoint storage and commits its `acknowledge` callback only after the
+adapter has received accepted/duplicate. If checkpoint persistence fails, retry
+returns the original receipt. Message/thread/attachment relationships are copied;
+credentials and arbitrary headers are excluded. The ordinary `syncFrom` metadata
+sync remains separate; `hasAttachments` is never proof of byte preservation.
+
+Watch-folder intake polls only an explicitly configured existing private local
+directory. Producers should close their files, preferably publishing with atomic
+rename. Two unchanged size/inode/mtime/ctime observations separated by
+`stabilityMs` are required, and the interval runs again after claim/restart.
+A private `.ingestion-claims/<UUID>/claim.json` intent is synced before atomically
+renaming the original into that directory. Keep the directory on one filesystem,
+under the host's ownership; symlink inputs are refused. A file descriptor still
+held by an uncooperative producer can write after any stability window, so the
+producer close/publish protocol is required for immutable input. Accepted or
+duplicate receipts move the entire claim to `.ingestion-processed`; do not delete
+claims to retry. Polling recovers persisted UUIDs after process death, so receipt
+replay deduplicates ready-without-ack. `failure.json` and poll results expose safe
+categories while originals remain available. Intent directories without an
+original mean death before claim or a competing poll won; the producer original
+has not been removed. Operators may remove these empty intents after confirming
+no active importer. Keep processed originals according to the host's retention
+policy. This adapter does not watch arbitrary paths or start background loops.
+
+Vendor webhooks use a host `verify(request, originalBytes)` callback after bounded
+raw-body reading. The callback must verify signature, delivery time/replay window
+and account ownership, then return trusted binding and durable delivery identity.
+No vendor implementation or hardware driver is selected. All adapters invoke
+only receipt preservation, never domain writes, AI tools or external actions.
