@@ -40,7 +40,7 @@ const { t } = useI18n();
     {#if compact}
       {#if !logoSrc}<span aria-hidden="true">{title.charAt(0)}</span>{/if}
     {:else}
-      <div class="smrt-admin-shell__brand-text"><strong>{title}</strong>{#if subtitle}<span>{subtitle}</span>{/if}</div>
+      <div class="smrt-admin-shell__brand-text" class:wordmark={Boolean(logoSrc) && !subtitle}><strong>{title}</strong>{#if subtitle}<span>{subtitle}</span>{/if}</div>
     {/if}
   {/if}
 {/snippet}
@@ -76,5 +76,11 @@ const { t } = useI18n();
 
   .smrt-admin-shell__brand span {
     color: var(--smrt-color-on-surface-variant);
+  }
+
+  /* Logo and title alone ([logo] Planner): the title reads as a wordmark,
+     its line as tall as the 2rem logo. */
+  .smrt-admin-shell__brand-text.wordmark strong {
+    font: var(--smrt-typography-headline-small-font, 500 1.5rem/2rem sans-serif);
   }
 </style>

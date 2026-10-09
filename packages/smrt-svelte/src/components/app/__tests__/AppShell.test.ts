@@ -51,6 +51,10 @@ describe('AppShell', () => {
     const link = logo?.closest('a');
     expect(link?.getAttribute('href')).toBe('/');
     expect(link?.textContent).toContain('Planner');
+    // Logo + title with no subtitle: the title is a wordmark.
+    expect(
+      container.querySelector('.smrt-admin-shell__brand-text.wordmark'),
+    ).not.toBeNull();
   });
 
   it('renders the shell with and without navigation', async () => {
