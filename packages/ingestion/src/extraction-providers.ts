@@ -100,6 +100,15 @@ export async function extractWithProviders(
     if (request.signal?.aborted) fail('cancelled');
     if (Date.now() - started >= request.limits.timeoutMs) fail('timeout');
   };
+  const authorize = async () => {
+    check();
+    try {
+      await request.beforeProviderCall?.();
+    } catch {
+      fail('cancelled');
+    }
+    check();
+  };
   const report = () => {
     result.usage.elapsedMs = Date.now() - started;
     progress?.(structuredClone(result));
@@ -173,6 +182,7 @@ export async function extractWithProviders(
     check();
     if (!providers.ocr) fail('unsupported_type');
     const { identity } = providers.ocr;
+    await authorize();
     const caps = await providers.ocr.capabilities();
     if (
       !caps.canPerformOCR ||
@@ -190,6 +200,7 @@ export async function extractWithProviders(
       boxes,
       location.kind === 'page' ? 'page' : 'source',
     );
+    await authorize();
     const output = await providers.ocr.performOCR([image], {
       timeout: request.limits.timeoutMs,
       outputFormat: 'json',
@@ -266,8 +277,10 @@ export async function extractWithProviders(
       );
     if (!providers.vision) fail('unsupported_type');
     const { client, identity } = providers.vision;
+    await authorize();
     const caps = await client.getCapabilities();
     if (!caps.vision || !caps.chat) fail('unsupported_type');
+    await authorize();
     const output = await client.chat(
       [
         {
@@ -345,9 +358,11 @@ export async function extractWithProviders(
     } else if (mime === 'application/pdf') {
       if (!providers.pdf) fail('unsupported_type');
       const { client, identity } = providers.pdf;
+      await authorize();
       const caps = await client.checkCapabilities();
       if (!caps.canExtractMetadata || !caps.canExtractText)
         fail('unsupported_type');
+      await authorize();
       const metadata = await client.extractMetadata(request.bytes);
       if (metadata.encrypted) fail('unsupported_type');
       if (!Number.isSafeInteger(metadata.pageCount) || metadata.pageCount < 1)
@@ -358,6 +373,7 @@ export async function extractWithProviders(
         check();
         const location: EvidenceLocation = { kind: 'page', page };
         try {
+          await authorize();
           const embedded = await client.extractText(request.bytes, {
             pages: [page],
             skipOCRFallback: true,
@@ -366,6 +382,7 @@ export async function extractWithProviders(
             fail('malformed_output');
           if (embedded?.trim()) add(segment(embedded, location, identity));
           else {
+            await authorize();
             const rendered = await client.renderPages(request.bytes, {
               pages: [page],
               scale: 1,
@@ -448,6 +465,7 @@ export async function extractWithProviders(
     ) {
       if (!providers.speech) fail('unsupported_type');
       const { client, identity } = providers.speech;
+      await authorize();
       const output = await client.transcribe({
         audio: request.bytes,
         mimeType: mime,

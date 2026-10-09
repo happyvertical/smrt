@@ -12,6 +12,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import type {
   AnalysisOutput,
   IntakeEvidenceDTO,
+  IntakeFailure,
   IntakeItemDTO,
   IntakeLimits,
   ReceiptResult,
@@ -1033,6 +1034,7 @@ export class IngestionService {
     attemptId: string;
     fence: number;
     inputDigest: string;
+    maxOutputBytes: number;
     configuration: Record<string, unknown>;
     evidence: IntakeEvidenceDTO[];
   }> {
@@ -1104,6 +1106,7 @@ export class IngestionService {
         attemptId: lease.attemptId,
         fence: lease.fence,
         inputDigest: String(analysis.input_digest),
+        maxOutputBytes: Number(object(object(item.data).limits).maxOutputBytes),
         configuration,
         evidence,
       };
@@ -1209,6 +1212,75 @@ export class IngestionService {
           lease.itemId,
           lease.revision,
         );
+      return true;
+    });
+  }
+  /** Terminal failure accounting without a provider payload. The fixed safe error
+   * and lifecycle metadata are not charged to the provider-output byte ceiling. */
+  async failAnalysis(
+    lease: AnalysisLease,
+    category: IntakeFailure,
+  ): Promise<boolean> {
+    if (!failures.has(category)) throw new Error('Invalid analysis failure');
+    return this.tx(async (db) => {
+      await this.lock(db, lease.itemId);
+      const item = await this.item(lease.itemId, 'process', db);
+      if (item.cancelled || Number(item.analysis_revision) !== lease.revision)
+        return false;
+      const [analysis] = await this.rows(
+        db,
+        'intake_analyses',
+        'id=? AND item_id=?',
+        [lease.analysisId, lease.itemId],
+      );
+      const [attempt] = await this.rows(
+        db,
+        'intake_analysis_attempts',
+        'id=? AND analysis_id=? AND item_id=?',
+        [lease.attemptId, lease.analysisId, lease.itemId],
+      );
+      if (
+        !analysis ||
+        !attempt ||
+        Number(analysis.revision) !== lease.revision ||
+        analysis.current_attempt_id !== lease.attemptId ||
+        Number(analysis.fence) !== lease.fence ||
+        Number(attempt.fence) !== lease.fence ||
+        attempt.state !== 'running' ||
+        attempt.lease_token !== lease.token ||
+        persistedDate(attempt.lease_until) <= this.now()
+      )
+        return false;
+      await db.query(
+        "UPDATE intake_analysis_attempts SET state='needs_attention',safe_error=?,data=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+        category,
+        canonical({
+          ...object(attempt.data),
+          completedAt: this.now().toISOString(),
+        }),
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        lease.attemptId,
+      );
+      await db.query(
+        "UPDATE intake_analyses SET state='needs_attention' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        lease.analysisId,
+      );
+      await db.query(
+        "UPDATE intake_items SET processing_state='needs_attention' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        lease.itemId,
+      );
+      await db.query(
+        "UPDATE intake_dispatches SET state='completed' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND revision=?",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        lease.itemId,
+        lease.revision,
+      );
       return true;
     });
   }

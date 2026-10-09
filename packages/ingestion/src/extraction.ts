@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { GetAIOptions } from '@happyvertical/ai';
 import type { PDFReaderOptions } from '@happyvertical/pdf';
 import type { GetTranscriberOptions } from '@happyvertical/speech';
+import type { AnalysisOutput } from './dto.js';
 import {
   ExtractionFailure,
   emptyExtraction,
@@ -154,8 +155,24 @@ export function createSDKExtractionAdapter(
         });
         child.on(
           'message',
-          (message: { kind: string; result?: ExtractionResult }) => {
+          async (message: {
+            kind: string;
+            id?: number;
+            result?: ExtractionResult;
+          }) => {
             if (done) return;
+            if (
+              message.kind === 'authorize' &&
+              Number.isSafeInteger(message.id)
+            ) {
+              try {
+                await request.beforeProviderCall?.();
+                if (!done) child.send({ kind: 'authorized', id: message.id });
+              } catch {
+                finish('cancelled');
+              }
+              return;
+            }
             if (
               (message.kind === 'progress' || message.kind === 'result') &&
               message.result
@@ -171,7 +188,11 @@ export function createSDKExtractionAdapter(
             } else finish('unavailable');
           },
         );
-        const { signal: _signal, ...wireRequest } = request;
+        const {
+          signal: _signal,
+          beforeProviderCall: _authorize,
+          ...wireRequest
+        } = request;
         child.send({ request: wireRequest, configuration }, (error) => {
           if (error) finish('unavailable');
         });
@@ -313,6 +334,55 @@ export async function extractAnalysis(
   const evidence = snapshot.evidence;
   const boundOptions = { ...options, limits: structuredClone(options.limits) };
   const results: ExtractionResult[] = [];
+  let limited = false;
+  const publication = (reserve = false): AnalysisOutput => {
+    const allComplete =
+      !limited &&
+      results.length === evidence.length &&
+      results.every((result) => result.status === 'complete');
+    const firstError =
+      limited || reserve
+        ? 'limit'
+        : results.flatMap((result) => result.errors)[0]?.category;
+    return {
+      status: reserve
+        ? 'needs_attention'
+        : allComplete
+          ? 'completed'
+          : results.some((result) => result.segments.length)
+            ? 'partial'
+            : 'needs_attention',
+      provider: 'smrt-ingestion-extraction',
+      model: 'none',
+      version: '1',
+      output: {
+        configurationRevision: options.configurationRevision,
+        results,
+        ...(limited || reserve
+          ? {
+              truncated: true,
+              omittedEvidenceCount: evidence.length - results.length,
+            }
+          : {}),
+      },
+      usage: {},
+      ...(firstError ? { error: firstError } : {}),
+    };
+  };
+  // Canonical persistence sorts keys but uses identical JSON value encoding/size.
+  const fits = (output: AnalysisOutput) =>
+    Buffer.byteLength(JSON.stringify(output)) <= snapshot.maxOutputBytes;
+  const minimum: AnalysisOutput = {
+    status: 'needs_attention',
+    provider: 'smrt-ingestion-extraction',
+    model: 'none',
+    version: '1',
+    output: {},
+    usage: {},
+    error: 'limit',
+  };
+  if (!fits(minimum)) return service.failAnalysis(lease, 'limit');
+  if (!fits(publication(true))) return service.completeAnalysis(lease, minimum);
   for (const part of evidence) {
     await service.getAnalysisInput(lease);
     const bytes = await service.readEvidence(lease.itemId, part.id);
@@ -323,31 +393,28 @@ export async function extractAnalysis(
       evidence: { ...part },
       limits: { ...request.limits },
       bytes: bytes.slice(),
+      beforeProviderCall: async () => {
+        await service.getAnalysisInput(lease);
+      },
     });
     assertExtractionOutput(result, request);
     results.push(result);
+    if (!fits(publication(true))) {
+      limited = true;
+      // Preserve earlier parts and the largest prefix of complete segments that fits.
+      result.status = 'partial';
+      result.truncated = true;
+      result.errors = [{ category: 'limit', location: { kind: 'source' } }];
+      result.omitted = [{ kind: 'source' }];
+      while (result.segments.length && !fits(publication(true)))
+        result.segments.pop();
+      if (!fits(publication(true))) results.pop();
+    }
     // Revalidation after an external call prevents returning/publishing revoked evidence.
     await service.getAnalysisInput(lease);
-    if (options.signal?.aborted) break;
+    if (limited || options.signal?.aborted) break;
   }
-  const allComplete =
-    results.length === evidence.length &&
-    results.every((result) => result.status === 'complete');
-  const hasOutput = results.some((result) => result.segments.length);
-  const firstError = results.flatMap((result) => result.errors)[0]?.category;
-  return service.completeAnalysis(lease, {
-    status: allComplete
-      ? 'completed'
-      : hasOutput
-        ? 'partial'
-        : 'needs_attention',
-    provider: 'smrt-ingestion-extraction',
-    model: 'none',
-    version: '1',
-    output: { configurationRevision: options.configurationRevision, results },
-    usage: {},
-    ...(firstError ? { error: firstError } : {}),
-  });
+  return service.completeAnalysis(lease, publication());
 }
 
 /** Side-effect-free, versioned split proposal. Original evidence is not replaced. */

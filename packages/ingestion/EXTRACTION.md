@@ -26,7 +26,11 @@ Persist `{extraction: {configurationRevision, limits}}` using `service.analyze`,
 then claim its lease. Call `extractAnalysis(service, lease, adapter, options)`
 with exactly that revision and limits. The service reloads the immutable input
 snapshot and rechecks current processing authority before each provider and
-before publication. Bytes are read through the service's integrity-checked
+before publication. The production child requests a parent-side authorization
+handshake before each PDF/OCR/vision/speech operation, including calls on later
+pages. Denial kills the child; already transmitted material cannot be recalled.
+Custom trusted adapters must await `request.beforeProviderCall` before every
+provider invocation. Bytes are read through the service's integrity-checked
 reader; revoked, expired, foreign-scope, forged and stale leases fail closed.
 A retry keeps the same analysis input revision; changed provider/model/options
 must use a new configuration revision and `analyze` request key. Credentials are
@@ -49,6 +53,17 @@ even if an injected capability claims otherwise. Measured OCR values retain an
 unknown calibration label; they are not routing certainty or approval. Boxes
 are in decoded image pixels, attached only to that actual page/source. No tables
 are invented: the current PDF/OCR text APIs do not supply a table contract.
+
+The persisted receipt's `maxOutputBytes`, exposed by `getAnalysisInput`, bounds
+the complete serialized analysis envelope across all parts, including provenance,
+capabilities, usage, and failure metadata. Extraction reserves room for a `limit`
+outcome and retains fitting earlier parts/segments when the aggregate is too
+large. Top-level `truncated` and `omittedEvidenceCount` identify publication
+omissions; per-result omissions identify discarded segments. If the ceiling
+cannot fit the minimum result envelope, no provider runs: `failAnalysis` records
+only a fixed safe category and terminal lifecycle state, with no provider output
+or output digest. That service-owned failure accounting is outside the provider
+payload budget; `completeAnalysis` never accepts an oversized result.
 
 Partial page results survive later failures or process timeout. Warnings and
 omitted page/source references remain inspectable. `unsupported_type` covers

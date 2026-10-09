@@ -158,14 +158,14 @@ export function recordedToneWAV(): Buffer {
 }
 
 /** Actual PDF raster page, optionally preceded by an embedded-text page. */
-export function scannedPDF(mixed = false): Buffer {
+export function scannedPDF(mixed = false, allRaster = false): Buffer {
   const raster = 'q 100 0 0 100 20 20 cm /Im1 Do Q';
   const embedded = 'BT /F1 12 Tf 20 100 Td (Embedded first page) Tj ET';
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     `<< /Type /Pages /Kids [3 0 R${mixed ? ' 7 0 R' : ''}] /Count ${mixed ? 2 : 1} >>`,
     `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 160 160] /Resources << /XObject << /Im1 5 0 R >> /Font << /F1 6 0 R >> >> /Contents 4 0 R >>`,
-    `<< /Length ${(mixed ? embedded : raster).length} >>\nstream\n${mixed ? embedded : raster}\nendstream`,
+    `<< /Length ${(mixed && !allRaster ? embedded : raster).length} >>\nstream\n${mixed && !allRaster ? embedded : raster}\nendstream`,
     '<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /ASCIIHexDecode /Length 9 >>\nstream\nff0000ff>\nendstream',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
   ];

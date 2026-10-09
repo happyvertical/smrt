@@ -13,11 +13,24 @@ import type { ExtractionRequest } from './extraction-types.js';
 process.once(
   'message',
   async (message: {
-    request: Omit<ExtractionRequest, 'signal'>;
+    request: Omit<ExtractionRequest, 'signal' | 'beforeProviderCall'>;
     configuration: ExtractionSDKConfiguration;
   }) => {
     try {
       const { request, configuration } = message;
+      let sequence = 0;
+      const beforeProviderCall = () =>
+        new Promise<void>((resolve) => {
+          const id = ++sequence;
+          const receive = (reply: { kind: string; id?: number }) => {
+            if (reply.kind === 'authorized' && reply.id === id) {
+              process.off('message', receive);
+              resolve();
+            }
+          };
+          process.on('message', receive);
+          process.send?.({ kind: 'authorize', id });
+        });
       const providers: ExtractionProviders = {
         imageMode: configuration.imageMode,
       };
@@ -84,8 +97,10 @@ process.once(
           identity: configuration.vision.identity,
           client: await getAI(configuration.vision.options),
         };
-      const result = await extractWithProviders(request, providers, (partial) =>
-        process.send?.({ kind: 'progress', result: partial }),
+      const result = await extractWithProviders(
+        { ...request, beforeProviderCall },
+        providers,
+        (partial) => process.send?.({ kind: 'progress', result: partial }),
       );
       process.send?.({ kind: 'result', result }, () => process.exit(0));
     } catch {

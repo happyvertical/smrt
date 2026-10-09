@@ -1,7 +1,7 @@
 # #3672 extraction behavior contract
 
 Risk: high. Named trigger: the new public `getAnalysisInput` lease/evidence
-authorization boundary; independent review must cover current-grant and snapshot
+authorization boundary and fenced payload-free `failAnalysis`; independent review must cover current-grant and snapshot
 integrity enforcement as well as extraction adapters.
 
 Runtime: repository Node 26.10.0. Extraction itself has no SQL executor; durable
@@ -24,3 +24,13 @@ API exists at base). Fixtures include embedded/scanned/mixed PDF contracts,
 multipage/multiple-document scans, TIFF fax, scene, email/attachments, recorded
 audio, corrupt and unsupported media. These are extraction boundary examples,
 not the ADR held-out routing evaluation corpus. No quality threshold is claimed.
+
+Round-two blocker regressions run on SQLite and PostgreSQL: actual packaged child
+and installed Unlimited-OCR HTTP adapter process a two-raster-page PDF; revoking
+authority, expiring the lease, or superseding the analysis during page-one OCR
+must leave the HTTP request count at one. The old worker produced two requests
+in all three cases. Multipart budget tests include individually fitting outputs
+whose aggregate exceeds the receipt ceiling, oversized capability metadata, and
+ceilings of 1, 128, and 192 bytes. They verify bounded retained work, terminal
+`limit` accounting, no provider call for insufficient envelopes, consistent
+item/analysis/dispatch projections, and foreign/revoked/stale failure denial.

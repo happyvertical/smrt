@@ -69,6 +69,8 @@ export interface ExtractionRequest {
   limits: ExtractionLimits;
   configurationRevision: string;
   signal?: AbortSignal;
+  /** Trusted parent authorization; adapters must await before every provider call. */
+  beforeProviderCall?: () => Promise<void>;
 }
 export interface ExtractionAdapter {
   extract(request: ExtractionRequest): Promise<ExtractionResult>;
