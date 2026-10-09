@@ -298,38 +298,59 @@ bind legacy name-based cleanup to registrations made by that caller, so
 overlapping same-name fields can unmount in either order without retaining a
 detached control.
 
-### Voice typing where the browser cannot (local Whisper)
+### Voice typing where the browser cannot (on-device Whisper and Moonshine)
 
 Browsers differ on speech recognition: Chrome and Safari have it, Firefox does
 not, and Brave has the API without a speech service behind it. `probeBrowserSpeech()`
 says which you have (`'works' | 'missing' | 'unreliable'`) without a network
 call or a microphone prompt. For the last two, offer a one-time model download
-and dictate with Whisper running in the browser (WebGPU where available,
-single-thread WASM otherwise; no cross-origin isolation needed).
+and dictate with a speech model running in the browser (WebGPU where available,
+single-thread WASM otherwise; no cross-origin isolation needed). The engine is
+`@happyvertical/speech/local` (an optional peer, `>=0.102.4`, as is
+`@huggingface/transformers`).
+
+| `model` | Size | Notes |
+| --- | --- | --- |
+| `moonshine-tiny` (`onnx-community/moonshine-tiny-ONNX`) | ~32 MB | English, fastest: best for live dictation |
+| `moonshine-base` (`onnx-community/moonshine-base-ONNX`) | ~67 MB | English, more accurate |
+| `whisper-tiny.en` (default) | ~45 MB | English |
+| `whisper-base.en` / `whisper-small.en` | ~85 / ~260 MB | English |
+| any Hugging Face id, e.g. `onnx-community/whisper-base` | varies | multilingual Whisper |
 
 ```ts
 import {
+  createLocalSpeechModel,
   createSttDictationSource,
-  createWhisperLocalModel,
   probeBrowserSpeech,
 } from '@happyvertical/smrt-svelte/browser-ai';
-// The worker is the only module that imports the optional peer
-// `@huggingface/transformers`, so only apps that build it bundle it.
-import WhisperWorker from '@happyvertical/smrt-svelte/browser-ai/whisper-worker?worker';
+// The worker is the one module that imports the optional peers statically,
+// so only apps that build it bundle them.
+import SpeechWorker from '@happyvertical/smrt-svelte/browser-ai/whisper-worker?worker';
 
 if ((await probeBrowserSpeech()) !== 'works') {
-  const model = createWhisperLocalModel({ createWorker: () => new WhisperWorker() });
-  model.estimateSize();            // ~45 MB, for the consent text
+  const model = createLocalSpeechModel({
+    model: 'moonshine-tiny',
+    createWorker: () => new SpeechWorker(),
+    loadSpeech: () => import('@happyvertical/speech/local'),
+  });
+  model.estimateSize();            // ~32 MB, for the consent text
   await model.isCached();          // already downloaded on this device?
-  await model.load({ onProgress, signal }); // bytes; abort() cancels
-  const dictation = createSttDictationSource({ type: 'whisper-local', modelHandle: model });
+  await model.load({ onProgress, signal }); // downloading -> extracting ("Getting ready") -> complete; abort() cancels
+  const dictation = createSttDictationSource({ type: 'moonshine', modelHandle: model });
 }
 ```
 
+`createWhisperLocalModel`, `{ type: 'whisper-local' }` and the `whisper-wasm`
+alias keep working. Without `createWorker` the model runs on the page's thread
+and `loadModule: () => import('@huggingface/transformers')` supplies the
+runtime. With a worker, `device` and `dtype` are the worker entry's (`auto`
+and `q8`).
+
 Push-to-talk: the microphone records until stopped, then one final result is
-emitted. The default model is `onnx-community/whisper-tiny.en` (8-bit, English
-only); pass `modelId: 'onnx-community/whisper-tiny'` for other languages.
-`'whisper-wasm'` is the former name of the same adapter and still works.
+emitted. For hands-free dictation (each sentence written down when the speaker
+pauses) give smrt-ui's `Dictation` `mode: 'hands-free'` and
+`createHandsFreeCapture`; these adapters' `transcribePcm()` writes down each
+utterance. English-only models (`*.en`, Moonshine) ignore a requested language.
 
 ### Form Components
 

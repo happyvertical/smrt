@@ -75,6 +75,7 @@ export interface STTAdapter {
     | 'browser-speech'
     | 'whisper-wasm'
     | 'whisper-local'
+    | 'moonshine'
     | 'whisper-cpp';
 
   /** Current initialization state */
@@ -153,16 +154,25 @@ export interface BrowserSpeechSTTOptions extends BaseBrowserAIOptions {
 }
 
 /**
- * Local Whisper (transformers.js) adapter options: speech recognition that
- * runs in the browser after a one-time model download, for browsers whose
- * own speech recognition is missing or unreliable (Firefox, Brave).
+ * On-device speech-to-text options (`@happyvertical/speech/local` on
+ * transformers.js): speech recognition that runs in the browser after a
+ * one-time model download, for browsers whose own speech recognition is
+ * missing or unreliable (Firefox, Brave).
  *
- * `'whisper-wasm'` is the older name for the same adapter and is accepted
- * as an alias; `modelSize` maps to the English-only model of that size.
+ * `'whisper-local'` defaults to English-only Whisper; `'moonshine'` defaults
+ * to Moonshine tiny, the fastest model for live dictation. `'whisper-wasm'`
+ * is the older name for `'whisper-local'` and is accepted as an alias;
+ * `modelSize` maps to the English-only Whisper model of that size.
  */
-export interface WhisperLocalSTTOptions extends BaseBrowserAIOptions {
-  type: 'whisper-local' | 'whisper-wasm';
-  /** Hugging Face model id. Default `onnx-community/whisper-tiny.en`. */
+export interface LocalSpeechSTTOptions extends BaseBrowserAIOptions {
+  type: 'whisper-local' | 'whisper-wasm' | 'moonshine';
+  /**
+   * A short name (`'moonshine-tiny'`, `'moonshine-base'`, `'whisper-tiny.en'`,
+   * ...) or a Hugging Face model id. Default `onnx-community/whisper-tiny.en`
+   * (`moonshine-tiny` for `type: 'moonshine'`).
+   */
+  model?: string;
+  /** Alias of `model`. */
   modelId?: string;
   /** Legacy size selector (`whisper-wasm`): picks `whisper-<size>.en`. */
   modelSize?: 'tiny' | 'base' | 'small';
@@ -174,11 +184,17 @@ export interface WhisperLocalSTTOptions extends BaseBrowserAIOptions {
   defaultLanguage?: string;
   /**
    * Make the Web Worker that runs the model. Pass one from the host app, where
-   * the optional `@huggingface/transformers` peer is installed (see
-   * `whisper-local.worker.ts`). Without it the model runs on the page's own
-   * thread.
+   * the optional `@happyvertical/speech` and `@huggingface/transformers`
+   * peers are installed (see `local-speech.worker.ts`). Without it the model
+   * runs on the page's own thread.
    */
   createWorker?: () => Worker;
+  /**
+   * Load `@happyvertical/speech/local`, e.g.
+   * `() => import('@happyvertical/speech/local')`. Needed in a bundled
+   * browser app.
+   */
+  loadSpeech?: () => Promise<unknown>;
   /**
    * Load `@huggingface/transformers` for the in-page fallback, e.g.
    * `() => import('@huggingface/transformers')`. Needed in a browser when
@@ -186,13 +202,16 @@ export interface WhisperLocalSTTOptions extends BaseBrowserAIOptions {
    */
   loadModule?: () => Promise<unknown>;
   /** Share one downloaded model between adapters and a consent UI. */
-  modelHandle?: import('./whisper-local-model.js').WhisperLocalModel;
+  modelHandle?: import('./local-speech-model.js').LocalSpeechModel;
   /** Longest recording in ms (default 2 minutes). */
   maxDurationMs?: number;
 }
 
-/** @deprecated Use {@link WhisperLocalSTTOptions}. */
-export type WhisperWasmSTTOptions = WhisperLocalSTTOptions;
+/** @deprecated Use {@link LocalSpeechSTTOptions}. */
+export type WhisperLocalSTTOptions = LocalSpeechSTTOptions;
+
+/** @deprecated Use {@link LocalSpeechSTTOptions}. */
+export type WhisperWasmSTTOptions = LocalSpeechSTTOptions;
 
 /**
  * Whisper.cpp WASM adapter options (using @remotion/whisper-web)
@@ -208,5 +227,5 @@ export interface WhisperCppSTTOptions extends BaseBrowserAIOptions {
  */
 export type GetSTTOptions =
   | BrowserSpeechSTTOptions
-  | WhisperLocalSTTOptions
+  | LocalSpeechSTTOptions
   | WhisperCppSTTOptions;

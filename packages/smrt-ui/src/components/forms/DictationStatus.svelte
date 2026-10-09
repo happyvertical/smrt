@@ -2,7 +2,9 @@
 /**
  * DictationStatus — what dictation is doing, in words (see `Dictation`).
  *
- * "Listening…" (with the words heard so far) while the microphone is on,
+ * "Listening…" (with the words heard so far) while the microphone is on
+ * (hands-free: "Listening. Just talk…", with "Hearing you…" while someone is
+ * speaking and "Writing it down…" while sentences are being written down),
  * "Writing it down…" while a recording is turned into text, and
  * a plain explanation when it cannot listen: the browser cannot turn speech
  * into text, the microphone is blocked, or nothing was heard. Nothing while
@@ -64,6 +66,20 @@ function errorText(kind: DictationErrorKind | null): string {
   >
     {#if dictation.state === 'starting'}
       {t(M['ui.dictation.starting'])}
+    {:else if dictation.handsFree && dictation.state === 'listening'}
+      <span class="smrt-dictation-status-dot" aria-hidden="true"></span>
+      {#if dictation.queued > 0}
+        <span class="smrt-dictation-status-spinner" aria-hidden="true"></span>
+        {t(M['ui.dictation.transcribing'])}
+      {:else}
+        {t(M['ui.dictation.listening_hands_free'])}
+      {/if}
+      <!-- Visual only: announcing every breath would drown the real messages. -->
+      {#if dictation.speaking}
+        <span class="smrt-dictation-status-interim" aria-hidden="true"
+          >{t(M['ui.dictation.hearing'])}</span
+        >
+      {/if}
     {:else if dictation.state === 'listening' || dictation.state === 'stopping'}
       <span class="smrt-dictation-status-dot" aria-hidden="true"></span>
       {t(M['ui.dictation.listening'])}

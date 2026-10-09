@@ -63,7 +63,12 @@ export const M = defineMessages({
   'ui.dictation.start': 'Speak instead of typing',
   'ui.dictation.start_hint':
     'Speak instead of typing. You can also press and hold the text box.',
+  'ui.dictation.start_hands_free':
+    'Speak instead of typing, hands-free. It writes each sentence down when you pause.',
   'ui.dictation.stop': 'Stop listening',
+  'ui.dictation.listening_hands_free':
+    'Listening. Just talk; I write it down when you pause. Tap the microphone when you are done.',
+  'ui.dictation.hearing': 'Hearing you…',
   'ui.dictation.starting': 'Getting the microphone ready…',
   'ui.dictation.listening': 'Listening. Tap the microphone when you are done.',
   'ui.dictation.unsupported':

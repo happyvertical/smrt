@@ -81,6 +81,21 @@ pnpm add @happyvertical/smrt-ui
   body (`Content-Type` is the recording's type, `?language=&durationMs=`)
   and answers `{ text }`; 413, 503 and 401/403 become "too long", "not set
   up" and "not allowed" messages.
+- Hands-free dictation: `new Dictation({ mode: 'hands-free', handsFreeCapture:
+  createHandsFreeCapture, … })` keeps the microphone on and writes each
+  sentence down when the speaker pauses; one tap on the microphone ends it.
+  `createHandsFreeCapture` comes from `@happyvertical/smrt-ui/forms/hands-free`,
+  the one entry that imports the optional peer `@happyvertical/speech`
+  (>= 0.102.4: on-device voice activity detection with an adaptive noise
+  floor, pre-roll and a 30 s split; no audio leaves the page). It needs a
+  speech source with `transcribePcm` (smrt-svelte's on-device `whisper-local`
+  and `moonshine`); with any of the three missing it is plain press-to-talk.
+  Utterances are written down one at a time in the order spoken
+  (`dictation.queued` counts those waiting); `speaking` and `level` (0 to 1)
+  drive the button: a steady ring while listening, a halo that swells with the
+  voice while speaking, a spinner while writing down, all still under
+  `prefers-reduced-motion`. `vad` tunes `silenceMs` (default 800),
+  `minSpeechMs`, `preRollMs`, `maxUtteranceMs` and `sensitivity`.
 
 ### Link tabs
 

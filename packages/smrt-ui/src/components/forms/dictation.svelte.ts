@@ -38,6 +38,17 @@
  * while `transcribe(audio, { mimeType, language })` turns the recording into
  * text, which goes to `onText` like a spoken phrase. Once the browser's
  * recogniser has failed, this `Dictation` records straight away next time.
+ *
+ * Hands-free: with `mode: 'hands-free'`, a `handsFreeCapture` factory and a
+ * source that has `transcribePcm` (smrt-svelte's on-device `whisper-local`
+ * and `moonshine`), listening starts once and then stays on. The microphone
+ * is cut into utterances on the device: `speaking` is true while one is
+ * being spoken, `level` follows the voice, and each finished utterance is
+ * written down (`queued` counts those waiting) and handed to `onText` in
+ * the order spoken, while the next one is already being heard. One tap ends
+ * it; whatever was said last is still written down (`transcribing`) before
+ * it goes `idle`. Where any of the three is missing it is ordinary
+ * press-to-talk.
  */
 import {
   canCaptureDictationAudio,
@@ -47,6 +58,12 @@ import {
   DictationError,
 } from './audio-capture.js';
 import type { DictationTranscribe } from './dictation-transcribe.js';
+import type {
+  HandsFreeCapture,
+  HandsFreeCaptureFactory,
+  HandsFreeUtterance,
+  HandsFreeVadOptions,
+} from './hands-free-capture.js';
 import { playReadyBeep } from './ready-beep.js';
 
 export type DictationState =
@@ -122,6 +139,16 @@ export interface DictationSpeechSource {
   /** When given, listening (and the beep) starts on this event. */
   onStart?(callback: () => void): () => void;
   /**
+   * Write down one finished utterance (16 kHz mono PCM, -1 to 1) and resolve
+   * the text (empty when nothing intelligible was said). A source that has
+   * it can be used in hands-free mode, where `Dictation` captures and
+   * segments the microphone itself and never calls `start`.
+   */
+  transcribePcm?(
+    pcm: Float32Array,
+    options?: { language?: string },
+  ): Promise<string>;
+  /**
    * How long to wait for the source to finish after `stop()` before giving
    * up (default: the `stopTimeoutMs` option). A source that writes the
    * message down after the person stops (a model running in the browser)
@@ -178,6 +205,19 @@ export interface DictationOptions {
   transcribe?: DictationTranscribe | null;
   /** Records the message (default: `MediaRecorder`). For tests and hosts. */
   capture?: DictationAudioCaptureFactory;
+  /**
+   * `'push'` (default): listen until stopped. `'hands-free'`: stay on and
+   * write down each utterance as it ends (see the module comment). Needs
+   * `handsFreeCapture` and a source with `transcribePcm`, else it is `'push'`.
+   */
+  mode?: 'push' | 'hands-free';
+  /**
+   * The microphone for hands-free mode, normally `createHandsFreeCapture`
+   * from `@happyvertical/smrt-ui/forms/hands-free`.
+   */
+  handsFreeCapture?: HandsFreeCaptureFactory | null;
+  /** Voice activity tuning for hands-free mode (pause length, sensitivity). */
+  vad?: HandsFreeVadOptions;
   /** Longest recording, in ms; it stops and is written down then. Default 120000. */
   maxDurationMs?: number;
   /** Largest recording, in bytes. Default 10 MB. */
@@ -203,7 +243,8 @@ export interface DictationLogEvent {
     | 'error'
     | 'end'
     | 'record'
-    | 'transcribe';
+    | 'transcribe'
+    | 'hands-free';
   /** Set when dictation carried on by recording instead of stopping. */
   fallback?: 'recording';
 }
@@ -343,6 +384,14 @@ export class Dictation {
    * recognised by the browser.
    */
   recording = $state(false);
+  /** This session is hands-free: the microphone stays on between phrases. */
+  handsFree = $state(false);
+  /** Hands-free: someone is speaking right now (an utterance is open). */
+  speaking = $state(false);
+  /** Hands-free: how loud the voice is, 0 to 1 (in steps of 0.05). */
+  level = $state(0);
+  /** Hands-free: utterances heard that are not written down yet. */
+  queued = $state(0);
 
   #options: DictationOptions;
   #source: DictationSpeechSource | null = null;
@@ -365,6 +414,12 @@ export class Dictation {
   #captureOff: (() => void) | null = null;
   /** Cancels writing a recording down. */
   #transcribeAbort: AbortController | null = null;
+  /** The hands-free microphone, while open. */
+  #handsFreeCapture: HandsFreeCapture | null = null;
+  /** Hands-free utterances are written down one at a time, in order. */
+  #utteranceQueue: Promise<void> = Promise.resolve();
+  /** The person ended hands-free; the queue is being drained. */
+  #handsFreeDraining = false;
 
   constructor(options: DictationOptions) {
     this.#options = options;
@@ -373,6 +428,17 @@ export class Dictation {
   /** A speech source or a `transcribe` was given (the browser may still turn out unable). */
   get available(): boolean {
     return Boolean(this.#options.source || this.#options.transcribe);
+  }
+
+  /**
+   * Hands-free is set up: `mode: 'hands-free'` with a microphone factory.
+   * (Whether the speech source can do it is only known once it loads.)
+   */
+  get wantsHandsFree(): boolean {
+    return (
+      this.#options.mode === 'hands-free' &&
+      Boolean(this.#options.handsFreeCapture)
+    );
   }
 
   /** Starting or listening. */
@@ -420,6 +486,10 @@ export class Dictation {
       return;
     }
     if (session !== this.#session || this.#disposed) return;
+    if (this.#wantsHandsFree(source)) {
+      await this.#startHandsFree(session, source);
+      return;
+    }
     // Ask for the microphone first and wait for the answer: the recogniser
     // then starts with the permission settled instead of racing the prompt.
     try {
@@ -457,6 +527,10 @@ export class Dictation {
     if (!this.active) return;
     if (this.recording) {
       await this.#finishRecording();
+      return;
+    }
+    if (this.handsFree) {
+      this.#stopHandsFree();
       return;
     }
     this.state = 'stopping';
@@ -505,15 +579,17 @@ export class Dictation {
     this.#disposed = true;
     this.#session++;
     this.#clearStopTimer();
-    if (this.active && !this.recording)
+    if (this.active && !this.recording && !this.handsFree)
       void this.#source?.stop().catch(() => undefined);
     this.#dropCapture(true);
+    this.#dropHandsFree();
     this.#transcribeAbort?.abort();
     this.#transcribeAbort = null;
     for (const off of this.#unsubscribe) off();
     this.#unsubscribe = [];
     this.state = 'idle';
     this.recording = false;
+    this.#resetHandsFree();
   }
 
   #language(): string {
@@ -707,6 +783,138 @@ export class Dictation {
     this.#options.onText(text);
   }
 
+  /** Hands-free is wanted and possible with this source. */
+  #wantsHandsFree(source: DictationSpeechSource): boolean {
+    return Boolean(
+      this.#options.mode === 'hands-free' &&
+        this.#options.handsFreeCapture &&
+        typeof source.transcribePcm === 'function',
+    );
+  }
+
+  async #startHandsFree(
+    session: number,
+    source: DictationSpeechSource,
+  ): Promise<void> {
+    const factory = this.#options.handsFreeCapture;
+    if (!factory) return;
+    this.#resetHandsFree();
+    this.handsFree = true;
+    let capture: HandsFreeCapture;
+    try {
+      capture = factory({
+        vad: this.#options.vad,
+        onUtterance: (utterance) =>
+          this.#enqueueUtterance(session, source, utterance),
+        onSpeaking: (speaking) => {
+          if (session === this.#session && this.handsFree) {
+            this.speaking = speaking;
+          }
+        },
+        onLevel: (level) => {
+          if (session !== this.#session || !this.handsFree) return;
+          const stepped = Math.round(Math.min(1, Math.max(0, level)) * 20) / 20;
+          if (stepped !== this.level) this.level = stepped;
+        },
+        onError: (error) => {
+          if (session === this.#session) this.#failWith(error, 'hands-free');
+        },
+      });
+    } catch (error) {
+      if (session === this.#session) this.#failWith(error, 'hands-free');
+      return;
+    }
+    this.#handsFreeCapture = capture;
+    try {
+      await capture.start();
+    } catch (error) {
+      if (this.#handsFreeCapture === capture) this.#handsFreeCapture = null;
+      if (session === this.#session) this.#failWith(error, 'microphone');
+      return;
+    }
+    if (
+      session !== this.#session ||
+      this.#disposed ||
+      this.#handsFreeCapture !== capture ||
+      !this.active
+    ) {
+      // Stopped (or disposed) while the microphone was opening.
+      if (this.#handsFreeCapture === capture) this.#handsFreeCapture = null;
+      capture.cancel();
+      return;
+    }
+    if (this.state === 'starting') this.#listening();
+  }
+
+  /** Write one utterance down, after the ones before it. */
+  #enqueueUtterance(
+    session: number,
+    source: DictationSpeechSource,
+    utterance: HandsFreeUtterance,
+  ): void {
+    if (this.#disposed || session !== this.#session) return;
+    this.queued += 1;
+    const language = this.#language();
+    this.#utteranceQueue = this.#utteranceQueue.then(async () => {
+      if (this.#disposed || session !== this.#session) return;
+      let text = '';
+      try {
+        text = (
+          (await source.transcribePcm?.(utterance.pcm, { language })) ?? ''
+        ).trim();
+      } catch (error) {
+        if (session === this.#session) {
+          const kind = classifyDictationError(error);
+          this.#fail(
+            TRANSCRIBE_ERROR_KINDS.has(kind) ? kind : 'not-transcribed',
+            dictationErrorCode(error),
+            errorMessage(error),
+            'transcribe',
+          );
+        }
+        return;
+      }
+      if (this.#disposed || session !== this.#session) return;
+      this.queued = Math.max(0, this.queued - 1);
+      // Models write "[BLANK_AUDIO]" or "(silence)" for noise: not words.
+      if (text && !/^[[(].*[\])]$/.test(text)) this.#options.onText(text);
+      if (this.#handsFreeDraining && this.queued === 0) this.#idle();
+    });
+  }
+
+  /** The person ended hands-free: finish the phrase, then write it all down. */
+  #stopHandsFree(): void {
+    const capture = this.#handsFreeCapture;
+    this.#handsFreeCapture = null;
+    this.speaking = false;
+    this.level = 0;
+    this.beepPending = false;
+    // Hands over the utterance in progress, then releases the microphone.
+    capture?.stop();
+    if (this.queued > 0) {
+      this.#handsFreeDraining = true;
+      this.state = 'transcribing';
+    } else {
+      this.#idle();
+    }
+  }
+
+  /** Release the hands-free microphone and drop what it heard. */
+  #dropHandsFree(): void {
+    const capture = this.#handsFreeCapture;
+    this.#handsFreeCapture = null;
+    capture?.cancel();
+  }
+
+  #resetHandsFree(): void {
+    this.handsFree = false;
+    this.speaking = false;
+    this.level = 0;
+    this.queued = 0;
+    this.#handsFreeDraining = false;
+    this.#utteranceQueue = Promise.resolve();
+  }
+
   /** Forget the recorder; `cancel` throws its audio away too. */
   #dropCapture(cancel: boolean): void {
     this.#captureOff?.();
@@ -845,6 +1053,7 @@ export class Dictation {
     this.interim = '';
     this.beepPending = false;
     this.recording = false;
+    this.#resetHandsFree();
   }
 
   #failWith(error: unknown, stage: DictationLogEvent['stage']): void {
@@ -885,6 +1094,11 @@ export class Dictation {
   ): void {
     this.#clearStopTimer();
     this.#dropCapture(true);
+    if (this.handsFree) {
+      // Whatever was queued dies with the session.
+      this.#session++;
+      this.#dropHandsFree();
+    }
     this.#log(kind, code, message, stage);
     this.errorKind = kind;
     this.errorCode = code;
@@ -892,6 +1106,7 @@ export class Dictation {
     this.interim = '';
     this.beepPending = false;
     this.recording = false;
+    this.#resetHandsFree();
   }
 
   #clearStopTimer(): void {

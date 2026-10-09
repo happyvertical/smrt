@@ -2942,6 +2942,9 @@ importers:
       '@happyvertical/smrt-users':
         specifier: workspace:*
         version: link:../users
+      '@happyvertical/speech':
+        specifier: ^0.102.3
+        version: 0.102.3(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
@@ -2988,6 +2991,9 @@ importers:
         specifier: ^1.2.2
         version: 1.2.2
     devDependencies:
+      '@happyvertical/speech':
+        specifier: ^0.102.3
+        version: 0.102.3(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)

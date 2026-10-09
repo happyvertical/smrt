@@ -15,6 +15,8 @@ import {
   type DictationSourceProvider,
   DictationStatus,
   type DictationTranscribe,
+  type HandsFreeCaptureFactory,
+  type HandsFreeVadOptions,
   insertTextAtCursor,
   longPress,
   primeReadyBeep,
@@ -66,6 +68,21 @@ export interface Props {
    * own, without `dictation`.
    */
   transcribe?: DictationTranscribe | null;
+  /**
+   * `'hands-free'`: the microphone stays on and each sentence is written
+   * down when the speaker pauses, with no tap per phrase; tapping the
+   * microphone (or sending, or Escape) ends it. Needs `handsFreeCapture` and
+   * an on-device speech source (smrt-svelte's `whisper-local` / `moonshine`);
+   * otherwise it is ordinary press-to-talk. Default `'push'`.
+   */
+  dictationMode?: 'push' | 'hands-free';
+  /**
+   * The hands-free microphone, `createHandsFreeCapture` from
+   * `@happyvertical/smrt-ui/forms/hands-free`.
+   */
+  handsFreeCapture?: HandsFreeCaptureFactory | null;
+  /** Pause length and sensitivity for hands-free (see `HandsFreeVadOptions`). */
+  handsFreeVad?: HandsFreeVadOptions;
 }
 
 let {
@@ -76,6 +93,9 @@ let {
   value: content = $bindable(''),
   dictation: dictationSource = null,
   transcribe = null,
+  dictationMode = 'push',
+  handsFreeCapture = null,
+  handsFreeVad,
 }: Props = $props();
 const canDictate = $derived(Boolean(dictationSource || transcribe));
 let stagedAttachments = $state<AssistantAttachmentRef[]>([]);
@@ -126,7 +146,12 @@ const dictation = new Dictation({
 });
 // The recording fallback follows the prop (a host may set it later).
 $effect.pre(() => {
-  dictation.setOptions({ transcribe });
+  dictation.setOptions({
+    transcribe,
+    mode: dictationMode,
+    handsFreeCapture,
+    vad: handsFreeVad,
+  });
 });
 
 onDestroy(() => dictation.dispose());

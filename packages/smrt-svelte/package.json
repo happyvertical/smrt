@@ -89,9 +89,14 @@
       "default": "./dist/browser-ai/index.js"
     },
     "./browser-ai/whisper-worker": {
-      "types": "./dist/browser-ai/adapters/stt/whisper-local.worker.d.ts",
-      "import": "./dist/browser-ai/adapters/stt/whisper-local.worker.js",
-      "default": "./dist/browser-ai/adapters/stt/whisper-local.worker.js"
+      "types": "./dist/browser-ai/adapters/stt/local-speech.worker.d.ts",
+      "import": "./dist/browser-ai/adapters/stt/local-speech.worker.js",
+      "default": "./dist/browser-ai/adapters/stt/local-speech.worker.js"
+    },
+    "./browser-ai/speech-worker": {
+      "types": "./dist/browser-ai/adapters/stt/local-speech.worker.d.ts",
+      "import": "./dist/browser-ai/adapters/stt/local-speech.worker.js",
+      "default": "./dist/browser-ai/adapters/stt/local-speech.worker.js"
     },
     "./browser-ai/svelte": {
       "types": "./dist/browser-ai/svelte/index.d.ts",
@@ -177,6 +182,7 @@
     "esm-env": "^1.2.2"
   },
   "peerDependencies": {
+    "@happyvertical/speech": ">=0.102.4",
     "@huggingface/transformers": ">=4.3.0",
     "@mlc-ai/web-llm": ">=0.2.85",
     "@remotion/whisper-web": ">=4.0.526",
@@ -185,6 +191,9 @@
     "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
+    "@happyvertical/speech": {
+      "optional": true
+    },
     "@huggingface/transformers": {
       "optional": true
     },
@@ -210,6 +219,7 @@
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
+    "@happyvertical/speech": "catalog:",
     "@sveltejs/package": "^2.5.8",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@testing-library/jest-dom": "^7.0.1",

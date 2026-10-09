@@ -18,6 +18,8 @@ import type {
 import type {
   DictationSourceProvider,
   DictationTranscribe,
+  HandsFreeCaptureFactory,
+  HandsFreeVadOptions,
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
@@ -178,6 +180,14 @@ export interface Props {
    * speech (Firefox, Brave), e.g. smrt-ui's `createHttpTranscriber()`;
    * see `AssistantComposer`. */
   transcribe?: DictationTranscribe | null;
+  /** `'hands-free'` keeps the microphone on and writes each sentence down
+   * when the speaker pauses; see `AssistantComposer`. */
+  dictationMode?: 'push' | 'hands-free';
+  /** The hands-free microphone (`createHandsFreeCapture` from
+   * `@happyvertical/smrt-ui/forms/hands-free`); see `AssistantComposer`. */
+  handsFreeCapture?: HandsFreeCaptureFactory | null;
+  /** Pause length and sensitivity for hands-free; see `AssistantComposer`. */
+  handsFreeVad?: HandsFreeVadOptions;
 }
 
 const {
@@ -204,6 +214,9 @@ const {
   choiceSources,
   dictation,
   transcribe,
+  dictationMode,
+  handsFreeCapture,
+  handsFreeVad,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -898,6 +911,9 @@ async function handleConfirmAction(requestId: string) {
             placeholder={composerPlaceholder}
             {dictation}
             {transcribe}
+            {dictationMode}
+            {handsFreeCapture}
+            {handsFreeVad}
           />
         {/key}
       </div>

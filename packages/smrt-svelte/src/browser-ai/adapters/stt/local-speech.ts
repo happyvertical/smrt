@@ -1,13 +1,16 @@
 /**
- * Local Whisper speech-to-text (`whisper-local`, alias `whisper-wasm`).
+ * On-device speech-to-text (`whisper-local`, alias `whisper-wasm`, and
+ * `moonshine`).
  *
  * For browsers whose own speech recognition is missing or unreliable
  * (Firefox, Brave). It is push-to-talk: `start()` records from the
  * microphone, `stop()` ends the recording and transcribes it with a Whisper
- * model running in the browser (WebGPU when available, single-thread WASM
- * otherwise, in a Web Worker when the host supplies one), then emits one
- * final result. The model is a one-time download kept in Cache Storage; see
- * `WhisperLocalModel` for the consent/progress API.
+ * or Moonshine model running in the browser (WebGPU when available,
+ * single-thread WASM otherwise, in a Web Worker when the host supplies one),
+ * then emits one final result. `transcribePcm()` transcribes one finished
+ * utterance directly, which smrt-ui's hands-free dictation uses. The engine
+ * is `@happyvertical/speech/local`; the model is a one-time download kept in
+ * Cache Storage; see `LocalSpeechModel` for the consent/progress API.
  */
 import {
   createMediaRecorderCapture,
@@ -15,19 +18,18 @@ import {
   type DictationAudioCaptureFactory,
 } from '@happyvertical/smrt-ui/forms';
 import type { InitState, OnProgress } from '../../core/types.js';
+import {
+  createLocalSpeechModel,
+  type LocalSpeechLoadOptions,
+  type LocalSpeechModel,
+} from './local-speech-model.js';
 import type {
+  LocalSpeechSTTOptions,
   STTAdapter,
   STTCapabilities,
   STTOptions,
   STTResult,
-  WhisperLocalSTTOptions,
 } from './types.js';
-import { WHISPER_LOCAL_DEFAULT_MODEL } from './whisper-local-engine.js';
-import {
-  createWhisperLocalModel,
-  type WhisperLocalLoadOptions,
-  type WhisperLocalModel,
-} from './whisper-local-model.js';
 
 const SIZE_MODELS = {
   tiny: 'onnx-community/whisper-tiny.en',
@@ -35,7 +37,7 @@ const SIZE_MODELS = {
   small: 'onnx-community/whisper-small.en',
 } as const;
 
-/** Sample rate Whisper expects. */
+/** Sample rate the speech models expect. */
 const SAMPLE_RATE = 16_000;
 
 /**
@@ -59,15 +61,15 @@ async function decodeAudio(blob: Blob): Promise<Float32Array> {
   }
 }
 
-export class WhisperLocalSTTAdapter implements STTAdapter {
-  readonly type: 'whisper-local' | 'whisper-wasm';
+export class LocalSpeechSTTAdapter implements STTAdapter {
+  readonly type: 'whisper-local' | 'whisper-wasm' | 'moonshine';
   /**
    * `Dictation` waits this long for the text after the person stops.
    */
   readonly stopTimeoutMs = STOP_TIMEOUT_MS;
 
-  private readonly options: WhisperLocalSTTOptions;
-  private readonly _model: WhisperLocalModel;
+  private readonly options: LocalSpeechSTTOptions;
+  private readonly _model: LocalSpeechModel;
   private readonly makeCapture: DictationAudioCaptureFactory;
   private capture: DictationAudioCapture | null = null;
   private captureOff: (() => void) | null = null;
@@ -82,7 +84,7 @@ export class WhisperLocalSTTAdapter implements STTAdapter {
   private endListeners = new Set<() => void>();
 
   constructor(
-    options: Partial<WhisperLocalSTTOptions> & {
+    options: Partial<LocalSpeechSTTOptions> & {
       /** Test seam: the microphone recorder. */
       capture?: DictationAudioCaptureFactory;
     } = {},
@@ -91,29 +93,33 @@ export class WhisperLocalSTTAdapter implements STTAdapter {
       type: 'whisper-local',
       defaultLanguage: 'en',
       ...options,
-    } as WhisperLocalSTTOptions;
+    } as LocalSpeechSTTOptions;
     this.type = this.options.type;
     this.language = this.options.defaultLanguage ?? 'en';
     this.makeCapture = options.capture ?? createMediaRecorderCapture;
-    const modelId =
+    const model =
+      this.options.model ??
       this.options.modelId ??
       (this.options.modelSize
         ? SIZE_MODELS[this.options.modelSize]
-        : WHISPER_LOCAL_DEFAULT_MODEL);
+        : this.type === 'moonshine'
+          ? 'moonshine-tiny'
+          : undefined);
     this._model =
       this.options.modelHandle ??
-      createWhisperLocalModel({
-        modelId,
+      createLocalSpeechModel({
+        model,
         device: this.options.device,
         dtype: this.options.dtype,
         createWorker: this.options.createWorker,
+        loadSpeech: this.options.loadSpeech,
         loadModule: this.options.loadModule,
         allowLocalModels: this.options.allowLocalModels,
       });
   }
 
   /** The downloadable model, for consent UIs. */
-  get model(): WhisperLocalModel {
+  get model(): LocalSpeechModel {
     return this._model;
   }
 
@@ -138,7 +144,7 @@ export class WhisperLocalSTTAdapter implements STTAdapter {
     return this._model.isCached();
   }
 
-  load(options?: WhisperLocalLoadOptions): Promise<void> {
+  load(options?: LocalSpeechLoadOptions): Promise<void> {
     return this._model.load(options);
   }
 
@@ -148,15 +154,11 @@ export class WhisperLocalSTTAdapter implements STTAdapter {
     });
   }
 
-  private englishOnly(): boolean {
-    return this._model.modelId.endsWith('.en');
-  }
-
   getCapabilities(): STTCapabilities {
     return {
       continuous: false,
       interimResults: false,
-      languages: this.englishOnly()
+      languages: this._model.englishOnly
         ? ['en']
         : [
             'en',
@@ -176,6 +178,22 @@ export class WhisperLocalSTTAdapter implements STTAdapter {
       requiresDownload: true,
       downloadSize: this._model.estimateSize(),
     };
+  }
+
+  /**
+   * Transcribe one finished utterance (16 kHz mono PCM). Loads the model
+   * first if it is not ready. This is what hands-free dictation calls for
+   * each utterance the voice activity detector cuts out.
+   */
+  async transcribePcm(
+    pcm: Float32Array,
+    options: { language?: string } = {},
+  ): Promise<string> {
+    await this.ensureInitialized();
+    return this._model.transcribe(
+      pcm,
+      options.language ?? this.options.defaultLanguage ?? 'en',
+    );
   }
 
   async start(options: STTOptions = {}): Promise<void> {
@@ -307,5 +325,9 @@ export class WhisperLocalSTTAdapter implements STTAdapter {
   }
 }
 
-/** @deprecated Use {@link WhisperLocalSTTAdapter}. */
-export { WhisperLocalSTTAdapter as WhisperWasmSTTAdapter };
+/** @deprecated Use {@link LocalSpeechSTTAdapter}. */
+/** @deprecated Use {@link LocalSpeechSTTAdapter}. */
+export {
+  LocalSpeechSTTAdapter as WhisperLocalSTTAdapter,
+  LocalSpeechSTTAdapter as WhisperWasmSTTAdapter,
+};
