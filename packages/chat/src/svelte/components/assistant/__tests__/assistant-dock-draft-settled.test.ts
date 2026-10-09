@@ -125,7 +125,7 @@ describe('AssistantComposer value (#2991)', () => {
 });
 
 describe('AssistantComposer in-flight edits (#2991)', () => {
-  it('keeps text typed while the send was in flight', async () => {
+  it('clears the sent text at once; text typed meanwhile goes in the fresh box', async () => {
     let release!: () => void;
     const onsend = vi.fn(
       () =>
@@ -137,11 +137,12 @@ describe('AssistantComposer in-flight edits (#2991)', () => {
       props: { onsend, onupload: vi.fn(), value: 'first' },
     });
     await userEvent.click(screen.getByRole('button', { name: 'Send' }));
-    await userEvent.type(textarea(), ' and more');
+    expect(textarea()).toHaveValue('');
+    await userEvent.type(textarea(), 'and more');
     release();
     await vi.waitFor(() => expect(onsend).toHaveBeenCalledTimes(1));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(textarea()).toHaveValue('first and more');
+    expect(textarea()).toHaveValue('and more');
   });
 });
 
@@ -522,5 +523,16 @@ describe('AssistantDock onactionsettled', () => {
       status: 'rejected',
       by: 'user',
     });
+  });
+});
+
+describe('AssistantComposer failed send', () => {
+  it('puts the sent text back when the send fails', async () => {
+    const onsend = vi.fn(() => Promise.reject(new Error('boom')));
+    render(AssistantComposer, {
+      props: { onsend, onupload: vi.fn(), value: 'first' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await vi.waitFor(() => expect(textarea()).toHaveValue('first'));
   });
 });

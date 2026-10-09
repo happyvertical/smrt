@@ -640,17 +640,6 @@ async function handleConfirmAction(requestId: string) {
         </div>
       {/if}
 
-      {#if controller.status.state === 'working'}
-        <div class="assistant-dock-status" role="status" aria-live="polite">
-          <span class="assistant-dock-status-label">{controller.status.label}</span>
-          {#if controller.status.cancellable}
-            <Button type="button" size="sm" variant="ghost" onclick={() => controller.cancel()}>
-              {t(M['chat.assistant_dock.stop'])}
-            </Button>
-          {/if}
-        </div>
-      {/if}
-
       {#if contextMode === 'data-surfaces' && controller.surfaces.length === 0 && !pageTools}
         <p class="assistant-dock-empty">
           {t(M['chat.assistant_dock.no_surfaces'])}
@@ -719,7 +708,7 @@ async function handleConfirmAction(requestId: string) {
 
         <ul class="assistant-dock-messages">
           {#each controller.messages as message (message.id)}
-            <li>
+            <li data-role={message.role}>
               <MessageBubble
                 variant={bubbleVariant(message.role)}
                 own={message.role === 'user'}
@@ -899,6 +888,17 @@ async function handleConfirmAction(requestId: string) {
         {/if}
       </div>
 
+      {#if controller.status.state === 'working'}
+        <div class="assistant-dock-status" role="status" aria-live="polite">
+          <span class="assistant-dock-status-label">{controller.status.label}</span>
+          {#if controller.status.cancellable}
+            <Button type="button" size="sm" variant="ghost" onclick={() => controller.cancel()}>
+              {t(M['chat.assistant_dock.stop'])}
+            </Button>
+          {/if}
+        </div>
+      {/if}
+
       <div class="assistant-dock-composer">
         {#if controller.models.length > 0}
           <div class="assistant-dock-composer-header">
@@ -959,7 +959,7 @@ async function handleConfirmAction(requestId: string) {
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.35rem 0.75rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c7c5);
+    border-top: 1px solid var(--smrt-color-outline-variant, #c4c7c5);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
     color: var(--smrt-color-on-surface-variant, #44474e);
   }
@@ -1104,6 +1104,44 @@ async function handleConfirmAction(requestId: string) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 8px);
+  }
+
+  /* Narrow-dock friendly bubbles: the user's message sits right, the
+   * assistant's left, each at most ~85% of the thread width in calm tokens. */
+  .assistant-dock-messages > li {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .assistant-dock-messages > li :global(.bubble),
+  .assistant-dock-streaming :global(.bubble) {
+    max-width: 85%;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    border-radius: var(--smrt-radius-large, 12px);
+    overflow-wrap: anywhere;
+  }
+
+  .assistant-dock-messages > li[data-role='user'] :global(.bubble),
+  .assistant-dock-messages > li[data-role='user'] :global(.bubble--own) {
+    align-self: flex-end;
+    background: var(--smrt-color-primary-container, #d8e2ff);
+    color: var(--smrt-color-on-primary-container, #001a41);
+    border-radius: var(--smrt-radius-large, 12px);
+  }
+
+  .assistant-dock-messages > li:not([data-role='user']) :global(.bubble--agent),
+  .assistant-dock-streaming :global(.bubble--agent) {
+    align-self: flex-start;
+    background: var(--smrt-color-surface-container, #f0f0f4);
+    color: var(--smrt-color-on-surface, #1a1c1e);
+    border-left: none;
+    border-radius: var(--smrt-radius-large, 12px);
+  }
+
+  .assistant-dock-streaming {
+    display: flex;
+    flex-direction: column;
   }
 
   .assistant-dock-thread-state {

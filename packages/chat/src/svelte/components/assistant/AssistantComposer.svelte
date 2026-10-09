@@ -331,23 +331,20 @@ async function handleSend(keepListening = false) {
   if (dictation.active && !keepListening) void dictation.stop();
   sendError = null;
   sending = true;
-  // #2904 review finding 4: keep the draft text/attachments until onsend
-  // settles — clearing them synchronously (the previous behavior) lost the
-  // user's message forever on a transport failure, with no visible error.
+  // The sent text leaves the box as soon as the send starts, so a manual or
+  // automatic send never leaves it sitting there for the whole reply, and
+  // anything said or typed meanwhile lands in a fresh box. A failed send puts
+  // it back (#2904 review finding 4: never lose the message on failure).
+  const sentAttachments = stagedAttachments;
+  content = '';
+  stagedAttachments = [];
+  if (textareaEl) textareaEl.style.height = 'auto';
   try {
-    await onsend(trimmed, stagedAttachments);
-    // #2991: text typed while the send was in flight is newer than what was
-    // sent; keep it.
-    if (content.trim() === trimmed) content = '';
-    // Dictated while an automatic send was in flight: keep only what was said
-    // after the sent text (typed edits keep the whole draft, see above).
-    else if (keepListening && content.trimStart().startsWith(trimmed))
-      content = content.trimStart().slice(trimmed.length).trimStart();
-    stagedAttachments = [];
-    if (textareaEl) {
-      textareaEl.style.height = 'auto';
-    }
+    await onsend(trimmed, sentAttachments);
   } catch (error) {
+    const newer = content.trim();
+    content = newer ? `${trimmed}\n${newer}` : trimmed;
+    stagedAttachments = [...sentAttachments, ...stagedAttachments];
     sendError =
       error instanceof Error
         ? error.message

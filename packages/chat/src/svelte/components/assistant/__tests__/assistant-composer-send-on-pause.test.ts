@@ -157,7 +157,8 @@ describe('AssistantComposer send on pause', () => {
     t.say();
     await vi.waitFor(() => expect(t.onsend).toHaveBeenCalledWith('one', []));
     t.say();
-    await vi.waitFor(() => expect(t.field.value).toBe('one two'));
+    // The sent text left the box at once; the new sentence is alone in it.
+    await vi.waitFor(() => expect(t.field.value).toBe('two'));
     await wait(GRACE * 2);
     expect(t.onsend).toHaveBeenCalledTimes(1);
     finish();
