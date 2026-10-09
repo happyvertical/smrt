@@ -107,6 +107,10 @@ export class Contract extends SmrtObject {
   /**
    * Contract type discriminator (STI)
    */
+  @field({
+    description:
+      'The kind of contract: order, estimate, lease, agreement and so on.',
+  })
   contractType: ContractType = ContractType.ORDER;
 
   /**

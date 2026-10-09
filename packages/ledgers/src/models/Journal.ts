@@ -5,7 +5,7 @@
  * Contains one or more JournalEntry records that must balance (debits = credits).
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
@@ -35,16 +35,19 @@ export class Journal extends SmrtObject {
   /**
    * Journal number (auto-generated sequence, e.g., "JNL-0001")
    */
+  @field({ description: "The journal's reference number." })
   number: string = '';
 
   /**
    * Transaction date
    */
+  @field({ description: 'The date of the transaction.' })
   date: Date = new Date();
 
   /**
    * Description of the financial event
    */
+  @field({ description: 'What the transaction was.' })
   description: string = '';
 
   /**
@@ -60,11 +63,15 @@ export class Journal extends SmrtObject {
   /**
    * Journal status: draft, posted, voided
    */
+  @field({
+    description: 'draft while you work on it, posted once final, or voided.',
+  })
   status: JournalStatus = 'draft';
 
   /**
    * When the journal was posted (finalized)
    */
+  @field({ description: 'When it was posted.' })
   postedAt: Date | null = null;
 
   /**

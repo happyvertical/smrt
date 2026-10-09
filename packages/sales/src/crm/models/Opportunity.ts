@@ -68,41 +68,52 @@ export class Opportunity extends SmrtObject {
   tenantId: string | null = null;
 
   /** Deal name shown on boards and lists. Required. */
-  @field({ required: true })
+  @field({ required: true, description: 'What you call this deal.' })
   name: string = '';
 
   /** Originating lead (empty for opportunities created directly). */
+  @field({ description: 'The lead it came from.' })
   @foreignKey('Lead')
   leadId: string = '';
 
   /** Owning sales rep. */
+  @field({ description: 'The sales representative who owns this deal.' })
   @foreignKey('SalesRepresentative')
   ownerRepId: string = '';
 
   /** Pipeline the deal moves through. */
+  @field({ description: 'The pipeline it moves through.' })
   @foreignKey('PipelineDefinition')
   pipelineId: string = '';
 
   /** Current stage within the pipeline. */
+  @field({ description: 'The stage it is at now.' })
   @foreignKey('PipelineStage')
   stageId: string = '';
 
   /** Expected deal value in integer cents (INTEGER column). */
+  @field({ description: 'What you expect the deal to be worth, in cents.' })
   expectedValueCents: number = 0;
 
   /** ISO 4217 currency code for `expectedValueCents`. */
+  @field({ description: 'The currency of that value.' })
   currency: string = 'USD';
 
   /**
    * Win probability (`0`–`1`, DECIMAL). Adopted from the current stage's
    * default on stage moves unless explicitly overridden.
    */
+  @field({
+    description: 'How likely it is to close, as a decimal (0.5 is 50%).',
+  })
   probability: number = 0.0;
 
   /** Forecasted close date. */
+  @field({ description: 'When you expect it to close.' })
   expectedCloseAt: Date | null = null;
 
   /** Lifecycle status; `open → won|lost` is save-guarded, terminal after. */
+  @field({ description: 'open, won or lost.' })
   status: OpportunityStatus = 'open';
 
   /**

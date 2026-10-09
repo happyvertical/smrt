@@ -11,6 +11,7 @@ import {
   resolveOwnedAssetsById,
 } from '@happyvertical/smrt-assets';
 import {
+  field,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
@@ -75,7 +76,13 @@ export class Product extends SmrtObject {
    */
   productType: ProductType = ProductType.PRODUCT;
 
+  @field({
+    description: 'What you call the product, as customers will see it.',
+  })
   name = '';
+  @field({
+    description: 'A few words on what the product is and who it is for.',
+  })
   description = '';
   category = ''; // Reference to category
   manufacturer = '';
@@ -91,6 +98,7 @@ export class Product extends SmrtObject {
    * `Material.costPerUnit` is a `Meta<number>` decimal in `_meta_data` rather
    * than a column, so it is unaffected by this rule.
    */
+  @field({ description: 'What one costs, in dollars and cents.' })
   price = 0;
   inStock = true;
   specifications: Record<string, unknown> = {};

@@ -7,6 +7,7 @@
 
 import { type AIClientOptions, getAI } from '@happyvertical/ai';
 import {
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -167,6 +168,7 @@ export class Issue extends SmrtObject {
    * Project this issue belongs to. Optional and additive; repository-backed
    * issues may leave it unset.
    */
+  @field({ description: 'The project this issue belongs to.' })
   @foreignKey('Project')
   projectId?: string;
 
@@ -183,31 +185,37 @@ export class Issue extends SmrtObject {
   /**
    * Issue title
    */
+  @field({ description: 'A short summary of the issue.' })
   title: string = '';
 
   /**
    * Issue body/description
    */
+  @field({ description: 'The full description.' })
   body: string = '';
 
   /**
    * Issue state
    */
+  @field({ description: 'open or closed.' })
   state: 'open' | 'closed' = 'open';
 
   /**
    * Author's login/username
    */
+  @field({ description: 'Who raised the issue.' })
   author: string = '';
 
   /**
    * Labels attached to the issue
    */
+  @field({ description: 'The labels attached to the issue.' })
   labels: string[] = [];
 
   /**
    * Assignee logins
    */
+  @field({ description: 'The people working on it.' })
   assignees: string[] = [];
 
   /**

@@ -47,25 +47,29 @@ export class PipelineDefinition extends SmrtObject {
    * Stable machine key, unique per tenant (natural key with `tenantId`).
    * Required — e.g. `'default'`, `'enterprise'`.
    */
-  @field({ required: true })
+  @field({ required: true, description: 'A short code for the pipeline.' })
   key: string = '';
 
   /** Human-readable pipeline name shown on CRM surfaces. */
+  @field({ description: 'What the pipeline is called.' })
   name: string = '';
 
   /**
    * Marks the tenant's default pipeline. Informational for pickers/UI; the
    * seeded default pipeline sets it `true`.
    */
+  @field({ description: 'Turn this on to use it for new deals.' })
   isDefault: boolean = false;
 
   /** `active` pipelines accept new opportunities; `archived` are read-only history. */
+  @field({ description: 'Whether the pipeline is in use.' })
   status: PipelineStatus = 'active';
 
   /**
    * Free-form JSON object stored as a string. Use
    * {@link getMetadata}/{@link setMetadata} instead of parsing manually.
    */
+  @field({ description: 'Extra details kept with the pipeline.' })
   metadata: string = '{}';
 
   constructor(options: PipelineDefinitionOptions = {}) {

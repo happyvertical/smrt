@@ -60,15 +60,26 @@ export class StockLevel extends SmrtObject {
   tenantId: string | null = null;
 
   /** Plain string reference to the {@link Sku} this row tracks. */
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'The item being counted. Set for you when you save the product.',
+  })
   skuId: string = '';
 
   /** Plain string reference to the {@link InventoryLocation} this row tracks. */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'Where it is kept. New stock goes to the main warehouse.',
+  })
   locationId: string = '';
 
   /** Logical state — `available`, `allocated`, `wip`, `qc_hold`, `damaged`. */
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'Whether the count is available to sell. New stock starts as available.',
+  })
   state: StockState = 'available';
 
   /**
@@ -76,7 +87,7 @@ export class StockLevel extends SmrtObject {
    * domains that count in units of measure other than whole pieces
    * (kilograms, litres, metres).
    */
-  @field({ type: 'decimal' })
+  @field({ type: 'decimal', description: 'How many you have on hand.' })
   qty: number = 0.0;
 
   /** Available-stock threshold; null disables reorder monitoring. */

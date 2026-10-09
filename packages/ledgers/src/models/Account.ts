@@ -5,7 +5,7 @@
  * The 5 core types: Asset, Liability, Equity, Revenue, Expense
  */
 
-import { SmrtHierarchical, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtHierarchical, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AccountOptions, AccountTreeNode, AccountType } from '../types';
 
@@ -29,21 +29,25 @@ export class Account extends SmrtHierarchical {
   /**
    * Account number (e.g., "1000", "5030")
    */
+  @field({ description: 'The account number in your chart of accounts.' })
   number: string = '';
 
   /**
    * Account name (e.g., "Cash", "Coffee Expense")
    */
+  @field({ description: 'What the account is called.' })
   name: string = '';
 
   /**
    * Account description
    */
+  @field({ description: 'What the account is used for.' })
   description: string = '';
 
   /**
    * Account type - one of the 5 core types
    */
+  @field({ description: 'asset, liability, equity, revenue or expense.' })
   type: AccountType = 'asset';
 
   // parentId inherited from SmrtHierarchical (null = top-level)
@@ -51,6 +55,9 @@ export class Account extends SmrtHierarchical {
   /**
    * Whether the account is active
    */
+  @field({
+    description: 'Turn this off to stop using the account without deleting it.',
+  })
   active: boolean = true;
 
   /**

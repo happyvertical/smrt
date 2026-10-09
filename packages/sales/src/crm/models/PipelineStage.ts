@@ -46,6 +46,7 @@ export class PipelineStage extends SmrtObject {
   tenantId: string | null = null;
 
   /** Owning pipeline. Required. */
+  @field({ description: 'The pipeline this stage belongs to.' })
   @foreignKey('PipelineDefinition', { required: true })
   pipelineId: string = '';
 
@@ -53,25 +54,36 @@ export class PipelineStage extends SmrtObject {
    * Stable machine key, unique within the pipeline (natural key with
    * `pipelineId`). Required — e.g. `'proposal'`, `'closed_won'`.
    */
-  @field({ required: true })
+  @field({ required: true, description: 'A short code for the stage.' })
   key: string = '';
 
   /** Human-readable stage name shown on board columns. */
+  @field({ description: 'What the stage is called.' })
   name: string = '';
 
   /** Ordering within the pipeline (ascending). Seeded in steps of 10. */
+  @field({ description: 'Where it comes in the pipeline.' })
   sortOrder: number = 0;
 
   /**
    * Default win probability (`0`–`1`, DECIMAL) adopted by an opportunity
    * entering this stage unless the move overrides it.
    */
+  @field({
+    description: 'How likely a deal at this stage is to close, as a decimal.',
+  })
   probability: number = 0.0;
 
   /** Terminal flag: moving an opportunity here closes it as `won`. */
+  @field({
+    description: 'Turn this on for the stage that means the deal is won.',
+  })
   isWon: boolean = false;
 
   /** Terminal flag: moving an opportunity here closes it as `lost`. */
+  @field({
+    description: 'Turn this on for the stage that means the deal is lost.',
+  })
   isLost: boolean = false;
 
   /**

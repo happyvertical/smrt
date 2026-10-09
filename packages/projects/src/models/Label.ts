@@ -5,6 +5,7 @@
  */
 
 import {
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -35,22 +36,26 @@ export class Label extends SmrtObject {
    * Project this label is scoped to (optional; a label may be scoped to a
    * repository, a project, or neither)
    */
+  @field({ description: 'The project this label belongs to.' })
   @foreignKey('Project')
   projectId?: string;
 
   /**
    * Label name
    */
+  @field({ description: "The label's name, for example bug." })
   name: string = '';
 
   /**
    * Label color (hex without #)
    */
+  @field({ description: "The label's colour." })
   color: string = '';
 
   /**
    * Label description
    */
+  @field({ description: 'What the label means.' })
   description: string = '';
 
   constructor(options: LabelOptions = {}) {

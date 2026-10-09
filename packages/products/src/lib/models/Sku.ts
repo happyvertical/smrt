@@ -69,7 +69,11 @@ export class Sku extends SmrtObject {
    * decorator also surfaces the constraint in generated REST/MCP
    * schemas.
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'The product this item is a version of. Set for you when you save the product.',
+  })
   productId: string = '';
 
   /**
@@ -78,7 +82,11 @@ export class Sku extends SmrtObject {
    * key (`conflictColumns: ['code', 'tenant_id']`), so re-saving an
    * identical row is an upsert rather than a UNIQUE violation.
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'The short code that identifies this exact size and color. Made for you from the product name.',
+  })
   code: string = '';
 
   /** Optional scannable barcode (EAN/UPC/Code-128/etc.). */
@@ -95,6 +103,10 @@ export class Sku extends SmrtObject {
    * {@link setAttributes} to round-trip parsed values without worrying
    * about parse errors.
    */
+  @field({
+    description:
+      'Which size and color this item is. Set for you from the grid.',
+  })
   attributes: string = '{}';
 
   /** Optional physical weight in grams for shipping / cost calculations. */
