@@ -38,8 +38,12 @@ the current tenant, actor and record identity. Change that key whenever any of
 those identities changes: it clears drafts/errors and ignores stale submission
 completion. The host owns loading, authentication, mention selection and refresh.
 The component renders plain text. `RecordCommentsRecipe` declares the
-`comments.records` model recipe; surface/provider declarations await the shared
-recipe contract.
+`comments.records` model recipe in the stable `comments` catalog group. It
+intentionally has no global navigation or section: a discussion needs an
+already-authorized parent record, and a generic comment list would lose that
+context. Hosts embed it on a record detail page. Catalog help explains posting
+and mentions without promising a mention picker or delivery configuration.
+Surface/provider declarations await the shared recipe contract.
 
 Validation: `pnpm --filter @happyvertical/smrt-comments test` covers SQLite and
 DuckDB. `pnpm --filter @happyvertical/smrt-comments test:postgres` adds PostgreSQL

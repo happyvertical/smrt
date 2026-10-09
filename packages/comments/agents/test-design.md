@@ -16,3 +16,9 @@ Notification delivery intentionally occurs after save and is not atomic with it;
 the failure test asserts the saved-row contract. No comment retry/idempotency
 contract is promised: clients must not blindly retry create after delivery error.
 Recipe surfaces are deferred until #3708 lands.
+
+Recipe metadata follow-up (#3604): the comments catalog group, embedded-only
+navigation and help are checked in the generated manifest and knowledge artifact
+after building with refreshed scanner/core artifacts. Model exposure stays off.
+This change does not affect persistence or delivery; prior three-dialect evidence
+remains applicable. Full package tests, typecheck, Svelte and Biome are rerun.
