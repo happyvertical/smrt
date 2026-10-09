@@ -388,9 +388,15 @@ test('human page regrouping preserves the original and forces new review after r
   await page
     .getByRole('textbox', { name: /Logical page groups/ })
     .fill('[[1,2]]');
+  const reprocessed = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/split') &&
+      response.request().method() === 'POST',
+  );
   await page
     .getByRole('button', { name: 'Save split and reprocess', exact: true })
     .click();
+  expect((await reprocessed).status()).toBe(200);
   await expect(
     page.getByRole('button', { name: 'Prepare review', exact: true }),
   ).toBeVisible();
