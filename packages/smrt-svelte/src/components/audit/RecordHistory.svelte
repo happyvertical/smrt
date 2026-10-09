@@ -180,7 +180,54 @@ function date(value: string): string {
 </section>
 
 <style>
-  .smrt-record-history ol { display: grid; gap: var(--smrt-spacing-4); padding-inline-start: var(--smrt-spacing-6); }
-  .smrt-record-history p { margin-block: var(--smrt-spacing-1); overflow-wrap: anywhere; }
-  .smrt-record-history time { color: var(--smrt-color-on-surface-variant); }
+  .smrt-record-history > ol {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .smrt-record-history > ol > li {
+    min-inline-size: 0;
+    padding-block: var(--smrt-spacing-3);
+    border-block-end: 1px solid var(--smrt-color-outline-variant);
+    overflow-wrap: anywhere;
+  }
+
+  .smrt-record-history > ol > li:first-child { padding-block-start: 0; }
+  .smrt-record-history > ol > li:last-child {
+    padding-block-end: 0;
+    border-block-end: 0;
+  }
+
+  .smrt-record-history p { margin-block: var(--smrt-spacing-1); }
+  .smrt-record-history time {
+    display: block;
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-medium-font);
+  }
+
+  .smrt-record-history a {
+    color: var(--smrt-color-primary);
+    text-decoration-thickness: .08em;
+    text-underline-offset: .18em;
+  }
+
+  .smrt-record-history a:hover { text-decoration-thickness: .14em; }
+  .smrt-record-history a:focus-visible {
+    border-radius: var(--smrt-radius-extra-small, .25rem);
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+  }
+
+  .smrt-record-history ul {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    margin-block: var(--smrt-spacing-2) 0;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border-inline-start: 2px solid var(--smrt-color-outline);
+    border-radius: var(--smrt-radius-small, .375rem);
+    background: var(--smrt-color-surface-container-low);
+    list-style: none;
+  }
 </style>
