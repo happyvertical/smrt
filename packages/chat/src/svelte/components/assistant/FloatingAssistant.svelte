@@ -16,7 +16,10 @@ import { M } from '../../i18n.js';
 import AssistantDock, {
   type Props as AssistantDockProps,
 } from './AssistantDock.svelte';
-import type { AssistantRun } from './create-assistant-dock-controller.svelte.js';
+import type {
+  AssistantDockController,
+  AssistantRun,
+} from './create-assistant-dock-controller.svelte.js';
 
 const { t } = useI18n();
 
@@ -53,12 +56,14 @@ let {
   onstatus,
   onrun,
   onattentionchange,
+  oncontroller,
   ...dockProps
 }: Props = $props();
 
 let status = $state<AssistantStatus>({ state: 'idle', label: null });
 let run = $state<AssistantRun | null>(null);
 let attentionRequired = $state(false);
+let dockController = $state.raw<AssistantDockController | null>(null);
 let launcher: HTMLButtonElement | undefined = $state();
 let panel: HTMLElement | undefined = $state();
 
@@ -81,6 +86,7 @@ const hasActionableRun = $derived(
 const hasActionableStatus = $derived(
   status.state === 'working' || status.state === 'error',
 );
+const hasControllerError = $derived(!!dockController?.error);
 const panelExpanded = $derived(
   visible &&
     (expanded || attentionRequired) &&
@@ -88,14 +94,16 @@ const panelExpanded = $derived(
       presentation === 'full' ||
       attentionRequired ||
       hasActionableRun ||
-      hasActionableStatus),
+      hasActionableStatus ||
+      hasControllerError),
 );
 const launcherVisible = $derived(
   !hideIdleControls ||
     presentation === 'full' ||
     attentionRequired ||
     hasActionableRun ||
-    hasActionableStatus,
+    hasActionableStatus ||
+    hasControllerError,
 );
 const presentationState = $derived({ expanded: panelExpanded, status, run });
 
@@ -131,6 +139,11 @@ function handleAttentionChange(required: boolean) {
   attentionRequired = required;
   if (required) open();
   onattentionchange?.(required);
+}
+
+function handleController(next: AssistantDockController) {
+  dockController = next;
+  oncontroller?.(next);
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -190,6 +203,7 @@ function handleKeydown(event: KeyboardEvent) {
       {...dockProps}
       {presentation}
       visible={panelExpanded}
+      oncontroller={handleController}
       onstatus={handleStatus}
       onrun={handleRun}
       onattentionchange={handleAttentionChange}

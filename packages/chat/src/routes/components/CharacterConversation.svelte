@@ -321,7 +321,10 @@ function connect(owned: AssistantDockController) {
   conversationError = null;
   void owned
     .openThread('dev-character-conversation')
-    .then(() => (conversationReady = true))
+    .then(() => {
+      if (owned.error) throw new Error(owned.error);
+      conversationReady = true;
+    })
     .catch(() => {
       conversationReady = false;
       conversationError = t(
@@ -556,6 +559,10 @@ onMount(() => {
   .character-stage :global(canvas), .character-stage :global(svg) { inline-size: 100%; block-size: 100%; }
   @media (min-width: 48rem) {
     .character-conversation { padding-inline-end: 30rem; }
+    .character-conversation.bottom-left {
+      padding-inline-start: 30rem;
+      padding-inline-end: 0;
+    }
     .character-conversation :global(.character-conversation-voice) {
       inline-size: min(100%, calc(100vw - 32rem));
     }

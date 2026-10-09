@@ -250,6 +250,76 @@ describe('HelperControlPanel', () => {
     expect(trigger).toHaveFocus();
   });
 
+  it('adopts a changed recovery draft after custom setup stages an offering', async () => {
+    const recoveryDraft = {
+      version: 1 as const,
+      offeringId: 'happy',
+      name: 'Initial recovery name',
+      voiceId: 'calm',
+      placement: 'bottom-right' as const,
+      heardSubtitles: true,
+      spokenSubtitles: false,
+    };
+    const initial: HelperSnapshot = {
+      ...snapshot(),
+      preferences: null,
+      recoveryDraft,
+      source: 'unavailable',
+      permissions: {
+        ...snapshot().permissions,
+        customStyleIds: ['photo-cutout'],
+      },
+    };
+    const created = {
+      id: 'photo:2',
+      label: 'Cedar · saved today',
+      styleId: 'photo-cutout',
+      source: 'saved' as const,
+      assetId: '2',
+    };
+    const refreshed: HelperSnapshot = {
+      ...initial,
+      offerings: [...initial.offerings, created],
+    };
+    const client: HelperClient = {
+      load: vi.fn(async () => refreshed),
+      save: vi.fn(async () => refreshed),
+      reset: vi.fn(async () => refreshed),
+    };
+    const setupStyle: HelperStyleDefinition = {
+      id: 'photo-cutout',
+      label: 'Photo',
+      Setup: TestSetup,
+      mount: () => ({ destroy() {}, setMouthOpen() {} }),
+    };
+    const view = render(HelperControlPanel, {
+      props: {
+        client,
+        registry: createHelperStyleRegistry([styles[0], setupStyle]),
+        snapshot: initial,
+      },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Add Photo' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save photo' }));
+    await screen.findByRole('radio', {
+      name: 'Cedar · saved today',
+      checked: true,
+    });
+    await view.rerender({
+      snapshot: {
+        ...refreshed,
+        recoveryDraft: { ...recoveryDraft, name: 'Updated recovery name' },
+      },
+    });
+    expect(screen.getByLabelText('Display name')).toHaveValue(
+      'Updated recovery name',
+    );
+    expect(screen.getByRole('radio', { name: 'Happy' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+  });
+
   it('lets keyboard users replace a removed recovery offering without applying it early', async () => {
     const unavailable: HelperSnapshot = {
       ...snapshot(),

@@ -581,6 +581,19 @@ describe('conversation lifecycle', () => {
       screen.queryByRole('button', { name: 'Talk to your assistant' }),
     ).not.toBeInTheDocument();
   });
+  it('keeps listening input disabled when opening its thread fails', async () => {
+    mocks.loadMessages.mockRejectedValueOnce(new Error('Thread unavailable'));
+    render(CharacterConversation);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Listening mode', exact: true }),
+    );
+    expect(
+      await screen.findByText(
+        'The assistant could not be opened. Try again before starting listening mode.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Type your message')).toBeDisabled();
+  });
   it('does not play a delayed obsolete body or a body completed after hide/disposal', async () => {
     const old = deferred<ArrayBuffer>();
     const hidden = deferred<ArrayBuffer>();

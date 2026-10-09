@@ -210,6 +210,7 @@ function snapshotFingerprint(next: HelperSnapshot) {
     selection: next.selection,
     source: next.source,
     recovery: next.recovery,
+    recoveryDraft: next.recoveryDraft,
   });
 }
 function focusOffering(offeringId: string) {

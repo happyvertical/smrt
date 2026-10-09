@@ -77,6 +77,46 @@ describe('FloatingAssistant', () => {
     ).toHaveAttribute('aria-hidden', 'true');
   });
 
+  it.each([
+    'threads',
+    'models',
+  ] as const)('keeps a controls-only dock reachable when %s loading fails', async (kind) => {
+    const transport = {
+      ...props().transport,
+      ...(kind === 'threads'
+        ? {
+            listThreads: vi.fn(async () => {
+              throw new Error('Thread loading failed');
+            }),
+          }
+        : {
+            listModels: vi.fn(async () => {
+              throw new Error('Model loading failed');
+            }),
+          }),
+    };
+    const { container } = render(FloatingAssistant, {
+      props: {
+        ...props(),
+        transport,
+        presentation: 'controls',
+        expanded: true,
+        hideIdleControls: true,
+      },
+    });
+    expect(
+      await screen.findByText(
+        new RegExp(`${kind === 'threads' ? 'Thread' : 'Model'} loading failed`),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Open assistant' }),
+    ).toBeVisible();
+    expect(
+      container.querySelector('.floating-assistant-panel'),
+    ).toHaveAttribute('aria-hidden', 'false');
+  });
+
   it('preserves idle controls chrome by default for existing hosts', () => {
     const { container } = render(FloatingAssistant, {
       props: { ...props(), presentation: 'controls', expanded: true },
