@@ -34,6 +34,15 @@ export class CalendarRecipe extends SmrtRecipe {
     description: 'Events and what is scheduled when.',
   };
   static models = [Event, EventType, EventSeries, EventParticipant];
+  static runtime = 'both' as const;
+  static surfaces = [
+    {
+      kind: 'route',
+      path: '/events/meeting',
+      export: '@happyvertical/smrt-events/svelte#MeetingView',
+      label: 'Meeting view',
+    },
+  ] as const;
   static nav = [
     {
       label: 'Events',
