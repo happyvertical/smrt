@@ -331,6 +331,84 @@ describe('CommandPaletteController', () => {
     expect(two.active?.item.id).toBe('a');
   });
 
+  it('drops a late items result from a replaced provider and clears its rows', async () => {
+    const oldLoad = deferred<PaletteItem[]>();
+    const newLoad = deferred<PaletteItem[]>();
+    const palette = createCommandPalette({
+      providers: [{ id: 'p', label: 'P', items: () => oldLoad.promise }],
+    });
+    palette.open();
+    palette.registerProvider({
+      id: 'p',
+      label: 'P',
+      items: () => newLoad.promise,
+    });
+    newLoad.resolve([item('new', 'New command')]);
+    await flush();
+    expect(palette.results.map((r) => r.item.id)).toEqual(['new']);
+    oldLoad.resolve([item('old', 'Obsolete command', { run: () => {} })]);
+    await flush();
+    expect(palette.results.map((r) => r.item.id)).toEqual(['new']);
+  });
+
+  it('keeps no cached rows when a provider is replaced', async () => {
+    const palette = createCommandPalette({
+      providers: [{ id: 'p', label: 'P', items: () => [item('old', 'Old')] }],
+    });
+    palette.open();
+    expect(palette.results.map((r) => r.item.id)).toEqual(['old']);
+    const pending = deferred<PaletteItem[]>();
+    palette.registerProvider({
+      id: 'p',
+      label: 'P',
+      items: () => pending.promise,
+    });
+    expect(palette.results).toEqual([]);
+    pending.resolve([item('new', 'New')]);
+    await flush();
+    expect(palette.results.map((r) => r.item.id)).toEqual(['new']);
+  });
+
+  it('ignores a late items failure from a replaced provider', async () => {
+    const oldLoad = deferred<PaletteItem[]>();
+    const onError = vi.fn();
+    const palette = createCommandPalette({
+      onError,
+      providers: [{ id: 'p', label: 'P', items: () => oldLoad.promise }],
+    });
+    palette.open();
+    palette.registerProvider({
+      id: 'p',
+      label: 'P',
+      items: () => [item('new', 'New command')],
+    });
+    oldLoad.reject(new Error('stale boom'));
+    await flush();
+    expect(onError).not.toHaveBeenCalled();
+    expect(palette.failedProviders.has('p')).toBe(false);
+    expect(palette.results.map((r) => r.item.id)).toEqual(['new']);
+  });
+
+  it('drops a late search result from a replaced provider', async () => {
+    const oldSearch = deferred<PaletteItem[]>();
+    const palette = createCommandPalette({
+      searchDebounceMs: 10,
+      providers: [{ id: 's', label: 'S', search: () => oldSearch.promise }],
+    });
+    palette.open();
+    palette.setQuery('abc');
+    await vi.advanceTimersByTimeAsync(10);
+    palette.registerProvider({
+      id: 's',
+      label: 'S',
+      search: () => [item('fresh', 'Fresh abc')],
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    oldSearch.resolve([item('stale', 'Stale abc')]);
+    await flush();
+    expect(palette.results.map((r) => r.item.id)).toEqual(['fresh']);
+  });
+
   it('toggles and clears state on close', () => {
     const palette = createCommandPalette({ providers: [commands] });
     palette.toggle();

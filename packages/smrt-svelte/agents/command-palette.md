@@ -35,6 +35,8 @@ limit? }`.
   returned (not re-filtered); earlier rows stay until the new ones arrive. A
   superseded result is dropped, never shown.
 - Registering an id again replaces the provider; a stale disposer is a no-op.
+  The replaced provider's cached rows are cleared and its in-flight `items` or
+  `search` results (and failures) are dropped, never shown or reported.
 - Authorization stays with the provider. A failing provider is reported through
   `onError` (default: logger warning) and marked in `failedProviders`; the
   palette keeps working. The palette is not a security boundary.

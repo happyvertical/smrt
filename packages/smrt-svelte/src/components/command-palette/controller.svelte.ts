@@ -126,9 +126,15 @@ export class CommandPaletteController {
     if (existing === -1) {
       this.#providers = [...this.#providers, provider];
     } else {
+      const replaced = this.#providers[existing];
       this.#providers = this.#providers.map((p, index) =>
         index === existing ? provider : p,
       );
+      // The replaced provider's rows (and any in-flight results, dropped by
+      // the registration check) must not outlive it.
+      this.#local = omit(this.#local, replaced.id);
+      this.#remote = omit(this.#remote, replaced.id);
+      this.#markFailed(replaced.id, false);
     }
     if (this.#open) {
       void this.#loadProvider(provider, this.#itemsSignal());
@@ -286,8 +292,13 @@ export class CommandPaletteController {
   #loadProvider(provider: PaletteProvider, signal: AbortSignal): Promise<void> {
     if (!provider.items) return Promise.resolve();
     const generation = this.#generation;
+    // A replaced or removed registration must not land late results.
+    const current = () =>
+      generation === this.#generation &&
+      !signal.aborted &&
+      this.#providers.includes(provider);
     const accept = (items: readonly PaletteItem[]) => {
-      if (generation !== this.#generation || signal.aborted) return;
+      if (!current()) return;
       this.#local = { ...this.#local, [provider.id]: items };
       this.#markFailed(provider.id, false);
     };
@@ -317,7 +328,7 @@ export class CommandPaletteController {
       },
       (error) => {
         settle();
-        if (generation !== this.#generation || signal.aborted) return;
+        if (!current()) return;
         this.#markFailed(provider.id, true);
         this.#report(error, { providerId: provider.id, phase: 'items' });
       },
@@ -358,8 +369,10 @@ export class CommandPaletteController {
     this.#searchAbort = controller;
     const run = ++this.#searchRun;
     this.#searchPending = 0;
-    const stale = () =>
-      generation !== this.#generation || controller.signal.aborted;
+    const stale = (provider: PaletteProvider) =>
+      generation !== this.#generation ||
+      controller.signal.aborted ||
+      !this.#providers.includes(provider);
     const settle = () => {
       if (run === this.#searchRun) {
         this.#searchPending = Math.max(0, this.#searchPending - 1);
@@ -390,13 +403,13 @@ export class CommandPaletteController {
       Promise.resolve(outcome).then(
         (items) => {
           settle();
-          if (stale()) return;
+          if (stale(provider)) return;
           this.#remote = { ...this.#remote, [provider.id]: items };
           this.#markFailed(provider.id, false);
         },
         (error) => {
           settle();
-          if (stale()) return;
+          if (stale(provider)) return;
           this.#remote = omit(this.#remote, provider.id);
           this.#markFailed(provider.id, true);
           this.#report(error, { providerId: provider.id, phase: 'search' });
