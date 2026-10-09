@@ -586,6 +586,22 @@ export class ManifestGenerator {
   assertRecipeOptions(manifest: SmartObjectManifest): void {
     const problems: string[] = [];
     for (const recipe of manifest.recipes ?? []) {
+      for (const entry of recipe.nav) {
+        if (!entry.filter) continue;
+        const object = Object.values(manifest.objects).find(
+          (candidate) =>
+            (candidate.qualifiedName ?? candidate.className) === entry.model,
+        );
+        if (
+          object &&
+          !Object.keys(object.fields).includes(entry.filter.field) &&
+          !UNIVERSAL_OBJECT_FIELDS.includes(entry.filter.field as never)
+        ) {
+          problems.push(
+            `recipe ${recipe.id}: nav "${entry.label}" filters on "${entry.filter.field}", which ${object.className} does not declare`,
+          );
+        }
+      }
       for (const [model, options] of Object.entries(recipe.options ?? {})) {
         const object = Object.values(manifest.objects).find(
           (candidate) =>
