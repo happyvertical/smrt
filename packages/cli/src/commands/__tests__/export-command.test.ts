@@ -32,18 +32,20 @@ vi.mock('@happyvertical/smrt-core', () => ({
     getTableStrategy: vi.fn(() => 'sti'),
     getSTIBase: vi.fn((t: string) => t),
     getTableName: vi.fn((t: string) =>
-      t === 'Article' || t === 'Content' ? 'contents' : null,
+      t === 'Article' || t === 'Mirror' || t === 'Content' ? 'contents' : null,
     ),
-    getAllFields: vi.fn(
-      () =>
-        new Map<string, any>([
-          ['id', { type: 'text', _meta: { __smrtSystemField: true } }],
-          ['slug', { type: 'text', _meta: { __smrtSystemField: true } }],
-          ['title', { type: 'string' }],
-          ['body', { type: 'string' }],
-          ['status', { type: 'string' }],
-        ]),
-    ),
+    getAllFields: vi.fn((t: string) => {
+      if (t === 'Unregistered') return new Map<string, any>();
+      const fields = new Map<string, any>([
+        ['id', { type: 'text', _meta: { __smrtSystemField: true } }],
+        ['slug', { type: 'text', _meta: { __smrtSystemField: true } }],
+        ['title', { type: 'string' }],
+        ['body', { type: 'string' }],
+        ['status', { type: 'string' }],
+      ]);
+      if (t === 'Mirror') fields.set('externalUrl', { type: 'string' });
+      return fields;
+    }),
     getSchema: vi.fn(() => ({
       tableName: 'contents',
       columns: {
@@ -320,6 +322,76 @@ describe('export command handler', () => {
 
     const written = await readFile(join(dir, 'contents.csv'), 'utf-8');
     expect(written).toBe('');
+  });
+
+  it('fails with a non-zero exit naming an unregistered type (#3682)', async () => {
+    const dir = await tmp('.tmp-export-unregistered-');
+    getConfig.mockReturnValue({
+      export: { contents: { types: ['Article', 'Unregistered'] } },
+    });
+
+    await requireCommandHandler(exportCommand)([], { output: dir });
+
+    expect(errored()).toContain('Export failed');
+    expect(errored()).toContain('"Unregistered"');
+    expect(process.exitCode).toBe(1);
+    expect(dbQuery).not.toHaveBeenCalled();
+    await expect(
+      readFile(join(dir, 'contents.json'), 'utf-8'),
+    ).rejects.toThrow();
+  });
+
+  it('names the unregistered type in the JSON error', async () => {
+    const dir = await tmp('.tmp-export-unregistered-json-');
+    getConfig.mockReturnValue({
+      export: { contents: { types: ['Unregistered'] } },
+    });
+
+    await requireCommandHandler(exportCommand)([], { output: dir, json: true });
+
+    expect(logged()).toContain('Unregistered');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('exports the union of columns for same-table STI types (#3682)', async () => {
+    const dir = await tmp('.tmp-export-union-');
+    getConfig.mockReturnValue({
+      export: { contents: { types: ['Article', 'Mirror'] } },
+    });
+    dbQuery.mockResolvedValue({
+      rows: [
+        { id: '1', title: 'A', external_url: null },
+        { id: '2', title: 'M', external_url: 'https://example.test/m' },
+      ],
+    });
+
+    await requireCommandHandler(exportCommand)([], { output: dir });
+
+    expect(dbQuery).toHaveBeenCalledWith(
+      expect.stringContaining('external_url'),
+      '%:Article',
+      '%:Mirror',
+      'published',
+    );
+    const parsed = JSON.parse(
+      await readFile(join(dir, 'contents.json'), 'utf-8'),
+    );
+    expect(parsed[1].externalUrl).toBe('https://example.test/m');
+    expect(parsed[0].externalUrl).toBeNull();
+  });
+
+  it("keeps only shared columns with fields: 'common'", async () => {
+    const dir = await tmp('.tmp-export-common-');
+    getConfig.mockReturnValue({
+      export: {
+        contents: { types: ['Article', 'Mirror'], fields: 'common' },
+      },
+    });
+
+    await requireCommandHandler(exportCommand)([], { output: dir });
+
+    const sql = String(dbQuery.mock.calls[0][0]);
+    expect(sql).not.toContain('external_url');
   });
 
   it('falls back to the events table for unknown event-like types', async () => {

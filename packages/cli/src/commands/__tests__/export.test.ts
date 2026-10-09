@@ -40,6 +40,8 @@ vi.mock('@happyvertical/smrt-core', () => ({
         baseFields.set('meetingId', { type: 'foreignKey' });
       }
 
+      if (typeName === 'Unregistered') return new Map();
+
       if (typeName === 'Council') {
         return new Map([
           ['id', { type: 'text', _meta: { __smrtSystemField: true } }],
@@ -167,6 +169,16 @@ describe('export command helpers', () => {
     expect(fields).not.toContain('context');
     expect(fields).not.toContain('created_at');
     expect(fields).not.toContain('updated_at');
+  });
+
+  it('throws instead of dropping the file when a type is unregistered', async () => {
+    await expect(
+      getCommonFields(
+        ['MeetingRecap', 'Unregistered'],
+        { types: ['MeetingRecap', 'Unregistered'] },
+        true,
+      ),
+    ).rejects.toThrow('"Unregistered" is not registered');
   });
 
   it('keeps shared STI standard fields for sparse subclass schemas', async () => {

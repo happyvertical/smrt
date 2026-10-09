@@ -630,6 +630,17 @@ export interface ExportFileConfig {
   format?: 'json' | 'ndjson' | 'csv' | 'sqlite';
 
   /**
+   * Column set for a file listing several types.
+   *
+   * - `'union'`: every type's columns; rows of a type lacking a column get
+   *   NULL. Only valid for types sharing one table (STI).
+   * - `'common'`: only columns every listed type has.
+   *
+   * Default: `'union'` when all types share one table, otherwise `'common'`.
+   */
+  fields?: 'union' | 'common';
+
+  /**
    * Field to order by
    * Prefix with '-' for descending (e.g., '-publish_date')
    */

@@ -136,8 +136,13 @@ async function getExportableFields(
   // Export needs inherited STI/CTI fields as well as direct fields.
   const fields = await ObjectRegistry.getAllFields(typeName);
   if (fields.size === 0) {
-    console.warn(`⚠️  No fields found for type: ${typeName}`);
-    return [];
+    // A listed type with no registered fields is a configuration error, not an
+    // empty set: silently contributing nothing would drop the whole file.
+    throw new Error(
+      `Export type "${typeName}" is not registered (no fields found). ` +
+        'Check the spelling in smrt.config.js export types and that the ' +
+        'class is registered (decorated and imported by the project).',
+    );
   }
 
   // If include whitelist is specified, use only those fields
@@ -459,6 +464,61 @@ export async function getCommonFields(
   return commonFields;
 }
 
+/**
+ * Get the union of exportable fields across all types for an export file.
+ *
+ * Fields are ordered by first appearance. Rows of a type that lacks a column
+ * come back NULL, so this is only appropriate for types that share one table.
+ */
+export async function getUnionFields(
+  types: string[],
+  fileConfig: ExportFileConfig,
+  fieldExportDefault: boolean,
+): Promise<string[]> {
+  const union = new Set<string>();
+
+  for (const typeName of types) {
+    const fields = await getExportableFields(
+      typeName,
+      fileConfig,
+      fieldExportDefault,
+    );
+    for (const field of fields) union.add(field);
+  }
+
+  return [...union];
+}
+
+/**
+ * Resolve the columns for an export file.
+ *
+ * Types that share one table (single-table inheritance) export the union of
+ * their columns, so subtype columns reach the file; `fields: 'common'` opts
+ * back into the intersection. Types spread over different tables always use
+ * the intersection, because only one table is queried.
+ */
+export async function resolveExportFields(
+  types: string[],
+  fileConfig: ExportFileConfig,
+  fieldExportDefault: boolean,
+): Promise<string[]> {
+  if (types.length > 1 && fileConfig.fields !== 'common') {
+    const { ObjectRegistry } = await import('@happyvertical/smrt-core');
+    const tables = new Set(types.map((t) => ObjectRegistry.getTableName(t)));
+    if (tables.size === 1 && !tables.has(undefined)) {
+      return getUnionFields(types, fileConfig, fieldExportDefault);
+    }
+    if (fileConfig.fields === 'union') {
+      throw new Error(
+        `Export "fields: 'union'" requires all types to share one table; ` +
+          `got ${types.join(', ')}.`,
+      );
+    }
+  }
+
+  return getCommonFields(types, fileConfig, fieldExportDefault);
+}
+
 export const exportCommand: CLICommand = {
   name: 'export',
   description:
@@ -617,8 +677,8 @@ export const exportCommand: CLICommand = {
           continue;
         }
 
-        // Get fields to export (union of all type fields)
-        const fields = await getCommonFields(
+        // Get fields to export (union for same-table types, else common)
+        const fields = await resolveExportFields(
           types,
           fileConfig,
           fieldExportDefault,

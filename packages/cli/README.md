@@ -199,6 +199,13 @@ knowledge index; documentation snapshots use lightweight package discovery.
 | `smrt export` | Export data in various formats |
 | `smrt init` | Initialize s-m-r-t in an existing SvelteKit project |
 
+`smrt export` reads the `export` section of `smrt.config.js`. A listed type that
+is not registered fails the command (non-zero exit, naming the type) instead of
+skipping the file. A file listing several types that share one table (STI)
+exports the union of their columns (absent columns are NULL; `_meta_type`
+distinguishes rows); set `fields: 'common'` on the file to keep only the
+columns every type has.
+
 `smrt init` updates an existing SvelteKit application's `package.json` with the
 direct dependencies its generated source and default MCP server require:
 `@happyvertical/smrt-core`, `@happyvertical/smrt-config`, and
