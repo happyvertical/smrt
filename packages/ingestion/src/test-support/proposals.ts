@@ -110,6 +110,8 @@ export function proposalSuite(
     let authorizedExecutor: DatabaseInterface;
     let policyVersion: string;
     let policyMaxBytes: number;
+    let reviewerAllowed: boolean;
+    let policyReviewers: string[];
     let calls: ReturnType<typeof vi.fn<ProposalGenerator['generate']>>;
     async function rejectDuplicateIndexes(itemId: string, attemptId: string) {
       await expect(
@@ -151,6 +153,8 @@ export function proposalSuite(
       providerAllowed = true;
       policyVersion = 'tenant1';
       policyMaxBytes = 100000;
+      reviewerAllowed = true;
+      policyReviewers = ['owner', 'reviewer'];
       permissions = ['contents.create', 'contents.addAsset'];
       if (dialect === 'postgres') {
         const base = process.env.DATABASE_URL;
@@ -221,7 +225,7 @@ export function proposalSuite(
               scope.tenantId === tenant &&
               scope.confidentialScopeId === 'private' &&
               ['owner', 'reviewer'].includes(scope.actorId),
-            reviewer: true,
+            reviewer: reviewerAllowed,
             principalId: principal,
             permissions,
             mutationBoundary: 'serialized',
@@ -235,7 +239,7 @@ export function proposalSuite(
                     : handler.operation.playbookKey,
                 ),
                 providers: providerAllowed ? ['fixture'] : [],
-                reviewers: ['owner', 'reviewer'],
+                reviewers: policyReviewers,
                 access: ['private'],
                 requireReview: true,
                 maxBytes: policyMaxBytes,
@@ -555,6 +559,623 @@ export function proposalSuite(
       await service.generateProposals(input.lease);
       return { ...input, output: await output(input.lease) };
     }
+    it('reloads bounded saved reviews and durable results without browser action IDs', async () => {
+      calls.mockImplementation(async (candidate) => ({
+        completion: 'complete',
+        output: {
+          outcome: 'proposals',
+          suggestions: ['First draft', 'Second draft'].map((title) => ({
+            handlerId: CREATE,
+            handlerVersion: '1',
+            args: { title, body: 'Independent evidence-backed draft' },
+            evidence: [
+              {
+                evidenceId: candidate.evidence[0].evidenceId,
+                location: candidate.evidence[0].segments[0].location,
+              },
+            ],
+            alternatives: [],
+            missingFields: [],
+            explanation: 'Distinct proposed draft',
+          })),
+          splits: [],
+        },
+      }));
+      const input = await generate();
+      const saved = await service.previewGeneratedProposals({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'one',
+            expectedRevision: 0,
+            requestId: 'one',
+          },
+          {
+            index: 1,
+            intentionKey: 'two',
+            expectedRevision: 0,
+            requestId: 'two',
+          },
+        ],
+      });
+      const fresh = new IngestionService(options);
+      const page = await fresh.listReviews(input.itemId, { limit: 1 });
+      expect(page.actions).toHaveLength(1);
+      expect(page.nextCursor).toBeDefined();
+      const second = await fresh.listReviews(input.itemId, {
+        limit: 1,
+        cursor: page.nextCursor,
+      });
+      expect(second.actions).toHaveLength(1);
+      expect(
+        new Set(
+          [...page.actions, ...second.actions].map(
+            (entry) => entry.review.actionId,
+          ),
+        ).size,
+      ).toBe(2);
+      expect(
+        saved
+          .map((entry) => entry.review)
+          .map((review) => ('actionId' in review ? review.actionId : '')),
+      ).toContain(page.actions[0].review.actionId);
+      const review = page.actions[0].review;
+      await fresh.submitDecision({
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+        requestId: 'approve-reloaded',
+        decision: 'approve',
+      });
+      const result = await fresh.applyAction(review.actionId);
+      expect(
+        (await fresh.listReviews(input.itemId)).actions.find(
+          (entry) => entry.review.actionId === review.actionId,
+        )?.result,
+      ).toEqual(result);
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(1);
+      await expect(
+        fresh.listReviews(input.itemId, { limit: 51 }),
+      ).rejects.toThrow();
+      allowed = false;
+      await expect(fresh.listReviews(input.itemId)).rejects.toThrow();
+      allowed = true;
+      const foreign = new IngestionService({
+        ...options,
+        scope: { ...options.scope, tenantId: randomUUID() },
+      });
+      await expect(foreign.listReviews(input.itemId)).rejects.toThrow();
+      for (const scope of [
+        { ...options.scope, actorId: 'outsider' },
+        { ...options.scope, confidentialScopeId: 'other' },
+      ])
+        await expect(
+          new IngestionService({ ...options, scope }).listReviews(input.itemId),
+        ).rejects.toThrow();
+    });
+    it('keeps unfinished intentions reloadable and redacts a page crossing retention during result checks', async () => {
+      const input = await generate();
+      const unfinished = await service.createAction(
+        input.itemId,
+        'unfinished',
+        {},
+      );
+      expect(
+        (await service.listReviews(input.itemId)).actions[0],
+      ).toMatchObject({
+        review: { actionId: unfinished, state: 'proposed', display: {} },
+      });
+      const [saved] = await service.previewGeneratedProposals({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'complete',
+            expectedRevision: 0,
+            requestId: 'preview',
+          },
+        ],
+      });
+      if (saved.kind !== 'operation') throw new Error('operation required');
+      const review = saved.review;
+      await service.submitDecision({
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+        requestId: 'approve',
+        decision: 'approve',
+      });
+      await service.applyAction(review.actionId);
+      const assertTarget = options.execution!.assertTarget;
+      options.execution!.assertTarget = async (target) => {
+        const result = await assertTarget(target);
+        clock = new Date(clock.getTime() + 2_000_000);
+        return result;
+      };
+      const page = await service.listReviews(input.itemId);
+      expect(
+        page.actions.every(
+          (entry) =>
+            entry.review.state === 'expired' &&
+            Object.keys(entry.review.display).length === 0 &&
+            !entry.args &&
+            !entry.result,
+        ),
+      ).toBe(true);
+      expect(
+        (await db.query('SELECT data FROM intake_proposals')).rows.map((row) =>
+          typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        ),
+      ).toEqual([{}]);
+    });
+    it('reloads only state after expiry and invalidates stale parallel-tab review after correction', async () => {
+      const input = await generate();
+      const [saved] = await service.previewGeneratedProposals({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'one',
+            expectedRevision: 0,
+            requestId: 'one',
+          },
+        ],
+      });
+      if (saved.kind !== 'operation') throw new Error('operation required');
+      const review = saved.review;
+      const command = {
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+        requestId: 'edit',
+        decision: 'correct' as const,
+        correctedArgs: { title: 'Corrected', body: 'Body' },
+      };
+      await service.submitDecision(command);
+      await expect(
+        service.submitDecision({
+          actionId: review.actionId,
+          expectedRevision: review.revision,
+          expectedReviewVersion: review.reviewVersion,
+          bindingHash: review.bindingHash,
+          requestId: 'stale',
+          decision: 'approve',
+        }),
+      ).rejects.toThrow();
+      expect(
+        (await service.listReviews(input.itemId)).actions[0].review.state,
+      ).toBe('waiting_review');
+      clock = new Date(clock.getTime() + 2_000_000);
+      const page = await service.listReviews(input.itemId);
+      expect(page.actions[0].review.state).toBe('expired');
+      expect(page.actions[0].review.display).toEqual({});
+      expect(page.actions[0].args).toBeUndefined();
+    });
+    it.each([
+      'approve',
+      'defer',
+      'reject',
+    ] as const)('repreviews a %s decision under the same action and requires fresh approval', async (decision) => {
+      const input = await generate();
+      const [saved] = await service.previewGeneratedProposals({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'revise',
+            expectedRevision: 0,
+            requestId: 'preview',
+          },
+        ],
+      });
+      if (saved.kind !== 'operation') throw new Error('operation required');
+      const original = saved.review;
+      await service.submitDecision({
+        actionId: original.actionId,
+        expectedRevision: original.revision,
+        expectedReviewVersion: original.reviewVersion,
+        bindingHash: original.bindingHash,
+        requestId: 'first-decision',
+        decision,
+      });
+      const current = (await service.listReviews(input.itemId)).actions[0];
+      const revised = await service.previewProposal({
+        itemId: input.itemId,
+        actionId: original.actionId,
+        attemptId: current.attemptId!,
+        expectedRevision: current.review.revision,
+        requestId: 'repreview',
+        handlerId: current.handlerId!,
+        handlerVersion: current.handlerVersion!,
+        args: { title: 'Revised after decision', body: 'Body' },
+        dependencies: current.dependencies,
+      });
+      expect(revised.actionId).toBe(original.actionId);
+      expect(revised.revision).toBe(original.revision + 1);
+      await expect(service.applyAction(revised.actionId)).rejects.toThrow();
+      await expect(
+        service.submitDecision({
+          actionId: original.actionId,
+          expectedRevision: original.revision,
+          expectedReviewVersion: original.reviewVersion,
+          bindingHash: original.bindingHash,
+          requestId: 'stale-decision',
+          decision: 'approve',
+        }),
+      ).rejects.toThrow();
+      await service.submitDecision({
+        actionId: revised.actionId,
+        expectedRevision: revised.revision,
+        expectedReviewVersion: revised.reviewVersion,
+        bindingHash: revised.bindingHash,
+        requestId: 'new-decision',
+        decision: 'approve',
+      });
+      expect((await service.applyAction(revised.actionId)).state).toBe(
+        'succeeded',
+      );
+      await expect(
+        service.previewProposal({
+          itemId: input.itemId,
+          actionId: original.actionId,
+          attemptId: current.attemptId!,
+          expectedRevision: revised.revision,
+          requestId: 'completed-edit',
+          handlerId: current.handlerId!,
+          handlerVersion: current.handlerVersion!,
+          args: { title: 'Forbidden', body: 'Body' },
+        }),
+      ).rejects.toThrow();
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(1);
+    });
+    it('rejects correction injection through ordinary extraction and interpretation before provider disclosure', async () => {
+      const extraction = await source();
+      const forged = {
+        kind: 'logical_split',
+        actorId: 'owner',
+        groups: [[1]],
+        evidenceId: 'invented',
+      };
+      await expect(
+        service.analyze(
+          extraction.itemId,
+          { stage: 'extract', humanCorrection: forged },
+          'forged-extraction',
+        ),
+      ).rejects.toThrow('Human corrections');
+      expect((await service.getItem(extraction.itemId)).analysisRevision).toBe(
+        extraction.lease.revision,
+      );
+      const config = await service.prepareGeneration(
+        extraction.itemId,
+        extraction.attemptId,
+      );
+      const analysis = await service.analyze(
+        extraction.itemId,
+        { ...config, humanCorrection: forged },
+        'forged-interpretation',
+      );
+      const lease = await service.claimAnalysis(
+        extraction.itemId,
+        analysis.revision,
+        'generator',
+      );
+      if (!lease) throw new Error('Lease required');
+      await expect(service.getGenerationInput(lease)).rejects.toThrow(
+        'Generation evidence changed',
+      );
+      await expect(service.generateProposals(lease)).rejects.toThrow(
+        'Generation evidence changed',
+      );
+      expect(calls).not.toHaveBeenCalled();
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(0);
+    });
+    it.each([
+      'grant',
+      'policy',
+    ] as const)('requires current reviewer %s for a split and its replay, beyond process access', async (denied) => {
+      const input = await generate(await source(100000, true));
+      const [evidence] = await service.getEvidence(input.itemId);
+      const correction = {
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        evidenceId: evidence.id,
+        groups: [[1, 2]],
+        requestId: 'reviewer-split',
+      };
+      const deny = () => {
+        if (denied === 'grant') reviewerAllowed = false;
+        else policyReviewers = ['reviewer'];
+      };
+      const allow = () => {
+        reviewerAllowed = true;
+        policyReviewers = ['owner', 'reviewer'];
+      };
+      deny();
+      expect((await service.getCompletedAnalysis(input.itemId)).attemptId).toBe(
+        input.lease.attemptId,
+      );
+      await expect(service.reviseLogicalSplit(correction)).rejects.toThrow();
+      expect((await service.getItem(input.itemId)).analysisRevision).toBe(
+        input.lease.revision,
+      );
+      allow();
+      const accepted = await service.reviseLogicalSplit(correction);
+      deny();
+      await expect(service.reviseLogicalSplit(correction)).rejects.toThrow();
+      allow();
+      expect(await service.reviseLogicalSplit(correction)).toEqual(accepted);
+    });
+    it('rolls back a split when the current reviewer grant is revoked before publication', async () => {
+      const input = await generate(await source(100000, true));
+      const [evidence] = await service.getEvidence(input.itemId);
+      const original = options.execution!.authorize;
+      options.execution!.authorize = async (context) => {
+        const grant = await original(context);
+        const row = (
+          await context.db.query(
+            'SELECT analysis_revision FROM intake_items WHERE id=?',
+            input.itemId,
+          )
+        ).rows[0];
+        return {
+          ...grant,
+          reviewer: Number(row.analysis_revision) <= input.lease.revision,
+        };
+      };
+      await expect(
+        service.reviseLogicalSplit({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          expectedRevision: input.lease.revision,
+          evidenceId: evidence.id,
+          groups: [[1, 2]],
+          requestId: 'revoked-split',
+        }),
+      ).rejects.toThrow();
+      expect((await service.getItem(input.itemId)).analysisRevision).toBe(
+        input.lease.revision,
+      );
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_analyses WHERE item_id=?',
+            input.itemId,
+          )
+        ).rows,
+      ).toHaveLength(2);
+    });
+    it('denies a correction when there is no reviewable generation catalogue', async () => {
+      for (const handler of handlers) handler.discovery = undefined;
+      const input = await generate(await source(100000, true));
+      const [evidence] = await service.getEvidence(input.itemId);
+      await expect(
+        service.reviseLogicalSplit({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          expectedRevision: input.lease.revision,
+          evidenceId: evidence.id,
+          groups: [[1, 2]],
+          requestId: 'unrouted-split',
+        }),
+      ).rejects.toThrow('Review catalogue unavailable');
+      expect((await service.getItem(input.itemId)).analysisRevision).toBe(
+        input.lease.revision,
+      );
+    });
+    it('serializes concurrent split corrections on the exact current revision', async () => {
+      const input = await generate(await source(100000, true));
+      const [evidence] = await service.getEvidence(input.itemId);
+      const original = await service.readEvidence(input.itemId, evidence.id);
+      const correction = {
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        evidenceId: evidence.id,
+      };
+      const results = await Promise.allSettled([
+        service.reviseLogicalSplit({
+          ...correction,
+          groups: [[1], [2]],
+          requestId: 'parallel-one',
+        }),
+        new IngestionService(options).reviseLogicalSplit({
+          ...correction,
+          groups: [[1, 2]],
+          requestId: 'parallel-two',
+        }),
+      ]);
+      expect(
+        results.filter((result) => result.status === 'fulfilled'),
+      ).toHaveLength(1);
+      expect(
+        results.filter((result) => result.status === 'rejected'),
+      ).toHaveLength(1);
+      expect((await service.getItem(input.itemId)).analysisRevision).toBe(
+        input.lease.revision + 1,
+      );
+      expect(await service.readEvidence(input.itemId, evidence.id)).toEqual(
+        original,
+      );
+    });
+    it('records a split correction as fresh extraction then interpretation and preserves originals', async () => {
+      const input = await generate(await source(100000, true));
+      const evidence = await service.getEvidence(input.itemId);
+      const original = await service.readEvidence(input.itemId, evidence[0].id);
+      const [saved] = await service.previewGeneratedProposals({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'one',
+            expectedRevision: 0,
+            requestId: 'one',
+          },
+        ],
+      });
+      if (saved.kind !== 'operation') throw new Error('operation required');
+      const review = saved.review;
+      await service.submitDecision({
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
+        decision: 'approve',
+        requestId: 'approve',
+      });
+      const correction = {
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        expectedRevision: input.lease.revision,
+        evidenceId: evidence[0].id,
+        groups: [[1, 2]],
+        requestId: 'split',
+      };
+      allowed = false;
+      await expect(service.reviseLogicalSplit(correction)).rejects.toThrow();
+      allowed = true;
+      await expect(
+        service.reviseLogicalSplit({ ...correction, groups: [[1], [1]] }),
+      ).rejects.toThrow();
+      await expect(
+        service.reviseLogicalSplit({ ...correction, groups: [[1, 3]] }),
+      ).rejects.toThrow();
+      const revised = await service.reviseLogicalSplit(correction);
+      expect(await service.reviseLogicalSplit(correction)).toEqual(revised);
+      await expect(
+        service.reviseLogicalSplit({ ...correction, groups: [[1], [2]] }),
+      ).rejects.toThrow();
+      await expect(
+        service.getCompletedAnalysis(input.itemId),
+      ).rejects.toThrow();
+      await expect(service.applyAction(review.actionId)).rejects.toThrow();
+      expect(
+        (await service.listReviews(input.itemId)).actions[0].review,
+      ).toMatchObject({ state: 'stale', display: {} });
+      expect(await service.readEvidence(input.itemId, evidence[0].id)).toEqual(
+        original,
+      );
+      const lease = await service.claimAnalysis(
+        input.itemId,
+        revised.revision,
+        'extractor',
+      );
+      if (!lease) throw new Error('lease required');
+      const frozen = await service.getAnalysisInput(lease);
+      expect(frozen.configuration.humanCorrection).toMatchObject({
+        actorId: 'owner',
+        kind: 'logical_split',
+        groups: [[1, 2]],
+      });
+      await extractAnalysis(
+        service,
+        lease,
+        {
+          extract: (request) =>
+            extractWithProviders(request, {
+              pdf: {
+                identity: fixtureIdentity,
+                client: pdfFixture(
+                  ['Document one', 'Document two'],
+                  new Uint8Array(),
+                ),
+              },
+            }),
+        },
+        { configurationRevision: '1', limits: extractionLimits },
+      );
+      const next = await generation({
+        itemId: input.itemId,
+        attemptId: lease.attemptId,
+        lease,
+      });
+      await service.generateProposals(next.lease);
+      const mismatch = await output(next.lease);
+      expect(mismatch.outcome).toBe('needs_review');
+      expect(mismatch.suggestions).toEqual([]);
+      expect(mismatch.warnings).toContain('human_split_not_respected');
+      expect(calls.mock.calls.at(-1)?.[0].humanCorrection).toMatchObject({
+        groups: [[1, 2]],
+        actorId: 'owner',
+      });
+      calls.mockImplementation(async (candidate) => ({
+        completion: 'complete',
+        output: {
+          outcome: 'proposals',
+          suggestions: [
+            {
+              handlerId: CREATE,
+              handlerVersion: '1',
+              args: { title: 'Corrected groups', body: 'Body' },
+              evidence: [
+                {
+                  evidenceId: candidate.evidence[0].evidenceId,
+                  location: candidate.evidence[0].segments[0].location,
+                },
+              ],
+              alternatives: [],
+              missingFields: [],
+              explanation: 'Freshly interpreted corrected groups',
+            },
+          ],
+          splits: [{ evidenceId: correction.evidenceId, groups: [[1], [2]] }],
+        },
+      }));
+      const accepted = await service.reviseLogicalSplit({
+        ...correction,
+        attemptId: next.lease.attemptId,
+        expectedRevision: next.lease.revision,
+        groups: [[1], [2]],
+        requestId: 'split-again',
+      });
+      const extractionLease = await service.claimAnalysis(
+        input.itemId,
+        accepted.revision,
+        'extractor',
+      );
+      if (!extractionLease) throw new Error('lease required');
+      await extractAnalysis(
+        service,
+        extractionLease,
+        {
+          extract: (request) =>
+            extractWithProviders(request, {
+              pdf: {
+                identity: fixtureIdentity,
+                client: pdfFixture(
+                  ['Document one', 'Document two'],
+                  new Uint8Array(),
+                ),
+              },
+            }),
+        },
+        { configurationRevision: '1', limits: extractionLimits },
+      );
+      const final = await generation({
+        itemId: input.itemId,
+        attemptId: extractionLease.attemptId,
+        lease: extractionLease,
+      });
+      await service.generateProposals(final.lease);
+      expect((await output(final.lease)).suggestions[0].disposition).toBe(
+        'ready_for_review',
+      );
+      expect((await output(final.lease)).splits[0].groups).toEqual([[1], [2]]);
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(0);
+      expect(await service.readEvidence(input.itemId, evidence[0].id)).toEqual(
+        original,
+      );
+    });
     function chooseCreate() {
       calls.mockImplementation(async (input) => ({
         completion: 'complete',
@@ -1658,6 +2279,50 @@ export function proposalSuite(
       if (preview.kind !== 'plan') throw new Error('Plan required');
       expect(preview.review.steps).toHaveLength(2);
       expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(0);
+      const beforeIds = preview.review.steps.map((step) => step.actionId);
+      const reloadedPlan = await service.listReviews(input.itemId);
+      expect(reloadedPlan.actions.map((action) => action.plan?.id)).toEqual([
+        preview.review.id,
+        preview.review.id,
+      ]);
+      const authorizeParent = options.execution!.authorize;
+      options.execution!.authorize = async (request) => ({
+        ...(await authorizeParent(request)),
+        ...(request.handlerId === plan.id ? { allowed: false } : {}),
+      });
+      await expect(service.listReviews(input.itemId)).rejects.toThrow();
+      options.execution!.authorize = authorizeParent;
+      const oldReview = preview.review.steps[0];
+      preview.review = await service.previewPlan({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        planKey: 'document-with-evidence',
+        expectedRevision: preview.review.revision,
+        requestId: 'plan-edit',
+        handlerId: plan.id,
+        handlerVersion: plan.version,
+        args: {
+          ...reloadedPlan.actions[0].plan!.args,
+          title: 'Human corrected plan',
+        },
+      });
+      expect(preview.review.steps.map((step) => step.actionId)).toEqual(
+        beforeIds,
+      );
+      expect(
+        preview.review.steps.every((step) => step.state === 'waiting_review'),
+      ).toBe(true);
+      await expect(
+        service.submitDecision({
+          actionId: oldReview.actionId,
+          expectedRevision: oldReview.revision,
+          expectedReviewVersion: oldReview.reviewVersion,
+          bindingHash: oldReview.bindingHash,
+          requestId: 'old-plan-approval',
+          decision: 'approve',
+        }),
+      ).rejects.toThrow();
+
       for (const review of preview.review.steps)
         await service.submitDecision({
           actionId: review.actionId,

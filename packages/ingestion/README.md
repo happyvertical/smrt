@@ -149,3 +149,10 @@ only receipt preservation, never domain writes, AI tools or external actions.
 
 See [PROPOSALS.md](PROPOSALS.md) for bounded application catalog discovery, durable
 interpretation revisions, optional typed decisions and explicit generated preview.
+
+## Human review
+
+Mount the `/svelte` inbox and review components through an authenticated host using
+the browser-safe `IntakeReviewHost` DTO contract. See [REVIEW.md](REVIEW.md) for
+exact revision-bound callbacks, live evidence access, logical split corrections,
+assignment ownership, and the maintained upload-to-domain-result browser fixture.

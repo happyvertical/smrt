@@ -33,6 +33,7 @@ import {
   type TransactionRunner,
 } from './execution-internal.js';
 import { intersect, resolveIntakePolicy } from './policy.js';
+import type { ReviewAction, ReviewPage } from './review-dto.js';
 import type { IngestionOptions } from './server.js';
 
 export type * from './execution-contracts.js';
@@ -506,6 +507,7 @@ export class IntakeExecutionService {
     run: TransactionRunner<T>,
     itemId: string,
     work: (db: DatabaseInterface, authorize: DiscoveryGate) => Promise<T>,
+    requireReview = false,
   ): Promise<T> {
     return this.withRetention(() =>
       run(async (db) => {
@@ -520,6 +522,7 @@ export class IntakeExecutionService {
             handlerId,
             handlerVersion,
             callback,
+            requireReview,
           );
         const result = await work(db, authorize);
         // A foundation retry must retain the narrowest authorized privacy ceiling.
@@ -545,7 +548,17 @@ export class IntakeExecutionService {
     handlerId: string,
     handlerVersion: string,
     work: (context: HandlerContext) => Promise<T>,
+    requireReview = false,
   ): Promise<T> {
+    const review = async () => {
+      const item = await this.item(db, itemId, true);
+      await this.access(
+        db,
+        item,
+        this.handler(handlerId, handlerVersion),
+        'review',
+      );
+    };
     const authorize = async <R>(
       callback: (context: HandlerContext) => Promise<R>,
     ) => {
@@ -605,9 +618,11 @@ export class IntakeExecutionService {
       }
       return callback(context);
     };
+    if (requireReview) await review();
     const result = await authorize(work);
     // A long database callback may cross retention or a current-grant boundary.
     await authorize(async () => {});
+    if (requireReview) await review();
     return result;
   }
 
@@ -683,6 +698,173 @@ export class IntakeExecutionService {
       await this.access(db, bound.item, bound.handler, 'read');
       if (!this.retained(bound.item)) return expiredReview();
       return this.review(bound);
+    });
+  }
+  /** Bounded reload discovery. The cursor is an opaque action ID, never authority. */
+  async listReviews(
+    itemId: string,
+    input: { cursor?: string; limit?: number } = {},
+  ): Promise<ReviewPage> {
+    const limit = input.limit ?? 20;
+    if (
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 50 ||
+      (input.cursor !== undefined && !/^[0-9a-f-]{36}$/i.test(input.cursor))
+    )
+      throw new Error('Invalid review page');
+    return this.tx(async (db) => {
+      const item = await this.item(db, itemId, true, true);
+      const rows = (
+        await db.query(
+          `SELECT * FROM intake_actions WHERE tenant_id=? AND confidential_scope_id=? AND item_id=?${input.cursor ? ' AND id>?' : ''} ORDER BY id LIMIT ?`,
+          this.scope.tenantId,
+          this.scope.confidentialScopeId,
+          itemId,
+          ...(input.cursor ? [input.cursor] : []),
+          limit + 1,
+        )
+      ).rows;
+      const actions: ReviewAction[] = [];
+      for (const action of rows.slice(0, limit)) {
+        const [proposal] = await this.rows(
+          db,
+          'intake_proposals',
+          'action_id=? AND revision=?',
+          [action.id, action.proposal_revision],
+        );
+        if (!proposal) {
+          actions.push({
+            review: {
+              actionId: String(action.id),
+              proposalId: '',
+              revision: Number(action.proposal_revision),
+              reviewVersion: Number(action.review_version),
+              bindingHash: '',
+              display: {},
+              state: this.retained(item) ? 'proposed' : 'expired',
+            },
+          });
+          continue;
+        }
+        const tombstone = (state: string): ReviewAction => ({
+          review: {
+            actionId: String(action.id),
+            proposalId: String(proposal.id),
+            revision: Number(proposal.revision),
+            reviewVersion: Number(action.review_version),
+            bindingHash: String(proposal.binding_hash),
+            display: {},
+            state,
+          },
+        });
+        if (!this.retained(item)) {
+          actions.push(tombstone('expired'));
+          continue;
+        }
+        const bound = await this.bound(db, String(action.id));
+        const { context } = await this.access(
+          db,
+          bound.item,
+          bound.handler,
+          'read',
+        );
+        item.expires_at = bound.item.expires_at;
+        if (!this.retained(bound.item)) {
+          actions.push(tombstone('expired'));
+          continue;
+        }
+        for (const target of bound.binding.targetPreconditions)
+          await context.assertTarget(target.model, target.id, target.revision);
+        if (!this.retained(bound.item)) {
+          actions.push(tombstone('expired'));
+          continue;
+        }
+        if (bound.action.state !== 'succeeded') {
+          const [analysis] = await this.rows(db, 'intake_analyses', 'id=?', [
+            proposal.analysis_id,
+          ]);
+          if (
+            !analysis ||
+            Number(analysis.revision) !== Number(item.analysis_revision)
+          ) {
+            actions.push(tombstone('stale'));
+            continue;
+          }
+          await this.verifyEvidence(db, bound);
+        }
+        const entry: ReviewAction = {
+          review: this.review(bound),
+          args: structuredClone(bound.binding.args),
+          handlerId: bound.handler.id,
+          handlerVersion: bound.handler.version,
+          attemptId: String(proposal.analysis_attempt_id),
+          dependencies: structuredClone(bound.binding.dependencies),
+        };
+        if (action.state === 'succeeded')
+          entry.result = await this.successful(db, action, item);
+        if (bound.binding.plan) {
+          const [plan] = await this.rows(
+            db,
+            'intake_plans',
+            'item_id=? AND plan_key=? AND revision=?',
+            [itemId, bound.binding.plan.key, bound.binding.plan.revision],
+          );
+          if (!plan) throw new Error('Plan unavailable');
+          const planData = object(plan.data);
+          const parent = this.handler(
+            String(planData.handlerId),
+            String(planData.handlerVersion),
+          );
+          const parentPreview = object(planData.preview);
+          await this.discoveryContext(
+            db,
+            itemId,
+            parent.id,
+            parent.version,
+            async (context) => {
+              for (const target of parentPreview.targetPreconditions as Array<{
+                model: string;
+                id: string;
+                revision: string;
+              }>)
+                await context.assertTarget(
+                  target.model,
+                  target.id,
+                  target.revision,
+                );
+            },
+          );
+          const steps = planData.steps as Array<{ actionId: string }>;
+          entry.plan = {
+            id: String(plan.id),
+            key: String(plan.plan_key),
+            revision: Number(plan.revision),
+            stepIndex: steps.findIndex((step) => step.actionId === action.id),
+            args: object(planData.args),
+            handlerId: parent.id,
+            handlerVersion: parent.version,
+            attemptId: String(proposal.analysis_attempt_id),
+          };
+        }
+        await this.access(db, bound.item, bound.handler, 'read');
+        actions.push(this.retained(bound.item) ? entry : tombstone('expired'));
+      }
+      // Later callbacks can cross the shared deadline; publish no earlier payload then.
+      const current = await this.item(db, itemId, false, true);
+      if (!this.retained(current)) {
+        await this.redactExecution(db, current);
+        for (let index = 0; index < actions.length; index++)
+          actions[index] = {
+            review: { ...actions[index].review, display: {}, state: 'expired' },
+          };
+      }
+      return {
+        actions,
+        ...(rows.length > limit
+          ? { nextCursor: String(rows[limit - 1].id) }
+          : {}),
+      };
     });
   }
   private async buildBinding(

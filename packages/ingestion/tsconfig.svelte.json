@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "rootDir": ".",
+    "outDir": "./dist/svelte",
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "svelte"
+    ],
+    "verbatimModuleSyntax": true
+  },
+  "include": [
+    "src/svelte/**/*",
+    "src/*dto.ts",
+    "e2e/review/*.svelte",
+    "e2e/review/client.ts",
+    "src/svelte/**/*.component.test.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}
