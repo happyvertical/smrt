@@ -36,7 +36,10 @@ export class Tag extends SmrtHierarchical {
     this._context = value;
   }
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The name people see when they pick or browse tags.',
+  })
   name: string = ''; // Display name
 
   // parentId inherited from SmrtHierarchical (UUID, nullable). Stores the
@@ -44,7 +47,15 @@ export class Tag extends SmrtHierarchical {
   // the public identifier on TagCollection's API, but the FK is now UUID
   // for consistency with Place / Event / Account / Zone.
   level: number = 0; // Hierarchy depth (0 = root)
+
+  @field({
+    description: 'A short note on what belongs under this tag.',
+  })
   description: string = ''; // Optional description
+
+  @field({
+    description: 'Extra details about the tag, kept as JSON text.',
+  })
   metadata: string = ''; // JSON metadata stored as text
 
   // Tenancy
