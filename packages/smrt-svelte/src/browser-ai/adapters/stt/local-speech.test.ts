@@ -494,4 +494,69 @@ describe('LocalSpeechSTTAdapter', () => {
     expect(fake.preload).toHaveBeenCalledTimes(1);
     expect(fake.transcribe).toHaveBeenCalledTimes(2);
   });
+
+  it('never downloads: start, transcribePcm and prepare reject while the model is not cached', async () => {
+    const fake = fakeSpeech({ cached: false });
+    const capture = fakeCapture();
+    const adapter = new LocalSpeechSTTAdapter({
+      type: 'whisper-local',
+      loadSpeech: fake.loadSpeech,
+      loadModule: async () => ({}),
+      capture: () => capture,
+    });
+    await expect(adapter.start()).rejects.toMatchObject({
+      name: 'ModelNotDownloadedError',
+      dictationKind: 'model-missing',
+    });
+    await expect(adapter.prepare()).rejects.toMatchObject({
+      code: 'MODEL_NOT_DOWNLOADED',
+    });
+    await expect(adapter.transcribePcm(new Float32Array(160))).rejects.toThrow(
+      "isn't downloaded yet",
+    );
+    expect(fake.preload).not.toHaveBeenCalled();
+    expect(capture.start).not.toHaveBeenCalled();
+    // The host loads it explicitly; dictation then works.
+    await adapter.load();
+    expect(fake.preload).toHaveBeenCalledTimes(1);
+    await adapter.start();
+    expect(adapter.isListening()).toBe(true);
+  });
+
+  it('dictation reports model-missing instead of downloading, in push and hands-free modes', async () => {
+    const fake = fakeSpeech({ cached: false });
+    const provide = createSttDictationSource({
+      type: 'whisper-local',
+      loadSpeech: fake.loadSpeech,
+      loadModule: async () => ({}),
+      // @ts-expect-error test seam, not part of the public options
+      capture: () => fakeCapture(),
+    });
+    const push = new Dictation({
+      source: provide,
+      onText: vi.fn(),
+      beep: false,
+      requestMicrophone: false,
+      log: () => {},
+    });
+    await push.start();
+    expect(push.state).toBe('error');
+    expect(push.errorKind).toBe('model-missing');
+    push.dispose();
+    const factory = vi.fn();
+    const handsFree = new Dictation({
+      source: provide,
+      onText: vi.fn(),
+      mode: 'hands-free',
+      handsFreeCapture: factory,
+      beep: false,
+      requestMicrophone: false,
+      log: () => {},
+    });
+    await handsFree.start();
+    expect(handsFree.errorKind).toBe('model-missing');
+    expect(factory).not.toHaveBeenCalled();
+    expect(fake.preload).not.toHaveBeenCalled();
+    handsFree.dispose();
+  });
 });

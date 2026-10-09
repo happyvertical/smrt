@@ -91,6 +91,8 @@ export const M = defineMessages({
     "Couldn't write that down. Tap the microphone to try again, or type instead.",
   'ui.dictation.unavailable':
     "Speaking isn't set up here yet. Please type instead.",
+  'ui.dictation.model_missing':
+    "The speech model isn't downloaded yet. Download it first, or type instead.",
   'ui.dictation.forbidden': "You can't use speaking here. Please type instead.",
 
   // feedback/ProgressBar.svelte

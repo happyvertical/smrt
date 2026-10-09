@@ -87,6 +87,8 @@ export type DictationState =
  * - `not-transcribed`: the recording could not be written down;
  * - `unavailable`: writing recordings down is not set up here;
  * - `forbidden`: this person may not use it here;
+ * - `model-missing`: the on-device speech model is not downloaded (dictation
+ *   never downloads it; the host asks first and loads it);
  * - `failed`: anything else.
  */
 export type DictationErrorKind =
@@ -98,6 +100,7 @@ export type DictationErrorKind =
   | 'too-long'
   | 'not-transcribed'
   | 'unavailable'
+  | 'model-missing'
   | 'forbidden'
   | 'failed';
 
@@ -110,6 +113,7 @@ const DICTATION_ERROR_KINDS = new Set<DictationErrorKind>([
   'too-long',
   'not-transcribed',
   'unavailable',
+  'model-missing',
   'forbidden',
   'failed',
 ]);
@@ -148,6 +152,13 @@ export interface DictationSpeechSource {
     pcm: Float32Array,
     options?: { language?: string },
   ): Promise<string>;
+  /**
+   * Check the source can write down speech now, before the microphone opens
+   * (hands-free calls it; push-to-talk sources do the same inside `start`).
+   * Rejects when it cannot, for example an on-device model that is not
+   * downloaded yet. It must never start a download itself.
+   */
+  prepare?(): Promise<void>;
   /**
    * How long to wait for the source to finish after `stop()` before giving
    * up (default: the `stopTimeoutMs` option). A source that writes the
@@ -827,6 +838,13 @@ export class Dictation {
   ): Promise<void> {
     const factory = this.#options.handsFreeCapture;
     if (!factory) return;
+    try {
+      await source.prepare?.();
+    } catch (error) {
+      if (session === this.#session) this.#failWith(error, 'source');
+      return;
+    }
+    if (session !== this.#session || this.#disposed) return;
     this.#resetHandsFree();
     this.handsFree = true;
     let capture: HandsFreeCapture;

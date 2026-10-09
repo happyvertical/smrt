@@ -61,6 +61,8 @@ function errorText(kind: DictationErrorKind | null): string {
       return t(M['ui.dictation.not_transcribed']);
     case 'unavailable':
       return t(M['ui.dictation.unavailable']);
+    case 'model-missing':
+      return t(M['ui.dictation.model_missing']);
     case 'forbidden':
       return t(M['ui.dictation.forbidden']);
     default:

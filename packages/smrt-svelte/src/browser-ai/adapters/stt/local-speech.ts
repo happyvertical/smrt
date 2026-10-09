@@ -17,6 +17,7 @@ import {
   type DictationAudioCapture,
   type DictationAudioCaptureFactory,
 } from '@happyvertical/smrt-ui/forms';
+import { ModelNotDownloadedError } from '../../core/errors.js';
 import type { InitState, OnProgress } from '../../core/types.js';
 import {
   createLocalSpeechModel,
@@ -155,6 +156,20 @@ export class LocalSpeechSTTAdapter implements STTAdapter {
     });
   }
 
+  /**
+   * Make the model ready for dictation without ever downloading it: a model
+   * already loaded is used, one stored on this device is loaded from there,
+   * and anything else rejects with `ModelNotDownloadedError`. The host asks
+   * for consent and calls `load()` itself.
+   */
+  async prepare(): Promise<void> {
+    if (this._model.state === 'ready') return;
+    if (!(await this._model.isCached())) {
+      throw new ModelNotDownloadedError(this._model.modelId, this.type);
+    }
+    await this.ensureInitialized();
+  }
+
   getCapabilities(): STTCapabilities {
     return {
       continuous: false,
@@ -190,7 +205,7 @@ export class LocalSpeechSTTAdapter implements STTAdapter {
     pcm: Float32Array,
     options: { language?: string } = {},
   ): Promise<string> {
-    await this.ensureInitialized();
+    await this.prepare();
     return this._model.transcribe(
       pcm,
       options.language ?? this.options.defaultLanguage ?? 'en',
@@ -205,7 +220,7 @@ export class LocalSpeechSTTAdapter implements STTAdapter {
     const session = ++this.session;
     this.starting = true;
     try {
-      await this.ensureInitialized();
+      await this.prepare();
     } finally {
       this.starting = false;
     }

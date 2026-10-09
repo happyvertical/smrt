@@ -119,6 +119,26 @@ describe('Dictation hands-free', () => {
     dictation.dispose();
   });
 
+  it('fails with model-missing and never opens the microphone when the source is not prepared', async () => {
+    const src = fakeSource();
+    const error = Object.assign(
+      new Error("The speech model isn't downloaded yet"),
+      {
+        dictationKind: 'model-missing',
+      },
+    );
+    src.source.prepare = vi.fn(async () => {
+      throw error;
+    });
+    const { dictation, mic } = setup({ src });
+    await dictation.start();
+    expect(dictation.state).toBe('error');
+    expect(dictation.errorKind).toBe('model-missing');
+    expect(mic.factory).not.toHaveBeenCalled();
+    expect(mic.capture.start).not.toHaveBeenCalled();
+    dictation.dispose();
+  });
+
   it('follows speaking and the voice level', async () => {
     const { dictation, mic } = setup();
     await dictation.start();
