@@ -43,6 +43,7 @@ import {
   RUNTIME_REPORT_HAVING_OPS,
   RUNTIME_REPORT_LIMITS,
   RUNTIME_REPORT_MEASURE_FNS,
+  RuntimeReport,
   type RuntimeReportCompileContext,
   RuntimeReportError,
   type RuntimeReportResult,
@@ -52,6 +53,7 @@ import {
   runStoredRuntimeReport,
   saveRuntimeReport,
 } from '@happyvertical/smrt-reports';
+import type { OperationPermissionCollectionInput } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 
 /** Tool slug (permission/allow-list name) for the source field catalogue. */
@@ -76,9 +78,18 @@ const DEFAULT_PREVIEW_ROWS = 20;
 const DEFAULT_RUN_ROWS = 200;
 
 /** A server-owned report source; `collection` gates reads via RBAC. */
-export interface RuntimeReportToolSource extends RuntimeReportSourceDefinition {
-  /** Permission-catalog collection the principal must be able to `read`. */
-  collection: string;
+export interface RuntimeReportToolSource
+  extends Omit<RuntimeReportSourceDefinition, 'collection'> {
+  /**
+   * Permission-catalog collection the principal must be able to `read`. A
+   * string is used VERBATIM as the catalog collection slug (the part of
+   * `<collection>.read` the permission catalog emits, for example
+   * `invoices`), NOT a class name: `Invoice` derives `Invoice.read`, which no
+   * catalog contains, so every read is denied and the source is silently not
+   * offered. Prefer passing the registered model class (or a collection
+   * instance), which resolves to the exact slug the catalog emits.
+   */
+  collection: OperationPermissionCollectionInput;
 }
 
 /** What a human is asked to confirm before a runtime report is saved. */
@@ -126,8 +137,13 @@ export interface RuntimeReportToolsOptions {
   confirmation?: RuntimeReportConfirmationHost;
   /** Optional audit sink for tool-level activity. */
   audit?: (entry: RuntimeReportAuditEntry) => void | Promise<void>;
-  /** Permission-catalog collection for stored reports. Default `RuntimeReport`. */
-  reportsCollection?: string;
+  /**
+   * Permission-catalog collection for stored reports. Defaults to the
+   * registered `RuntimeReport` class, which resolves to the slug the
+   * catalog emits (for example `runtimereports.read`). A string is used
+   * verbatim as the catalog slug, never as a class name.
+   */
+  reportsCollection?: OperationPermissionCollectionInput;
   /** Rows returned by a preview. Default 20. */
   previewRows?: number;
   /** Row ceiling for a stored-report run. Default 200. */
@@ -183,7 +199,12 @@ async function compileContext(
   const sources = await resolveSources(options, run);
   const byId = new Map(sources.map((source) => [source.id, source]));
   return {
-    sources,
+    // The compiler never reads `collection`; hand it a plain definition so a
+    // class/collection-instance input does not leak into the compile context.
+    sources: sources.map(({ collection, ...source }) => ({
+      ...source,
+      ...(typeof collection === 'string' ? { collection } : {}),
+    })),
     permissions: run.permissions,
     tenantId: run.context.tenantId,
     authorizeSource: async (source) => {
@@ -367,7 +388,7 @@ function boundedPreview(
 export function createRuntimeReportTools(
   options: RuntimeReportToolsOptions,
 ): PrincipalTool[] {
-  const reportsCollection = options.reportsCollection ?? 'RuntimeReport';
+  const reportsCollection = options.reportsCollection ?? RuntimeReport;
   const previewRows = cap(options.previewRows, DEFAULT_PREVIEW_ROWS);
   const maxRows = cap(options.maxRows, DEFAULT_RUN_ROWS);
 

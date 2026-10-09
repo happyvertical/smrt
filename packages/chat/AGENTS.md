@@ -110,7 +110,11 @@ the live run on every compile and every stored-report run. `apply` needs the
 `specHash` of the previewed spec plus an app-owned `confirmation` host that
 resolves only after a human approved that exact spec; with no host the tools are
 propose-only and a model-supplied `confirmed` flag is ignored. Saving also needs
-`create` on the `RuntimeReport` collection. Contract and authority model:
+`create` on the `RuntimeReport` collection, and `list`/`run` need `read`; the
+default `reportsCollection` is the `RuntimeReport` class itself, which resolves
+to the catalog slug. A string `collection`/`reportsCollection` is used verbatim
+as a catalog slug (never a class name); tests must run the tools under the real
+`assertOperationPermission` guard so a wrong slug fails. Contract and authority model:
 [`packages/reports/agents/runtime-reports.md`](../reports/agents/runtime-reports.md).
 
 ## Conversational Harness (L3, #1891)

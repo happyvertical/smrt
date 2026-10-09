@@ -40,7 +40,13 @@ inputs the caller cannot supply through the spec:
   `{ id, className, collection }`. The spec names an id; unknown and
   not-offered answer identically (`unknown_source`). `authorizeSource` is the
   host's RBAC hook (the chat tools call `run.assertOperation(collection,
-  'read')`) and runs before any field is enumerated.
+  'read')`) and runs before any field is enumerated. `collection` is the
+  permission-catalog collection **slug** (the `<collection>` of
+  `<collection>.read`, for example `runtimereports`), or the registered model
+  class, which resolves to that slug through the catalog's own helper. It is
+  never a class name string: `Invoice` derives `Invoice.read`, which no
+  catalog contains, so every read is denied and the source is silently not
+  offered.
 - **Field policy.** Names are resolved from the ObjectRegistry, never from the
   spec. Not nameable: `sensitive` / `sensitivity: sensitive|secret` fields,
   `readPermission` fields unless `context.permissions` holds that permission,

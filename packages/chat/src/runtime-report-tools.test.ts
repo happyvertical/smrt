@@ -5,13 +5,18 @@ import {
   ObjectRegistry,
   SmrtObject,
 } from '@happyvertical/smrt-core';
-import { RuntimeReportError } from '@happyvertical/smrt-reports';
+import { RuntimeReport, RuntimeReportError } from '@happyvertical/smrt-reports';
 import {
   disableTenancy,
   enableTenancy,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
-import type { SessionPermissionRuntimeContext } from '@happyvertical/smrt-users';
+import {
+  assertOperationPermission,
+  deriveOperationPermissionSlug,
+  PermissionCatalogService,
+  type SessionPermissionRuntimeContext,
+} from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -39,13 +44,16 @@ const ALL_TOOLS = [
   RUNTIME_REPORT_RUN_TOOL_SLUG,
 ];
 
-const SOURCES: RuntimeReportToolSource[] = [
-  { id: 'invoices', className: 'ToolInvoice', collection: 'ToolInvoice' },
-];
+/**
+ * The catalog collection slug of the fixture source, read from the generated
+ * catalog after fixtures register (never typed by hand).
+ */
+let invoiceCollection = '';
+let sources: RuntimeReportToolSource[] = [];
 
 let db: DatabaseInterface;
 
-function registerFixtures(): void {
+async function registerFixtures(): Promise<void> {
   const field = (name: string, def: Record<string, unknown>) =>
     ObjectRegistry.registerFieldDecorator('ToolInvoice', name, def as never);
   field('tenantId', {
@@ -62,6 +70,13 @@ function registerFixtures(): void {
     tableName: 'tool_invoices',
     tenantScoped: { mode: 'optional' },
   });
+  // A runtime-registered (manifest-less) class only settles on the catalog's
+  // slug once its schema has been synthesized; do that before reading slugs.
+  await ObjectRegistry.getAllFields('ToolInvoice');
+  invoiceCollection = catalogSlug('ToolInvoice', 'read').replace(/\.read$/, '');
+  sources = [
+    { id: 'invoices', className: 'ToolInvoice', collection: invoiceCollection },
+  ];
 }
 
 async function seed(): Promise<void> {
@@ -92,21 +107,47 @@ async function seed(): Promise<void> {
 }
 
 interface RunOptions {
-  tenantId?: string;
+  tenantId?: string | null;
   allowedTools?: string[];
   permissions?: string[];
-  /** collection -> allowed actions */
+  /** model name -> allowed actions; granted as REAL catalog permission slugs */
   rbac?: Record<string, string[]>;
 }
 
+/**
+ * The catalog slug for `(model, action)`, read from the GENERATED permission
+ * catalog by class name. It is deliberately independent of the guard's
+ * derivation helpers: a tool that asks the guard about a slug the catalog does
+ * not contain is denied (`unknown_permission`) and fails the suite.
+ */
+function catalogSlug(model: string, action: string): string {
+  const entry = PermissionCatalogService.create()
+    .getCatalog()
+    .permissions.find(
+      (p) => p.className === model && p.slug === `${p.collection}.${action}`,
+    );
+  if (!entry) throw new Error(`no catalog slug for ${model}.${action}`);
+  return entry.slug;
+}
+
+/** Published permission set for `rbac`, as REAL catalog permission slugs. */
+function grantedSlugs(rbac: Record<string, string[]>): Set<string> {
+  const granted = new Set<string>();
+  for (const [model, actions] of Object.entries(rbac)) {
+    for (const action of actions) granted.add(catalogSlug(model, action));
+  }
+  return granted;
+}
+
 function fakeRun(options: RunOptions = {}): PrincipalRun {
-  const tenantId = options.tenantId ?? TENANT_A;
+  const tenantId = options.tenantId === undefined ? TENANT_A : options.tenantId;
   const allowedTools = options.allowedTools ?? ALL_TOOLS;
   const permissions = options.permissions ?? [];
   const rbac = options.rbac ?? {
     ToolInvoice: ['read'],
     RuntimeReport: ['read', 'create'],
   };
+  const permissionSet = grantedSlugs(rbac);
   return {
     context: {
       userId: USER,
@@ -128,14 +169,17 @@ function fakeRun(options: RunOptions = {}): PrincipalRun {
     assertToolAllowed(tool) {
       if (!allowedTools.includes(tool)) throw new Error(`denied:${tool}`);
     },
+    // The REAL catalog guard (same call `executeAsPrincipal` makes), so a
+    // collection slug that is not in the generated catalog is denied here
+    // exactly as it is in production.
     async assertOperation(collection, action) {
-      const name = String(collection);
-      if (!rbac[name]?.includes(action)) throw new Error('rbac denied');
-      return {
-        allowed: true,
-        permission: `${name}.${action}`,
-        reason: 'permission_granted',
-      };
+      return assertOperationPermission({
+        collection,
+        action,
+        userId: USER,
+        tenantId: tenantId ?? undefined,
+        permissionSet,
+      });
     },
   };
 }
@@ -143,7 +187,7 @@ function fakeRun(options: RunOptions = {}): PrincipalRun {
 function toolMap(
   extra: Partial<Parameters<typeof createRuntimeReportTools>[0]> = {},
 ) {
-  const tools = createRuntimeReportTools({ sources: SOURCES, ...extra });
+  const tools = createRuntimeReportTools({ sources, ...extra });
   return new Map(tools.map((tool) => [tool.slug, tool]));
 }
 
@@ -171,7 +215,7 @@ const SPEC = {
 };
 
 beforeEach(async () => {
-  registerFixtures();
+  await registerFixtures();
   db = await getTestDatabase({
     type: 'sqlite',
     url: ':memory:',
@@ -187,7 +231,7 @@ afterEach(() => {
 
 describe('createRuntimeReportTools', () => {
   it('exposes four principal tools with stable slugs, names and strict schemas', () => {
-    const tools = createRuntimeReportTools({ sources: SOURCES });
+    const tools = createRuntimeReportTools({ sources });
     expect(tools.map((t) => t.slug)).toEqual(ALL_TOOLS);
     for (const tool of tools) {
       expect(tool.aiTool.function.name).toBe(tool.slug.replaceAll('.', '-'));
@@ -687,8 +731,114 @@ describe('createRuntimeReportTools', () => {
     });
   });
 
+  describe('permission collection slugs (real catalog guard)', () => {
+    it('the default stored-report slugs exist in the generated permission catalog', () => {
+      const catalog = PermissionCatalogService.create().getCatalog();
+      const slugs = new Set(catalog.permissions.map((p) => p.slug));
+      for (const action of ['read', 'create']) {
+        const slug = deriveOperationPermissionSlug(RuntimeReport, action);
+        expect(slugs.has(slug), `${slug} is in the catalog`).toBe(true);
+      }
+      // A class-name string is used verbatim and matches no catalog slug.
+      expect(slugs.has('RuntimeReport.read')).toBe(false);
+      expect(slugs.has('ToolInvoice.read')).toBe(false);
+      expect(slugs.has(`${invoiceCollection}.read`)).toBe(true);
+    });
+
+    it('list, run and apply work under the real guard with the default collection', async () => {
+      const tools = toolMap({ confirmation: { confirmSave: async () => {} } });
+      const run = fakeRun();
+      const preview = await call(
+        tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+        run,
+        { phase: 'preview', spec: SPEC },
+      );
+      const saved = await call(
+        tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+        run,
+        { phase: 'apply', spec: SPEC, specHash: preview.specHash },
+      );
+      expect(
+        (await call(tools.get(RUNTIME_REPORT_LIST_TOOL_SLUG), run)).reports,
+      ).toHaveLength(1);
+      expect(
+        (
+          await call(tools.get(RUNTIME_REPORT_RUN_TOOL_SLUG), run, {
+            reportId: saved.reportId,
+          })
+        ).result.rows,
+      ).toHaveLength(2);
+    });
+
+    it('grants for the catalog slug of a different action do not leak', async () => {
+      const tools = toolMap({ confirmation: { confirmSave: async () => {} } });
+      // read on the reports collection only: the apply step needs create.
+      const run = fakeRun({
+        rbac: { ToolInvoice: ['read'], RuntimeReport: ['read'] },
+      });
+      const preview = await call(
+        tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+        run,
+        { phase: 'preview', spec: SPEC },
+      );
+      await expect(
+        call(tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG), run, {
+          phase: 'apply',
+          spec: SPEC,
+          specHash: preview.specHash,
+        }),
+      ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+    });
+
+    it('a class-name string is NOT a catalog slug: source is not offered, stored reports are denied', async () => {
+      const wrongSources: RuntimeReportToolSource[] = [
+        { id: 'invoices', className: 'ToolInvoice', collection: 'ToolInvoice' },
+      ];
+      const offered = await call(
+        new Map(
+          createRuntimeReportTools({ sources: wrongSources }).map((t) => [
+            t.slug,
+            t,
+          ]),
+        ).get(RUNTIME_REPORT_SOURCES_TOOL_SLUG),
+        fakeRun(),
+      );
+      expect(offered.sources).toEqual([]);
+
+      const wrongReports = toolMap({ reportsCollection: 'RuntimeReport' });
+      await expect(
+        call(wrongReports.get(RUNTIME_REPORT_LIST_TOOL_SLUG), fakeRun()),
+      ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+    });
+
+    it('accepts a registered model class as a source collection', async () => {
+      // A manifest-backed class resolves through the catalog's own helper, so
+      // the read gate follows the class rather than a hand-typed slug. (The
+      // gate target here is RuntimeReport purely because it is manifest-backed.)
+      const classSources: RuntimeReportToolSource[] = [
+        { id: 'invoices', className: 'ToolInvoice', collection: RuntimeReport },
+      ];
+      const sourcesTool = new Map(
+        createRuntimeReportTools({ sources: classSources }).map((t) => [
+          t.slug,
+          t,
+        ]),
+      ).get(RUNTIME_REPORT_SOURCES_TOOL_SLUG);
+      const granted = await call(
+        sourcesTool,
+        fakeRun({ rbac: { RuntimeReport: ['read'] } }),
+      );
+      expect(granted.sources).toHaveLength(1);
+      const denied = await call(
+        sourcesTool,
+        fakeRun({ rbac: { ToolInvoice: ['read'] } }),
+      );
+      expect(denied.sources).toEqual([]);
+    });
+  });
+
   it('accepts a per-run source resolver', async () => {
-    const resolver = vi.fn().mockResolvedValue(SOURCES);
+    const resolver = vi.fn().mockResolvedValue(sources);
     const tools = new Map(
       createRuntimeReportTools({ sources: resolver }).map((t) => [t.slug, t]),
     );

@@ -51,7 +51,11 @@ export interface RuntimeReportSourceDefinition {
   /** Registered `ObjectRegistry` class (qualified or bare name). */
   className: string;
   label?: string;
-  /** Permission-catalog collection the host authorizes reads against. */
+  /**
+   * Permission-catalog collection SLUG the host authorizes reads against (the
+   * `<collection>` in `<collection>.read`, not a class name). Informational
+   * to the compiler; the host's `authorizeSource` consumes it.
+   */
   collection?: string;
   description?: string;
 }
