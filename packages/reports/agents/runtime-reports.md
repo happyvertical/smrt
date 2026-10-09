@@ -40,7 +40,11 @@ inputs the caller cannot supply through the spec:
   `{ id, className, collection }`. The spec names an id; unknown and
   not-offered answer identically (`unknown_source`). `authorizeSource` is the
   host's RBAC hook (the chat tools call `run.assertOperation(collection,
-  'read')`) and runs before any field is enumerated. `collection` is the
+  'read')`) and runs before any field is enumerated. A host should also narrow
+  `sources` to those the principal may read before compiling (the chat tools do),
+  because `authorizeSource` only runs for an id that is in the list: otherwise
+  an RBAC refusal for a configured id and `unknown_source` for an absent one are
+  different answers, and a caller can enumerate the configured source ids. `collection` is the
   permission-catalog collection **slug** (the `<collection>` of
   `<collection>.read`, for example `runtimereports`), or the registered model
   class, which resolves to that slug through the catalog's own helper. It is

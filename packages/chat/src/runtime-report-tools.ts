@@ -212,15 +212,39 @@ async function resolveSources(
     : options.sources;
 }
 
+/** Whether the principal may `read` a configured source (never throws). */
+async function canReadSource(
+  run: PrincipalRun,
+  source: RuntimeReportToolSource,
+): Promise<boolean> {
+  try {
+    await run.assertOperation(source.collection, 'read');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Build the compile context from the LIVE run. The permission set is the
  * principal's published snapshot and every source read is gated by RBAC.
+ *
+ * The allow-list is narrowed to the sources this principal may read BEFORE the
+ * compiler sees it. A configured-but-unreadable source id is then
+ * indistinguishable from an id that is not configured at all: both fail in the
+ * compiler's source resolution with the same `unknown_source` error, so the
+ * model cannot enumerate the host's source ids by probing for a different
+ * error. `authorizeSource` stays as a second, fail-closed gate.
  */
 async function compileContext(
   options: RuntimeReportToolsOptions,
   run: PrincipalRun,
 ): Promise<RuntimeReportCompileContext> {
-  const sources = await resolveSources(options, run);
+  const configured = await resolveSources(options, run);
+  const sources: RuntimeReportToolSource[] = [];
+  for (const source of configured) {
+    if (await canReadSource(run, source)) sources.push(source);
+  }
   const byId = new Map(sources.map((source) => [source.id, source]));
   return {
     // The compiler never reads `collection`; hand it a plain definition so a
@@ -232,12 +256,8 @@ async function compileContext(
     permissions: run.permissions,
     tenantId: run.context.tenantId,
     authorizeSource: async (source) => {
-      const configured = byId.get(source.id);
-      if (!configured) throw new DataSurfaceDeniedError();
-      try {
-        await run.assertOperation(configured.collection, 'read');
-      } catch {
-        // Do not reveal whether the source exists or merely is not readable.
+      const allowed = byId.get(source.id);
+      if (!allowed || !(await canReadSource(run, allowed))) {
         throw new DataSurfaceDeniedError();
       }
     },
@@ -591,15 +611,8 @@ export function createRuntimeReportTools(
         limit,
       });
       const context = await compileContext(options, run);
-      const readable = new Set<string>();
-      for (const source of context.sources) {
-        try {
-          await context.authorizeSource?.(source);
-          readable.add(source.id);
-        } catch {
-          // not readable by this principal
-        }
-      }
+      // The context only carries sources this principal may read.
+      const readable = new Set(context.sources.map((source) => source.id));
       await audit(run, { action: 'list' });
       return {
         reports: reports.map((report) => ({

@@ -388,16 +388,44 @@ describe('createRuntimeReportTools', () => {
       expect(Number((survivors.rows[0] as { n: unknown }).n)).toBe(4);
     });
 
-    it('denies a source the principal may not read, indistinguishably', async () => {
-      const denied = await call(
-        define(),
-        fakeRun({ rbac: { RuntimeReport: ['read', 'create'] } }),
-        {
+    it('answers a configured-but-unreadable source exactly like an unknown id (no source-id oracle)', async () => {
+      const unreadable = fakeRun({
+        rbac: { RuntimeReport: ['read', 'create'] },
+      });
+      const probe = (sourceId: string) =>
+        call(define(), unreadable, {
           phase: 'preview',
-          spec: SPEC,
-        },
-      ).catch((e) => e);
-      expect(denied).toBeInstanceOf(DataSurfaceDeniedError);
+          spec: { ...SPEC, source: sourceId },
+        }).catch((e) => e);
+      const configured = await probe('invoices');
+      const unknown = await probe('no_such_source');
+      for (const error of [configured, unknown]) {
+        expect(error).toBeInstanceOf(RuntimeReportError);
+        expect(classifyToolError(error)).toBe('invalid_request');
+      }
+      // Same error class, code, path, status and message once the id the
+      // caller supplied is factored out of the text.
+      const shape = (error: RuntimeReportError, id: string) => ({
+        name: error.constructor.name,
+        code: error.code,
+        path: error.path,
+        status: error.status,
+        message: error.message.replaceAll(id, '<id>'),
+      });
+      expect(shape(configured, 'invoices')).toEqual(
+        shape(unknown, 'no_such_source'),
+      );
+      expect(configured.message).not.toMatch(
+        /permission|not permitted|denied/i,
+      );
+    });
+
+    it('a readable principal still previews the same source', async () => {
+      const out = await call(define(), fakeRun(), {
+        phase: 'preview',
+        spec: SPEC,
+      });
+      expect(out.phase).toBe('preview');
     });
 
     it('rejects an invalid phase', async () => {
@@ -629,16 +657,21 @@ describe('createRuntimeReportTools', () => {
       ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
     });
 
-    it('re-validates on every run: lost source access is denied and flagged in list', async () => {
+    it('re-validates on every run: lost source access is refused and flagged in list', async () => {
       const { tools, saved } = await save();
       const noSource = fakeRun({
         rbac: { RuntimeReport: ['read'], ToolInvoice: [] },
       });
-      await expect(
-        call(tools.get(RUNTIME_REPORT_RUN_TOOL_SLUG), noSource, {
+      const error = await call(
+        tools.get(RUNTIME_REPORT_RUN_TOOL_SLUG),
+        noSource,
+        {
           reportId: saved.reportId,
-        }),
-      ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+        },
+      ).catch((e) => e);
+      // Not distinguishable from a source the host never configured.
+      expect(error).toBeInstanceOf(RuntimeReportError);
+      expect(error.code).toBe('unknown_source');
       const listed = await call(
         tools.get(RUNTIME_REPORT_LIST_TOOL_SLUG),
         noSource,
