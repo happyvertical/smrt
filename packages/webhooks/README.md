@@ -122,9 +122,14 @@ callbacks backed by `WebhookAdminService`. Refresh the view after mutations.
 The host owns login, administrator permissions, and CSRF protection. The component
 has busy/error states and never receives persisted signing secrets.
 
-The `integrations.webhooks` recipe's server runtime and settings surface await
-#3708's shared recipe contract; the coordinator will wire those fields after that
-prerequisite lands. The server module and component are usable independently.
+The `integrations.webhooks` recipe declares `runtime: 'server'` and the
+`@happyvertical/smrt-webhooks/svelte#WebhookAdmin` settings panel in the
+Integrations group. The host resolves that export and supplies the authenticated
+callbacks and safe read models described above. It intentionally declares no
+model navigation: generated CRUD is disabled for these sensitive internal
+models. It declares no provider or demo seed because transport configuration and
+signing secrets belong to the server; selecting the recipe does not configure a
+worker or authorize a browser to dispatch webhooks.
 
 ## Validation
 
