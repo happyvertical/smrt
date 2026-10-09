@@ -114,6 +114,7 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",
+    "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/smrt-web": "workspace:*",
     "@mlc-ai/web-llm": "^0.2.85",

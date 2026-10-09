@@ -175,6 +175,13 @@ the config `ai` block. Pass `runtime`: a turn never keeps the RLS request tx
 (`clientRequestMessageId`): the PK is the retry reservation. See
 [docs](../../docs/assistant-dock.md).
 
+## Recipes (#3719)
+
+`src/recipes.ts` declares `chat.assistant` (the AssistantDock as a `header.end`
+shell widget, an `llm` provider, runtime `both`; help in
+`src/assistant.recipe.md`). Keep each recipe class self-contained. Details:
+[agents/recipes.md](agents/recipes.md).
+
 ## Gotchas
 
 - **sessionContext, not context**: `context` is reserved for slug scoping. Use `getSessionContext()`/`updateSessionContext()` for agent memory.
