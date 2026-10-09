@@ -68,6 +68,12 @@ interface Props {
   title?: string;
   /** Secondary line under the application name in the shell brand. */
   subtitle?: string;
+  /** Logo shown before the title in the shell brand (and as the compact rail mark). */
+  logoSrc?: string;
+  /** Alternative text for the logo (decorative by default: the title names the app). */
+  logoAlt?: string;
+  /** Where the brand links to (e.g. the app's home); unlinked when omitted. */
+  homeHref?: string;
   /** localStorage key for the user's shell layout preferences. */
   storageKey?: string;
   /** Navigation rendered in the tenant (left) panel. */
@@ -177,6 +183,9 @@ interface Props {
 let {
   title = 'SMRT',
   subtitle,
+  logoSrc,
+  logoAlt,
+  homeHref,
   storageKey = 'smrt-app-shell',
   nav = [],
   navGroups = [],
@@ -650,7 +659,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet brandItem()}
-  <ShellBrand {title} {subtitle} />
+  <ShellBrand {title} {subtitle} {logoSrc} {logoAlt} {homeHref} />
 {/snippet}
 
 {#snippet editRegionControl(region: ShellRegion)}
@@ -685,6 +694,9 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
     <AdminShell
       {title}
       {subtitle}
+      {logoSrc}
+      {logoAlt}
+      {homeHref}
       state={shell}
       path={currentHref}
       slots={shellSlots}

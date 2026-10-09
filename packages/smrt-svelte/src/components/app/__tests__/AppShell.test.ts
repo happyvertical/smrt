@@ -36,6 +36,23 @@ function render(props: Record<string, unknown>) {
 }
 
 describe('AppShell', () => {
+  it('shows the logo before the title in the brand, linked home', async () => {
+    await render({
+      title: 'Planner',
+      logoSrc: '/mark.svg',
+      homeHref: '/',
+      config: open,
+    });
+    const logo = container.querySelector<HTMLImageElement>(
+      'img.smrt-admin-shell__logo',
+    );
+    expect(logo?.getAttribute('src')).toBe('/mark.svg');
+    expect(logo?.getAttribute('alt')).toBe('');
+    const link = logo?.closest('a');
+    expect(link?.getAttribute('href')).toBe('/');
+    expect(link?.textContent).toContain('Planner');
+  });
+
   it('renders the shell with and without navigation', async () => {
     await render({ title: 'Acme', config: open });
     expect(container.textContent).toContain('page body');

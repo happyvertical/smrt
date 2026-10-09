@@ -122,7 +122,7 @@ Movable items have stable ids: dock toggles `dock:<tool>`, each host `slots`
 snippet `slot:<slot>`, and host `slotItems` (`AppShell`, `{ id, label, slot,
 render }[]`, exported type `ShellSlotItem`; keep ids stable, they are stored in
 layouts). `AppShell` also supplies the built-in item `item:brand` (the shell
-title and subtitle, default slot `header.start`, movable, same fallback chain
+`logoSrc`/`logoAlt`, title and subtitle, linked to `homeHref` when set, default slot `header.start`, movable, same fallback chain
 when the header is hidden); it sets `AdminShell` `brandInSlot` so the top band
 draws no brand of its own (standalone `AdminShell` still does). The menu
 opener and account content are not items yet (#3656 step 3).

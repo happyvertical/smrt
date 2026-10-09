@@ -1505,6 +1505,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-column: var(--band-column, 2);
   }
 
+  /* The header's slots can render in the top band too: keep the floating
+     layout toggle's corner clear there as well. */
+  .smrt-admin-shell__band--top {
+    padding-inline-end: calc(var(--smrt-spacing-4) + var(--smrt-shell-floating-reserve-inline));
+  }
+
   .smrt-admin-shell__empty {
     color: var(--smrt-color-on-surface-variant);
   }
