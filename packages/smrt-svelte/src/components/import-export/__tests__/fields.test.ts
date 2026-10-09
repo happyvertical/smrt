@@ -3,6 +3,7 @@ import {
   createCollectionImportExport,
   ExportLimitError,
 } from '../collection-adapter.js';
+import { buildExportFile } from '../export.js';
 import {
   fieldsFromCollectionDefinition,
   humanizeFieldName,
@@ -25,6 +26,7 @@ const definition = {
     createdAt: { type: 'datetime' },
     _meta_type: { type: 'text' },
     internal: { type: 'text' },
+    secret: { type: 'text', required: true, default: 'hush' },
   },
 } as const;
 
@@ -39,8 +41,18 @@ describe('fieldsFromCollectionDefinition', () => {
   const fields = fieldsFromCollectionDefinition(definition, {
     enums: { status: ['draft', 'live'] },
     unique: ['sku'],
+    // The resolver omits `secret` (sensitive / read-gated): it is not on the allowlist.
     policy: {
       internal: { visibility: 'hidden' },
+      sku: {},
+      priceCents: {},
+      rate: {},
+      launchedAt: {},
+      ownerId: {},
+      config: {},
+      status: {},
+      notes: {},
+      tenantId: {},
       active: {
         locked: true,
         hasDefault: true,
@@ -108,6 +120,36 @@ describe('fieldsFromCollectionDefinition', () => {
     });
   });
 
+  it('treats a supplied policy as an allowlist: omitted fields are not importable or exportable', () => {
+    expect(Object.keys(byName)).not.toContain('secret');
+    expect(
+      fields.some((f) => f.name === 'secret' && (f.importable || f.exportable)),
+    ).toBe(false);
+    // An empty resolved policy allows nothing but the export-only id.
+    expect(
+      fieldsFromCollectionDefinition(definition, { policy: {} }).map(
+        (f) => f.name,
+      ),
+    ).toEqual(['id']);
+  });
+
+  it('keeps manifest defaults when no policy is supplied', () => {
+    const noPolicy = fieldsFromCollectionDefinition(definition);
+    const secret = noPolicy.find((f) => f.name === 'secret');
+    expect(secret).toMatchObject({
+      importable: true,
+      exportable: true,
+      hasDefault: true,
+      defaultValue: 'hush',
+    });
+  });
+
+  it('marks only policy-locked fields as locked', () => {
+    expect(byName.active.locked).toBe(true);
+    expect(byName.internal.locked).toBeUndefined();
+    expect(byName.tenantId.locked).toBeUndefined();
+  });
+
   it('orders by policy order, then ui order, then declaration, with id first', () => {
     const names = fields.map((f) => f.name);
     expect(names.slice(0, 3)).toEqual(['id', 'name', 'launchedAt']);
@@ -160,6 +202,24 @@ describe('createCollectionImportExport', () => {
     await expect(
       io.loadRows({ pageSize: 2, maxRows: 3 }),
     ).rejects.toBeInstanceOf(ExportLimitError);
+  });
+
+  it('does not export a field the resolved policy omits, even when loadRows returns it', async () => {
+    const io = createCollectionImportExport({
+      definition,
+      fetchers: {
+        list: vi.fn(async () => ({
+          items: [{ id: '1', name: 'Widget', secret: 'hunter2' }],
+        })),
+        create: vi.fn(),
+      },
+      fieldOptions: { policy: { name: {} } },
+    });
+    const rows = await io.loadRows();
+    const file = buildExportFile({ fields: io.fields, rows });
+    expect(file.content).toContain('Widget');
+    expect(file.content).not.toContain('hunter2');
+    expect(file.content).not.toContain('secret');
   });
 
   it('stops when aborted', async () => {

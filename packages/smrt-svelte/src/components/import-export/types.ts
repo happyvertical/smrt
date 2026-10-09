@@ -48,6 +48,12 @@ export interface ImportExportField {
   /** A resolved policy/manifest default; fills empty or unmapped cells. */
   hasDefault?: boolean;
   defaultValue?: unknown;
+  /**
+   * An org-locked field: not importable, but its resolved default is still
+   * written to every record. A non-importable field that is not `locked`
+   * (hidden, tenant, system) never enters the payload, defaults included.
+   */
+  locked?: boolean;
   /** Reject a second row repeating the same value within one file. */
   unique?: boolean;
   /** Extra header spellings the auto-mapper should accept. */

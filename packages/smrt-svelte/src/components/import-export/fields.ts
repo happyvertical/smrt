@@ -72,6 +72,8 @@ export function humanizeFieldName(name: string): string {
  * - system fields (`createdAt`, `updatedAt`, ...) and `_`-prefixed storage
  *   fields are skipped; `id` is exportable but never imported; tenant fields
  *   are neither
+ * - a supplied policy is an allowlist: a field the policy omits is neither
+ *   imported nor exported (manifest defaults apply only with no policy)
  * - a policy `hidden` field is neither imported nor exported, so an export
  *   cannot reveal what the UI hides
  * - a policy `locked` field is not importable and keeps its resolved default
@@ -82,7 +84,7 @@ export function fieldsFromCollectionDefinition(
   definition: Pick<SmrtWebCollectionDefinition, 'fields'>,
   options: FieldsFromDefinitionOptions = {},
 ): ImportExportField[] {
-  const { policy = {}, enums = {}, unique = [], exclude = [] } = options;
+  const { policy, enums = {}, unique = [], exclude = [] } = options;
   const skip = new Set(exclude);
   const uniqueSet = new Set(unique);
   const entries: Array<{
@@ -97,7 +99,10 @@ export function fieldsFromCollectionDefinition(
     if (name.startsWith('_') || SYSTEM_FIELDS.has(name) || skip.has(name))
       continue;
     if (name === 'id') continue; // re-added below with fixed semantics
-    const p = policy[name];
+    const p = policy?.[name];
+    // A supplied resolved policy is an allowlist: the resolver omits sensitive,
+    // transient and read-gated fields, so a field absent from it never appears.
+    if (policy && !p) continue;
     const tenant = TENANT_FIELDS.has(name);
     const hidden = p?.visibility === 'hidden';
     const locked = p?.locked === true;
@@ -123,6 +128,7 @@ export function fieldsFromCollectionDefinition(
           ? { help: (p?.help ?? def.description) as string }
           : {}),
         ...(hasDefault ? { hasDefault: true, defaultValue } : {}),
+        ...(locked && !hidden && !tenant ? { locked: true } : {}),
         ...(uniqueSet.has(name) ? { unique: true } : {}),
       },
       order: p?.order ?? def.ui?.order ?? Number.POSITIVE_INFINITY,
