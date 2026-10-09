@@ -3,7 +3,9 @@
 This directory owns independent evaluation artifacts, not another ingestion stack.
 The application handlers remain in `reference/handlers.ts`; source, extraction,
 proposal, review and feedback behavior must use their owning public APIs.
-Implementation is in progress. No paid inference or quality result is recorded here.
+The completed paid run and its retained failures are documented in
+[the measured report](../../../docs/evaluation/3677-measured-evaluation.md).
+The measured gates do not support a supported-reference or automation claim.
 
 ## Freeze and provenance
 
@@ -35,8 +37,9 @@ image/audio and family counts must appear alongside all measured results.
 It records family/generator hashes, exact source hashes and byte lengths, labels,
 candidates, authored source text, tool versions and single-author annotation
 provenance. Independent semantic adjudication is explicitly pending; mechanical
-validation is not human adjudication. The checked-in compact index records 75 family digests/counts and the complete manifest SHA256; each family digest binds every case source hash, label, candidate and partition. The full manifest and media are reproducible artifacts, not required opaque Git rows. The current candidate materialization is not yet frozen;
-root freeze and paid-run approval remain pending. Pin/record the actual Nix closure for ImageMagick, espeak-ng and
+validation is not human adjudication. The checked-in compact index records 75 family digests/counts and the complete manifest SHA256; each family digest binds every case source hash, label, candidate and partition. The full manifest and media are reproducible artifacts, not required opaque Git rows. The measured materialization was frozen before the completed paid run; its external
+freeze receipts are preserved in the report archive. The protocol retains its
+historical preregistration status, and the draft profile is not a new authorization. Pin/record the actual Nix closure for ImageMagick, espeak-ng and
 fonts when generating. Never silently regenerate a different corpus under a frozen
 version. Reproduction must match the full manifest hash and every source hash.
 No generated media directory belongs in Git.
@@ -255,3 +258,11 @@ failures recover the original offers, keeping precision denominators independent
 of review success. Explicit duplicate-effect observations fail safety even when
 other counters remain unknown. The historical measured export predates this fix;
 its documented limitation and original scores remain unchanged.
+
+Current preparation binds a conservative superset of every declared workspace's
+complete `dist` tree and public exports, plus package/workspace/lock metadata.
+Missing exports, unexpected workspace resolutions and artifact symlinks fail
+closed. Workspace runtime modules load only after release and ledger validation.
+Keep the trusted host's artifacts unchanged during execution; this receipt is not
+protection against concurrent hostile host mutation. The completed run predates
+this dependency-build binding; see the report's original build receipt limitation.

@@ -13,17 +13,15 @@ import { recoverProjection } from './case-observation.js';
 import { readFrozenSource } from './case-source.js';
 import { sha256 } from './corpus.mjs';
 import { feedbackCases } from './feedback-cases.mjs';
-import { runFeedbackCohort } from './feedback-run.js';
 import { verifyMaterialization } from './freeze.mjs';
 import { assertNativeScope } from './native-scope.mjs';
-import { projectSuggestion } from './prediction.js';
-import { type ReferenceCase, runReferenceCase } from './reference-case.js';
-import { createReferenceProviderOptions } from './reference-providers.js';
+import type { ReferenceCase } from './reference-case.js';
 import {
   assertPaidRelease,
   fileTreeReceipt,
   LIVE_LEDGER,
   scheduleBound,
+  workspaceBuildReceipt,
 } from './release.mjs';
 import { exactActionMatch, scoreCases, scoreStrata } from './scoring.mjs';
 
@@ -88,7 +86,7 @@ export function prepareEvaluation(
     'pnpm-lock.yaml',
     'package.json',
   ]);
-  const built = fileTreeReceipt(repository, ['packages/ingestion/dist/']);
+  const built = workspaceBuildReceipt(repository);
   const gitHead = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: repository,
     encoding: 'utf8',
@@ -142,6 +140,12 @@ export async function runApprovedEvaluation(paths: RunPaths) {
       initial.calls.length !== release.startingCalls
     )
       throw Error('Live ledger differs from initial inspected release');
+    const { runFeedbackCohort } = await import('./feedback-run.js');
+    const { projectSuggestion } = await import('./prediction.js');
+    const { runReferenceCase } = await import('./reference-case.js');
+    const { createReferenceProviderOptions } = await import(
+      './reference-providers.js'
+    );
     mkdirSync(outputRoot, { recursive: false });
     writeFileSync(
       join(outputRoot, 'frozen-run.json'),

@@ -171,3 +171,14 @@ after later artifact/cleanup errors, and counts known positive safety observatio
 without claiming missing counters are zero. Its fault-injection tests are
 correctness evidence for later tooling, not an improvement to this paid result.
 No paid rerun occurred.
+
+### Original build receipt limitation
+
+The frozen execution receipt bound ingestion's build output, but did not bind the
+ignored build outputs of its workspace dependencies. The recorded execution HEAD
+and normal build/test evidence remain available; they do not retrospectively
+certify the dependency bytes loaded during that run. The original archive,
+predictions and score are unchanged. A later receipt correction binds all declared
+workspace build directories, public export files, package metadata and installed
+workspace dependency resolutions before loading the reference runtime. Its current
+validation is separate evidence, not a replacement execution receipt or a paid rerun.

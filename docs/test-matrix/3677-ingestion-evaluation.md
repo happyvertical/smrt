@@ -94,3 +94,15 @@ other observations remain unknown. Final round2 checks passed:62 tooling cases (
 static/knowledge gates. Four targeted baseline assertions failed before the fix;
 all now pass, including precision-denominator and explicit safety-counter checks. Historical paid artifacts/scores stay unchanged; this
 is not a paid recognition-quality improvement or a claim of observed paid loss.
+
+### Round 3: workspace runtime receipt and current status
+
+An unchanged Git HEAD with a modified transitive workspace public build must reject
+an earlier release before reservation or provider invocation. A temporary three-package
+workspace exercises that boundary, missing exports, incorrect installed workspace
+links, symlink build roots and escaping export targets. All five regressions fail
+against ingestion-only binding and pass against the workspace superset receipt.
+The actual built checkout is separately inspected; this does not certify historical
+paid-run dependency bytes. The original measured archive and summary remain unchanged.
+README status now describes the completed run and distinguishes its historical frozen
+protocol from a reusable, nonauthorizing draft profile.
