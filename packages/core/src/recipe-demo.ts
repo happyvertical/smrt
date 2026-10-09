@@ -20,15 +20,17 @@
  *    claim, so the package capability refines it.
  * 2. A package the bundle-gate reports `server-only` is `server`.
  * 3. A *server provider* is one that lists `secrets`: it holds credentials a
- *    browser cannot. It is *mockable* when `options` includes `mock`. A
- *    required server provider that is not mockable is `sample` when the recipe
- *    ships a `demoSeed` (the fixtures stand in for what the provider would
- *    feed), otherwise `server`.
+ *    browser cannot. One with a `browserOptions` entry is satisfied in a
+ *    browser (an in-browser model), so it changes nothing. Otherwise it is
+ *    *mockable* when `options` includes `mock`. A required server provider
+ *    that is neither is `sample` when the recipe ships a `demoSeed` (the
+ *    fixtures stand in for what the provider would feed), otherwise `server`.
  * 4. Any other mockable server provider makes the recipe `mock`.
  * 5. Otherwise `live`.
  *
  * Contradictions fail the build: `runtime: 'browser'` on a `server-only`
- * package, or beside a required server provider that cannot be mocked.
+ * package, or beside a required server provider with no browser option and no
+ * mock.
  *
  * @packageDocumentation
  */
@@ -63,6 +65,11 @@ const rank = (mode: RecipeDemoMode): number => RECIPE_DEMO_MODES.indexOf(mode);
 /** True when the provider holds credentials a browser cannot (`secrets` listed). */
 export function isServerProvider(provider: RecipeProvider): boolean {
   return (provider.secrets?.length ?? 0) > 0;
+}
+
+/** True when one of the provider's options runs in a browser (`browserOptions`). */
+export function hasBrowserOption(provider: RecipeProvider): boolean {
+  return (provider.browserOptions?.length ?? 0) > 0;
 }
 
 /** True when a demo can fake the provider (`options` includes `mock`). */
@@ -108,7 +115,13 @@ export function deriveRecipeDemo(
   };
 
   const providers = recipe.providers ?? [];
-  const serverProviders = providers.filter(isServerProvider);
+  // A provider with an in-browser option is satisfied there: it needs no faking.
+  const serverProviders = providers.filter(
+    (provider) => isServerProvider(provider) && !hasBrowserOption(provider),
+  );
+  const inBrowser = providers.filter(
+    (provider) => isServerProvider(provider) && hasBrowserOption(provider),
+  );
   const mockable = serverProviders.filter(isMockableProvider);
   const blocking = serverProviders.filter(
     (provider) => provider.required && !isMockableProvider(provider),
@@ -126,7 +139,7 @@ export function deriveRecipeDemo(
     }
     for (const provider of blocking) {
       problems.push(
-        `recipe ${recipe.id}: runtime is "browser" but provider "${provider.id}" is required and holds secrets (${provider.secrets?.join(', ')}) a browser cannot keep; give it a "${MOCK_PROVIDER_OPTION}" option, make it optional, or declare "both" or "server"`,
+        `recipe ${recipe.id}: runtime is "browser" but provider "${provider.id}" is required and holds secrets (${provider.secrets?.join(', ')}) a browser cannot keep; give it a browserOptions entry or a "${MOCK_PROVIDER_OPTION}" option, make it optional, or declare "both" or "server"`,
       );
     }
   }
@@ -144,12 +157,12 @@ export function deriveRecipeDemo(
     if (recipe.demoSeed) {
       raise('sample');
       reasons.push(
-        `Required provider ${names} holds secrets a browser cannot keep and has no "${MOCK_PROVIDER_OPTION}" option; the demo seed stands in for its data.`,
+        `Required provider ${names} holds secrets a browser cannot keep and has no in-browser or "${MOCK_PROVIDER_OPTION}" option; the demo seed stands in for its data.`,
       );
     } else {
       raise('server');
       reasons.push(
-        `Required provider ${names} holds secrets a browser cannot keep and has no "${MOCK_PROVIDER_OPTION}" option or demo seed.`,
+        `Required provider ${names} holds secrets a browser cannot keep and has no in-browser or "${MOCK_PROVIDER_OPTION}" option and the recipe has no demo seed.`,
       );
     }
   }
@@ -157,6 +170,13 @@ export function deriveRecipeDemo(
     raise('mock');
     reasons.push(
       `Provider ${mockable.map((provider) => provider.id).join(', ')} is faked in a demo.`,
+    );
+  }
+  if (inBrowser.length > 0) {
+    reasons.push(
+      `Provider ${inBrowser.map((provider) => provider.id).join(', ')} has an in-browser option (${inBrowser
+        .flatMap((provider) => provider.browserOptions ?? [])
+        .join(', ')}).`,
     );
   }
   if (optionalUnavailable.length > 0) {

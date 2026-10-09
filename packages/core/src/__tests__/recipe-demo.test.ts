@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   deriveRecipeDemo,
   effectiveRecipeDemo,
+  hasBrowserOption,
   isMockableProvider,
   isServerProvider,
 } from '../recipe-demo.js';
@@ -125,6 +126,42 @@ describe('deriveRecipeDemo', () => {
     );
     expect(demo?.mode).toBe('live');
     expect(demo?.reasons.join(' ')).toMatch(/Optional provider smtp/);
+  });
+
+  it('treats a provider with an in-browser option as satisfied', () => {
+    const llm: RecipeProvider = {
+      id: 'llm',
+      kind: 'llm',
+      options: ['openai', 'webllm'],
+      required: true,
+      secrets: ['OPENAI_API_KEY'],
+      browserOptions: ['webllm'],
+    };
+    const { demo, problems } = derive(
+      { runtime: 'browser', providers: [llm] },
+      SAFE,
+    );
+    expect(problems).toEqual([]);
+    expect(demo?.mode).toBe('live');
+    expect(demo?.mocked).toBeUndefined();
+    expect(demo?.reasons.join(' ')).toMatch(/in-browser option \(webllm\)/);
+    expect(hasBrowserOption(llm)).toBe(true);
+  });
+
+  it('prefers the in-browser option over a mock', () => {
+    const { demo } = derive(
+      {
+        providers: [
+          {
+            ...mockableSmtp,
+            options: ['smtp', 'mock', 'wasm'],
+            browserOptions: ['wasm'],
+          },
+        ],
+      },
+      SAFE,
+    );
+    expect(demo?.mode).toBe('live');
   });
 
   it('ignores providers without secrets', () => {

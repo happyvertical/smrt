@@ -81,7 +81,7 @@ at scan time; a host resolves them. Relative or absolute specifiers are rejected
 | Static | Shape | Meaning |
 | --- | --- | --- |
 | `surfaces` | `RecipeSurface[]` | `{ kind: 'shell-widget', slot, export, label, icon? }`, `{ kind: 'route', path, export, label }`, `{ kind: 'settings-panel', export, label }`, `{ kind: 'playground', export, label? }`, `{ kind: 'widget', type, export, label, ... }` (see below). `slot` is a smrt-svelte `ShellSlot`; `path` starts with `/` and has no whitespace, `?`, `#` or `..`. |
-| `providers` | `RecipeProvider[]` | `{ id, kind, options, required, secrets? }`: lowercase slugs, `options` non-empty and distinct, `required` always written, `secrets` distinct `UPPER_SNAKE` names (never values). Ids are unique per recipe. |
+| `providers` | `RecipeProvider[]` | `{ id, kind, options, required, secrets?, browserOptions? }`: lowercase slugs, `options` non-empty and distinct, `required` always written, `secrets` distinct `UPPER_SNAKE` names (never values), `browserOptions` a non-empty subset of `options` that run in a browser with none of the secrets (#3709). Ids are unique per recipe. |
 | `runtime` | `'browser' \| 'server' \| 'both'` | Where the recipe's runtime pieces can run. Omitted means `both`; the value is emitted as authored. The build refines it into `demo` (below). |
 | `demoSeed` | `{ export } \| { data }` | A fixture export reference, or inline JSON of at most 8 KB, for demo hosts. Exactly one key. |
 
@@ -206,18 +206,20 @@ a `demo` only when they declare `runtime`, `providers` or `demoSeed`.
    `server`.
 2. A `server-only` package is `server`.
 3. A **server provider** is one that lists `secrets` (credentials a browser
-   cannot hold). It is **mockable** when its `options` include `mock`. A
-   *required* server provider that is not mockable is `sample` when the recipe
-   has a `demoSeed` (the fixtures stand in for what the provider would feed),
-   else `server`. An optional one that is not mockable leaves the mode alone and
-   adds a reason.
+   cannot hold). One with a `browserOptions` entry (an in-browser model such as
+   `webllm`) is satisfied in a browser and changes nothing. Otherwise it is
+   **mockable** when its `options` include `mock`. A *required* server provider
+   that is neither is `sample` when the recipe has a `demoSeed` (the fixtures
+   stand in for what the provider would feed), else `server`. An optional one
+   that is neither leaves the mode alone and adds a reason.
 4. Any mockable server provider makes the recipe `mock` and lands in `mocked`.
 5. Otherwise `live`.
 
 **Contradictions fail the build** (like `assertRecipeOptions`), naming the
 recipe: `runtime: 'browser'` on a `server-only` package, or beside a required
-server provider that has no `mock` option. Fix by giving the provider a `mock`
-option, making it optional, or declaring `both`/`server`. An explicit `both` or
+server provider with no in-browser and no `mock` option. Fix by giving the
+provider a `browserOptions` entry or a `mock` option, making it optional, or
+declaring `both`/`server`. An explicit `both` or
 `server` on a `server-only` package is not a contradiction.
 
 **Dependencies between recipes.** `demo` is the recipe's own answer. A host that

@@ -1352,11 +1352,20 @@ function readProviders(
       return;
     }
     for (const key of Object.keys(entry)) {
-      if (!['id', 'kind', 'options', 'required', 'secrets'].includes(key)) {
+      if (
+        ![
+          'id',
+          'kind',
+          'options',
+          'required',
+          'secrets',
+          'browserOptions',
+        ].includes(key)
+      ) {
         fail(`${at} does not accept \`${key}\``);
       }
     }
-    const { id, kind, options, required, secrets } = entry;
+    const { id, kind, options, required, secrets, browserOptions } = entry;
     if (typeof id !== 'string' || !PROVIDER_SLUG_PATTERN.test(id)) {
       fail(`${at}.id must be a lowercase slug`);
     } else if (ids.has(id)) {
@@ -1394,6 +1403,22 @@ function readProviders(
         `${at}.secrets must be distinct UPPER_SNAKE names (names, not values)`,
       );
     }
+    if (
+      browserOptions !== undefined &&
+      (!Array.isArray(browserOptions) ||
+        browserOptions.length === 0 ||
+        new Set(browserOptions).size !== browserOptions.length ||
+        !browserOptions.every(
+          (o) =>
+            typeof o === 'string' &&
+            Array.isArray(options) &&
+            options.includes(o),
+        ))
+    ) {
+      fail(
+        `${at}.browserOptions must be a non-empty list of distinct entries of options`,
+      );
+    }
     if (ok) {
       out.push({
         id: id as string,
@@ -1401,6 +1426,9 @@ function readProviders(
         options: options as string[],
         required: required as boolean,
         ...(secrets ? { secrets: secrets as string[] } : {}),
+        ...(browserOptions
+          ? { browserOptions: browserOptions as string[] }
+          : {}),
       });
     }
   });

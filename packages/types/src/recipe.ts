@@ -164,6 +164,13 @@ export interface RecipeProvider {
   required: boolean;
   /** Names (never values) of the secrets the provider needs, `UPPER_SNAKE`. */
   secrets?: readonly string[];
+  /**
+   * The `options` that run inside a browser with no server and none of the
+   * `secrets` (an in-browser model, local storage). A provider with one is
+   * satisfied in a browser demo (#3709). Entries of `options`, non-empty and
+   * distinct; omitted when no option runs in a browser.
+   */
+  browserOptions?: readonly string[];
 }
 
 /** Where a recipe's runtime pieces can run. Omitted means `both`. */

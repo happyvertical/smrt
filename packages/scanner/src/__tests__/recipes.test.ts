@@ -1017,6 +1017,29 @@ ${statics}
       return messages(results);
     }
 
+    it("emits a provider's browserOptions (#3709)", async () => {
+      write(
+        'src/recipes.ts',
+        RECIPE(`
+  static providers = [
+    { id: 'llm', kind: 'llm', options: ['openai', 'webllm'], required: true, secrets: ['OPENAI_API_KEY'], browserOptions: ['webllm'] },
+  ];
+`),
+      );
+      const { results } = await scan();
+      expect(results.errors).toEqual([]);
+      expect(results.recipes[0].providers).toEqual([
+        {
+          id: 'llm',
+          kind: 'llm',
+          options: ['openai', 'webllm'],
+          required: true,
+          secrets: ['OPENAI_API_KEY'],
+          browserOptions: ['webllm'],
+        },
+      ]);
+    });
+
     it('emits every declaration and nothing when none is declared', async () => {
       write(
         'src/recipes.ts',
@@ -1176,6 +1199,21 @@ ${statics}
         'duplicate provider id',
         `static providers = [{ id: 'm', kind: 'email', options: ['smtp'], required: true }, { id: 'm', kind: 'oauth', options: ['github'], required: false }];`,
         'declared more than once',
+      ],
+      [
+        'browserOptions outside options',
+        `static providers = [{ id: 'm', kind: 'llm', options: ['openai'], required: true, browserOptions: ['webllm'] }];`,
+        'browserOptions must be a non-empty list',
+      ],
+      [
+        'empty browserOptions',
+        `static providers = [{ id: 'm', kind: 'llm', options: ['openai'], required: true, browserOptions: [] }];`,
+        'browserOptions must be a non-empty list',
+      ],
+      [
+        'duplicate browserOptions',
+        `static providers = [{ id: 'm', kind: 'llm', options: ['webllm'], required: true, browserOptions: ['webllm', 'webllm'] }];`,
+        'browserOptions must be a non-empty list',
       ],
       ['bad runtime', `static runtime = 'edge';`, 'runtime must be one of'],
       [

@@ -343,6 +343,7 @@ export {
 export {
   deriveRecipeDemo,
   effectiveRecipeDemo,
+  hasBrowserOption,
   isMockableProvider,
   isServerProvider,
   MOCK_PROVIDER_OPTION,
