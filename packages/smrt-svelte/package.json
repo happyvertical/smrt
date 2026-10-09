@@ -51,6 +51,11 @@
       "import": "./dist/components/command-palette/index.js",
       "default": "./dist/components/command-palette/index.js"
     },
+    "./overview/server": {
+      "types": "./dist/components/overview/server.d.ts",
+      "import": "./dist/components/overview/server.js",
+      "default": "./dist/components/overview/server.js"
+    },
     "./sortable": {
       "types": "./dist/components/sortable/index.d.ts",
       "svelte": "./dist/components/sortable/index.js",
