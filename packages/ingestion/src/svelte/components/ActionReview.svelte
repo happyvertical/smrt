@@ -212,5 +212,5 @@ function choose(id: string) {
 {#if host.feedback && action.args !== undefined}<fieldset><legend>{t(M['ingestion.feedback'])}</legend><Textarea aria-label={t(M['ingestion.comment'])} bind:value={comment} /><Button onclick={() => run(() => host.feedback?.({itemId,actionId:action.review.actionId,judgment:'correct',comment,requestId:crypto.randomUUID()}) ?? Promise.resolve())}>{t(M['ingestion.correctJudgment'])}</Button><Button onclick={() => run(() => host.feedback?.({itemId,actionId:action.review.actionId,judgment:'incorrect',comment,requestId:crypto.randomUUID()}) ?? Promise.resolve())}>{t(M['ingestion.incorrectJudgment'])}</Button></fieldset>{/if}
 </article>
 <style>
-article{min-width:0;overflow-wrap:anywhere;border-block-start:1px solid var(--smrt-color-border,#ccc);padding-block:1rem}.controls{display:flex;flex-wrap:wrap;gap:.5rem;margin-block:.75rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}fieldset{margin-block:1rem;min-width:0}
+article{min-width:0;overflow-wrap:anywhere;border-block-start:1px solid var(--smrt-color-outline-variant,#ccc);padding-block:1rem}.controls{display:flex;flex-wrap:wrap;gap:.5rem;margin-block:.75rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}fieldset{margin-block:1rem;min-width:0}
 </style>

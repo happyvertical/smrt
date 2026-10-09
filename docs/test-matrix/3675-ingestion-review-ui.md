@@ -1,6 +1,6 @@
 # #3675 ingestion review UI behavior contract
 
-Status: implementation checkpoint; complete SQLite/server (240), components (25), owning TypeScript/Svelte and root build passed. PostgreSQL, providers, final Chromium, packed consumer, root types and static gates remain pending; this checkpoint is not review or publication approval. Temporary proposal checkpoint `1ca435992691be3e6b809d686f51a3450975679d` (actual merged main `23a007cd11689ff19641dddbd8ec5319ee6729ff` plus proposals and accepted refinements) is not merged dependency proof. The duplicate-selection refinement is integrated, and the bounded reload fixture selects distinct generated suggestions. High risk: exact human approval provenance, authenticated confidential media, concurrent immutable review revisions.
+Status: implementation complete. Current executable evidence includes SQLite/server 240, PostgreSQL 200, components 25, providers 21, Chromium 5, bundle gate 26, root build 73, root types 143 and CI scripts 181 passing cases/tasks. Final exact-head handoff records the normal packed consumer and all static checks before review. Temporary proposal checkpoint `1ca435992691be3e6b809d686f51a3450975679d` (actual merged main `23a007cd11689ff19641dddbd8ec5319ee6729ff` plus proposals and accepted refinements) is not merged dependency proof. The duplicate-selection refinement is integrated, and the bounded reload fixture selects distinct generated suggestions. High risk: exact human approval provenance, authenticated confidential media, concurrent immutable review revisions.
 
 ## Validation lanes
 
@@ -29,3 +29,21 @@ Each lane above names its exact command; U/P run each persistence row on both su
 Assignment ownership is host-defined and explicitly authenticated; UI has no private SQL access. Logical split retains immutable originals and records a new provenance revision. No feedback/rule persistence, model spending, moderation, browser execution authority, or runtime application DDL.
 
 Assignment persistence is a host-owned SQLite reference application contract; PostgreSQL is not declared for that fixture table. The production owning review/split APIs execute U/P on both declared ingestion dialects. UI state/DOM scenarios execute C/E; they do not claim a browser database runtime.
+
+## Final evidence boundary
+
+The immutable handoff maps every row above to named cases and captured command logs,
+with exit status and SHA256. Server, DTO and persistence test source is unchanged
+from the database-tested checkpoint. Final packaging corrections only move the
+independent root/DTO browser check before Svelte packaging (so artifact pruning is
+last), and replace unsupported CSS tokens with emitted theme tokens. Fresh build,
+components, owning types, Chromium, theme/static and packed-consumer checks cover
+those corrections.
+
+Unrelated monorepo runtime suites carry the proposal parent’s complete root test
+proof, backed by its byte-equivalent ancestry and this issue’s complete own diff.
+No core/runtime schema or other package implementation changes. The only added
+runtime dependency is the existing smrt-ui workspace package; other importers and
+resolved dependency versions are unchanged. Root build/types, full bundle gate,
+CI-script tests and relevant global checks run freshly. This is an explicit carry,
+not a claim that the whole monorepo runtime suite was rerun for UI work.

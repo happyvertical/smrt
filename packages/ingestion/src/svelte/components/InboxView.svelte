@@ -115,5 +115,5 @@ onMount(() => {
 {#if cursor}<Button disabled={pending} onclick={() => load(true)}>{t(M['ingestion.more'])}</Button>{/if}
 </section>
 <style>
-section{max-width:72rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-text,#222)}.toolbar{display:flex;flex-wrap:wrap;gap:.75rem;margin-block:1rem}ul{list-style:none;padding:0}li{padding:1rem;border-block-end:1px solid var(--smrt-color-border,#ccc);display:grid;gap:.75rem}h2{font-size:1.1rem}
+section{max-width:72rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface,#222)}.toolbar{display:flex;flex-wrap:wrap;gap:.75rem;margin-block:1rem}ul{list-style:none;padding:0}li{padding:1rem;border-block-end:1px solid var(--smrt-color-outline-variant,#ccc);display:grid;gap:.75rem}h2{font-size:1.1rem}
 </style>

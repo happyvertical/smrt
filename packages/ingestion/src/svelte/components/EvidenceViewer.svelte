@@ -27,5 +27,5 @@ const { t } = useI18n();
 {/each}
 </section>
 <style>
-section,article{min-width:0}article{margin-block:1rem}img,iframe,audio{display:block;max-width:100%;width:100%;margin-block:.5rem}img{object-fit:contain;max-height:32rem}iframe{height:32rem;border:1px solid var(--smrt-color-border,#ccc)}pre{white-space:pre-wrap;overflow-wrap:anywhere}
+section,article{min-width:0}article{margin-block:1rem}img,iframe,audio{display:block;max-width:100%;width:100%;margin-block:.5rem}img{object-fit:contain;max-height:32rem}iframe{height:32rem;border:1px solid var(--smrt-color-outline-variant,#ccc)}pre{white-space:pre-wrap;overflow-wrap:anywhere}
 </style>

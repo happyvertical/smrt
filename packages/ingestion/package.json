@@ -49,7 +49,7 @@
     }
   },
   "scripts": {
-    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist && node scripts/check-browser.mjs",
+    "build": "vite build --mode library && node scripts/check-browser.mjs && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "test": "vitest run && pnpm test:components",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run --config vitest.postgres.config.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
