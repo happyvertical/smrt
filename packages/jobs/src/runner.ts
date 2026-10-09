@@ -1266,13 +1266,13 @@ export class TaskRunner extends EventEmitter {
 
     for (const job of orphans) {
       const snapshot = terminalSnapshot(job);
-      if (!snapshot || !job.workerId) continue;
+      if (!snapshot) continue;
       const event = await transitionTerminalJob(this.db, {
         job: snapshot,
         status: 'failed',
         completedAt: recoveredAt,
         expectedStatuses: ['running'],
-        expectedWorkerId: job.workerId,
+        expectedWorkerId: job.workerId ?? null,
         clearWorker: true,
         lastError: errorMessage,
         failureKind: 'stale-recovery',

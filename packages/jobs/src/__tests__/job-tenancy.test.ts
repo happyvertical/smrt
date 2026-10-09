@@ -12,6 +12,7 @@ import { withBackgroundJobs } from '../object-extension.js';
 import { createTaskRunner } from '../runner.js';
 import { createScheduleRunner } from '../schedule-runner.js';
 import { SmrtJobCollection } from '../smrt-job.js';
+import { SmrtJobEventCollection } from '../smrt-job-event.js';
 import { SmrtWorkerCollection } from '../smrt-worker.js';
 
 @smrt()
@@ -298,6 +299,39 @@ describe('job tenancy propagation', () => {
     expect(recovered?.workerId).toBeNull();
     expect(recovered?.workerHeartbeat).toBeNull();
     expect(recovered?.lastError).toContain('owning worker is no longer alive');
+  });
+
+  it('recovers legacy running jobs with no worker id', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const collection = await SmrtJobCollection.create({ db });
+    const events = await SmrtJobEventCollection.create({ db });
+    const job = await collection.create({
+      tenantId: 'tenant-ownerless-job',
+      objectType: 'JobTenantProbe',
+      method: 'captureTenantId',
+      args: {},
+    });
+    await db.query(
+      `UPDATE _smrt_jobs
+          SET status = 'running', worker_id = NULL
+        WHERE id = ?`,
+      job.id,
+    );
+
+    const runner = createTaskRunner({ concurrency: 1, leaseTickMs: 1 });
+    await runner.initialize(db);
+    await (
+      runner as unknown as { recoverStaleJobs(): Promise<void> }
+    ).recoverStaleJobs();
+
+    expect((await collection.get({ id: job.id ?? '' }))?.status).toBe('failed');
+    expect(
+      (
+        await events.listTerminalOutcomes({
+          tenantId: 'tenant-ownerless-job',
+        })
+      ).outcomes,
+    ).toMatchObject([{ status: 'failed', failureKind: 'stale-recovery' }]);
   });
 
   it('reconciles stale scheduled jobs and frees stuck running slots', async () => {

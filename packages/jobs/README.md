@@ -164,6 +164,10 @@ Completion, permanent failure, timeout, stale-worker recovery, and cancellation
 persist the job's terminal state and a versioned `_smrt_job_events` outcome in
 one database transaction. A retry remains nonterminal and is not projected.
 Ordinary progress and log events remain best-effort telemetry.
+The event uses the row returned by the conditional update, so a concurrent
+claim cannot leave a stale attempt count in history. Public cancellation
+retains the normal ambient-tenant check; explicit system context remains the
+operator bypass.
 
 ```typescript
 const events = await SmrtJobEventCollection.create({ db });

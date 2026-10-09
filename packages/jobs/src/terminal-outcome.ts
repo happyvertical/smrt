@@ -17,7 +17,7 @@ export interface TransitionTerminalJobOptions {
   status: SmrtJobTerminalStatus;
   completedAt: Date;
   expectedStatuses: JobStatus[];
-  expectedWorkerId?: string;
+  expectedWorkerId?: string | null;
   expectedTaskId?: string;
   clearWorker?: boolean;
   lastError?: string | null;
@@ -67,11 +67,19 @@ export async function transitionTerminalJob(
 
     const where = ['id = ?'];
     const whereValues: unknown[] = [options.job.id];
+    if (options.job.tenantId === null) {
+      where.push('tenant_id IS NULL');
+    } else {
+      where.push('tenant_id = ?');
+      whereValues.push(options.job.tenantId);
+    }
     where.push(
       `status IN (${options.expectedStatuses.map(() => '?').join(', ')})`,
     );
     whereValues.push(...options.expectedStatuses);
-    if (options.expectedWorkerId !== undefined) {
+    if (options.expectedWorkerId === null) {
+      where.push('worker_id IS NULL');
+    } else if (options.expectedWorkerId !== undefined) {
       where.push('worker_id = ?');
       whereValues.push(options.expectedWorkerId);
     }
@@ -84,11 +92,23 @@ export async function transitionTerminalJob(
       `UPDATE _smrt_jobs
           SET ${assignments.map(([column]) => `${column} = ?`).join(', ')}
         WHERE ${where.join(' AND ')}
-        RETURNING id`,
+        RETURNING CAST(tenant_id AS VARCHAR) AS tenant_id,
+                  queue, object_type, method, attempts`,
       ...assignments.map(([, value]) => value),
       ...whereValues,
     );
     if (updated.rows.length !== 1) return null;
+    const authoritative = updated.rows[0] as {
+      tenant_id: string | null;
+      queue: string;
+      object_type: string;
+      method: string;
+      attempts: number | string;
+    };
+    const attempts = Number(authoritative.attempts);
+    if (!Number.isSafeInteger(attempts) || attempts < 0) {
+      throw new Error('Terminal job transition returned invalid attempts');
+    }
 
     const stage =
       options.status === 'failed' && options.failureKind === 'stale-recovery'
@@ -108,10 +128,10 @@ export async function transitionTerminalJob(
       version: 1,
       terminal: true,
       status: options.status,
-      queue: options.job.queue,
-      objectType: options.job.objectType,
-      method: options.job.method,
-      attempts: options.job.attempts,
+      queue: authoritative.queue,
+      objectType: authoritative.object_type,
+      method: authoritative.method,
+      attempts,
       completedAt: options.completedAt.toISOString(),
       ...(options.status === 'failed' && options.failureKind
         ? { failureKind: options.failureKind }
@@ -128,7 +148,7 @@ export async function transitionTerminalJob(
       '',
       timestamp,
       timestamp,
-      options.job.tenantId,
+      authoritative.tenant_id,
       options.job.id,
       type,
       level,
@@ -143,7 +163,7 @@ export async function transitionTerminalJob(
       context: '',
       created_at: timestamp,
       updated_at: timestamp,
-      tenant_id: options.job.tenantId,
+      tenant_id: authoritative.tenant_id,
       job_id: options.job.id,
       type,
       level,

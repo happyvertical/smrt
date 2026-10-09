@@ -9,6 +9,9 @@ import {
 } from '@happyvertical/smrt-core';
 import {
   getTenantId,
+  isSuperAdminBypass,
+  isSystemContext,
+  TenantIsolationError,
   TenantScoped,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
@@ -281,6 +284,21 @@ export class SmrtJob extends SmrtObject {
 
     const snapshot = terminalSnapshot(this);
     if (!snapshot) throw new Error('Cannot cancel an unpersisted job');
+    const contextTenantId = getTenantId();
+    if (
+      contextTenantId &&
+      snapshot.tenantId !== contextTenantId &&
+      !isSystemContext() &&
+      !isSuperAdminBypass()
+    ) {
+      throw new TenantIsolationError(
+        `Tenant isolation violation: cannot cancel SmrtJob with tenantId '${snapshot.tenantId}' in context of tenant '${contextTenantId}'`,
+        {
+          tenantId: contextTenantId,
+          attemptedTenantId: snapshot.tenantId ?? 'null',
+        },
+      );
+    }
     const completedAt = new Date();
     const event = await transitionTerminalJob(this.db, {
       job: snapshot,

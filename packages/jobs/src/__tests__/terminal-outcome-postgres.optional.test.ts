@@ -109,4 +109,50 @@ describePostgres('atomic terminal job outcomes on PostgreSQL', () => {
       ).outcomes,
     ).toHaveLength(1);
   });
+
+  it('uses authoritative returned fields and binds the persisted tenant', async () => {
+    const jobs = await SmrtJobCollection.create({ db });
+    const events = await SmrtJobEventCollection.create({ db });
+    const job = await jobs.create({
+      tenantId: TENANT_ID,
+      queue: 'reports',
+      objectType: 'SmrtDataSurfaceActionTask',
+      method: 'run',
+    });
+    const snapshot = terminalSnapshot(job);
+    if (!snapshot) throw new Error('Expected persisted job');
+    await db.query(
+      `UPDATE _smrt_jobs
+          SET status = 'running', attempts = 2, worker_id = 'worker-a'
+        WHERE id = ?`,
+      job.id,
+    );
+
+    expect(
+      await transitionTerminalJob(db, {
+        job: snapshot,
+        status: 'cancelled',
+        completedAt: new Date(),
+        expectedStatuses: ['running'],
+        expectedWorkerId: 'worker-a',
+      }),
+    ).not.toBeNull();
+    expect(
+      (await events.listTerminalOutcomes({ tenantId: TENANT_ID })).outcomes,
+    ).toMatchObject([{ status: 'cancelled', attempts: 2 }]);
+
+    const wrongTenant = {
+      ...snapshot,
+      tenantId: '22222222-2222-4222-8222-222222222222',
+    };
+    expect(
+      await transitionTerminalJob(db, {
+        job: wrongTenant,
+        status: 'failed',
+        completedAt: new Date(),
+        expectedStatuses: ['cancelled'],
+        failureKind: 'execution',
+      }),
+    ).toBeNull();
+  });
 });

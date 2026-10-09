@@ -1,4 +1,9 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  TenantIsolationError,
+  withSystemContext,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import { describe, expect, it } from 'vitest';
 import { SmrtJobCollection } from '../smrt-job.js';
 import { SmrtJobEventCollection } from '../smrt-job-event.js';
@@ -121,6 +126,46 @@ describe('atomic terminal job outcomes', () => {
     ]);
   });
 
+  it('rejects retained cross-tenant cancellation and preserves system bypass', async () => {
+    const { events, job } = await fixture();
+
+    await expect(
+      withTenant({ tenantId: 'tenant-b' }, () => job.cancel()),
+    ).rejects.toBeInstanceOf(TenantIsolationError);
+    expect(job.status).toBe('pending');
+    expect(
+      (await events.listTerminalOutcomes({ tenantId: 'tenant-a' })).outcomes,
+    ).toEqual([]);
+
+    await withSystemContext(() => job.cancel());
+    expect(job.status).toBe('cancelled');
+    expect(
+      (await events.listTerminalOutcomes({ tenantId: 'tenant-a' })).outcomes,
+    ).toMatchObject([{ status: 'cancelled' }]);
+  });
+
+  it('projects authoritative fields returned by the conditional update', async () => {
+    const { db, events, snapshot } = await fixture();
+    await db.query(
+      `UPDATE _smrt_jobs
+          SET status = 'running', attempts = 1, worker_id = 'worker-a'
+        WHERE id = ?`,
+      snapshot.id,
+    );
+
+    await transitionTerminalJob(db, {
+      job: snapshot,
+      status: 'cancelled',
+      completedAt: new Date(),
+      expectedStatuses: ['running'],
+      expectedWorkerId: 'worker-a',
+    });
+
+    expect(
+      (await events.listTerminalOutcomes({ tenantId: 'tenant-a' })).outcomes,
+    ).toMatchObject([{ status: 'cancelled', attempts: 1 }]);
+  });
+
   it('preserves the stale-recovery event stage while projecting failed', async () => {
     const { db, events, job, snapshot } = await fixture();
     const event = await transitionTerminalJob(db, {
@@ -218,7 +263,6 @@ describe('atomic terminal job outcomes', () => {
     });
 
     const page = await events.listTerminalOutcomes({ tenantId: 'tenant-a' });
-    expect(page.outcomes).toHaveLength(1);
-    expect(page.outcomes[0]).not.toHaveProperty('failureKind');
+    expect(page.outcomes).toEqual([]);
   });
 });

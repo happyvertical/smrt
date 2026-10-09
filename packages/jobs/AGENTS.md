@@ -151,6 +151,9 @@ permanent failure, timeout, stale-worker recovery, and cancellation update the
 owned `_smrt_jobs` row and append the safe `_smrt_job_events` projection in one
 database transaction. If either write fails, neither commits. Conditional
 ownership/status predicates prevent a lost race from appending an event.
+Build the event from the conditional update's returned row, not a caller
+snapshot, and bind that update to the row's tenant. Public cancellation must
+retain ambient-tenant isolation; only explicit bypass contexts may cross it.
 Retries are deliberately excluded until a later terminal transition. Ordinary
 progress, logs, start, and retry telemetry remain best-effort.
 

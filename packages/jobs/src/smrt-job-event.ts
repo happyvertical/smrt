@@ -535,10 +535,17 @@ function terminalOutcome(event: SmrtJobEvent): SmrtJobTerminalOutcome | null {
     data.attempts < 0 ||
     typeof data.completedAt !== 'string' ||
     Number.isNaN(Date.parse(data.completedAt)) ||
+    (data.status === 'failed'
+      ? !isFailureKind(data.failureKind)
+      : data.failureKind !== undefined) ||
     !event.id
   ) {
     return null;
   }
+  const failureKind =
+    data.status === 'failed'
+      ? (data.failureKind as SmrtJobTerminalOutcome['failureKind'])
+      : undefined;
 
   return {
     eventId: event.id,
@@ -549,9 +556,7 @@ function terminalOutcome(event: SmrtJobEvent): SmrtJobTerminalOutcome | null {
     objectType: data.objectType,
     method: data.method,
     attempts: data.attempts,
-    ...(data.status === 'failed' && isFailureKind(data.failureKind)
-      ? { failureKind: data.failureKind }
-      : {}),
+    ...(failureKind ? { failureKind } : {}),
     completedAt: new Date(data.completedAt).toISOString(),
     cursor: event.toCursor(),
   };
