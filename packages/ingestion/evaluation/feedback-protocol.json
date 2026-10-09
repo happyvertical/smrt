@@ -1,0 +1,81 @@
+{
+  "version": "synthetic-feedback-paired-v1",
+  "status": "frozen-design-before-inference; final owning contracts and paid release pending",
+  "purpose": "Exploratory paired influence from scripted authenticated review against a preregistered agent-authored oracle, not observed human correction sessions, deployment quality or guaranteed improvement.",
+  "maximumPaidCalls": 11,
+  "maximumChargeNanoUSD": 122496000,
+  "reservedWithinAggregateNanoUSD": 400000000,
+  "paidCalibrationRetriesReruns": 0,
+  "training": [
+    {
+      "family": "purchase-request-v1",
+      "text": "Invoice supplier expense east",
+      "expectedTarget": "Finance East"
+    },
+    {
+      "family": "counsel-memo-v1",
+      "text": "Contract legal agreement east",
+      "expectedTarget": "Legal East"
+    },
+    {
+      "family": "service-status-v1",
+      "text": "Outage support incident east",
+      "expectedTarget": null
+    }
+  ],
+  "pairedHeldout": [
+    {
+      "family": "receipt-summary-v2",
+      "text": "Supplier invoice receipt west",
+      "expectedTarget": "Finance West",
+      "order": ["baseline", "treatment"]
+    },
+    {
+      "family": "terms-note-v3",
+      "text": "Legal contract terms west",
+      "expectedTarget": "Legal West",
+      "order": ["treatment", "baseline"]
+    },
+    {
+      "family": "incident-escalation-v2",
+      "text": "Support outage escalation west",
+      "expectedTarget": null,
+      "order": ["treatment", "baseline"]
+    },
+    {
+      "family": "observatory-note-v1",
+      "text": "Galaxy telescope orbit west",
+      "expectedTarget": "General West",
+      "order": ["baseline", "treatment"]
+    }
+  ],
+  "orderRule": "Fixed balanced sequence above before any results; no adaptive reordering.",
+  "armDifference": "Same maintained catalog, grants, model, prompt and source bytes. Baseline omits optional host feedback configuration; treatment enables fixed training-only feedback. Separate received items have recorded UUID bijections; configuration and opaque IDs differ explicitly, so API payloads are not claimed byte-identical.",
+  "trainingPolicy": "Keep every raw model outcome, including no-action and wrong routes. For a reviewable attach offer in either positive-target training case, the scripted authenticated reviewer fixture may correct reviewed args to the frozen target; retain original offer and correction against the authored oracle separately and never credit corrected args to the model. No-action, invalid or incompatible-handler offers do not manufacture an executable feedback example. For expected no-action training, an offered executable action can be explicitly rejected and labeled incorrect; an existing abstention does not fabricate a negative action. Missing eligible examples are reported, not replaced or retried.",
+  "exampleEligibility": "Only eligible explicit judgments from the three training families; bounded owning retrieval with fresh permission/retention/version checks. No heldout judgment or outcome is recorded as retrievable feedback. No target/permission/catalog expansion from examples.",
+  "feedbackConfiguration": {
+    "version": "evaluation-feedback-v1",
+    "maxExamples": 2,
+    "maxScan": 100,
+    "maxBytes": 8192,
+    "minimumSimilarity": 0.2
+  },
+  "comparison": "Exact logical target/action match or explicit abstention against frozen labels. Report all four paired family outcomes, successes/denominators, changed and unchanged cases, eligible example counts and per-arm source/config/provenance hashes. Missing/provider/budget/malformed results remain failures. Do not select favorable pairs.",
+  "correctionEffort": "Report scripted changed-field counts separately; no measured human time or usability claim.",
+  "limitations": "Four authored paired heldout families, synthetic domain, no independent population inference, no improvement guarantee. Negative authority controls remain deterministic service evidence and are not billed or counted as model quality. Automation disabled.",
+  "oracleProvenance": "Codex-authored synthetic labels fixed before model results; independent human semantic adjudication remains pending.",
+  "catalog": {
+    "targets": [
+      "Finance East",
+      "Legal East",
+      "Finance West",
+      "Legal West",
+      "General West"
+    ],
+    "maximumCandidates": 6,
+    "configurationVersion": "evaluation-feedback-generator-v1",
+    "promptVersion": "evaluation-owning-prompt-v1",
+    "selection": "All five targets offered to every arm under identical tenant/confidential grants; title labels unchanged, actual UUID mapping frozen before calls. No route hint from expectedTarget enters model input."
+  },
+  "feedbackBudgetSemantics": "The owning maxBytes bounds durable feedback events and bounded retrieval; 8192 bytes accommodates provenance-bearing events. It grants no extra model input allowance: the complete serialized outbound model request independently remains capped at 8192 bytes, including examples, or fails before network."
+}

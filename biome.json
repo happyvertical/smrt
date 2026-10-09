@@ -3,6 +3,7 @@
   "files": {
     "includes": [
       "packages/*/src/**/*.{js,ts,tsx,jsx,svelte}",
+      "packages/ingestion/evaluation/**/*.{mjs,ts,json}",
       "packages/smrt-svelte/e2e/**/*.{js,ts,svelte}",
       "packages/ingestion/e2e/**/*.{js,ts,svelte}",
       "packages/ingestion/reference/review-host.ts",

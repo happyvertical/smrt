@@ -39,5 +39,7 @@ See [REVIEW.md](REVIEW.md) for authenticated hosts, bounded saved-review reloads
 assignment ownership, logical split re-extraction and the maintained browser proof.
 UI validation additionally requires `pnpm test:components` and `pnpm test:e2e`;
 `typecheck` includes Svelte and `build` includes the types-first `/svelte` entry.
-The evaluation command remains reserved for #3677 and fails explicitly.
+`pnpm test:evaluation` runs repository evaluation tooling/format/fault contracts.
+Measured held-out quality is a separate frozen-protocol, budget-gated run; tooling
+success does not establish reference quality or permit automatic actions.
 See ../../docs/test-matrix/3670-ingestion-foundation.md for behavior coverage.
