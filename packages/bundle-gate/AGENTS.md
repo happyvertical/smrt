@@ -60,6 +60,24 @@ Known violations are in `src/browser-gate/expected-failures.ts` with issue
 numbers; the gate fails on unexpected breakage AND stale entries, so a fix PR
 removes its own entry. Never add an entry without a tracking issue. See README.
 
+## Browser capability table (#3709)
+
+`src/browser-gate/capability.ts` derives a per-package capability from the
+expected-failures list and each package's `dependencies`: `server-only` when the
+package or a workspace package it depends on (transitively; `smrt-core` is the
+platform baseline and does not propagate) is listed, else `browser-safe`. It is
+generated into `packages/core/src/manifest/browser-capability.generated.ts`,
+which every manifest build reads to emit `browser` and each recipe's `demo`
+(see core `agents/recipes.md`). `browser-capability.spec.ts` fails when that file
+is stale and needs no bundle. After editing `expected-failures.ts` (a fix PR
+deleting its entry flips dependents too) or a model package's dependencies:
+
+```bash
+UPDATE_BROWSER_CAPABILITY=1 pnpm --filter @happyvertical/smrt-bundle-gate test
+```
+
+then rebuild core. Never hand-edit the generated file.
+
 ## Ownership and budget updates
 
 The gate belongs to whoever changes chat/personas/messages/core/assets

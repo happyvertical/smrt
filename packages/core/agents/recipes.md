@@ -82,7 +82,7 @@ at scan time; a host resolves them. Relative or absolute specifiers are rejected
 | --- | --- | --- |
 | `surfaces` | `RecipeSurface[]` | `{ kind: 'shell-widget', slot, export, label, icon? }`, `{ kind: 'route', path, export, label }`, `{ kind: 'settings-panel', export, label }`, `{ kind: 'playground', export, label? }`, `{ kind: 'widget', type, export, label, ... }` (see below). `slot` is a smrt-svelte `ShellSlot`; `path` starts with `/` and has no whitespace, `?`, `#` or `..`. |
 | `providers` | `RecipeProvider[]` | `{ id, kind, options, required, secrets? }`: lowercase slugs, `options` non-empty and distinct, `required` always written, `secrets` distinct `UPPER_SNAKE` names (never values). Ids are unique per recipe. |
-| `runtime` | `'browser' \| 'server' \| 'both'` | Where the recipe's runtime pieces can run. Omitted means `both`; the value is emitted as authored. |
+| `runtime` | `'browser' \| 'server' \| 'both'` | Where the recipe's runtime pieces can run. Omitted means `both`; the value is emitted as authored. The build refines it into `demo` (below). |
 | `demoSeed` | `{ export } \| { data }` | A fixture export reference, or inline JSON of at most 8 KB, for demo hosts. Exactly one key. |
 
 Write `surfaces` with `as const` (like `options`) so `kind` and `slot` stay
@@ -150,6 +150,87 @@ The scanner's copies of these rules live in `packages/scanner/src/recipe-widgets
 and a scanner test compares them to the smrt-svelte source. See
 [overview-surfaces.md](../../smrt-svelte/agents/overview-surfaces.md#recipe-widgets-recipe-widgetsts)
 for how a host registers them.
+
+## Browser-demo mode: Live, Mock, Sample, Server (#3709)
+
+A catalog host (smrt-planner) labels each feature by how far it runs in a
+browser-only demo. The label is **derived at build time**, never authored: the
+manifest build combines what the bundle-gate measured for the recipe's package
+with the recipe's own `runtime`, `providers` and `demoSeed`, and emits it as
+`demo` on the recipe entry and `browser` on the package. A recipe that declares
+none of those keeps its shape except for `demo`, which every recipe of a
+measured package gets.
+
+```jsonc
+// manifest.json and smrt-knowledge.json, top level
+"browser": {
+  "status": "browser-safe" | "server-only",
+  "issues": ["#3624"],            // tracking issues; omitted when browser-safe
+  "reason": "node:crypto",        // the package's own blocker; omitted when only inherited
+  "via": ["@happyvertical/smrt-tenancy"]  // inherited from these; omitted when none
+}
+// on each entry of "recipes"
+"demo": {
+  "mode": "live" | "mock" | "sample" | "server",
+  "reasons": ["Needs a server because ..."],  // plain sentences, in rule order
+  "mocked": ["smtp"]                          // providers a demo fakes; omitted when none
+}
+```
+
+| Mode | Meaning |
+| --- | --- |
+| `live` | Real browser data layer (PGlite); nothing faked. |
+| `mock` | Runs in the browser, but a provider (sending mail, OAuth) is faked. |
+| `sample` | Runs in the browser on `demoSeed` fixtures only. |
+| `server` | Needs a server; a browser-only host cannot offer it. |
+
+**Package capability.** The browser gate (`packages/bundle-gate`) fails any
+model package that is not in its expected-failures list and does not build for
+a browser, and any listed package that now builds. So a package is `server-only`
+exactly when it is listed. The ratchet attributes a defect to the package that
+owns the fix, so a dependent passes while still dragging the failure into a
+browser bundle; the derivation therefore also marks a package `server-only`
+when a workspace package it depends on (transitively, through `dependencies`)
+is, and records them in `via`. `smrt-core` is the platform baseline and does not
+propagate. The table lives in `src/manifest/browser-capability.generated.ts`
+(generated, never edited) and a bundle-gate spec fails when it is stale; see
+that package's AGENTS.md for the regenerate command. A package the gate does
+not measure (an app's own, a UI package) emits no `browser`, and its recipes get
+a `demo` only when they declare `runtime`, `providers` or `demoSeed`.
+
+**Rules** (`src/recipe-demo.ts`, pure and browser-safe; the worst mode wins,
+`live` < `mock` < `sample` < `server`):
+
+1. `runtime: 'server'` is `server`. `runtime: 'both'` or omitted makes no claim:
+   the package capability refines it, so `both` on a `server-only` package is
+   `server`.
+2. A `server-only` package is `server`.
+3. A **server provider** is one that lists `secrets` (credentials a browser
+   cannot hold). It is **mockable** when its `options` include `mock`. A
+   *required* server provider that is not mockable is `sample` when the recipe
+   has a `demoSeed` (the fixtures stand in for what the provider would feed),
+   else `server`. An optional one that is not mockable leaves the mode alone and
+   adds a reason.
+4. Any mockable server provider makes the recipe `mock` and lands in `mocked`.
+5. Otherwise `live`.
+
+**Contradictions fail the build** (like `assertRecipeOptions`), naming the
+recipe: `runtime: 'browser'` on a `server-only` package, or beside a required
+server provider that has no `mock` option. Fix by giving the provider a `mock`
+option, making it optional, or declaring `both`/`server`. An explicit `both` or
+`server` on a `server-only` package is not a contradiction.
+
+**Dependencies between recipes.** `demo` is the recipe's own answer. A host that
+wants the answer including what the recipe needs calls
+`effectiveRecipeDemo(id, recipes)` (exported from both core entries): the worst
+of its own mode and every `requires` (transitively), counting the best known
+alternative of each `requiresAny` list; unknown ids are ignored.
+
+The classification runs in `ManifestGenerator.applyGenerationPasses` (the one
+pass sequence the Vite plugin, `ManifestBuilder` and `generateManifest()` share)
+through `applyRecipeDemo` in `src/scanner/recipe-demo-pass.ts`, after the
+merged-manifest recipe assertions. It needs the package name, so it cannot run
+in the scanner, which resolves recipes before it knows the package.
 
 ## How the scanner collects it
 
