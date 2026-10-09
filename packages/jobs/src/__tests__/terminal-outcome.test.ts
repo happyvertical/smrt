@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto';
+import { existsSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import {
   TenantIsolationError,
@@ -30,6 +34,53 @@ async function fixture() {
 }
 
 describe('atomic terminal job outcomes', () => {
+  it.each([
+    { label: 'in-memory SQLite', type: 'sqlite' as const, fileBacked: false },
+    { label: 'file-backed SQLite', type: 'sqlite' as const, fileBacked: true },
+    { label: 'DuckDB', type: 'duckdb' as const, fileBacked: false },
+  ] as const)('keeps cancellation atomic on $label when a consumer prepared only SmrtJob', async ({
+    type,
+    fileBacked,
+  }) => {
+    const tenantId = '11111111-1111-4111-8111-111111111111';
+    const dbPath = fileBacked
+      ? join(tmpdir(), `smrt-terminal-storage-${randomUUID()}.db`)
+      : null;
+    const db = await getTestDatabase({
+      type,
+      url: dbPath ? `file:${dbPath}` : ':memory:',
+      classes: ['SmrtJob'],
+      includeSystemTables: false,
+      omitForeignKeyConstraints: type === 'duckdb',
+    });
+    try {
+      const jobs = await SmrtJobCollection.create({ db });
+      const job = await jobs.create({
+        tenantId,
+        queue: 'reports',
+        objectType: 'SmrtDataSurfaceActionTask',
+        method: 'run',
+      });
+
+      await job.cancel();
+
+      expect((await jobs.get({ id: job.id }))?.status).toBe('cancelled');
+      const events = await SmrtJobEventCollection.create({ db });
+      await expect(
+        events.listTerminalOutcomes({ tenantId }),
+      ).resolves.toMatchObject({
+        outcomes: [{ jobId: job.id, status: 'cancelled' }],
+      });
+    } finally {
+      await db.close?.();
+      for (const path of dbPath
+        ? [dbPath, `${dbPath}-shm`, `${dbPath}-wal`]
+        : []) {
+        if (existsSync(path)) unlinkSync(path);
+      }
+    }
+  });
+
   it('orders and pages DuckDB outcomes across second boundaries', async () => {
     const tenantId = '11111111-1111-4111-8111-111111111111';
     const db = await getTestDatabase({

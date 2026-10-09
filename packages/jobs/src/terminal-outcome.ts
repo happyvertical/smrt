@@ -1,7 +1,35 @@
 import { randomUUID } from 'node:crypto';
+import { ensureJobEventsSystemTableCompatibility } from '@happyvertical/smrt-core';
+import { ensureSchema } from '@happyvertical/smrt-core/schema/utils';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { JobStatus, SmrtJob } from './smrt-job.js';
 import { SmrtJobEvent, type SmrtJobTerminalStatus } from './smrt-job-event.js';
+
+const terminalStorageReady = new WeakMap<object, Promise<void>>();
+
+async function ensureTerminalOutcomeStorage(
+  db: DatabaseInterface,
+): Promise<void> {
+  const key = db as object;
+  const existing = terminalStorageReady.get(key);
+  if (existing) return existing;
+
+  const pending = (async () => {
+    // SmrtJob.cancel() has historically worked for consumers that prepare only
+    // the job model. Terminal outcomes now require their package-owned event
+    // table as well, so prepare that registered schema before opening the
+    // state+event transaction. Never fall back to a state-only transition.
+    await ensureSchema(db, 'SmrtJobEvent');
+    await ensureJobEventsSystemTableCompatibility(db);
+  })();
+  terminalStorageReady.set(key, pending);
+  try {
+    await pending;
+  } catch (error) {
+    terminalStorageReady.delete(key);
+    throw error;
+  }
+}
 
 export interface SmrtJobTerminalSnapshot {
   id: string;
@@ -42,6 +70,8 @@ export async function transitionTerminalJob(
   if (options.expectedStatuses.length === 0) {
     throw new Error('Terminal job transitions require an expected status');
   }
+
+  await ensureTerminalOutcomeStorage(db);
 
   const persisted = await db.transaction(async (tx) => {
     const assignments: Array<[string, unknown]> = [

@@ -43,6 +43,27 @@ describePostgres('atomic terminal job outcomes on PostgreSQL', () => {
     await (admin as { close?: () => Promise<void> }).close?.();
   });
 
+  it('keeps cancellation atomic when only the job table remains', async () => {
+    await db.query('DROP TABLE _smrt_job_events');
+    const jobs = await SmrtJobCollection.create({ db });
+    const job = await jobs.create({
+      tenantId: TENANT_ID,
+      queue: 'reports',
+      objectType: 'SmrtDataSurfaceActionTask',
+      method: 'run',
+    });
+
+    await job.cancel();
+
+    expect((await jobs.get({ id: job.id }))?.status).toBe('cancelled');
+    const events = await SmrtJobEventCollection.create({ db });
+    await expect(
+      events.listTerminalOutcomes({ tenantId: TENANT_ID }),
+    ).resolves.toMatchObject({
+      outcomes: [{ jobId: job.id, status: 'cancelled' }],
+    });
+  });
+
   it('commits once after a race and rolls back state when its event fails', async () => {
     const jobs = await SmrtJobCollection.create({ db });
     const events = await SmrtJobEventCollection.create({ db });
