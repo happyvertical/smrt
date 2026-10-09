@@ -285,7 +285,9 @@ against a server-owned source allow-list, field policy (sensitive and
 permission-gated fields are not nameable), the caller's permissions, and tenant
 isolation, then targets the same aggregate plan as declared reports.
 `RuntimeReport` stores validated specs per tenant, and a stored spec is
-re-compiled for the running user on every run. Result rows are not stored. The
+re-compiled for the running user on every run. Result rows are not stored. A row
+can only be inserted, or have its spec changed, through `saveRuntimeReport()`
+with the spec hash a human confirmed; the model layer refuses every other write. The
 chat package offers matching assistant tools that propose a spec, preview it,
 and save only after a human confirms. See
 [`agents/runtime-reports.md`](./agents/runtime-reports.md).

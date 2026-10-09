@@ -21,7 +21,7 @@ import {
   archiveRuntimeReport,
   getRuntimeReport,
   listRuntimeReports,
-  type RuntimeReport,
+  RuntimeReport,
   runStoredRuntimeReport,
   saveRuntimeReport,
 } from '../runtime-report.js';
@@ -29,6 +29,7 @@ import {
   parseRuntimeReportSpec,
   RuntimeReportError,
   runtimeReportSpecHash,
+  serializeRuntimeReportSpec,
 } from '../runtime-spec.js';
 
 class RtInvoice extends SmrtObject {}
@@ -778,6 +779,29 @@ describe('compileRuntimeReportSpec + runRuntimeReport', () => {
   });
 });
 
+/** The confirmed-save path, as the application's confirmation host drives it. */
+function saveConfirmed(
+  options: Omit<Parameters<typeof saveRuntimeReport>[0], 'confirmedSpecHash'>,
+): Promise<RuntimeReport> {
+  return saveRuntimeReport({
+    ...options,
+    confirmedSpecHash: options.compiled.specHash,
+  });
+}
+
+async function rowCount(): Promise<number> {
+  const out = await db.query('SELECT COUNT(*) AS n FROM runtime_reports');
+  return Number((out.rows[0] as { n: unknown }).n);
+}
+
+async function storedSpecHash(id: string): Promise<unknown> {
+  const out = await db.query(
+    'SELECT spec_hash FROM runtime_reports WHERE id = $1',
+    id,
+  );
+  return (out.rows[0] as { spec_hash: unknown }).spec_hash;
+}
+
 describe('RuntimeReport storage', () => {
   async function compile(overrides: Record<string, unknown> = {}) {
     return compileRuntimeReportSpec(spec(overrides), context());
@@ -785,7 +809,7 @@ describe('RuntimeReport storage', () => {
 
   it('saves a compiled spec and lists/gets it within the tenant', async () => {
     const saved = await withTenant({ tenantId: TENANT_A }, async () =>
-      saveRuntimeReport({
+      saveConfirmed({
         db,
         compiled: await compile(),
         createdByUserId: USER,
@@ -813,7 +837,7 @@ describe('RuntimeReport storage', () => {
 
   it('requires a tenant to save', async () => {
     await expectRejected(
-      saveRuntimeReport({
+      saveConfirmed({
         db,
         compiled: await compileRuntimeReportSpec(
           spec(),
@@ -828,7 +852,7 @@ describe('RuntimeReport storage', () => {
 
   it('refuses tampered or inconsistent rows at save time', async () => {
     const saved = await withTenant({ tenantId: TENANT_A }, async () =>
-      saveRuntimeReport({
+      saveConfirmed({
         db,
         compiled: await compile(),
         createdByUserId: USER,
@@ -842,16 +866,18 @@ describe('RuntimeReport storage', () => {
       row.spec = JSON.stringify({ ...JSON.parse(row.spec), where: '1=1' });
       await expectSaveCause(row.save(), /not a known key/);
 
+      // A spec change on a stored row is a different report: it needs the
+      // confirmed-save path, so the edit is refused and the row is unchanged.
       const row2 = (await getRuntimeReport({
         db,
         ref: saved.id as string,
       })) as RuntimeReport;
       row2.spec = row2.spec.replace('Revenue by status', 'Renamed');
-      await row2.save();
-      // Columns are re-derived from the spec, never trusted from the writer.
-      expect(row2.title).toBe('Renamed');
-      expect(row2.specHash).toBe(runtimeReportSpecHash(row2.getSpec()));
+      await expectSaveCause(row2.save(), /confirmed save/);
+      expect(await storedSpecHash(saved.id as string)).toBe(saved.specHash);
 
+      // Denormalized columns are re-derived from the spec, never trusted from
+      // the writer, so setting them to something else changes nothing.
       const row3 = (await getRuntimeReport({
         db,
         ref: saved.id as string,
@@ -859,14 +885,173 @@ describe('RuntimeReport storage', () => {
       row3.title = 'Different title';
       row3.sourceId = 'users';
       await row3.save();
-      expect(row3.title).toBe('Renamed');
+      expect(row3.title).toBe('Revenue by status');
       expect(row3.sourceId).toBe('invoices');
+    });
+  });
+
+  describe('confirmed-save invariant (model layer)', () => {
+    const body = () => {
+      const normalized = spec();
+      return {
+        tenantId: TENANT_A,
+        title: normalized.title,
+        description: '',
+        sourceId: normalized.source,
+        spec: serializeRuntimeReportSpec(normalized),
+        specHash: runtimeReportSpecHash(normalized),
+        status: 'active' as const,
+        createdByUserId: USER,
+      };
+    };
+
+    it('refuses a directly constructed valid row and writes nothing', async () => {
+      await withTenant({ tenantId: TENANT_A }, async () => {
+        const report = new RuntimeReport({ db, _skipLoad: true, ...body() });
+        await report.initialize();
+        await expectSaveCause(report.save(), /confirmed save/);
+      });
+      expect(await rowCount()).toBe(0);
+    });
+
+    it('refuses collection create (the generated REST create path) and writes nothing', async () => {
+      await withTenant({ tenantId: TENANT_A }, async () => {
+        const collection = (await ObjectRegistry.getCollection(
+          'RuntimeReport',
+          {
+            db,
+          },
+        )) as { create(values: Record<string, unknown>): Promise<unknown> };
+        await expectSaveCause(collection.create(body()), /confirmed save/);
+        // A JSON round trip of a legitimately saved row cannot carry the proof.
+        const saved = await saveConfirmed({
+          db,
+          compiled: await compile(),
+          createdByUserId: USER,
+        });
+        const cloned = JSON.parse(JSON.stringify(saved));
+        delete cloned.id;
+        delete cloned.slug;
+        await expectSaveCause(collection.create(cloned), /confirmed save/);
+      });
+      expect(await rowCount()).toBe(1);
+    });
+
+    it('refuses an insert that reuses an existing id to overwrite its spec', async () => {
+      const saved = await withTenant({ tenantId: TENANT_A }, async () =>
+        saveConfirmed({
+          db,
+          compiled: await compile(),
+          createdByUserId: USER,
+        }),
+      );
+      await withTenant({ tenantId: TENANT_A }, async () => {
+        const forged = new RuntimeReport({
+          db,
+          _skipLoad: true,
+          ...body(),
+          id: saved.id,
+          spec: serializeRuntimeReportSpec(spec({ title: 'Forged' })),
+        });
+        await forged.initialize();
+        await expectSaveCause(forged.save(), /confirmed save/);
+      });
+      expect(await rowCount()).toBe(1);
+      expect(await storedSpecHash(saved.id as string)).toBe(saved.specHash);
+    });
+
+    it('refuses collection.update of the spec and of the author', async () => {
+      const saved = await withTenant({ tenantId: TENANT_A }, async () =>
+        saveConfirmed({
+          db,
+          compiled: await compile(),
+          createdByUserId: USER,
+        }),
+      );
+      await withTenant({ tenantId: TENANT_A }, async () => {
+        const collection = (await ObjectRegistry.getCollection(
+          'RuntimeReport',
+          {
+            db,
+          },
+        )) as {
+          update(id: string, values: Record<string, unknown>): Promise<unknown>;
+        };
+        await expectSaveCause(
+          collection.update(saved.id as string, {
+            spec: serializeRuntimeReportSpec(spec({ title: 'Edited' })),
+          }),
+          /confirmed save/,
+        );
+        await expectSaveCause(
+          collection.update(saved.id as string, {
+            createdByUserId: 'someone-else',
+          }),
+          /confirmed save/,
+        );
+      });
+      expect(await storedSpecHash(saved.id as string)).toBe(saved.specHash);
+    });
+
+    it('still allows archive and unarchive (status only) by an authorised writer', async () => {
+      const saved = await withTenant({ tenantId: TENANT_A }, async () =>
+        saveConfirmed({
+          db,
+          compiled: await compile(),
+          createdByUserId: USER,
+        }),
+      );
+      await withTenant({ tenantId: TENANT_A }, async () => {
+        const archived = await archiveRuntimeReport({
+          db,
+          ref: saved.id as string,
+        });
+        expect(archived?.status).toBe('archived');
+        const again = (await getRuntimeReport({
+          db,
+          ref: saved.id as string,
+        })) as RuntimeReport;
+        again.status = 'active';
+        await again.save();
+        expect(again.status).toBe('active');
+      });
+      expect(await storedSpecHash(saved.id as string)).toBe(saved.specHash);
+    });
+
+    it('refuses a confirmation for a different spec hash and writes nothing', async () => {
+      const compiled = await compile();
+      await expectRejected(
+        withTenant({ tenantId: TENANT_A }, () =>
+          saveRuntimeReport({
+            db,
+            compiled,
+            createdByUserId: USER,
+            confirmedSpecHash: 'f'.repeat(64),
+          }),
+        ),
+        'confirmation_required',
+      );
+      expect(await rowCount()).toBe(0);
+    });
+
+    it('mints a proof per write: a later save of the same instance with a new spec is refused', async () => {
+      const saved = await withTenant({ tenantId: TENANT_A }, async () =>
+        saveConfirmed({
+          db,
+          compiled: await compile(),
+          createdByUserId: USER,
+        }),
+      );
+      saved.spec = serializeRuntimeReportSpec(spec({ title: 'Second' }));
+      await withTenant({ tenantId: TENANT_A }, () =>
+        expectSaveCause(saved.save(), /confirmed save/),
+      );
     });
   });
 
   it('detects out-of-band edits to the stored spec on read', async () => {
     const saved = await withTenant({ tenantId: TENANT_A }, async () =>
-      saveRuntimeReport({
+      saveConfirmed({
         db,
         compiled: await compile(),
         createdByUserId: USER,
@@ -898,7 +1083,7 @@ describe('RuntimeReport storage', () => {
     };
     await expectRejected(
       withTenant({ tenantId: TENANT_A }, () =>
-        saveRuntimeReport({ db, compiled, createdByUserId: USER }),
+        saveConfirmed({ db, compiled, createdByUserId: USER }),
       ),
       'invalid_spec',
     );
@@ -906,7 +1091,7 @@ describe('RuntimeReport storage', () => {
 
   it('re-validates against the live principal on every run', async () => {
     const saved = await withTenant({ tenantId: TENANT_A }, async () =>
-      saveRuntimeReport({
+      saveConfirmed({
         db,
         compiled: await compileRuntimeReportSpec(
           spec({
@@ -948,7 +1133,7 @@ describe('RuntimeReport storage', () => {
 
   it('archives and refuses to run archived reports', async () => {
     const saved = await withTenant({ tenantId: TENANT_A }, async () =>
-      saveRuntimeReport({
+      saveConfirmed({
         db,
         compiled: await compile(),
         createdByUserId: USER,

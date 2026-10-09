@@ -160,6 +160,7 @@ export type RuntimeReportErrorCode =
   | 'invalid_operation'
   | 'invalid_value'
   | 'tenant_required'
+  | 'confirmation_required'
   | 'unsupported_source'
   | 'invalid_result';
 
@@ -173,8 +174,8 @@ export class RuntimeReportError extends Error {
   readonly path: string;
   /**
    * HTTP-style status so tool loops classify it: 4xx input problems are
-   * repairable by the caller, `tenant_required` is a denial, results that
-   * cannot be represented are server errors.
+   * repairable by the caller, `tenant_required` and `confirmation_required`
+   * are denials, results that cannot be represented are server errors.
    */
   readonly status: number;
 
@@ -184,7 +185,11 @@ export class RuntimeReportError extends Error {
     this.code = code;
     this.path = path;
     this.status =
-      code === 'tenant_required' ? 403 : code === 'invalid_result' ? 500 : 422;
+      code === 'tenant_required' || code === 'confirmation_required'
+        ? 403
+        : code === 'invalid_result'
+          ? 500
+          : 422;
   }
 }
 

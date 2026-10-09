@@ -65,6 +65,30 @@ export const RUNTIME_REPORT_LIST_TOOL_SLUG = 'reports.runtime.list';
 /** Tool slug for running a stored runtime report. */
 export const RUNTIME_REPORT_RUN_TOOL_SLUG = 'reports.runtime.run';
 
+/** Qualified registry name of the stored runtime report model. */
+export const RUNTIME_REPORT_QUALIFIED_NAME =
+  '@happyvertical/smrt-reports:RuntimeReport';
+
+/**
+ * Whether a manifest operation would WRITE a stored runtime report
+ * (`create`, `update`, `delete` or any custom method). The model may read
+ * stored reports through the generic manifest tools, but it persists one only
+ * through `reports.runtime.define` (apply), behind the app-owned human
+ * confirmation. The generic manifest tool catalog and dispatcher use this to
+ * refuse these operations even when a persona's `allowedTools` names a
+ * `runtimereports.create` style slug; the model layer refuses them too.
+ */
+export function isRuntimeReportWriteOperation(tool: {
+  className?: string;
+  qualifiedName?: string;
+  action: string;
+}): boolean {
+  const isRuntimeReport =
+    tool.qualifiedName === RUNTIME_REPORT_QUALIFIED_NAME ||
+    (tool.qualifiedName === undefined && tool.className === 'RuntimeReport');
+  return isRuntimeReport && tool.action !== 'read';
+}
+
 /** Provider function name for {@link RUNTIME_REPORT_SOURCES_TOOL_SLUG}. */
 export const RUNTIME_REPORT_SOURCES_FUNCTION_NAME = 'reports-runtime-sources';
 /** Provider function name for {@link RUNTIME_REPORT_DEFINE_TOOL_SLUG}. */
@@ -507,15 +531,19 @@ export function createRuntimeReportTools(
       } catch {
         throw new DataSurfaceDeniedError();
       }
+      const confirmedSpecHash = compiled.specHash;
       await options.confirmation.confirmSave({
         run,
         spec: compiled.spec,
-        specHash: compiled.specHash,
+        specHash: confirmedSpecHash,
         sourceLabel: compiled.source.label,
       });
+      // Only reached once the host resolved for exactly this hash. The model
+      // layer refuses every other write of a RuntimeReport row.
       const saved = await saveRuntimeReport({
         db: database,
         compiled,
+        confirmedSpecHash,
         createdByUserId: principalFromRun(run).userId,
         tenantId: run.context.tenantId,
       });

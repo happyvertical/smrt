@@ -1,5 +1,8 @@
 import type { PrincipalRun, PrincipalTool } from '@happyvertical/smrt-agents';
-import { DataSurfaceDeniedError } from '@happyvertical/smrt-agents';
+import {
+  DataSurfaceDeniedError,
+  PrincipalToolNotAllowedError,
+} from '@happyvertical/smrt-agents';
 import {
   getTestDatabase,
   ObjectRegistry,
@@ -29,7 +32,11 @@ import {
   type RuntimeReportAuditEntry,
   type RuntimeReportToolSource,
 } from './runtime-report-tools.js';
-import { classifyToolError } from './tool-loop.js';
+import {
+  buildManifestToolCatalog,
+  classifyToolError,
+  invokeManifestTool,
+} from './tool-loop.js';
 
 class ToolInvoice extends SmrtObject {}
 
@@ -834,6 +841,119 @@ describe('createRuntimeReportTools', () => {
         fakeRun({ rbac: { ToolInvoice: ['read'] } }),
       );
       expect(denied.sources).toEqual([]);
+    });
+  });
+
+  describe('stored report write surface', () => {
+    const runtimeReportCatalog = () =>
+      PermissionCatalogService.create()
+        .getCatalog()
+        .permissions.filter((p) => p.className === 'RuntimeReport');
+
+    it('the catalog enables exactly read and create for RuntimeReport', () => {
+      const entries = runtimeReportCatalog();
+      expect(
+        entries.map((p) => p.slug.slice(p.collection?.length)).sort(),
+      ).toEqual(['.create', '.read']);
+      // update/delete are never grantable, so no role, RLS binding or
+      // persona allowedTools entry can name them.
+      expect(entries.some((p) => /\.(update|delete)$/.test(p.slug))).toBe(
+        false,
+      );
+    });
+
+    it('the manifest tool catalog offers RuntimeReport read only, even when update/delete/create are allow-listed', () => {
+      const slugs = runtimeReportCatalog().map((p) => p.slug);
+      const named = [
+        ...slugs,
+        ...slugs.map((s) => s.replace(/\.\w+$/, '.update')),
+        ...slugs.map((s) => s.replace(/\.\w+$/, '.delete')),
+      ];
+      const offered = buildManifestToolCatalog({ allowedTools: named });
+      expect(offered.filter((t) => t.className === 'RuntimeReport')).toEqual([
+        expect.objectContaining({ action: 'read' }),
+      ]);
+    });
+
+    it('invokeManifestTool refuses create/update/delete of RuntimeReport and writes nothing', async () => {
+      const entry = runtimeReportCatalog()[0];
+      const collection = entry.collection as string;
+      const spec = {
+        title: 'Injected',
+        source: 'invoices',
+        measures: [{ fn: 'count' }],
+      };
+      for (const action of ['create', 'update', 'delete']) {
+        const slug = `${collection}.${action}`;
+        const run = fakeRun({
+          allowedTools: [...ALL_TOOLS, slug],
+          rbac: {
+            ToolInvoice: ['read'],
+            RuntimeReport: ['read', 'create'],
+          },
+        });
+        await expect(
+          withTenant({ tenantId: TENANT_A }, () =>
+            invokeManifestTool(
+              run,
+              {
+                slug,
+                collection,
+                className: 'RuntimeReport',
+                qualifiedName: entry.qualifiedName,
+                action,
+              },
+              {
+                id: 'x',
+                title: 'Injected',
+                spec: JSON.stringify(spec),
+              },
+              { db },
+            ),
+          ),
+        ).rejects.toBeInstanceOf(PrincipalToolNotAllowedError);
+      }
+      const rows = await db.query('SELECT COUNT(*) AS n FROM runtime_reports');
+      expect(Number((rows.rows[0] as { n: unknown }).n)).toBe(0);
+    });
+
+    it('the model layer also refuses a create that reaches the collection directly', async () => {
+      const collection = (await ObjectRegistry.getCollection('RuntimeReport', {
+        db,
+      })) as { create(values: Record<string, unknown>): Promise<unknown> };
+      await expect(
+        withTenant({ tenantId: TENANT_A }, () =>
+          collection.create({
+            title: 'Injected',
+            spec: JSON.stringify({
+              version: 1,
+              title: 'Injected',
+              source: 'invoices',
+              measures: [{ fn: 'count' }],
+            }),
+          }),
+        ),
+      ).rejects.toThrow();
+      const rows = await db.query('SELECT COUNT(*) AS n FROM runtime_reports');
+      expect(Number((rows.rows[0] as { n: unknown }).n)).toBe(0);
+    });
+
+    it('the confirmed define/apply path still saves', async () => {
+      const tools = toolMap({ confirmation: { confirmSave: async () => {} } });
+      const run = fakeRun();
+      const preview = await call(
+        tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+        run,
+        { phase: 'preview', spec: SPEC },
+      );
+      const saved = await call(
+        tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+        run,
+        { phase: 'apply', spec: SPEC, specHash: preview.specHash },
+      );
+      expect(saved.saved).toBe(true);
+      const rows = await db.query('SELECT COUNT(*) AS n FROM runtime_reports');
+      expect(Number((rows.rows[0] as { n: unknown }).n)).toBe(1);
     });
   });
 

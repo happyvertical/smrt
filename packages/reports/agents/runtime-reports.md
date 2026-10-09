@@ -79,11 +79,41 @@ JSON text), `specHash`, denormalized `title`/`description`/`sourceId`,
 `status` (`active|archived`) and `createdByUserId`. `validateBeforeSave()` parses
 whatever was written and re-derives every denormalized column, so columns
 cannot disagree with the spec. `getSpec()` throws if the JSON no longer matches
-`specHash` (out-of-band edit). Generated REST exposes `list`/`get`/`create`
-(MCP `list`/`get`); `create` is enabled so the permission catalog and Postgres
-RLS bindings know the operation the confirmed save performs. It grants nothing
-beyond storing a validated spec. Adopting apps need a `db:migrate` for the new
+`specHash` (out-of-band edit). Adopting apps need a `db:migrate` for the new
 `runtime_reports` table; runtime never creates schema.
+
+**Invariant: no row is inserted, and no spec/title/source/description/author is
+changed, except through the confirmed save.** It is enforced in the model layer,
+not by which surfaces exist. `validateBeforeSave()` refuses (`confirmation_required`,
+403) every insert, and every update that changes those columns, unless the
+instance carries a confirmation proof. The proof is a symbol-keyed constructor
+option plus a module-private `WeakMap`; only `saveRuntimeReport()` can mint it,
+and only when `confirmedSpecHash` equals the compiled plan's hash (the value
+handed to the application's `RuntimeReportConfirmationHost`). It is single use
+and tied to that exact spec hash. A REST body, a manifest tool call or
+`new RuntimeReport({...}).save()` cannot carry it, so it is refused whatever
+surface delivered it. A reused id on an insert is refused the same way, so it
+cannot overwrite a stored spec. Archiving or unarchiving (a `status` change with
+the stored columns untouched) is allowed for an authorised writer.
+
+**Exposed operations** (these decide the permission catalog and RLS grants):
+
+| Surface | Operations |
+| --- | --- |
+| REST (`api`) | `list`, `get`, `create` |
+| CLI | `list`, `get` |
+| MCP | `list`, `get` |
+
+The permission catalog therefore holds exactly `<collection>.read` and
+`<collection>.create` for `RuntimeReport` (the collection slug is
+`runtimereports`). `update` and `delete` exist on no surface, so they are not in
+the catalog, not grantable to a role and not nameable in a persona's
+`allowedTools`. REST `create` exists only so the catalog knows the operation the
+confirmed save performs (`assertOperation(RuntimeReport, 'create')`); its body is
+always refused by the invariant above. The generic manifest tool dispatcher in
+`@happyvertical/smrt-chat` additionally never offers or runs a write operation on
+`RuntimeReport` (`isRuntimeReportWriteOperation`), so the assistant persists a
+report only through `reports.runtime.define` (apply).
 
 **Result rows are never persisted.** A result computed for one principal must
 not be served to another, so the table stores definitions only.

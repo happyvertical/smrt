@@ -114,7 +114,10 @@ propose-only and a model-supplied `confirmed` flag is ignored. Saving also needs
 default `reportsCollection` is the `RuntimeReport` class itself, which resolves
 to the catalog slug. A string `collection`/`reportsCollection` is used verbatim
 as a catalog slug (never a class name); tests must run the tools under the real
-`assertOperationPermission` guard so a wrong slug fails. Contract and authority model:
+`assertOperationPermission` guard so a wrong slug fails. A stored report is
+written only by this confirmed `apply`: the model layer refuses every other
+insert/spec change, and the generic manifest tools (`buildManifestToolCatalog`,
+`invokeManifestTool`) never offer or run a `RuntimeReport` write. Contract and authority model:
 [`packages/reports/agents/runtime-reports.md`](../reports/agents/runtime-reports.md).
 
 ## Conversational Harness (L3, #1891)

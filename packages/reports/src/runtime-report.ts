@@ -10,16 +10,23 @@
  *
  * The assistant creates rows through {@link saveRuntimeReport}, so only a spec
  * that compiled for the saving principal and was confirmed by a human is
- * stored. The generated REST surface exposes `list`/`get`/`create` (MCP:
- * `list`/`get`); `validateBeforeSave()` parses and re-derives every column
- * from the spec for any writer, and `getSpec()` refuses a row whose JSON no
- * longer matches its recorded hash.
+ * stored. That is enforced HERE, in the model layer, not just by which
+ * surfaces are generated: `validateBeforeSave()` refuses every insert, and
+ * every update that changes the spec (or title, source, description or author),
+ * unless the instance carries a confirmation proof that only
+ * {@link saveRuntimeReport} can attach. Rows built from JSON (a REST body, a
+ * manifest tool call) cannot carry the proof, so they are refused whatever
+ * surface delivered them. Archiving (a `status` change with the spec
+ * untouched) stays allowed. The generated surfaces expose `list`/`get`, plus
+ * `create` on the API only so the permission catalog and Postgres RLS bindings
+ * know the operation the confirmed save performs.
  */
 
 import {
   field,
   SmrtCollection,
   SmrtObject,
+  type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import {
@@ -45,16 +52,30 @@ import {
 
 export type RuntimeReportStatus = 'active' | 'archived';
 
+/**
+ * Confirmation proof carried on a constructor option. A symbol key can never
+ * arrive from JSON (REST body, manifest tool arguments), and the symbol is not
+ * exported, so only code in this module can mint a row that may be written.
+ */
+const CONFIRMED_SAVE = Symbol('smrt-reports.runtimeReport.confirmedSave');
+
+/** Instance -> spec hash a human confirmed for this exact write. */
+const confirmedSaves = new WeakMap<object, string>();
+
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'runtime_reports',
-  // `create` is enabled so the permission catalog (and Postgres RLS bindings)
-  // know the operation the assistant's confirmed save performs. The body is
-  // still validated and re-derived in validateBeforeSave(), and every run
-  // re-compiles against the live principal, so a stored spec grants nothing.
+  // The exposed operations are exactly: list/get (API, CLI, MCP) and `create`
+  // (API only). `create` is enabled so the permission catalog -- and with it
+  // role grants -- know the operation the assistant's confirmed save performs
+  // (`<collection>.create`); it is NOT a way to author a report. The model layer
+  // (validateBeforeSave) refuses any insert that was not minted by
+  // saveRuntimeReport() after a human confirmed that exact spec, so a REST
+  // `create` body is always refused. `update` and `delete` are deliberately
+  // absent from every surface, so they never enter the catalog or RLS grants.
   api: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get'] },
-  cli: { skipApiCheck: true },
+  cli: { include: ['list', 'get'] },
 })
 export class RuntimeReport extends SmrtObject {
   @tenantId()
@@ -85,6 +106,12 @@ export class RuntimeReport extends SmrtObject {
   @field({ type: 'text' })
   createdByUserId: string = '';
 
+  constructor(options: SmrtObjectOptions = {}) {
+    super(options);
+    const proof = (options as Record<symbol, unknown>)[CONFIRMED_SAVE];
+    if (typeof proof === 'string') confirmedSaves.set(this, proof);
+  }
+
   /** Re-parse the stored JSON; never trust the column without validation. */
   getSpec(): RuntimeReportSpec {
     const parsed = parseRuntimeReportSpec(this.spec);
@@ -112,10 +139,52 @@ export class RuntimeReport extends SmrtObject {
     // Parse whatever was supplied (REST body, service, direct assignment) and
     // re-derive every denormalized column from it, so the columns can never
     // disagree with the spec that runs.
-    this.setSpec(parseRuntimeReportSpec(this.spec));
+    const parsed = parseRuntimeReportSpec(this.spec);
+    await this.assertConfirmedWrite(parsed);
+    this.setSpec(parsed);
     if (this.status !== 'active' && this.status !== 'archived') {
       throw new RuntimeReportError('invalid_spec', 'status', 'is invalid');
     }
+  }
+
+  /**
+   * Invariant: a RuntimeReport row is inserted, or has its spec/title/source/
+   * description/author changed, only by the confirmed-save path. Anything else
+   * (REST `create` body, manifest tool args, `new RuntimeReport().save()`,
+   * `collection.update()` of the spec) is refused here. A save that leaves those
+   * columns as stored (an archive/unarchive status change) needs no proof.
+   */
+  private async assertConfirmedWrite(parsed: RuntimeReportSpec): Promise<void> {
+    const hash = runtimeReportSpecHash(parsed);
+    const proof = confirmedSaves.get(this);
+    if (proof !== undefined) {
+      // Single use: the proof covers exactly one write of this exact spec.
+      confirmedSaves.delete(this);
+      if (proof === hash) return;
+    } else if (this.isPersisted && this.id) {
+      const stored = (await this.db.get(this.tableName, { id: this.id })) as {
+        spec_hash?: unknown;
+        title?: unknown;
+        description?: unknown;
+        source_id?: unknown;
+        created_by_user_id?: unknown;
+      } | null;
+      if (
+        stored &&
+        stored.spec_hash === hash &&
+        (stored.title ?? '') === parsed.title &&
+        (stored.description ?? '') === (parsed.description ?? '') &&
+        (stored.source_id ?? '') === parsed.source &&
+        (stored.created_by_user_id ?? '') === (this.createdByUserId ?? '')
+      ) {
+        return;
+      }
+    }
+    throw new RuntimeReportError(
+      'confirmation_required',
+      'spec',
+      'a runtime report can only be created or changed through the confirmed save of reports.runtime.define; the write was refused',
+    );
   }
 }
 
@@ -130,6 +199,12 @@ export interface RuntimeReportStoreOptions {
 export interface SaveRuntimeReportOptions extends RuntimeReportStoreOptions {
   /** A plan compiled for the SAVING principal; the only accepted input. */
   compiled: CompiledRuntimeReport;
+  /**
+   * The spec hash a human confirmed (the value handed to the application's
+   * confirmation host). It must equal the compiled plan's hash; the row is
+   * only minted when it does. Call this ONLY after that confirmation resolved.
+   */
+  confirmedSpecHash: string;
   createdByUserId: string;
   /** Defaults to the tenant the plan was compiled for, then ambient. */
   tenantId?: string | null;
@@ -165,6 +240,13 @@ export async function saveRuntimeReport(
       'compiled plan does not match its spec',
     );
   }
+  if (options.confirmedSpecHash !== specHash) {
+    throw new RuntimeReportError(
+      'confirmation_required',
+      'specHash',
+      'the confirmed spec hash does not match the spec; the report was not saved',
+    );
+  }
   const collection = await collectionFor(options.db);
   return collection.create({
     tenantId: tenant,
@@ -175,7 +257,9 @@ export async function saveRuntimeReport(
     specHash,
     status: 'active',
     createdByUserId: options.createdByUserId,
-  });
+    // The only place a confirmation proof is minted; see CONFIRMED_SAVE.
+    [CONFIRMED_SAVE]: specHash,
+  } as Parameters<RuntimeReportCollection['create']>[0]);
 }
 
 export async function getRuntimeReport(
