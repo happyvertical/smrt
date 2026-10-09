@@ -22,6 +22,11 @@ import type {
 import { useShellLayout } from './layout-context.js';
 import type { ShellLayoutController } from './layout-controller.svelte.js';
 import ShellIconButton from './ShellIconButton.svelte';
+import ShellSectionIcon from './ShellSectionIcon.svelte';
+import {
+  SHELL_DEFAULT_SECTION_ICON,
+  SHELL_SECTION_ICONS,
+} from './shell-icons.js';
 import type { ShellSectionActionsContext } from './types.js';
 
 interface Props {
@@ -33,6 +38,12 @@ interface Props {
   iconComponent?: Component<{ name: string; size?: number }>;
   /** Host icon buttons for each section (overlay and floating toolbar). */
   sectionActions?: Snippet<[ShellSectionActionsContext]>;
+  /**
+   * `'sections'` edits only the sections (grip, rename, show, delete, icon
+   * picker); their entries are edited on the section's own page with
+   * `ShellSectionMenu`. Default `'items'`.
+   */
+  navMode?: 'items' | 'sections';
 }
 
 let {
@@ -40,6 +51,7 @@ let {
   'aria-label': ariaLabel,
   iconComponent: IconComponent,
   sectionActions,
+  navMode = 'items',
 }: Props = $props();
 
 const { t } = useI18n();
@@ -51,6 +63,7 @@ interface NavContainer extends SortableContainer {
   custom: boolean;
   titleVisible: boolean;
   count: number;
+  icon: string;
 }
 
 const sections = $derived(layout.sections);
@@ -64,10 +77,11 @@ const containers = $derived<NavContainer[]>(
     custom: section.custom,
     titleVisible: section.titleVisible,
     count: section.items.length,
+    icon: section.icon ?? SHELL_DEFAULT_SECTION_ICON,
   })),
 );
 const items = $derived<SortableItem[]>(
-  sections.flatMap((section) =>
+  (navMode === 'sections' ? [] : sections).flatMap((section) =>
     section.items.map((entry) => ({
       id: entry.id,
       containerId: section.id,
@@ -140,6 +154,12 @@ function onkeydown(id: string, event: KeyboardEvent): void {
   if (event.key !== 'Escape' || open?.id !== id) return;
   event.preventDefault();
   event.stopPropagation();
+  // An open icon picker closes first; the toolbar stays.
+  if (iconPicker === id) {
+    iconPicker = null;
+    pickerButton(id)?.focus();
+    return;
+  }
   open = null;
   sectionEl(id)
     ?.querySelector<HTMLElement>('button[data-section-title]')
@@ -166,6 +186,31 @@ $effect(() => {
   document.addEventListener('pointerdown', dismiss, true);
   return () => document.removeEventListener('pointerdown', dismiss, true);
 });
+
+// The section whose icon picker is open (inside its toolbar).
+let iconPicker = $state<string | null>(null);
+
+function pickerButton(id: string): HTMLElement | null {
+  return (
+    sectionEl(id)?.querySelector<HTMLElement>('button[data-section-icon]') ??
+    null
+  );
+}
+
+function chooseIcon(id: string, icon: string): void {
+  layout.setSectionIcon(id, icon);
+  iconPicker = null;
+  pickerButton(id)?.focus();
+}
+
+// The picker lives in the toolbar: it closes with it.
+$effect(() => {
+  if (iconPicker !== null && open?.id !== iconPicker) iconPicker = null;
+});
+
+function humanizeIcon(name: string): string {
+  return name.replace(/([A-Z])/g, ' $1').toLowerCase();
+}
 
 // The item whose name is being edited in place (one at a time).
 let renamingItem = $state<string | null>(null);
@@ -243,12 +288,14 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
     label={t(M['ui.shell_layout_editor.show_entry'], { label: entry.label })}
     onclick={() => setShown(entry.id, entry.hidden)}
   />
-  <ShellIconButton
-    icon={entry.titleVisible ? 'heading' : 'headingOff'}
-    pressed={entry.titleVisible}
-    label={t(M['ui.shell_layout_editor.show_title_for'], { label: entry.label })}
-    onclick={() => layout.setSectionTitleVisible(entry.id, !entry.titleVisible)}
-  />
+  {#if navMode !== 'sections'}
+    <ShellIconButton
+      icon={entry.titleVisible ? 'heading' : 'headingOff'}
+      pressed={entry.titleVisible}
+      label={t(M['ui.shell_layout_editor.show_title_for'], { label: entry.label })}
+      onclick={() => layout.setSectionTitleVisible(entry.id, !entry.titleVisible)}
+    />
+  {/if}
 {/snippet}
 
 {#snippet actions(entry: NavContainer)}
@@ -263,6 +310,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 <nav
   class="smrt-nav-editor"
   data-layout-editing=""
+  data-nav-mode={navMode}
   aria-label={ariaLabel || t(M['ui.shell_layout_editor.sortable_label'])}
   bind:this={rootEl}
 >
@@ -302,7 +350,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
             aria-label={t(M['ui.layout_edit.edit_section'], { label: entry.label })}
             onpointerenter={(event) => onhover(entry.id, event)}
             onclick={() => onactivate(entry.id)}
-          >{entry.label}</button>
+          >{#if navMode === 'sections'}<span class="smrt-nav-editor__section-icon"><ShellSectionIcon name={entry.icon} iconComponent={IconComponent} /></span>{/if}{entry.label}</button>
           <span class="smrt-nav-editor__overlay">
             {@render toggles(entry)}
             {@render actions(entry)}
@@ -329,6 +377,17 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
                 }}
               />
               {@render toggles(entry)}
+              {#if navMode === 'sections'}
+                <ShellIconButton
+                  data-section-icon={entry.id}
+                  aria-haspopup="true"
+                  aria-expanded={iconPicker === entry.id}
+                  label={t(M['ui.shell_layout_editor.section_icon'], { label: entry.label })}
+                  onclick={() => (iconPicker = iconPicker === entry.id ? null : entry.id)}
+                >
+                  <ShellSectionIcon name={entry.icon} iconComponent={IconComponent} />
+                </ShellIconButton>
+              {/if}
               {#if entry.custom}
                 <ShellIconButton
                   icon="trash"
@@ -337,6 +396,24 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
                 />
               {/if}
               {@render actions(entry)}
+              {#if navMode === 'sections' && iconPicker === entry.id}
+                <div
+                  class="smrt-nav-editor__icons"
+                  role="group"
+                  aria-label={t(M['ui.shell_layout_editor.section_icon'], { label: entry.label })}
+                >
+                  {#each SHELL_SECTION_ICONS as name (name)}
+                    <ShellIconButton
+                      data-icon-option={name}
+                      pressed={entry.icon === name}
+                      label={t(M['ui.shell_layout_editor.icon_option'], { icon: humanizeIcon(name) })}
+                      onclick={() => chooseIcon(entry.id, name)}
+                    >
+                      <ShellSectionIcon {name} />
+                    </ShellIconButton>
+                  {/each}
+                </div>
+              {/if}
             </div>
           {/if}
         </div>
@@ -446,4 +523,9 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   .smrt-nav-editor__icon { display: inline-grid; place-items: center; inline-size: 1.25rem; block-size: 1.25rem; min-inline-size: 1.25rem; }
   :global(.smrt-nav-editor__item-name) { flex: 1 1 auto; min-inline-size: 0; }
   :global(.smrt-nav-editor__new) { justify-self: start; }
+  /* Sections mode: the entries are edited on the section's page. */
+  .smrt-nav-editor[data-nav-mode='sections'] :global(.smrt-sortable__items) { display: none; }
+  .smrt-nav-editor__section-icon { display: inline-flex; margin-inline-end: var(--smrt-spacing-2); vertical-align: middle; }
+  .smrt-nav-editor__icons { flex: 1 1 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr)); gap: var(--smrt-spacing-1); padding-block-start: var(--smrt-spacing-1); }
+  .smrt-nav-editor__icons :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
 </style>

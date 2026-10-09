@@ -371,6 +371,35 @@ control panel), wired by `app/AppShell.svelte`.
   "Rename <label>" button opening an inline field (Enter saves, Escape cancels,
   blur saves) and, once renamed, "Reset <label> to <original>"; the original shows
   as the row tooltip. Presets ("cookbooks") ship it in the stored layout.
+- **Sections-only navigation (`navMode: 'sections'`).** `AppShell` (and
+  `TenantNav` / `ShellNavEditor` directly) take `navMode?: 'items' | 'sections'`
+  (default `'items'`, unchanged). In `'sections'` the left sidebar shows one
+  link per section (icon + label), no entries; a collapsed rail (`tenantRail`)
+  shows the icons with tooltips. The link goes to `ShellNavGroup.href`, else
+  `AppShell` `sectionHref(sectionId)` (user-created sections), else the first
+  entry; it is `aria-current="page"` on that page and `"true"` on any of the
+  section's entry pages. `AppShell` also takes `iconComponent` for host icon
+  names. `ShellNavGroup.icon` / `.href` are additive; the user override is
+  `sections[id].icon` (trimmed; blank or the host's icon removes it), helper
+  `setShellSectionIcon(nav, groups, layout, id, icon | null)`, controller
+  `setSectionIcon(id, icon | null)`; `resolveShellNavModel` sections carry
+  `icon` / `defaultIcon` and `applyShellLayout` emits the effective `icon`.
+  Icons are shell icon names (`SHELL_SECTION_ICONS` is the picker set, drawn
+  from Material icons like the rest of `SHELL_ICON_PATHS`; `SHELL_DEFAULT_SECTION_ICON`
+  is `folder`) or host names rendered by `iconComponent` (`ShellSectionIcon`
+  tries the built-in set first). Edit mode in this mode: sections keep grip,
+  rename, hide, delete; the title toggle is replaced by an "Icon of <label>"
+  popover grid ("Use <icon> icon", `aria-pressed` on the current one; Escape
+  closes the grid before the toolbar). Entries are not in the sidebar.
+- **`ShellSectionMenu`** (`sectionId`, `controller?`, `meta(entry)`,
+  `actions(entry)`, `iconComponent`, `aria-label`): the section's page body. A
+  `<ul>` of rows (icon, label link, host `meta`, host `actions`, chevron; the
+  row is one stretched link, actions sit above it) in applied order with
+  renames; hidden entries are omitted. While editing, the same rows become the
+  nav editor's chrome (single-container `Sortable` grip with keyboard moves,
+  inline rename/reset, show/hide toggle) driving `moveItem`/`renameItem`/
+  `hide`/`show`; rows are not links then. `ShellSectionMenuEntry` is the snippet
+  argument (`id, href, label, defaultLabel, icon, hidden, item`).
 - **`ShellLayoutEditor`**: `controller` (default: context), `preview` (default
   true), `iconComponent`. Each section has an inline name input, icon toggles
   for visibility and title, and (custom only) a trash button, which confirms

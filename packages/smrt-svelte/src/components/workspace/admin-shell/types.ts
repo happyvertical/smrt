@@ -155,6 +155,18 @@ export interface ShellNavGroup {
    * an accessible name. Hosts suggest it; a user's layout can override it.
    */
   showTitle?: boolean;
+  /**
+   * The section's icon: a shell icon name (`SHELL_SECTION_ICONS`) or a name
+   * the host's `iconComponent` renders. Shown by `navMode: 'sections'`; the
+   * user can override it in the layout (`sections[id].icon`).
+   */
+  icon?: string;
+  /**
+   * Where the section's own page (overview) lives. `navMode: 'sections'`
+   * links the section here and treats it as current on this page; without it
+   * the first visible item's href is used.
+   */
+  href?: string;
   items: ShellNavItem[];
 }
 
@@ -436,3 +448,16 @@ export const ADMIN_SHELL_REGION_IDS = {
   bottom: 'smrt-admin-shell-bottom-panel',
   main: 'smrt-admin-shell-main',
 } as const;
+
+/** One row of the menu, as passed to the `meta` and `actions` snippets. */
+export interface ShellSectionMenuEntry {
+  id: string;
+  href: string;
+  /** The displayed label (the user's rename, else the host's). */
+  label: string;
+  /** The host's label. */
+  defaultLabel: string;
+  icon?: string;
+  hidden: boolean;
+  item: ShellNavItem;
+}

@@ -89,6 +89,8 @@ export { default as ShellIconButton } from './admin-shell/ShellIconButton.svelte
 export { default as ShellLayoutEditor } from './admin-shell/ShellLayoutEditor.svelte';
 export { default as ShellNavEditor } from './admin-shell/ShellNavEditor.svelte';
 export { default as ShellNavToggle } from './admin-shell/ShellNavToggle.svelte';
+export { default as ShellSectionIcon } from './admin-shell/ShellSectionIcon.svelte';
+export { default as ShellSectionMenu } from './admin-shell/ShellSectionMenu.svelte';
 export { default as ShellSettingsPanel } from './admin-shell/ShellSettingsPanel.svelte';
 export { default as ShellTitle } from './admin-shell/ShellTitle.svelte';
 export { default as ShortcutsOverlay } from './admin-shell/ShortcutsOverlay.svelte';
@@ -108,6 +110,13 @@ export {
   resolveShellConfig,
   stripUnpersistedSettings,
 } from './admin-shell/settings.js';
+export {
+  isShellIconName,
+  SHELL_DEFAULT_SECTION_ICON,
+  SHELL_ICON_PATHS,
+  SHELL_SECTION_ICONS,
+  type ShellIconName,
+} from './admin-shell/shell-icons.js';
 export type {
   ShellPlacementItem,
   ShellRegion,
@@ -160,6 +169,7 @@ export type {
   ShellPanelResize,
   ShellScope,
   ShellSectionActionsContext,
+  ShellSectionMenuEntry,
   ShellSettingsAdapter,
   ShellSettingsDelta,
   ShellStateSnapshot,

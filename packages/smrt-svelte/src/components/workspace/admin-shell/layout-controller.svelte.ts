@@ -17,6 +17,7 @@ import {
   type ShellLayout,
   type ShellNavModelSection,
   setShellLayoutPanel,
+  setShellSectionIcon,
   setShellSectionTitleVisible,
   showShellEntry,
 } from './layout.js';
@@ -316,6 +317,22 @@ export class ShellLayoutController {
         this.layout,
         itemId,
         label,
+      ),
+    );
+  }
+
+  /**
+   * Set a section's icon (a shell or host icon name). `null` or blank
+   * restores the host's suggested icon.
+   */
+  setSectionIcon(sectionId: string, icon: string | null): boolean {
+    return this.apply(
+      setShellSectionIcon(
+        this.options.nav(),
+        this.options.groups(),
+        this.layout,
+        sectionId,
+        icon,
       ),
     );
   }

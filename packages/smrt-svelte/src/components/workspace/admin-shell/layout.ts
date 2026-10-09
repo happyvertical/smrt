@@ -45,6 +45,8 @@ export interface ShellLayoutSection {
   label?: string;
   /** `false` renders the section's items flat, without a visible heading. */
   showTitle?: boolean;
+  /** Replaces the section's icon (a shell icon name or a host icon name). */
+  icon?: string;
 }
 
 /** A user's override of one navigation item's presentation. */
@@ -137,6 +139,10 @@ export interface ShellNavModelSection {
   custom: boolean;
   /** Whether the title is displayed (the root has none). */
   titleVisible: boolean;
+  /** The displayed icon (the user's choice, else the host's), if any. */
+  icon: string | null;
+  /** The host's suggested icon; `null` when it suggests none. */
+  defaultIcon: string | null;
   hidden: boolean;
   /** Items in display order, including hidden ones. */
   items: ShellNavModelItem[];
@@ -200,6 +206,8 @@ function readSection(raw: unknown): ShellLayoutSection | undefined {
   const label = cleanLabel(raw.label);
   if (label) section.label = label;
   if (typeof raw.showTitle === 'boolean') section.showTitle = raw.showTitle;
+  const icon = cleanLabel(raw.icon);
+  if (icon) section.icon = icon;
   return hasKeys(section) ? section : undefined;
 }
 
@@ -468,6 +476,10 @@ export function resolveShellNavModel(
       titleVisible: section.group
         ? (override?.showTitle ?? section.group.showTitle !== false)
         : false,
+      icon: section.group
+        ? (override?.icon ?? section.group.icon ?? null)
+        : null,
+      defaultIcon: section.group?.icon ?? null,
       hidden: section.group ? hidden.has(section.id) : false,
       items: order.map((id) => byItem.get(id) as ShellNavModelItem),
     };
@@ -539,6 +551,7 @@ export function applyShellLayout(
     }
     if (section.titleVisible) delete next.showTitle;
     else next.showTitle = false;
+    if (section.icon) next.icon = section.icon;
     nextGroups.push(next);
   }
 
@@ -763,6 +776,7 @@ function setSectionOverride(
   const merged: ShellLayoutSection = { ...(sections[id] ?? {}), ...patch };
   if (merged.label === undefined) delete merged.label;
   if (merged.showTitle === undefined) delete merged.showTitle;
+  if (merged.icon === undefined) delete merged.icon;
   if (hasKeys(merged)) sections[id] = merged;
   else delete sections[id];
   return compact({ ...current, sections });
@@ -853,6 +867,27 @@ export function setShellSectionTitleVisible(
   const suggested = section.custom ? true : section.group?.showTitle !== false;
   return setSectionOverride(current, sectionId, {
     showTitle: visible === suggested ? undefined : visible,
+  });
+}
+
+/**
+ * Set a section's icon. A blank icon (or `null`), or the host's own icon,
+ * removes the override. Works for host and custom sections; unknown ids and
+ * the root section are ignored.
+ */
+export function setShellSectionIcon(
+  nav: readonly ShellNavItem[],
+  groups: readonly ShellNavGroup[],
+  layout: ShellLayout | null | undefined,
+  sectionId: string,
+  icon: string | null,
+): ShellLayout {
+  const current = normalizeShellLayout(layout ?? createShellLayout());
+  const section = findSection(nav, groups, current, sectionId);
+  if (!section) return current;
+  const clean = cleanLabel(icon);
+  return setSectionOverride(current, sectionId, {
+    icon: !clean || clean === section.defaultIcon ? undefined : clean,
   });
 }
 

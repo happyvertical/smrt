@@ -4,6 +4,7 @@
  * with the label as tooltip, `aria-pressed` for toggles, and a 2rem hit area
  * (the same visual language as a nav row's `action`).
  */
+import type { Snippet } from 'svelte';
 import type { HTMLButtonAttributes } from 'svelte/elements';
 import { SHELL_ICON_PATHS, type ShellIconName } from './shell-icons.js';
 
@@ -11,8 +12,10 @@ interface Props
   extends Omit<HTMLButtonAttributes, 'aria-label' | 'title' | 'children'> {
   /** Accessible name and tooltip. */
   label: string;
-  /** Which filled icon to draw. */
-  icon: ShellIconName;
+  /** Which filled icon to draw (omit when passing `children`). */
+  icon?: ShellIconName;
+  /** Custom icon content, drawn instead of `icon` (decorative). */
+  children?: Snippet;
   /** Toggle state; omit for a plain action button. */
   pressed?: boolean;
   /** Tooltip text when it should differ from the label (default: the label). */
@@ -24,6 +27,7 @@ interface Props
 let {
   label,
   icon,
+  children,
   pressed,
   tooltip,
   size = 18,
@@ -42,9 +46,13 @@ let {
   title={tooltip ?? label}
   aria-pressed={pressed}
 >
-  <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true" focusable="false">
-    <path d={SHELL_ICON_PATHS[icon]} />
-  </svg>
+  {#if children}
+    {@render children()}
+  {:else if icon}
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true" focusable="false">
+      <path d={SHELL_ICON_PATHS[icon]} />
+    </svg>
+  {/if}
 </button>
 
 <style>

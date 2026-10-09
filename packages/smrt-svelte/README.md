@@ -704,6 +704,13 @@ canonical 48px target; omit density to inherit the theme, or choose
 `"comfortable"`. Account menus in the shell app bar open below the bar so the
 existing footer's default placement stays reachable on narrow screens.
 
+Sections-only navigation: pass `navMode="sections"` to `AppShell` and give
+each `ShellNavGroup` an `icon` and `href`; the sidebar then lists only the
+sections, and the section's page renders its entries with `ShellSectionMenu`
+(`meta`/`actions` snippets for counts and "New ..." links). In layout edit mode
+the menu rows get grip, rename and hide controls, and the sidebar's section
+toolbar gets an icon picker (`useShellLayout().setSectionIcon`).
+
 `TenantNav` accepts optional `groups: ShellNavGroup[]` (`{ heading, items }`)
 next to its existing flat `items`. Each group has a labelled `role="group"` and
 native disclosure summary; keyboard and touch users can collapse it even in the

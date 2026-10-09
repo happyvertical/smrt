@@ -9,7 +9,7 @@ import '@happyvertical/smrt-ui/themes/styles/base.css';
 import '@happyvertical/smrt-ui/themes/styles/fonts.css';
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { type Snippet, tick, untrack } from 'svelte';
+import { type Component, type Snippet, tick, untrack } from 'svelte';
 import { M as SORTABLE_STRINGS } from '../../i18n/strings.sortable.js';
 import { M } from '../../i18n/strings.workspace.js';
 import Provider from '../../Provider.svelte';
@@ -170,6 +170,19 @@ interface Props {
    */
   sectionActions?: Snippet<[ShellSectionActionsContext]>;
   /**
+   * `'items'` (default) lists every section's entries in the left sidebar.
+   * `'sections'` lists only the sections, one icon link each, to the
+   * section's own page (`ShellNavGroup.href`, else `sectionHref`, else its
+   * first entry); render the entries there with `ShellSectionMenu`. In edit
+   * mode the sidebar edits sections (grip, rename, hide, icon); entries are
+   * edited on the section page.
+   */
+  navMode?: 'items' | 'sections';
+  /** Section page for groups without an `href` (e.g. user-created ones). */
+  sectionHref?: (sectionId: string) => string | undefined;
+  /** Renders host icon names for sections and entries. */
+  iconComponent?: Component<{ name: string; size?: number }>;
+  /**
    * Edge toggle buttons and WASD drop-down panels (see `AdminShell`).
    * Default `false`: regions are laid out inline and no toggles or hotkeys
    * exist. Pass `true` (or a per-edge map) for the previous behaviour.
@@ -209,6 +222,9 @@ let {
   slotItems = [],
   layoutEditing = false,
   sectionActions,
+  navMode = 'items',
+  sectionHref,
+  iconComponent,
   edgeToggles = false,
   hotkeys,
   children,
@@ -723,17 +739,37 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
         </AppScopePanel>
       {/snippet}
 
+      {#snippet tenantRail()}
+        {#if navMode === 'sections' && !editing && hasNav}
+          <TenantNav
+            collapsed
+            items={applied.nav}
+            groups={applied.groups}
+            {currentHref}
+            {navMode}
+            {sectionHref}
+            {iconComponent}
+            aria-label={t(M['ui.app_shell.navigation'])}
+          />
+        {/if}
+      {/snippet}
+
       {#snippet tenantPanel()}
         {#if editing}
           <ShellNavEditor
             aria-label={t(M['ui.app_shell.navigation'])}
             {sectionActions}
+            {navMode}
+            {iconComponent}
           />
         {:else if hasNav}
           <TenantNav
             items={applied.nav}
             groups={applied.groups}
             {currentHref}
+            {navMode}
+            {sectionHref}
+            {iconComponent}
             aria-label={t(M['ui.app_shell.navigation'])}
           />
         {/if}
