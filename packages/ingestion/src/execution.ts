@@ -817,7 +817,114 @@ export class IntakeExecutionService {
         throw new Error('Evidence unavailable');
     }
   }
-  private async approved(db: DatabaseInterface, bound: Bound): Promise<void> {
+  private async approved(db: DatabaseInterface, bound: Bound): Promise<number> {
+    await this.verifyEvidence(db, bound);
+    if (bound.binding.plan) {
+      const plans = await this.rows(
+        db,
+        'intake_plans',
+        'item_id=? AND plan_key=?',
+        [bound.item.id, bound.binding.plan.key],
+      );
+      const latest = plans.sort(
+        (a, b) => Number(b.revision) - Number(a.revision),
+      )[0];
+      if (
+        !latest ||
+        latest.digest !== bound.binding.plan.digest ||
+        Number(latest.revision) !== bound.binding.plan.revision
+      )
+        throw new Error('Plan superseded');
+      const definition = object(latest.data);
+      const steps = definition.steps as Array<{
+        actionId: string;
+        proposalRevision: number;
+      }>;
+      const position = steps.findIndex(
+        (step) => step.actionId === bound.action.id,
+      );
+      if (
+        position < 0 ||
+        steps[position].proposalRevision !== Number(bound.proposal.revision)
+      )
+        throw new Error('Plan superseded');
+      for (const step of steps.slice(0, position)) {
+        const [predecessor] = await this.rows(
+          db,
+          'intake_actions',
+          'id=? AND item_id=?',
+          [step.actionId, bound.item.id],
+        );
+        if (
+          !predecessor ||
+          Number(predecessor.proposal_revision) !== step.proposalRevision ||
+          (predecessor.state !== 'succeeded' &&
+            !(
+              object(definition.definition).onStepFailure === 'continue' &&
+              predecessor.state === 'failed'
+            ))
+        )
+          throw new Error('Plan predecessor incomplete or failed');
+      }
+      const parent = this.handler(
+        String(definition.handlerId),
+        String(definition.handlerVersion),
+      );
+      if (!('playbookKey' in parent.operation))
+        throw new Error('Plan unavailable');
+      const parentAccess = await this.access(db, bound.item, parent, 'execute');
+      const planArgs = object(definition.args);
+      if (!(await parent.validate(planArgs, parentAccess.context)).ok)
+        throw new Error('Plan validation changed');
+      const planPreview = await parent.preview(planArgs, parentAccess.context);
+      if (canonical(planPreview) !== canonical(definition.preview))
+        throw new Error('Plan preview changed');
+      for (const target of planPreview.targetPreconditions)
+        await parentAccess.context.assertTarget(
+          target.model,
+          target.id,
+          target.revision,
+        );
+      const resolved = await resolvePlaybook(parent.operation.playbookKey, {
+        db,
+        tenantId: this.scope.tenantId,
+        plane: 'server',
+        classifier: ({ model, action }) => {
+          const match = this.config.handlers.find(
+            (entry) =>
+              'execution' in entry &&
+              entry.operation.model === model &&
+              entry.operation.action === action,
+          );
+          return match && 'execution' in match ? match.capability : undefined;
+        },
+      });
+      if (
+        !resolved.ok ||
+        intakeBindingDigest(resolved.plan) !==
+          parent.operation.definitionHash ||
+        canonical(resolved.plan) !== canonical(definition.definition)
+      )
+        throw new Error('Playbook changed');
+    }
+    const regenerated = await this.buildBinding(db, bound.item, {
+      itemId: String(bound.item.id),
+      actionId: String(bound.action.id),
+      attemptId: String(bound.proposal.analysis_attempt_id),
+      expectedRevision: Number(bound.proposal.revision) - 1,
+      requestId: 'verify',
+      handlerId: bound.handler.id,
+      handlerVersion: bound.handler.version,
+      args: bound.binding.args,
+      dependencies: bound.binding.dependencies,
+    });
+    if (
+      canonical({
+        ...regenerated,
+        ...(bound.binding.plan ? { plan: bound.binding.plan } : {}),
+      }) !== canonical(bound.binding)
+    )
+      throw new Error('Preview changed; review required');
     const { policy } = await this.access(
       db,
       bound.item,
@@ -878,83 +985,10 @@ export class IntakeExecutionService {
       )
         throw new Error('Automatic eligibility revoked');
     }
+    if (time(object(decision.data).expiresAt) <= this.now().getTime())
+      throw new Error('Approval required');
     await this.verifyEvidence(db, bound);
-    if (bound.binding.plan) {
-      const plans = await this.rows(
-        db,
-        'intake_plans',
-        'item_id=? AND plan_key=?',
-        [bound.item.id, bound.binding.plan.key],
-      );
-      const latest = plans.sort(
-        (a, b) => Number(b.revision) - Number(a.revision),
-      )[0];
-      if (
-        !latest ||
-        latest.digest !== bound.binding.plan.digest ||
-        Number(latest.revision) !== bound.binding.plan.revision
-      )
-        throw new Error('Plan superseded');
-      const definition = object(latest.data);
-      const parent = this.handler(
-        String(definition.handlerId),
-        String(definition.handlerVersion),
-      );
-      if (!('playbookKey' in parent.operation))
-        throw new Error('Plan unavailable');
-      const parentAccess = await this.access(db, bound.item, parent, 'execute');
-      const planArgs = object(definition.args);
-      if (!(await parent.validate(planArgs, parentAccess.context)).ok)
-        throw new Error('Plan validation changed');
-      const planPreview = await parent.preview(planArgs, parentAccess.context);
-      if (canonical(planPreview) !== canonical(definition.preview))
-        throw new Error('Plan preview changed');
-      for (const target of planPreview.targetPreconditions)
-        await parentAccess.context.assertTarget(
-          target.model,
-          target.id,
-          target.revision,
-        );
-      const resolved = await resolvePlaybook(parent.operation.playbookKey, {
-        db,
-        tenantId: this.scope.tenantId,
-        plane: 'server',
-        classifier: ({ model, action }) => {
-          const match = this.config.handlers.find(
-            (entry) =>
-              'execution' in entry &&
-              entry.operation.model === model &&
-              entry.operation.action === action,
-          );
-          return match && 'execution' in match ? match.capability : undefined;
-        },
-      });
-      if (
-        !resolved.ok ||
-        intakeBindingDigest(resolved.plan) !==
-          parent.operation.definitionHash ||
-        canonical(resolved.plan) !== canonical(definition.definition)
-      )
-        throw new Error('Playbook changed');
-    }
-    const regenerated = await this.buildBinding(db, bound.item, {
-      itemId: String(bound.item.id),
-      actionId: String(bound.action.id),
-      attemptId: String(bound.proposal.analysis_attempt_id),
-      expectedRevision: Number(bound.proposal.revision) - 1,
-      requestId: 'verify',
-      handlerId: bound.handler.id,
-      handlerVersion: bound.handler.version,
-      args: bound.binding.args,
-      dependencies: bound.binding.dependencies,
-    });
-    if (
-      canonical({
-        ...regenerated,
-        ...(bound.binding.plan ? { plan: bound.binding.plan } : {}),
-      }) !== canonical(bound.binding)
-    )
-      throw new Error('Preview changed; review required');
+    return Math.min(time(decisionData.expiresAt), time(bound.item.expires_at));
   }
   private async arguments(
     db: DatabaseInterface,
@@ -1086,8 +1120,11 @@ export class IntakeExecutionService {
     result: IntakeValues,
   ): Promise<ActionResult> {
     const resultDigest = intakeBindingDigest(result);
+    const tombstone = bound.item.visibility !== 'active';
     const resultTargets: IntakeValues = {};
-    for (const [field, model] of Object.entries(bound.handler.resultModels)) {
+    for (const [field, model] of Object.entries(
+      tombstone ? {} : bound.handler.resultModels,
+    )) {
       id(result[field]);
       const target = await this.config.assertTarget({
         db,
@@ -1103,12 +1140,14 @@ export class IntakeExecutionService {
         revision: target.revision,
       };
     }
-    const data = {
-      ...object(execution.data),
-      result,
-      resultTargets,
-      completedAt: this.now().toISOString(),
-    };
+    const data = tombstone
+      ? {}
+      : {
+          ...object(execution.data),
+          result,
+          resultTargets,
+          completedAt: this.now().toISOString(),
+        };
     const updated = await db.query(
       "UPDATE intake_actions SET state='succeeded',result_digest=? WHERE id=? AND tenant_id=? AND confidential_scope_id=? AND fence=? AND state IN ('executing','outcome_unknown') RETURNING id",
       resultDigest,
@@ -1129,7 +1168,7 @@ export class IntakeExecutionService {
     return {
       state: 'succeeded',
       actionId: String(bound.action.id),
-      result,
+      ...(tombstone ? { tombstone: true } : { result }),
       resultDigest,
     };
   }
@@ -1270,53 +1309,79 @@ export class IntakeExecutionService {
       );
     });
     if (!reserved) return result;
-    const { bound, execution, args } = reserved;
+    const { bound, execution } = reserved;
     try {
-      // The transaction commits the stable key before any external send. A fresh
-      // host check is required again at this exact network boundary.
+      // Reservation commits before network I/O. Reauthorize and validate the
+      // authoritative binding after all asynchronous principal/target callbacks,
+      // under the owning lock, then submit without another host callback gap.
       const item = await this.item(this.db, String(bound.item.id));
       const effect = await this.principal(
         this.db,
         item,
         bound.handler,
         'execute',
-        async (context) => {
-          await this.arguments(this.db, bound, context);
-          if (bound.handler.execution.kind !== 'external')
+        async () => {
+          const send = await this.tx(async (db) => {
+            const fresh = await this.bound(db, actionId, true);
+            if (
+              fresh.action.state !== 'executing' ||
+              Number(fresh.action.fence) !== Number(execution.fence) ||
+              fresh.proposal.binding_hash !== execution.binding_hash
+            )
+              throw new Error('Execution fence lost');
+            return this.principal(
+              db,
+              fresh.item,
+              fresh.handler,
+              'execute',
+              async (context) => {
+                const currentArgs = await this.arguments(db, fresh, context);
+                if (
+                  intakeBindingDigest(currentArgs) !==
+                  object(execution.data).argsDigest
+                )
+                  throw new Error('Execution arguments changed');
+                const deadline = await this.approved(db, fresh);
+                return { bound: fresh, args: currentArgs, context, deadline };
+              },
+            );
+          });
+          if (send.bound.handler.execution.kind !== 'external')
             throw new Error('Handler changed');
-          const output = await bound.handler.execution.submit(
-            args,
-            context,
+          // Commit latency cannot extend the approved execution window.
+          if (send.deadline <= this.now().getTime())
+            throw new Error('Approval required');
+          // Do not expose the completed transaction executor to an external adapter.
+          const effect = await send.bound.handler.execution.submit(
+            send.args,
+            {
+              ...send.context,
+              db: this.db,
+              assertTarget: async (model, targetId, revision) => {
+                await this.config.assertTarget({
+                  db: this.db,
+                  scope: this.scope,
+                  itemId: String(send.bound.item.id),
+                  model,
+                  id: targetId,
+                  ...(revision === undefined ? {} : { revision }),
+                });
+              },
+            },
             String(execution.idempotency_key),
           );
           this.validate(
-            bound.handler.resultSchema,
-            output,
-            context.policy.maxBytes,
+            send.bound.handler.resultSchema,
+            effect,
+            send.context.policy.maxBytes,
           );
-          return output;
+          return effect;
         },
       );
       await this.options.checkpoint?.('external-submitted');
       return await this.tx(async (db) => {
         const item = await this.item(db, String(bound.item.id), true, true);
-        if (item.visibility !== 'active') {
-          // Result content cannot outlive privacy expiry; retain only success identity.
-          const completed = await this.finish(db, bound, execution, effect);
-          await db.query(
-            "UPDATE intake_executions SET data='{}' WHERE id=? AND tenant_id=? AND confidential_scope_id=?",
-            execution.id,
-            this.scope.tenantId,
-            this.scope.confidentialScopeId,
-          );
-          return {
-            state: 'succeeded',
-            actionId,
-            resultDigest: completed.resultDigest,
-            tombstone: true,
-          };
-        }
-        return this.finish(db, bound, execution, effect);
+        return this.finish(db, { ...bound, item }, execution, effect);
       });
     } catch {
       return this.tx(async (db) => {
@@ -1400,7 +1465,7 @@ export class IntakeExecutionService {
         throw new Error('Reconciliation fence lost');
       await this.access(db, item, bound.handler, 'reconcile');
       if (observed.kind === 'succeeded')
-        return this.finish(db, bound, execution, observed.result);
+        return this.finish(db, { ...bound, item }, execution, observed.result);
       const state =
         observed.kind === 'not_applied' ? 'failed' : 'outcome_unknown';
       await db.query(
@@ -1413,12 +1478,20 @@ export class IntakeExecutionService {
       await db.query(
         'UPDATE intake_executions SET state=?,data=? WHERE id=? AND tenant_id=? AND confidential_scope_id=?',
         state,
-        canonical({ ...object(execution.data), reconciliation: observed.kind }),
+        canonical(
+          item.visibility !== 'active'
+            ? {}
+            : { ...object(execution.data), reconciliation: observed.kind },
+        ),
         execution.id,
         this.scope.tenantId,
         this.scope.confidentialScopeId,
       );
-      return { state, actionId };
+      return {
+        state,
+        actionId,
+        ...(item.visibility !== 'active' ? { tombstone: true } : {}),
+      };
     });
   }
   /** Machine authorization is separate provenance, never a fabricated human decision. */

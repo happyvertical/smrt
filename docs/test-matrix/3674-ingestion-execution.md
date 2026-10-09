@@ -81,3 +81,26 @@ connections and retries only SQLSTATE 55006 until a bounded deadline. Permission
 and unknown errors propagate immediately. `postgres-cleanup.test.ts` checks that
 boundary; the PostgreSQL execution suite also holds real connections past the
 deadline and proves the database remains intact until ordinary cleanup succeeds.
+
+## Accepted review regressions (round 2)
+
+Both real database suites pause the actual post-reservation authorization callback
+and invalidate approval expiry, policy version, current analysis revision, or
+machine eligibility before it returns; no provider submission may occur. Final
+approval checks run after asynchronous preview/principal/argument callbacks, with
+expiry checked again after machine evaluation and no further host callback before
+submission. The owning transaction commits before external I/O.
+
+Direct and competing `applyAction` calls for independent later plan steps must
+obey pinned ordering and abort/continue policy under the item lock; calling the
+plan wrapper is not an authority prerequisite. A pending, executing or unknown
+predecessor never permits a later effect; continue permits a completed failure.
+
+Paused reconciliation overlaps public `expire()` on a second database connection
+for succeeded, unknown and not_applied outcomes. Every completion returns a
+tombstone without provider content and leaves execution data empty; successful
+completion retains only the result digest and durable terminal identity.
+
+All nine regression cases were demonstrated failing against reviewed HEAD
+`533ea8c3` before fixes, with corrected provider-result fixture schemas. The full
+SQLite/PostgreSQL suites supply final evidence, not the sensitivity-only run.

@@ -697,6 +697,196 @@ export function executionSuite(
       expect((await service.applyAction(actionId)).state).toBe('succeeded');
       expect(sends).toBe(1);
     });
+    for (const invalidation of [
+      'expiry',
+      'policy',
+      'evidence',
+      'automation',
+    ] as const)
+      it(`revalidates ${invalidation} after the final pre-send callback`, async () => {
+        let sends = 0;
+        let eligible = true;
+        let policyVersion = 'app1';
+        const external: OperationHandler = {
+          ...(handlers[0] as OperationHandler),
+          id: '@test/ingestion:boundary',
+          resultModels: {},
+          resultSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { privateContent: { type: 'string' } },
+          },
+          capability: { effect: 'write', idempotent: false, openWorld: true },
+          execution: {
+            kind: 'external',
+            submit: async () => {
+              sends++;
+              return {};
+            },
+            reconcile: async () => ({ kind: 'unknown' }),
+          },
+        };
+        handlers.push(external);
+        const authorize = config.authorize;
+        let pause = false;
+        let reached!: () => void;
+        let release!: () => void;
+        const atBoundary = new Promise<void>((resolve) => {
+          reached = resolve;
+        });
+        const resume = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        config.authorize = async (input) => {
+          if (pause && input.operation === 'execute') {
+            const rows = await input.db.query(
+              "SELECT id FROM intake_actions WHERE state='executing'",
+            );
+            if (rows.rows.length) {
+              pause = false;
+              reached();
+              await resume;
+              if (invalidation === 'evidence')
+                await input.db.query(
+                  'UPDATE intake_items SET analysis_revision=analysis_revision+1',
+                );
+            }
+          }
+          const access = await authorize(input);
+          access.policy[0] = { ...access.policy[0], version: policyVersion };
+          if (invalidation === 'automation')
+            access.policy = access.policy.map((layer) => ({
+              ...layer,
+              requireReview: false,
+              automation: {
+                handlers: [external.id],
+                evaluationVersion: 'eval1',
+                consequential: true,
+              },
+            })) as typeof access.policy;
+          return access;
+        };
+        config.evaluateAutomatic = async () => ({
+          eligible,
+          evaluationVersion: 'eval1',
+          certainty: 1,
+        });
+        const input = await ready();
+        const actionId = await service.createAction(
+          input.itemId,
+          'boundary',
+          {},
+        );
+        const review = await service.previewProposal({
+          ...input,
+          actionId,
+          expectedRevision: 0,
+          requestId: 'boundary',
+          handlerId: external.id,
+          handlerVersion: '1',
+          args: { title: 'Send', body: 'Body' },
+        });
+        if (invalidation === 'automation')
+          await service.authorizeAutomatic(actionId);
+        else await approve(review);
+        pause = true;
+        const pending = service.applyAction(actionId);
+        await atBoundary;
+        if (invalidation === 'expiry')
+          clock = new Date(clock.getTime() + 100001);
+        if (invalidation === 'policy') policyVersion = 'app2';
+        if (invalidation === 'automation') eligible = false;
+        release();
+        expect((await pending).state).toBe('outcome_unknown');
+        expect(sends).toBe(0);
+        expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(
+          0,
+        );
+      });
+    for (const outcome of ['succeeded', 'unknown', 'not_applied'] as const)
+      it(`preserves retention redaction when ${outcome} reconciliation completes after expiry`, async () => {
+        let reached!: () => void;
+        let release!: () => void;
+        const atProvider = new Promise<void>((resolve) => {
+          reached = resolve;
+        });
+        const resume = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const external: OperationHandler = {
+          ...(handlers[0] as OperationHandler),
+          id: '@test/ingestion:redaction',
+          resultModels: {},
+          resultSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { privateContent: { type: 'string' } },
+          },
+          execution: {
+            kind: 'external',
+            submit: async () => {
+              throw new Error('unknown');
+            },
+            reconcile: async () => {
+              reached();
+              await resume;
+              return outcome === 'succeeded'
+                ? {
+                    kind: outcome,
+                    result: { privateContent: 'must disappear' },
+                  }
+                : { kind: outcome };
+            },
+          },
+        };
+        handlers.push(external);
+        const input = await ready();
+        const actionId = await service.createAction(
+          input.itemId,
+          'redaction',
+          {},
+        );
+        const review = await service.previewProposal({
+          ...input,
+          actionId,
+          expectedRevision: 0,
+          requestId: 'redaction',
+          handlerId: external.id,
+          handlerVersion: '1',
+          args: { title: 'Private', body: 'Secret' },
+        });
+        await approve(review);
+        expect((await service.applyAction(actionId)).state).toBe(
+          'outcome_unknown',
+        );
+        const pending = service.reconcileAction(actionId);
+        await atProvider;
+        await new IngestionService({ ...options, db: peer }).expire(
+          input.itemId,
+        );
+        release();
+        const result = await pending;
+        expect(result).toMatchObject({
+          state:
+            outcome === 'succeeded'
+              ? 'succeeded'
+              : outcome === 'unknown'
+                ? 'outcome_unknown'
+                : 'failed',
+          tombstone: true,
+        });
+        expect(result.result).toBeUndefined();
+        const row = (
+          await db.query(
+            'SELECT data FROM intake_executions WHERE action_id=?',
+            actionId,
+          )
+        ).rows[0];
+        expect(
+          typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        ).toEqual({});
+        expect(JSON.stringify(result)).not.toContain('must disappear');
+      });
     it('requires evaluated layered opt-in and rechecks machine eligibility before mutation', async () => {
       const authorize = config.authorize;
       let eligible = true;
@@ -1160,6 +1350,32 @@ export function executionSuite(
           args: {},
         });
         for (const step of review.steps) await approve(step);
+        await expect(
+          service.applyAction(review.steps[1].actionId),
+        ).rejects.toThrow('Plan predecessor');
+        expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(
+          0,
+        );
+        const competing = await Promise.allSettled([
+          service.applyAction(review.steps[0].actionId),
+          new IngestionService({ ...options, db: peer }).applyAction(
+            review.steps[1].actionId,
+          ),
+        ]);
+        expect(competing[0]).toMatchObject({
+          status: 'fulfilled',
+          value: { state: 'failed' },
+        });
+        if (failurePolicy === 'abort') {
+          expect(competing[1].status).toBe('rejected');
+          await expect(
+            service.applyAction(review.steps[1].actionId),
+          ).rejects.toThrow('Plan predecessor');
+        } else {
+          expect(
+            (await service.applyAction(review.steps[1].actionId)).state,
+          ).toBe('succeeded');
+        }
         expect(
           (await service.applyPlan(review.id)).map((step) => step.state),
         ).toEqual(
