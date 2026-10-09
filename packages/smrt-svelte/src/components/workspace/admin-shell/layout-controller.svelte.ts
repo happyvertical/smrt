@@ -353,16 +353,16 @@ export class ShellLayoutController {
   /** Create an empty custom section; returns its id, or `null` when blank. */
   createSection(label: string): string | null {
     const before = this.layout.customSections?.length ?? 0;
-    const changed = this.apply(
-      createShellSection(
-        this.options.nav(),
-        this.options.groups(),
-        this.layout,
-        label,
-      ),
+    const next = createShellSection(
+      this.options.nav(),
+      this.options.groups(),
+      this.layout,
+      label,
     );
-    if (!changed) return null;
-    const list = this.layout.customSections ?? [];
+    if (!this.apply(next)) return null;
+    // Read the id from the proposed layout: with a controlled `layout` prop
+    // the host may not have applied it yet.
+    const list = next.customSections ?? [];
     return list.length > before ? (list[list.length - 1]?.id ?? null) : null;
   }
 

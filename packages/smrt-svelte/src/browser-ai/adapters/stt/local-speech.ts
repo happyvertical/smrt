@@ -76,6 +76,7 @@ export class LocalSpeechSTTAdapter implements STTAdapter {
   private _isListening = false;
   private language = 'en';
   private session = 0;
+  private starting = false;
   private stopping: Promise<void> | null = null;
 
   private resultListeners = new Set<(result: STTResult) => void>();
@@ -197,11 +198,19 @@ export class LocalSpeechSTTAdapter implements STTAdapter {
   }
 
   async start(options: STTOptions = {}): Promise<void> {
-    if (this._isListening) return;
-    await this.ensureInitialized();
-    if (this._isListening) return;
-    this.language = options.language ?? this.options.defaultLanguage ?? 'en';
+    if (this._isListening || this.starting) return;
+    // The session token is taken before the (possibly long) model load, so a
+    // stop() or abort() meanwhile cancels this start instead of letting the
+    // microphone open once the load finishes.
     const session = ++this.session;
+    this.starting = true;
+    try {
+      await this.ensureInitialized();
+    } finally {
+      this.starting = false;
+    }
+    if (session !== this.session || this._isListening) return;
+    this.language = options.language ?? this.options.defaultLanguage ?? 'en';
     const capture = this.makeCapture({
       maxDurationMs: this.options.maxDurationMs,
     });
@@ -232,6 +241,7 @@ export class LocalSpeechSTTAdapter implements STTAdapter {
   stop(): Promise<void> {
     if (this.stopping) return this.stopping;
     const capture = this.capture;
+    if (this.starting) this.session++;
     if (!capture || !this._isListening) return Promise.resolve();
     const session = this.session;
     this.stopping = (async () => {
@@ -279,6 +289,7 @@ export class LocalSpeechSTTAdapter implements STTAdapter {
   }
 
   abort(): void {
+    if (this.starting) this.session++;
     if (!this._isListening) return;
     this.session++;
     this.captureOff?.();

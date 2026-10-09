@@ -918,6 +918,15 @@ export class Dictation {
     });
   }
 
+  /**
+   * Resolves once every hands-free utterance heard so far has been written
+   * down (and handed to `onText`). A caller that reads the field right after
+   * `stop()` (a send) awaits this to see the last sentence.
+   */
+  async whenSettled(): Promise<void> {
+    await this.#utteranceQueue;
+  }
+
   /** The person ended hands-free: finish the phrase, then write it all down. */
   #stopHandsFree(): void {
     const capture = this.#handsFreeCapture;

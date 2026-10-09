@@ -404,6 +404,30 @@ describe('LocalSpeechSTTAdapter', () => {
     expect(onResult).not.toHaveBeenCalled();
   });
 
+  it('a stop() while the model is still loading cancels the start', async () => {
+    const fake = fakeSpeech();
+    const capture = fakeCapture();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const adapter = new LocalSpeechSTTAdapter({
+      type: 'whisper-local',
+      loadSpeech: async () => {
+        await gate;
+        return fake.loadSpeech();
+      },
+      loadModule: async () => ({}),
+      capture: () => capture,
+    });
+    const starting = adapter.start();
+    await adapter.stop();
+    release();
+    await starting;
+    expect(capture.start).not.toHaveBeenCalled();
+    expect(adapter.isListening()).toBe(false);
+  });
+
   it('maps legacy modelSize, keeps the whisper-wasm type, shares a model handle', () => {
     const legacy = new LocalSpeechSTTAdapter({
       type: 'whisper-wasm',

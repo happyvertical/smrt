@@ -325,10 +325,15 @@ async function handleDrop(event: DragEvent) {
 /** `keepListening`: a hands-free send on pause keeps the microphone on so the
  * conversation can go on; pressing Send or Enter ends dictation. */
 async function handleSend(keepListening = false) {
+  if (disabled || sending) return;
+  cancelAutoSend();
+  // End dictation and wait for its last words before the draft is read.
+  if (dictation.active && !keepListening) {
+    await dictation.stop();
+    await dictation.whenSettled();
+  }
   const trimmed = content.trim();
   if (!trimmed || disabled || sending) return;
-  cancelAutoSend();
-  if (dictation.active && !keepListening) void dictation.stop();
   sendError = null;
   sending = true;
   // The sent text leaves the box as soon as the send starts, so a manual or

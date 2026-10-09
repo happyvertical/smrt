@@ -264,6 +264,22 @@ describe('Dictation hands-free', () => {
     expect(dictation.queued).toBe(0);
   });
 
+  it('whenSettled() resolves after the last phrase has been written down', async () => {
+    const { dictation, mic, src, texts } = setup({
+      mic: fakeMicrophone({ finalUtterance: true }),
+    });
+    await dictation.start();
+    mic.say();
+    await dictation.stop();
+    const settled = dictation.whenSettled();
+    await vi.waitFor(() => expect(src.pending.length).toBe(1));
+    src.pending[0]?.resolve('one');
+    await vi.waitFor(() => expect(src.pending.length).toBe(2));
+    src.pending[1]?.resolve('two');
+    await settled;
+    expect(texts).toEqual(['one', 'two']);
+  });
+
   it('stop() with nothing waiting goes straight to idle', async () => {
     const { dictation, mic } = setup();
     await dictation.start();
