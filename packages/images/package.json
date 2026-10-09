@@ -52,7 +52,7 @@
   "dependencies": {
     "@happyvertical/animation": "0.5.0",
     "@happyvertical/ai": "catalog:",
-    "@happyvertical/images": "link:../../../sdk-helper-release/packages/images",
+    "@happyvertical/images": "catalog:",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-prompts": "workspace:*",

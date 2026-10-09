@@ -92,8 +92,8 @@
   },
   "dependencies": {
     "@happyvertical/animation": "0.5.0",
-    "@happyvertical/ai": "link:../../../sdk-helper-release/packages/ai",
-    "@happyvertical/speech": "link:../../../sdk-helper-release/packages/speech",
+    "@happyvertical/ai": "catalog:",
+    "@happyvertical/speech": "catalog:",
     "@happyvertical/smrt-images": "workspace:*",
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-assets": "workspace:*",
@@ -106,7 +106,7 @@
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@happyvertical/images": "link:../../../sdk-helper-release/packages/images",
+    "@happyvertical/images": "catalog:",
     "gsap": "^3.13.0"
   },
   "peerDependencies": {

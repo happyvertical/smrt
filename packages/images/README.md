@@ -63,10 +63,9 @@ server-only AI configuration (for example `SMRT_CHAT_DEV_MODEL`). Review the
 result against the actual crop: valid geometry does not guarantee accurate
 mouth placement. The UI never exposes provider credentials or model selection.
 
-During coordinated development for s-m-r-t #3643 and SDK #1368, the workspace may
-temporarily resolve `@happyvertical/ai` from its sibling SDK worktree. This is a
-development-only integration override; releases restore the SDK family's exact,
-atomic published pins.
+The helper release consumes the published SDK family through the workspace catalog.
+SMRT keeps the SDK catalog and overrides aligned atomically; the
+`bash scripts/check-sdk-versions.sh` release gate enforces that boundary.
 
 ## Installation
 
