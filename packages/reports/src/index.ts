@@ -100,9 +100,11 @@ export type {
   RuntimeReportCompileContext,
   RuntimeReportResult,
   RuntimeReportSourceDefinition,
+  RuntimeReportSourceDescription,
 } from './runtime-compiler.js';
 export {
   compileRuntimeReportSpec,
+  describeRuntimeReportSource,
   runRuntimeReport,
 } from './runtime-compiler.js';
 export type {

@@ -8,10 +8,12 @@
  * see. Result rows are deliberately never persisted (a cached result computed
  * for one principal must not be served to another).
  *
- * The generated REST/MCP surface is read-only (`list`/`get`). Creation goes
- * through {@link saveRuntimeReport} so only a spec that compiled for the
- * saving principal can be stored; `validateBeforeSave()` additionally refuses
- * any row whose JSON does not parse back to the recorded hash.
+ * The assistant creates rows through {@link saveRuntimeReport}, so only a spec
+ * that compiled for the saving principal and was confirmed by a human is
+ * stored. The generated REST surface exposes `list`/`get`/`create` (MCP:
+ * `list`/`get`); `validateBeforeSave()` parses and re-derives every column
+ * from the spec for any writer, and `getSpec()` refuses a row whose JSON no
+ * longer matches its recorded hash.
  */
 
 import {
@@ -46,7 +48,11 @@ export type RuntimeReportStatus = 'active' | 'archived';
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'runtime_reports',
-  api: { include: ['list', 'get'] },
+  // `create` is enabled so the permission catalog (and Postgres RLS bindings)
+  // know the operation the assistant's confirmed save performs. The body is
+  // still validated and re-derived in validateBeforeSave(), and every run
+  // re-compiles against the live principal, so a stored spec grants nothing.
+  api: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get'] },
   cli: { skipApiCheck: true },
 })
@@ -54,14 +60,14 @@ export class RuntimeReport extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   title: string = '';
 
   @field({ type: 'text' })
   description: string = '';
 
   /** Source id the spec names; resolved against a host allow-list at run. */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   sourceId: string = '';
 
   /** Normalized spec JSON; use {@link getSpec}/{@link setSpec}. */
@@ -69,7 +75,7 @@ export class RuntimeReport extends SmrtObject {
   spec: string = '';
 
   /** Hash of the normalized spec; detects out-of-band edits to `spec`. */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   specHash: string = '';
 
   @field({ type: 'text', required: true })
@@ -103,18 +109,10 @@ export class RuntimeReport extends SmrtObject {
 
   protected override async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
-    const spec = this.getSpec();
-    if (
-      this.title !== spec.title ||
-      this.sourceId !== spec.source ||
-      (this.description ?? '') !== (spec.description ?? '')
-    ) {
-      throw new RuntimeReportError(
-        'invalid_spec',
-        'spec',
-        'denormalized columns do not match the stored spec',
-      );
-    }
+    // Parse whatever was supplied (REST body, service, direct assignment) and
+    // re-derive every denormalized column from it, so the columns can never
+    // disagree with the spec that runs.
+    this.setSpec(parseRuntimeReportSpec(this.spec));
     if (this.status !== 'active' && this.status !== 'archived') {
       throw new RuntimeReportError('invalid_spec', 'status', 'is invalid');
     }

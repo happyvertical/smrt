@@ -466,15 +466,20 @@ function resolveSource(
   return source;
 }
 
-/**
- * Validate a parsed spec against the registry, the live principal's field
- * policy, and tenancy, and compile it to an executable aggregate plan.
- */
-export async function compileRuntimeReportSpec(
-  spec: RuntimeReportSpec,
+interface PreparedSource {
+  source: RuntimeReportSourceDefinition;
+  registeredName: string;
+  qualifiedName: string;
+  table: string;
+  tenantCol: string | null;
+  fields: Map<string, SourceField>;
+}
+
+async function prepareSource(
   context: RuntimeReportCompileContext,
-): Promise<CompiledRuntimeReport> {
-  const source = resolveSource(context, spec.source);
+  id: string,
+): Promise<PreparedSource> {
+  const source = resolveSource(context, id);
   await context.authorizeSource?.(source);
 
   const registered = ObjectRegistry.getClass(source.className);
@@ -482,7 +487,7 @@ export async function compileRuntimeReportSpec(
     throw new RuntimeReportError(
       'unknown_source',
       'spec.source',
-      `'${spec.source}' is not an available report source`,
+      `'${id}' is not an available report source`,
     );
   }
   const qualifiedName = registered.qualifiedName ?? registered.name;
@@ -508,6 +513,76 @@ export async function compileRuntimeReportSpec(
     tenantCol,
     new Set(context.permissions ?? []),
   );
+  return {
+    source,
+    registeredName: registered.name,
+    qualifiedName,
+    table,
+    tenantCol,
+    fields,
+  };
+}
+
+export interface RuntimeReportSourceDescription {
+  id: string;
+  label: string;
+  description?: string;
+  /** Fields the live principal may group by, filter on or aggregate. */
+  fields: {
+    name: string;
+    label: string;
+    type: RuntimeReportColumnType;
+    format?: string;
+    filterOperators: readonly string[];
+    aggregates: readonly string[];
+  }[];
+}
+
+/**
+ * Describe what a spec may reference on one source for the live principal:
+ * exactly the field set the compiler would admit, so a model never has to
+ * guess names and never learns about hidden ones.
+ */
+export async function describeRuntimeReportSource(
+  context: RuntimeReportCompileContext,
+  sourceId: string,
+): Promise<RuntimeReportSourceDescription> {
+  const prepared = await prepareSource(context, sourceId);
+  return {
+    id: prepared.source.id,
+    label: prepared.source.label ?? humanize(prepared.registeredName),
+    ...(prepared.source.description
+      ? { description: prepared.source.description }
+      : {}),
+    fields: [...prepared.fields.values()].map((field) => ({
+      name: field.name,
+      label: field.label,
+      type: field.type,
+      ...(field.format ? { format: field.format } : {}),
+      filterOperators: OPERATORS_BY_TYPE[field.type],
+      aggregates: aggregatesFor(field.type),
+    })),
+  };
+}
+
+function aggregatesFor(type: RuntimeReportColumnType): readonly string[] {
+  if (type === 'integer' || type === 'decimal') {
+    return ['count', 'countDistinct', 'sum', 'avg', 'min', 'max'];
+  }
+  if (type === 'datetime') return ['count', 'countDistinct', 'min', 'max'];
+  return ['count', 'countDistinct'];
+}
+
+/**
+ * Validate a parsed spec against the registry, the live principal's field
+ * policy, and tenancy, and compile it to an executable aggregate plan.
+ */
+export async function compileRuntimeReportSpec(
+  spec: RuntimeReportSpec,
+  context: RuntimeReportCompileContext,
+): Promise<CompiledRuntimeReport> {
+  const { source, registeredName, qualifiedName, table, tenantCol, fields } =
+    await prepareSource(context, spec.source);
 
   const lookup = (name: string, path: string): SourceField => {
     const field = fields.get(name);
@@ -667,7 +742,7 @@ export async function compileRuntimeReportSpec(
     source: {
       id: source.id,
       className: qualifiedName,
-      label: source.label ?? humanize(registered.name),
+      label: source.label ?? humanize(registeredName),
       table,
     },
     columns,

@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   type CompiledRuntimeReport,
   compileRuntimeReportSpec,
+  describeRuntimeReportSource,
   type RuntimeReportCompileContext,
   runRuntimeReport,
 } from '../runtime-compiler.js';
@@ -24,7 +25,11 @@ import {
   runStoredRuntimeReport,
   saveRuntimeReport,
 } from '../runtime-report.js';
-import { parseRuntimeReportSpec, RuntimeReportError } from '../runtime-spec.js';
+import {
+  parseRuntimeReportSpec,
+  RuntimeReportError,
+  runtimeReportSpecHash,
+} from '../runtime-spec.js';
 
 class RtInvoice extends SmrtObject {}
 class RtGlobalNote extends SmrtObject {}
@@ -542,6 +547,58 @@ describe('compileRuntimeReportSpec + runRuntimeReport', () => {
     });
   });
 
+  describe('describeRuntimeReportSource', () => {
+    it('lists exactly the fields the compiler admits for the principal', async () => {
+      const plain = await describeRuntimeReportSource(context(), 'invoices');
+      const names = plain.fields.map((f) => f.name);
+      expect(names).toEqual(
+        expect.arrayContaining([
+          'status',
+          'totalAmount',
+          'issuedAt',
+          'customerId',
+        ]),
+      );
+      for (const hidden of [
+        'internalNote',
+        'apiToken',
+        'margin',
+        'payload',
+        'tenantId',
+        'draftFlag',
+      ]) {
+        expect(names).not.toContain(hidden);
+      }
+      expect(plain.fields.find((f) => f.name === 'totalAmount')).toMatchObject({
+        type: 'integer',
+        format: 'money',
+        aggregates: expect.arrayContaining(['sum', 'avg']),
+      });
+      const withPermission = await describeRuntimeReportSource(
+        context({ permissions: ['finance.margins'] }),
+        'invoices',
+      );
+      expect(withPermission.fields.map((f) => f.name)).toContain('margin');
+    });
+
+    it('applies source authorization and the allow-list', async () => {
+      await expectRejected(
+        describeRuntimeReportSource(context(), 'users'),
+        'unknown_source',
+      );
+      await expect(
+        describeRuntimeReportSource(
+          context({
+            authorizeSource: () => {
+              throw new Error('denied');
+            },
+          }),
+          'invoices',
+        ),
+      ).rejects.toThrow('denied');
+    });
+  });
+
   describe('type and operator checks', () => {
     it.each([
       [
@@ -790,14 +847,47 @@ describe('RuntimeReport storage', () => {
         ref: saved.id as string,
       })) as RuntimeReport;
       row2.spec = row2.spec.replace('Revenue by status', 'Renamed');
-      await expectSaveCause(row2.save(), /hash/);
+      await row2.save();
+      // Columns are re-derived from the spec, never trusted from the writer.
+      expect(row2.title).toBe('Renamed');
+      expect(row2.specHash).toBe(runtimeReportSpecHash(row2.getSpec()));
 
       const row3 = (await getRuntimeReport({
         db,
         ref: saved.id as string,
       })) as RuntimeReport;
       row3.title = 'Different title';
-      await expectSaveCause(row3.save(), /denormalized/);
+      row3.sourceId = 'users';
+      await row3.save();
+      expect(row3.title).toBe('Renamed');
+      expect(row3.sourceId).toBe('invoices');
+    });
+  });
+
+  it('detects out-of-band edits to the stored spec on read', async () => {
+    const saved = await withTenant({ tenantId: TENANT_A }, async () =>
+      saveRuntimeReport({
+        db,
+        compiled: await compile(),
+        createdByUserId: USER,
+      }),
+    );
+    await db.query(
+      'UPDATE runtime_reports SET spec = REPLACE(spec, $1, $2) WHERE id = $3',
+      '"limit":100',
+      '"limit":900',
+      saved.id,
+    );
+    await withTenant({ tenantId: TENANT_A }, async () => {
+      const report = (await getRuntimeReport({
+        db,
+        ref: saved.id as string,
+      })) as RuntimeReport;
+      expect(() => report.getSpec()).toThrow(/hash/);
+      await expectRejected(
+        runStoredRuntimeReport({ db, report, context: context() }),
+        'invalid_spec',
+      );
     });
   });
 
