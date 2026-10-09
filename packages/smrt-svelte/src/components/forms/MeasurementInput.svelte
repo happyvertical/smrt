@@ -1,4 +1,5 @@
 <script lang="ts">
+import { FieldLabel } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -442,10 +443,7 @@ function handleUnitChange(e: Event) {
 
 <div class="smrt-measurement" data-smrt-field-owner={fieldOwnerToken}>
   {#if label}
-    <label for={name} class="smrt-label">
-      {label}
-      {#if required}<span class="required">*</span>{/if}
-    </label>
+    <FieldLabel for={name} {label} {required} />
   {/if}
 
   <div class="input-wrapper" class:smrt-mode={isSmrt}>
@@ -503,17 +501,6 @@ function handleUnitChange(e: Event) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1, 4px);
-  }
-
-  .smrt-label {
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-body-medium-weight, 500);
-    color: var(--smrt-color-on-surface, #374151);
-  }
-
-  .smrt-label .required {
-    color: var(--smrt-color-error, #ba1a1a);
-    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .input-wrapper {

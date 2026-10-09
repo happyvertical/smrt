@@ -304,13 +304,53 @@ function displayNames(
     return new Intl.DisplayNames('en', { type });
   }
 }
-/** Build localized choices from the shared ISO currency metadata. */
+/**
+ * ISO 4217 codes that are not circulating currencies: funds codes, precious
+ * metals, the IMF unit and bond-market units, and the testing / "no currency"
+ * codes. They stay valid stored values (the select retains an unknown value)
+ * but are not offered as choices.
+ */
+export const NON_CIRCULATING_CURRENCY_CODES: ReadonlySet<string> = new Set([
+  // Funds codes
+  'BOV',
+  'CHE',
+  'CHW',
+  'CLF',
+  'COU',
+  'MXV',
+  'USN',
+  'USS',
+  'UYI',
+  'UYW',
+  // Precious metals
+  'XAG',
+  'XAU',
+  'XPD',
+  'XPT',
+  // Bond-market units, IMF special drawing rights, other supranational units
+  'XBA',
+  'XBB',
+  'XBC',
+  'XBD',
+  'XDR',
+  'XSU',
+  'XUA',
+  // Testing and "no currency"
+  'XTS',
+  'XXX',
+]);
+/** Build localized choices for circulating currencies from the shared ISO metadata. */
 export function currencyOptions(locale: string): CodeSelectOption[] {
   const names = displayNames(locale, 'currency');
-  return [...ISO_4217_MINOR_UNITS.keys()].sort().map((value) => ({
-    value,
-    label: `${value} — ${names.of(value) ?? value}`,
-  }));
+  return [...ISO_4217_MINOR_UNITS.keys()]
+    .filter((value) => !NON_CIRCULATING_CURRENCY_CODES.has(value))
+    .sort()
+    .flatMap((value) => {
+      const name = names.of(value);
+      // A code the runtime cannot name (shown as "XYZ — XYZ") is not a currency to offer.
+      if (!name || name === value) return [];
+      return [{ value, label: `${value} — ${name}` }];
+    });
 }
 /** Build localized ISO alpha-2 country choices. */
 export function countryOptions(locale: string): CodeSelectOption[] {

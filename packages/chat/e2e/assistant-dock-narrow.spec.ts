@@ -69,3 +69,29 @@ test('the composer textarea uses --smrt-font-family', async ({ page }) => {
     expect(font).toContain('Georgia');
   }
 });
+
+for (const width of [250, 285, 800]) {
+  test(`${width}px: a hidden thread list leaves full width and a working conversation`, async ({
+    page,
+  }) => {
+    await page.goto('/previews/assistant-dock-narrow?threadList=false', {
+      waitUntil: 'networkidle',
+    });
+    const dock = page.locator(box(width));
+    await expect(dock.locator('.assistant-dock-threads')).toHaveCount(0);
+    await expect(dock.locator('.assistant-dock-threads-toggle')).toHaveCount(0);
+    await expect(dock.getByRole('button', { name: 'View conversations' })).toHaveCount(0);
+    const layout = await dock.locator('.assistant-dock-layout').boundingBox();
+    expect(layout).not.toBeNull();
+    expect(Math.abs((await mainWidth(page, width)) - (layout?.width ?? 0))).toBeLessThanOrEqual(1);
+
+    const composer = dock.getByRole('textbox', { name: 'Message', exact: true });
+    await expect(composer).toBeDisabled();
+    await dock.getByRole('button', { name: 'Create conversation' }).click();
+    await expect(composer).toBeEnabled();
+    await composer.fill('Hello from the single conversation');
+    await dock.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(dock.getByText('Hello from the single conversation', { exact: true })).toBeVisible();
+    await expect(dock.locator('.assistant-dock-threads')).toHaveCount(0);
+  });
+}

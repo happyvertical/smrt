@@ -37,6 +37,10 @@ class JobTelemetryProbe extends SmrtObject {
     });
     return 'done';
   }
+
+  async fail(): Promise<never> {
+    throw new Error('expected job failure');
+  }
 }
 
 afterEach(() => {
@@ -351,7 +355,7 @@ describe('job telemetry', () => {
     ).toBe(true);
   });
 
-  it('keeps running jobs when telemetry persistence is unavailable', async () => {
+  it('keeps running jobs when nonterminal telemetry persistence is unavailable', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const jobs = await SmrtJobCollection.create({ db });
 
@@ -364,7 +368,12 @@ describe('job telemetry', () => {
 
     const runner = createTaskRunner({ concurrency: 1, pollInterval: 10 });
     await runner.initialize(db);
-    await db.query('DROP TABLE _smrt_job_events');
+    await db.query(`CREATE TRIGGER fail_nonterminal_telemetry
+      BEFORE INSERT ON _smrt_job_events
+      WHEN NEW.stage != 'completed'
+      BEGIN
+        SELECT RAISE(FAIL, 'nonterminal telemetry rejected');
+      END`);
 
     const telemetryErrors: Error[] = [];
     runner.on('runner:error', (error) => {
@@ -383,6 +392,65 @@ describe('job telemetry', () => {
     try {
       await expect(completed).resolves.toBe('telemetry-best-effort');
       expect(telemetryErrors.length).toBeGreaterThan(0);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('keeps terminal lifecycle events when telemetry listeners throw', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const jobs = await SmrtJobCollection.create({ db });
+
+    await jobs.create({
+      tenantId: 'tenant-runner',
+      objectType: 'JobTelemetryProbe',
+      method: 'legacyEcho',
+      args: { value: 'listener-safe' },
+    });
+    await jobs.create({
+      tenantId: 'tenant-runner',
+      objectType: 'JobTelemetryProbe',
+      method: 'fail',
+      args: {},
+      maxAttempts: 1,
+    });
+
+    const runner = createTaskRunner({ concurrency: 2, pollInterval: 10 });
+    await runner.initialize(db);
+    const telemetryErrors: Error[] = [];
+    runner.on('runner:error', (error) => telemetryErrors.push(error));
+    runner.on('job:event', (_job, event) => {
+      if (['completed', 'failed'].includes(event.stage ?? '')) {
+        throw new Error(`listener rejected ${event.stage}`);
+      }
+    });
+
+    const terminal = new Promise<{ completed: number; failed: number }>(
+      (resolve) => {
+        let completed = 0;
+        let failed = 0;
+        const settle = () => {
+          if (completed + failed === 2) resolve({ completed, failed });
+        };
+        runner.on('job:completed', () => {
+          completed += 1;
+          settle();
+        });
+        runner.on('job:failed', () => {
+          failed += 1;
+          settle();
+        });
+      },
+    );
+
+    await runner.start();
+    try {
+      await expect(terminal).resolves.toEqual({ completed: 1, failed: 1 });
+      expect(telemetryErrors).toHaveLength(2);
+      expect(telemetryErrors.map((error) => error.message).sort()).toEqual([
+        'listener rejected completed',
+        'listener rejected failed',
+      ]);
     } finally {
       await runner.stop();
     }

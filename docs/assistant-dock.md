@@ -102,6 +102,32 @@ factory) to choose the client yourself.
 <AssistantDock {transport} {registry} {actionClient} />
 ```
 
+### Hiding the thread list (`threadList`)
+
+By default the dock shows a "Conversations" list (a toggle in narrow
+containers) beside the message thread. Pass `threadList={false}` for a
+single-conversation surface: the toggle and list are not rendered and the
+messages and composer take the full width at every container size.
+
+```svelte
+<AssistantDock {transport} {registry} threadList={false} oncontroller={open} />
+```
+
+Only the list goes. The dock still does not open or create a conversation for
+you, and the composer stays disabled until one is active, so a host that hides
+the list opens one itself from `oncontroller`. After `await controller.loadThreads()`,
+open an existing thread with `await controller.openThread(id)`. For the first
+conversation, create **and then open** the returned thread:
+
+```ts
+const thread = await controller.createThread('New conversation');
+await controller.openThread(thread.id);
+```
+
+`createThread()` alone does not activate the conversation. Until a thread is
+open, the empty state offers "Create conversation" when the transport
+supports `createThread`, and never points at the omitted list.
+
 | Route | Body | Answer |
 |---|---|---|
 | `GET threads` | — | `{ items: ThreadSummary[] }` |
@@ -511,6 +537,7 @@ Earlier contracts remain in force:
 
 | Behavior | Test | Kind |
 |---|---|---|
+| `threadList={false}` renders neither the Conversations toggle nor the thread list, in wide and narrow containers; the empty state offers only "Create conversation" (no `aria-controls` to the omitted list); a host-opened conversation enables the composer; the default and `true` keep the list (#3405) | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts`; `packages/chat/e2e/assistant-dock-narrow.spec.ts` (250px, 285px, 800px) | component + browser (#3405) |
 | A transport may omit `createThread`; the dock then omits New conversation, while a direct controller call rejects without changing conversation state | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts`; `create-assistant-dock-controller.test.ts` | component + unit (#3546) |
 | A transport may omit `uploadAttachment`; the composer then has no attach/file/drop behavior, while full transports retain upload and its visible errors | `packages/chat/src/svelte/components/assistant/__tests__/AssistantComposer.test.ts`; `AssistantDock.test.ts` | component (#3546) |
 | `contextMode="server"` omits only the irrelevant empty-data-surface guidance; transport errors remain visible and data-surface actions stay fail-closed | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts`; `create-assistant-dock-controller.test.ts` | component + unit (#3546) |
@@ -560,6 +587,26 @@ This file, plus the shell-mounting recipe in
 index, next to `ui-surfaces.md`.
 
 ## Host extension points
+
+### One conversation: `conversations="single"`
+
+By default the dock shows a conversation list and lets the person start new
+ones (`conversations="multiple"`). For an app where people should not have to
+know about separate conversations, pass `conversations="single"`:
+
+```svelte
+<AssistantDock {transport} {registry} conversations="single" />
+```
+
+There is no list, no Conversations toggle, and no choose or start screens. Once
+the thread list loads, the dock opens the transport's most recent thread
+(newest `lastMessageAt`; a thread nobody has written to counts as newest), or
+creates one silently when there is none, and opens the composer, focusing it
+while `visible`. A failure to list, create, or open shows inline with a "Try
+again" button. Once the conversation has messages, an icon-only "Clear
+conversation" button starts a fresh thread (transports with `createThread`
+only). A transport swap re-runs the same open-or-create step for the new
+context.
 
 ### Rendering a message's `toolCallData` (#2988)
 

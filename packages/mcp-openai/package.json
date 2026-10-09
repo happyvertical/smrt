@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-mcp-openai",
-  "version": "0.55.3",
+  "version": "0.55.7",
   "description": "Optional OpenAI navigation and settings for authorized SMRT MCP Apps",
   "type": "module",
   "main": "./dist/index.js",

@@ -70,7 +70,7 @@ export {
   StockMovement,
   type StockMovementOptions,
 } from './models/index.js';
-
+export { StockRecipe } from './recipes.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // Services and dispatch-bus hook helpers (opt-in)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,7 +88,6 @@ export {
   StockService,
   type StockServiceOptions,
 } from './services/index.js';
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared types and enums
 // ─────────────────────────────────────────────────────────────────────────────

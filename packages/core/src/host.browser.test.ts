@@ -20,12 +20,13 @@ describe('browser host (#2838)', () => {
     ).toThrow(/"postgres" is not available in the browser/);
   });
 
-  it('states what the SQL helpers are waiting on rather than failing obscurely', () => {
-    expect(() => browserHost.buildWhere({ id: 1 })).toThrow(
-      /browser-safe export from @happyvertical\/sql/,
+  it('uses the same query helpers and nested-transaction error as the Node host', () => {
+    expect(browserHost.buildWhere({ id: 1 })).toEqual(
+      nodeHost.buildWhere({ id: 1 }),
     );
-    expect(() => browserHost.raw('x >')).toThrow(
-      /browser-safe export from @happyvertical\/sql/,
+    expect(browserHost.raw('count(*)')).toEqual(nodeHost.raw('count(*)'));
+    expect(browserHost.NestedTransactionError).toBe(
+      nodeHost.NestedTransactionError,
     );
   });
 

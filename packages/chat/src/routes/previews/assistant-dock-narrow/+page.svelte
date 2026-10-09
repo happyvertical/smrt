@@ -6,8 +6,10 @@
  * AdminShell right dock (250px), a portrait-tablet overlay (285px), and a
  * wide panel (800px). `e2e/assistant-dock-narrow.spec.ts` measures it.
  */
+
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
+import { page } from '$app/state';
 import AssistantDock from '../../../svelte/components/assistant/AssistantDock.svelte';
 import { createInMemoryAssistantTransport } from '../../../svelte/components/assistant/assistant-transport.js';
 
@@ -30,7 +32,11 @@ const docks = [250, 285, 800].map((width) => ({
       style:width="{dock.width}px"
       style:--smrt-font-family="Georgia, serif"
     >
-      <AssistantDock transport={dock.transport} registry={dock.registry} />
+      <AssistantDock
+        transport={dock.transport}
+        registry={dock.registry}
+        threadList={page.url.searchParams.get('threadList') !== 'false'}
+      />
     </div>
   {/each}
 </ThemeProvider>

@@ -2,10 +2,11 @@
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Component } from 'svelte';
 import { M } from '../../../i18n/strings.workspace.js';
+import ShellSectionIcon from './ShellSectionIcon.svelte';
+import { SHELL_DEFAULT_SECTION_ICON, SHELL_ICON_PATHS } from './shell-icons.js';
 import type { ShellNavGroup, ShellNavItem } from './types.js';
 
 const DEFAULT_ACTION_ICON = 'settings';
-const DEFAULT_ACTION_GLYPH = '\u2699';
 
 interface Props {
   /** Navigation items with href, label, icon, and optional children. */
@@ -24,6 +25,14 @@ interface Props {
   collapsed?: boolean;
   /** Called when the user clicks a navigation link. */
   onNavigate?: () => void;
+  /**
+   * `'items'` (default) lists every group's entries. `'sections'` shows only
+   * the sections, one icon link each, to the section's own page
+   * (`ShellNavGroup.href`, else `sectionHref(id)`, else its first entry).
+   */
+  navMode?: 'items' | 'sections';
+  /** Section page for groups without an `href` (e.g. user-created ones). */
+  sectionHref?: (sectionId: string) => string | undefined;
 }
 
 let {
@@ -35,6 +44,8 @@ let {
   iconComponent: IconComponent,
   collapsed = false,
   onNavigate,
+  navMode = 'items',
+  sectionHref,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -53,6 +64,23 @@ function isItemCurrent(item: ShellNavItem): boolean {
 
 function isGroupCurrent(group: ShellNavGroup): boolean {
   return group.items.some(isItemCurrent);
+}
+
+function groupId(group: ShellNavGroup): string {
+  return group.id ?? group.heading;
+}
+
+function groupHref(group: ShellNavGroup): string | undefined {
+  return group.href ?? sectionHref?.(groupId(group)) ?? group.items[0]?.href;
+}
+
+/** A section is current on its own page or on any of its entries' pages. */
+function isSectionCurrent(group: ShellNavGroup): boolean {
+  const href = groupHref(group);
+  return (
+    (!!href && (href === currentHref || currentHref.startsWith(`${href}/`))) ||
+    isGroupCurrent(group)
+  );
 }
 
 function showAction(item: ShellNavItem, sectionCurrent: boolean): boolean {
@@ -142,8 +170,10 @@ function fallbackIcon(label: string): string {
           <span class="smrt-tenant-nav__icon" aria-hidden="true">
             {#if IconComponent}
               <IconComponent name={action.icon ?? DEFAULT_ACTION_ICON} size={16} />
+            {:else if action.icon}
+              {action.icon}
             {:else}
-              {action.icon ?? DEFAULT_ACTION_GLYPH}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d={SHELL_ICON_PATHS.settings} /></svg>
             {/if}
           </span>
         </a>
@@ -188,6 +218,40 @@ function fallbackIcon(label: string): string {
 
   {@render navItems(items)}
   {#each groups as group}
+    {#if navMode === 'sections'}
+      {@const href = groupHref(group)}
+      {#if href}
+        <div class="smrt-tenant-nav__section" data-nav-section={groupId(group)}>
+          <div class="smrt-tenant-nav__row">
+            <a
+              {href}
+              class="smrt-tenant-nav__section-link"
+              class:smrt-tenant-nav__link--visible-active={isSectionCurrent(group)}
+              aria-current={href === currentHref ? 'page' : isSectionCurrent(group) ? 'true' : undefined}
+              title={collapsed ? group.heading : undefined}
+              onclick={onNavigate}
+            >
+              <span class="smrt-tenant-nav__icon" aria-hidden="true">
+                <ShellSectionIcon
+                  name={group.icon ?? SHELL_DEFAULT_SECTION_ICON}
+                  size={18}
+                  iconComponent={IconComponent}
+                />
+              </span>
+              {#if collapsed}
+                <span class="smrt-tenant-nav__sr-only">{group.heading}</span>
+              {:else}
+                <strong>{group.heading}</strong>
+              {/if}
+            </a>
+          </div>
+        </div>
+      {/if}
+    {:else if group.showTitle === false}
+      <div class="smrt-tenant-nav__group smrt-tenant-nav__group--flat" role="group" aria-label={group.heading}>
+        <div class="smrt-tenant-nav__group-items">{@render navItems(group.items, isGroupCurrent(group))}</div>
+      </div>
+    {:else}
     <details class="smrt-tenant-nav__group" aria-label={group.heading} open>
       <summary class="smrt-tenant-nav__heading">
         {#if collapsed}
@@ -199,6 +263,7 @@ function fallbackIcon(label: string): string {
       </summary>
       <div class="smrt-tenant-nav__group-items">{@render navItems(group.items, isGroupCurrent(group))}</div>
     </details>
+    {/if}
   {/each}
 </nav>
 

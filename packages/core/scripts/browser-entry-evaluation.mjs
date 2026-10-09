@@ -22,6 +22,7 @@ import { build, createLogger } from 'vite';
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const browserEntry = resolve(packageDir, 'dist/browser.js');
+const browserHost = resolve(packageDir, 'dist/host.browser.js');
 if (!existsSync(browserEntry)) {
   throw new Error(`${browserEntry} is missing; run \`pnpm build\` first`);
 }
@@ -35,6 +36,11 @@ try {
   await writeFile(
     entry,
     `import * as core from ${JSON.stringify(browserEntry)};
+import { buildWhere, raw, NestedTransactionError } from ${JSON.stringify(browserHost)};
+const query = buildWhere({ id: 1 });
+if (!query || !raw('count(*)') || typeof NestedTransactionError !== 'function') {
+  throw new Error('browser SQL helpers are unavailable');
+}
 const { SmrtObject, ObjectRegistry, smrt } = core;
 const required = ['SmrtObject', 'SmrtCollection', 'SmrtClass', 'smrt', 'smrtRegistry'];
 const missing = required.filter((name) => !(name in core));

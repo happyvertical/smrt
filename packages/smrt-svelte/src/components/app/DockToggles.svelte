@@ -66,7 +66,6 @@ function press(event: MouseEvent, toggle: DockToggle): void {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
-    margin-inline-start: auto;
   }
 
   .smrt-dock-toggles__button {

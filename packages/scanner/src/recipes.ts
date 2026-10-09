@@ -33,8 +33,10 @@ import type {
   RecipeDefinition,
   RecipeExposureNarrowing,
   RecipeFieldOptions,
+  RecipeGroup,
   RecipeHelp,
   RecipeModelOptions,
+  RecipeSection,
 } from '@happyvertical/smrt-types';
 import { getLineColumn } from './source-location.js';
 import type { ResolvedClassDefinition, ScanError } from './types.js';
@@ -60,7 +62,14 @@ const FIELD_OPTION_KEYS = new Set([
   'order',
   'visibility',
   'locked',
+  'required',
 ]);
+const NAV_EXTRA_KEYS = ['icon', 'description', 'key', 'noun'] as const;
+const GROUP_KEYS = new Set(['id', 'label', 'summary']);
+const SECTION_KEYS = new Set(['id', 'label', 'icon', 'description']);
+/** Ids of groups, sections and nav keys: lowercase, digits, `-`, `_`. */
+const SLUG_PATTERN = /^[a-z][a-z0-9_-]*$/;
+const ICON_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const VISIBILITIES = new Set(['basic', 'advanced', 'hidden']);
 const EXPOSURE_TRANSPORTS = ['api', 'mcp', 'cli'] as const;
 
@@ -88,8 +97,23 @@ export interface RawRecipe {
   summary: string | null;
   synonyms: string[];
   models: RawRecipeModelRef[];
-  nav: Array<{ label: string; model: RawRecipeModelRef; line?: number }>;
+  nav: Array<{
+    label: string;
+    model: RawRecipeModelRef;
+    line?: number;
+    icon?: string;
+    description?: string;
+    key?: string;
+    noun?: string;
+    filter?: unknown;
+  }>;
   requires: string[];
+  /** `static requiresAny`, as authored (shape checked at resolve). */
+  requiresAny: { value: unknown; line?: number } | null;
+  /** `static group`, as authored (shape checked at resolve). */
+  group: { value: unknown; line?: number } | null;
+  /** `static section`, as authored (shape checked at resolve). */
+  section: { value: unknown; line?: number } | null;
   /** Options entries in authored order; the key is a model name. */
   options: Array<{ key: string; value: unknown; line?: number }>;
   /** `static help`: a path to a Markdown file, relative to the recipe's file. */
@@ -478,6 +502,9 @@ export function extractRecipes(input: {
       models: [],
       nav: [],
       requires: [],
+      requiresAny: null,
+      group: null,
+      section: null,
       options: [],
       help: null,
     };
@@ -528,14 +555,26 @@ export function extractRecipes(input: {
               const label = fields.find((field) => field.key === 'label');
               const model = fields.find((field) => field.key === 'model');
               const extra = fields.find(
-                (field) => field.key !== 'label' && field.key !== 'model',
+                (field) =>
+                  field.key !== 'label' &&
+                  field.key !== 'model' &&
+                  field.key !== 'filter' &&
+                  !(NAV_EXTRA_KEYS as readonly string[]).includes(field.key),
               );
               if (extra) {
                 throw new RecipeReadError(
-                  `static nav entries accept only \`label\` and \`model\`, not \`${extra.key}\``,
+                  `static nav entries accept only \`label\`, \`model\`, \`icon\`, \`description\`, \`key\`, \`noun\` and \`filter\`, not \`${extra.key}\``,
                   extra.node,
                 );
               }
+              const extras: Record<string, string> = {};
+              for (const name of NAV_EXTRA_KEYS) {
+                const found = fields.find((field) => field.key === name);
+                if (found) {
+                  extras[name] = stringValue(found.value, `static nav ${name}`);
+                }
+              }
+              const filter = fields.find((field) => field.key === 'filter');
               if (!label || !model) {
                 throw new RecipeReadError(
                   'static nav entries need both `label` and `model`',
@@ -552,8 +591,22 @@ export function extractRecipes(input: {
                   input.sourceText,
                 ),
                 line: lineOf(input.sourceText, entry),
+                ...extras,
+                ...(filter
+                  ? {
+                      filter: literalValue(filter.value, 'static nav filter'),
+                    }
+                  : {}),
               };
             });
+            break;
+          case 'requiresAny':
+          case 'group':
+          case 'section':
+            recipe[name] = {
+              value: literalValue(value, `static ${name}`),
+              line: lineOf(input.sourceText, member),
+            };
             break;
           case 'options':
             recipe.options = objectEntries(value, 'static options').map(
@@ -837,7 +890,7 @@ function readModelOptions(
           const at = `${where}.fields.${field}.${hint}`;
           if (!FIELD_OPTION_KEYS.has(hint)) {
             fail(
-              `${at} is not a field option; use default, label, help, order, visibility, or locked`,
+              `${at} is not a field option; use default, label, help, order, visibility, locked, or required`,
             );
           } else if (
             (hint === 'label' || hint === 'help') &&
@@ -849,7 +902,10 @@ function readModelOptions(
             (typeof hintValue !== 'number' || !Number.isFinite(hintValue))
           ) {
             fail(`${at} must be a finite number`);
-          } else if (hint === 'locked' && typeof hintValue !== 'boolean') {
+          } else if (
+            (hint === 'locked' || hint === 'required') &&
+            typeof hintValue !== 'boolean'
+          ) {
             fail(`${at} must be a boolean`);
           } else if (
             hint === 'visibility' &&
@@ -900,6 +956,122 @@ function readModelOptions(
  * name belongs to the manifest adapter, which knows it. Errors carry the
  * recipe's file and line and fail the build like any other scan error.
  */
+/** Validate a nav `filter`: `{ field, value }` naming a field of the model. */
+function readNavFilter(
+  value: unknown,
+  fail: (message: string) => void,
+): { field: string; value: string } | undefined {
+  if (value === undefined) return undefined;
+  if (!isPlainObject(value)) {
+    fail('filter must be an object `{ field, value }`');
+    return undefined;
+  }
+  const extra = Object.keys(value).find((k) => k !== 'field' && k !== 'value');
+  if (extra) {
+    fail(`filter accepts only \`field\` and \`value\`, not \`${extra}\``);
+    return undefined;
+  }
+  if (typeof value.field !== 'string' || typeof value.value !== 'string') {
+    fail('filter needs a string `field` and a string `value`');
+    return undefined;
+  }
+  // Field names are checked against the merged manifest in core
+  // (`assertRecipeOptions`), which also knows inherited and tenant fields.
+  return { field: value.field, value: value.value };
+}
+
+/** `requiresAny`: a non-empty list of non-empty lists of recipe ids. */
+function readRequiresAny(
+  raw: RawRecipe,
+  id: string,
+  report: (message: string, line?: number) => void,
+): string[][] | undefined {
+  if (!raw.requiresAny) return undefined;
+  const { value, line } = raw.requiresAny;
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    !value.every((alt) => Array.isArray(alt) && alt.length > 0)
+  ) {
+    report(
+      "requiresAny must be a non-empty list of non-empty id lists, e.g. [['a.b', 'c.d']]",
+      line,
+    );
+    return undefined;
+  }
+  const out: string[][] = [];
+  for (const alt of value as unknown[][]) {
+    const ids: string[] = [];
+    for (const entry of alt) {
+      if (
+        typeof entry !== 'string' ||
+        entry.length > RECIPE_ID_MAX_LENGTH ||
+        !RECIPE_ID_PATTERN.test(entry)
+      ) {
+        report(
+          `requiresAny entry \`${String(entry)}\` is not a recipe id`,
+          line,
+        );
+      } else if (entry === id) {
+        report('a recipe cannot require itself', line);
+      } else if (ids.includes(entry)) {
+        report(`requiresAny lists \`${entry}\` more than once`, line);
+      } else {
+        ids.push(entry);
+      }
+    }
+    out.push(ids);
+  }
+  return out;
+}
+
+/** Validate `group` / `section`: `{ id, label, ... }` strings, known keys only. */
+function readLabelled(
+  raw: { value: unknown; line?: number } | null,
+  name: string,
+  allowed: Set<string>,
+  report: (message: string, line?: number) => void,
+): Record<string, string> | undefined {
+  if (!raw) return undefined;
+  const { value, line } = raw;
+  if (!isPlainObject(value)) {
+    report(`${name} must be an object literal`, line);
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  let ok = true;
+  for (const [key, entry] of Object.entries(value)) {
+    if (!allowed.has(key)) {
+      report(
+        `${name} accepts only ${[...allowed].join(', ')}, not \`${key}\``,
+        line,
+      );
+      ok = false;
+    } else if (typeof entry !== 'string' || entry.trim() === '') {
+      report(`${name}.${key} must be a non-empty string`, line);
+      ok = false;
+    } else {
+      out[key] = entry;
+    }
+  }
+  if (!out.id || !out.label) {
+    if (ok) report(`${name} needs both \`id\` and \`label\``, line);
+    return undefined;
+  }
+  if (!SLUG_PATTERN.test(out.id)) {
+    report(
+      `${name}.id \`${out.id}\` must be lowercase letters, digits, \`-\` or \`_\``,
+      line,
+    );
+    return undefined;
+  }
+  if (out.icon !== undefined && !ICON_PATTERN.test(out.icon)) {
+    report(`${name}.icon \`${out.icon}\` must be an icon name`, line);
+    return undefined;
+  }
+  return ok ? out : undefined;
+}
+
 export function resolveRecipes(
   raws: RawRecipe[],
   classes: ResolvedClassDefinition[],
@@ -979,7 +1151,57 @@ export function resolveRecipes(
         );
         continue;
       }
-      nav.push({ label: entry.label, model: model.className });
+      const filter = readNavFilter(entry.filter, (message) =>
+        report(`nav entry \`${entry.label}\`: ${message}`, entry.line),
+      );
+      if (entry.key !== undefined && !SLUG_PATTERN.test(entry.key)) {
+        report(
+          `nav entry \`${entry.label}\`: key \`${entry.key}\` must be lowercase letters, digits, \`-\` or \`_\``,
+          entry.line,
+        );
+      }
+      if (entry.icon !== undefined && !ICON_PATTERN.test(entry.icon)) {
+        report(
+          `nav entry \`${entry.label}\`: icon \`${entry.icon}\` must be an icon name`,
+          entry.line,
+        );
+      }
+      for (const text of ['description', 'noun'] as const) {
+        if (entry[text] !== undefined && entry[text]?.trim() === '') {
+          report(
+            `nav entry \`${entry.label}\`: ${text} must not be empty`,
+            entry.line,
+          );
+        }
+      }
+      if (filter && entry.key === undefined) {
+        report(
+          `nav entry \`${entry.label}\`: a filter needs a key, which names its view`,
+          entry.line,
+        );
+      }
+      nav.push({
+        label: entry.label,
+        model: model.className,
+        ...(entry.icon !== undefined ? { icon: entry.icon } : {}),
+        ...(entry.description !== undefined
+          ? { description: entry.description }
+          : {}),
+        ...(entry.key !== undefined ? { key: entry.key } : {}),
+        ...(entry.noun !== undefined ? { noun: entry.noun } : {}),
+        ...(filter ? { filter } : {}),
+      });
+    }
+    // One view per (model, key): a second entry over a model needs its own key.
+    const viewKeys = new Set<string>();
+    for (const entry of nav) {
+      const view = `${entry.model}:${entry.key ?? ''}`;
+      if (viewKeys.has(view)) {
+        report(
+          `nav entry \`${entry.label}\` repeats the view of ${entry.model}${entry.key ? ` key \`${entry.key}\`` : ''}; give each extra entry over a model its own key`,
+        );
+      }
+      viewKeys.add(view);
     }
 
     const requires: string[] = [];
@@ -997,6 +1219,10 @@ export function resolveRecipes(
         requires.push(required);
       }
     }
+
+    const requiresAny = readRequiresAny(raw, id, report);
+    const group = readLabelled(raw.group, 'group', GROUP_KEYS, report);
+    const section = readLabelled(raw.section, 'section', SECTION_KEYS, report);
 
     let options: Record<string, RecipeModelOptions> | undefined;
     for (const entry of raw.options) {
@@ -1044,6 +1270,9 @@ export function resolveRecipes(
       models: models.map((model) => model.className),
       nav,
       requires,
+      ...(requiresAny ? { requiresAny } : {}),
+      ...(group ? { group: group as unknown as RecipeGroup } : {}),
+      ...(section ? { section: section as unknown as RecipeSection } : {}),
       ...(options && Object.keys(options).length > 0 ? { options } : {}),
       ...(help ? { help } : {}),
     });

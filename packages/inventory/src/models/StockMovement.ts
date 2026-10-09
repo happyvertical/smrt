@@ -74,11 +74,11 @@ export class StockMovement extends SmrtObject {
   tenantId: string | null = null;
 
   /** Plain string reference to the {@link Sku} being moved. */
-  @field({ required: true })
+  @field({ required: true, description: 'The item that moved.' })
   skuId: string = '';
 
   /** Plain string reference to the {@link InventoryLocation} being mutated. */
-  @field({ required: true })
+  @field({ required: true, description: 'The place it moved at.' })
   locationId: string = '';
 
   /**
@@ -86,16 +86,20 @@ export class StockMovement extends SmrtObject {
    * reservation). `null` indicates "no origin" — used when stock enters
    * the system fresh via {@link StockService.receive} or production.
    */
+  @field({
+    description: 'What it was before, for example available or damaged.',
+  })
   fromState: StockState | null = null;
 
   /**
    * Destination state. `null` indicates "no destination" — used for
    * fulfilment, where stock leaves the building entirely.
    */
+  @field({ description: 'What it became.' })
   toState: StockState | null = null;
 
   /** Quantity moved. Always positive; the direction is encoded by from/to. */
-  @field({ type: 'decimal' })
+  @field({ type: 'decimal', description: 'How many moved.' })
   qty: number = 0.0;
 
   /**
@@ -103,7 +107,10 @@ export class StockMovement extends SmrtObject {
    * from the canonical list when emitted by {@link StockService}; free-form
    * strings are allowed for vertical-specific reasons.
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'Why it moved, for example adjustment, sale or return.',
+  })
   reasonCode: StockMovementReason = 'adjustment';
 
   /**
@@ -125,12 +132,14 @@ export class StockMovement extends SmrtObject {
   actorProfileId: string | null = null;
 
   /** Optional free-form note shown in audit UIs. */
+  @field({ description: 'Anything worth remembering about this movement.' })
   note: string = '';
 
   /**
    * When the movement happened. Set to `now` at write time; explicit
    * values are allowed when back-dating an import.
    */
+  @field({ description: 'When it happened.' })
   occurredAt: Date = new Date();
 
   constructor(options: StockMovementOptions = {}) {

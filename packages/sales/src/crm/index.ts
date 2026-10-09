@@ -26,6 +26,7 @@ export { PipelineDefinition } from './models/PipelineDefinition.js';
 export { PipelineStage } from './models/PipelineStage.js';
 export { SalesActivity } from './models/SalesActivity.js';
 export { SalesRepresentative } from './models/SalesRepresentative.js';
+export { SalesPipelineRecipe } from './recipes.js';
 export type {
   AssignLeadInput,
   AssignLeadResult,

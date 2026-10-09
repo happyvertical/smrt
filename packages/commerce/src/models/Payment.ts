@@ -5,6 +5,7 @@
 
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -144,12 +145,14 @@ export class Payment extends SmrtObject {
   /**
    * Contract this payment is for
    */
+  @field({ description: 'The order or agreement this payment is for, if any.' })
   @foreignKey('Contract')
   contractId: string | null = null;
 
   /**
    * Customer who made the payment
    */
+  @field({ description: 'The customer who paid.' })
   @foreignKey('Customer')
   customerId: string | null = null;
 
@@ -161,21 +164,30 @@ export class Payment extends SmrtObject {
    * `PaymentAllocation.save()` caps allocations against and `Invoice.amountPaid`
    * is summed from, so it must be in the same exact units as both (#2401).
    */
+  @field({ description: 'How much was paid.' })
   amount: number = 0;
 
   /**
    * Currency code (ISO 4217)
    */
+  @field({ description: 'The currency of the payment.' })
   currency: string = 'USD';
 
   /**
    * Payment method used
    */
+  @field({
+    description: 'How it was paid: cash, check, card, bank transfer or other.',
+  })
   method: PaymentMethod = PaymentMethod.BANK_TRANSFER;
 
   /**
    * Current payment status
    */
+  @field({
+    description:
+      'Whether the payment is pending, completed, failed or refunded.',
+  })
   status: PaymentStatus = PaymentStatus.PENDING;
 
   /**
@@ -186,6 +198,7 @@ export class Payment extends SmrtObject {
   /**
    * Internal reference number
    */
+  @field({ description: 'A reference note, such as a check number.' })
   reference: string = '';
 
   /**
@@ -197,11 +210,13 @@ export class Payment extends SmrtObject {
   /**
    * When the payment was completed
    */
+  @field({ description: 'When the money was received.' })
   paidAt: Date | null = null;
 
   /**
    * Notes about the payment
    */
+  @field({ description: 'Anything worth remembering about this payment.' })
   notes: string = '';
 
   // ============================================================================

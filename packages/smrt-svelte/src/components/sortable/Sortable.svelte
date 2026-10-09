@@ -1,6 +1,7 @@
 <script lang="ts" generics="Item extends SortableItem, Container extends SortableContainer">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n/strings.sortable.js';
+import { formatSortableAnnouncement } from './announce.js';
 import {
   createSortable,
   type SortableAnnouncement,
@@ -53,35 +54,7 @@ const containersById = $derived(
 );
 
 function itemMessage(announcement: SortableAnnouncement): string {
-  switch (announcement.type) {
-    case 'pickup':
-      return t(M['ui.sortable.pickup'], {
-        item: announcement.item,
-        destinations: announcement.destinations.join(', '),
-      });
-    case 'position':
-      return t(M['ui.sortable.position'], {
-        item: announcement.item,
-        container: announcement.container,
-        position: announcement.position,
-        count: announcement.count,
-      });
-    case 'drop':
-      return t(M['ui.sortable.drop'], {
-        item: announcement.item,
-        container: announcement.container,
-        position: announcement.position,
-        count: announcement.count,
-      });
-    case 'unavailable':
-      return t(M['ui.sortable.unavailable'], {
-        container: announcement.container,
-      });
-    case 'failed':
-      return t(M['ui.sortable.failed'], { item: announcement.item });
-    case 'cancel':
-      return t(M['ui.sortable.cancel'], { item: announcement.item });
-  }
+  return formatSortableAnnouncement(t, announcement);
 }
 
 const itemSortable = createSortable({
@@ -338,14 +311,14 @@ function containerRank(id: string): number {
 </div>
 
 <style>
-  .smrt-sortable { display: grid; gap: var(--smrt-spacing-3); min-width: 0; position: relative; }
-  .smrt-sortable__containers { display: grid; gap: var(--smrt-spacing-3); }
-  .smrt-sortable__container { display: grid; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container); min-width: 0; }
+  .smrt-sortable { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-3); min-width: 0; position: relative; }
+  .smrt-sortable__containers { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-3); min-width: 0; }
+  .smrt-sortable__container { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container); min-width: 0; }
   .smrt-sortable__container--disabled { opacity: 0.6; }
   .smrt-sortable__container--dragging { opacity: 0.55; }
   .smrt-sortable__header { display: flex; align-items: center; gap: var(--smrt-spacing-2); min-block-size: 2.25rem; }
   .smrt-sortable__content { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--smrt-spacing-2); }
-  .smrt-sortable__items { display: grid; gap: var(--smrt-spacing-1); min-block-size: 2.25rem; }
+  .smrt-sortable__items { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-1); min-block-size: 2.25rem; min-width: 0; }
   .smrt-sortable__item { display: flex; align-items: center; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-sm); background: var(--smrt-color-surface); min-width: 0; }
   .smrt-sortable__item--dragging { opacity: 0.55; }
   .smrt-sortable__handle { display: inline-grid; place-items: center; flex: 0 0 auto; inline-size: 2rem; block-size: 2rem; padding: 0; border: 0; border-radius: var(--smrt-radius-sm); background: transparent; color: var(--smrt-color-on-surface-variant); cursor: grab; touch-action: none; }

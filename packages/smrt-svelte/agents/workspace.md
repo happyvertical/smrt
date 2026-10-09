@@ -45,6 +45,14 @@ App settings, tenant names and environment badges wrap within narrow drawers.
 system bars never clip wrapped chips. Custom bars must allow this flex child
 to shrink; use safe alignment if aligning its contents to the end.
 
+Sidebar-only shells may set `top: false`. In that mode the configured brand is
+shown at the top of the expanded tenant panel as well as in the compact rail.
+Use `tenantRailFooter` for a control pinned below collapsed navigation; it sits
+outside the rail's scroll clip so menus can open over the workspace. Pair it
+with `WorkspaceAccountMenu compact` for an avatar-only trigger that retains the
+full account identity as its accessible name. Keep the ordinary
+`tenantFooter` for the expanded panel.
+
 ### Responsive chrome, viewport defaults, resizable edges
 
 The root grid has five rows: `header` · top edge · body · bottom edge · phone
@@ -74,6 +82,140 @@ package dependencies. The package-local fixture exercises real Chromium bounds
 and touch input across mobile widths and desktop panel-state combinations.
 
 See `src/components/workspace/MIGRATION.md` for the old-to-new concept map.
+
+### Regions and slots
+
+Four regions map to the existing edges (ids and `ShellLayout.panels` keys are
+unchanged): Header (`top`), Left sidebar (`left`), Right sidebar (`right`),
+Footer (`bottom`). Default labels are those names; override via `config`.
+`AdminShell`/`AppShell` take `slots?: Partial<Record<ShellSlot, Snippet>>`
+(`ShellSlot` from `./workspace`): `header.start|center|end`,
+`footer.start|center|end`, `leftSidebar.header|footer`,
+`rightSidebar.header|footer`. Header/footer slots sit in the bar (start after
+the brand/menu opener, end after the account), sidebar header sits above and
+footer below the sidebar's main area. Defaults: brand/title/menu opener/account
+stay where they were (`header.start`/`header.end` areas), `tenantFooter` stays
+the left sidebar footer, `dockToggles` default to `header.end`. There is no
+separate header row.
+
+Fallback when a slot's region is hidden (or a sidebar is collapsed), first
+visible wins (`slotFallbackChain`): header.X -> leftSidebar.header ->
+rightSidebar.header -> footer.X; footer.X -> leftSidebar.footer ->
+rightSidebar.footer -> header.X; leftSidebar.header -> header.start ->
+rightSidebar.header -> footer.start; leftSidebar.footer -> footer.start ->
+header.start -> rightSidebar.footer; rightSidebar.header -> header.end ->
+leftSidebar.header -> footer.end; rightSidebar.footer -> footer.end ->
+header.end -> leftSidebar.footer. The legacy `tenantFooter` prop keeps its own
+`footerInHeader` fallback.
+
+### Edge toggles and hotkeys are opt-in (#3661)
+
+`AdminShell`/`AppShell` `edgeToggles?: boolean | Partial<Record<PanelEdge,
+boolean>>` defaults to `false`: no edge toggle buttons, no hotkey hints, and
+WASD/`?` are inert. Regions are laid out inline: the left sidebar is docked
+open off phones (`ShellState.setInlineEdges`/`isInline`; viewport defaults and
+`overlayMedia` do not apply), and the header/footer are plain bands without a
+drop-down drawer (so `appPanel`/`systemPanel` are not reachable). Visibility
+comes from `ShellLayout.panels.visible` and edit mode. The right edge is the
+dock: dock toggles and focus tools still open it, it just loses its button.
+`hotkeys` (default: follows the toggles) forces shortcuts on (`true`, panels
+behave as drop-downs without buttons) or off. Phones keep the Menu opener and
+the left drawer's close toggle. `showTenantToggle` is a deprecated alias for
+`edgeToggles.left`. Migration: pass `edgeToggles` (true) to keep the previous
+behaviour.
+
+### Moving items between slots
+
+Movable items have stable ids: dock toggles `dock:<tool>`, each host `slots`
+snippet `slot:<slot>`, and host `slotItems` (`AppShell`, `{ id, label, slot,
+render }[]`, exported type `ShellSlotItem`; keep ids stable, they are stored in
+layouts). `AppShell` also supplies the built-in item `item:brand` (the shell
+`logoSrc`/`logoAlt`, title and subtitle, linked to `homeHref` when set, default slot `header.start`, movable, same fallback chain
+when the header is hidden); it sets `AdminShell` `brandInSlot` so the top band
+draws no brand of its own (standalone `AdminShell` still does). The menu
+opener and account content are not items yet (#3656 step 3).
+
+`ShellLayout.placements?: Record<itemId, ShellSlot>` (additive, still version
+1) overrides default slots. Pure helpers in `layout.ts` (also `./workspace/layout`):
+`placeShellItem(layout, id, slot, defaultSlot?)` (passing the default drops a
+no-op override; re-placing puts the item last), `resetShellItemPlacement`,
+`resolveShellPlacements(items, layout)` (default order first, then placement
+order; unknown ids and slots ignored) and `resolveShellVisiblePlacements(items,
+layout, visible)` (placement first, then the hidden-region fallback above).
+`useShellLayout()` adds `placeItem(id, slot)`, `resetItem(id)`, and readers
+`placementItems`, `placements` (per slot) and `isRegionVisible(region)`.
+
+### Editing the layout in place
+
+`AppShell` `layoutEditing?: boolean | { slot?; floating? }` opts in (off: no toggle,
+`setEditing(true)` refused, existing apps unchanged). It adds the built-in item
+`item:layout-edit` (default slot `header.end`, normal hidden-region fallback):
+a pencil `ShellIconButton` named "Edit layout" with `aria-pressed`; the same
+button turns edit mode off (it stays a pencil, highlighted while on). Escape
+also exits when no section toolbar is open (an open toolbar, or a keyboard move,
+consumes Escape first).
+`{ floating: true }` instead renders the same button fixed in the top-right
+corner (round, elevated, safe-area aware, z-index 45): not a slot item, not
+movable, never displaced by hidden regions. The header reserves end padding for
+it, or, when the header is hidden, the right sidebar reserves top padding, or main
+does when no right sidebar is shown
+(`--smrt-shell-floating-reserve-inline|block|main`, set by `AppShell`).
+A polite live region announces the mode. `useShellLayout()` has
+`editable`, `editing` and `setEditing(boolean)` for hosts and assistants.
+
+While `editing`:
+
+- `AdminShell` `layoutEdit` (`ShellLayoutEditSurface`, set by `AppShell`) renders
+  every slot of a visible region as a dashed drop zone (entering edit mode
+  expands a collapsed left/right sidebar so its header/footer zones exist, and
+  leaving restores it; a railless `rail: false` edge is never revealed: it
+  stays as the user left it, and while editing a closed railless right edge
+  with focus/dock tools shows a slim "Open <tool>" indicator tab
+  (`data-edit-indicator`, z 21, no layout shift) that opens it and closes it
+  again on exit) (`data-smrt-edit-zone`)
+  labelled "Header · Left", empty ones included, highlighted
+  (`data-drop-target`) while a drag targets it. Movable items render exactly as
+  on the site (inside an `inert` wrapper) with a grip; the toggle itself is
+  fixed. One headless `createSortable` engine (confined to the shell root,
+  `allowSameContainerReorder: false`) drives pointer, native-drag and keyboard
+  moves (Space, Up/Down across zones in visual order, Enter drops, Escape
+  cancels) with the same announcements as `Sortable`
+  (`sortable/announce.ts`), committing `placeItem(id, slot)`. Items whose region
+  is hidden show in the zone they fall back to.
+- Nothing in the header band renders outside the drop zones except each
+  region's edit control: the brand is an item in `header.start`, and the Menu
+  opener is hidden off phones. Every region, a collapsed sidebar rail included, gets an icon-only eye-off
+  "Hide <region>" button (`ShellLayoutEditSurface.regionControl`, end of the
+  header/footer band, top of a sidebar) that writes
+  `setPanel(edge, { visible: false })`; the strip's "Show" restores it. The
+  last visible region's button is disabled with an explanatory tooltip. Items
+  of a hidden region (the edit toggle included) follow the fallback chain.
+  Hiding the right sidebar (the dock) makes `useShellDock().available` false:
+  dock toggles render unregistered and `open` is refused until it is shown.
+- Hidden, available regions render as thin dashed strips ("Right sidebar ·
+  hidden") with an eye "Show <region>" button (`setPanel(edge, { visible })`).
+- `ShellNavEditor` replaces `TenantNav`: the real rows plus grips on every
+  heading and item (existing reorder/move-across-sections), icon-only
+  `ShellIconButton`s (eye `aria-pressed` = shown in navigation, heading
+  `aria-pressed` = title shown, host actions) on each section and an eye per
+  item, and a "New section" button at the end.
+- Clicking a section heading opens its floating toolbar (rename input focused,
+  title, hide, delete for custom sections with a confirm when non-empty, host
+  actions). With `(hover: hover) and (pointer: fine)` hovering also opens it
+  (closes on leave unless a click pinned it); touch or no hover is click/tap
+  only. One toolbar at a time; Escape closes and returns focus to the heading;
+  a pinned toolbar closes on outside pointer or focus leaving.
+
+Host extension point: `AppShell` `sectionActions?: Snippet<[ShellSectionActionsContext]>`
+(`{ sectionId, label, custom, editing }`) renders icon buttons in both the
+section overlay and its toolbar (e.g. the planner's Options gear and Help);
+use `ShellIconButton` (from `./workspace`) for matching looks. It renders only
+while editing.
+
+`ShellLayoutEditor` no longer has a Placement section (superseded by dragging in
+place); it keeps panels, the navigation sort (icon toggles `aria-pressed` for
+"Show <name> in navigation" / "Show title of <name>"), the preview and Reset.
+The layout helpers and `placeItem`/`resetItem` stay.
 
 ### Activity ticker
 
@@ -211,11 +353,75 @@ control panel), wired by `app/AppShell.svelte`.
   `moveItem(id, sectionId, toIndex?)`, `hide(id)`, `show(id)`, `setPanel(edge,
   { visible?, initial? })`, `reset()`, each returning whether anything changed,
   plus readers (`layout`, `sections`, `panels`, `applied`, `customized`,
-  `isHidden`). An assistant calls the same methods the editor does. The
+  `isHidden`; item placement is in "Moving items between slots", edit mode in
+  "Editing the layout in place"). An assistant calls the same methods the editor does. The
   context is separate from `useAdminShell()` because `AppShell`, not
   `AdminShell`, owns the navigation.
+- **Sections belong to the app.** Hosts (and recipes, via the host) suggest
+  sections as `ShellNavGroup`s; the user overrides them in the same additive
+  version-1 layout: `sections[id] = { label?, showTitle? }` (rename; hide the
+  title) and `customSections: { id: 'custom:...', label }[]` (user-created).
+  Custom sections join `sectionOrder`, receive items through `moved`, show in
+  the editor when empty but not in the nav, and get a unique `custom:` id.
+  `showTitle: false` (also settable by a host on `ShellNavGroup.showTitle`)
+  renders the items flat in a `role="group"` named by the heading, no
+  `<details>`/`<summary>`. `applyShellLayout` keeps the section's original id
+  on renamed output groups. Helpers: `renameShellSection`,
+  `setShellSectionTitleVisible`, `createShellSection`, `deleteShellSection`
+  (custom only; items return to their default sections). Old stored layouts
+  need no migration; new host sections and items land in their suggested slot.
+  Controller: `renameSection`, `setSectionTitleVisible`, `createSection(label)`
+  (returns the id), `deleteSection`.
+- **Item labels.** The same layout renames single navigation entries:
+  `items[itemId] = { label? }` (additive; trimmed, blank removed; ids as above,
+  top-level items of `nav` and groups). `resolveShellNavModel` items carry
+  `label` / `defaultLabel`; `applyShellLayout` emits the renamed item with
+  `label` = the user's and `defaultLabel` = the host's (so nav, breadcrumbs and
+  titles that read `nav` follow the rename). Helper `renameShellItem(nav, groups,
+  layout, itemId, label | null)`; controller `renameItem(itemId, label | null)`
+  (null or blank resets). Edit mode: each `ShellNavEditor` row has an icon-only
+  "Rename <label>" button opening an inline field (Enter saves, Escape cancels,
+  blur saves) and, once renamed, "Reset <label> to <original>"; the original shows
+  as the row tooltip. Presets ("cookbooks") ship it in the stored layout.
+- **Sections-only navigation (`navMode: 'sections'`).** `AppShell` (and
+  `TenantNav` / `ShellNavEditor` directly) take `navMode?: 'items' | 'sections'`
+  (default `'items'`, unchanged). In `'sections'` the left sidebar shows one
+  link per section (icon + label), no entries; a collapsed rail (`tenantRail`)
+  shows the icons with tooltips. The link goes to `ShellNavGroup.href`, else
+  `AppShell` `sectionHref(sectionId)` (user-created sections), else the first
+  entry; it is `aria-current="page"` on that page and `"true"` on any of the
+  section's entry pages. `AppShell` also takes `iconComponent` for host icon
+  names. `ShellNavGroup.icon` / `.href` are additive; the user override is
+  `sections[id].icon` (trimmed; blank or the host's icon removes it), helper
+  `setShellSectionIcon(nav, groups, layout, id, icon | null)`, controller
+  `setSectionIcon(id, icon | null)`; `resolveShellNavModel` sections carry
+  `icon` / `defaultIcon` and `applyShellLayout` emits the effective `icon`.
+  Icons are shell icon names (`SHELL_SECTION_ICONS` is the picker set, drawn
+  from Material icons like the rest of `SHELL_ICON_PATHS`; `SHELL_DEFAULT_SECTION_ICON`
+  is `folder`) or host names rendered by `iconComponent` (`ShellSectionIcon`
+  tries the built-in set first). Edit mode in this mode: sections keep grip,
+  rename, hide, delete; the title toggle is replaced by an "Icon of <label>"
+  popover grid ("Use <icon> icon", `aria-pressed` on the current one; Escape
+  closes the grid before the toolbar). Entries are not in the sidebar.
+- **`ShellSectionMenu`** (`sectionId`, `controller?`, `meta(entry)`,
+  `actions(entry)`, `iconComponent`, `aria-label`, `layout`): the section's page body.
+  `layout="cards"` renders an auto-fill grid (min 16rem) of cards: 32px icon in a
+  tinted circle, title, `ShellNavItem.description` (2 lines), then `meta` and
+  `actions` at the bottom; one stretched link, actions stay separate controls;
+  edit mode keeps grip/rename/hide in the grid. Unknown icon names draw the
+  default glyph (dev warning), never the name. `layout.items[id].description` (host/preset-set, not editable in the UI)
+  overrides an item's `description`. Default `list`: A
+  `<ul>` of rows (icon, label link, host `meta`, host `actions`, chevron; the
+  row is one stretched link, actions sit above it) in applied order with
+  renames; hidden entries are omitted. While editing, the same rows become the
+  nav editor's chrome (single-container `Sortable` grip with keyboard moves,
+  inline rename/reset, show/hide toggle) driving `moveItem`/`renameItem`/
+  `hide`/`show`; rows are not links then. `ShellSectionMenuEntry` is the snippet
+  argument (`id, href, label, defaultLabel, icon, hidden, item`).
 - **`ShellLayoutEditor`**: `controller` (default: context), `preview` (default
-  true), `iconComponent`. Mount it on a settings page or in a dock tool.
+  true), `iconComponent`. Each section has an inline name input, icon toggles
+  for visibility and title, and (custom only) a trash button, which confirms
+  when non-empty; a New section button creates one. Mount it on a settings page or in a dock tool.
 
 ### Sortable and the Board engine
 
@@ -247,9 +453,8 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   (`{#snippet dock(registry)}`), the instance mounted routes register on
   when `webmcp` UI is on; pass it to `<AssistantDock {registry} />`. `runtimeDiagnostics` (default false) mounts the
   read-only `smrt.runtime.diagnostics.read` WebMCP tool. `dockToggles`
-  (`{ tool, label, icon? }[]`) renders icon buttons at the right of the shell
-  header (the AdminShell `header` row, shown only when the prop is non-empty),
-  each toggling the `ShellDockTool` with that id: `aria-pressed` and
+  (`{ tool, label, icon?, slot? }[]`) renders icon buttons in the shell slot
+  named by `slot` (default `header.end`; see "Regions and slots"), each toggling the `ShellDockTool` with that id: `aria-pressed` and
   `aria-expanded` follow the dock, `aria-controls` is
   `smrt-admin-shell-right-panel`, the label is the tooltip, and `assistant`
   defaults to a chat-bubble icon (`icon: 'chat'`; other text is a glyph). A

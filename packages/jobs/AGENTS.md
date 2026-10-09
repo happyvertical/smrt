@@ -144,6 +144,26 @@ change what the agents runtime will dispatch.
   every sibling method. Adding the decorator to one method of an existing class
   is therefore a behaviour change for the rest of it.
 
+## Terminal outcomes (#3696)
+
+Terminal state is authoritative together with its versioned event. Completion,
+permanent failure, timeout, stale-worker recovery, and cancellation update the
+owned `_smrt_jobs` row and append the safe `_smrt_job_events` projection in one
+database transaction. If either write fails, neither commits. Conditional
+ownership/status predicates prevent a lost race from appending an event.
+Build the event from the conditional update's returned row, not a caller
+snapshot, and bind that update to the row's tenant. Public cancellation must
+retain ambient-tenant isolation; only explicit bypass contexts may cross it.
+Retries are deliberately excluded until a later terminal transition. Ordinary
+progress, logs, start, and retry telemetry remain best-effort.
+
+`SmrtJobEventCollection.listTerminalOutcomes()` requires an explicit tenant
+(`null` means global), reads newest-first, scans at most 1,000 candidates, and
+returns only the safe versioned terminal shape. Never add job arguments,
+object IDs, results, raw errors, or stacks to that shape. Applications must
+intersect job IDs with their own authorized ownership records; queue/object
+type/method filters narrow the projection but do not authorize it.
+
 ## Retention (#2375)
 
 `_smrt_jobs` and `_smrt_job_events` are append-only in practice — `cleanup()`

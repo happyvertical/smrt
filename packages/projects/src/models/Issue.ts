@@ -7,6 +7,7 @@
 
 import { type AIClientOptions, getAI } from '@happyvertical/ai';
 import {
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -121,6 +122,7 @@ function normalizeLabelVocabulary(
 
 export interface IssueOptions extends SmrtObjectOptions {
   repositoryId?: string;
+  projectId?: string;
   number?: number;
   nodeId?: string;
   title?: string;
@@ -156,10 +158,19 @@ export class Issue extends SmrtObject {
   tenantId: string | null = null;
 
   /**
-   * Repository this issue belongs to
+   * Repository this issue is mirrored from. Optional: a native issue that
+   * lives only in a {@link Project} has no repository and no provider sync.
    */
-  @foreignKey('Repository', { required: true })
+  @foreignKey('Repository')
   repositoryId?: string;
+
+  /**
+   * Project this issue belongs to. Optional and additive; repository-backed
+   * issues may leave it unset.
+   */
+  @field({ description: 'The project this issue belongs to.' })
+  @foreignKey('Project')
+  projectId?: string;
 
   /**
    * Issue number (provider-specific)
@@ -174,31 +185,37 @@ export class Issue extends SmrtObject {
   /**
    * Issue title
    */
+  @field({ description: 'A short summary of the issue.' })
   title: string = '';
 
   /**
    * Issue body/description
    */
+  @field({ description: 'The full description.' })
   body: string = '';
 
   /**
    * Issue state
    */
+  @field({ description: 'open or closed.' })
   state: 'open' | 'closed' = 'open';
 
   /**
    * Author's login/username
    */
+  @field({ description: 'Who raised the issue.' })
   author: string = '';
 
   /**
    * Labels attached to the issue
    */
+  @field({ description: 'The labels attached to the issue.' })
   labels: string[] = [];
 
   /**
    * Assignee logins
    */
+  @field({ description: 'The people working on it.' })
   assignees: string[] = [];
 
   /**
@@ -236,6 +253,7 @@ export class Issue extends SmrtObject {
     super(options);
     if (options.repositoryId !== undefined)
       this.repositoryId = options.repositoryId;
+    if (options.projectId !== undefined) this.projectId = options.projectId;
     if (options.number !== undefined) this.number = options.number;
     if (options.nodeId !== undefined) this.nodeId = options.nodeId;
     if (options.title !== undefined) this.title = options.title;
@@ -256,7 +274,17 @@ export class Issue extends SmrtObject {
   }
 
   /**
+   * Whether this issue is mirrored from a repository. Repository-less
+   * (project-native) issues skip every provider call and change local state only.
+   */
+  hasRepository(): boolean {
+    return Boolean(this.repositoryId);
+  }
+
+  /**
    * Get the repository this issue belongs to
+   *
+   * @throws if the issue is not repository-backed (check {@link hasRepository})
    */
   async getRepository(): Promise<Repository> {
     if (this._repository) {
@@ -264,7 +292,7 @@ export class Issue extends SmrtObject {
     }
 
     if (!this.repositoryId) {
-      throw new Error('Issue has no repositoryId set');
+      throw new Error('Issue is not backed by a repository (no repositoryId)');
     }
 
     const { RepositoryCollection } = await import(
@@ -323,6 +351,11 @@ export class Issue extends SmrtObject {
       return this;
     }
 
+    // Project-native issues have no remote to sync from.
+    if (!this.hasRepository()) {
+      return this;
+    }
+
     const client = await this.getClient();
     const issueData = await client.getIssue(this.number);
 
@@ -347,6 +380,13 @@ export class Issue extends SmrtObject {
    * @returns Array of Comment objects (SMRT models)
    */
   async getComments(): Promise<Comment[]> {
+    if (!this.hasRepository()) {
+      if (!this.id) return [];
+      const { CommentCollection } = await import('../collections/Comments');
+      const collection = await CommentCollection.create(this.options);
+      return await collection.list({ where: { issueId: this.id } });
+    }
+
     const client = await this.getClient();
     const comments: SDKComment[] = await client.listComments(this.number);
 
@@ -373,6 +413,22 @@ export class Issue extends SmrtObject {
    * @returns Created Comment (SMRT model)
    */
   async addComment(body: string): Promise<Comment> {
+    if (!this.hasRepository()) {
+      const now = new Date();
+      const { CommentCollection } = await import('../collections/Comments');
+      const comments = await CommentCollection.create(this.options);
+      const local = await comments.create({
+        issueId: this.id ?? undefined,
+        body,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await local.save();
+      this.commentsCount++;
+      await this.save();
+      return local;
+    }
+
     const client = await this.getClient();
     const created = await client.addComment(this.number, body);
 
@@ -480,8 +536,10 @@ export class Issue extends SmrtObject {
       }
 
       // Update the issue body
-      const client = await this.getClient();
-      await client.updateIssue(this.number, { body: synthesized });
+      if (this.hasRepository()) {
+        const client = await this.getClient();
+        await client.updateIssue(this.number, { body: synthesized });
+      }
 
       // Update local state
       this.body = synthesized;
@@ -610,8 +668,10 @@ export class Issue extends SmrtObject {
     }
 
     // Update the issue body on the provider
-    const client = await this.getClient();
-    await client.updateIssue(this.number, { body: this.originalBody });
+    if (this.hasRepository()) {
+      const client = await this.getClient();
+      await client.updateIssue(this.number, { body: this.originalBody });
+    }
 
     // Update local state
     this.body = this.originalBody;
@@ -749,8 +809,10 @@ export class Issue extends SmrtObject {
    * Close this issue
    */
   async close(): Promise<void> {
-    const client = await this.getClient();
-    await client.closeIssue(this.number);
+    if (this.hasRepository()) {
+      const client = await this.getClient();
+      await client.closeIssue(this.number);
+    }
     this.state = 'closed';
     this.lastSyncedAt = new Date();
     await this.save();
@@ -762,8 +824,10 @@ export class Issue extends SmrtObject {
    * @param labels - Label names to add
    */
   async addLabels(labels: string[]): Promise<void> {
-    const client = await this.getClient();
-    await client.addLabels(this.number, labels);
+    if (this.hasRepository()) {
+      const client = await this.getClient();
+      await client.addLabels(this.number, labels);
+    }
     this.labels = [...new Set([...this.labels, ...labels])];
     await this.save();
   }
@@ -774,8 +838,10 @@ export class Issue extends SmrtObject {
    * @param label - Label name to remove
    */
   async removeLabel(label: string): Promise<void> {
-    const client = await this.getClient();
-    await client.removeLabel(this.number, label);
+    if (this.hasRepository()) {
+      const client = await this.getClient();
+      await client.removeLabel(this.number, label);
+    }
     this.labels = this.labels.filter((l) => l !== label);
     await this.save();
   }
@@ -786,8 +852,10 @@ export class Issue extends SmrtObject {
    * @param assignees - User logins to assign
    */
   async assign(assignees: string[]): Promise<void> {
-    const client = await this.getClient();
-    await client.assignIssue(this.number, assignees);
+    if (this.hasRepository()) {
+      const client = await this.getClient();
+      await client.assignIssue(this.number, assignees);
+    }
     this.assignees = [...new Set([...this.assignees, ...assignees])];
     await this.save();
   }

@@ -31,6 +31,7 @@ import {
   type AssistantTransport,
   createInMemoryAssistantTransport,
 } from '../assistant-transport.js';
+import type { AssistantDockController } from '../create-assistant-dock-controller.svelte.js';
 
 const identity: DataSurfaceIdentity = {
   surfaceId: 'orders',
@@ -1057,6 +1058,86 @@ describe('AssistantDock (mounted component)', () => {
     );
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await vi.waitFor(() => expect(document.activeElement).toBe(toggle));
+  });
+
+  it('omits the Conversations toggle and thread list when `threadList` is false (#3405)', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+    await transport.createThread('Existing chat');
+    const { container } = render(AssistantDock, {
+      props: { transport, registry, threadList: false },
+    });
+
+    // The empty state settles first, so absence below is not just "not loaded".
+    expect(
+      await screen.findByRole('heading', { name: 'Start a conversation' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Conversations' }),
+    ).not.toBeInTheDocument();
+    expect(
+      container.querySelector('nav[aria-label="Assistant conversations"]'),
+    ).toBeNull();
+    expect(container.querySelector('.assistant-dock-threads')).toBeNull();
+    expect(
+      container.querySelector('.assistant-dock-threads-toggle'),
+    ).toBeNull();
+    expect(screen.queryByText('Existing chat')).not.toBeInTheDocument();
+    // Never points at the omitted list.
+    expect(
+      screen.queryByRole('button', { name: 'View conversations' }),
+    ).not.toBeInTheDocument();
+    expect(container.querySelector('[aria-controls]')).toBeNull();
+    expect(container.querySelector('.assistant-dock-main')).not.toBeNull();
+    await expectNoA11yViolations(container);
+  });
+
+  it('still renders the thread list by default and with `threadList` true (#3405)', async () => {
+    const registry = createDataSurfaceRegistry();
+    for (const props of [{}, { threadList: true }]) {
+      const { container, unmount } = render(AssistantDock, {
+        props: {
+          transport: createInMemoryAssistantTransport(),
+          registry,
+          ...props,
+        },
+      });
+      expect(
+        screen.getByRole('button', { name: 'Conversations' }),
+      ).toBeInTheDocument();
+      expect(container.querySelector('.assistant-dock-threads')).not.toBeNull();
+      unmount();
+    }
+  });
+
+  it('with `threadList` false a host-opened conversation takes the whole dock and can be sent to (#3405)', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+    let dock: AssistantDockController | undefined;
+    const { container } = render(AssistantDock, {
+      props: {
+        transport,
+        registry,
+        threadList: false,
+        oncontroller: (c: AssistantDockController) => {
+          dock = c;
+        },
+      },
+    });
+
+    await vi.waitFor(() => expect(dock).toBeDefined());
+    const thread = await dock?.createThread('Host-opened');
+    await dock?.openThread(thread?.id ?? '');
+
+    const composer = await screen.findByLabelText('Message');
+    await vi.waitFor(() => expect(composer).toBeEnabled());
+    expect(
+      screen.queryByRole('heading', { name: 'Start a conversation' }),
+    ).not.toBeInTheDocument();
+    expect(container.querySelector('.assistant-dock-threads')).toBeNull();
+    await userEvent.type(composer, 'hello');
+    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+    expect(await screen.findByText('hello')).toBeInTheDocument();
   });
 
   // #2988: a host renders a message's own toolCallData through the

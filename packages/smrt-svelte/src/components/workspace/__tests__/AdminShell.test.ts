@@ -35,6 +35,51 @@ afterEach(() => {
 });
 
 describe('AdminShell', () => {
+  it('keeps a consumer header and default phone menu opener when the top edge is unavailable', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('max-width'),
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    const state = createShellState({
+      viewport: 'phone',
+      config: {
+        top: { initial: 'hidden' },
+        left: { initial: 'collapsed' },
+      },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        header: textSnippet('consumer header'),
+        children: textSnippet('main'),
+        tenantPanel: textSnippet('tenant navigation'),
+      },
+    });
+    try {
+      await tick();
+      const menu = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Menu"]',
+      );
+      expect(menu).not.toBeNull();
+      expect(
+        container.querySelector('[data-testid="admin-shell-header"]'),
+      ).toHaveTextContent('consumer header');
+      expect(menu).toHaveAttribute('aria-expanded', 'false');
+      expect(menu).toHaveAttribute(
+        'aria-controls',
+        'smrt-admin-shell-left-panel',
+      );
+      menu?.click();
+      await tick();
+      expect(menu).toHaveAttribute('aria-expanded', 'true');
+      expect(state.panels.left).toBe('expanded');
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('keeps a single tenant footer reachable when the left edge collapses or hides', async () => {
     const state = createShellState({
       config: { left: { initial: 'collapsed' } },
@@ -42,6 +87,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         tenantFooter: textSnippet('Dana account'),
         children: textSnippet('main'),
@@ -72,6 +118,108 @@ describe('AdminShell', () => {
     }
   });
 
+  it('keeps sidebar-only branding and a rail footer reachable in both left states', async () => {
+    const state = createShellState({
+      config: { top: false, left: { initial: 'collapsed' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        edgeToggles: { left: true },
+        title: 'Workshop',
+        homeHref: '/app',
+        tenantRail: textSnippet('compact navigation'),
+        tenantPanel: textSnippet('full navigation'),
+        tenantFooter: textSnippet('full account'),
+        tenantRailFooter: textSnippet('compact account'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.querySelector('#smrt-admin-shell-top-panel')).toBeNull();
+      expect(
+        container.querySelector('.smrt-admin-shell__brand.compact'),
+      ).toHaveAttribute('href', '/app');
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-rail-footer')
+          ?.textContent,
+      ).toContain('compact account');
+      expect(container.textContent?.match(/account/g)).toHaveLength(1);
+
+      state.expandPanel('left');
+      await tick();
+      expect(
+        container.querySelector('.smrt-admin-shell__brand:not(.compact)')
+          ?.textContent,
+      ).toContain('Workshop');
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-footer')
+          ?.textContent,
+      ).toContain('full account');
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-rail-footer'),
+      ).toBeNull();
+      expect(container.textContent?.match(/account/g)).toHaveLength(1);
+    } finally {
+      await unmount(component);
+    }
+  });
+
+  it('restores the ordinary footer to the header when the rail becomes unreachable', async () => {
+    const state = createShellState({
+      config: { left: { initial: 'collapsed' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        edgeToggles: { left: true },
+        tenantFooter: textSnippet('full account'),
+        tenantRailFooter: textSnippet('compact account'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.querySelector('header')?.textContent).not.toContain(
+        'full account',
+      );
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-rail-footer')
+          ?.textContent,
+      ).toContain('compact account');
+
+      state.setPanelState('left', 'hidden');
+      flushSync();
+      expect(container.querySelector('header')?.textContent).toContain(
+        'full account',
+      );
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-rail-footer'),
+      ).toBeNull();
+
+      state.setPanelState('left', 'collapsed');
+      flushSync();
+      expect(container.querySelector('header')?.textContent).not.toContain(
+        'full account',
+      );
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-rail-footer')
+          ?.textContent,
+      ).toContain('compact account');
+    } finally {
+      await unmount(component);
+    }
+  });
+
+  it('assigns a footer-only collapsed rail to the bottom grid row', () => {
+    expect(adminShellSource).toMatch(
+      /\.smrt-admin-shell__tenant-rail-footer\s*\{[^}]*grid-row:\s*2;/s,
+    );
+  });
+
   it('keeps an explicit account slot in a custom app bar regardless of left state', async () => {
     const state = createShellState({
       config: { left: { initial: 'expanded' } },
@@ -79,6 +227,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         account: textSnippet('Dana account'),
         appBar: textSnippet('Custom title'),
@@ -130,6 +279,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         systemBar: textSnippet('custom status'),
         systemPanel: textSnippet('status detail'),
         children: textSnippet('main'),
@@ -149,6 +299,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         systemBar: textSnippet('custom status'),
         children: textSnippet('main'),
       },
@@ -169,7 +320,7 @@ describe('AdminShell', () => {
   it('keeps the default bottom toggle when neither system slot is supplied', async () => {
     const component = mount(AdminShell, {
       target: container,
-      props: { children: textSnippet('main') },
+      props: { edgeToggles: true, children: textSnippet('main') },
     });
     try {
       await tick();
@@ -191,6 +342,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         title: 'Shop',
         homeHref: '/home',
@@ -220,6 +372,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         title: 'Shop',
         logoSrc: '/shop.svg',
         logoAlt: 'Shop mark',
@@ -250,6 +403,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         title: 'Shop',
         homeHref: '/',
         brand,
@@ -269,6 +423,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         title: 'Ops',
         children: textSnippet('main work'),
       },
@@ -280,7 +435,12 @@ describe('AdminShell', () => {
       expect(container.querySelector('main')?.textContent).toContain(
         'main work',
       );
-      expect(container.querySelector('[role="navigation"]')).not.toBeNull();
+      // The left sidebar is a labelled complementary region; it only contains a
+      // navigation landmark when it actually renders navigation (aria-allowed-role).
+      const left = container.querySelector('#smrt-admin-shell-left-panel');
+      expect(left?.tagName).toBe('ASIDE');
+      expect(left?.getAttribute('role')).toBeNull();
+      expect(left?.getAttribute('aria-label')).toBeTruthy();
     } finally {
       unmount(component);
     }
@@ -296,6 +456,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         children: textSnippet('main work'),
       },
     });
@@ -321,6 +482,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
       },
@@ -346,6 +508,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
         focusRail: textSnippet('focus rail'),
@@ -382,6 +545,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
         focusPanel: activeToolSnippet(),
@@ -409,6 +573,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
         focusPanel: createRawSnippet(() => ({
@@ -447,6 +612,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
         focusPanel: textSnippet('focus panel'),
@@ -474,6 +640,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
         tenantRail: textSnippet('tenant rail'),
@@ -509,6 +676,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
         tenantPanel: textSnippet('tenant navigation'),
@@ -548,6 +716,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
       },
@@ -576,6 +745,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         state,
         children: textSnippet('main work'),
       },
@@ -598,6 +768,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         title: 'Ops',
         children: textSnippet('main work'),
       },
@@ -660,6 +831,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         title: 'Ops',
         topLeftCorner: textSnippet('corner'),
         children: textSnippet('main work'),
@@ -686,6 +858,7 @@ describe('AdminShell', () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
+        edgeToggles: true,
         title: 'Ops',
         topRightCorner: textSnippet('right corner'),
         children: textSnippet('main work'),

@@ -81,19 +81,23 @@ export class Lead extends SmrtObject {
   tenantId: string | null = null;
 
   /** Short descriptive name of the prospect/deal-to-be. Required. */
-  @field({ required: true })
+  @field({ required: true, description: 'What you call this lead.' })
   name: string = '';
 
   /** Primary human contact name. */
+  @field({ description: 'The person to talk to.' })
   contactName: string = '';
 
   /** Primary contact email. */
+  @field({ description: 'Their email address.' })
   email: string = '';
 
   /** Primary contact phone. */
+  @field({ description: 'Their phone number.' })
   phone: string = '';
 
   /** Prospect organization/company name. */
+  @field({ description: 'The company they are with.' })
   organizationName: string = '';
 
   /**
@@ -104,10 +108,14 @@ export class Lead extends SmrtObject {
   profileId: string = '';
 
   /** Owning sales rep (assignment). Empty while unassigned. */
+  @field({ description: 'The sales representative who owns this lead.' })
   @foreignKey('SalesRepresentative')
   ownerRepId: string = '';
 
   /** Lifecycle status; transitions are save-guarded (see module map). */
+  @field({
+    description: 'Where the lead stands, for example new or qualified.',
+  })
   status: LeadStatus = 'new';
 
   /**

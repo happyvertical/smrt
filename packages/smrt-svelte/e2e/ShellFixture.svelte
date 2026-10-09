@@ -38,16 +38,19 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
 </script>
 
 {#snippet appPanel()}<AppScopePanel appName="Mobile fixture" tenantName="mobile-qa@example.invalid" environment="Tenant 01234567-0123-4567-8901-012345678901" />{/snippet}
+{#snippet shellHeader()}<span>Consumer header</span>{/snippet}
 
 {#snippet panel()}<p>Scrollable panel content</p>{/snippet}
 {#snippet navigation()}<TenantNav items={navItems} groups={query.has('groups') ? navGroups : []} aria-label="Shop navigation" density="touch" onNavigate={() => shell.setPanelState('left', 'collapsed')} />{/snippet}
 {#snippet navigationRail()}<TenantNav items={navItems} groups={query.has('groups') ? navGroups : []} aria-label="Shop navigation" density="touch" collapsed />{/snippet}
 {#snippet account()}<WorkspaceAccountMenu userName="Dana" roleLabel="Welder" density="touch" onSignOut={() => { signedOut = true; }} />{/snippet}
+{#snippet compactAccount()}<WorkspaceAccountMenu userName="Dana" roleLabel="Welder" density="touch" compact onSignOut={() => { signedOut = true; }} />{/snippet}
 {#snippet systemBar()}<SystemStatusChips {chips} />{/snippet}
 <div data-theme="smrt" data-color-scheme="light">
-<AdminShell state={shell} title="Mobile shell fixture" storageKey="mobile-shell-fixture"
+<AdminShell edgeToggles state={shell} title="Mobile shell fixture" storageKey="mobile-shell-fixture"
+  header={query.has('header') ? shellHeader : undefined}
   homeHref={query.has('brand') ? '/home' : undefined} logoSrc={query.has('brand') ? 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"%3E%3Ccircle cx="16" cy="16" r="15"/%3E%3C/svg%3E' : undefined}
-  {appPanel} systemPanel={panel} tenantFooter={query.has('account') ? account : undefined} tenantPanel={navigation} tenantRail={navigationRail} focusPanel={panel} {systemBar}>
+  {appPanel} systemPanel={panel} tenantFooter={query.has('account') ? account : undefined} tenantRailFooter={query.has('railAccount') ? compactAccount : undefined} tenantPanel={navigation} tenantRail={query.has('railFooterOnly') ? undefined : navigationRail} focusPanel={panel} {systemBar}>
   <p>Main content</p>
   {#if signedOut}<p>Signed out callback</p>{/if}
   <Button onclick={() => shell.setPanelState('left', 'hidden')}>Hide navigation</Button>

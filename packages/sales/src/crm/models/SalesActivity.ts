@@ -76,10 +76,16 @@ export class SalesActivity extends SmrtObject {
   tenantId: string | null = null;
 
   /** Which model the activity attaches to: `'lead'` or `'opportunity'`. */
+  @field({
+    description: 'What the activity is about: a lead or an opportunity.',
+  })
   subjectKind: SalesActivitySubjectKind = 'lead';
 
   /** Id of the subject row. Required. */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The lead or opportunity it is about.',
+  })
   subjectId: string = '';
 
   /**
@@ -88,15 +94,21 @@ export class SalesActivity extends SmrtObject {
    * kinds (framework-written rows use `qualification`, `stage_change`,
    * `merge`).
    */
+  @field({
+    description: 'The kind of activity, for example call, note or email.',
+  })
   activityKind: string = 'note';
 
   /** One-line human-readable description. */
+  @field({ description: 'What happened or what needs doing.' })
   summary: string = '';
 
   /** Next-action due date — set for `task`-like activities. */
+  @field({ description: 'When it is due.' })
   dueAt: Date | null = null;
 
   /** When the next action was completed; `null` while open. */
+  @field({ description: 'When it was done.' })
   completedAt: Date | null = null;
 
   /**

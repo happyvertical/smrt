@@ -67,6 +67,9 @@ jobs:
               # evaluation step in this lane loads (#2838).
               - 'packages/core/**'
               - 'packages/config/**'
+              - 'packages/ingestion/**'
+              - 'packages/smrt-ui/**'
+              - '.github/workflows/test-suite.yml'
               - 'packages/smrt-svelte/**'
               - 'packages/smrt-workbench/**'
               - 'packages/smrt-playground/**'
@@ -446,6 +449,7 @@ jobs:
           --filter='@happyvertical/smrt-content...'
           --filter='@happyvertical/smrt-workbench...'
           --filter='@happyvertical/smrt-svelte...'
+          --filter='@happyvertical/smrt-ingestion...'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -466,6 +470,17 @@ jobs:
       # downstream page (#2838).
       - name: Run core browser entry evaluation
         run: pnpm --filter @happyvertical/smrt-core test:browser
+      - name: Run authenticated ingestion review browser tests
+        run: pnpm --filter @happyvertical/smrt-ingestion test:e2e
+
+      - name: Upload ingestion review failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ingestion-review-browser-evidence
+          path: packages/ingestion/test-results/review
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload mobile shell failure evidence
         if: failure()

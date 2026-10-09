@@ -257,8 +257,11 @@ controller keeps a supervised `run` (goal, current step, `running | paused |
 waiting | done | failed | cancelled`), with `pauseRun` / `continueRun`,
 `holdForUser` for choices the person makes, a `clientToolFilter`, and a
 `settle` hook so the step after a navigation sees the new page's tools.
-`matchesToolAllowList` is exported browser-safe. Full guide:
+`threadList={false}` omits the Conversations list for a single-conversation dock
+(the host then opens a thread via `oncontroller`). `matchesToolAllowList` is exported browser-safe. Full guide:
 [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
+
+Pass `conversations="single"` to `AssistantDock` for an app where people should not see separate conversations: it reuses the newest thread (or creates one), opens the focused composer, and offers an icon-only clear action.
 
 The server side mounts in one route file. The principal comes from
 `event.locals` (`@happyvertical/smrt-users/sveltekit`); threads are scoped to

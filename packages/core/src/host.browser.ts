@@ -2,21 +2,18 @@
  * Browser build of `host.ts` (#2838): selected through `package.json#browser`.
  *
  * Persistence runs on `@happyvertical/sql/pglite`, the SDK's browser-safe
- * adapter. The SDK exposes only `getDatabase` there, so the other SQL helpers
- * `host.ts` forwards from the package root (`buildWhere`, `raw`,
- * `NestedTransactionError`) have no browser-safe source yet and throw when
- * used; collection queries need them. Tracked as the SDK follow-up to #2838.
- * TODO(sdk#1364): swap these stand-ins for `@happyvertical/sql/query` once
- * sdk PR #1366 is published and the catalog pins it.
+ * adapter. Driver-independent query helpers come from `@happyvertical/sql/query`.
  * The AI SDK and installed-package discovery have no browser build either.
  *
  * Every export is typed against `host.ts`, so the two cannot drift.
  */
 import { getDatabase as getPGliteDatabase } from '@happyvertical/sql/pglite';
+import {
+  NestedTransactionError as SdkNestedTransactionError,
+  buildWhere as sdkBuildWhere,
+  raw as sdkRaw,
+} from '@happyvertical/sql/query';
 import type * as NodeHost from './host.js';
-
-const SQL_FOLLOW_UP =
-  'needs a browser-safe export from @happyvertical/sql (tracked as the SDK follow-up to smrt#2838)';
 
 /**
  * Opens a PGlite database. Rejects the other engines, which are Node-only,
@@ -32,21 +29,10 @@ export const getDatabase: typeof NodeHost.getDatabase = (options) => {
   return getPGliteDatabase(options as Parameters<typeof getPGliteDatabase>[0]);
 };
 
-export const buildWhere: typeof NodeHost.buildWhere = () => {
-  throw new Error(`[smrt-core] buildWhere ${SQL_FOLLOW_UP}`);
-};
-
-export const raw: typeof NodeHost.raw = () => {
-  throw new Error(`[smrt-core] raw ${SQL_FOLLOW_UP}`);
-};
-
-/**
- * Stand-in for the SDK's `NestedTransactionError`, which has no browser-safe
- * export. `instanceof` against it is always false for errors the PGlite
- * adapter throws, so callers rethrow them, the safe default.
- */
+export const buildWhere: typeof NodeHost.buildWhere = sdkBuildWhere;
+export const raw: typeof NodeHost.raw = sdkRaw;
 export const NestedTransactionError: typeof NodeHost.NestedTransactionError =
-  class NestedTransactionError extends Error {} as typeof NodeHost.NestedTransactionError;
+  SdkNestedTransactionError;
 
 export const importAI: typeof NodeHost.importAI = () =>
   Promise.reject(

@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "rootDir": ".",
+    "noEmit": true,
+    "types": [
+      "node",
+      "svelte",
+      "vite/client"
+    ]
+  },
+  "include": [
+    "src/**/*.ts",
+    "reference/**/*.ts",
+    "e2e/review/*.ts"
+  ],
+  "exclude": [
+    "src/svelte/**"
+  ]
+}

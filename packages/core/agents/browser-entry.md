@@ -35,10 +35,9 @@ not emit it), and a `browser` mapping; `browser-field.test.ts` checks all three.
 
 ## Known limits
 
-- `@happyvertical/sql/pglite` exports only `getDatabase`. In the browser,
-  `buildWhere`, `raw` and `NestedTransactionError` (collection queries need the
-  first) throw or stand in until the SDK exports them from a browser-safe
-  subpath. The browser build also rejects non-PGlite engines.
+- The browser uses `getDatabase` from `@happyvertical/sql/pglite` and
+  `buildWhere`, `raw`, and `NestedTransactionError` from the browser-safe
+  `@happyvertical/sql/query` entry. It rejects non-PGlite engines.
 - The AI SDK is unavailable in the browser build.
 - The embedded write queue runs unqueued without async-local state; its only
   browser database, PGlite, serializes statements itself.
