@@ -778,8 +778,8 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
         {/if}
       {/snippet}
 
+      <div class="smrt-layout-live" role="status" aria-live="polite">{modeMessage}</div>
       {#if editing}
-        <div class="smrt-layout-live" role="status" aria-live="polite">{modeMessage}</div>
         <div class="smrt-layout-live" aria-live="assertive" aria-atomic="true">{slotSortable.announcement}</div>
       {/if}
       {#if layoutFloating}

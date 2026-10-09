@@ -57,7 +57,7 @@ time-entry Svelte components are re-exported from smrt-timesheets too. See
 
 ## Key Patterns
 
-- **Repository is optional (project-native issues)**: an Issue/Label may carry only a `projectId`. `issue.hasRepository()` gates every provider call: `sync()` is a no-op, `close/addLabels/removeLabel/assign/addComment/rollback/incorporateFeedback(apply)` change local state only, `getComments()` reads stored `Comment` rows, `getRepository()` throws, `getUrl()` returns `''`. No unique key spans `repositoryId`+`number` (lookups only), so NULL repositories need no partial index. Schema change is additive (`issues.project_id`, `labels.project_id`); `db:migrate` generates it from the manifest.
+- **Repository is optional (project-native issues)**: an Issue/Label may carry only a `projectId`. `issue.hasRepository()` gates every provider call: `sync()` is a no-op, `close/addLabels/removeLabel/assign/addComment/rollback/incorporateFeedback(apply)` change local state only, `getComments()` reads stored `Comment` rows, `getRepository()` throws, `getUrl()` returns `''`. No unique key spans `repositoryId`+`number` (lookups only), so NULL repositories need no partial index. Schema change adds `issues.project_id`/`labels.project_id` and relaxes `repository_id` to nullable on both; `db:migrate` generates it from the manifest.
 
 - **Token config reference**: stores env var name (`tokenConfigKey: 'GITHUB_TOKEN'`), not the token itself. Resolved at runtime from `process.env` or `getModuleConfig()`
 - **Living spec** (`incorporateFeedback()`): AI synthesizes issue comments into updated body. Supports preview mode and `rollback()`
