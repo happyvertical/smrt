@@ -97,6 +97,7 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-personas": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
+    "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
