@@ -18,7 +18,7 @@ UI, extraction/provider accuracy, domain execution, migration/schema changes: N/
 
 ## Provider byte-path provenance
 
-Inspected installed `@happyvertical/email@0.102.3`, `dist/index.js` SHA-256
+Initial pre-review inspection used `@happyvertical/email@0.102.3`, `dist/index.js` SHA-256
 `568235976fa38d4ea5f6de22186cc3ef1e1fc69dc427b5ef9d319c44464303ee`:
 Gmail `getMessage` (line 124) requests `users.messages.get({format:'raw'})`,
 decodes and parses MIME, and maps actual `attachment.content` (line 170).
@@ -37,3 +37,11 @@ Mobile convention provenance: `smrt-mobile/.../network/MobileApiClient.kt`
 SHA-256 metadata. The ingestion reference route maps the durable upload UUID to
 `captureId`; host-side payload assembly remains application-owned. Stub captures
 and client local paths are not accepted as preserved bytes.
+
+## Released email provider correction
+
+Email intake requires `@happyvertical/email >=0.102.4` within the catalog range. The installed 0.102.4 `dist/index.js` SHA-256 is `ae8f9013cf05a99bf8730f3523c152c2a97e66260619faa59b423b514d2773cd`. SDK repair happyvertical/sdk#1379 (PR#1380) makes all IMAP UID-result fetches use UID-mode ranges and retains POP3 parsed reply provenance. IMAP already retained reply headers; only its UID retrieval needed correction. The consumer preserves its existing folder/UIDVALIDITY/UID checks. Protocol-boundary evidence uses the released package with UID42 at sequence1, actual MIME parsing/attachment bytes and POP3 parent headers; it does not claim live mailbox quality or credential-store integration.
+
+The normal targeted pnpm update extends only the existing exact-version email release-age allowance to verified 0.102.4, following repository policy for its own SDK releases. Quarantine settings and every unrelated SDK version remain unchanged.
+
+If an earlier deployment preserved POP3 snapshots without parent metadata, recover from retained upstream originals with an explicit new source revision; existing immutable receipts are not silently rewritten.
