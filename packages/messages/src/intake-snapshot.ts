@@ -52,7 +52,7 @@ export function snapshotEmailForIntake(
     html: message.html || '',
     date: message.date.toISOString(),
   };
-  let size = Buffer.byteLength(JSON.stringify(body));
+  let size = 0;
   const attachments = (message.attachments || []).map((attachment, index) => {
     if (!(attachment.content instanceof Uint8Array))
       throw new EmailIntakeSnapshotError(
@@ -66,10 +66,28 @@ export function snapshotEmailForIntake(
       partId: String(index),
       filename: attachment.filename || '',
       mediaType: attachment.contentType,
-      bytes: Buffer.from(attachment.content),
+      bytes: attachment.content,
     };
   });
+  // Match the message part preserved by EmailSourceAdapter, including JSON
+  // delimiters, escaped/UTF-8 descriptors and the empty attachments array.
+  size += Buffer.byteLength(
+    JSON.stringify({
+      ...body,
+      attachments: attachments.map(({ partId, filename, mediaType }) => ({
+        partId,
+        filename,
+        mediaType,
+      })),
+    }),
+  );
   if (size > maxBytes)
     throw new EmailIntakeSnapshotError('limit', 'Email byte limit exceeded');
-  return { ...body, attachments };
+  return {
+    ...body,
+    attachments: attachments.map((attachment) => ({
+      ...attachment,
+      bytes: Buffer.from(attachment.bytes),
+    })),
+  };
 }

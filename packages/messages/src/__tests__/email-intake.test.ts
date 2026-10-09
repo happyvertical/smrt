@@ -59,6 +59,99 @@ describe('configured email intake byte retrieval', () => {
     expect(JSON.stringify(result)).not.toContain('secret-not-retained');
     expect(result.attachments[1].filename).toBe('');
   });
+  it('enforces the exact persisted JSON metadata plus attachment payload boundary', async () => {
+    const { account, message } = fixture();
+    message.attachments![0].filename = 'résumé\n".pdf';
+    const metadata = {
+      accountId: 'account',
+      messageId: 'rfc-id',
+      threadId: 'thread',
+      inReplyTo: '',
+      subject: 'subject',
+      text: 'body',
+      html: '',
+      date: '2026-10-08T00:00:00.000Z',
+      attachments: [
+        {
+          partId: '0',
+          filename: 'résumé\n".pdf',
+          mediaType: 'application/pdf',
+        },
+        { partId: '1', filename: '', mediaType: 'image/tiff' },
+      ],
+    };
+    const limit = Buffer.byteLength(JSON.stringify(metadata)) + 6 + 4;
+    await expect(
+      account.readIntakeMessage('uid', limit),
+    ).resolves.toMatchObject({
+      attachments: [{ filename: 'résumé\n".pdf' }, { filename: '' }],
+    });
+    await expect(
+      account.readIntakeMessage('uid', limit - 1),
+    ).rejects.toMatchObject({
+      category: 'limit',
+    });
+  });
+  it.each([
+    'filename',
+    'empty attachments',
+  ])('rejects oversized %s metadata before copying payloads', async (kind) => {
+    const { account, message, client } = fixture();
+    const payload = Buffer.from([1]);
+    message.attachments =
+      kind === 'filename'
+        ? [
+            {
+              filename: 'é"\n'.repeat(2000),
+              contentType: 'application/pdf',
+              content: payload,
+            },
+          ]
+        : Array.from({ length: 100 }, () => ({
+            filename: '',
+            contentType: 'application/pdf',
+            content: Buffer.alloc(0),
+          }));
+    const payloads = message.attachments.map(
+      (attachment) => attachment.content,
+    );
+    const copy = vi.spyOn(Buffer, 'from');
+    try {
+      await expect(
+        account.readIntakeMessage('uid', 1024),
+      ).rejects.toMatchObject({ category: 'limit' });
+      expect(
+        copy.mock.calls.some(([value]) =>
+          payloads.some((bytes) => value === bytes),
+        ),
+      ).toBe(false);
+      expect(client.disconnect).toHaveBeenCalledOnce();
+    } finally {
+      copy.mockRestore();
+    }
+  });
+  it('counts the empty attachments array at the no-attachment boundary', async () => {
+    const { account, message } = fixture();
+    message.attachments = [];
+    const metadata = {
+      accountId: 'account',
+      messageId: 'rfc-id',
+      threadId: 'thread',
+      inReplyTo: '',
+      subject: 'subject',
+      text: 'body',
+      html: '',
+      date: '2026-10-08T00:00:00.000Z',
+      attachments: [],
+    };
+    const limit = Buffer.byteLength(JSON.stringify(metadata));
+    await expect(
+      account.readIntakeMessage('uid', limit),
+    ).resolves.toMatchObject({ attachments: [] });
+    await expect(
+      account.readIntakeMessage('uid', limit - 1),
+    ).rejects.toMatchObject({ category: 'limit' });
+  });
   it('fails metadata-only attachments, oversized input and upstream errors without leaking details', async () => {
     const { account, message, client } = fixture();
     delete message.attachments![0].content;
