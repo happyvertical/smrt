@@ -397,6 +397,10 @@ export class IngestionProposalService {
     const catalog = await this.catalog(lease.itemId);
     if (digest(catalog) !== catalogDigest)
       throw new Error('Generation catalog changed');
+    let maxInputBytes = Math.min(
+      this.config.limits.maxInputBytes,
+      ...catalog.map((entry) => entry.maxBytes),
+    );
     for (const entry of offered)
       await this.execution.withDiscoveryContext(
         lease.itemId,
@@ -405,6 +409,7 @@ export class IngestionProposalService {
         async (context) => {
           if (!this.allowedProviders(context))
             throw new Error('Provider unavailable');
+          maxInputBytes = Math.min(maxInputBytes, context.policy.maxBytes);
           for (const candidate of entry.candidates)
             await context.assertTarget(
               candidate.model,
@@ -414,6 +419,7 @@ export class IngestionProposalService {
         },
       );
     await this.service.getAnalysisInput(lease);
+    return maxInputBytes;
   }
   private async deadline<T>(
     work: (signal: AbortSignal) => Promise<T>,
@@ -681,13 +687,20 @@ export class IngestionProposalService {
       ),
       questions,
     };
-    if (bytes(request) > this.config.limits.maxInputBytes)
-      throw new StageFailure('limit');
-    await this.live(lease, output.provenance.catalogDigest, output.offered);
+    const requestBytes = bytes(request);
+    const assertRequestBudget = async () => {
+      const maxInputBytes = await this.live(
+        lease,
+        output.provenance.catalogDigest,
+        output.offered,
+      );
+      if (requestBytes > maxInputBytes) throw new StageFailure('limit');
+    };
+    await assertRequestBudget();
     // Both SDK capability probing and deciding get a fresh gate, since either may use I/O.
     const result = await this.deadline((signal) => {
       const gate = async () => {
-        await this.live(lease, output.provenance.catalogDigest, output.offered);
+        await assertRequestBudget();
         signal.throwIfAborted();
       };
       return executeDecision(
@@ -807,6 +820,7 @@ export class IngestionProposalService {
       if (
         supported.probability <
           (this.config.minimumDecisionProbability ?? 0.8) ||
+        route.confidence < (this.config.minimumDecisionProbability ?? 0.8) ||
         route.choice !==
           `${suggestion.handlerId}@${suggestion.handlerVersion}` ||
         risk.score >= 1

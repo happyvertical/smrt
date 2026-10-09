@@ -38,3 +38,12 @@ Feature baseline comparison is N/A: no proposal-generation implementation exists
 at the stack base. Deterministic injected provider responses establish validation
 contracts, not routing accuracy. No held-out evaluation or automatic action
 eligibility is claimed. UI, learning, and moderation are outside this change.
+
+Round 2 decision regressions cover full serialized UTF-8 request size exactly at
+and one byte above the current policy ceiling, policy shrink after generation and
+after capability probing, and non-tied selected-handler confidence below or
+exactly at the configured threshold. Both SQLite and PostgreSQL exercise actual
+service authorization/persistence; denied outbound boundaries and denied preview
+are asserted separately. The new overflow and low-route cases fail against the
+reviewed implementation before the fixes; complete affected proposal suites and
+the provider lane supply the corrected evidence.

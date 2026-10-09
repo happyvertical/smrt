@@ -105,8 +105,13 @@ capability without changing its errors or protocol. Optional `decision` uses pub
 predicate, choice, score and batch contracts. Supported-effect predicates,
 handler classification, candidate entity matching, and action ambiguity/risk
 are distinct questions. Their validated probabilities and provenance are stored
-separately from generative provenance and unknown OCR certainty. Ties, insufficient
-support and actually incomplete extraction require review. Unknown provider
+separately from generative provenance and unknown OCR certainty. The complete
+serialized decision request, including suggestions and questions, must fit the
+minimum configured/current policy byte ceiling before capability probing and
+again before deciding. A policy change between these boundaries fails closed.
+Ties, support probability or selected-handler confidence below
+`minimumDecisionProbability`, and actually incomplete extraction require review.
+Unknown provider
 completion metadata is preserved as `source_completion_unknown`; it does not
 block otherwise schema-valid **human** preview or imply completeness. Automatic
 action eligibility remains false. An unconfigured decision path
