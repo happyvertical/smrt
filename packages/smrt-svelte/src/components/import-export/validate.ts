@@ -259,7 +259,13 @@ export function validateRows(input: ValidateRowsInput): ValidationResult {
     }
 
     for (const field of fields) {
-      if (!(field.name in values) && field.hasDefault) {
+      // Only importable and org-locked fields take a default; hidden, tenant
+      // and system fields never enter the payload.
+      if (
+        !(field.name in values) &&
+        field.hasDefault &&
+        (field.importable || field.locked === true)
+      ) {
         values[field.name] = field.defaultValue;
       }
       if (field.required && field.importable && !(field.name in values)) {

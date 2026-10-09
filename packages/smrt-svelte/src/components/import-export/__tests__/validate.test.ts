@@ -218,6 +218,7 @@ describe('validateRows', () => {
     field({
       name: 'locked',
       importable: false,
+      locked: true,
       hasDefault: true,
       defaultValue: 'L',
     }),
@@ -295,6 +296,39 @@ describe('validateRows', () => {
       rows: [['N', 'attempt']],
     });
     expect(ok.records[0].values.locked).toBe('L');
+  });
+
+  it('never writes a hidden or tenant field default into the payload', () => {
+    const r = validateRows({
+      headers: ['Name'],
+      mapping: ['name'],
+      fields: [
+        field({ name: 'name', required: true }),
+        field({
+          name: 'internal',
+          importable: false,
+          exportable: false,
+          hasDefault: true,
+          defaultValue: 'secret-default',
+        }),
+        field({
+          name: 'tenantId',
+          importable: false,
+          exportable: false,
+          hasDefault: true,
+          defaultValue: 'tenant-1',
+        }),
+        field({
+          name: 'locked',
+          importable: false,
+          locked: true,
+          hasDefault: true,
+          defaultValue: 'L',
+        }),
+      ],
+      rows: [['Widget']],
+    });
+    expect(r.records[0].values).toEqual({ name: 'Widget', locked: 'L' });
   });
 
   it('flags rows with more cells than headers', () => {

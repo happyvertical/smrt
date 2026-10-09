@@ -23,11 +23,14 @@ component.
 
 ## Invariants
 
-- **Field policy is a hard boundary.** `hidden` fields are neither importable
+- **Field policy is a hard boundary.** A supplied resolved policy is an
+  allowlist: a field it omits is neither importable nor exportable (manifest
+  defaults apply only with no policy). `hidden` fields are neither importable
   nor exportable; `locked` fields are not importable but keep their resolved
   default; tenant fields (`tenantId`) are never imported (the server sets
   them). `id` is export-only. Do not add a path that writes a non-importable
-  field.
+  field: only importable and `locked` fields take a default; hidden and tenant
+  defaults never enter the payload.
 - **Nothing is written during validation.** `validateRows` returns no records
   while `mappingIssues` is non-empty (an unmapped required field would be
   written without its value). `records` only ever holds fully valid rows;
