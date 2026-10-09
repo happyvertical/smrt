@@ -18,7 +18,13 @@ async function upload(
   await page
     .locator('input[type=file]')
     .setInputFiles({ name, mimeType, buffer });
+  const uploaded = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/upload') &&
+      response.request().method() === 'POST',
+  );
   await page.getByRole('button', { name: 'Upload', exact: true }).click();
+  expect((await uploaded).ok()).toBe(true);
   await expect(page.getByTestId('intake-review')).toBeVisible();
   await expect(page.getByTestId('intake-review')).toHaveAttribute(
     'aria-busy',
