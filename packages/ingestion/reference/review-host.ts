@@ -36,6 +36,7 @@ import {
   DOCUMENT,
   referenceHandlers,
 } from './handlers.js';
+import { loadReviewAnalysis } from './review-analysis.js';
 
 export const REVIEW_TENANT = '11111111-1111-4111-8111-111111111111';
 const principalId = '33333333-3333-4333-8333-333333333333';
@@ -511,9 +512,7 @@ export class ReferenceReviewHost {
         : item.processingState === 'needs_attention'
           ? 'failed'
           : 'unresolved';
-    let analysis: ItemReviewView['analysis'];
-    if (['completed', 'partial'].includes(item.processingState))
-      analysis = await service.getCompletedAnalysis(itemId);
+    const analysis = await loadReviewAnalysis(service, item, reviews);
     const evidence = await service.getEvidence(itemId);
     const views = [];
     for (const part of evidence) {

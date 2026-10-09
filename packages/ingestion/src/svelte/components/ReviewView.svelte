@@ -194,7 +194,7 @@ onMount(() => {
 {/if}
 {#if !view.reviews.actions.length}<p>{t(M['ingestion.noReviews'])}</p>{/if}
 {#each view.reviews.actions as action (`${action.review.actionId}:${action.review.revision}:${action.review.reviewVersion}`)}
-<ActionReview {host} {itemId} {action} {run} {deny} catalog={view.generation?.offered.find((entry) => entry.handler.id === action.handlerId && entry.handler.version === action.handlerVersion)?.handler} />
+<ActionReview {host} {itemId} {action} {run} {deny} currentAttemptId={action.stalePlan && view.reviews.actions.find((entry) => entry.stalePlan?.id === action.stalePlan?.id) === action ? action.attemptId : undefined} catalog={view.generation?.offered.find((entry) => entry.handler.id === action.handlerId && entry.handler.version === action.handlerVersion)?.handler} />
 {/each}
 {#if view.reviews.nextCursor}{@const cursor = view.reviews.nextCursor}<Button onclick={() => load(cursor)}>{t(M['ingestion.more'])}</Button>{/if}
 </div></div>

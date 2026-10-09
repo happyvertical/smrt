@@ -399,6 +399,221 @@ export function executionSuite(
       handlers.push(plan);
       return plan;
     }
+    it.each([
+      ['operation', false],
+      ['parent', false],
+      ['operation', true],
+      ['parent', true],
+    ] as const)('reloads %s target drift with completed=%s without losing unrelated reviews', async (level, completed) => {
+      const target = await (await Contents.create({ db })).create({
+        _meta_type: DOCUMENT,
+        tenantId: tenant,
+        context: 'private',
+        title: 'Target before change',
+        body: 'Retained target',
+        status: 'draft',
+      });
+      const handler = level === 'parent' ? await configurePlan() : undefined;
+      if (handler)
+        handler.preview = async (args, context) => ({
+          normalizedArgs: args,
+          display: args,
+          targetPreconditions: [
+            {
+              model: DOCUMENT,
+              id: target.id!,
+              revision: (
+                await assertReferenceTarget({
+                  db: context.db,
+                  scope: context.scope,
+                  itemId: context.itemId,
+                  model: DOCUMENT,
+                  id: target.id!,
+                })
+              ).revision,
+            },
+          ],
+        });
+      const input = await ready();
+      const unrelatedId = await service.createAction(
+        input.itemId,
+        'unrelated',
+        {},
+      );
+      const unrelated = await service.previewProposal({
+        ...input,
+        actionId: unrelatedId,
+        handlerId: CREATE,
+        handlerVersion: '1',
+        expectedRevision: 0,
+        requestId: 'unrelated',
+        args: { title: 'Unrelated private draft', body: 'Body' },
+      });
+      const actionId = handler
+        ? undefined
+        : await service.createAction(input.itemId, 'target', {});
+      const args = handler
+        ? { title: 'Plan draft', evidenceId: input.evidenceId }
+        : { contentId: target.id!, evidenceId: input.evidenceId };
+      const plan = handler
+        ? await service.previewPlan({
+            ...input,
+            planKey: 'target-plan',
+            handlerId: handler.id,
+            handlerVersion: '1',
+            expectedRevision: 0,
+            requestId: 'target-preview',
+            args,
+          })
+        : undefined;
+      const reviews = plan
+        ? plan.steps
+        : [
+            await service.previewProposal({
+              ...input,
+              actionId: actionId!,
+              handlerId: ATTACH,
+              handlerVersion: '1',
+              expectedRevision: 0,
+              requestId: 'target-preview',
+              args,
+            }),
+          ];
+      for (const review of reviews) await approve(review);
+      const results = completed
+        ? plan
+          ? await service.applyPlan(plan.id)
+          : [await service.applyAction(reviews[0].actionId)]
+        : [];
+      const oldRevision = target.updated_at;
+      target.title = 'Target after legitimate update';
+      await target.save();
+      expect(target.updated_at).not.toEqual(oldRevision);
+      const reloaded = await new IngestionService(options).listReviews(
+        input.itemId,
+      );
+      expect(
+        reloaded.actions.find((entry) => entry.review.actionId === unrelatedId)
+          ?.review,
+      ).toEqual(unrelated);
+      for (const [index, review] of reviews.entries()) {
+        const entry = reloaded.actions.find(
+          (row) => row.review.actionId === review.actionId,
+        )!;
+        if (completed) {
+          expect(entry.review.state).toBe('succeeded');
+          expect(entry.result).toEqual(results[index]);
+          if (plan) expect(entry.plan?.id).toBe(plan.id);
+        } else {
+          expect(entry).toEqual({
+            review: {
+              ...review,
+              reviewVersion: review.reviewVersion,
+              display: {},
+              state: 'stale',
+            },
+            attemptId: input.attemptId,
+            handlerId: plan && index === 0 ? CREATE : ATTACH,
+            handlerVersion: '1',
+            ...(plan
+              ? {
+                  stalePlan: {
+                    id: plan.id,
+                    key: plan.key,
+                    revision: plan.revision,
+                    handlerId: handler!.id,
+                    handlerVersion: handler!.version,
+                  },
+                }
+              : {}),
+          });
+        }
+      }
+      if (handler) {
+        const authorize = config.authorize;
+        config.authorize = async (request) => {
+          const grant = await authorize(request);
+          return {
+            ...grant,
+            allowed: grant.allowed && request.handlerId !== handler.id,
+          };
+        };
+        await expect(service.listReviews(input.itemId)).rejects.toThrow();
+        config.authorize = authorize;
+      }
+      if (!completed) {
+        await expect(service.applyAction(reviews[0].actionId)).rejects.toThrow(
+          /[Pp]review changed/,
+        );
+        const recovery = reloaded.actions.find(
+          (entry) => entry.stalePlan,
+        )?.stalePlan;
+        const currentAttempt = (
+          await service.getCompletedAnalysis(input.itemId)
+        ).attemptId;
+        let refreshedPlanId: string | undefined;
+        const fresh = plan
+          ? (
+              await service
+                .previewPlan({
+                  ...input,
+                  planKey: recovery!.key,
+                  attemptId: currentAttempt,
+                  handlerId: recovery!.handlerId,
+                  handlerVersion: recovery!.handlerVersion,
+                  expectedRevision: recovery!.revision,
+                  requestId: 'fresh-target',
+                  args,
+                })
+                .then((result) => {
+                  refreshedPlanId = result.id;
+                  return result;
+                })
+            ).steps
+          : [
+              await service.previewProposal({
+                ...input,
+                actionId: actionId!,
+                handlerId: ATTACH,
+                handlerVersion: '1',
+                expectedRevision: reviews[0].revision,
+                requestId: 'fresh-target',
+                args,
+              }),
+            ];
+        expect(fresh.map((review) => review.actionId)).toEqual(
+          reviews.map((review) => review.actionId),
+        );
+        for (const [index, review] of fresh.entries()) {
+          expect(review.state).toBe('waiting_review');
+          expect(review.bindingHash).not.toBe(reviews[index].bindingHash);
+          await expect(service.applyAction(review.actionId)).rejects.toThrow();
+          await approve(review);
+        }
+        const applied = plan
+          ? await service.applyPlan(refreshedPlanId!)
+          : [await service.applyAction(actionId!)];
+        expect(applied.every((result) => result.state === 'succeeded')).toBe(
+          true,
+        );
+      }
+      target.context = 'revoked';
+      await target.save();
+      await expect(service.listReviews(input.itemId)).rejects.toThrow(
+        'Target unavailable',
+      );
+      clock = new Date(clock.getTime() + 1000001);
+      const expired = await service.listReviews(input.itemId);
+      expect(
+        expired.actions.every(
+          (entry) =>
+            entry.review.state === 'expired' &&
+            !entry.args &&
+            !entry.result &&
+            !entry.stalePlan,
+        ),
+      ).toBe(true);
+    });
     it('commits one real draft under concurrent repeated apply and stable replay', async () => {
       const handler = handlers[0] as OperationHandler;
       const preview = handler.preview;

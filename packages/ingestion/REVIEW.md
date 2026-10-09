@@ -17,8 +17,17 @@ state and disabled buttons provide no server authority.
 current plan membership without browser storage. It returns at most 50 actions,
 with an opaque action-ID cursor. Every payload requires current item, handler,
 parent plan and target access under the owning transaction. Denied reads fail
-closed; expired/stale entries have only review identity/state, never old args or
-target labels. Success results are rechecked through the durable result reader.
+closed. Target reads check current authorization separately from historical
+revision freshness: unfinished drift returns state-only stale reviews without
+removing unrelated entries; succeeded results remain readable after authorized
+target changes. Apply still enforces exact bound target revisions. Expired entries
+contain only review identity/state. Stale entries never disclose old args or target
+labels; an authorized parent plan additionally exposes `stalePlan` identity, key,
+current plan revision and handler identity. Hosts must collect fresh explicit args
+from the reviewer/current authorized evidence and call `previewPlan` with that
+exact plan CAS and the current completed analysis attempt. Action revision is not
+plan revision. Re-expansion preserves action identity and requires fresh approval.
+Success results are rechecked through the durable result reader.
 Plan membership contains the exact parent args/version so edits call
 `previewPlan`, not per-step correction. An item may have more review pages; the
 host must aggregate state across pages when projecting a production inbox state.
@@ -26,7 +35,15 @@ host must aggregate state across pages when projecting a production inbox state.
 The host's `load` callback supplies a current `ItemReviewView`, using
 `getCompletedAnalysis` with no historical fallback. Generated suggestions bind
 the **current generation attempt**, not `generation.source.attemptId` (the prior
-extraction). `previewGeneratedProposals` publishes exact reviews. Approve,
+extraction). `previewGeneratedProposals` publishes exact reviews and continues to reject stale
+generation candidate pins. When `listReviews` reports `generationStale`, the host
+omits obsolete generation output and renders authorized saved reviews/results.
+Completed-only pages do not need generation output. Stale entries expose handler
+and attempt identity only when that attempt is still the current completed/partial
+analysis. An empty-args editor submits fresh explicit human arguments through
+`previewProposal` or `previewPlan` with the saved CAS; it never reuses old generated
+arguments, rewrites the generation snapshot or transfers approval. Analysis-stale
+entries without an attempt require normal reprocessing. Approve,
 reject, defer and correct call `submitDecision`; corrected args create a new
 revision which requires a separate human approval. After an approve/defer/reject
 decision, optional `editAction` calls `previewProposal` with the current action

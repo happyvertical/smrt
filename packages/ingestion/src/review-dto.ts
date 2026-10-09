@@ -32,6 +32,14 @@ export interface ReviewAction {
   attemptId?: string;
   dependencies?: Record<string, ResultReference>;
   result?: ActionResult;
+  /** Authorized identity/CAS only; hosts must collect fresh explicit args. */
+  stalePlan?: {
+    id: string;
+    key: string;
+    revision: number;
+    handlerId: string;
+    handlerVersion: string;
+  };
   plan?: {
     id: string;
     key: string;
@@ -44,6 +52,8 @@ export interface ReviewAction {
   };
 }
 export interface ReviewPage {
+  /** A saved target changed: omit stale generation output, retain authorized reviews. */
+  generationStale?: boolean;
   actions: ReviewAction[];
   nextCursor?: string;
 }

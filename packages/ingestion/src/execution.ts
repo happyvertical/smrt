@@ -726,6 +726,7 @@ export class IntakeExecutionService {
         )
       ).rows;
       const actions: ReviewAction[] = [];
+      let generationStale = false;
       for (const action of rows.slice(0, limit)) {
         const [proposal] = await this.rows(
           db,
@@ -763,19 +764,34 @@ export class IntakeExecutionService {
           continue;
         }
         const bound = await this.bound(db, String(action.id));
-        const { context } = await this.access(
-          db,
-          bound.item,
-          bound.handler,
-          'read',
-        );
+        await this.access(db, bound.item, bound.handler, 'read');
         item.expires_at = bound.item.expires_at;
         if (!this.retained(bound.item)) {
           actions.push(tombstone('expired'));
           continue;
         }
-        for (const target of bound.binding.targetPreconditions)
-          await context.assertTarget(target.model, target.id, target.revision);
+        let stale = false;
+        let recoveryAttemptId: string | undefined;
+        const authorizeTargets = async (
+          targets: Array<{ model: string; id: string; revision: string }>,
+        ) => {
+          for (const target of targets) {
+            // Read authority is current. Historical execution preconditions are
+            // freshness fences, not a reason to hide an authorized result/page.
+            const current = await this.config.assertTarget({
+              db,
+              scope: this.scope,
+              itemId,
+              model: target.model,
+              id: target.id,
+            });
+            if (current.revision !== target.revision) {
+              generationStale = true;
+              if (bound.action.state !== 'succeeded') stale = true;
+            }
+          }
+        };
+        await authorizeTargets(bound.binding.targetPreconditions);
         if (!this.retained(bound.item)) {
           actions.push(tombstone('expired'));
           continue;
@@ -787,11 +803,23 @@ export class IntakeExecutionService {
           if (
             !analysis ||
             Number(analysis.revision) !== Number(item.analysis_revision)
-          ) {
-            actions.push(tombstone('stale'));
-            continue;
+          )
+            stale = true;
+          else {
+            await this.verifyEvidence(db, bound);
+            const [attempt] = await this.rows(
+              db,
+              'intake_analysis_attempts',
+              'id=? AND analysis_id=?',
+              [proposal.analysis_attempt_id, analysis.id],
+            );
+            if (
+              attempt &&
+              ['completed', 'partial'].includes(String(attempt.state)) &&
+              String(analysis.current_attempt_id) === String(attempt.id)
+            )
+              recoveryAttemptId = String(attempt.id);
           }
-          await this.verifyEvidence(db, bound);
         }
         const entry: ReviewAction = {
           review: this.review(bound),
@@ -807,10 +835,19 @@ export class IntakeExecutionService {
           const [plan] = await this.rows(
             db,
             'intake_plans',
-            'item_id=? AND plan_key=? AND revision=?',
-            [itemId, bound.binding.plan.key, bound.binding.plan.revision],
+            bound.action.state === 'succeeded'
+              ? 'item_id=? AND plan_key=? AND revision=?'
+              : 'item_id=? AND plan_key=? ORDER BY revision DESC LIMIT 1',
+            bound.action.state === 'succeeded'
+              ? [itemId, bound.binding.plan.key, bound.binding.plan.revision]
+              : [itemId, bound.binding.plan.key],
           );
           if (!plan) throw new Error('Plan unavailable');
+          if (
+            bound.action.state !== 'succeeded' &&
+            Number(plan.revision) !== bound.binding.plan.revision
+          )
+            stale = true;
           const planData = object(plan.data);
           const parent = this.handler(
             String(planData.handlerId),
@@ -822,17 +859,14 @@ export class IntakeExecutionService {
             itemId,
             parent.id,
             parent.version,
-            async (context) => {
-              for (const target of parentPreview.targetPreconditions as Array<{
-                model: string;
-                id: string;
-                revision: string;
-              }>)
-                await context.assertTarget(
-                  target.model,
-                  target.id,
-                  target.revision,
-                );
+            async () => {
+              await authorizeTargets(
+                parentPreview.targetPreconditions as Array<{
+                  model: string;
+                  id: string;
+                  revision: string;
+                }>,
+              );
             },
           );
           const steps = planData.steps as Array<{ actionId: string }>;
@@ -848,7 +882,33 @@ export class IntakeExecutionService {
           };
         }
         await this.access(db, bound.item, bound.handler, 'read');
-        actions.push(this.retained(bound.item) ? entry : tombstone('expired'));
+        actions.push(
+          !this.retained(bound.item)
+            ? tombstone('expired')
+            : stale
+              ? {
+                  ...tombstone('stale'),
+                  ...(recoveryAttemptId
+                    ? {
+                        attemptId: recoveryAttemptId,
+                        handlerId: bound.handler.id,
+                        handlerVersion: bound.handler.version,
+                      }
+                    : {}),
+                  ...(entry.plan
+                    ? {
+                        stalePlan: {
+                          id: entry.plan.id,
+                          key: entry.plan.key,
+                          revision: entry.plan.revision,
+                          handlerId: entry.plan.handlerId,
+                          handlerVersion: entry.plan.handlerVersion,
+                        },
+                      }
+                    : {}),
+                }
+              : entry,
+        );
       }
       // Later callbacks can cross the shared deadline; publish no earlier payload then.
       const current = await this.item(db, itemId, false, true);
@@ -861,6 +921,7 @@ export class IntakeExecutionService {
       }
       return {
         actions,
+        ...(generationStale ? { generationStale: true } : {}),
         ...(rows.length > limit
           ? { nextCursor: String(rows[limit - 1].id) }
           : {}),

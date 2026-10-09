@@ -17,6 +17,7 @@ import {
   DOCUMENT,
   referenceHandlers,
 } from '../../reference/handlers.js';
+import { loadReviewAnalysis } from '../../reference/review-analysis.js';
 import { intakeBindingDigest } from '../execution.js';
 import type {
   IntakeExecutionOptions,
@@ -1792,6 +1793,129 @@ export function proposalSuite(
           await expect(preview).rejects.toThrow('not ready');
         else await expect(preview).resolves.toHaveLength(1);
       }
+    });
+    it('reloads stale generated targets without output disclosure and explicitly re-previews fresh user arguments', async () => {
+      const target = await document('Existing');
+      calls.mockImplementation(async (input) => ({
+        completion: 'complete',
+        output: {
+          outcome: 'proposals',
+          suggestions: [
+            {
+              handlerId: ATTACH,
+              handlerVersion: '1',
+              args: {
+                contentId: target.id,
+                evidenceId: input.evidence[0].evidenceId,
+              },
+              evidence: [
+                {
+                  evidenceId: input.evidence[0].evidenceId,
+                  location: { kind: 'source' },
+                },
+              ],
+              alternatives: [],
+              missingFields: [],
+              explanation: 'Attach',
+            },
+          ],
+          splits: [],
+        },
+      }));
+      const input = await generate();
+      expect(input.output.outcome).toBe('proposals');
+      const [saved] = await service.previewGeneratedProposals({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'attach',
+            expectedRevision: 0,
+            requestId: 'first',
+          },
+        ],
+      });
+      if (saved.kind !== 'operation') throw new Error('operation required');
+      const first = saved.review;
+      await service.submitDecision({
+        actionId: first.actionId,
+        expectedRevision: first.revision,
+        expectedReviewVersion: first.reviewVersion,
+        bindingHash: first.bindingHash,
+        requestId: 'approve',
+        decision: 'approve',
+      });
+      target.title = 'New authorized title';
+      await target.save();
+      const page = await service.listReviews(input.itemId);
+      expect(page.generationStale).toBe(true);
+      const stale = page.actions[0];
+      expect(stale.review.state).toBe('stale');
+      expect(stale.args).toBeUndefined();
+      expect(
+        await loadReviewAnalysis(
+          service,
+          await service.getItem(input.itemId),
+          page,
+        ),
+      ).toBeUndefined();
+      await expect(
+        service.getCompletedAnalysis(input.itemId),
+      ).rejects.toThrow();
+      await expect(
+        service.previewGeneratedProposals({
+          itemId: input.itemId,
+          attemptId: input.lease.attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'attach',
+              expectedRevision: first.revision,
+              requestId: 'old-pin',
+            },
+          ],
+        }),
+      ).rejects.toThrow();
+      const fresh = await service.previewProposal({
+        itemId: input.itemId,
+        attemptId: stale.attemptId!,
+        actionId: stale.review.actionId,
+        handlerId: stale.handlerId!,
+        handlerVersion: stale.handlerVersion!,
+        expectedRevision: stale.review.revision,
+        requestId: 'explicit-fresh',
+        args: {
+          contentId: target.id!,
+          evidenceId: (await service.getEvidence(input.itemId))[0].id,
+        },
+      });
+      expect(fresh.actionId).toBe(first.actionId);
+      expect(fresh.state).toBe('waiting_review');
+      await expect(service.applyAction(first.actionId)).rejects.toThrow();
+      await service.submitDecision({
+        actionId: fresh.actionId,
+        expectedRevision: fresh.revision,
+        expectedReviewVersion: fresh.reviewVersion,
+        bindingHash: fresh.bindingHash,
+        requestId: 'new-approve',
+        decision: 'approve',
+      });
+      expect((await service.applyAction(fresh.actionId)).state).toBe(
+        'succeeded',
+      );
+      const completed = await service.listReviews(input.itemId);
+      expect(completed.actions[0].result?.state).toBe('succeeded');
+      expect(
+        await loadReviewAnalysis(
+          service,
+          await service.getItem(input.itemId),
+          completed,
+        ),
+      ).toBeUndefined();
+      target.context = 'revoked';
+      await target.save();
+      await expect(service.listReviews(input.itemId)).rejects.toThrow();
     });
     it('rejects stale candidate ownership/revision at preview', async () => {
       const target = await document('Existing');

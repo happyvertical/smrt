@@ -382,6 +382,101 @@ describe('intake review host boundary', () => {
     expect(callbacks.apply).toHaveBeenCalledWith('action');
     expect(callbacks.feedback).not.toHaveBeenCalled();
   });
+  it('requires fresh explicit arguments to recover a stale operation without approving it', async () => {
+    const view = page();
+    view.reviews.actions = [
+      {
+        review: {
+          ...view.reviews.actions[0].review,
+          state: 'stale',
+          display: {},
+        },
+        attemptId: 'current-attempt',
+        handlerId: 'draft',
+        handlerVersion: '1',
+      },
+    ];
+    const callbacks = host(view);
+    callbacks.editAction = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const editor = await screen.findByRole('textbox', {
+      name: 'Exact arguments (JSON)',
+    });
+    expect((editor as HTMLTextAreaElement).value).toBe('');
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    await fireEvent.input(editor, {
+      target: { value: '{"title":"Fresh human input"}' },
+    });
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Save edits for new review' }),
+    );
+    await waitFor(() =>
+      expect(callbacks.editAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actionId: 'action',
+          attemptId: 'current-attempt',
+          expectedRevision: 2,
+          args: { title: 'Fresh human input' },
+        }),
+      ),
+    );
+    expect(callbacks.decide).not.toHaveBeenCalled();
+    expect(callbacks.apply).not.toHaveBeenCalled();
+  });
+  it('recovers a stale plan only from authorized reload identity and fresh arguments', async () => {
+    const view = page();
+    view.reviews.actions = [
+      {
+        review: {
+          ...view.reviews.actions[0].review,
+          state: 'stale',
+          display: {},
+        },
+        attemptId: 'generation-attempt',
+        stalePlan: {
+          id: 'plan',
+          key: 'parent',
+          revision: 7,
+          handlerId: 'plan-handler',
+          handlerVersion: '1',
+        },
+      },
+    ];
+    const callbacks = host(view);
+    callbacks.editPlan = vi.fn(async () => {});
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    const editor = await screen.findByRole('textbox', {
+      name: 'Plan arguments (JSON)',
+    });
+    expect((editor as HTMLTextAreaElement).value).toBe('');
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Apply approved action' }),
+    ).toBeNull();
+    await fireEvent.input(editor, {
+      target: { value: '{"title":"Fresh explicit plan"}' },
+    });
+    await fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit the plan and review its new steps',
+      }),
+    );
+    await waitFor(() =>
+      expect(callbacks.editPlan).toHaveBeenCalledWith(
+        expect.objectContaining({
+          itemId: 'item',
+          planKey: 'parent',
+          attemptId: 'generation-attempt',
+          expectedRevision: 7,
+          handlerId: 'plan-handler',
+          handlerVersion: '1',
+          args: { title: 'Fresh explicit plan' },
+        }),
+      ),
+    );
+    expect(callbacks.decide).not.toHaveBeenCalled();
+    expect(callbacks.apply).not.toHaveBeenCalled();
+  });
   it('edits parent plans through re-expansion, never step correction', async () => {
     const view = page();
     view.reviews.actions[0].plan = {

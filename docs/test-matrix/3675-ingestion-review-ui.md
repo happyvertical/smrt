@@ -47,3 +47,23 @@ runtime dependency is the existing smrt-ui workspace package; other importers an
 resolved dependency versions are unchanged. Root build/types, full bundle gate,
 CI-script tests and relevant global checks run freshly. This is an explicit carry,
 not a claim that the whole monorepo runtime suite was rerun for UI work.
+
+## Accepted round-one reload regressions
+
+Both independent reviews identified historical target revision checks conflating
+current read authorization with execution freshness. Four baseline cases fail on
+SQLite and PostgreSQL: operation/parent-plan targets changed before/after success.
+The corrected owner cases retain unrelated page entries, preserve durable results,
+redact stale arguments, expose only authorized identity/CAS recovery metadata,
+reject revoked targets/parents and preserve expiry tombstones. Reload-only plan
+recovery uses the returned plan revision (never action revision) and fresh approval.
+A real generated attachment case proves stale candidate snapshots remain rejected,
+the maintained host omits obsolete generation output, and explicit fresh human
+arguments re-preview the same action before actual domain application. Component
+cases cover empty-args operation/plan editors and exact reload CAS/attempt binding.
+
+Round-two evidence reruns the complete execution and proposal suites on both real
+databases, components, owning TS/Svelte/build, maintained Chromium, packed consumer
+and affected static/knowledge checks. Unchanged foundation/source/extraction/provider
+suites and unrelated root runtime/types retain exact prior evidence; no schema,
+dependency, export map or other-package runtime changes occur in this delta.

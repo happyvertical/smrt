@@ -16,10 +16,12 @@ export interface Props {
   itemId: string;
   action: ReviewAction;
   catalog?: ProposalCatalogEntry;
+  currentAttemptId?: string;
   run: (operation: () => Promise<unknown>) => Promise<void>;
   deny: () => void;
 }
-let { host, itemId, action, catalog, run, deny }: Props = $props();
+let { host, itemId, action, catalog, currentAttemptId, run, deny }: Props =
+  $props();
 const { t } = useI18n();
 // ReviewView keys this editor by action/revision/reviewVersion; edits are local to that binding.
 let args = $state(untrack(() => JSON.stringify(action.args, null, 2) ?? '')),
@@ -89,8 +91,9 @@ async function decide(decision: ReviewInput['decision']) {
 async function saveEdits() {
   if (waiting) return decide('correct');
   if (
-    !editable ||
+    (!editable && action.review.state !== 'stale') ||
     action.plan ||
+    action.stalePlan ||
     !host.editAction ||
     !action.attemptId ||
     !action.handlerId ||
@@ -136,12 +139,13 @@ async function search() {
   }
 }
 async function editPlan() {
-  const plan = action.plan;
+  const plan = action.plan ?? action.stalePlan;
+  const attemptId = action.plan?.attemptId ?? currentAttemptId;
   if (
-    !plan?.args ||
+    !plan ||
     !plan.handlerId ||
     !plan.handlerVersion ||
-    !plan.attemptId ||
+    !attemptId ||
     !host.editPlan
   )
     return;
@@ -155,7 +159,7 @@ async function editPlan() {
   const input = {
     itemId,
     planKey: plan.key,
-    attemptId: plan.attemptId,
+    attemptId,
     expectedRevision: plan.revision,
     handlerId: plan.handlerId,
     handlerVersion: plan.handlerVersion,
@@ -207,6 +211,18 @@ function choose(id: string) {
 <Button onclick={editPlan}>{t(M['ingestion.editPlan'])}</Button>
 {/if}
 {#if action.review.state === 'authorized'}<Button disabled={dirty} onclick={() => { if (!dirty) void run(() => host.apply(action.review.actionId)); }}>{t(M['ingestion.apply'])}</Button>{/if}
+{/if}
+{#if action.review.state === 'stale' && !action.stalePlan && action.attemptId && host.editAction}
+<p>{t(M['ingestion.reviewAgain'])}</p>
+<Textarea aria-label={t(M['ingestion.args'])} bind:value={args} rows={8} />
+{#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
+<Button onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>
+{/if}
+{#if action.review.state === 'stale' && action.stalePlan && currentAttemptId && host.editPlan}
+<p>{t(M['ingestion.reviewAgain'])}</p>
+<Textarea aria-label={t(M['ingestion.planArgs'])} bind:value={planArgs} rows={8} />
+{#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
+<Button onclick={editPlan}>{t(M['ingestion.editPlan'])}</Button>
 {/if}
 {#if action.result}<h4>{t(M['ingestion.result'])}</h4><pre>{JSON.stringify(action.result,null,2)}</pre>{/if}
 {#if host.feedback && action.args !== undefined}<fieldset><legend>{t(M['ingestion.feedback'])}</legend><Textarea aria-label={t(M['ingestion.comment'])} bind:value={comment} /><Button onclick={() => run(() => host.feedback?.({itemId,actionId:action.review.actionId,judgment:'correct',comment,requestId:crypto.randomUUID()}) ?? Promise.resolve())}>{t(M['ingestion.correctJudgment'])}</Button><Button onclick={() => run(() => host.feedback?.({itemId,actionId:action.review.actionId,judgment:'incorrect',comment,requestId:crypto.randomUUID()}) ?? Promise.resolve())}>{t(M['ingestion.incorrectJudgment'])}</Button></fieldset>{/if}
