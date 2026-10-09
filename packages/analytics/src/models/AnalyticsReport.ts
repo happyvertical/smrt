@@ -66,8 +66,8 @@ export interface AnalyticsReportOptions
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
-  api: { include: ['list', 'get', 'create', 'update', 'run'] },
-  mcp: { include: ['list', 'get', 'run', 'analyze'] },
+  api: { include: ['list', 'get', 'create', 'update'] },
+  mcp: { include: ['list', 'get'] },
   cli: { skipApiCheck: true },
 })
 export class AnalyticsReport extends SmrtObject {
