@@ -61,6 +61,53 @@ describe('AssetStore storage resolver', () => {
     return dir;
   }
 
+  it('plans and adopts retained bytes without rewriting them', async () => {
+    const base = await createDefaultBasePath();
+    const store = await new AssetStore(
+      base,
+      {} as AssetCollection,
+    ).initialize();
+    const asset = { id: 'retained', sourceUri: '' } as Asset;
+    const opts = { mimeType: 'application/pdf', typeSlug: 'intake' };
+    asset.sourceUri = await store.planFile(asset, opts);
+    const data = Buffer.from('immutable original');
+    expect(await store.preserveFile(asset, data, opts)).toBe(asset.sourceUri);
+    expect(await store.preserveFile(asset, data, opts)).toBe(asset.sourceUri);
+    await expect(
+      store.preserveFile(asset, Buffer.from('changed'), opts),
+    ).rejects.toThrow('integrity');
+    expect(await store.read(asset)).toEqual(data);
+  });
+
+  it('refuses changed plans and never overwrites on a non-missing read failure', async () => {
+    const base = await createDefaultBasePath();
+    const fs = createMemoryFilesystem();
+    const write = vi.spyOn(fs, 'write');
+    fs.read = async () => {
+      throw new Error('permission denied');
+    };
+    let prefix = 'stable';
+    const store = await new AssetStore(base, {} as AssetCollection, {
+      resolver: (request) => ({
+        filesystem: fs,
+        providerOptions: { type: 'local', basePath: base },
+        path: `${prefix}/${request.asset.id}`,
+      }),
+    }).initialize();
+    const asset = { id: 'retained', sourceUri: '' } as Asset;
+    const opts = { mimeType: 'text/plain' };
+    asset.sourceUri = await store.planFile(asset, opts);
+    await expect(
+      store.preserveFile(asset, Buffer.from('data'), opts),
+    ).rejects.toThrow('permission denied');
+    expect(write).not.toHaveBeenCalled();
+    prefix = 'changed';
+    await expect(
+      store.preserveFile(asset, Buffer.from('data'), opts),
+    ).rejects.toThrow('plan changed');
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it('lets writes target a resolved filesystem instead of the default store', async () => {
     const defaultBasePath = await createDefaultBasePath();
     const resolvedFilesystem = createMemoryFilesystem();

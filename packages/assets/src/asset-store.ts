@@ -320,10 +320,61 @@ export class AssetStore {
     };
   }
 
+  /**
+   * Resolve an existing asset's future storage URI before writing bytes.
+   * Persist this URI with the caller's storage intent. Resolvers used for
+   * recoverable writes must return the same target for the same asset.
+   */
+  async planFile(
+    asset: Asset,
+    opts: { mimeType: string; typeSlug?: string },
+  ): Promise<string> {
+    const ext = MIME_TO_EXT[opts.mimeType] ?? 'bin';
+    const typeSlug = opts.typeSlug ?? 'file';
+    const path = `${typeSlug}/${AssetStore.requireAssetId(asset)}.${ext}`;
+    const target = await this.resolveStorage({
+      operation: 'write',
+      asset,
+      path,
+      sourceUri: this.buildSourceUri(path),
+      mimeType: opts.mimeType,
+      typeSlug,
+    });
+    return target.sourceUri;
+  }
+
+  /**
+   * Preserve bytes at a previously committed plan. Existing bytes must match;
+   * missing files are written, while all other read failures fail closed.
+   * The caller owns serialization/fencing and must persist sourceUri first.
+   */
+  async preserveFile(
+    asset: Asset,
+    data: Buffer,
+    opts: { mimeType: string; typeSlug?: string },
+  ): Promise<string> {
+    const planned = await this.planFile(asset, opts);
+    if (!asset.sourceUri || asset.sourceUri !== planned) {
+      throw new Error('Asset storage plan changed');
+    }
+    try {
+      const existing = await this.read(asset);
+      if (!existing.equals(data))
+        throw new Error('Asset storage integrity conflict');
+      return planned;
+    } catch (error) {
+      if (!isFileNotFoundError(error)) throw error;
+    }
+    const written = await this.writeAssetData(asset, data, opts, planned);
+    if (written !== planned) throw new Error('Asset storage plan changed');
+    return written;
+  }
+
   private async writeAssetData(
     asset: Asset,
     data: Buffer,
     opts: { mimeType: string; typeSlug?: string },
+    expectedSourceUri?: string,
   ): Promise<string> {
     const ext = MIME_TO_EXT[opts.mimeType] ?? 'bin';
     const typeSlug = opts.typeSlug ?? 'file';
@@ -339,6 +390,9 @@ export class AssetStore {
       typeSlug,
     });
 
+    if (expectedSourceUri && target.sourceUri !== expectedSourceUri) {
+      throw new Error('Asset storage plan changed');
+    }
     await target.filesystem.write(target.path, data, { createParents: true });
     return target.sourceUri;
   }
@@ -511,11 +565,11 @@ export class AssetStore {
   }
 
   /**
-   * Delete file from disk and remove the Asset record.
+   * Delete retained file bytes without requiring an existing Asset record.
    *
    * @param asset - Asset to remove
    */
-  async remove(asset: Asset): Promise<void> {
+  async removeFile(asset: Asset): Promise<void> {
     // Delete the file if it exists
     if (asset.sourceUri) {
       const filePath = AssetStore.pathFromUri(asset.sourceUri);
@@ -531,11 +585,14 @@ export class AssetStore {
         if (!isFileNotFoundError(err)) {
           throw err;
         }
-        // File may not exist on disk — still delete the record
+        // An already-missing file is successful idempotent cleanup.
       }
     }
+  }
 
-    // Delete the asset record
+  /** Delete bytes and the owner record. Storage-only recovery uses removeFile. */
+  async remove(asset: Asset): Promise<void> {
+    await this.removeFile(asset);
     await asset.delete();
   }
 

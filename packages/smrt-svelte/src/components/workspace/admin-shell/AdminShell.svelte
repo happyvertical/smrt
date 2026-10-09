@@ -92,6 +92,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     appPanel?: Snippet;
     /** Content for the left tenant rail. */
     tenantRail?: Snippet;
+    /** Content pinned below the collapsed tenant rail. */
+    tenantRailFooter?: Snippet;
     /** Content for the left tenant panel. */
     tenantPanel?: Snippet;
     /**
@@ -198,6 +200,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     account,
     appPanel,
     tenantRail,
+    tenantRailFooter,
     tenantPanel,
     tenantFooter,
     slots,
@@ -277,8 +280,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     });
     return () => { cancelled = true; queueMicrotask(() => { if (opener?.isConnected) opener.focus(); }); };
   });
-  const showPhoneTop = $derived(isPhone && Boolean(phoneTopBar));
-  const showHeader = $derived(Boolean(header) && !showPhoneTop);
+  const showDefaultPhoneTenantOpener = $derived(
+    isPhone &&
+      !phoneTopBar &&
+      panelState('top') === 'hidden' &&
+      shell.isEdgeShown('left') &&
+      shell.phonePresentation('left') !== 'hidden',
+  );
+  const showPhoneTop = $derived(
+    isPhone && (Boolean(phoneTopBar) || showDefaultPhoneTenantOpener),
+  );
+  const showHeader = $derived(
+    Boolean(header) && !(isPhone && Boolean(phoneTopBar)),
+  );
   const bottomBar = $derived<BottomBarMode>(
     isPhone && phoneBottomBar
       ? bottomBarMode({ formActions, keyboardOpen })
@@ -649,7 +663,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     handle.addEventListener('lostpointercapture', onEnd);
   }
 
-  const footerInHeader = $derived(!account && !!tenantFooter && (!shell.isEdgeShown('left') || !edgeExpanded('left')));
+  const footerInHeader = $derived(
+    !account &&
+      !!tenantFooter &&
+      (!shell.isEdgeShown('left') ||
+        (!edgeExpanded('left') && !tenantRailFooter)),
+  );
 
   function regionVisible(region: ShellRegion): boolean {
     return shell.isRegionVisible(region);
@@ -1088,7 +1107,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {@render resizer('left')}
       <div class="smrt-admin-shell__rail">
         {@render regionEdit('leftSidebar')}
-        {#if !edgeExpanded('left') && (homeHref || logoSrc || brand)}{@render shellBrand(true)}{/if}
+        {#if (panelState('top') === 'hidden' || !edgeExpanded('left')) && (homeHref || logoSrc || brand)}{@render shellBrand(!edgeExpanded('left'))}{/if}
         {#if showToggle('left') || isPhone}{@render edgeToggle('left')}{/if}
         {#if shownOpen('left') || (tenantPanel && keepsContent('left'))}
           <div
@@ -1111,8 +1130,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
             {@render slotGroup('leftSidebar.footer')}
           </div>
         {/if}
-        {#if !shownOpen('left') && tenantRail}
-          {@render tenantRail()}
+        {#if !shownOpen('left') && (tenantRail || tenantRailFooter)}
+          <div class="smrt-admin-shell__tenant-rail-stack">
+            {#if tenantRail}
+              <div class="smrt-admin-shell__tenant-rail-content">
+                {@render tenantRail()}
+              </div>
+            {/if}
+            {#if tenantRailFooter}
+              <div class="smrt-admin-shell__tenant-rail-footer">
+                {@render tenantRailFooter()}
+              </div>
+            {/if}
+          </div>
         {/if}
       </div>
     </aside>
@@ -1129,7 +1159,24 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   {#if showPhoneTop}
     <div class="smrt-admin-shell__phone-top" data-testid="admin-shell-phone-top">
-      {@render phoneTopBar?.({ hidden: chromeHidden })}
+      {#if phoneTopBar}
+        {@render phoneTopBar({ hidden: chromeHidden })}
+      {:else if showDefaultPhoneTenantOpener}
+        <div class="smrt-admin-shell__phone-default-top">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={t(M['ui.admin_shell.menu'])}
+            aria-expanded={edgeExpanded('left')}
+            aria-controls="smrt-admin-shell-left-panel"
+            onclick={() =>
+              shell.setPanelState(
+                'left',
+                edgeExpanded('left') ? 'collapsed' : 'expanded',
+              )}
+          >{t(M['ui.admin_shell.menu'])}</Button>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -1692,6 +1739,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
+    overflow: visible;
   }
 
   /* A collapsed `keepMounted` edge keeps its panel in the DOM but hidden;
@@ -1821,6 +1869,30 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-width: 0;
     padding-block-start: var(--smrt-spacing-3);
     border-block-start: 1px solid var(--smrt-color-outline-variant);
+  }
+
+  .smrt-admin-shell__tenant-rail-stack {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .smrt-admin-shell__tenant-rail-content {
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .smrt-admin-shell__tenant-rail-footer {
+    position: relative;
+    z-index: 1;
+    grid-row: 2;
+    min-width: 0;
+    padding-block-start: var(--smrt-spacing-2);
+    border-block-start: 1px solid var(--smrt-color-outline-variant);
+    overflow: visible;
   }
 
   .smrt-admin-shell__edge--right[data-state='expanded']
@@ -2009,6 +2081,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     background: var(--smrt-color-surface);
     transition: transform var(--smrt-admin-shell-chrome-duration)
       var(--smrt-easing-standard, ease);
+  }
+
+  .smrt-admin-shell__phone-default-top {
+    display: flex;
+    align-items: center;
+    min-block-size: var(--smrt-admin-shell-phone-top-size);
+    padding-inline: var(--smrt-spacing-3);
   }
 
   .smrt-admin-shell[data-chrome-hidden] .smrt-admin-shell__phone-top {

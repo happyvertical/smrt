@@ -248,6 +248,32 @@ test('continuous drawer animations do not block phone focus', async ({
     .toBe(true);
 });
 
+test('a top-hidden default phone shell keeps its header and one supported menu opener', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/?top=hidden&left=collapsed&header=1');
+  await expect(page.getByTestId('admin-shell-header')).toHaveText(
+    'Consumer header',
+  );
+  const menu = page.getByRole('button', { name: 'Menu', exact: true });
+  await expect(menu).toHaveCount(1);
+  await expect(menu).toHaveAttribute(
+    'aria-controls',
+    'smrt-admin-shell-left-panel',
+  );
+  await expect(menu).toHaveAttribute('aria-expanded', 'false');
+  await menu.click();
+  await expect(menu).toHaveAttribute('aria-expanded', 'true');
+  await expect(
+    page
+      .locator('.smrt-admin-shell__edge--left')
+      .getByRole('button', { name: 'Collapse Tenant' }),
+  ).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeFocused();
+});
+
 test('narrow navigation opens, restores focus and excludes closed drawer controls', async ({
   page,
 }) => {
@@ -296,6 +322,61 @@ test('supplied tenant navigation keeps its collapse control and touch rail targe
   await expect(
     page.locator('footer').getByRole('button', { name: /^System/ }),
   ).toBeVisible();
+});
+
+test('sidebar-only chrome keeps brand and account access across rail states', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(
+    '/?top=hidden&left=collapsed&brand=1&account=1&railAccount=1',
+  );
+
+  await expect(page.locator('#smrt-admin-shell-top-panel')).toHaveCount(0);
+  const rail = page.locator('.smrt-admin-shell__edge--left');
+  const account = page.getByRole('button', {
+    name: /Open account menu Dana(?: ·)? Welder/,
+  });
+  await expect(rail.locator('.smrt-admin-shell__brand.compact')).toBeVisible();
+  await expect(account).toHaveCount(1);
+  await account.click();
+  const signOut = page.getByRole('menuitem', { name: 'Sign out' });
+  await expect(signOut).toBeInViewport();
+  const menuBox = await signOut.boundingBox();
+  const railBox = await rail.boundingBox();
+  expect(menuBox!.x + menuBox!.width).toBeGreaterThan(
+    railBox!.x + railBox!.width,
+  );
+  await page.keyboard.press('Escape');
+
+  await rail.getByRole('button', { name: 'Expand Tenant' }).click();
+  await expect(
+    rail.locator('.smrt-admin-shell__brand:not(.compact)'),
+  ).toContainText('Mobile shell fixture');
+  await expect(account).toHaveCount(1);
+});
+
+test('a footer-only collapsed rail pins its account control at the bottom', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/?top=hidden&left=collapsed&railAccount=1&railFooterOnly=1');
+
+  const left = page.locator('.smrt-admin-shell__edge--left');
+  const rail = left.locator('.smrt-admin-shell__rail');
+  const footer = rail.locator('.smrt-admin-shell__tenant-rail-footer');
+  await expect(
+    footer.getByRole('button', { name: /Open account menu Dana/ }),
+  ).toBeVisible();
+  await expect(footer).toHaveCSS('grid-row-start', '2');
+  const railBox = await rail.boundingBox();
+  const footerBox = await footer.boundingBox();
+  expect(railBox).not.toBeNull();
+  expect(footerBox).not.toBeNull();
+  expect(footerBox!.y).toBeGreaterThan(railBox!.y + railBox!.height / 2);
+  expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(
+    railBox!.y + railBox!.height,
+  );
 });
 
 for (const width of [320, 390, 1280]) {

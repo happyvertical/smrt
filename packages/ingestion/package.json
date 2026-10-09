@@ -1,0 +1,84 @@
+{
+  "name": "@happyvertical/smrt-ingestion",
+  "version": "0.55.4",
+  "description": "Durable tenant-scoped intake and evidence foundations",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "EXTRACTION.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./dto": {
+      "types": "./dist/dto.d.ts",
+      "import": "./dist/dto.js"
+    },
+    "./models": {
+      "types": "./dist/models.d.ts",
+      "import": "./dist/models.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json",
+    "./execution": {
+      "types": "./dist/execution.d.ts",
+      "import": "./dist/execution.js"
+    }
+  },
+  "scripts": {
+    "build": "vite build --mode library && node scripts/check-browser.mjs",
+    "test": "vitest run",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run --config vitest.postgres.config.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "prepack": "node ../../scripts/prepack-package.js",
+    "test:providers": "vitest run src/extraction.providers.test.ts",
+    "test:components": "node scripts/unavailable-lane.mjs components",
+    "test:e2e": "node scripts/unavailable-lane.mjs e2e",
+    "test:evaluation": "node scripts/unavailable-lane.mjs evaluation"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-assets": "workspace:*",
+    "@happyvertical/smrt-jobs": "workspace:*",
+    "@happyvertical/sql": "catalog:",
+    "@happyvertical/pdf": "catalog:",
+    "@happyvertical/ocr": "catalog:",
+    "@happyvertical/speech": "catalog:",
+    "@happyvertical/ai": "catalog:",
+    "sharp": "catalog:",
+    "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-playbooks": "workspace:*",
+    "ajv": "8.20.0"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3",
+    "vite": "8.1.4",
+    "vitest": "4.1.10",
+    "@happyvertical/smrt-content": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "author": "HappyVertical",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/ingestion"
+  }
+}

@@ -32,7 +32,7 @@ pnpm add @happyvertical/smrt-ui
 | Area | Components |
 | --- | --- |
 | Fields | `Form`, `Field`/`FormGroup`, `Fieldset`, `InputGroup`, `ErrorSummary`, `FormActionBar` |
-| Text and structured input | `Input`, `Textarea`, `Select`, `Combobox`, `Listbox`, `MultiSelect`, `TagsInput`, `SearchInput` |
+| Text and structured input | `Input`, `Textarea`, `Select`, `Combobox`, `RelationInput`, `Listbox`, `MultiSelect`, `TagsInput`, `SearchInput` |
 | Choices | `Checkbox`, `RadioGroup`/`Radio`, `Switch`, `Toggle`, `ToggleButton`, `SegmentedControl` |
 | Values and files | `Slider`, `RangeSlider`, `DatePicker`, `TimePicker`, `FilePicker` |
 | Capture | `CameraCapture`, `SignaturePad` |
@@ -159,6 +159,50 @@ the last committed selection. A named empty selection submits an empty string;
 controls with no name or an empty name are omitted. Disabled controls, including
 those inside disabled fieldsets, are omitted by native `FormData`. Native form
 reset restores the initial selection and its label, unless reset is canceled.
+
+### RelationInput
+
+`RelationInput` (`/forms`) moved here from `@happyvertical/smrt-svelte/forms` in #3637 (originally #3600); smrt-svelte keeps a deprecated re-export. Labels are props (`createLabel`, `clearLabel`, `loadingText`, ...); there is no message catalog.
+
+Searchable single-select for relation (foreign-key) fields, a thin wrapper over
+`Combobox`. It is presentation only: the caller supplies the data,
+so the same lookup an assistant uses to turn "Acme" into a record id backs the
+picker. Option shape is `RelationOption` — `{ id, label, detail? }`.
+
+- **Props.** `name`, `label`, `value` (bindable id, `''` = none), `required`,
+  `disabled`, `error`, `placeholder`, `description`, `search(query)`, optional
+  `resolve(id)` and `onCreate(query)`, plus `debounceMs` (250), `interaction`,
+  `onchange` and overridable text (`createLabel`, `clearLabel`, `loadingText`,
+  `emptyText`, `errorText`, `resultsText`).
+- **`search`** runs with `''` when the list opens and then debounced per
+  keystroke; a response for a superseded query is dropped. A rejected search
+  shows `errorText` and the next keystroke retries.
+- **`resolve`** supplies the label of a `value` that has not been searched yet
+  (initial value, parent rebind, form reset). Without it such a value shows an
+  empty field, never the raw id. A `null` result also leaves the field empty.
+- **`onCreate`** adds a "New ..." button; it receives the text most recently
+  searched for and may return the created `RelationOption`, which is selected.
+- **Form integration** is through `Combobox`'s control registration (`Form`
+  provides the registry), not a `FieldDefinition`: agents see a `combobox`
+  control whose value is the id. The form posts the id under `name`.
+- **Known limit.** An agent staging a value through the registered control can
+  only choose among the options last listed (the registry matches against
+  `options`; `allowCustom` is off), so it cannot write an id it has not
+  searched. It fails closed. Writing a resolved id needs an async hook on
+  `Combobox` and is tracked separately.
+- **Stale options.** Typing clears the listed options until the new search
+  answers, so Enter or a click can never pick a record for an older query.
+- **Clear button** shows only when not `required`, not `disabled`, and a value
+  is set; it returns focus to the field.
+- **Accessibility** is the combobox pattern (`role=combobox`, `aria-expanded`,
+  `aria-activedescendant`, listbox/option, Arrow/Enter/Escape) plus a polite
+  `role=status` live region announcing searching / "N results" / no matches,
+  `aria-busy` while fetching, and `aria-invalid` + `aria-describedby` for
+  `error` and `description`.
+- Options render `detail` under the label, so the option's accessible name
+  includes it. The `Combobox` additions that make this possible (`filter`,
+  `onquery`, `status`, `busy`, `invalid`, `describedby`, `optionContent`) are
+  generic and default to the previous behaviour.
 
 ### MultiSelect form submission
 

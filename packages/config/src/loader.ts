@@ -1,7 +1,15 @@
 import type { Loader } from 'cosmiconfig';
 import { cosmiconfig } from 'cosmiconfig';
 import { createJiti } from 'jiti';
+import {
+  getCachedConfig,
+  getExplorer,
+  setCachedConfig,
+  setExplorer,
+} from './loader-state.js';
 import type { LoadConfigOptions, SmrtConfig } from './types.js';
+
+export { clearConfigCache } from './loader-state.js';
 
 const MODULE_NAME = 'smrt';
 
@@ -39,41 +47,6 @@ function getJiti(): ReturnType<typeof createJiti> {
 const typeScriptLoader: Loader = async (filepath: string) => {
   return getJiti().import(filepath, { default: true });
 };
-
-/**
- * Extend globalThis to include loader cache properties.
- * Using globalThis ensures all module instances share the same loader state,
- * which is critical in monorepos where the same package can be loaded
- * from different paths (e.g., pnpm store vs workspace symlink).
- *
- * @see https://github.com/happyvertical/smrt/issues/543
- */
-declare global {
-  // eslint-disable-next-line no-var
-  var __smrtLoaderCachedConfig: SmrtConfig | null | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtLoaderExplorer: ReturnType<typeof cosmiconfig> | null | undefined;
-}
-
-/** Retrieve the cached config from the globalThis singleton store. */
-function getCachedConfig(): SmrtConfig | null {
-  return globalThis.__smrtLoaderCachedConfig ?? null;
-}
-
-/** Write the config (or null to invalidate) into the globalThis singleton store. */
-function setCachedConfig(config: SmrtConfig | null): void {
-  globalThis.__smrtLoaderCachedConfig = config;
-}
-
-/** Retrieve the cosmiconfig explorer instance from the globalThis singleton store. */
-function getExplorer(): ReturnType<typeof cosmiconfig> | null {
-  return globalThis.__smrtLoaderExplorer ?? null;
-}
-
-/** Write the cosmiconfig explorer instance into the globalThis singleton store. */
-function setExplorer(exp: ReturnType<typeof cosmiconfig> | null): void {
-  globalThis.__smrtLoaderExplorer = exp;
-}
 
 /**
  * Distinguish "config file does not exist" (a benign, expected condition that
@@ -212,26 +185,4 @@ export async function loadConfig(
   }
 
   return config;
-}
-
-/**
- * Clear the internal loader cache.
- *
- * Resets `globalThis.__smrtLoaderCachedConfig` and invalidates the cosmiconfig
- * explorer so that the next `loadConfig()` call performs a fresh file search.
- *
- * This is a low-level helper. Consumer code should call {@link clearCache}
- * from `index.ts` instead, which also clears the runtime-override store.
- *
- * @see {@link clearCache}
- */
-export function clearConfigCache(): void {
-  setCachedConfig(null);
-
-  // Clear cosmiconfig's cache
-  const explorer = getExplorer();
-  if (explorer) {
-    explorer.clearCaches();
-    setExplorer(null);
-  }
 }

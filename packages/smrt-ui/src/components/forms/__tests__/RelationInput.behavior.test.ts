@@ -5,27 +5,12 @@
  * so every test drives them with controllable promises.
  */
 
-import { createControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
-import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../hooks/useAppState.svelte.js', () => ({
-  useAppState: () => ({ state: { mode: 'default' }, setMode: vi.fn() }),
-}));
-vi.mock('../../../hooks/useSTT.svelte.js', () => ({
-  useSTT: () => ({
-    isListening: false,
-    lastResult: '',
-    isReady: false,
-    adapterType: null,
-    initialize: vi.fn(),
-    start: vi.fn(),
-    stop: vi.fn(),
-  }),
-}));
-
+import { expectNoA11yViolations } from '../../../test-support/a11y.js';
+import { createControlInteractionRegistry } from '../control-interaction.js';
 import RelationInput from '../RelationInput.svelte';
 import type { RelationOption } from '../types.js';
 import FormFixture from './relation-input-form.fixture.svelte';
