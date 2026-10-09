@@ -15,10 +15,18 @@ save on the provided executor, with validation/authorization before mutation.
 Notification delivery intentionally occurs after save and is not atomic with it;
 the failure test asserts the saved-row contract. No comment retry/idempotency
 contract is promised: clients must not blindly retry create after delivery error.
-Recipe surfaces are deferred until #3708 lands.
+The fixture-only playground does not replace the authenticated record surface.
 
 Recipe metadata follow-up (#3604): the comments catalog group, embedded-only
 navigation and help are checked in the generated manifest and knowledge artifact
 after building with refreshed scanner/core artifacts. Model exposure stays off.
 This change does not affect persistence or delivery; prior three-dialect evidence
 remains applicable. Full package tests, typecheck, Svelte and Biome are rerun.
+
+#3708 follow-up: the browser-only playground renders fixture projections and
+accepts local posts without storage or notification access. Component tests
+verify display, posting, instance isolation and reset on remount. Build assertions
+verify runtime, playground and demo exports in manifest and knowledge artifacts.
+Persistence and authorization are unchanged; existing three-dialect evidence
+applies. Route/settings/shell/provider contracts are N/A because they cannot
+provide the parent record authorization context.
