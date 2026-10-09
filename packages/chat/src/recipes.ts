@@ -29,7 +29,26 @@ export class ChatRoomsRecipe extends SmrtRecipe {
     ChatThread,
     ChatReaction,
   ];
-  static nav = [{ label: 'Chat Rooms', model: ChatRoom }];
+  static group = {
+    id: 'team-collaboration',
+    label: 'Team collaboration',
+    summary: 'Keep conversations and shared work in one place.',
+  };
+  static section = {
+    id: 'team',
+    label: 'Team',
+    icon: 'users',
+    description: 'People and the conversations that keep them aligned.',
+  };
+  static nav = [
+    {
+      label: 'Chat Rooms',
+      model: ChatRoom,
+      icon: 'users',
+      description: 'Team conversations organized by topic or audience.',
+      noun: 'chat room',
+    },
+  ];
   static options = {
     ChatRoom: {
       fields: {

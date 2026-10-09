@@ -20,8 +20,25 @@ describe('ChatRoomsRecipe', () => {
       ChatReaction,
     ]);
     expect(ChatRoomsRecipe.nav).toEqual([
-      { label: 'Chat Rooms', model: ChatRoom },
+      {
+        label: 'Chat Rooms',
+        model: ChatRoom,
+        icon: 'users',
+        description: 'Team conversations organized by topic or audience.',
+        noun: 'chat room',
+      },
     ]);
+    expect(ChatRoomsRecipe.group).toEqual({
+      id: 'team-collaboration',
+      label: 'Team collaboration',
+      summary: 'Keep conversations and shared work in one place.',
+    });
+    expect(ChatRoomsRecipe.section).toEqual({
+      id: 'team',
+      label: 'Team',
+      icon: 'users',
+      description: 'People and the conversations that keep them aligned.',
+    });
     expect(ChatRoomsRecipe.help).toBe('./chat-rooms.recipe.md');
   });
 
