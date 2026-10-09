@@ -54,6 +54,13 @@ describe('chat.assistant recipe (#3719)', () => {
     expect(AssistantRecipe.runtime).toBe('both');
   });
 
+  it('names the options that run in a browser with none of the secrets (#3709)', () => {
+    const [llm] = AssistantRecipe.providers;
+    expect(llm.browserOptions).toEqual(['webllm', 'bitgpu']);
+    for (const option of llm.browserOptions)
+      expect(llm.options).toContain(option);
+  });
+
   describe('through the scanner and manifest generator', () => {
     let recipe: NonNullable<
       ReturnType<ManifestAdapter['toManifest']>['recipes']
@@ -100,6 +107,7 @@ describe('chat.assistant recipe (#3719)', () => {
           options: ['openai', 'anthropic', 'gemini', 'webllm', 'bitgpu'],
           required: true,
           secrets: ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY'],
+          browserOptions: ['webllm', 'bitgpu'],
         },
       ]);
       expect(recipe.runtime).toBe('both');

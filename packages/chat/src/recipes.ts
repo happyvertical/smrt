@@ -65,6 +65,7 @@ export class AssistantRecipe extends SmrtRecipe {
       options: ['openai', 'anthropic', 'gemini', 'webllm', 'bitgpu'],
       required: true,
       secrets: ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY'],
+      browserOptions: ['webllm', 'bitgpu'],
     },
   ] as const;
 }
