@@ -76,6 +76,17 @@ describe('real local SDK provider integration (no remote quality claims)', () =>
       expect(result.segments.at(-1)?.text).toBe('Injected raster observation');
     }
   });
+  it('extracts JSON source context through the built disposable adapter', async () => {
+    const create = await builtAdapter();
+    const adapter = create({ nativeMemoryIsolation: 'host-enforced' });
+    const text = '{"captureSource":"document","captureId":"capture-1"}';
+    const request = extractionRequest(Buffer.from(text), 'application/json');
+    const result = await adapter.extract(request);
+    expect(result.status).toBe('complete');
+    expect(result.evidence).toEqual(request.evidence);
+    expect(result.segments[0].text).toBe(text);
+    expect(result.automaticActionEligible).toBe(false);
+  });
   it('extracts generated embedded PDF through actual installed PDF SDK', async () => {
     const client = await getPDFReader({ provider: 'unpdf', enableOCR: false });
     const result = await extractWithProviders(

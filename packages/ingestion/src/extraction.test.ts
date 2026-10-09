@@ -98,6 +98,32 @@ describe('deterministic injected SDK extraction contracts (not quality evaluatio
     });
     expect(result.automaticActionEligible).toBe(false);
   });
+  it('preserves JSON email/capture context as literal source evidence', async () => {
+    const text = '{ "subject": "Invoice", "text": "Pay <b>later</b>" }';
+    const request = extractionRequest(Buffer.from(text), 'application/json');
+    const result = await extractWithProviders(request, {});
+    expect(result.status).toBe('complete');
+    expect(result.evidence).toEqual(request.evidence);
+    expect(result.segments[0]).toMatchObject({
+      text,
+      location: { kind: 'source' },
+      confidence: null,
+      boxes: null,
+    });
+    expect(result.automaticActionEligible).toBe(false);
+  });
+  it.each([
+    Buffer.from('{invalid'),
+    Buffer.from([0xff]),
+  ])('rejects malformed JSON or UTF-8 without publishing source segments', async (bytes) => {
+    const result = await extractWithProviders(
+      extractionRequest(bytes, 'application/json'),
+      {},
+    );
+    expect(result.status).toBe('failed');
+    expect(result.segments).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+  });
   it('fails integrity before calling any provider and rejects video', async () => {
     const request = extractionRequest();
     request.evidence.contentHash = 'wrong';
