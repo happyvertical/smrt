@@ -148,6 +148,9 @@ describe('audit views', () => {
     'javascript:alert(1)',
     'data:text/html,bad',
     '//example.com/jobs/job-1',
+    '/\n/example.com/jobs/job-1',
+    '/\t/example.com/jobs/job-1',
+    '/\r/example.com/jobs/job-1',
     '\\\\example.com\\jobs\\job-1',
     'mailto:person@example.com',
   ])('renders unsafe resource href %s as plain text', (href) => {

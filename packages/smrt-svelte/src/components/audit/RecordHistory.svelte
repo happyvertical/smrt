@@ -108,6 +108,12 @@ function display(
   }
   return defaultDisplay(value);
 }
+function hasUrlControlCharacter(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x1f || codePoint === 0x7f;
+  });
+}
 function safeResourceHref(entry: AuditHistoryEntry): string | null {
   if (!resourceHref) return null;
   let resolved: unknown;
@@ -118,7 +124,13 @@ function safeResourceHref(entry: AuditHistoryEntry): string | null {
   }
   if (typeof resolved !== 'string') return null;
   const href = resolved.trim();
-  if (!href || href.startsWith('//') || href.includes('\\')) return null;
+  if (
+    !href ||
+    href.startsWith('//') ||
+    href.includes('\\') ||
+    hasUrlControlCharacter(href)
+  )
+    return null;
   try {
     const url = new URL(href, 'https://smrt.invalid');
     return url.protocol === 'http:' || url.protocol === 'https:' ? href : null;
