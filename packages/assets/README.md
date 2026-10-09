@@ -7,6 +7,18 @@ objects when there is not a model-owned noun join table. Base/domain-owned
 relationships should use dedicated joins such as `content_assets`,
 `profile_assets`, `event_assets`, `place_assets`, and `product_assets`.
 
+## Feature recipes
+
+`assets.library` provides the model-backed file and media library: assets,
+folders, classifications, statuses, and metadata definitions.
+`assets.attachments` adds record attachment provenance and requires the library.
+Both recipes embed user-facing help in the generated manifest.
+
+The package playground is a Mock preview. Its asset grid uses in-memory props
+and data-URI thumbnails, and its attachment panel demonstrates supplied native
+form data only. It never performs a real network upload or creates public
+storage URLs.
+
 ## Installation
 
 ```bash

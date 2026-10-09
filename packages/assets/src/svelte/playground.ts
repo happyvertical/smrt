@@ -16,7 +16,8 @@ function createPreviewAssetUri(label: string, accent: string): string {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
-const sampleAssets = [
+/** Browser-safe mock data for the Asset Grid playground entry. */
+export const assetGridMockAssets = [
   {
     id: 'asset-harbor-map',
     name: 'Harbor Map',
@@ -77,7 +78,7 @@ export default {
       order: 1,
       tags: ['grid', 'assets', 'media'],
       props: {
-        assets: sampleAssets,
+        assets: assetGridMockAssets,
         selectedIds: new Set(['asset-spring-lookbook']),
         loading: false,
         onSelectionChange: () => undefined,
