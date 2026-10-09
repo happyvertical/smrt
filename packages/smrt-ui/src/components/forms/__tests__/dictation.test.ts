@@ -126,6 +126,35 @@ describe('Dictation', () => {
     expect(dictation.state).not.toBe('listening');
   });
 
+  it("waits a slow source's own stopTimeoutMs for the text after stop", async () => {
+    vi.useFakeTimers();
+    try {
+      const source = fakeSource();
+      // A model running in the browser writes the message down after stop.
+      source.stop = vi.fn(async () => {});
+      Object.defineProperty(source, 'stopTimeoutMs', { value: 60_000 });
+      const onText = vi.fn();
+      const dictation = new Dictation({
+        source: () => source,
+        onText,
+        beep: false,
+        stopTimeoutMs: 10,
+        requestMicrophone: false,
+      });
+      await dictation.start();
+      await dictation.stop();
+      expect(dictation.state).toBe('stopping');
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(dictation.state).toBe('stopping');
+      source.emitResult('hello there', true);
+      source.emitEnd();
+      expect(onText).toHaveBeenCalledWith('hello there');
+      expect(dictation.state).toBe('idle');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('toggle starts and stops', async () => {
     const source = fakeSource();
     const dictation = new Dictation({

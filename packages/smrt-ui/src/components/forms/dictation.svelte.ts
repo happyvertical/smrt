@@ -121,6 +121,13 @@ export interface DictationSpeechSource {
   onEnd(callback: () => void): () => void;
   /** When given, listening (and the beep) starts on this event. */
   onStart?(callback: () => void): () => void;
+  /**
+   * How long to wait for the source to finish after `stop()` before giving
+   * up (default: the `stopTimeoutMs` option). A source that writes the
+   * message down after the person stops (a model running in the browser)
+   * needs far longer than one that has the text already.
+   */
+  readonly stopTimeoutMs?: number;
 }
 
 /** Resolves the speech source on first use (it may load lazily). */
@@ -455,9 +462,13 @@ export class Dictation {
     this.state = 'stopping';
     const session = this.#session;
     this.#clearStopTimer();
-    this.#stopTimer = setTimeout(() => {
-      if (session === this.#session && this.state === 'stopping') this.#idle();
-    }, this.#options.stopTimeoutMs ?? 1500);
+    this.#stopTimer = setTimeout(
+      () => {
+        if (session === this.#session && this.state === 'stopping')
+          this.#idle();
+      },
+      this.#source?.stopTimeoutMs ?? this.#options.stopTimeoutMs ?? 1500,
+    );
     try {
       await this.#source?.stop();
     } catch {
