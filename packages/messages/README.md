@@ -189,3 +189,22 @@ Account credentials are stored via `credentialSecretId` pointing to smrt-secrets
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+### Notification bell and mailbox recipes
+
+`Messages` exports `NotificationsRecipe` (`messages.notifications`) and `MailboxRecipe`
+(`messages.mailbox`). The mailbox playground offers an interactive fictional inbox;
+its compose action reports a mock send and never calls a mail transport.
+
+For a server-rendered authorized host, construct `createUserNotificationBellProvider`
+from `@happyvertical/smrt-messages/svelte` with a `UserNotificationService`, the signed-in
+`userId`, and the authorized `tenantIds`. Pass that provider to `NotificationBell`
+from `@happyvertical/smrt-svelte/notifications`. Browser hosts implement the same
+provider interface over authenticated server endpoints; never send database services
+to a browser. Replace the provider when the user or tenant context changes. Optional
+`subscribe` connects a host-owned transport; the UI unsubscribes on disposal.
+
+The Messaging feature card offers mailbox and notification controls independently.
+Mailbox navigation includes a stable Failed sends entry filtered by `sendStatus = failed`.
+Notifications deliberately declare no generic model navigation: recipient-scoped
+provider access remains required.

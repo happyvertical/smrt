@@ -704,6 +704,11 @@ all other currencies render their ISO code for deterministic SSR hydration.
 
 `getCachedSTT`, `getCachedTTS`, `getCachedLLM`, `getCacheStats`, `clearAllCaches`
 
+Browser speech synthesis honors `stop()`, replacement `speak()` calls, and
+`dispose()` while voices are loading. Canceled `speak()` promises resolve even
+when the browser emits no completion event; `onEnd` is reserved for natural
+completion. Events from canceled utterances are ignored.
+
 ## Dependencies
 
 - `@happyvertical/smrt-types` -- shared type definitions

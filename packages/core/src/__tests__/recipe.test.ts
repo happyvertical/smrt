@@ -40,6 +40,9 @@ describe('SmrtRecipe', () => {
     expect(SalesRecipe.models).toEqual([Order]);
     expect(SalesRecipe.synonyms).toEqual([]);
     expect(SalesRecipe.options).toEqual({});
+    expect(SalesRecipe.requiresAny).toEqual([]);
+    expect(SalesRecipe.group).toBeUndefined();
+    expect(SalesRecipe.section).toBeUndefined();
   });
 
   it('is exported through the package browser condition', async () => {
@@ -101,6 +104,45 @@ describe('recipes in the domain-knowledge artifact', () => {
   it('omits the key when a package declares none', () => {
     expect('recipes' in build()).toBe(false);
     expect('recipes' in build([])).toBe(false);
+  });
+
+  it('carries group, section, requiresAny and rich nav entries through', () => {
+    const rich: RecipeDefinition = {
+      ...recipe,
+      group: { id: 'billing', label: 'Billing' },
+      section: { id: 'sales', label: 'Sales', icon: 'shoppingBag' },
+      requiresAny: [['shop.a', 'shop.b']],
+      nav: [
+        {
+          label: 'Open',
+          model: '@shop/pkg:Order',
+          icon: 'receipt',
+          key: 'open',
+          filter: { field: 'status', value: 'open' },
+        },
+      ],
+    };
+    expect(build([rich]).recipes).toEqual([rich]);
+  });
+
+  it('carries surfaces, providers, runtime and demoSeed through (#3708)', () => {
+    const surfaced: RecipeDefinition = {
+      ...recipe,
+      runtime: 'browser',
+      surfaces: [
+        {
+          kind: 'shell-widget',
+          slot: 'header.end',
+          export: '@shop/pkg/svelte#Bell',
+          label: 'Bell',
+        },
+      ],
+      providers: [
+        { id: 'mail', kind: 'email', options: ['smtp'], required: true },
+      ],
+      demoSeed: { data: { orders: [] } },
+    };
+    expect(build([surfaced]).recipes).toEqual([surfaced]);
   });
 
   it('changes the manifest hash when a recipe changes', () => {

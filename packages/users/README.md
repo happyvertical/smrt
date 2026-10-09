@@ -10,6 +10,40 @@ pnpm add @happyvertical/smrt-users
 
 ## Usage
 
+### Auth component adapter
+
+The `@happyvertical/smrt-users/svelte` authentication components take a
+`UsersAuthAdapter`. Bind each callback to an application server action; the
+components never receive a session bearer, API-key value, magic-link signing
+secret, or OIDC client secret. On the server, password actions use
+`createPasswordCredentialHandlers()`, magic-link actions use
+`MagicLinkService`, and OIDC actions use `OidcLoginService`. Session and API
+key revoke actions must verify the current account owns the selected record
+before calling `SessionService.destroySession()` or the profile API-key
+service. Passkey sign-in is deliberately hidden until #3275 supplies
+`signInWithPasskey`.
+
+```svelte
+<script lang="ts">
+  import { SignInForm, type UsersAuthAdapter } from '@happyvertical/smrt-users/svelte';
+
+  const adapter: UsersAuthAdapter = {
+    async signInWithPassword({ email, password }) {
+      await fetch('/auth/password/sign-in', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+    },
+  };
+</script>
+
+<SignInForm {adapter} />
+```
+
+The endpoint in this example is application-owned. It must call the package
+handler/service on the server; it is not a generated public identity API.
+
 ### Application discovery conformance
 
 The SvelteKit `createResourceListHandler()` export produces the app CLI

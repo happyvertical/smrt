@@ -514,7 +514,7 @@ export class ManifestAdapter {
       ...recipe,
       models: recipe.models.map(qualify),
       nav: recipe.nav.map((entry) => ({
-        label: entry.label,
+        ...entry,
         model: qualify(entry.model),
       })),
       ...(recipe.options

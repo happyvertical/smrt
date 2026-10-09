@@ -5,6 +5,7 @@
 
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -47,18 +48,21 @@ export class ContractLineItem extends SmrtObject {
   /**
    * Parent contract
    */
+  @field({ description: 'The order, quote or agreement this line belongs to.' })
   @foreignKey('Contract')
   contractId: string = '';
 
   /**
    * Item description
    */
+  @field({ description: 'What is being sold or bought on this line.' })
   description: string = '';
 
   /**
    * Quantity ordered. Decimal on purpose — contracts price fractional
    * quantities (hours, weight, bandwidth), as do invoice line items.
    */
+  @field({ description: 'How many.' })
   quantity: number = 1.0;
 
   /**
@@ -68,6 +72,7 @@ export class ContractLineItem extends SmrtObject {
    * INTEGER and a decimal literal to DECIMAL. Money is exact, so `$49.99` is
    * `4999` (#2401).
    */
+  @field({ description: 'The price of one, before tax.' })
   unitPrice: number = 0;
 
   /**
@@ -79,6 +84,9 @@ export class ContractLineItem extends SmrtObject {
    * Tax rate as decimal (e.g., 0.08 for 8%). A rate is inherently fractional,
    * so it stays DECIMAL — INTEGER would truncate every meaningful value.
    */
+  @field({
+    description: 'The tax rate for this line, as a percentage (5 means 5%).',
+  })
   taxRate: number = 0.0;
 
   /**
@@ -86,11 +94,15 @@ export class ContractLineItem extends SmrtObject {
    * units. Derived by {@link ContractLineItem.calculateAmount}, which rounds
    * the fractional tax to a whole minor unit (#2401).
    */
+  @field({ description: 'The line total.' })
   amount: number = 0;
 
   /**
    * Optional product reference (cross-package, plain string)
    */
+  @field({
+    description: 'The product this line is for, if it is one you list.',
+  })
   @crossPackageRef('@happyvertical/smrt-products:Product')
   productId: string = '';
 

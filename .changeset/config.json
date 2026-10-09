@@ -16,6 +16,7 @@
       "@happyvertical/smrt-assets-ergot",
       "@happyvertical/smrt-assets-local",
       "@happyvertical/smrt-chat",
+      "@happyvertical/smrt-comments",
       "@happyvertical/smrt-cli",
       "@happyvertical/smrt-commerce",
       "@happyvertical/smrt-config",

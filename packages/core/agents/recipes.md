@@ -31,6 +31,69 @@ spelled literally; `models` and `nav[].model` take identifiers. Write
 `static options = { ... } as const` so `visibility` stays a literal type.
 The emitted `options` are keyed by qualified model name.
 
+## Host metadata: group, section, nav detail, alternatives (#3604)
+
+Everything a catalog host (an app shell, an agent, a CLI) needs
+to present a recipe lives on the recipe, so it reads the manifest or knowledge
+artifact instead of importing runtime code. All are optional and additive:
+
+| Static | Shape | Meaning |
+| --- | --- | --- |
+| `group` | `{ id, label, summary? }` | Recipes with the same `group.id` share one card; the first declaration of an id supplies `label` and `summary`. Declaration order is the sub-switch order. |
+| `section` | `{ id, label, icon?, description? }` | Navigation section the recipe suggests for its `nav` entries. The host owns sections and the user may rename them, so keep `id` stable; the same `id` shares a section. |
+| `requiresAny` | `string[][]` | At least one id of each inner list must be on (`[['products.simple', 'products.clothing']]`); adding the recipe with none on adds the first. |
+| `nav[].icon` / `description` | string | Shell icon name and one friendly line for a business owner. |
+| `nav[].noun` | string | What "New" creates when the label is not countable ("Stock levels" -> `stock entry`). |
+| `nav[].key` | slug | Fixed key for the layout id `item:<pkg>:<Model>:<key>`. Required for a second entry over the same model and for a `filter`. |
+| `nav[].filter` | `{ field, value }` | Narrows the entry to rows where `field` equals `value` (Ingredients over Products: `productType` = `material`). Needs a `key`. |
+| `options.<Model>.fields.<f>.required` | boolean | The form refuses to save without a value. |
+
+Across recipes of one package the scanner also rejects a repeated nav `key`
+over the same model (it names one layout id) and one `group`/`section` id with
+two different labels. `packages/scanner/src/__tests__/workspace-recipes.test.ts`
+scans every recipe in the workspace and checks ids, `requires`/`requiresAny`
+targets (which a single package cannot see) and shared labels.
+
+Child models (line items) are simply listed in `models` without a `nav` entry.
+Validation: `group`/`section` take only their keys, slug ids, non-empty
+strings; `requiresAny` ids follow the recipe-id format and cannot name the
+recipe itself; each (model, key) pair appears once in `nav`; a `filter.field`
+must be a field the model declares (checked in core on the merged manifest,
+`assertRecipeOptions`).
+
+Not part of the recipe declaration (still host-local): a host's
+cross-package `forms` and `extends` (form records spanning profiles, variants
+and SKUs).
+
+User-facing field text for the recipes comes from `@field({ description })` on
+the models (the glossary seed), so a package that declares a recipe carries the
+descriptions of every field the recipe shows.
+
+## Non-model surfaces, providers, runtime, demo seed (#3708)
+
+Many features are not a list of models: a shell widget (assistant dock,
+notification bell), a component, a route, a settings panel. All four statics are
+optional and additive; a recipe that declares none emits none of the keys. They
+are emitted on the recipe entry in `manifest.json` and `smrt-knowledge.json`.
+Components are named by `'<package specifier>#<ExportName>'` and never imported
+at scan time; a host resolves them. Relative or absolute specifiers are rejected.
+
+| Static | Shape | Meaning |
+| --- | --- | --- |
+| `surfaces` | `RecipeSurface[]` | `{ kind: 'shell-widget', slot, export, label, icon? }`, `{ kind: 'route', path, export, label }`, `{ kind: 'settings-panel', export, label }`, `{ kind: 'playground', export, label? }`. `slot` is a smrt-svelte `ShellSlot`; `path` starts with `/` and has no whitespace, `?`, `#` or `..`. |
+| `providers` | `RecipeProvider[]` | `{ id, kind, options, required, secrets? }`: lowercase slugs, `options` non-empty and distinct, `required` always written, `secrets` distinct `UPPER_SNAKE` names (never values). Ids are unique per recipe. |
+| `runtime` | `'browser' \| 'server' \| 'both'` | Where the recipe's runtime pieces can run. Omitted means `both`; the value is emitted as authored. |
+| `demoSeed` | `{ export } \| { data }` | A fixture export reference, or inline JSON of at most 8 KB, for demo hosts. Exactly one key. |
+
+Write `surfaces` with `as const` (like `options`) so `kind` and `slot` stay
+literal types. The slot union is `RecipeShellSlot` in smrt-types (types only) and the
+scanner's `RECIPE_SHELL_SLOTS` list copies smrt-svelte's `SHELL_SLOTS`; a
+type-level test in smrt-svelte and a scanner test keep them equal, so there is
+no runtime dependency on smrt-svelte. Inline `demoSeed.data` must be finite JSON. Every violation (unknown
+kind or slot, extra key, duplicate route path or provider id, malformed
+reference) is a scan error. Example: `events.calendar` in
+`packages/events/src/recipes.ts`.
+
 ## How the scanner collects it
 
 The scanner class pass finds classes by decorator, which a recipe lacks, so

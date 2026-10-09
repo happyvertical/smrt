@@ -165,6 +165,7 @@ export {
   resolveConversationInstructions,
   runPersonaConversationTurn,
 } from './persona-conversation.js';
+export { ChatRoomsRecipe } from './recipes.js';
 // Services
 export {
   ChatClientRequestConflictError,

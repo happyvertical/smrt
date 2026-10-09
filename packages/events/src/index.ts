@@ -40,6 +40,7 @@ export { EventParticipant } from './models/EventParticipant';
 export { EventSeries } from './models/EventSeries';
 // Export models
 export { EventType } from './models/EventType';
+export { CalendarRecipe } from './recipes';
 export type {
   CivilDate,
   ExpandRecurrenceOptions,

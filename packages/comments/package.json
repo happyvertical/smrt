@@ -1,0 +1,65 @@
+{
+  "name": "@happyvertical/smrt-comments",
+  "version": "0.55.7",
+  "description": "Record comments and mention hooks for SMRT applications",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "CLAUDE.md",
+    "AGENTS.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "svelte": "./dist/svelte/index.js",
+      "import": "./dist/svelte/index.js"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json"
+  },
+  "scripts": {
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
+    "test": "vitest run",
+    "check": "svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte-test.json",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/comments.test.ts"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*"
+  },
+  "peerDependencies": {
+    "svelte": "^5.57.0"
+  },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    }
+  },
+  "author": "HappyVertical",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/comments"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@sveltejs/package": "^2.5.8",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@testing-library/svelte": "^5.4.2",
+    "@types/node": "24.13.6",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "6.0.3",
+    "vite": "8.1.4",
+    "vitest": "4.1.10",
+    "@happyvertical/smrt-messages": "workspace:*"
+  }
+}
