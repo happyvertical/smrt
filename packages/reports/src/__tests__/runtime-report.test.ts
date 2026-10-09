@@ -6,6 +6,7 @@ import {
 import {
   disableTenancy,
   enableTenancy,
+  withSystemContext,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -833,6 +834,41 @@ describe('RuntimeReport storage', () => {
       getRuntimeReport({ db, ref: saved.id as string }),
     );
     expect(crossGet).toBeNull();
+  });
+
+  it('an explicit tenantId filter holds even where the ambient tenant context does not constrain', async () => {
+    const saved = await withTenant({ tenantId: TENANT_A }, async () =>
+      saveConfirmed({
+        db,
+        compiled: await compile(),
+        createdByUserId: USER,
+      }),
+    );
+    // System context lifts the ambient tenant filter entirely; the explicit
+    // owner filter is what keeps another tenant's reports out of the answer.
+    await withSystemContext(async () => {
+      expect(await listRuntimeReports({ db })).toHaveLength(1);
+      expect(await listRuntimeReports({ db, tenantId: TENANT_B })).toEqual([]);
+      expect(
+        await getRuntimeReport({
+          db,
+          ref: saved.id as string,
+          tenantId: TENANT_B,
+        }),
+      ).toBeNull();
+      expect(
+        (await listRuntimeReports({ db, tenantId: TENANT_A })).map((r) => r.id),
+      ).toEqual([saved.id]);
+      expect(
+        (
+          await getRuntimeReport({
+            db,
+            ref: saved.id as string,
+            tenantId: TENANT_A,
+          })
+        )?.id,
+      ).toBe(saved.id);
+    });
   });
 
   it('requires a tenant to save', async () => {

@@ -53,6 +53,13 @@ import {
   runStoredRuntimeReport,
   saveRuntimeReport,
 } from '@happyvertical/smrt-reports';
+import {
+  getCurrentTenant,
+  isSuperAdminBypass,
+  isSystemContext,
+  isTenancyEnabled,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { OperationPermissionCollectionInput } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 
@@ -210,6 +217,50 @@ async function resolveSources(
   return typeof options.sources === 'function'
     ? options.sources(run)
     : options.sources;
+}
+
+/** The principal's tenant; stored reports are tenant-owned, so one is required. */
+function requirePrincipalTenant(run: PrincipalRun): string {
+  const tenantId = run.context.tenantId;
+  if (!tenantId) {
+    throw new RuntimeReportError(
+      'tenant_required',
+      '',
+      'a tenant is required to use stored runtime reports',
+    );
+  }
+  return tenantId;
+}
+
+/**
+ * Run stored-report storage calls under the AUTHENTICATED principal's tenant,
+ * the same tenant the compiler scopes the aggregate to. Stored reports are
+ * tenant-owned, and the tenancy interceptor filters by the AMBIENT tenant
+ * context, so without this a tenant-less persona (or one whose context was not
+ * entered) would list whatever tenant happens to be ambient. Mirrors the
+ * data-surface guard: enter the principal's context when none is active, and
+ * refuse when an ambient tenant disagrees with the principal (unless the
+ * caller is deliberately in a system-context/super-admin path, where the
+ * explicit tenant filters passed to the store still apply).
+ */
+async function withPrincipalTenant<T>(
+  run: PrincipalRun,
+  fn: (tenantId: string) => Promise<T>,
+): Promise<T> {
+  const tenantId = requirePrincipalTenant(run);
+  if (!isTenancyEnabled()) return fn(tenantId);
+  const active = getCurrentTenant();
+  if (active === undefined) {
+    return withTenant({ tenantId }, () => fn(tenantId));
+  }
+  if (
+    active.tenantId !== tenantId &&
+    !isSystemContext() &&
+    !isSuperAdminBypass()
+  ) {
+    throw new DataSurfaceDeniedError();
+  }
+  return fn(tenantId);
 }
 
 /** Whether the principal may `read` a configured source (never throws). */
@@ -539,6 +590,8 @@ export function createRuntimeReportTools(
           'does not match the spec; preview the spec again and pass its specHash',
         );
       }
+      // Before asking a human to confirm anything that cannot be stored.
+      requirePrincipalTenant(run);
       if (!options.confirmation) {
         throw new RuntimeReportError(
           'invalid_operation',
@@ -560,13 +613,15 @@ export function createRuntimeReportTools(
       });
       // Only reached once the host resolved for exactly this hash. The model
       // layer refuses every other write of a RuntimeReport row.
-      const saved = await saveRuntimeReport({
-        db: database,
-        compiled,
-        confirmedSpecHash,
-        createdByUserId: principalFromRun(run).userId,
-        tenantId: run.context.tenantId,
-      });
+      const saved = await withPrincipalTenant(run, (tenantId) =>
+        saveRuntimeReport({
+          db: database,
+          compiled,
+          confirmedSpecHash,
+          createdByUserId: principalFromRun(run).userId,
+          tenantId,
+        }),
+      );
       await audit(run, {
         action: 'save',
         specHash: compiled.specHash,
@@ -606,10 +661,10 @@ export function createRuntimeReportTools(
         typeof args.limit === 'number' && Number.isSafeInteger(args.limit)
           ? Math.min(Math.max(args.limit, 1), 100)
           : 50;
-      const reports = await listRuntimeReports({
-        db: requireDatabase(run, db),
-        limit,
-      });
+      const database = requireDatabase(run, db);
+      const reports = await withPrincipalTenant(run, (tenantId) =>
+        listRuntimeReports({ db: database, limit, tenantId }),
+      );
       const context = await compileContext(options, run);
       // The context only carries sources this principal may read.
       const readable = new Set(context.sources.map((source) => source.id));
@@ -649,10 +704,10 @@ export function createRuntimeReportTools(
         throw new DataSurfaceDeniedError();
       }
       const database = requireDatabase(run, db);
-      const report = await getRuntimeReport({
-        db: database,
-        ref: requiredString(args.reportId, 'reportId'),
-      });
+      const ref = requiredString(args.reportId, 'reportId');
+      const report = await withPrincipalTenant(run, (tenantId) =>
+        getRuntimeReport({ db: database, ref, tenantId }),
+      );
       // Same answer for "missing", "other tenant" and "not visible".
       if (!report) throw new DataSurfaceDeniedError();
       const result = await runStoredRuntimeReport({

@@ -990,6 +990,129 @@ describe('createRuntimeReportTools', () => {
     });
   });
 
+  describe('stored-report reads are bound to the principal tenant, not the ambient one', () => {
+    async function saveForA() {
+      const tools = toolMap({ confirmation: { confirmSave: async () => {} } });
+      const preview = await call(
+        tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+        fakeRun(),
+        { phase: 'preview', spec: SPEC },
+      );
+      const saved = await call(
+        tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+        fakeRun(),
+        { phase: 'apply', spec: SPEC, specHash: preview.specHash },
+      );
+      return { tools, saved };
+    }
+
+    /**
+     * A tenant-less principal that still passes the RBAC guard (as a
+     * system-context/bypass principal does), so the tenant binding itself is
+     * what is under test rather than the guard's `missing_principal` denial.
+     */
+    const tenantlessBypass = (): PrincipalRun => ({
+      ...fakeRun({ tenantId: null }),
+      async assertOperation() {
+        return {
+          allowed: true,
+          permission: 'bypass',
+          reason: 'system_context_bypass',
+        };
+      },
+    });
+
+    /** Execute under an AMBIENT tenant that differs from the run's tenant. */
+    const underAmbient = (
+      tool: PrincipalTool | undefined,
+      run: PrincipalRun,
+      ambient: string,
+      args: Record<string, unknown> = {},
+    ) =>
+      withTenant({ tenantId: ambient }, () =>
+        (tool as PrincipalTool).execute({ run, args, db }),
+      );
+
+    it('a tenant-less persona inside a tenant-scoped ambient context cannot list or run that tenant', async () => {
+      const { tools, saved } = await saveForA();
+      const tenantless = tenantlessBypass();
+      const listed = await underAmbient(
+        tools.get(RUNTIME_REPORT_LIST_TOOL_SLUG),
+        tenantless,
+        TENANT_A,
+      ).catch((e) => e);
+      expect(listed).toBeInstanceOf(RuntimeReportError);
+      expect(listed.code).toBe('tenant_required');
+      const ran = await underAmbient(
+        tools.get(RUNTIME_REPORT_RUN_TOOL_SLUG),
+        tenantless,
+        TENANT_A,
+        { reportId: saved.reportId },
+      ).catch((e) => e);
+      expect(ran).toBeInstanceOf(RuntimeReportError);
+      expect(ran.code).toBe('tenant_required');
+    });
+
+    it('a principal whose tenant disagrees with the ambient one is refused', async () => {
+      const { tools, saved } = await saveForA();
+      const runB = fakeRun({ tenantId: TENANT_B });
+      await expect(
+        underAmbient(tools.get(RUNTIME_REPORT_LIST_TOOL_SLUG), runB, TENANT_A),
+      ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+      await expect(
+        underAmbient(tools.get(RUNTIME_REPORT_RUN_TOOL_SLUG), runB, TENANT_A, {
+          reportId: saved.reportId,
+        }),
+      ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+    });
+
+    it('a tenant-less persona cannot save into the ambient tenant', async () => {
+      const confirmSave = vi.fn();
+      const tools = toolMap({ confirmation: { confirmSave } });
+      const tenantless = tenantlessBypass();
+      const preview = await underAmbient(
+        tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+        tenantless,
+        TENANT_A,
+        { phase: 'preview', spec: SPEC },
+      );
+      const error = await underAmbient(
+        tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+        tenantless,
+        TENANT_A,
+        { phase: 'apply', spec: SPEC, specHash: preview.specHash },
+      ).catch((e) => e);
+      expect(error).toBeInstanceOf(RuntimeReportError);
+      expect(error.code).toBe('tenant_required');
+      // The human is never asked to confirm a report that cannot be stored.
+      expect(confirmSave).not.toHaveBeenCalled();
+      const rows = await db.query('SELECT COUNT(*) AS n FROM runtime_reports');
+      expect(Number((rows.rows[0] as { n: unknown }).n)).toBe(0);
+    });
+
+    it('enters the principal tenant when no tenant context is active', async () => {
+      const { tools, saved } = await saveForA();
+      const listed = await (
+        tools.get(RUNTIME_REPORT_LIST_TOOL_SLUG) as PrincipalTool
+      ).execute({
+        run: fakeRun(),
+        args: {},
+        db,
+      });
+      expect((listed as { reports: unknown[] }).reports).toHaveLength(1);
+      const ran = await (
+        tools.get(RUNTIME_REPORT_RUN_TOOL_SLUG) as PrincipalTool
+      ).execute({
+        run: fakeRun(),
+        args: { reportId: saved.reportId },
+        db,
+      });
+      expect((ran as { result: { rows: unknown[] } }).result.rows).toHaveLength(
+        2,
+      );
+    });
+  });
+
   it('accepts a per-run source resolver', async () => {
     const resolver = vi.fn().mockResolvedValue(sources);
     const tools = new Map(

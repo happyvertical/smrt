@@ -117,7 +117,9 @@ as a catalog slug (never a class name); tests must run the tools under the real
 `assertOperationPermission` guard so a wrong slug fails. A stored report is
 written only by this confirmed `apply`: the model layer refuses every other
 insert/spec change, and the generic manifest tools (`buildManifestToolCatalog`,
-`invokeManifestTool`) never offer or run a `RuntimeReport` write. Contract and authority model:
+`invokeManifestTool`) never offer or run a `RuntimeReport` write. Stored-report
+reads/saves run under the principal's tenant (`withPrincipalTenant`), refuse a
+mismatching ambient tenant, and filter by the principal tenant explicitly. Contract and authority model:
 [`packages/reports/agents/runtime-reports.md`](../reports/agents/runtime-reports.md).
 
 ## Conversational Harness (L3, #1891)

@@ -75,6 +75,13 @@ inputs the caller cannot supply through the spec:
   re-compiled against the **running** principal on every run, so policy changes
   apply immediately and a viewer without a permission cannot run a report saved
   by someone who had it.
+- **Stored-report storage.** The tenancy interceptor filters by the AMBIENT
+  tenant, while compilation uses the principal's tenant. The chat tools bind the
+  two: they enter the principal's tenant context for `list`/`get`/`save` (as the
+  data-surface guard does), refuse when an ambient tenant disagrees with the
+  principal, require a tenant for any stored-report use, and pass the principal
+  tenant as an explicit owner filter (`getRuntimeReport`/`listRuntimeReports`
+  accept `tenantId`) that still holds under a system context.
 
 ## Storage and surface
 

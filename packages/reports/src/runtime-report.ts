@@ -263,21 +263,38 @@ export async function saveRuntimeReport(
 }
 
 export async function getRuntimeReport(
-  options: RuntimeReportStoreOptions & { ref: string },
+  options: RuntimeReportStoreOptions & {
+    ref: string;
+    /**
+     * Explicit owner tenant. When given, a row owned by any other tenant is
+     * treated as absent even if the ambient tenant context would admit it
+     * (a host that knows the principal's tenant should always pass it).
+     */
+    tenantId?: string;
+  },
 ): Promise<RuntimeReport | null> {
   const collection = await collectionFor(options.db);
-  return collection.get(options.ref);
+  const report = await collection.get(options.ref);
+  if (report && options.tenantId && report.tenantId !== options.tenantId) {
+    return null;
+  }
+  return report;
 }
 
 export async function listRuntimeReports(
   options: RuntimeReportStoreOptions & {
     status?: RuntimeReportStatus;
     limit?: number;
+    /** Explicit owner tenant; filters in addition to the ambient context. */
+    tenantId?: string;
   },
 ): Promise<RuntimeReport[]> {
   const collection = await collectionFor(options.db);
   return collection.list({
-    where: { status: options.status ?? 'active' },
+    where: {
+      status: options.status ?? 'active',
+      ...(options.tenantId ? { tenantId: options.tenantId } : {}),
+    },
     orderBy: 'created_at DESC',
     limit: Math.min(Math.max(options.limit ?? 50, 1), 200),
   });
