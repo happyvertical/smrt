@@ -151,6 +151,57 @@ describe('ImportExport import', () => {
     expect(await screen.findByText(/the limit is/)).toBeInTheDocument();
   });
 
+  describe('overlapping file reads', () => {
+    /** A CSV file whose `text()` settles only when the test says so. */
+    function deferredFile(name: string) {
+      let resolve!: (text: string) => void;
+      const pending = new Promise<string>((r) => {
+        resolve = r;
+      });
+      const file = new File([''], name, { type: 'text/csv' });
+      Object.defineProperty(file, 'text', { value: () => pending });
+      return { file, resolve };
+    }
+
+    function fileInput() {
+      const input =
+        document.querySelector<HTMLInputElement>('input[type="file"]');
+      if (!input) throw new Error('no file input');
+      return input;
+    }
+
+    it('keeps the newest selection when an older read finishes last', async () => {
+      const createRecord = vi.fn(async () => ({}));
+      render(ImportExport, { props: { fields, createRecord } });
+      const older = deferredFile('older.csv');
+      const newer = deferredFile('newer.csv');
+
+      await userEvent.upload(fileInput(), older.file);
+      await userEvent.upload(fileInput(), newer.file);
+
+      newer.resolve('Name,Qty\nNewer,2\n');
+      expect(
+        await screen.findByRole('button', { name: 'Import 1 rows' }),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/newer\.csv/)).toBeInTheDocument();
+
+      // The older read lands after the newer one and must be discarded.
+      older.resolve('Name,Qty\nOlder,1\nOlder two,9\n');
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(screen.queryByText(/older\.csv/)).not.toBeInTheDocument();
+      expect(screen.getByText(/newer\.csv/)).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Import 1 rows' }),
+      ).toBeInTheDocument();
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Import 1 rows' }),
+      );
+      await waitFor(() => expect(createRecord).toHaveBeenCalledTimes(1));
+      expect(createRecord).toHaveBeenCalledWith({ name: 'Newer', qty: 2 });
+    });
+  });
+
   it('has no axe violations with a file loaded', async () => {
     const { container } = render(ImportExport, {
       props: { fields, createRecord: async () => ({}) },

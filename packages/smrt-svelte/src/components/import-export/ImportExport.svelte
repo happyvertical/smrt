@@ -8,6 +8,7 @@ import {
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Badge, Button, Card } from '@happyvertical/smrt-ui/ui';
+import { onDestroy } from 'svelte';
 import { M } from '../../i18n/strings.import-export.js';
 import { CsvParseError, parseTable } from './csv.js';
 import { downloadFile } from './download.js';
@@ -136,7 +137,18 @@ function delimiterName(delimiter: string): string {
   }
 }
 
+// Monotonic token for in-flight file reads. A plain `let` on purpose: it is
+// compared by value and must never trigger rendering. Bumped by every new
+// selection, reset, and teardown, so an older read can never land its table
+// and mapping next to a newer file name.
+let readToken = 0;
+onDestroy(() => {
+  readToken += 1;
+});
+
 function resetImport() {
+  readToken += 1;
+  reading = false;
   table = null;
   mapping = [];
   fileName = '';
@@ -147,6 +159,8 @@ function resetImport() {
 }
 
 async function onFiles(picked: File[]) {
+  const token = ++readToken;
+  reading = false;
   runResult = null;
   table = null;
   fileError = null;
@@ -164,11 +178,13 @@ async function onFiles(picked: File[]) {
   reading = true;
   try {
     const text = await file.text();
+    if (token !== readToken) return;
     // maxRows data rows plus the header record.
     const parsed = parseTable(text, { maxRecords: maxRows + 1 });
     table = parsed;
     mapping = autoMapColumns(parsed.headers, fields);
   } catch (error) {
+    if (token !== readToken) return;
     if (error instanceof CsvParseError) {
       fileError =
         error.code === 'too-many-rows'
@@ -182,7 +198,7 @@ async function onFiles(picked: File[]) {
       fileError = t(M['ui.importExport.import.readFailed']);
     }
   } finally {
-    reading = false;
+    if (token === readToken) reading = false;
   }
 }
 
