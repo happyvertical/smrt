@@ -68,7 +68,9 @@ export const M = defineMessages({
   'ui.dictation.stop': 'Stop listening',
   'ui.dictation.listening_hands_free':
     'Listening. Just talk; I write it down when you pause. Tap the microphone when you are done.',
+  'ui.dictation.listening_short': 'Listening',
   'ui.dictation.hearing': 'Hearing you…',
+  'ui.dictation.sending': 'Sending…',
   'ui.dictation.starting': 'Getting the microphone ready…',
   'ui.dictation.listening': 'Listening. Tap the microphone when you are done.',
   'ui.dictation.unsupported':

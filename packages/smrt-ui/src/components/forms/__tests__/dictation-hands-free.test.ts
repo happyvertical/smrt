@@ -326,21 +326,31 @@ describe('hands-free in the button and the status line', () => {
     expect(stop).toHaveAttribute('aria-pressed', 'true');
     expect(stop).toHaveAttribute('data-dictation-mode', 'hands-free');
     expect(stop.className).toContain('smrt-dictation-button--hands-free');
-    expect(screen.getByRole('status')).toHaveTextContent(
+    // The help text is the tooltip and the description, not a line of text;
+    // the live region only says the state, and is visually hidden.
+    expect(stop).toHaveAttribute(
+      'title',
+      expect.stringMatching(/Just talk; I write it down when you pause/),
+    );
+    const helpId = stop.getAttribute('aria-describedby');
+    expect(helpId).toBeTruthy();
+    expect(document.getElementById(helpId as string)).toHaveTextContent(
       /Just talk; I write it down when you pause/,
     );
+    const live = screen.getByRole('status');
+    expect(live).toHaveTextContent('Listening');
+    expect(live).not.toHaveTextContent(/Just talk/);
+    expect(live.className).toContain('smrt-dictation-status--empty');
     expect(stop).not.toHaveAttribute('data-dictation-speaking');
 
-    // Someone speaks: the halo follows the level, and the line says so for
-    // the eye only (it is not announced).
+    // Someone speaks: the halo follows the level, and the live region says so.
     mic.options.onSpeaking?.(true);
     mic.options.onLevel?.(0.6);
     flushSync();
     expect(stop).toHaveAttribute('data-dictation-speaking', 'true');
     expect(stop.getAttribute('style')).toContain('--smrt-dictation-level: 0.6');
     expect(stop.className).toContain('smrt-dictation-button--speaking');
-    const hearing = screen.getByText('Hearing you…');
-    expect(hearing).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('Hearing you…');
     await expectNoA11yViolations(container);
 
     // A sentence ends and is being written down.
@@ -372,5 +382,18 @@ describe('hands-free in the button and the status line', () => {
     expect(reduced).toContain('.smrt-dictation-button--speaking');
     expect(reduced).toMatch(/animation:\s*none/);
     expect(reduced).toMatch(/transition:\s*none/);
+  });
+});
+
+describe('DictationStatus sending hint', () => {
+  it('shows a short visible "Sending…" and is axe-clean', async () => {
+    const { dictation } = setup();
+    const { container } = render(DictationStatus, {
+      props: { dictation, sending: true },
+    });
+    const live = screen.getByRole('status');
+    expect(live).toHaveTextContent('Sending…');
+    expect(live.className).not.toContain('smrt-dictation-status--empty');
+    await expectNoA11yViolations(container);
   });
 });

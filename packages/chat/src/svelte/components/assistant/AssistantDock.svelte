@@ -188,6 +188,10 @@ export interface Props {
   handsFreeCapture?: HandsFreeCaptureFactory | null;
   /** Pause length and sensitivity for hands-free; see `AssistantComposer`. */
   handsFreeVad?: HandsFreeVadOptions;
+  /** Hands-free: send once the speaker stops talking; see `AssistantComposer`. */
+  sendOnPause?: boolean;
+  /** Quiet time before `sendOnPause` sends, in ms (default 1200). */
+  sendOnPauseMs?: number;
 }
 
 const {
@@ -217,6 +221,8 @@ const {
   dictationMode,
   handsFreeCapture,
   handsFreeVad,
+  sendOnPause = false,
+  sendOnPauseMs,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -914,6 +920,8 @@ async function handleConfirmAction(requestId: string) {
             {dictationMode}
             {handsFreeCapture}
             {handsFreeVad}
+            {sendOnPause}
+            {sendOnPauseMs}
           />
         {/key}
       </div>

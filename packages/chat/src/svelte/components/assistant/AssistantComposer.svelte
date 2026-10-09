@@ -83,6 +83,18 @@ export interface Props {
   handsFreeCapture?: HandsFreeCaptureFactory | null;
   /** Pause length and sensitivity for hands-free (see `HandsFreeVadOptions`). */
   handsFreeVad?: HandsFreeVadOptions;
+  /**
+   * Hands-free only: send the message once the speaker has been quiet for
+   * `sendOnPauseMs` after the last sentence was written down (the same path
+   * as pressing Send). A new sentence, a key press, Escape or the microphone
+   * button cancels the pending send. Never sends an empty message. While a
+   * send is in flight, or the composer is disabled, the send waits and the
+   * text stays in the box until the composer can accept it again. Default
+   * `false`.
+   */
+  sendOnPause?: boolean;
+  /** Quiet time before `sendOnPause` sends, in ms. Default 1200. */
+  sendOnPauseMs?: number;
 }
 
 let {
@@ -96,6 +108,8 @@ let {
   dictationMode = 'push',
   handsFreeCapture = null,
   handsFreeVad,
+  sendOnPause = false,
+  sendOnPauseMs = 1200,
 }: Props = $props();
 const canDictate = $derived(Boolean(dictationSource || transcribe));
 let stagedAttachments = $state<AssistantAttachmentRef[]>([]);
@@ -132,6 +146,19 @@ export function focus(): void {
   messageField()?.focus();
 }
 
+// Send on pause: true once a hands-free sentence has been written into the
+// box and not yet sent, `autoSendCountdown` while the grace period runs, and
+// `autoSendWaiting` when the grace period is over but a send is in flight.
+let sendDictated = $state(false);
+let autoSendCountdown = $state(false);
+let autoSendWaiting = $state(false);
+
+function cancelAutoSend() {
+  sendDictated = false;
+  autoSendCountdown = false;
+  autoSendWaiting = false;
+}
+
 // One dictation per composer; the source is read when listening starts.
 const dictation = new Dictation({
   source: () => {
@@ -139,6 +166,8 @@ const dictation = new Dictation({
     return dictationSource();
   },
   onText: (text) => {
+    // A new sentence (re)arms the send-on-pause countdown.
+    sendDictated = true;
     const field = messageField();
     if (field) insertTextAtCursor(field, text);
     else content = content ? `${content} ${text}` : text;
@@ -155,6 +184,58 @@ $effect.pre(() => {
 });
 
 onDestroy(() => dictation.dispose());
+
+// The grace period: quiet, nothing being written down, something to send.
+// Speech starting (or a sentence still queued) clears it; the next written
+// sentence starts it again.
+$effect(() => {
+  const armed =
+    sendOnPause &&
+    sendDictated &&
+    dictation.handsFree &&
+    dictation.state === 'listening' &&
+    !dictation.speaking &&
+    dictation.queued === 0 &&
+    content.trim().length > 0;
+  if (!armed) {
+    autoSendCountdown = false;
+    return;
+  }
+  autoSendCountdown = true;
+  const timer = setTimeout(
+    () => {
+      autoSendCountdown = false;
+      sendDictated = false;
+      autoSendWaiting = true;
+    },
+    Math.max(0, sendOnPauseMs),
+  );
+  return () => clearTimeout(timer);
+});
+
+// Ends of the wait: send as soon as the composer can take input, but only
+// while still hands-free (stopping the microphone cancels a pending send).
+$effect(() => {
+  if (!autoSendWaiting) return;
+  if (!sendOnPause || !dictation.handsFree || !content.trim()) {
+    autoSendWaiting = false;
+    return;
+  }
+  if (dictation.speaking || dictation.queued > 0) {
+    // More was said while waiting: back to the grace period.
+    autoSendWaiting = false;
+    sendDictated = true;
+    return;
+  }
+  if (sending || disabled || uploading) return;
+  autoSendWaiting = false;
+  void handleSend(true);
+});
+
+// Hands-free ended (microphone tapped, Escape, an error): nothing is sent.
+$effect(() => {
+  if (!dictation.handsFree) cancelAutoSend();
+});
 
 function startDictationFromHold() {
   if (disabled || uploading || dictation.active) return;
@@ -224,10 +305,13 @@ async function handleDrop(event: DragEvent) {
   }
 }
 
-async function handleSend() {
+/** `keepListening`: a hands-free send on pause keeps the microphone on so the
+ * conversation can go on; pressing Send or Enter ends dictation. */
+async function handleSend(keepListening = false) {
   const trimmed = content.trim();
   if (!trimmed || disabled || sending) return;
-  if (dictation.active) void dictation.stop();
+  cancelAutoSend();
+  if (dictation.active && !keepListening) void dictation.stop();
   sendError = null;
   sending = true;
   // #2904 review finding 4: keep the draft text/attachments until onsend
@@ -238,6 +322,10 @@ async function handleSend() {
     // #2991: text typed while the send was in flight is newer than what was
     // sent; keep it.
     if (content.trim() === trimmed) content = '';
+    // Dictated while an automatic send was in flight: keep only what was said
+    // after the sent text (typed edits keep the whole draft, see above).
+    else if (keepListening && content.trimStart().startsWith(trimmed))
+      content = content.trimStart().slice(trimmed.length).trimStart();
     stagedAttachments = [];
     if (textareaEl) {
       textareaEl.style.height = 'auto';
@@ -253,17 +341,20 @@ async function handleSend() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && dictation.active) {
+  if (event.key === 'Escape' && (dictation.active || sendDictated)) {
     event.preventDefault();
-    void dictation.stop();
+    cancelAutoSend();
+    if (dictation.active) void dictation.stop();
     return;
   }
+  // Typing means the person has taken over: no automatic send.
+  if (event.key.length === 1 || event.key === 'Backspace') cancelAutoSend();
   // Matches ../messages/MessageInput.svelte's handleKeydown convention:
   // plain Enter sends, Shift+Enter inserts a newline. `isComposing` guards
   // against an IME's confirmation Enter being treated as a send.
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
-    handleSend();
+    void handleSend();
   }
 }
 
@@ -316,7 +407,7 @@ function removeAttachment(id: string) {
     </ul>
   {/if}
   {#if canDictate}
-    <DictationStatus {dictation} />
+    <DictationStatus {dictation} sending={autoSendCountdown || autoSendWaiting} />
   {/if}
   <div class="assistant-composer-row">
     {#if onupload}
@@ -381,7 +472,7 @@ function removeAttachment(id: string) {
     <Button
       type="button"
       class="assistant-composer-send"
-      onclick={handleSend}
+      onclick={() => handleSend()}
       disabled={disabled || uploading || sending || !content.trim()}
     >
       {t(M['chat.assistant_composer.send'])}

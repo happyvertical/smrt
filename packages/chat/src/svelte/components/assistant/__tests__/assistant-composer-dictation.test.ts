@@ -297,7 +297,9 @@ describe('AssistantComposer hands-free dictation', () => {
     const stop = await screen.findByRole('button', { name: 'Stop listening' });
     expect(stop).toHaveAttribute('data-dictation-mode', 'hands-free');
     expect(speech.source.start).not.toHaveBeenCalled();
-    expect(screen.getByRole('status')).toHaveTextContent(/Just talk/);
+    expect(screen.getByRole('status')).toHaveTextContent('Listening');
+    expect(screen.getByRole('status')).not.toHaveTextContent(/Just talk/);
+    expect(stop).toHaveAttribute('title', expect.stringMatching(/Just talk/));
 
     mic.say();
     await vi.waitFor(() => expect(field.value).toBe('add milk'));

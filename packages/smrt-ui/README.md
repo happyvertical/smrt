@@ -96,6 +96,12 @@ pnpm add @happyvertical/smrt-ui
   voice while speaking, a spinner while writing down, all still under
   `prefers-reduced-motion`. `vad` tunes `silenceMs` (default 800),
   `minSpeechMs`, `preRollMs`, `maxUtteranceMs` and `sensitivity`.
+  The help text ("Just talk; I write it down when you pause...") is the
+  microphone's tooltip and `aria-describedby`, not a line in the form;
+  `DictationStatus` keeps a visually hidden polite live region ("Listening",
+  "Hearing you...", "Writing it down...") and shows errors. Its `sending` prop
+  adds the one short visible hint, "Sending...". The chat composer's
+  `sendOnPause` / `sendOnPauseMs` (default 1200) builds send-on-pause on it.
 
 ### Link tabs
 

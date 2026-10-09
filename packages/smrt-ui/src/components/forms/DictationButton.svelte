@@ -12,7 +12,9 @@
  * a halo that swells with the voice means someone is speaking, and a small
  * spinner means sentences are being written down. The ring is the
  * non-motion cue; the halo and spinner stop moving for people who ask for
- * reduced motion. Tapping ends it either way.
+ * reduced motion. Tapping ends it either way. The help text ("Just talk;
+ * I write it down when you pause...") is the tooltip and the button's
+ * `aria-describedby`, never a line of text in the form.
  */
 import { M } from '../../i18n/strings.ui.js';
 import { useI18n } from '../../i18n/use-i18n.js';
@@ -56,9 +58,13 @@ const name = $derived(
     ? (stopLabel ?? t(M['ui.dictation.stop']))
     : (label ?? t(M['ui.dictation.start'])),
 );
+const uid = $props.id();
+const helpId = `smrt-dictation-help-${uid}`;
 const hint = $derived(
   active
-    ? name
+    ? handsFree
+      ? t(M['ui.dictation.listening_hands_free'])
+      : name
     : (title ??
         t(
           dictation.wantsHandsFree
@@ -84,6 +90,7 @@ function handleClick() {
   aria-pressed={active}
   aria-busy={busy || undefined}
   title={hint}
+  aria-describedby={hint !== name ? helpId : undefined}
   disabled={disabled || busy}
   onclick={handleClick}
   data-dictation-state={dictation.state}
@@ -103,6 +110,9 @@ function handleClick() {
     <span class="smrt-dictation-writing" aria-hidden="true"></span>
   {/if}
 </Button>
+{#if hint !== name}
+  <span id={helpId} class="smrt-dictation-help">{hint}</span>
+{/if}
 
 <style>
   :global(.smrt-dictation-button) {
@@ -122,6 +132,16 @@ function handleClick() {
   :global(.smrt-dictation-button--listening) {
     background: var(--smrt-color-error-container, #ffdad6);
     color: var(--smrt-color-on-error-container, #410002);
+  }
+
+  /* Read out with the button's name; never shown. */
+  .smrt-dictation-help {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .smrt-dictation-dot {
