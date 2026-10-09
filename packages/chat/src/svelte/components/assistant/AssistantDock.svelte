@@ -110,7 +110,7 @@ export interface Props {
    * not open or create a conversation for you, so a host that hides the list
    * opens one itself through `oncontroller` (`loadThreads()`, then
    * `openThread()` or `createThread()`). Until a conversation is active the
-   * composer stays disabled and the empty state offers "Start a new
+   * composer stays disabled and the empty state offers "Create
    * conversation" (when the transport supports `createThread`); it never
    * points at the omitted list. */
   threadList?: boolean;

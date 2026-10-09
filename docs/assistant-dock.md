@@ -117,7 +117,7 @@ Only the list goes. The dock still does not open or create a conversation for
 you, and the composer stays disabled until one is active, so a host that hides
 the list opens one itself from `oncontroller` (`await loadThreads()`, then
 `openThread(id)` of the latest thread or `createThread()` for the first). Until
-then the empty state offers "Start new conversation" when the transport
+then the empty state offers "Create conversation" when the transport
 supports `createThread`, and never points at the omitted list.
 
 | Route | Body | Answer |
@@ -529,7 +529,7 @@ Earlier contracts remain in force:
 
 | Behavior | Test | Kind |
 |---|---|---|
-| `threadList={false}` renders neither the Conversations toggle nor the thread list, in wide and narrow containers; the empty state offers only "Start new conversation" (no `aria-controls` to the omitted list); a host-opened conversation enables the composer; the default and `true` keep the list (#3405) | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts` | component (#3405) |
+| `threadList={false}` renders neither the Conversations toggle nor the thread list, in wide and narrow containers; the empty state offers only "Create conversation" (no `aria-controls` to the omitted list); a host-opened conversation enables the composer; the default and `true` keep the list (#3405) | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts`; `packages/chat/e2e/assistant-dock-narrow.spec.ts` (250px, 285px, 800px) | component + browser (#3405) |
 | A transport may omit `createThread`; the dock then omits New conversation, while a direct controller call rejects without changing conversation state | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts`; `create-assistant-dock-controller.test.ts` | component + unit (#3546) |
 | A transport may omit `uploadAttachment`; the composer then has no attach/file/drop behavior, while full transports retain upload and its visible errors | `packages/chat/src/svelte/components/assistant/__tests__/AssistantComposer.test.ts`; `AssistantDock.test.ts` | component (#3546) |
 | `contextMode="server"` omits only the irrelevant empty-data-surface guidance; transport errors remain visible and data-surface actions stay fail-closed | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts`; `create-assistant-dock-controller.test.ts` | component + unit (#3546) |
