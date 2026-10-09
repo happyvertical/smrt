@@ -63,6 +63,30 @@ User-facing field text for the recipes comes from `@field({ description })` on
 the models (the glossary seed), so a package that declares a recipe carries the
 descriptions of every field the recipe shows.
 
+## Non-model surfaces, providers, runtime, demo seed (#3708)
+
+Many features are not a list of models: a shell widget (assistant dock,
+notification bell), a component, a route, a settings panel. All four statics are
+optional and additive; a recipe that declares none emits none of the keys. They
+are emitted on the recipe entry in `manifest.json` and `smrt-knowledge.json`.
+Components are named by `'<package specifier>#<ExportName>'` and never imported
+at scan time; a host resolves them. Relative or absolute specifiers are rejected.
+
+| Static | Shape | Meaning |
+| --- | --- | --- |
+| `surfaces` | `RecipeSurface[]` | `{ kind: 'shell-widget', slot, export, label, icon? }`, `{ kind: 'route', path, export, label }`, `{ kind: 'settings-panel', export, label }`, `{ kind: 'playground', export, label? }`. `slot` is a smrt-svelte `ShellSlot`; `path` starts with `/` and has no whitespace, `?`, `#` or `..`. |
+| `providers` | `RecipeProvider[]` | `{ id, kind, options, required, secrets? }`: lowercase slugs, `options` non-empty and distinct, `required` always written, `secrets` distinct `UPPER_SNAKE` names (never values). Ids are unique per recipe. |
+| `runtime` | `'browser' \| 'server' \| 'both'` | Where the recipe's runtime pieces can run. Omitted means `both`; the value is emitted as authored. |
+| `demoSeed` | `{ export } \| { data }` | A fixture export reference, or inline JSON of at most 8 KB, for demo hosts. Exactly one key. |
+
+Write `surfaces` with `as const` (like `options`) so `kind` and `slot` stay
+literal types. The slot list is `RECIPE_SHELL_SLOTS` in smrt-types, a literal
+copy of smrt-svelte's `SHELL_SLOTS` (a smrt-svelte test keeps them equal), so
+the scanner has no runtime dependency on smrt-svelte. Every violation (unknown
+kind or slot, extra key, duplicate route path or provider id, malformed
+reference) is a scan error. Example: `events.calendar` in
+`packages/events/src/recipes.ts`.
+
 ## How the scanner collects it
 
 The scanner class pass finds classes by decorator, which a recipe lacks, so
