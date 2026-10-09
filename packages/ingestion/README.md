@@ -58,9 +58,13 @@ storage namespace. Upstream source mutation/deletion cannot change copied
 originals; explicit privacy deletion revokes every ingestion-derived payload and
 requires host cache/index purge.
 
-Validation commands are `pnpm test`, `pnpm test:postgres`, `pnpm typecheck` and
+See [EXTRACTION.md](EXTRACTION.md) for bounded extraction, lease-bound input
+snapshots, provider isolation requirements and the extraction corpus.
+
+Validation commands are `pnpm test`, `pnpm test:postgres`, `pnpm test:providers`, `pnpm typecheck` and
 `pnpm build` (including built browser import inspection). The PostgreSQL lane
 requires the repository's configured database service and never silently skips.
-Provider, component, e2e and evaluation command names are reserved by the ADR and
+The provider lane exercises local SDK adapters and process isolation; it does not
+claim live remote recognition quality. Component, e2e and evaluation command names are reserved by the ADR and
 explicitly unavailable until their owning children deliver the corresponding
 capability. See the [behavior matrix](../../docs/test-matrix/3670-ingestion-foundation.md).

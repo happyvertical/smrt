@@ -1584,6 +1584,15 @@ importers:
 
   packages/ingestion:
     dependencies:
+      '@happyvertical/ai':
+        specifier: ^0.102.3
+        version: 0.102.3(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/ocr':
+        specifier: ^0.61.6
+        version: 0.61.6(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/pdf':
+        specifier: ^0.65.9
+        version: 0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1599,9 +1608,15 @@ importers:
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types
+      '@happyvertical/speech':
+        specifier: ^0.102.3
+        version: 0.102.3(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@happyvertical/sql':
         specifier: ^0.102.3
         version: 0.102.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      sharp:
+        specifier: 'catalog:'
+        version: 0.35.5(@types/node@24.13.2)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
