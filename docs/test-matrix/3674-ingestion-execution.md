@@ -104,3 +104,12 @@ completion retains only the result digest and durable terminal identity.
 All nine regression cases were demonstrated failing against reviewed HEAD
 `533ea8c3` before fixes, with corrected provider-result fixture schemas. The full
 SQLite/PostgreSQL suites supply final evidence, not the sensitivity-only run.
+
+## Accepted deadline regression (round 3)
+
+Pause external submission or reconciliation (succeeded, unknown, not_applied),
+advance beyond the item's retained-until timestamp, and resume without calling
+expire or a retention sweep. Both real database suites verify visibility is still
+active while the completion returns a tombstone, reveals no provider result, and
+persists empty execution data. The shared retention predicate checks both current
+visibility and actual deadline, including after asynchronous result-target checks.

@@ -803,8 +803,16 @@ export function executionSuite(
           0,
         );
       });
-    for (const outcome of ['succeeded', 'unknown', 'not_applied'] as const)
-      it(`preserves retention redaction when ${outcome} reconciliation completes after expiry`, async () => {
+    for (const [outcome, expiry] of [
+      ['succeeded', 'sweep'],
+      ['unknown', 'sweep'],
+      ['not_applied', 'sweep'],
+      ['succeeded', 'deadline'],
+      ['unknown', 'deadline'],
+      ['not_applied', 'deadline'],
+      ['submission', 'deadline'],
+    ] as const)
+      it(`preserves retention redaction when ${outcome} completes after ${expiry} expiry`, async () => {
         let reached!: () => void;
         let release!: () => void;
         const atProvider = new Promise<void>((resolve) => {
@@ -825,7 +833,10 @@ export function executionSuite(
           execution: {
             kind: 'external',
             submit: async () => {
-              throw new Error('unknown');
+              if (outcome !== 'submission') throw new Error('unknown');
+              reached();
+              await resume;
+              return { privateContent: 'must disappear' };
             },
             reconcile: async () => {
               reached();
@@ -835,7 +846,7 @@ export function executionSuite(
                     kind: outcome,
                     result: { privateContent: 'must disappear' },
                   }
-                : { kind: outcome };
+                : { kind: outcome === 'submission' ? 'unknown' : outcome };
             },
           },
         };
@@ -856,19 +867,35 @@ export function executionSuite(
           args: { title: 'Private', body: 'Secret' },
         });
         await approve(review);
-        expect((await service.applyAction(actionId)).state).toBe(
-          'outcome_unknown',
-        );
-        const pending = service.reconcileAction(actionId);
+        if (outcome !== 'submission')
+          expect((await service.applyAction(actionId)).state).toBe(
+            'outcome_unknown',
+          );
+        const pending =
+          outcome === 'submission'
+            ? service.applyAction(actionId)
+            : service.reconcileAction(actionId);
         await atProvider;
-        await new IngestionService({ ...options, db: peer }).expire(
-          input.itemId,
-        );
+        if (expiry === 'sweep') {
+          await new IngestionService({ ...options, db: peer }).expire(
+            input.itemId,
+          );
+        } else {
+          clock = new Date(clock.getTime() + 1000001);
+          expect(
+            (
+              await db.query(
+                'SELECT visibility FROM intake_items WHERE id=?',
+                input.itemId,
+              )
+            ).rows[0].visibility,
+          ).toBe('active');
+        }
         release();
         const result = await pending;
         expect(result).toMatchObject({
           state:
-            outcome === 'succeeded'
+            outcome === 'succeeded' || outcome === 'submission'
               ? 'succeeded'
               : outcome === 'unknown'
                 ? 'outcome_unknown'

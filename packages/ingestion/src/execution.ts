@@ -1068,15 +1068,18 @@ export class IntakeExecutionService {
       throw new Error('Invalid handler arguments');
     return args;
   }
+  private retained(item: Row): boolean {
+    return (
+      item.visibility === 'active' &&
+      time(item.expires_at) > this.now().getTime()
+    );
+  }
   private async successful(
     db: DatabaseInterface,
     action: Row,
     item: Row,
   ): Promise<ActionResult> {
-    if (
-      item.visibility !== 'active' ||
-      time(item.expires_at) <= this.now().getTime()
-    )
+    if (!this.retained(item))
       return {
         state: 'succeeded',
         actionId: String(action.id),
@@ -1120,10 +1123,9 @@ export class IntakeExecutionService {
     result: IntakeValues,
   ): Promise<ActionResult> {
     const resultDigest = intakeBindingDigest(result);
-    const tombstone = bound.item.visibility !== 'active';
     const resultTargets: IntakeValues = {};
     for (const [field, model] of Object.entries(
-      tombstone ? {} : bound.handler.resultModels,
+      this.retained(bound.item) ? bound.handler.resultModels : {},
     )) {
       id(result[field]);
       const target = await this.config.assertTarget({
@@ -1140,6 +1142,7 @@ export class IntakeExecutionService {
         revision: target.revision,
       };
     }
+    const tombstone = !this.retained(bound.item);
     const data = tombstone
       ? {}
       : {
@@ -1479,7 +1482,7 @@ export class IntakeExecutionService {
         'UPDATE intake_executions SET state=?,data=? WHERE id=? AND tenant_id=? AND confidential_scope_id=?',
         state,
         canonical(
-          item.visibility !== 'active'
+          !this.retained(item)
             ? {}
             : { ...object(execution.data), reconciliation: observed.kind },
         ),
@@ -1490,7 +1493,7 @@ export class IntakeExecutionService {
       return {
         state,
         actionId,
-        ...(item.visibility !== 'active' ? { tombstone: true } : {}),
+        ...(!this.retained(item) ? { tombstone: true } : {}),
       };
     });
   }
