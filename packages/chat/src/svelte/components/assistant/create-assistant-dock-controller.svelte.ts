@@ -1128,7 +1128,9 @@ export function createAssistantDockController(
     //    earlier already-answered repeat of the same text (e.g. "yes") can
     //    never be mistaken for this send's own reply.
     pendingSends = pendingSends.filter((p) => {
-      if (p.threadId !== threadId) return true;
+      // An unresolved transport call owns its completion. Historical text
+      // matches cannot acknowledge it, even when the person repeats a turn.
+      if (p.status === 'sending' || p.threadId !== threadId) return true;
       const byId = p.clientRequestId
         ? messages.findIndex(
             (m) => m.role === 'user' && m.clientRequestId === p.clientRequestId,

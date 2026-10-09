@@ -103,6 +103,14 @@ export interface Props {
   surfaces?: DataSurfaceIdentity[];
   /** Whether the dock is currently visible; polling pauses while false. */
   visible?: boolean;
+  /**
+   * `full` renders the complete conversational surface. `controls` keeps the
+   * live status, required confirmations, choices, action outcomes, and retry
+   * controls while omitting stored history, the thread list, and composer.
+   * It is for hosts that present the transcript or input through another
+   * deliberate surface; it never changes the controller or its authority.
+   */
+  presentation?: 'full' | 'controls';
   /** Renders a message's own `toolCallData` (#2988), inside that message's
    * bubble below its text. Called only for messages whose `toolCallData` is
    * set. Without it the dock renders no tool-call region at all: the payload
@@ -135,6 +143,8 @@ export interface Props {
   /** Placeholder for the composer's empty textarea (#2991). Defaults to the
    * composer's own placeholder. */
   composerPlaceholder?: string;
+  /** Disables text submission while a host-owned input has a pending turn. */
+  composerDisabled?: boolean;
   /** The page's browser tools (#2908) — typically
    * `installWebMcpPageToolRegistry()` from
    * `@happyvertical/smrt-web/webmcp-page-tools`. Offered to the model each
@@ -157,6 +167,12 @@ export interface Props {
   /** Called whenever the supervised run changes (#assistant-watch). Also
    * readable as `controller.run`. */
   onrun?: (run: AssistantRun | null) => void;
+  /**
+   * Reports whether the dock has an item that needs an explicit person
+   * decision. A host may reveal its controls in response, but must not make
+   * that decision on the person's behalf.
+   */
+  onattentionchange?: (required: boolean) => void;
   /** Page features that can offer a few options for the person to pick
    * (see `./assistant-choices.svelte.ts`). The options show as cards here;
    * the person's click applies one. */
@@ -177,12 +193,14 @@ const {
   actionClient,
   surfaces,
   visible = true,
+  presentation = 'full',
   toolCall,
   oncontroller,
   onactionapplied,
   onactionsettled,
   initialDraft,
   composerPlaceholder,
+  composerDisabled = false,
   pageTools,
   clientToolPolicy,
   onstatus,
@@ -190,6 +208,7 @@ const {
   clientToolFilter,
   maxPauseMs,
   onrun,
+  onattentionchange,
   choiceSources,
   dictation,
   transcribe,
@@ -269,6 +288,22 @@ $effect(() => {
     oncontroller?.(controller);
   });
   return () => controller.dispose();
+});
+
+// A host that visually collapses the dock still needs an explicit signal to
+// reveal the existing confirmation UI. This stays derived from the dock's
+// authoritative state: the wrapper neither reconstructs a confirmation nor
+// decides one itself.
+const attentionRequired = $derived(
+  controller.run?.waitingFor?.kind === 'choice' ||
+    controller.toolRequests.some((request) => request.status === 'waiting') ||
+    [...controller.actions.values()].some(
+      (action) => action.status === 'previewed' || action.outcomeUnknown,
+    ),
+);
+
+$effect(() => {
+  onattentionchange?.(attentionRequired);
 });
 
 // Finding B (#2904 review, third final pass): a SEPARATE effect, scoped to
@@ -448,30 +483,32 @@ async function handleConfirmAction(requestId: string) {
     class="assistant-dock-layout"
     data-threads-open={threadsOpen || undefined}
   >
-    <Button
-      type="button"
-      variant="ghost"
-      id={threadsToggleId}
-      class="assistant-dock-threads-toggle"
-      aria-expanded={threadsOpen}
-      aria-controls={threadsId}
-      onclick={() => (threadsOpen = !threadsOpen)}
-    >
-      {t(M['chat.assistant_dock.conversations_toggle'])}
-    </Button>
+    {#if presentation === 'full'}
+      <Button
+        type="button"
+        variant="ghost"
+        id={threadsToggleId}
+        class="assistant-dock-threads-toggle"
+        aria-expanded={threadsOpen}
+        aria-controls={threadsId}
+        onclick={() => (threadsOpen = !threadsOpen)}
+      >
+        {t(M['chat.assistant_dock.conversations_toggle'])}
+      </Button>
 
-    <div
-      class="assistant-dock-threads"
-      id={threadsId}
-      bind:this={threadsEl}
-    >
-      <AssistantThreadList
-        threads={controller.threads}
-        activeThreadId={controller.activeThreadId}
-        onselect={handleSelectThread}
-        oncreate={transport.createThread ? handleCreateThread : undefined}
-      />
-    </div>
+      <div
+        class="assistant-dock-threads"
+        id={threadsId}
+        bind:this={threadsEl}
+      >
+        <AssistantThreadList
+          threads={controller.threads}
+          activeThreadId={controller.activeThreadId}
+          onselect={handleSelectThread}
+          oncreate={transport.createThread ? handleCreateThread : undefined}
+        />
+      </div>
+    {/if}
 
     <div class="assistant-dock-main">
       {#if controller.error}
@@ -491,6 +528,23 @@ async function handleConfirmAction(requestId: string) {
         </div>
       {/if}
 
+      {#if controller.run && (presentation === 'controls' || controller.run.state === 'paused')}
+        <div class="assistant-dock-run" role="status" aria-live="polite">
+          <span>{controller.run.goal}</span>
+          {#if controller.run.state === 'running'}
+            <Button type="button" size="sm" variant="ghost" onclick={() => controller.pauseRun()}>
+              Pause
+            </Button>
+          {:else if controller.run.state === 'paused'}
+            <Button type="button" size="sm" onclick={() => controller.continueRun()}>
+              Continue
+            </Button>
+          {:else if controller.run.state === 'waiting' && controller.run.waitingFor}
+            <span>{controller.run.waitingFor.label ?? `Waiting for ${controller.run.waitingFor.kind}`}</span>
+          {/if}
+        </div>
+      {/if}
+
       {#if contextMode === 'data-surfaces' && controller.surfaces.length === 0 && !pageTools}
         <p class="assistant-dock-empty">
           {t(M['chat.assistant_dock.no_surfaces'])}
@@ -498,6 +552,7 @@ async function handleConfirmAction(requestId: string) {
       {/if}
 
       <div class="assistant-dock-scroll">
+        {#if presentation === 'full'}
         {#if !controller.activeThreadId && controller.threadsLoading}
           <div
             class="assistant-dock-thread-state assistant-dock-thread-loading"
@@ -609,6 +664,8 @@ async function handleConfirmAction(requestId: string) {
               {/snippet}
             </MessageBubble>
           </div>
+        {/if}
+
         {/if}
 
         {#each controller.toolRequests.filter((r) => r.status === 'waiting') as request (request.id)}
@@ -729,6 +786,7 @@ async function handleConfirmAction(requestId: string) {
         {/if}
       </div>
 
+      {#if presentation === 'full'}
       <div class="assistant-dock-composer">
         {#if controller.models.length > 0}
           <div class="assistant-dock-composer-header">
@@ -746,13 +804,14 @@ async function handleConfirmAction(requestId: string) {
             }
             onsend={handleSend}
             onupload={transport.uploadAttachment ? handleUpload : undefined}
-            disabled={!controller.activeThreadId}
+            disabled={!controller.activeThreadId || composerDisabled}
             placeholder={composerPlaceholder}
             {dictation}
             {transcribe}
           />
         {/key}
       </div>
+      {/if}
     </div>
   </div>
 </div>
@@ -785,6 +844,16 @@ async function handleConfirmAction(requestId: string) {
     border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c7c5);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
     color: var(--smrt-color-on-surface-variant, #44474e);
+  }
+
+  .assistant-dock-run {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c7c5);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .assistant-dock-tool-request {

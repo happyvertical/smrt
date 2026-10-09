@@ -98,3 +98,21 @@ or the path reported by `node -p "require('node:os').tmpdir()"` on macOS.
 This is not production authentication. A production host must provide its
 authenticated principal, tenant, and authorization policy to
 `PhotoCutoutProfileStore`; it must not copy this fixed local identity pattern.
+
+### Character conversation lifecycle
+
+The Character conversation tab refreshes the persisted rig each time it becomes
+active, retaining its AssistantDock controller and history. Leaving the tab stops
+microphone input and reply playback; listening mode requires an explicit restart.
+An outstanding turn keeps both the listening input and full dock composer busy
+across mode changes and restarts until it settles. Both inputs share the retained
+controller’s pending-send state; microphone Stop remains reachable. Polling
+retains active sends until their transport completes, even when older history
+contains the same message text.
+Late persistence loads and cancelled speech responses cannot replace the current
+rig or audio. Spoken captions begin only when SDK playback actually starts.
+
+The development transport sends at most 24 context messages within a 16 KiB UTF-8
+JSON body, dropping oldest context first. Failed turns are not committed to its
+history, so retrying does not duplicate them. Draft proposals use one shared
+200-character limit in the model tool, route, preview, and execution boundary.

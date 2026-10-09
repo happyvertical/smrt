@@ -42,6 +42,7 @@ import MessageInput from '../svelte/components/messages/MessageInput.svelte';
 import MessageList from '../svelte/components/messages/MessageList.svelte';
 import type { ChatMessageData, ChatRoomData } from '../svelte/types.js';
 import { stageDraftSubjectIntent } from './chat-dev.intents.js';
+import CharacterConversation from './components/CharacterConversation.svelte';
 
 type DevChatMode = 'ai' | 'local';
 type WorkbenchMode = 'text' | 'voice';
@@ -208,6 +209,7 @@ let workbenchMode = $state<WorkbenchMode>('text');
 let workbenchTab = $state('character');
 const workbenchTabs = [
   { id: 'character', label: 'Character setup' },
+  { id: 'conversation', label: 'Character conversation' },
   { id: 'chat', label: 'Chat dev' },
 ];
 let voiceConfig = $state<DevVoiceConfig | null>(null);
@@ -957,6 +959,14 @@ onMount(() => {
     saveSetup={createDevCharacterPersistenceClient().save}
     loadSetup={createDevCharacterPersistenceClient().load}
   />
+  </div>
+  <div hidden={workbenchTab !== 'conversation'}>
+    <CharacterConversation active={workbenchTab === 'conversation'} workbenchAction={{
+      navigate: (section) => (workbenchTab = section),
+      stageDraft: (value) => (draftSubject = value),
+      draftSubject: () => draftSubject,
+      section: () => workbenchTab,
+    }} />
   </div>
   <div hidden={workbenchTab !== 'chat'}>
   <div class="chat-dev">

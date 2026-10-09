@@ -1,5 +1,36 @@
 import { expect, test } from '@playwright/test';
 
+test('character conversation hydrates and exposes listening input', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await page.getByRole('tab', { name: 'Character conversation' }).click();
+  await expect(page.getByRole('button', { name: 'Listening mode' })).toBeVisible();
+  await page.getByRole('button', { name: 'Listening mode' }).click();
+  await expect(page.getByLabel('Voice input')).toBeVisible();
+  await expect(page.getByLabel('Type your message')).toBeEnabled();
+});
+
+test('listening submit remains pointer-reachable beside an expanded dock', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await page.getByRole('tab', { name: 'Character conversation' }).click();
+  await page.getByRole('button', { name: 'Listening mode' }).click();
+  await page.getByRole('button', { name: 'Talk to your assistant' }).click();
+  const input = page.getByLabel('Type your message');
+  await input.fill('A typed turn');
+  const submit = page.getByRole('button', { name: 'Send message' });
+  await submit.scrollIntoViewIfNeeded();
+  await expect(submit).toBeVisible();
+  const hit = await submit.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const target = document.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      );
+      return node.contains(target);
+    });
+  expect(hit).toBe(true);
+});
+
 async function chooseSyntheticPhoto(page: import('@playwright/test').Page) {
   const buffer = Buffer.from(await page.evaluate(() => {
     const canvas = document.createElement('canvas'); canvas.width = 100; canvas.height = 120;
