@@ -668,6 +668,33 @@ Render `<CommandPalette {palette} />` as an `AppShell` `slotItems` entry
 [`agents/command-palette.md`](./agents/command-palette.md) for the provider
 contract, accessibility behavior, and the record-search limits.
 
+### Customizable overviews
+
+`@happyvertical/smrt-svelte/overview` turns an overview page into a grid of
+registered widgets (metric, chart, record list, shortcuts, note) that admins
+reorder, resize, configure, add and remove in the shell's layout edit mode,
+inside an allowed set the page declares. A saved overview is declarative data:
+widget options are validated against versioned schemas on save and on load, and
+widget data comes from a server `load(options, ctx)` that runs inside the page's
+load with the user's permissions, so the page renders fully on the server.
+Persistence is host-owned (the same pattern as the shell layout).
+
+```ts
+import {
+  createOverview,
+  OverviewGrid,
+  registerCoreWidgets,
+} from '@happyvertical/smrt-svelte/overview';
+import {
+  defineOverview,
+  loadOverview,
+  resolveOverview,
+} from '@happyvertical/smrt-svelte/overview/server';
+```
+
+See [`agents/overview-surfaces.md`](./agents/overview-surfaces.md) for the data
+model, the validation rules, the server load contract and the extension points.
+
 ## Exports
 
 ### Entry Points
@@ -686,6 +713,8 @@ importable, even if it appears in `dist/`.
 | `@happyvertical/smrt-svelte/app` | `AppShell` (Provider + themes + AdminShell + nav/dock slots, `dockToggles` buttons and host `slots` for the header/footer/sidebar regions), `OwnerSetupForm` (first-run owner setup), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp` |
 | `@happyvertical/smrt-svelte/app/runtime-diagnostics` | Svelte-free diagnostics WebMCP registration and its tool name/endpoint constants, importable from server routes |
 | `@happyvertical/smrt-svelte/command-palette` | Global search and command palette: `CommandPalette` (shell-slot trigger plus dialog), `createCommandPalette`, the provider contract, and the navigation and manifest-driven model providers |
+| `@happyvertical/smrt-svelte/overview` | Customizable overview surfaces: `OverviewGrid` (flow grid with keyboard reorder and resize), `createOverview` (host-owned controller), the widget registry (`registerWidget`), `registerCoreWidgets` (metric, chart, record list, shortcuts, note) and `shortcutsFromNav` |
+| `@happyvertical/smrt-svelte/overview/server` | Svelte-free half of the overview surface: the data model (`resolveOverview`, `checkOverviewOverride`), option-schema validation, `WidgetRegistry`, and `loadOverview` for a page's server load |
 | `@happyvertical/smrt-svelte/workspace/legacy` | Opt-in ToolsDock compatibility surface for applications migrating to AdminShell |
 | `@happyvertical/smrt-svelte/workspace/server` | Server-side workspace helpers (Node only) |
 | `@happyvertical/smrt-svelte/workspace/live` | `systemFeed` — the AdminShell system scope (jobs/schedules/dispatch) polled from an app status endpoint; deliberately carries no `smrt-web` dependency |
