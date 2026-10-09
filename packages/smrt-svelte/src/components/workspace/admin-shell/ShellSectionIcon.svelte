@@ -9,7 +9,9 @@ import type { Component } from 'svelte';
 import { isShellIconName, SHELL_ICON_PATHS } from './shell-icons.js';
 
 interface Props {
+  /** Icon name: a built-in shell icon, else whatever `iconComponent` knows. */
   name: string;
+  /** Edge length in pixels (default 18). */
   size?: number;
   /** Renders names that are not built-in shell icons. */
   iconComponent?: Component<{ name: string; size?: number }>;
