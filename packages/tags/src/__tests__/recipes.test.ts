@@ -16,10 +16,31 @@ describe('tags recipes (#3719)', () => {
     expect(TaxonomyRecipe.id).toBe('tags.taxonomy');
     expect(TaxonomyRecipe.models).toEqual([Tag, TagAlias]);
     expect(TaxonomyRecipe.nav).toEqual([
-      { label: 'Tags', model: Tag },
-      { label: 'Alternative Names', model: TagAlias },
+      expect.objectContaining({ label: 'Tags', model: Tag, icon: 'tag' }),
+      expect.objectContaining({
+        label: 'Alternative names',
+        model: TagAlias,
+        icon: 'book',
+      }),
     ]);
     expect(TaxonomyRecipe.requires).toEqual([]);
+  });
+
+  it('describes every nav entry in plain words', () => {
+    for (const entry of TaxonomyRecipe.nav) {
+      expect(entry.icon, entry.label).toBeTruthy();
+      expect(entry.description, entry.label).toBeTruthy();
+      // Sentence case: only the first word is capitalised.
+      expect(entry.label, entry.label).toBe(
+        entry.label.charAt(0) + entry.label.slice(1).toLowerCase(),
+      );
+    }
+  });
+
+  it('describes the inherited parent tag field through the recipe', () => {
+    expect(TaxonomyRecipe.options.Tag.fields.parentId.help).toMatch(
+      /broader tag/,
+    );
   });
 
   it('nav only names listed models', () => {

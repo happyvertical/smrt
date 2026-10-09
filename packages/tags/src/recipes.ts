@@ -24,8 +24,19 @@ export class TaxonomyRecipe extends SmrtRecipe {
   static synonyms = ['tags', 'tagging', 'categories', 'labels', 'topics'];
   static models = [Tag, TagAlias];
   static nav = [
-    { label: 'Tags', model: Tag },
-    { label: 'Alternative Names', model: TagAlias },
+    {
+      label: 'Tags',
+      model: Tag,
+      icon: 'tag',
+      description: 'The shared set of tags, including tags inside other tags.',
+    },
+    {
+      label: 'Alternative names',
+      model: TagAlias,
+      icon: 'book',
+      description:
+        'Other names and translations that lead people to the same tag.',
+    },
   ];
   // Literal values (`as const` keeps `visibility` a literal type): the scanner
   // reads these statically. `level` is recalculated when a tag moves, so it is
@@ -34,7 +45,13 @@ export class TaxonomyRecipe extends SmrtRecipe {
     Tag: {
       fields: {
         name: { order: 1 },
-        parentId: { label: 'Parent tag', order: 2 },
+        // `parentId` comes from the hierarchy base class in core, which does not
+        // describe it; the recipe supplies the user-facing hint instead.
+        parentId: {
+          label: 'Parent tag',
+          help: 'The broader tag this one sits under. Leave it empty for a top-level tag.',
+          order: 2,
+        },
         description: { order: 3 },
         level: { visibility: 'hidden', locked: true },
         metadata: { visibility: 'advanced' },
