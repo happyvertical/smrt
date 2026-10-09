@@ -562,6 +562,100 @@ export class A extends SmrtRecipe {
       expect(results.recipes[0].requires).toEqual(['elsewhere.customers']);
     });
 
+    it('reads group, section, requiresAny and the richer nav entries', async () => {
+      write(
+        'src/recipes.ts',
+        `${header}
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order, Customer];
+  static group = { id: 'billing', label: 'Billing', summary: 'Bill people.' };
+  static section = { id: 'sales', label: 'Sales', icon: 'shoppingBag', description: 'Everything you sell.' };
+  static requiresAny = [['shop.x', 'shop.y']];
+  static nav = [
+    { label: 'Orders', model: Order, icon: 'receipt', description: 'What was ordered.', noun: 'order' },
+    { label: 'Open orders', model: Order, key: 'open', filter: { field: 'status', value: 'open' } },
+  ];
+}`,
+      );
+      const { results } = await scan();
+      expect(results.errors).toEqual([]);
+      const recipe = results.recipes[0];
+      expect(recipe.group).toEqual({
+        id: 'billing',
+        label: 'Billing',
+        summary: 'Bill people.',
+      });
+      expect(recipe.section?.icon).toBe('shoppingBag');
+      expect(recipe.requiresAny).toEqual([['shop.x', 'shop.y']]);
+      expect(recipe.nav[0]).toEqual({
+        label: 'Orders',
+        model: 'Order',
+        icon: 'receipt',
+        description: 'What was ordered.',
+        noun: 'order',
+      });
+      expect(recipe.nav[1]).toEqual({
+        label: 'Open orders',
+        model: 'Order',
+        key: 'open',
+        filter: { field: 'status', value: 'open' },
+      });
+    });
+
+    it('omits group, section and requiresAny when not declared', async () => {
+      const text = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+}`);
+      expect(text).toBe('');
+    });
+
+    it('rejects bad group, section and requiresAny shapes', async () => {
+      const text = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+  static group = { id: 'Bad Id', label: 'X' };
+  static section = { id: 'sales', label: 'S', colour: 'red' };
+  static requiresAny = [[], ['Nope']];
+}`);
+      expect(text).toMatch(/group\.id `Bad Id`/);
+      expect(text).toMatch(/section accepts only .* not `colour`/);
+      expect(text).toMatch(/requiresAny must be a non-empty list/);
+    });
+
+    it('rejects a filter without a key, a repeated view, and unknown nav keys', async () => {
+      const text = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+  static nav = [
+    { label: 'One', model: Order },
+    { label: 'Two', model: Order, filter: { field: 'status', value: 'x' } },
+  ];
+}`);
+      expect(text).toMatch(/a filter needs a key/);
+      const unknown = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+  static nav = [{ label: 'Three', model: Order, colour: 'red' }];
+}`);
+      expect(unknown).toMatch(/accept only .*not `colour`/);
+      const dup = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+  static nav = [
+    { label: 'One', model: Order },
+    { label: 'Two', model: Order },
+  ];
+}`);
+      expect(dup).toMatch(/repeats the view of Order/);
+    });
+
     it('accepts options that refine declared fields', async () => {
       write(
         'src/recipes.ts',
@@ -685,7 +779,7 @@ export class A extends SmrtRecipe {
     Order: {
       type: 'x',
       fields: {
-        status: { visibility: 'secret', locked: 'yes', order: 'first', colour: 'red', label: 3 },
+        status: { visibility: 'secret', locked: 'yes', required: 1, order: 'first', colour: 'red', label: 3 },
       },
     },
   };
@@ -693,6 +787,7 @@ export class A extends SmrtRecipe {
       expect(text).toMatch(/options.Order.type is not a model option/);
       expect(text).toMatch(/visibility must be one of basic, advanced, hidden/);
       expect(text).toMatch(/locked must be a boolean/);
+      expect(text).toMatch(/required must be a boolean/);
       expect(text).toMatch(/order must be a finite number/);
       expect(text).toMatch(/colour is not a field option/);
       expect(text).toMatch(/label must be a string/);

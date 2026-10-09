@@ -128,9 +128,11 @@ export type {
   RecipeExposureNarrowing,
   RecipeFieldOptions,
   RecipeFieldVisibility,
+  RecipeGroup,
   RecipeHelp,
   RecipeModelOptions,
   RecipeNavEntry,
+  RecipeSection,
 } from './recipe.js';
 export type {
   SmrtRouteDefinition,

@@ -8,6 +8,7 @@
 import { getProject } from '@happyvertical/projects';
 import { getModuleConfig } from '@happyvertical/smrt-config';
 import {
+  field,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
@@ -81,21 +82,25 @@ export class Project extends SmrtObject {
   /**
    * Project title
    */
+  @field({ description: "The project's name." })
   title: string = '';
 
   /**
    * Project description
    */
+  @field({ description: 'What the project is about.' })
   description: string = '';
 
   /**
    * Project owner (organization or user)
    */
+  @field({ description: 'Who owns or runs the project.' })
   owner: string = '';
 
   /**
    * Project URL
    */
+  @field({ description: 'A link to the project elsewhere.' })
   url: string = '';
 
   /**

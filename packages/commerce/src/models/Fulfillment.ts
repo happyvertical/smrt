@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   type Address,
@@ -99,27 +99,38 @@ export class Fulfillment extends SmrtObject {
   /**
    * Parent contract being fulfilled
    */
+  @field({ description: 'The order being fulfilled.' })
   @foreignKey('Contract')
   contractId: string = '';
 
   /**
    * Type of fulfillment
    */
+  @field({
+    description:
+      'How it gets to the customer: shipment, delivery, pickup, digital or service.',
+  })
   fulfillmentType: FulfillmentType = FulfillmentType.SHIPMENT;
 
   /**
    * Current fulfillment status
    */
+  @field({
+    description:
+      'Where it stands: pending, processing, shipped, delivered or cancelled.',
+  })
   status: FulfillmentStatus = FulfillmentStatus.PENDING;
 
   /**
    * Tracking number from carrier
    */
+  @field({ description: "The carrier's tracking number." })
   trackingNumber: string = '';
 
   /**
    * Shipping carrier name
    */
+  @field({ description: 'The company carrying it.' })
   carrier: string = '';
 
   /**
@@ -130,11 +141,13 @@ export class Fulfillment extends SmrtObject {
   /**
    * When the shipment was sent
    */
+  @field({ description: 'When it was dispatched.' })
   shippedAt: Date | null = null;
 
   /**
    * When the shipment was delivered
    */
+  @field({ description: 'When it arrived.' })
   deliveredAt: Date | null = null;
 
   /**
@@ -145,6 +158,7 @@ export class Fulfillment extends SmrtObject {
   /**
    * Notes about this fulfillment
    */
+  @field({ description: 'Anything worth remembering about this shipment.' })
   notes: string = '';
 
   constructor(options: FulfillmentOptions = {}) {
