@@ -56,14 +56,107 @@ describe('FloatingAssistant', () => {
   });
 
   it('offers a controls-only presentation without conversational history or input', async () => {
-    render(FloatingAssistant, {
-      props: { ...props(), presentation: 'controls', expanded: true },
+    const { container } = render(FloatingAssistant, {
+      props: {
+        ...props(),
+        presentation: 'controls',
+        expanded: true,
+        hideIdleControls: true,
+      },
     });
 
     expect(screen.queryByLabelText('Message')).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Conversations' }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Open assistant' }),
+    ).not.toBeInTheDocument();
+    expect(
+      container.querySelector('.floating-assistant-panel'),
+    ).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it.each([
+    'threads',
+    'models',
+  ] as const)('keeps a controls-only dock reachable when %s loading fails', async (kind) => {
+    const transport = {
+      ...props().transport,
+      ...(kind === 'threads'
+        ? {
+            listThreads: vi.fn(async () => {
+              throw new Error('Thread loading failed');
+            }),
+          }
+        : {
+            listModels: vi.fn(async () => {
+              throw new Error('Model loading failed');
+            }),
+          }),
+    };
+    const { container } = render(FloatingAssistant, {
+      props: {
+        ...props(),
+        transport,
+        presentation: 'controls',
+        expanded: true,
+        hideIdleControls: true,
+      },
+    });
+    expect(
+      await screen.findByText(
+        new RegExp(`${kind === 'threads' ? 'Thread' : 'Model'} loading failed`),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Open assistant' }),
+    ).toBeVisible();
+    expect(
+      container.querySelector('.floating-assistant-panel'),
+    ).toHaveAttribute('aria-hidden', 'false');
+  });
+
+  it('preserves idle controls chrome by default for existing hosts', () => {
+    const { container } = render(FloatingAssistant, {
+      props: { ...props(), presentation: 'controls', expanded: true },
+    });
+    expect(
+      screen.getByRole('button', { name: 'Open assistant' }),
+    ).toBeVisible();
+    expect(
+      container.querySelector('.floating-assistant-panel'),
+    ).toHaveAttribute('aria-hidden', 'false');
+  });
+
+  it('returns controls-only chrome to idle after a completed run', async () => {
+    const fixture = await mountedFixture();
+    await fixture.rerender({ hideIdleControls: true });
+    const waiting = fixture.controller.send('choices');
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Compact layout/ }),
+    );
+    await waiting;
+    await vi.waitFor(() => expect(fixture.controller.run?.state).toBe('done'));
+    expect(
+      screen.queryByRole('button', { name: 'Open assistant' }),
+    ).not.toBeInTheDocument();
+    expect(
+      fixture.container.querySelector('.floating-assistant-panel'),
+    ).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('uses the requested left placement while keeping the default right placement', () => {
+    const { container, rerender } = render(FloatingAssistant, {
+      props: props(),
+    });
+    expect(container.querySelector('.floating-assistant')).not.toHaveClass(
+      'bottom-left',
+    );
+    rerender({ placement: 'bottom-left' });
+    expect(container.querySelector('.floating-assistant')).toHaveClass(
+      'bottom-left',
+    );
   });
 });
 
@@ -75,6 +168,7 @@ async function mountedFixture() {
       ...fixture,
       oncontroller,
       presentation: 'controls',
+      hideIdleControls: true,
       expanded: true,
     },
   });
@@ -123,9 +217,6 @@ describe('FloatingAssistant decision authority', () => {
     "Don't allow",
   ])('reveals a collapsed tool request and requires the actual %s decision', async (decision) => {
     const fixture = await mountedFixture();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Collapse assistant' }),
-    );
     const sending = fixture.controller.send('tool');
     const decide = await screen.findByRole('button', { name: decision });
     expect(
@@ -321,6 +412,7 @@ describe('FloatingAssistant host visibility', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const fixture = await mountedFixture();
     try {
+      await fixture.rerender({ presentation: 'full' });
       fixture.controller.setDraft('Keep the hidden draft');
       const initialLoads = fixture.evidence.loads;
       await vi.advanceTimersByTimeAsync(15001);

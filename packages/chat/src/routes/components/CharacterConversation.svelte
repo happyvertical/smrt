@@ -58,8 +58,12 @@ let mounted: HelperRendererHandle | null = null;
 let unavailable = $state<string | null>(null);
 let listening = $state(false);
 let audioEnabled = $state(false);
+let assistantExpanded = $state(false);
 let controller = $state.raw<AssistantDockController | null>(null);
 let conversationReady = $state(false);
+let conversationError = $state<string | null>(null);
+let latestReply = $state<string | null>(null);
+let speechError = $state<string | null>(null);
 let voiceTurnPending = $state(false);
 const turnPending = $derived(
   voiceTurnPending ||
@@ -293,6 +297,7 @@ let speechAbort: AbortController | null = null;
 const transport = createDevAssistantTransport(
   fetch,
   (reply) => {
+    latestReply = reply;
     void speak(reply);
   },
   (proposal) => {
@@ -313,9 +318,29 @@ const transport = createDevAssistantTransport(
 );
 function connect(owned: AssistantDockController) {
   controller = owned;
+  conversationError = null;
   void owned
     .openThread('dev-character-conversation')
-    .then(() => (conversationReady = true));
+    .then(() => {
+      if (owned.error) throw new Error(owned.error);
+      conversationReady = true;
+    })
+    .catch(() => {
+      conversationReady = false;
+      conversationError = t(
+        helperMessages['chat.helper.conversation_unavailable'],
+      );
+    });
+}
+function toggleListening() {
+  if (listening) {
+    listening = false;
+    return;
+  }
+  // This only opens the existing assistant surface. It never requests a mic
+  // permission or enables audio; those still require their own user actions.
+  assistantExpanded = true;
+  listening = true;
 }
 async function sendSpokenTurn(text: string) {
   if (!controller) throw new Error('Open the assistant before speaking.');
@@ -339,13 +364,19 @@ async function speak(reply: string) {
   spoken.setInterim('');
   try {
     if (!audioEnabled || !active) return;
+    speechError = null;
     const response = await fetch('/api/dev-character-speech', {
       method: 'POST',
       signal: controller.signal,
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text }),
     });
-    if (!response.ok || generation !== playbackGeneration) return;
+    if (!response.ok) {
+      if (generation === playbackGeneration)
+        speechError = t(M['chat.character_conversation.speech_failed']);
+      return;
+    }
+    if (generation !== playbackGeneration) return;
     const audio = await response.arrayBuffer();
     if (
       generation !== playbackGeneration ||
@@ -359,7 +390,11 @@ async function speak(reply: string) {
       contentType: response.headers.get('content-type') ?? 'audio/wav',
     });
   } catch {
-    if (generation === playbackGeneration) spoken.setInterim('');
+    if (generation === playbackGeneration) {
+      spoken.setInterim('');
+      if (!controller.signal.aborted)
+        speechError = t(M['chat.character_conversation.speech_failed']);
+    }
   } finally {
     if (generation === playbackGeneration) {
       playingText = '';
@@ -369,10 +404,20 @@ async function speak(reply: string) {
     }
   }
 }
-function enableSpeech() {
+function toggleSpeech() {
+  if (audioEnabled) {
+    audioEnabled = false;
+    speechError = null;
+    stopSpeech();
+    return;
+  }
   audioEnabled = true;
+  speechError = null;
   // Establish the browser audio context while this click still has user activation.
-  void playback.prepare();
+  void Promise.resolve(playback.prepare()).catch(() => {
+    if (audioEnabled)
+      speechError = t(M['chat.character_conversation.speech_failed']);
+  });
 }
 
 let ready = $state(false);
@@ -473,24 +518,30 @@ onMount(() => {
 });
 </script>
 
-<section class="character-conversation" aria-label={t(M['chat.character_conversation.saved_conversation'])}>
+<section class="character-conversation" class:bottom-left={helperPreferences?.placement === 'bottom-left'} aria-label={t(M['chat.character_conversation.saved_conversation'])}>
   <div class:bottom-left={helperPreferences?.placement === 'bottom-left'} class:bottom-right={helperPreferences?.placement !== 'bottom-left'} class="character-stage" bind:this={target} aria-label={helperPreferences?.name || t(M['chat.character_conversation.saved_character'])}></div>
   {#if helperPreferences}<p class="helper-name">{helperPreferences.name}</p>{/if}
   {#if unavailable}<p role="status">{unavailable}</p>{/if}
   <div class="conversation-controls">
-    <Button type="button" variant="secondary" aria-pressed={listening} onclick={() => (listening = !listening)}>
+    <Button type="button" variant="secondary" aria-pressed={listening} onclick={toggleListening}>
       {listening ? 'Leave listening mode' : 'Listening mode'}
     </Button>
-    <Button type="button" variant="secondary" aria-pressed={audioEnabled} onclick={enableSpeech}>
-      {audioEnabled ? 'Speech enabled' : 'Enable spoken replies'}
+    <Button type="button" variant="secondary" aria-pressed={audioEnabled} onclick={toggleSpeech}>
+      {audioEnabled ? 'Disable spoken replies' : 'Enable spoken replies'}
     </Button>
-    {#if listening}<p role="status">{t(M['chat.character_conversation.listening_notice'])}</p>{/if}
+    {#if listening}<p role="status">{conversationError ?? (conversationReady ? t(M['chat.character_conversation.listening_notice']) : t(helperMessages['chat.helper.opening_assistant']))}</p>{/if}
+    {#if speechError}<p role="alert">{speechError}</p>{/if}
   </div>
   {#if listening && active}
     <CharacterConversationVoice onfinal={sendSpokenTurn} heardSubtitles={helperPreferences?.heardSubtitles ?? true} disabled={!conversationReady || attentionRequired || turnPending} />
   {/if}
-  <FloatingAssistant composerDisabled={turnPending} {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} onattentionchange={(required) => (attentionRequired = required)} />
-  <SpokenCaptions enabled={helperPreferences?.spokenSubtitles ?? true} lines={spoken.lines} interim={spoken.interim} />
+  {#if listening && latestReply}
+    <section class="latest-reply" aria-label={t(M['chat.character_conversation.assistant_reply'])} aria-live={audioEnabled && !speechError ? 'off' : 'polite'}>
+      <p>{latestReply}</p>
+    </section>
+  {/if}
+  <FloatingAssistant bind:expanded={assistantExpanded} visible={active} hideIdleControls={listening} placement={helperPreferences?.placement ?? 'bottom-right'} composerDisabled={turnPending} {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} onattentionchange={(required) => (attentionRequired = required)} />
+  <SpokenCaptions placement="inline" enabled={helperPreferences?.spokenSubtitles ?? true} lines={spoken.lines} interim={spoken.interim} />
 </section>
 
 <style>
@@ -502,9 +553,16 @@ onMount(() => {
   .character-stage.bottom-right { margin-inline: auto 0; }
   .helper-name { margin: 0; text-align: center; font-weight: var(--smrt-typography-weight-semibold, 600); }
   .conversation-controls { display: grid; justify-items: center; gap: .5rem; }
+  .latest-reply { margin-block: var(--smrt-spacing-3); }
+  .latest-reply p { margin: 0; }
+  .character-conversation.bottom-left .conversation-controls { justify-items: start; }
   .character-stage :global(canvas), .character-stage :global(svg) { inline-size: 100%; block-size: 100%; }
   @media (min-width: 48rem) {
     .character-conversation { padding-inline-end: 30rem; }
+    .character-conversation.bottom-left {
+      padding-inline-start: 30rem;
+      padding-inline-end: 0;
+    }
     .character-conversation :global(.character-conversation-voice) {
       inline-size: min(100%, calc(100vw - 32rem));
     }

@@ -489,6 +489,111 @@ describe('conversation lifecycle', () => {
     mocks.events.onEnd?.();
     playing.resolve();
   });
+  it('shows the latest listening reply without requesting speech when audio is off', async () => {
+    render(CharacterConversation);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Listening mode', exact: true }),
+    );
+    mocks.reply('First hidden-history reply');
+    mocks.reply('Latest visible reply');
+    const reply = await screen.findByLabelText('Assistant reply');
+    expect(reply).toHaveTextContent('Latest visible reply');
+    expect(reply).not.toHaveTextContent('First hidden-history reply');
+    expect(mocks.play).not.toHaveBeenCalled();
+  });
+  it('reports a speech failure in full mode and clears it before a successful retry', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response('', { status: 503 }))
+        .mockResolvedValueOnce(new Response('audio')),
+    );
+    render(CharacterConversation);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Enable spoken replies' }),
+    );
+    mocks.reply('Speech request fails');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not play the spoken reply. The reply is shown below.',
+    );
+    mocks.reply('Speech retry succeeds');
+    await vi.waitFor(() => expect(mocks.play).toHaveBeenCalledOnce());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+  it('keeps a readable listening reply when browser playback rejects', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('audio')));
+    mocks.play.mockRejectedValueOnce(new Error('Playback unavailable'));
+    render(CharacterConversation);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Listening mode', exact: true }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Enable spoken replies' }),
+    );
+    mocks.reply('Read this even when playback fails');
+    expect(
+      await screen.findByText(
+        'Could not play the spoken reply. The reply is shown below.',
+      ),
+    ).toBeVisible();
+    const reply = screen.getByLabelText('Assistant reply');
+    expect(reply).toHaveTextContent('Read this even when playback fails');
+    expect(reply).toHaveAttribute('aria-live', 'polite');
+    expect(
+      screen.queryByLabelText('Assistant is speaking'),
+    ).not.toBeInTheDocument();
+  });
+  it('cancels an in-flight speech request when spoken replies are disabled', async () => {
+    const body = deferred<ArrayBuffer>();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers(),
+        arrayBuffer: () => body.promise,
+      }),
+    );
+    render(CharacterConversation);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Enable spoken replies' }),
+    );
+    mocks.reply('Cancel this audio');
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Disable spoken replies' }),
+    );
+    body.resolve(new ArrayBuffer(1));
+    await new Promise((done) => setTimeout(done, 0));
+    expect(mocks.stop).toHaveBeenCalled();
+    expect(mocks.play).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: 'Enable spoken replies' }),
+    ).toHaveAttribute('aria-pressed', 'false');
+  });
+  it('hides the floating assistant when the conversation tab is inactive', async () => {
+    const view = render(CharacterConversation);
+    expect(
+      screen.getByRole('button', { name: 'Talk to your assistant' }),
+    ).toBeVisible();
+    await view.rerender({ active: false });
+    expect(
+      screen.queryByRole('button', { name: 'Talk to your assistant' }),
+    ).not.toBeInTheDocument();
+  });
+  it('keeps listening input disabled when opening its thread fails', async () => {
+    mocks.loadMessages.mockRejectedValueOnce(new Error('Thread unavailable'));
+    render(CharacterConversation);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Listening mode', exact: true }),
+    );
+    expect(
+      await screen.findByText(
+        'The assistant could not be opened. Try again before starting listening mode.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Type your message')).toBeDisabled();
+  });
   it('does not play a delayed obsolete body or a body completed after hide/disposal', async () => {
     const old = deferred<ArrayBuffer>();
     const hidden = deferred<ArrayBuffer>();

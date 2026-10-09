@@ -123,6 +123,16 @@ retains active sends until their transport completes, even when older history
 contains the same message text.
 Late persistence loads and cancelled speech responses cannot replace the current
 rig or audio. Spoken captions begin only when SDK playback actually starts.
+Listening mode also keeps the newest assistant reply in a dedicated reply
+region, so a muted or failed spoken reply is still readable while history stays
+hidden. A speech failure is shown beside the conversation controls; disabling
+spoken replies aborts its outstanding request and playback. While the tab is
+inactive, its fixed dock is hidden and polling is paused.
+
+The development workbench links the SDK speech and animation packages from
+sibling worktrees. Keep those worktrees available until their released package
+versions replace the links; a fresh browser or Vite load cannot resolve a
+linked package whose sibling checkout is absent.
 
 The development transport sends at most 24 context messages within a 16 KiB UTF-8
 JSON body, dropping oldest context first. Failed turns are not committed to its

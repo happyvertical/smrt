@@ -16,7 +16,10 @@ import { M } from '../../i18n.js';
 import AssistantDock, {
   type Props as AssistantDockProps,
 } from './AssistantDock.svelte';
-import type { AssistantRun } from './create-assistant-dock-controller.svelte.js';
+import type {
+  AssistantDockController,
+  AssistantRun,
+} from './create-assistant-dock-controller.svelte.js';
 
 const { t } = useI18n();
 
@@ -35,6 +38,10 @@ export interface Props extends AssistantDockProps {
   panelLabel?: string;
   /** Starts expanded; the bindable value can also be controlled by the host. */
   expanded?: boolean;
+  /** Fixed viewport corner used by the launcher and its conversation panel. */
+  placement?: 'bottom-left' | 'bottom-right';
+  /** Hides empty controls-only chrome while preserving active runs and decisions. */
+  hideIdleControls?: boolean;
 }
 
 let {
@@ -42,16 +49,21 @@ let {
   launcherLabel = 'Open assistant',
   panelLabel = 'Assistant',
   expanded = $bindable(false),
+  placement = 'bottom-right',
+  hideIdleControls = false,
   visible = true,
+  presentation = 'full',
   onstatus,
   onrun,
   onattentionchange,
+  oncontroller,
   ...dockProps
 }: Props = $props();
 
 let status = $state<AssistantStatus>({ state: 'idle', label: null });
 let run = $state<AssistantRun | null>(null);
 let attentionRequired = $state(false);
+let dockController = $state.raw<AssistantDockController | null>(null);
 let launcher: HTMLButtonElement | undefined = $state();
 let panel: HTMLElement | undefined = $state();
 
@@ -66,8 +78,34 @@ const captureLauncher: Attachment<HTMLButtonElement> = (element) => {
 
 const floatingAssistantId = $props.id();
 const panelId = `floating-assistant-${floatingAssistantId}`;
-const panelExpanded = $derived(visible && (expanded || attentionRequired));
-const presentation = $derived({ expanded: panelExpanded, status, run });
+const hasActionableRun = $derived(
+  run?.state === 'running' ||
+    run?.state === 'paused' ||
+    run?.state === 'waiting',
+);
+const hasActionableStatus = $derived(
+  status.state === 'working' || status.state === 'error',
+);
+const hasControllerError = $derived(!!dockController?.error);
+const panelExpanded = $derived(
+  visible &&
+    (expanded || attentionRequired) &&
+    (!hideIdleControls ||
+      presentation === 'full' ||
+      attentionRequired ||
+      hasActionableRun ||
+      hasActionableStatus ||
+      hasControllerError),
+);
+const launcherVisible = $derived(
+  !hideIdleControls ||
+    presentation === 'full' ||
+    attentionRequired ||
+    hasActionableRun ||
+    hasActionableStatus ||
+    hasControllerError,
+);
+const presentationState = $derived({ expanded: panelExpanded, status, run });
 
 function open() {
   expanded = true;
@@ -103,6 +141,11 @@ function handleAttentionChange(required: boolean) {
   onattentionchange?.(required);
 }
 
+function handleController(next: AssistantDockController) {
+  dockController = next;
+  oncontroller?.(next);
+}
+
 function handleKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape' || !visible || !expanded) return;
   event.preventDefault();
@@ -114,27 +157,30 @@ function handleKeydown(event: KeyboardEvent) {
 
 <div
   class="floating-assistant"
+  class:bottom-left={placement === 'bottom-left'}
   data-expanded={panelExpanded || undefined}
   hidden={!visible}
   inert={!visible}
   aria-hidden={!visible}
 >
-  <Button
-    {@attach captureLauncher}
-    variant="ghost"
-    type="button"
-    class="floating-assistant-launcher"
-    aria-expanded={panelExpanded}
-    aria-controls={panelId}
-    onclick={open}
-  >
-    {#if character}
-      <span class="floating-assistant-character" aria-hidden="true">
-        {@render character(presentation)}
-      </span>
-    {/if}
-    <span>{launcherLabel}</span>
-  </Button>
+  {#if launcherVisible}
+    <Button
+      {@attach captureLauncher}
+      variant="ghost"
+      type="button"
+      class="floating-assistant-launcher"
+      aria-expanded={panelExpanded}
+      aria-controls={panelId}
+      onclick={open}
+    >
+      {#if character}
+        <span class="floating-assistant-character" aria-hidden="true">
+          {@render character(presentationState)}
+        </span>
+      {/if}
+      <span>{launcherLabel}</span>
+    </Button>
+  {/if}
 
   <section
     bind:this={panel}
@@ -155,7 +201,9 @@ function handleKeydown(event: KeyboardEvent) {
     </Button>
     <AssistantDock
       {...dockProps}
+      {presentation}
       visible={panelExpanded}
+      oncontroller={handleController}
       onstatus={handleStatus}
       onrun={handleRun}
       onattentionchange={handleAttentionChange}
@@ -173,6 +221,7 @@ function handleKeydown(event: KeyboardEvent) {
     justify-items: end;
     gap: 0.75rem;
   }
+  .floating-assistant.bottom-left { right: auto; left: max(1rem, env(safe-area-inset-left)); justify-items: start; }
 
   .floating-assistant[hidden] {
     display: none;
@@ -244,6 +293,7 @@ function handleKeydown(event: KeyboardEvent) {
       right: max(0.5rem, env(safe-area-inset-right));
       bottom: max(0.5rem, env(safe-area-inset-bottom));
     }
+    .floating-assistant.bottom-left { right: auto; left: max(0.5rem, env(safe-area-inset-left)); }
 
     .floating-assistant-panel {
       inline-size: calc(100vw - 1rem);

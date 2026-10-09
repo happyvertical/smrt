@@ -24,3 +24,26 @@ When an editable policy has no valid effective helper but can preserve its
 locked baseline fields while selecting an offered replacement, the snapshot
 contains `recoveryDraft`. It is an edit candidate only: UI must submit it to
 `save()` and wait for the returned snapshot before applying it.
+
+## Svelte helper controls
+
+`HelperControlPanel` distinguishes a local draft from the applied server
+snapshot. Selecting a gallery item, changing a control, or completing photo
+setup creates an unsaved draft; only the snapshot returned by `save()` is
+applied through `onchanged`. Photo setup returns to the settings panel, selects
+the newly returned offering in the draft, and restores focus to its gallery
+choice so the next action is explicit: **Save changes**.
+
+Gallery choices use roving radio keyboard behavior (Arrow keys, Home, End).
+Hosts should provide distinct safe offering labels, such as a user-provided
+name with a saved timestamp, rather than raw duplicate filenames.
+
+`FloatingAssistant` accepts an optional bottom-corner placement. Conversation
+hosts pass the effective saved placement to keep the dock with its selected
+helper. Opening listening mode may reveal the existing assistant surface, but
+must never start microphone capture or audio playback; those remain explicit
+user actions.
+
+`FloatingAssistant.hideIdleControls` is opt-in and defaults to false for existing hosts.
+The character listening workbench enables it to hide idle controls chrome while
+keeping active runs, errors and confirmation surfaces reachable.

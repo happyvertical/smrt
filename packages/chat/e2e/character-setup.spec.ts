@@ -9,12 +9,12 @@ test('character conversation hydrates and exposes listening input', async ({ pag
   await expect(page.getByLabel('Type your message')).toBeEnabled();
 });
 
-test('listening submit remains pointer-reachable beside an expanded dock', async ({ page }) => {
+test('listening submit remains pointer-reachable with idle controls hidden', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/', { waitUntil: 'networkidle' });
   await page.getByRole('tab', { name: 'Character conversation' }).click();
   await page.getByRole('button', { name: 'Listening mode' }).click();
-  await page.getByRole('button', { name: 'Talk to your assistant' }).click();
+  await expect(page.getByRole('button', { name: 'Talk to your assistant' })).toHaveCount(0);
   const input = page.getByLabel('Type your message');
   await input.fill('A typed turn');
   const submit = page.getByRole('button', { name: 'Send message' });
@@ -30,6 +30,69 @@ test('listening submit remains pointer-reachable beside an expanded dock', async
     });
   expect(hit).toBe(true);
 });
+
+test('listening mode shows completed replies without speech or hidden-history controls', async ({ page }) => {
+  let speechRequests = 0;
+  page.on('request', request => {
+    if (request.url().includes('/api/dev-character-speech')) speechRequests++;
+  });
+  let turn = 0;
+  await page.route('**/api/dev-character-conversation', route => route.fulfill({
+    json: { content: ++turn === 1 ? 'Four is the first answer.' : 'Eight is the next answer.' },
+  }));
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await page.getByRole('tab', { name: 'Character conversation' }).click();
+  await page.getByRole('button', { name: 'Listening mode', exact: true }).click();
+  const input = page.getByLabel('Type your message', { exact: true });
+  await expect(input).toBeEnabled();
+  await input.fill('What is two plus two?');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(page.getByText('Four is the first answer.', { exact: true })).toBeVisible();
+  await expect(input).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Talk to your assistant', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Conversations', exact: true })).toHaveCount(0);
+  await input.fill('What is four plus four?');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(page.getByText('Eight is the next answer.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Four is the first answer.', { exact: true })).not.toBeVisible();
+  expect(speechRequests).toBe(0);
+});
+
+for (const placement of ['bottom-left', 'bottom-right'] as const) {
+  test(`listening controls avoid the expanded ${placement} dock on desktop`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const offering = { id: 'happy', label: 'Happy', styleId: 'happy', source: 'ready-made' };
+    await page.route('**/api/dev-helper', route => route.fulfill({ json: {
+      selection: 'personal', source: 'personal', hasOverride: true, recovery: null,
+      preferences: { version: 1, offeringId: 'happy', name: 'Happy', voiceId: 'marin', placement, heardSubtitles: true, spokenSubtitles: true },
+      offering, offerings: [offering], voices: [{ id: 'marin', label: 'Marin' }],
+      permissions: { editableFields: [], canReset: false, customStyleIds: [] },
+    } }));
+    let release: () => void = () => {};
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/dev-character-conversation', async route => {
+      await pending;
+      await route.fulfill({ json: { content: 'Done.' } }).catch(() => {});
+    });
+    try {
+      await page.goto('/', { waitUntil: 'networkidle' });
+      await page.getByRole('tab', { name: 'Character conversation' }).click();
+      await page.getByRole('button', { name: 'Listening mode', exact: true }).click();
+      await page.getByLabel('Type your message', { exact: true }).fill('Wait for a reply');
+      await page.getByRole('button', { name: 'Send message', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+      const leave = page.getByRole('button', { name: 'Leave listening mode', exact: true });
+      await leave.scrollIntoViewIfNeeded();
+      await leave.click({ trial: true });
+      const dock = await page.getByRole('region', { name: 'Character assistant', exact: true }).boundingBox();
+      const voice = await page.getByLabel('Voice input', { exact: true }).boundingBox();
+      expect(dock).not.toBeNull();
+      expect(voice).not.toBeNull();
+      if (placement === 'bottom-left') expect(voice!.x).toBeGreaterThanOrEqual(dock!.x + dock!.width);
+      else expect(voice!.x + voice!.width).toBeLessThanOrEqual(dock!.x);
+    } finally { release(); }
+  });
+}
 
 async function chooseSyntheticPhoto(page: import('@playwright/test').Page) {
   const buffer = Buffer.from(await page.evaluate(() => {
