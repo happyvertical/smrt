@@ -77,6 +77,7 @@ describe('Form WebMCP staged-edit intent', () => {
     const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.dynamicImportSettled();
     await vi.waitFor(() =>
       expect(registered.length).toBeGreaterThan(_regLenBefore),
     );
