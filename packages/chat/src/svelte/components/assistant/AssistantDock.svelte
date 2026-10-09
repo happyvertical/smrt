@@ -103,6 +103,19 @@ export interface Props {
   surfaces?: DataSurfaceIdentity[];
   /** Whether the dock is currently visible; polling pauses while false. */
   visible?: boolean;
+  /** Whether the dock shows its "Conversations" toggle and thread list
+   * (#3405). Default `true`. With `false` the dock is a single running
+   * conversation: the message thread and the composer fill the full width, in
+   * wide and narrow containers alike. Nothing else changes — the dock does
+   * not open or create a conversation for you, so a host that hides the list
+   * opens one itself through `oncontroller`: load threads, then call
+   * `openThread(id)`. For a new conversation, await `createThread(title)` and then
+   * `openThread(thread.id)` with its result; creation alone does not activate
+   * the conversation. Until a conversation is active the
+   * composer stays disabled and the empty state offers "Create
+   * conversation" (when the transport supports `createThread`); it never
+   * points at the omitted list. */
+  threadList?: boolean;
   /** Renders a message's own `toolCallData` (#2988), inside that message's
    * bubble below its text. Called only for messages whose `toolCallData` is
    * set. Without it the dock renders no tool-call region at all: the payload
@@ -177,6 +190,7 @@ const {
   actionClient,
   surfaces,
   visible = true,
+  threadList = true,
   toolCall,
   oncontroller,
   onactionapplied,
@@ -448,30 +462,32 @@ async function handleConfirmAction(requestId: string) {
     class="assistant-dock-layout"
     data-threads-open={threadsOpen || undefined}
   >
-    <Button
-      type="button"
-      variant="ghost"
-      id={threadsToggleId}
-      class="assistant-dock-threads-toggle"
-      aria-expanded={threadsOpen}
-      aria-controls={threadsId}
-      onclick={() => (threadsOpen = !threadsOpen)}
-    >
-      {t(M['chat.assistant_dock.conversations_toggle'])}
-    </Button>
+    {#if threadList}
+      <Button
+        type="button"
+        variant="ghost"
+        id={threadsToggleId}
+        class="assistant-dock-threads-toggle"
+        aria-expanded={threadsOpen}
+        aria-controls={threadsId}
+        onclick={() => (threadsOpen = !threadsOpen)}
+      >
+        {t(M['chat.assistant_dock.conversations_toggle'])}
+      </Button>
 
-    <div
-      class="assistant-dock-threads"
-      id={threadsId}
-      bind:this={threadsEl}
-    >
-      <AssistantThreadList
-        threads={controller.threads}
-        activeThreadId={controller.activeThreadId}
-        onselect={handleSelectThread}
-        oncreate={transport.createThread ? handleCreateThread : undefined}
-      />
-    </div>
+      <div
+        class="assistant-dock-threads"
+        id={threadsId}
+        bind:this={threadsEl}
+      >
+        <AssistantThreadList
+          threads={controller.threads}
+          activeThreadId={controller.activeThreadId}
+          onselect={handleSelectThread}
+          oncreate={transport.createThread ? handleCreateThread : undefined}
+        />
+      </div>
+    {/if}
 
     <div class="assistant-dock-main">
       {#if controller.error}
@@ -511,7 +527,7 @@ async function handleConfirmAction(requestId: string) {
             class="assistant-dock-thread-state"
             aria-labelledby={`${threadsId}-empty-title`}
           >
-            {#if controller.threads.length > 0}
+            {#if threadList && controller.threads.length > 0}
               <h2 id={`${threadsId}-empty-title`}>
                 {t(M['chat.assistant_dock.choose_conversation'])}
               </h2>
