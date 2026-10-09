@@ -37,3 +37,25 @@ describe('auditActivityEntries', () => {
     ]);
   });
 });
+
+it('omits invalid dates and retains missing optional attribution without parsing changes', () => {
+  const invalid = new AuditLog({ action: 'updated' });
+  invalid.occurredAt = new Date('invalid');
+  const valid = new AuditLog({
+    action: 'future-action',
+    resourceType: 'Record',
+    resourceId: '1',
+  });
+  valid.occurredAt = new Date('2026-01-01');
+  expect(
+    auditActivityEntries([invalid, valid], {
+      actorLabel: () => 'A colleague',
+      href: () => '/records/1',
+    }),
+  ).toEqual([
+    expect.objectContaining({
+      title: 'A colleague · future-action',
+      href: '/records/1',
+    }),
+  ]);
+});

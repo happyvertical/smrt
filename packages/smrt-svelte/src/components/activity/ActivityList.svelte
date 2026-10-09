@@ -1,6 +1,7 @@
 <script lang="ts">
 import WorkspaceActivityList from '../workspace/admin-shell/ActivityList.svelte';
 import { tryUseAdminShell } from '../workspace/admin-shell/context.js';
+import { safeActivityHref } from './safe-href.js';
 import type { ActivityListEntry } from './types.js';
 
 interface Props {
@@ -20,8 +21,8 @@ $effect(() => {
       id: `${prefix}${entry.id}`,
       label: entry.title,
       message: entry.detail,
-      detailHref: entry.href ?? undefined,
-      kind: 'audit',
+      detailHref: safeActivityHref(entry.href),
+      kind: prefix,
       scope: 'system',
       status: 'completed',
       createdAt: entry.occurredAt,
@@ -31,4 +32,4 @@ $effect(() => {
   };
 });
 </script>
-{#if shell}<WorkspaceActivityList filter={{ kind: 'audit' }} {emptyLabel} />{:else}<p>{emptyLabel}</p>{/if}
+{#if shell}<WorkspaceActivityList filter={{ kind: prefix }} {emptyLabel} />{:else}<p>{emptyLabel}</p>{/if}

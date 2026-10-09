@@ -22,6 +22,7 @@ export function auditActivityEntries(
   options: AuditActivityOptions = {},
 ): AuditActivityEntry[] {
   return entries
+    .filter((entry) => Number.isFinite(entry.occurredAt?.getTime()))
     .map((entry) => ({
       id: String(entry.id),
       title: `${options.actorLabel?.(entry) || entry.profileId || 'Unknown actor'} · ${entry.action}`,

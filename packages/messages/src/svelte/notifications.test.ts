@@ -46,3 +46,24 @@ describe('createUserNotificationBellProvider', () => {
     ).toThrow('tenant ids');
   });
 });
+
+it('refuses unloaded writes and propagates upstream failures without emitting success', async () => {
+  const service = {
+    markRead: vi.fn(),
+    markAllRead: vi.fn().mockRejectedValue(new Error('denied')),
+    countUnread: vi.fn().mockRejectedValue(new Error('offline')),
+  };
+  const provider = createUserNotificationBellProvider({
+    service: service as never,
+    userId: 'a',
+    tenantIds: ['t'],
+  });
+  const listener = vi.fn();
+  const stop = provider.subscribe(listener);
+  await expect(provider.markRead('foreign')).rejects.toThrow('loaded');
+  expect(service.markRead).not.toHaveBeenCalled();
+  await expect(provider.markAllRead()).rejects.toThrow('denied');
+  await expect(provider.getUnreadCount()).rejects.toThrow('offline');
+  expect(listener).not.toHaveBeenCalled();
+  stop();
+});

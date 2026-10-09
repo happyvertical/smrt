@@ -10,6 +10,7 @@ export default defineConfig({
     rolldownOptions: {
       input: [
         'index',
+        'notifications',
         'tools-dock',
         'mcp-apps-binding',
         'mcp-apps-child',

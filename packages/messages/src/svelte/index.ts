@@ -164,3 +164,5 @@ ModuleUIRegistry.register(
   'messaging-settings',
   MessagingSettingsPanel,
 );
+
+export { default as MailboxDemo } from './components/MailboxDemo.svelte';
