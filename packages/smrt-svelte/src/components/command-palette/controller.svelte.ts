@@ -198,7 +198,8 @@ export class CommandPaletteController {
         ? delta > 0
           ? 0
           : selectable.length - 1
-        : (current + delta + selectable.length) % selectable.length;
+        : (((current + delta) % selectable.length) + selectable.length) %
+          selectable.length;
     this.#activeKey = selectable[next].key;
   }
 

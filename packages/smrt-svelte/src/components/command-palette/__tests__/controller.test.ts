@@ -302,6 +302,35 @@ describe('CommandPaletteController', () => {
     expect(palette.results).toEqual([]);
   });
 
+  it('wraps page-sized moves on short lists without a negative index', () => {
+    const palette = createCommandPalette({ providers: [commands] });
+    palette.open();
+    // (0 - 5) mod 3 must wrap to index 1, not -2.
+    palette.moveActive(-5);
+    expect(palette.active?.item.id).toBe('b');
+    palette.moveActive(5);
+    expect(palette.active?.item.id).toBe('a');
+    palette.moveActive(-100);
+    expect(palette.active?.item.id).toBe('c');
+    palette.moveActive(100);
+    expect(palette.active?.item.id).toBe('a');
+
+    const two = createCommandPalette({
+      providers: [
+        {
+          id: 'two',
+          label: 'Two',
+          items: () => [item('a', 'Alpha'), item('b', 'Beta')],
+        },
+      ],
+    });
+    two.open();
+    two.moveActive(-5);
+    expect(two.active?.item.id).toBe('b');
+    two.moveActive(5);
+    expect(two.active?.item.id).toBe('a');
+  });
+
   it('toggles and clears state on close', () => {
     const palette = createCommandPalette({ providers: [commands] });
     palette.toggle();
