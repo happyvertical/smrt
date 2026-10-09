@@ -215,13 +215,17 @@ export class WhisperLocalEngine {
       throw new Error('The speech model is not loaded');
     }
     const options: Record<string, unknown> = {
-      task: 'transcribe',
       chunk_length_s: 30,
       stride_length_s: 5,
     };
-    const lang = whisperLanguage(language);
-    // English-only models reject a language option.
-    if (lang && !isEnglishOnly(this.config.modelId)) options.language = lang;
+    // English-only models (`*.en`) reject both `task` and `language`
+    // ("Cannot specify `task` or `language` for an English-only model");
+    // multilingual ones need `task` so they transcribe rather than translate.
+    if (!isEnglishOnly(this.config.modelId)) {
+      options.task = 'transcribe';
+      const lang = whisperLanguage(language);
+      if (lang) options.language = lang;
+    }
     const out = await this.transcriber(audio, options);
     const first = Array.isArray(out)
       ? out.map((o) => o.text ?? '').join(' ')

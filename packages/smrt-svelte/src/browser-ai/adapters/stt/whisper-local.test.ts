@@ -107,7 +107,7 @@ describe('WhisperLocalEngine', () => {
     ).rejects.toThrow('no webgpu');
   });
 
-  it('transcribes, omitting the language for English-only models', async () => {
+  it('transcribes, omitting task and language for English-only models', async () => {
     stubGpu(false);
     const fake = fakeTransformers();
     const engine = new WhisperLocalEngine(async () => fake.module);
@@ -116,6 +116,8 @@ describe('WhisperLocalEngine', () => {
       'hello',
     );
     expect(fake.transcriber.mock.calls[0]?.[1]).not.toHaveProperty('language');
+    // transformers.js rejects `task` on an English-only model.
+    expect(fake.transcriber.mock.calls[0]?.[1]).not.toHaveProperty('task');
 
     const multi = fakeTransformers();
     const multiEngine = new WhisperLocalEngine(async () => multi.module);
@@ -125,6 +127,7 @@ describe('WhisperLocalEngine', () => {
     });
     await multiEngine.transcribe(new Float32Array(4), 'fr-CA');
     expect(multi.transcriber.mock.calls[0]?.[1]).toMatchObject({
+      task: 'transcribe',
       language: 'fr',
     });
   });
