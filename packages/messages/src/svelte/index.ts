@@ -11,6 +11,13 @@ import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 import type { ComponentProps } from 'svelte';
 import { MESSAGES_MODULE_META } from '../ui.js';
 
+export type {
+  NotificationBellItem,
+  UserNotificationBellProvider,
+  UserNotificationBellProviderOptions,
+} from './notifications.js';
+export { createUserNotificationBellProvider } from './notifications.js';
+
 // Import components
 import AccountAvatar from './components/AccountAvatar.svelte';
 import AccountCard from './components/AccountCard.svelte';
