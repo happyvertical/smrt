@@ -65,9 +65,10 @@ Validation commands are `pnpm test`, `pnpm test:postgres`, `pnpm test:providers`
 `pnpm build` (including built browser import inspection). The PostgreSQL lane
 requires the repository's configured database service and never silently skips.
 The provider lane exercises local SDK adapters and process isolation; it does not
-claim live remote recognition quality. Component, e2e and evaluation command names are reserved by the ADR and
-explicitly unavailable until their owning children deliver the corresponding
-capability. See the [behavior matrix](../../docs/test-matrix/3670-ingestion-foundation.md).
+claim live remote recognition quality. `pnpm test:components` and `pnpm test:e2e`
+cover the maintained review surface. `pnpm test:evaluation` checks repository
+evaluation tooling contracts; measured held-out quality requires a separately
+frozen protocol and an approved aggregate provider budget. See the [behavior matrix](../../docs/test-matrix/3670-ingestion-foundation.md).
 
 ## Authoritative review and execution
 

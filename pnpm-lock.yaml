@@ -1685,9 +1685,15 @@ importers:
         specifier: 'catalog:'
         version: 0.35.5(@types/node@24.13.2)
     devDependencies:
+      '@happyvertical/email':
+        specifier: ^0.102.7
+        version: 0.102.7(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(supports-color@10.2.2)
       '@happyvertical/smrt-content':
         specifier: workspace:*
         version: link:../content
+      '@happyvertical/smrt-messages':
+        specifier: workspace:*
+        version: link:../messages
       '@happyvertical/smrt-users':
         specifier: workspace:*
         version: link:../users

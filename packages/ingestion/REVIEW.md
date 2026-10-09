@@ -120,7 +120,8 @@ Run full package `test`, `test:postgres`, `test:providers`, `build`, `typecheck`
 `test:components`, `test:e2e`; use the root Node/pnpm versions. Set a short
 `CI_TEST_TMPDIR`/`TMPDIR`, and optionally
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to the supported installed Chromium.
-The evaluation lane remains explicitly unavailable until #3677.
+`pnpm test:evaluation` checks repository evaluation tooling contracts; measured
+held-out quality remains a separate frozen-protocol, budget-gated #3677 run.
 
 The existing CI browser job includes ingestion changes and shared UI primitive
 changes in affected mode, and runs the ingestion browser suite in full mode. Its
