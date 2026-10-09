@@ -9,8 +9,37 @@ export class MailboxRecipe extends SmrtRecipe {
   static label = 'Mailbox';
   static summary = 'Read and compose email from your connected accounts.';
   static synonyms = ['email', 'inbox', 'mail'];
+  static group = {
+    id: 'messages',
+    label: 'Messaging',
+    summary: 'Choose email and personal updates independently.',
+  };
+  static section = {
+    id: 'messages',
+    label: 'Messaging',
+    icon: 'folder',
+    description: 'Read email and keep up with updates addressed to you.',
+  };
   static models = [Email, EmailAccount];
-  static nav = [{ label: 'Mailbox', model: Email }];
+  static nav = [
+    {
+      label: 'Mailbox',
+      model: Email,
+      key: 'mailbox',
+      icon: 'folder',
+      noun: 'email',
+      description: 'Read email from your connected accounts.',
+    },
+    {
+      label: 'Drafts',
+      model: Email,
+      key: 'drafts',
+      icon: 'fileText',
+      noun: 'email',
+      description: 'Continue email that has not been sent.',
+      filter: { field: 'sendStatus', value: 'draft' },
+    },
+  ];
   static help = './help/mailbox.md';
 }
 
@@ -20,6 +49,19 @@ export class NotificationsRecipe extends SmrtRecipe {
   static label = 'Notifications';
   static summary = 'See updates addressed to you and mark them read.';
   static synonyms = ['alerts', 'notification bell'];
+  static group = {
+    id: 'messages',
+    label: 'Messaging',
+    summary: 'Choose email and personal updates independently.',
+  };
+  static section = {
+    id: 'messages',
+    label: 'Messaging',
+    icon: 'folder',
+    description: 'Read email and keep up with updates addressed to you.',
+  };
   static models = [UserNotification];
+  // Recipient-scoped reads use the bell provider, never generated model routes.
+  static nav = [];
   static help = './help/notifications.md';
 }
