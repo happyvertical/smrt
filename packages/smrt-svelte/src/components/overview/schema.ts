@@ -153,6 +153,27 @@ export function defaultWidgetOptions(
 }
 
 /**
+ * Fill a missing or cleared field from its default, or report it required.
+ * A substituted default goes through the same check as a supplied value
+ * (including the page-confined `models` list): a default the page does not
+ * allow fails like any other disallowed value, so a loader never runs for it.
+ */
+function substituteDefault(
+  field: WidgetOptionField,
+  context: WidgetOptionsContext | undefined,
+  options: OverviewOptions,
+  issues: WidgetOptionIssue[],
+): void {
+  if (field.default !== undefined && field.default !== null) {
+    const check = validateField(field, field.default, context);
+    if (check.issue) issues.push(check.issue);
+    else if (check.value !== undefined) options[field.key] = check.value;
+  } else if (field.required) {
+    issues.push({ key: field.key, code: 'required' });
+  }
+}
+
+/**
  * Validate untrusted options against a schema. Strict: an unknown key, a
  * wrong type, an out-of-range number, a value outside a closed set, or a
  * missing required field fails the whole object (all issues are reported).
@@ -181,20 +202,12 @@ export function validateWidgetOptions(
       ? input[field.key]
       : undefined;
     if (value === undefined || value === null) {
-      if (field.default !== undefined && field.default !== null) {
-        options[field.key] = field.default;
-      } else if (field.required) {
-        issues.push({ key: field.key, code: 'required' });
-      }
+      substituteDefault(field, context, options, issues);
       continue;
     }
     // A cleared select or identifier box behaves as unset.
     if (value === '' && field.type !== 'text' && field.type !== 'markdown') {
-      if (field.default !== undefined && field.default !== null) {
-        options[field.key] = field.default;
-      } else if (field.required) {
-        issues.push({ key: field.key, code: 'required' });
-      }
+      substituteDefault(field, context, options, issues);
       continue;
     }
     const check = validateField(field, value, context);

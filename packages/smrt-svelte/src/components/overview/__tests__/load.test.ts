@@ -125,6 +125,49 @@ describe('loadOverview', () => {
     expect(aborted).toBe(true);
   });
 
+  it('never loads a widget whose default model is outside the page-confined list', async () => {
+    const registry = createWidgetRegistry();
+    const load = vi.fn(() => ({ ok: true }));
+    registry.register({
+      type: 'defaulted',
+      title: 'D',
+      options: [
+        {
+          key: 'model',
+          type: 'model',
+          label: 'M',
+          default: 'events:Secret',
+        },
+      ],
+      load,
+    });
+    const def = { ...definition, allowed: undefined, models: ['events:Event'] };
+    for (const options of [{}, { model: '' }, { model: null }] as const) {
+      const out = await loadOverview(
+        { widgets: [w('a', 'defaulted', 1, options)] },
+        def,
+        registry,
+        {},
+      );
+      expect(out.widgets).toEqual([]);
+      expect(out.issues).toMatchObject([
+        { widgetId: 'a', code: 'invalid_options' },
+      ]);
+    }
+    expect(load).not.toHaveBeenCalled();
+
+    // A default inside the confined list still loads.
+    const allowed = { ...def, models: ['events:Secret'] };
+    const ok = await loadOverview(
+      { widgets: [w('b', 'defaulted', 1, {})] },
+      allowed,
+      registry,
+      {},
+    );
+    expect(ok.widgets.map((x) => x.status)).toEqual(['ready']);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
   it('loads what resolveOverview produced and never loads a dropped widget', async () => {
     const registry = makeRegistry();
     const resolved = resolveOverview(

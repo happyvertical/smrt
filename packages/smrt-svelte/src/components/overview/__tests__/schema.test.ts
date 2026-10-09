@@ -92,6 +92,38 @@ describe('validateWidgetOptions', () => {
     ).toBe(true);
   });
 
+  it('confines a substituted default model to the page list too', () => {
+    const fields = [
+      {
+        key: 'model',
+        type: 'model' as const,
+        label: 'M',
+        default: 'events:Secret',
+      },
+    ];
+    const models = ['events:Event'];
+    const forbidden = {
+      ok: false,
+      issues: [{ key: 'model', code: 'not_allowed' }],
+    };
+    expect(validateWidgetOptions(fields, {}, { models })).toEqual(forbidden);
+    expect(validateWidgetOptions(fields, { model: null }, { models })).toEqual(
+      forbidden,
+    );
+    // A cleared select behaves as unset, so it takes the same path.
+    expect(validateWidgetOptions(fields, { model: '' }, { models })).toEqual(
+      forbidden,
+    );
+    // Unconfined pages and allowed defaults are unchanged.
+    expect(validateWidgetOptions(fields, {})).toEqual({
+      ok: true,
+      options: { model: 'events:Secret' },
+    });
+    expect(
+      validateWidgetOptions(fields, {}, { models: ['events:Secret'] }),
+    ).toEqual({ ok: true, options: { model: 'events:Secret' } });
+  });
+
   it('rejects options that are not a plain object', () => {
     expect(validateWidgetOptions(countFields, [])).toMatchObject({ ok: false });
     expect(validateWidgetOptions(countFields, 'x')).toMatchObject({

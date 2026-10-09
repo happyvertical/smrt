@@ -31,7 +31,9 @@ against (absent means 1).
 
 - **`OverviewDefinition`** (what a page declares): `id` (dotted ids allowed,
   `events.home`), `defaults`, `allowed` (widget types; omit for every registered
-  type), `models` (confines `model` options), `maxWidgets` (default 24).
+  type), `models` (confines `model` options, including a substituted default: a
+  default outside the list fails validation, so its loader never runs),
+  `maxWidgets` (default 24).
   `defineOverview` validates ids.
 - **`OverviewOverride`** is the sparse, versioned (`version: 1`) delta a host
   stores: `order`, `removed`, `added`, `changed[id] = { span?, options?, version? }`.
