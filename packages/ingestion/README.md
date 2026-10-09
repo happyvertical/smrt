@@ -68,3 +68,12 @@ The provider lane exercises local SDK adapters and process isolation; it does no
 claim live remote recognition quality. Component, e2e and evaluation command names are reserved by the ADR and
 explicitly unavailable until their owning children deliver the corresponding
 capability. See the [behavior matrix](../../docs/test-matrix/3670-ingestion-foundation.md).
+
+## Authoritative review and execution
+
+Configure `IngestionOptions.execution` for policy, immutable previews, authenticated
+decisions and idempotent domain execution. See [execution integration](agents/execution.md)
+for the public handler catalog, required host authorization/target locks, deployment
+migrations and jobs continuation integration. The maintained application reference
+in `reference/handlers.ts` creates draft ContentDocuments and attaches retained
+evidence through public domain APIs; it is not a published runtime adapter.

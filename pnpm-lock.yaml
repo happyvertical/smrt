@@ -1593,6 +1593,9 @@ importers:
       '@happyvertical/pdf':
         specifier: ^0.65.9
         version: 0.65.9(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(@types/node@24.13.2)(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/smrt-agents':
+        specifier: workspace:*
+        version: link:../agents
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1602,6 +1605,9 @@ importers:
       '@happyvertical/smrt-jobs':
         specifier: workspace:*
         version: link:../jobs
+      '@happyvertical/smrt-playbooks':
+        specifier: workspace:*
+        version: link:../playbooks
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -1617,7 +1623,16 @@ importers:
       sharp:
         specifier: 'catalog:'
         version: 0.35.5(@types/node@24.13.2)
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
     devDependencies:
+      '@happyvertical/smrt-content':
+        specifier: workspace:*
+        version: link:../content
+      '@happyvertical/smrt-users':
+        specifier: workspace:*
+        version: link:../users
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
