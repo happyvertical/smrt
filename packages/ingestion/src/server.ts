@@ -1687,3 +1687,4 @@ export class IngestionService {
 }
 
 export * from './extraction.js';
+export * from './sources/index.js';
