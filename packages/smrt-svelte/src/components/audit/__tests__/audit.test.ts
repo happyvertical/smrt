@@ -47,6 +47,8 @@ describe('audit views', () => {
       resourceId: 'job-1',
     });
     expect(container.querySelectorAll('ol > li')).toHaveLength(2);
+    expect(container.querySelector('ol')).toHaveAttribute('role', 'list');
+    expect(container.querySelector('ul')).toHaveAttribute('role', 'list');
     expect(container.querySelector('ol > li')).toHaveTextContent(
       'bob · approved',
     );

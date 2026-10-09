@@ -150,7 +150,7 @@ function date(value: string): string {
   {#if error}<p role="alert">{error}</p>{/if}
   {#if loading}<p role="status">{t(M['ui.audit.loading'])}</p>{/if}
   {#if !loading && visible.length === 0}<p>{t(M['ui.audit.empty'])}</p>{/if}
-  <ol>
+  <ol role="list">
     {#each visible as entry (entry.id)}
       {@const resolvedResourceLabel = entryLabel(resourceLabel, entry, `${entry.resourceType} / ${entry.resourceId}`)}
       {@const resolvedResourceHref = safeResourceHref(entry)}
@@ -164,7 +164,7 @@ function date(value: string): string {
         {#if entry.onBehalfOfId}<p>{t(M['ui.audit.behalf'], { actor: entry.onBehalfOfId })}</p>{/if}
         {#if entry.reason}<p>{t(M['ui.audit.reason'], { reason: entry.reason })}</p>{/if}
         {#if entry.changes && Object.keys(entry.changes).length}
-          <ul>
+          <ul role="list">
             {#each Object.entries(entry.changes) as [field, change] (field)}
               <li>{t(M['ui.audit.change'], {
                 field: changedFieldLabel(field, entry),
@@ -208,7 +208,8 @@ function date(value: string): string {
   }
 
   .smrt-record-history a {
-    color: var(--smrt-color-primary);
+    color: var(--smrt-color-on-surface);
+    text-decoration-color: var(--smrt-color-primary);
     text-decoration-thickness: .08em;
     text-underline-offset: .18em;
   }
