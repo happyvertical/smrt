@@ -104,6 +104,27 @@ describe('EditForm', () => {
     expect(onsubmit.mock.calls[0][1]).toEqual({ isNew: false });
   });
 
+  it('edit: saving another field keeps the datetime seconds and milliseconds', async () => {
+    const onsubmit = vi.fn().mockResolvedValue(undefined);
+    render(EditForm, {
+      props: {
+        definition: taskDefinition,
+        policy: taskPolicy,
+        record: { ...taskRows[0], dueAt: '2026-10-09T12:30:45.123Z' },
+        onsubmit,
+      },
+    });
+    const title = screen.getByLabelText(/Task name/);
+    await userEvent.clear(title);
+    await userEvent.type(title, 'Renamed');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await vi.waitFor(() => expect(onsubmit).toHaveBeenCalledOnce());
+    expect(onsubmit.mock.calls[0][0]).toMatchObject({
+      title: 'Renamed',
+      dueAt: '2026-10-09T12:30:45.123Z',
+    });
+  });
+
   it('shows a form-level error when the host throws', async () => {
     const onsubmit = vi.fn().mockRejectedValue(new Error('boom'));
     render(EditForm, {

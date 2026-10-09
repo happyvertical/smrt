@@ -153,7 +153,7 @@ async function submit(): Promise<void> {
   if (working || submitting) return;
   failed = false;
   hostErrors = {};
-  const parsed = parseDraft(allFields, draft, { currency });
+  const parsed = parseDraft(allFields, draft, { currency, record });
   localErrors = parsed.errors;
   if (Object.keys(parsed.errors).length > 0) {
     if (advancedFields.some((f) => parsed.errors[f.name])) advancedOpen = true;

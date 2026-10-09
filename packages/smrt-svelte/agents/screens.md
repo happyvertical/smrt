@@ -37,8 +37,9 @@ stays below the domain layer, and the app passes both in as props.
 - **Values are `values.ts`**: money (`ui.widget: 'currency'` on an INTEGER field
   only) is integer minor units end to end. Editing shows major units but converts
   with exact string math (`majorStringToMinorUnits`), never `* 100`; integers are
-  rejected unless JavaScript-safe; datetimes go out as ISO strings; JSON as parsed
-  values. Empty optional text becomes `null` when the field is nullable and `''`
+  rejected unless JavaScript-safe; datetimes go out as ISO strings (an unchanged datetime keeps the
+  loaded record's full precision via `parseDraft`'s `record` context; the control
+  only shows minutes); JSON as parsed values. Empty optional text becomes `null` when the field is nullable and `''`
   otherwise (unset text persists as `''`); every other empty optional field is
   `null`. Errors are codes, mapped to messages by the component via `useI18n`.
 - **Transport-neutral.** `RecipeScreens` drives a `RecipeScreensSource`

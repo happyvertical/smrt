@@ -147,6 +147,40 @@ describe('parseDraft', () => {
     expect(values.notes).toBe('');
   });
 
+  it('keeps full datetime precision when the control text is unchanged', () => {
+    const record = { ...taskRows[0], dueAt: '2026-10-09T12:30:45.123Z' };
+    const unchanged = draftFromRecord(editFields, record);
+    const saved = parseDraft(
+      editFields,
+      { ...unchanged, title: 'Renamed' },
+      { record },
+    );
+    expect(saved.errors).toEqual({});
+    expect(saved.values.dueAt).toBe('2026-10-09T12:30:45.123Z');
+    // Without the loaded record the minute-precision text is all there is.
+    expect(parseDraft(editFields, unchanged).values.dueAt).toBe(
+      new Date(toDatetimeLocal(record.dueAt)).toISOString(),
+    );
+    // A Date-valued record keeps its precision too.
+    const dated = { ...record, dueAt: new Date('2026-10-09T12:30:45.123Z') };
+    expect(
+      parseDraft(editFields, draftFromRecord(editFields, dated), {
+        record: dated,
+      }).values.dueAt,
+    ).toBe('2026-10-09T12:30:45.123Z');
+  });
+
+  it('saves an edited datetime as the new value', () => {
+    const record = { ...taskRows[0], dueAt: '2026-10-09T12:30:45.123Z' };
+    const draft = {
+      ...draftFromRecord(editFields, record),
+      dueAt: '2026-11-01T09:05',
+    };
+    expect(parseDraft(editFields, draft, { record }).values.dueAt).toBe(
+      new Date('2026-11-01T09:05').toISOString(),
+    );
+  });
+
   it('respects the currency minor-unit digits', () => {
     expect(
       parseDraft(editFields, { ...base(), budget: '1250' }, { currency: 'JPY' })

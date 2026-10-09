@@ -140,6 +140,16 @@ export function draftForCreate(
   return draft;
 }
 
+export interface ParseDraftContext extends ScreenValueContext {
+  /**
+   * The loaded record being edited. A datetime control shows minute
+   * precision only, so a datetime whose draft text still equals what the
+   * record rendered is submitted as the record's own value, keeping seconds
+   * and milliseconds. A genuinely edited datetime saves the new value.
+   */
+  record?: ScreenRecord | null;
+}
+
 export interface ParsedDraft {
   /** Payload values, keyed by field name. */
   values: Record<string, unknown>;
@@ -154,7 +164,7 @@ export interface ParsedDraft {
 export function parseDraft(
   fields: readonly ScreenField[],
   draft: ScreenDraft,
-  context: ScreenValueContext = {},
+  context: ParseDraftContext = {},
 ): ParsedDraft {
   const values: Record<string, unknown> = {};
   const errors: Record<string, ScreenFieldErrorCode> = {};
@@ -209,6 +219,23 @@ export function parseDraft(
         break;
       }
       case 'datetime': {
+        const original = context.record?.[field.name];
+        const originalDate =
+          original === null || original === undefined || original === ''
+            ? null
+            : original instanceof Date
+              ? original
+              : new Date(original as string | number);
+        if (
+          originalDate &&
+          !Number.isNaN(originalDate.getTime()) &&
+          trimmed === toDatetimeLocal(originalDate)
+        ) {
+          // Unchanged at the control's precision: keep the full-precision
+          // original instead of truncating to the minute.
+          values[field.name] = originalDate.toISOString();
+          break;
+        }
         const date = new Date(trimmed);
         if (Number.isNaN(date.getTime()))
           errors[field.name] = 'invalid_datetime';
