@@ -20,8 +20,11 @@ are correct.
 
 Decision and downstream execution facts are captured inside their owning
 transaction, keyed by immutable event ID and signal, when the configured capture
-authority allows the optional memory projection. Denial leaves the underlying
-authoritative decision/outcome intact. Failed/rolled-back domain
+authority allows the optional memory projection and it fits the configured byte
+cap. Denial or an oversized automatic projection leaves the underlying
+authoritative decision/outcome intact, including failure and reconciliation.
+Explicit `recordFeedback` and `observeFeedback` requests still reject invalid or
+oversized writes; actual database failures still propagate and roll back. Failed/rolled-back domain
 work and unknown external outcomes remain distinct. `observeFeedback` can replay
 an authorized existing event; it cannot supply a correctness label or fabricate
 an execution result. An initial denial does not mutate retention. Once authorized,
@@ -41,7 +44,10 @@ scope, with its current action/analysis binding, target grants, handler version,
 model/prompt/configuration compatibility and retention. Each source's current
 provider policy must allow the generation recipient and any configured decision
 recipient; the source owner rechecks that policy on both initial and final live
-contexts. A receiving item's provider grant cannot substitute for a source grant.
+contexts. Receiving checks cover every offered handler, before and after source
+checks, using each live grant, actual provider recipients and the narrowest byte
+ceiling. Both retrieval and reference revalidation budget the full reconstructed
+examples. A receiving item's provider grant cannot substitute for a source grant.
 Superseded, revoked, deleted or incompatible sources are excluded. Current explicit human corrections
 take precedence: a generation carrying one does not retrieve learned examples.
 

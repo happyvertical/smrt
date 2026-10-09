@@ -525,6 +525,53 @@ export class IntakeFeedbackService {
       return undefined;
     }
   }
+  private receivingContext(
+    input: RetrieveFeedbackInput,
+    executor: DatabaseInterface | undefined,
+    work: (
+      context: import('./execution-contracts.js').HandlerContext,
+    ) => Promise<FeedbackSelection>,
+  ): Promise<FeedbackSelection> {
+    let limit = this.config.maxBytes;
+    let bytes: number | undefined;
+    const validate = async (
+      context: import('./execution-contracts.js').HandlerContext,
+    ) => {
+      if (
+        (input.providers ?? [input.model.provider]).some(
+          (provider) => !context.policy.providers.includes(provider),
+        )
+      )
+        throw new Error('Feedback recipient unavailable');
+      limit = Math.min(limit, context.policy.maxBytes);
+      if (bytes !== undefined && bytes > limit)
+        throw new Error('Feedback limit');
+    };
+    const visit = (
+      index: number,
+      db: DatabaseInterface | undefined,
+    ): Promise<FeedbackSelection> => {
+      const entry = input.offered[index];
+      return this.execution[feedbackDiscoveryContext](
+        db,
+        input.itemId,
+        entry.handler.id,
+        entry.handler.version,
+        async (context) => {
+          await validate(context);
+          const selection =
+            index + 1 < input.offered.length
+              ? await visit(index + 1, context.db)
+              : await work(context);
+          bytes = Buffer.byteLength(JSON.stringify(selection));
+          if (bytes > limit) throw new Error('Feedback limit');
+          return selection;
+        },
+        validate,
+      );
+    };
+    return visit(0, executor);
+  }
   async retrieve(
     input: RetrieveFeedbackInput,
     executor?: DatabaseInterface,
@@ -581,28 +628,10 @@ export class IntakeFeedbackService {
           .slice(0, this.config.maxExamples)
           .map((entry) => entry.example),
       };
-      if (
-        Buffer.byteLength(JSON.stringify(selection)) >
-        Math.min(this.config.maxBytes, context.policy.maxBytes)
-      )
-        throw new Error('Feedback limit');
       await authorize();
       return selection;
     };
-    return executor
-      ? this.execution[feedbackDiscoveryContext](
-          executor,
-          input.itemId,
-          offered.handler.id,
-          offered.handler.version,
-          work,
-        )
-      : this.execution.withDiscoveryContext(
-          input.itemId,
-          offered.handler.id,
-          offered.handler.version,
-          work,
-        );
+    return this.receivingContext(input, executor, work);
   }
   async assertSelection(
     input: RetrieveFeedbackInput,
@@ -637,6 +666,7 @@ export class IntakeFeedbackService {
         }))
       )
         throw new Error('Feedback unavailable');
+      const examples: FeedbackExample[] = [];
       for (const expected of selection.examples) {
         const [row] = await this.rows(context.db, 'id=? AND kind=?', [
           expected.feedbackId,
@@ -652,6 +682,7 @@ export class IntakeFeedbackService {
             this.config.minimumSimilarity
         )
           throw new Error('Feedback eligibility changed');
+        examples.push(current);
       }
       if (
         !(await this.config.authorize({
@@ -662,22 +693,9 @@ export class IntakeFeedbackService {
         }))
       )
         throw new Error('Feedback unavailable');
+      return { ...selection, examples };
     };
-    if (executor)
-      await this.execution[feedbackDiscoveryContext](
-        executor,
-        input.itemId,
-        offered.handler.id,
-        offered.handler.version,
-        work,
-      );
-    else
-      await this.execution.withDiscoveryContext(
-        input.itemId,
-        offered.handler.id,
-        offered.handler.version,
-        work,
-      );
+    await this.receivingContext(input, executor, work);
   }
   private async support(
     ctx: FeedbackActionContext,

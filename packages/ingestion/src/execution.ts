@@ -563,6 +563,7 @@ export class IntakeExecutionService {
     handlerVersion: string,
     work: (context: HandlerContext) => Promise<T>,
     requireReview = false,
+    revalidate?: (context: HandlerContext) => Promise<void>,
   ): Promise<T> {
     const review = async () => {
       const item = await this.item(db, itemId, true);
@@ -635,7 +636,7 @@ export class IntakeExecutionService {
     if (requireReview) await review();
     const result = await authorize(work);
     // A long database callback may cross retention or a current-grant boundary.
-    await authorize(async () => {});
+    await authorize(revalidate ?? (async () => {}));
     if (requireReview) await review();
     return result;
   }
@@ -685,13 +686,24 @@ export class IntakeExecutionService {
   /** Same-executor current review/evidence/target gate for the owning feedback ledger. */
   /** Join an existing owning transaction; its outer boundary restores retention after rollback. */
   [feedbackDiscoveryContext]<T>(
-    db: DatabaseInterface,
+    db: DatabaseInterface | undefined,
     itemId: string,
     handlerId: string,
     handlerVersion: string,
     work: (context: HandlerContext) => Promise<T>,
+    revalidate?: (context: HandlerContext) => Promise<void>,
   ): Promise<T> {
-    return this.discoveryContext(db, itemId, handlerId, handlerVersion, work);
+    const run = (executor: DatabaseInterface) =>
+      this.discoveryContext(
+        executor,
+        itemId,
+        handlerId,
+        handlerVersion,
+        work,
+        false,
+        revalidate,
+      );
+    return db ? run(db) : this.tx(run);
   }
   [feedbackActionTransaction]<T>(
     actionId: string,
@@ -1503,8 +1515,10 @@ export class IntakeExecutionService {
       generationProvenance: generation.provenance ?? null,
     };
     const data = { ...body, digest: intakeBindingDigest(body) };
+    // Optional memory projection cannot veto the authoritative event. Storage
+    // failures still propagate; explicit record/observe retain their own limits.
     if (Buffer.byteLength(canonical(data)) > this.options.feedback.maxBytes)
-      throw new Error('Feedback event limit');
+      return;
     await this.insert(db, 'intake_feedback', {
       item_id: bound.item.id,
       request_key: key,

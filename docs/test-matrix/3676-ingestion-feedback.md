@@ -193,3 +193,28 @@ checks, static gates, normal hooks and packed consumers are recorded in the
 round-3 evidence. Earlier full feedback/source-policy and broad suites carry only
 where the exact unchanged source/hunk proof applies; they are not fresh passes.
 No public contract, schema, dependency, timeout or grant changed.
+
+## Post-publication receiving authority and optional projection correction
+
+Accepted PR feedback exposed two boundaries. Retrieval/reference revalidation
+used only the first receiving handler's context after asynchronous source checks;
+a later handler could lose its grant, provider permission or byte budget while
+examples were still returned. Automatic decision/outcome projection also treated
+its optional memory byte cap as an authoritative-action failure.
+
+| Boundary | Regression and expected behavior |
+|---|---|
+| Every receiving handler | Two-handler fixtures keep the first authorized and revoke the second during source checks. Public retrieval and owning reference revalidation deny grant/provider/budget changes; the full examples, not only saved references, fit the minimum live receiving ceiling. |
+| Final receiving policy | Post-callback contexts retain current provider and byte checks, not only generic handler permission. |
+| Optional event capture | A one-byte cap skips automatic projection while approval, successful domain work, failed work, unknown outcome and not-applied reconciliation remain durable. No memory row or correctness label is invented. |
+| Explicit writes and storage errors | Explicit record/observe still reject invalid or oversized requests. A real database INSERT failure propagates and rolls back the authoritative decision and projection. |
+
+Baseline failures and corrected commands/counts are recorded separately in the
+round-4 hashed evidence. The first duplicate-wrapper implementation passed 45
+SQLite cases but timed out the PostgreSQL held-out cohort at its unchanged
+30-second limit; the isolated cohort reproduced that regression. Nested receiving
+contexts retain every initial/final check without redundant wrappers. The final
+46-case feedback lanes supersede those diagnostic runs. Both actual SQLite and ordinary-role PostgreSQL exercise
+the affected boundaries. Unchanged broader runtime gates carry with exact source
+and delta proof; no fresh full-monorepo result is claimed. No schema, dependency,
+public callback, timeout, privilege or paid-provider change is included.
