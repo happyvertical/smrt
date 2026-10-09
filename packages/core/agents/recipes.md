@@ -80,7 +80,7 @@ at scan time; a host resolves them. Relative or absolute specifiers are rejected
 
 | Static | Shape | Meaning |
 | --- | --- | --- |
-| `surfaces` | `RecipeSurface[]` | `{ kind: 'shell-widget', slot, export, label, icon? }`, `{ kind: 'route', path, export, label }`, `{ kind: 'settings-panel', export, label }`, `{ kind: 'playground', export, label? }`. `slot` is a smrt-svelte `ShellSlot`; `path` starts with `/` and has no whitespace, `?`, `#` or `..`. |
+| `surfaces` | `RecipeSurface[]` | `{ kind: 'shell-widget', slot, export, label, icon? }`, `{ kind: 'route', path, export, label }`, `{ kind: 'settings-panel', export, label }`, `{ kind: 'playground', export, label? }`, `{ kind: 'widget', type, export, label, ... }` (see below). `slot` is a smrt-svelte `ShellSlot`; `path` starts with `/` and has no whitespace, `?`, `#` or `..`. |
 | `providers` | `RecipeProvider[]` | `{ id, kind, options, required, secrets? }`: lowercase slugs, `options` non-empty and distinct, `required` always written, `secrets` distinct `UPPER_SNAKE` names (never values). Ids are unique per recipe. |
 | `runtime` | `'browser' \| 'server' \| 'both'` | Where the recipe's runtime pieces can run. Omitted means `both`; the value is emitted as authored. |
 | `demoSeed` | `{ export } \| { data }` | A fixture export reference, or inline JSON of at most 8 KB, for demo hosts. Exactly one key. |
@@ -93,6 +93,63 @@ no runtime dependency on smrt-svelte. Inline `demoSeed.data` must be finite JSON
 kind or slot, extra key, duplicate route path or provider id, malformed
 reference) is a scan error. Example: `events.calendar` in
 `packages/events/src/recipes.ts`.
+
+## Widget surfaces (#3727)
+
+`{ kind: 'widget', ... }` contributes a widget to customizable overviews
+(smrt-svelte `./overview`). The manifest carries everything a host needs to
+register it; the helper `registerRecipeWidgets` in smrt-svelte does that with an
+injected module resolver, so nothing is imported at scan time.
+
+```ts
+static surfaces = [
+  {
+    kind: 'widget',
+    type: 'sales-total',                       // registry type, unique per package
+    export: '@acme/shop/svelte#SalesTotal',    // the component
+    label: 'Sales total',                      // text or an i18n key
+    description: 'Order totals for the period.',
+    icon: 'chart',
+    version: 2,                                // option-schema version (default 1)
+    migrate: '@acme/shop/server#migrateSalesTotal', // needs version above 1
+    options: [
+      { key: 'model', type: 'model', label: 'Model', required: true },
+      { key: 'style', type: 'enum', label: 'Style', default: 'bar',
+        choices: [{ value: 'bar', label: 'Bar' }, { value: 'line', label: 'Line' }] },
+    ],
+    data: { load: '@acme/shop/server#loadSalesTotal', models: ['@acme/shop:Order'] },
+    allowedIn: ['shop.home'],                  // overview ids; omit for any
+    defaultSpan: 2, minSpan: 1, maxSpan: 3,
+  },
+] as const;
+```
+
+Emitted keys, in this order: `kind`, `type`, `export`, `label`, `description`,
+`icon`, `version`, `migrate`, `options`, `data`, `allowedIn`, `defaultSpan`,
+`minSpan`, `maxSpan`; absent ones are omitted. Rules (each violation is a scan
+error, same strictness as the other kinds):
+
+- `type` is a lowercase kebab id (`[a-z][a-z0-9-]{0,31}`), unique among a
+  recipe's surfaces and across the package's recipes. `export`, `data.load` and
+  `migrate` are `'<package specifier>#<ExportName>'`; relative specifiers are
+  rejected. `label` is required.
+- `options` is a non-empty list of plain-JSON fields limited to the overview
+  option types: `text`, `markdown`, `identifier`, `model`, `integer`, `number`,
+  `boolean`, closed `enum` (non-empty distinct `choices`). There is no free-form
+  query, expression, URL or SQL type. Keys are camelCase (`[A-Za-z][A-Za-z0-9]{0,31}`)
+  and unique; `default` must pass its field's own rule; `min`/`max` only on
+  numbers, `maxLength` only on text. Only `key`, `type`, `label`, `help`,
+  `required`, `default`, `min`, `max`, `maxLength`, `choices` are accepted.
+- `data` takes `load` and/or `models` (qualified class names, distinct). The
+  scanner cannot see other packages, so a model is checked for format only.
+- `allowedIn` is a non-empty list of distinct overview ids
+  (`[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}`); spans are integers 1 to 4 with
+  `minSpan <= defaultSpan <= maxSpan`.
+
+The scanner's copies of these rules live in `packages/scanner/src/recipe-widgets.ts`
+and a scanner test compares them to the smrt-svelte source. See
+[overview-surfaces.md](../../smrt-svelte/agents/overview-surfaces.md#recipe-widgets-recipe-widgetsts)
+for how a host registers them.
 
 ## How the scanner collects it
 

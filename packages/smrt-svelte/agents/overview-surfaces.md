@@ -10,8 +10,9 @@ each with an options object. A page declares which widget types it allows and
 its default arrangement; admins (or users, per role) add, reorder, resize,
 configure and remove widgets inside that confined set, and reset returns to the
 default. Phase 1 (this module) is the surface, the registry, the data model, the
-server load contract and five core widgets. Persistence, recipe surfaces and
-assistant operations are later phases (see "Extension points").
+server load contract and five core widgets; phase 2 adds package widgets from
+recipes ("Recipe widgets"). Persistence and assistant operations are later
+phases (see "Extension points").
 
 ## Two entries
 
@@ -193,14 +194,50 @@ literal text and `safeHref` limits links to http(s), mailto, same-site paths and
 fragments. Record and shortcut hrefs pass `safeHref` too. Charts carry their
 numbers as text (inline for bars, a visually hidden table for the line).
 
+## Recipe widgets (`recipe-widgets.ts`)
+
+A package contributes a widget with a `widget` surface on a recipe
+([core recipes.md](../../core/agents/recipes.md#widget-surfaces-3727) has the
+declaration and its scan-time rules). `registerRecipeWidgets(registry, recipes,
+resolveExport, { replace?, enabled? })` (async, Svelte-free, on both entries)
+turns the manifest's widget surfaces into `registry.register(...)` calls:
+
+| Surface field | Registration |
+|---|---|
+| `type`, `label`, `description`, `icon`, `version` | `type`, `title`, `description`, `icon`, `version` |
+| `options` | `options` (plain JSON; `registry.register` re-validates the schema) |
+| `export` | `loadComponent` (lazy; the export may be a component or a `{ default }` module) |
+| `data.load` | `load` (resolved on first use; a missing or non-function loader is that widget's error tile) |
+| `migrate` | `migrate`, **resolved eagerly** because the registry's `migrate` is synchronous |
+| `allowedIn`, `defaultSpan`, `minSpan`, `maxSpan` | same names |
+| `data.models` | not registered: documentation of what the loader reads; confine with the page's `models` |
+
+- **The module resolver is injected.** `resolveExport(specifier, exportName)` is
+  the host's: a static map of dynamic imports in a bundled app, a stub in tests.
+  Nothing is imported when the manifest is read, and the registration itself
+  imports nothing except `migrate` exports. Relative or absolute specifiers
+  are refused.
+- **Never throws for a bad surface.** The result is `{ registered, skipped,
+  dispose }`; a skip carries `reason` `duplicate_type` (a core widget or another
+  recipe owns the type; `replace` overrides), `invalid` (the registry refused the
+  definition) or `unresolved` (a `migrate` export is missing). One broken package
+  cannot take down the overview.
+- **`enabled(recipeId)`** keeps widgets of recipes that are off out of the add
+  list. Call the helper again (after `dispose()`) when the set changes.
+- Widget types share one registry namespace with the core widgets
+  (`metric`, `chart`, `records`, `shortcuts`, `note`). Pages still confine what
+  can appear with `defineOverview({ allowed })`, and a widget with `allowedIn`
+  only validates inside those overview ids.
+- `src/components/overview/__tests__/recipe-widgets.test.ts` covers lazy
+  resolution, the loader and migrate paths, allowed placements and the skip
+  reasons. The scanner's copy of the option vocabulary and patterns is checked
+  against `types.ts` / `schema.ts` by `packages/scanner/src/__tests__/recipe-widgets.test.ts`,
+  and a type-level assertion here keeps `RecipeWidgetOptionType` equal to
+  `WidgetOptionType`.
+
 ## Extension points left for later phases
 
-- **Phase 2, package widgets (#3708).** A recipe `widget` surface kind needs only
-  `registry.register(def)` at recipe load: `type`, `options` (the options
-  schema), `component` / `loadComponent` (the export ref), `load`, `allowedIn`
-  (allowed placements). `defineOverview({ allowed })` is the per-page allow list.
-  The recipe layer should call `registerWidget` and `registry.list()` /
-  `controller.addable`; nothing in the grid is core-specific.
+- **Phase 2, package widgets (#3727, done).** See "Recipe widgets" below.
 - **Phase 3, production persistence.** Implement the `override` getter /
   `onchange` pair against the `_smrt_` table (tenant tier merged into
   `definition.defaults`, user tier as the override), validate saves with
