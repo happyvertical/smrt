@@ -122,7 +122,9 @@ export default {
       },
       modes: {
         mock: {
-          label: 'Mock',
+          label: 'Static mock fixture',
+          description:
+            'Static room data only; no live chat service is connected.',
         },
       },
     },
@@ -141,7 +143,9 @@ export default {
       },
       modes: {
         mock: {
-          label: 'Mock',
+          label: 'Static mock fixture',
+          description:
+            'Static transcript data only; no live chat service is connected.',
         },
       },
     },
@@ -164,7 +168,9 @@ export default {
       },
       modes: {
         mock: {
-          label: 'Mock',
+          label: 'Static mock fixture',
+          description:
+            'Static composer state only; no live chat service is connected.',
         },
       },
     },

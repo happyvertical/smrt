@@ -29,6 +29,14 @@ trusting browser data or throwing raw transport errors.
 
 ## Usage
 
+### Team Chat recipe
+
+`ChatRoomsRecipe` declares the `chat.rooms` unit for app navigation and
+generated read-only room, message, membership, thread, and reaction views.
+Its [user help](src/chat-rooms.recipe.md) describes how to find rooms and
+follow conversations. The package playground previews use static mock fixtures;
+they do not connect to a live chat service.
+
 ### Local dev server
 
 Run the chat package workbench directly:
