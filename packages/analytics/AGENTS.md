@@ -59,6 +59,35 @@ import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 const StatCard = ModuleUIRegistry.get('@happyvertical/smrt-analytics', 'stat-card');
 ```
 
+## Recipes (#3719)
+
+`src/recipes.ts` declares `analytics.reports` (`AnalyticsReportsRecipe`:
+`AnalyticsProperty` and `AnalyticsReport`), emitted into the built
+`manifest.json` and `smrt-knowledge.json` `recipes`. `AnalyticsEvent` and
+`AnalyticsDataStream` are left out: event tracking and stream setup are separate
+concerns. User-facing help is `src/reports.recipe.md` (#3591); keep it and the
+`@field({ description })` text on the two models in plain language, and never
+reference a `sensitive` field (`apiSecret`, `providerMetadata`) in help.
+
+- **Runtime is `server`.** Reports and their rows live in the app database, the
+  AI summary needs a server-held key, and provider credentials sit on the
+  property row (so no `providers` are declared: there are no env secrets to name).
+- **One route, deliberately.** `/analytics/summary` mounts
+  `@happyvertical/smrt-analytics/svelte#AnalyticsSummary`, which renders an empty
+  state without data. `PropertyInfo` and `EventsTable` take required row props
+  and throw with none, so they are not routes; a host places them in its own
+  pages. Add a route only for a component that survives being mounted bare.
+- **No demo seed.** The playground sample data is module-local, not an export.
+- **What the assistant can do.** Generated MCP exposes `list` and `get` on
+  `AnalyticsReport` only; `analyzeResults()` is a model method the app calls,
+  not a tool. The help says so and points at `reports.query` (declared reports,
+  `@happyvertical/smrt-reports`) and `reports.runtime.*` (runtime reports,
+  `@happyvertical/smrt-chat`) for aggregates over the app's own data.
+
+`src/__tests__/recipes.test.ts` runs the real scan, manifest and generation
+passes in memory and renders the help. See
+[core recipes](../core/agents/recipes.md).
+
 ## Gotchas
 
 - **`apiSecret` / `providerMetadata` stripped from API/MCP**: marked `@field({ sensitive: true })` (#1540) so they never appear in generated responses or `where` filters. They are still stored at rest **unencrypted** — envelope encryption via `@happyvertical/smrt-secrets` is a separate, breaking follow-up (tracked, not done here).

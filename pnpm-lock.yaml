@@ -323,6 +323,9 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
     devDependencies:
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
