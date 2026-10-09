@@ -33,6 +33,14 @@ export type * from './execution-contracts.js';
 export type { IntakePolicy, IntakePolicyLayer } from './policy.js';
 export { resolveIntakePolicy } from './policy.js';
 
+class RetentionExpired extends Error {
+  constructor(
+    readonly itemId: string,
+    readonly deadline: number,
+  ) {
+    super('Intake retention expired');
+  }
+}
 type Row = Record<string, unknown>;
 function object(value: unknown): IntakeValues {
   const parsed: unknown = typeof value === 'string' ? JSON.parse(value) : value;
@@ -129,14 +137,71 @@ export class IntakeExecutionService {
   private now(): Date {
     return this.options.now?.() ?? new Date();
   }
-  private tx<T>(work: (db: DatabaseInterface) => Promise<T>): Promise<T> {
+  private async tx<T>(work: (db: DatabaseInterface) => Promise<T>): Promise<T> {
     // Database callbacks must have no external effects. Never transparently retry an effect.
-    return withEmbeddedWriteTransaction(
-      this.db,
-      isEmbeddedDatabase(this.db),
-      work,
-    );
+    try {
+      return await withEmbeddedWriteTransaction(
+        this.db,
+        isEmbeddedDatabase(this.db),
+        work,
+      );
+    } catch (error) {
+      // A denied late write rolls back its business transaction, but must not
+      // roll back the already-authorized privacy ceiling and payload erasure.
+      if (error instanceof RetentionExpired) {
+        await withEmbeddedWriteTransaction(
+          this.db,
+          isEmbeddedDatabase(this.db),
+          async (db) => {
+            const item = await this.item(db, error.itemId, true, true);
+            await this.narrowRetention(db, item, error.deadline);
+          },
+        );
+      }
+      throw error;
+    }
   }
+  private async redactExecution(
+    db: DatabaseInterface,
+    item: Row,
+  ): Promise<void> {
+    for (const table of [
+      'intake_actions',
+      'intake_proposals',
+      'intake_review_decisions',
+      'intake_executions',
+      'intake_plans',
+      'intake_feedback',
+    ])
+      await db.query(
+        `UPDATE ${table} SET data='{}' WHERE item_id=? AND tenant_id=? AND confidential_scope_id=?`,
+        item.id,
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+      );
+  }
+  private async narrowRetention(
+    db: DatabaseInterface,
+    item: Row,
+    deadline: number,
+  ): Promise<void> {
+    const current = await this.item(db, String(item.id), true, true);
+    const effective = Math.min(time(current.expires_at), deadline);
+    if (!Number.isFinite(effective))
+      throw new Error('Invalid retention deadline');
+    if (effective < time(current.expires_at))
+      await db.query(
+        'UPDATE intake_items SET expires_at=? WHERE id=? AND tenant_id=? AND confidential_scope_id=?',
+        new Date(effective).toISOString(),
+        item.id,
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+      );
+    item.expires_at = new Date(effective).toISOString();
+    item.visibility = current.visibility;
+    if (!this.retained(item)) await this.redactExecution(db, item);
+  }
+
   private async rows(
     db: DatabaseInterface,
     table: string,
@@ -306,6 +371,19 @@ export class IntakeExecutionService {
       (!current.reviewer || !policy.reviewers.includes(this.scope.actorId))
     )
       throw new Error('Intake unavailable');
+    const deadline = Math.min(
+      time(item.expires_at),
+      time(item.created_at) + policy.retentionMs,
+    );
+    if (db === this.db)
+      await this.tx((tx) => this.narrowRetention(tx, item, deadline));
+    else await this.narrowRetention(db, item, deadline);
+    if (
+      !this.retained(item) &&
+      operation !== 'read' &&
+      operation !== 'reconcile'
+    )
+      throw new RetentionExpired(String(item.id), deadline);
     const context: HandlerContext = {
       db,
       scope: this.scope,
@@ -410,9 +488,37 @@ export class IntakeExecutionService {
     };
   }
   async getAction(actionId: string): Promise<ProposalReview> {
-    const bound = await this.bound(this.db, actionId);
-    await this.access(this.db, bound.item, bound.handler, 'read');
-    return this.review(bound);
+    return this.tx(async (db) => {
+      const [action] = await this.rows(db, 'intake_actions', 'id=?', [
+        actionId,
+      ]);
+      if (!action) throw new Error('Intake unavailable');
+      const item = await this.item(db, String(action.item_id), true, true);
+      const expiredReview = async (): Promise<ProposalReview> => {
+        await this.redactExecution(db, item);
+        const [proposal] = await this.rows(
+          db,
+          'intake_proposals',
+          'action_id=? AND revision=?',
+          [actionId, action.proposal_revision],
+        );
+        if (!proposal) throw new Error('Proposal unavailable');
+        return {
+          actionId,
+          proposalId: String(proposal.id),
+          revision: Number(proposal.revision),
+          reviewVersion: Number(action.review_version),
+          bindingHash: String(proposal.binding_hash),
+          display: {},
+          state: 'expired',
+        };
+      };
+      if (!this.retained(item)) return expiredReview();
+      const bound = await this.bound(db, actionId);
+      await this.access(db, bound.item, bound.handler, 'read');
+      if (!this.retained(bound.item)) return expiredReview();
+      return this.review(bound);
+    });
   }
   private async buildBinding(
     db: DatabaseInterface,
@@ -976,7 +1082,7 @@ export class IntakeExecutionService {
         evaluated.certainty < access.policy.minimumCertainty ||
         evaluated.certainty > 1 ||
         access.current.policy
-          .slice(0, 3)
+          .filter((layer, index) => index < 3 || layer.automation !== undefined)
           .some(
             (layer) =>
               layer.automation?.evaluationVersion !==
@@ -1079,13 +1185,15 @@ export class IntakeExecutionService {
     action: Row,
     item: Row,
   ): Promise<ActionResult> {
-    if (!this.retained(item))
+    if (!this.retained(item)) {
+      await this.redactExecution(db, item);
       return {
         state: 'succeeded',
         actionId: String(action.id),
         resultDigest: String(action.result_digest),
         tombstone: true,
       };
+    }
     const [execution] = await this.rows(
       db,
       'intake_executions',
@@ -1099,6 +1207,13 @@ export class IntakeExecutionService {
       throw new Error('Execution integrity');
     const bound = await this.bound(db, String(action.id), false, true);
     await this.access(db, item, bound.handler, 'read');
+    if (!this.retained(item))
+      return {
+        state: 'succeeded',
+        actionId: String(action.id),
+        resultDigest: String(action.result_digest),
+        tombstone: true,
+      };
     for (const [field, model] of Object.entries(bound.handler.resultModels)) {
       id(result[field]);
       await this.config.assertTarget({
@@ -1122,6 +1237,7 @@ export class IntakeExecutionService {
     execution: Row,
     result: IntakeValues,
   ): Promise<ActionResult> {
+    await this.access(db, bound.item, bound.handler, 'read');
     const resultDigest = intakeBindingDigest(result);
     const resultTargets: IntakeValues = {};
     for (const [field, model] of Object.entries(
@@ -1143,6 +1259,7 @@ export class IntakeExecutionService {
       };
     }
     const tombstone = !this.retained(bound.item);
+    if (tombstone) await this.redactExecution(db, bound.item);
     const data = tombstone
       ? {}
       : {
@@ -1191,10 +1308,23 @@ export class IntakeExecutionService {
       ]);
       if (current.state === 'succeeded')
         return this.successful(db, current, item);
+      if (!this.retained(item)) {
+        await this.redactExecution(db, item);
+        if (current.state === 'outcome_unknown')
+          return { state: 'outcome_unknown', actionId, tombstone: true };
+        throw new RetentionExpired(String(item.id), time(item.expires_at));
+      }
       const bound = await this.bound(db, actionId);
-      if (bound.action.state === 'outcome_unknown')
-        return { state: 'outcome_unknown', actionId };
+      if (bound.action.state === 'outcome_unknown') {
+        await this.access(db, bound.item, bound.handler, 'read');
+        return {
+          state: 'outcome_unknown',
+          actionId,
+          ...(!this.retained(bound.item) ? { tombstone: true } : {}),
+        };
+      }
       if (bound.action.state === 'executing') {
+        await this.access(db, bound.item, bound.handler, 'read');
         const [execution] = await this.rows(
           db,
           'intake_executions',
@@ -1289,13 +1419,19 @@ export class IntakeExecutionService {
             // writes. A competing worker cannot enter a rollback/accounting gap.
             await db.query('ROLLBACK TO SAVEPOINT ingestion_domain_effect');
             await db.query('RELEASE SAVEPOINT ingestion_domain_effect');
+            if (!this.retained(bound.item))
+              await this.redactExecution(db, bound.item);
             await db.query(
               "UPDATE intake_executions SET state='failed',data=? WHERE id=? AND tenant_id=? AND confidential_scope_id=?",
-              canonical({
-                ...object(execution.data),
-                error: 'domain_failure',
-                rolledBack: true,
-              }),
+              canonical(
+                this.retained(bound.item)
+                  ? {
+                      ...object(execution.data),
+                      error: 'domain_failure',
+                      rolledBack: true,
+                    }
+                  : {},
+              ),
               execution.id,
               this.scope.tenantId,
               this.scope.confidentialScopeId,
@@ -1306,7 +1442,11 @@ export class IntakeExecutionService {
               this.scope.tenantId,
               this.scope.confidentialScopeId,
             );
-            return { state: 'failed', actionId };
+            return {
+              state: 'failed',
+              actionId,
+              ...(!this.retained(bound.item) ? { tombstone: true } : {}),
+            };
           }
         },
       );
@@ -1388,7 +1528,9 @@ export class IntakeExecutionService {
       });
     } catch {
       return this.tx(async (db) => {
-        await this.item(db, String(bound.item.id), true, true);
+        const item = await this.item(db, String(bound.item.id), true, true);
+        await this.access(db, item, bound.handler, 'read');
+        if (!this.retained(item)) await this.redactExecution(db, item);
         await db.query(
           "UPDATE intake_actions SET state='outcome_unknown' WHERE id=? AND tenant_id=? AND confidential_scope_id=? AND fence=? AND state='executing'",
           actionId,
@@ -1402,7 +1544,11 @@ export class IntakeExecutionService {
           this.scope.tenantId,
           this.scope.confidentialScopeId,
         );
-        return { state: 'outcome_unknown', actionId };
+        return {
+          state: 'outcome_unknown',
+          actionId,
+          ...(!this.retained(item) ? { tombstone: true } : {}),
+        };
       });
     }
   }
@@ -1529,7 +1675,7 @@ export class IntakeExecutionService {
         evaluated.certainty < policy.minimumCertainty ||
         evaluated.certainty > 1 ||
         current.policy
-          .slice(0, 3)
+          .filter((layer, index) => index < 3 || layer.automation !== undefined)
           .some(
             (layer) =>
               layer.automation?.evaluationVersion !==

@@ -113,3 +113,21 @@ expire or a retention sweep. Both real database suites verify visibility is stil
 active while the completion returns a tombstone, reveals no provider result, and
 persists empty execution data. The shared retention predicate checks both current
 visibility and actual deadline, including after asynchronous result-target checks.
+
+## Round 4 integration and accepted policy regressions
+
+Base advances to merged extraction `25ef815d`; shared package configuration keeps
+both extraction-worker and execution entries, all SDK/principal/playbook dependencies,
+provider tests and test-support declaration exclusion. Extraction/provider contracts
+remain governed by the complete #3672 matrix; combined package release suites apply.
+No speculative fixture schema expansion is part of integration.
+
+Both databases exercise an optional request evaluator mismatch at machine approval
+and apply while preserving the absent-fourth-block case. Tenant/source/request
+retention maxima shorten the durable item deadline from its creation anchor;
+reads/retries cannot refresh or widen it. Negative authority proves a denied policy
+access cannot change expiry. Expired review/decision/execution payloads redact before
+a delayed sweep; the sweep then removes actual original assets and invokes derived
+cleanup. Previously successful replay and submission/reconciliation callbacks
+spanning a newly narrowed policy return tombstones without restoring payloads.
+All nine initial boundary cases failed on the integrated pre-fix tree.

@@ -103,3 +103,24 @@ Real SQLite and PostgreSQL execution suites exercise the public Content draft an
 attachment APIs, transaction rollback, actor/context denials, simultaneous applies
 and reviewers, retention replay, external process death and actual TaskRunner
 restart. See the issue 3674 test matrix for the complete release evidence mapping.
+
+## Layered retention and request automation
+
+Every automation-bearing policy layer, including an optional request layer, must
+match the evaluated version. An absent request automation block adds no evaluator
+restriction; it cannot replace the three required application/tenant/source opt-ins.
+
+Authorized execution-policy access monotonically narrows the existing intake
+expiry to `min(existing expires_at, item.created_at + resolved retentionMs)`.
+The anchor is receipt creation, never review, retry or replay time. A longer later
+policy never extends a recorded deadline. This hard maximum applies to the whole
+intake item: the existing `sweepRetention` protocol removes retained originals and
+derivatives, preserving replay identities. No second expiry column or hidden clock
+is introduced, and no blob I/O occurs in an execution transaction.
+
+At an observed expired deadline, execution reads/completions erase proposal,
+decision, execution, plan, action and feedback payloads under the item lock. Review
+reads return existing identity/hash fields with `state: 'expired'` and empty
+`display`; completed action replay returns its digest-only tombstone. Failed late
+writes cannot roll back an already-authorized retention ceiling/redaction. Unknown
+external outcomes remain unknown/reconcile-only, never eligible for blind resend.

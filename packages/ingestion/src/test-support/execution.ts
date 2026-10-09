@@ -811,8 +811,24 @@ export function executionSuite(
       ['unknown', 'deadline'],
       ['not_applied', 'deadline'],
       ['submission', 'deadline'],
+      ['submission', 'policy'],
+      ['succeeded', 'policy'],
+      ['unknown', 'policy'],
+      ['not_applied', 'policy'],
     ] as const)
       it(`preserves retention redaction when ${outcome} completes after ${expiry} expiry`, async () => {
+        let retentionMs: number | undefined;
+        if (expiry === 'policy') {
+          const authorize = config.authorize;
+          config.authorize = async (input) => {
+            const access = await authorize(input);
+            access.policy[2] = {
+              ...access.policy[2],
+              ...(retentionMs ? { retentionMs } : {}),
+            };
+            return access;
+          };
+        }
         let reached!: () => void;
         let release!: () => void;
         const atProvider = new Promise<void>((resolve) => {
@@ -881,7 +897,10 @@ export function executionSuite(
             input.itemId,
           );
         } else {
-          clock = new Date(clock.getTime() + 1000001);
+          retentionMs = expiry === 'policy' ? 1000 : undefined;
+          clock = new Date(
+            clock.getTime() + (expiry === 'policy' ? 1001 : 1000001),
+          );
           expect(
             (
               await db.query(
@@ -914,6 +933,158 @@ export function executionSuite(
         ).toEqual({});
         expect(JSON.stringify(result)).not.toContain('must disappear');
       });
+    it('honors optional request evaluator versions at authorization and apply', async () => {
+      const authorize = config.authorize;
+      let requestEvaluator: string | undefined = 'eval2';
+      config.authorize = async (input) => {
+        const access = await authorize(input);
+        access.policy = access.policy.map((layer) => ({
+          ...layer,
+          requireReview: false,
+          automation: { handlers: [CREATE], evaluationVersion: 'eval1' },
+        })) as typeof access.policy;
+        access.policy.push({
+          version: 'request1',
+          ...(requestEvaluator
+            ? {
+                automation: {
+                  handlers: [CREATE],
+                  evaluationVersion: requestEvaluator,
+                },
+              }
+            : {}),
+        });
+        return access;
+      };
+      config.evaluateAutomatic = async () => ({
+        eligible: true,
+        evaluationVersion: 'eval1',
+        certainty: 1,
+      });
+      const { actionId } = await proposal();
+      await expect(service.authorizeAutomatic(actionId)).rejects.toThrow(
+        'Automatic',
+      );
+      requestEvaluator = undefined;
+      await service.authorizeAutomatic(actionId);
+      requestEvaluator = 'eval2';
+      await expect(service.applyAction(actionId)).rejects.toThrow(
+        'eligibility',
+      );
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(0);
+      requestEvaluator = 'eval1';
+      expect((await service.applyAction(actionId)).state).toBe('succeeded');
+    });
+    for (const layer of [1, 2, 3])
+      it(`enforces layer ${layer} retention without refreshing on reads and sweeps originals`, async () => {
+        const authorize = config.authorize;
+        let retentionMs = 1000;
+        config.authorize = async (input) => {
+          const access = await authorize(input);
+          if (layer === 3)
+            access.policy = [
+              ...access.policy,
+              { version: 'request1' },
+            ] as typeof access.policy;
+          access.policy[layer] = { ...access.policy[layer], retentionMs };
+          return access;
+        };
+        const purge = vi.fn(async () => {});
+        options.purgeDerived = purge;
+        service = new IngestionService(options);
+        const { itemId, actionId, review } = await proposal();
+        await approve(review);
+        const deadline = (
+          await db.query(
+            'SELECT expires_at FROM intake_items WHERE id=?',
+            itemId,
+          )
+        ).rows[0].expires_at;
+        expect(new Date(String(deadline)).getTime()).toBe(
+          clock.getTime() + 1000,
+        );
+        clock = new Date(clock.getTime() + 500);
+        retentionMs = 100000;
+        await service.getAction(actionId);
+        expect(
+          new Date(
+            String(
+              (
+                await db.query(
+                  'SELECT expires_at FROM intake_items WHERE id=?',
+                  itemId,
+                )
+              ).rows[0].expires_at,
+            ),
+          ).getTime(),
+        ).toBe(new Date(String(deadline)).getTime());
+        clock = new Date(clock.getTime() + 501);
+        expect(await service.getAction(actionId)).toMatchObject({
+          actionId,
+          state: 'expired',
+          display: {},
+        });
+        for (const table of ['intake_proposals', 'intake_review_decisions']) {
+          const rows = (
+            await db.query(`SELECT data FROM ${table} WHERE item_id=?`, itemId)
+          ).rows;
+          expect(rows.length).toBeGreaterThan(0);
+          for (const row of rows)
+            expect(
+              typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+            ).toEqual({});
+        }
+        await expect(service.applyAction(actionId)).rejects.toThrow();
+        await expect(service.getEvidence(itemId)).rejects.toThrow();
+        await service.sweepRetention();
+        expect(purge).toHaveBeenCalledWith({ tenantId: tenant, itemId });
+        expect((await db.query('SELECT id FROM assets')).rows).toHaveLength(0);
+      });
+    it('redacts completed replay when current policy narrows an active receipt deadline', async () => {
+      const { actionId, itemId, review } = await proposal();
+      await approve(review);
+      expect((await service.applyAction(actionId)).state).toBe('succeeded');
+      clock = new Date(clock.getTime() + 2000);
+      const originalExpiry = (
+        await db.query('SELECT expires_at FROM intake_items WHERE id=?', itemId)
+      ).rows[0].expires_at;
+      let permitted = false;
+      const authorize = config.authorize;
+      config.authorize = async (input) => {
+        const access = await authorize(input);
+        access.policy[1] = { ...access.policy[1], retentionMs: 1000 };
+        return { ...access, allowed: permitted };
+      };
+      await expect(service.getAction(actionId)).rejects.toThrow(
+        'Intake unavailable',
+      );
+      expect(
+        (
+          await db.query(
+            'SELECT expires_at FROM intake_items WHERE id=?',
+            itemId,
+          )
+        ).rows[0].expires_at,
+      ).toEqual(originalExpiry);
+      permitted = true;
+      expect(await service.applyAction(actionId)).toMatchObject({
+        state: 'succeeded',
+        tombstone: true,
+      });
+      for (const table of [
+        'intake_proposals',
+        'intake_review_decisions',
+        'intake_executions',
+      ]) {
+        for (const row of (
+          await db.query(`SELECT data FROM ${table} WHERE item_id=?`, itemId)
+        ).rows)
+          expect(
+            typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+          ).toEqual({});
+      }
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(1);
+    });
     it('requires evaluated layered opt-in and rechecks machine eligibility before mutation', async () => {
       const authorize = config.authorize;
       let eligible = true;
