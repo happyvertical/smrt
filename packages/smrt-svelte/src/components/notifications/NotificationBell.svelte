@@ -1,6 +1,5 @@
 <script lang="ts">
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { onMount } from 'svelte';
 import type { NotificationProvider } from './types.js';
 
 interface Props {
@@ -17,8 +16,10 @@ let loading = $state(true);
 let error = $state<string | null>(null);
 let unread = $state(0);
 let items = $state<Awaited<ReturnType<NotificationProvider['list']>>>([]);
+let request = 0;
 
 async function refresh() {
+  const current = ++request;
   loading = true;
   error = null;
   try {
@@ -26,13 +27,35 @@ async function refresh() {
       provider.getUnreadCount(),
       provider.list({ limit }),
     ]);
+    if (current !== request) return;
     unread =
       Number.isSafeInteger(nextUnread) && nextUnread > 0 ? nextUnread : 0;
     items = nextItems;
   } catch {
+    if (current !== request) return;
     error = 'Notifications are unavailable.';
   } finally {
     loading = false;
+  }
+}
+function safeHref(value: string | null | undefined): string | null {
+  if (!value || value.startsWith('//') || value.includes('\\')) return null;
+  try {
+    const parsed = new URL(value, 'https://smrt.invalid');
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+function close() {
+  open = false;
+}
+function keydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && open) {
+    event.preventDefault();
+    close();
   }
 }
 async function markRead(id: string) {
@@ -51,7 +74,8 @@ async function markAllRead() {
     error = 'Could not mark notifications read.';
   }
 }
-onMount(() => {
+$effect(() => {
+  provider;
   void refresh();
   return provider.subscribe?.(() => void refresh());
 });
@@ -62,12 +86,12 @@ onMount(() => {
     {label}{#if unread > 0}<span aria-label={`${unread} unread`}> ({unread})</span>{/if}
   </Button>
   {#if open}
-    <section role="dialog" aria-label={label} class="smrt-notification-bell__panel">
+    <section role="dialog" aria-label={label} tabindex="-1" onkeydown={keydown} class="smrt-notification-bell__panel">
       <header><strong>{label}</strong><Button variant="ghost" size="sm" disabled={unread === 0 || loading} onclick={markAllRead}>Mark all read</Button></header>
       {#if error}<p role="alert">{error}</p>{/if}
       {#if loading}<p role="status">Loading notifications</p>{:else if items.length === 0}<p>No notifications.</p>{:else}<ol>
         {#each items as item (item.id)}<li data-read={item.readAt ? 'true' : 'false'}>
-          {#if item.href}<a href={item.href}>{item.title}</a>{:else}<strong>{item.title}</strong>{/if}
+          {#if safeHref(item.href)}<a href={safeHref(item.href) ?? undefined}>{item.title}</a>{:else}<strong>{item.title}</strong>{/if}
           {#if item.body}<p>{item.body}</p>{/if}
           {#if !item.readAt}<Button variant="ghost" size="sm" onclick={() => markRead(item.id)}>Mark read</Button>{/if}
         </li>{/each}

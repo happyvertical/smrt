@@ -1,24 +1,34 @@
 <script lang="ts">
+import WorkspaceActivityList from '../workspace/admin-shell/ActivityList.svelte';
+import { tryUseAdminShell } from '../workspace/admin-shell/context.js';
 import type { ActivityListEntry } from './types.js';
 
 interface Props {
   /** Already-authorized activity rows to display. */
   entries: ActivityListEntry[];
-  /** Accessible name for the activity region. */
-  label?: string;
-  /** Message displayed when there are no entries. */
+  /** Message displayed by the shell list when no activities match. */
   emptyLabel?: string;
 }
-let {
-  entries,
-  label = 'Activity',
-  emptyLabel = 'No activity.',
-}: Props = $props();
+let { entries, emptyLabel = 'No activity.' }: Props = $props();
+const shell = tryUseAdminShell();
+const prefix = `audit-feed:${crypto.randomUUID()}:`;
+$effect(() => {
+  if (!shell) return;
+  const ids = new Set(entries.map((entry) => `${prefix}${entry.id}`));
+  for (const entry of entries)
+    shell.upsertActivity({
+      id: `${prefix}${entry.id}`,
+      label: entry.title,
+      message: entry.detail,
+      detailHref: entry.href ?? undefined,
+      kind: 'audit',
+      scope: 'system',
+      status: 'completed',
+      createdAt: entry.occurredAt,
+    });
+  return () => {
+    for (const id of ids) shell.removeActivity(id);
+  };
+});
 </script>
-<section aria-label={label} class="smrt-activity-list">
-  {#if entries.length === 0}<p>{emptyLabel}</p>{:else}<ol>{#each entries as entry (entry.id)}<li>
-    {#if entry.href}<a href={entry.href}>{entry.title}</a>{:else}<strong>{entry.title}</strong>{/if}
-    {#if entry.detail}<p>{entry.detail}</p>{/if}<time datetime={entry.occurredAt}>{entry.occurredAt}</time>
-  </li>{/each}</ol>{/if}
-</section>
-<style>ol { display:grid; padding:0; list-style:none; } li { padding-block:var(--smrt-spacing-3); border-block-end:1px solid var(--smrt-color-outline-variant); } p,time { color:var(--smrt-color-on-surface-variant); overflow-wrap:anywhere; }</style>
+{#if shell}<WorkspaceActivityList filter={{ kind: 'audit' }} {emptyLabel} />{:else}<p>{emptyLabel}</p>{/if}
