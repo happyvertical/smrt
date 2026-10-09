@@ -80,29 +80,17 @@ describe('assets feature recipes (#3725)', () => {
     expect(AssetAttachmentsRecipe.section).toEqual(AssetLibraryRecipe.section);
   });
 
-  it('declares public browser UI surfaces and mock fixture seeds', () => {
+  it('declares host-contextual UI exports and browser-safe mock fixture seeds', () => {
     expect(AssetManager).toBeDefined();
     expect(AttachmentPanel).toBeDefined();
     expect(playground.entries).toHaveLength(2);
     expect(AssetLibraryRecipe.runtime).toBe('both');
-    expect(AssetLibraryRecipe.surfaces).toEqual([
-      {
-        kind: 'settings-panel',
-        export: '@happyvertical/smrt-assets/svelte#AssetManager',
-        label: 'Asset library',
-      },
-    ]);
+    expect(AssetLibraryRecipe.surfaces).toBeUndefined();
     expect(AssetLibraryRecipe.demoSeed).toEqual({
       export: '@happyvertical/smrt-assets/playground#assetGridMockAssets',
     });
     expect(AssetAttachmentsRecipe.runtime).toBe('both');
-    expect(AssetAttachmentsRecipe.surfaces).toEqual([
-      {
-        kind: 'settings-panel',
-        export: '@happyvertical/smrt-assets/svelte#AttachmentPanel',
-        label: 'Attachments',
-      },
-    ]);
+    expect(AssetAttachmentsRecipe.surfaces).toBeUndefined();
     expect(AssetAttachmentsRecipe.demoSeed).toEqual({
       export:
         '@happyvertical/smrt-assets/playground#assetAttachmentMockAttachments',

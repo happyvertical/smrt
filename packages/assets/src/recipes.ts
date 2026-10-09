@@ -2,8 +2,10 @@
  * Declared feature recipes for smrt-assets (#3725).
  *
  * The recipes describe the package's model-backed asset workflows and their
- * public UI surfaces. Storage remains application-owned, so no provider is
- * declared here.
+ * public UI metadata. Storage remains application-owned, so no provider is
+ * declared here. The package's UI components require host persistence or
+ * record authorization context, so neither recipe declares a standalone
+ * placement.
  */
 
 import { SmrtRecipe } from '@happyvertical/smrt-core';
@@ -36,13 +38,6 @@ export class AssetLibraryRecipe extends SmrtRecipe {
   };
   static models = [Asset, Folder, AssetType, AssetStatus, AssetMetafield];
   static runtime = 'both' as const;
-  static surfaces = [
-    {
-      kind: 'settings-panel',
-      export: '@happyvertical/smrt-assets/svelte#AssetManager',
-      label: 'Asset library',
-    },
-  ] as const;
   static demoSeed = {
     export: '@happyvertical/smrt-assets/playground#assetGridMockAssets',
   } as const;
@@ -108,13 +103,6 @@ export class AssetAttachmentsRecipe extends SmrtRecipe {
   };
   static models = [Asset, AssetAssociation];
   static runtime = 'both' as const;
-  static surfaces = [
-    {
-      kind: 'settings-panel',
-      export: '@happyvertical/smrt-assets/svelte#AttachmentPanel',
-      label: 'Attachments',
-    },
-  ] as const;
   static demoSeed = {
     export:
       '@happyvertical/smrt-assets/playground#assetAttachmentMockAttachments',
