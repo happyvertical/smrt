@@ -54,7 +54,7 @@ export class Tag extends SmrtHierarchical {
   description: string = ''; // Optional description
 
   @field({
-    description: 'Extra details about the tag, kept as JSON text.',
+    description: 'Extra details about the tag, saved as named items.',
   })
   metadata: string = ''; // JSON metadata stored as text
 

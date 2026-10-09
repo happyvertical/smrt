@@ -117,7 +117,11 @@ export class AnalyticsProperty extends SmrtObject {
    * Sensitive (#1540): excluded from generated API/MCP responses and rejected
    * as a `where` filter key so it can't be probed.
    */
-  @field({ sensitive: true })
+  @field({
+    sensitive: true,
+    description:
+      'The secret key your analytics service issues for this property, stored securely.',
+  })
   apiSecret: string = '';
 
   /**
@@ -173,7 +177,11 @@ export class AnalyticsProperty extends SmrtObject {
    * Sensitive (#1540): may carry provider credentials/tokens, so it is excluded
    * from generated API/MCP responses and rejected as a `where` filter key.
    */
-  @field({ sensitive: true })
+  @field({
+    sensitive: true,
+    description:
+      'Extra connection details from your analytics service, stored securely.',
+  })
   providerMetadata: string = '{}';
 
   constructor(options: AnalyticsPropertyOptions = {}) {

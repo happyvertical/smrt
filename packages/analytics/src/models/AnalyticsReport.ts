@@ -86,7 +86,9 @@ export class AnalyticsReport extends SmrtObject {
   /**
    * Parent property ID (references AnalyticsProperty)
    */
-  @foreignKey('AnalyticsProperty')
+  @foreignKey('AnalyticsProperty', {
+    description: 'The website or app this report is about.',
+  })
   propertyId: string = '';
 
   /**
@@ -108,7 +110,7 @@ export class AnalyticsReport extends SmrtObject {
    */
   @field({
     description:
-      'What to break the figures down by, such as country or device, as a JSON list.',
+      'What to break the figures down by, such as country or device, as a list.',
   })
   dimensions: string = '[]';
 
@@ -116,8 +118,7 @@ export class AnalyticsReport extends SmrtObject {
    * Metrics to retrieve (JSON array)
    */
   @field({
-    description:
-      'What to count, such as active users or sessions, as a JSON list.',
+    description: 'What to count, such as active users or sessions, as a list.',
   })
   metrics: string = '[]';
 

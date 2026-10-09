@@ -155,6 +155,36 @@ describe('analytics recipes (#3719)', () => {
       expect(emitted).not.toContain('providerMetadata');
     });
 
+    it('describes every basic field in plain words', () => {
+      const [recipe] = built.recipes;
+      const jargon = /\b(json|api|rest|mcp|sql|uuid|schema|endpoint)\b/i;
+      const problems: string[] = [];
+      for (const id of recipe.models) {
+        const name = id.slice(id.indexOf(':') + 1);
+        const object =
+          built.manifest.objects[id] ?? built.manifest.objects[name];
+        const policies = recipe.options?.[id]?.fields ?? {};
+        for (const [field, def] of Object.entries(object.fields ?? {})) {
+          // Advanced and hidden fields are not shown on the basic form.
+          if (policies[field]?.visibility) continue;
+          if (
+            ['id', 'slug', 'tenantId', 'createdAt', 'updatedAt'].includes(field)
+          )
+            continue;
+          // A foreign key keeps its description under `_meta`.
+          const { description = undefined, _meta } = def as {
+            description?: string;
+            _meta?: { description?: string };
+          };
+          const text = description ?? _meta?.description;
+          if (!text) problems.push(`${name}.${field} has no description`);
+          else if (jargon.test(text))
+            problems.push(`${name}.${field}: ${text}`);
+        }
+      }
+      expect(problems).toEqual([]);
+    });
+
     it('emits the help with the references the Markdown makes', () => {
       const [recipe] = built.recipes;
       const help = helpOf(recipe);
