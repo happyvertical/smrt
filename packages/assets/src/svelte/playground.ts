@@ -52,6 +52,27 @@ export const assetGridMockAssets = [
   },
 ];
 
+/** Browser-safe attachment data used by the private attachments preview. */
+export const assetAttachmentMockAttachments = [
+  {
+    id: 'document-v2',
+    name: 'Supplier quote.pdf',
+    mimeType: 'application/pdf',
+    version: 2,
+    note: 'Corrected supplier reference',
+    statusLabel: 'Awaiting review',
+    versions: [
+      {
+        id: 'document-v1',
+        name: 'Supplier quote.pdf',
+        mimeType: 'application/pdf',
+        version: 1,
+        note: 'Original supplied document',
+      },
+    ],
+  },
+];
+
 const loadAssetGrid = () => import('./AssetGrid.svelte');
 
 export default {
