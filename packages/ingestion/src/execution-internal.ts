@@ -12,5 +12,8 @@ export type TransactionRunner<T> = (
 export type DiscoveryGate = <T>(
   handlerId: string,
   handlerVersion: string,
-  work: (context: HandlerContext) => Promise<T>,
+  work: (
+    context: HandlerContext,
+    currentTarget: (model: string, id: string) => Promise<{ revision: string }>,
+  ) => Promise<T>,
 ) => Promise<T>;

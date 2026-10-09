@@ -38,7 +38,16 @@ the **current generation attempt**, not `generation.source.attemptId` (the prior
 extraction). `previewGeneratedProposals` publishes exact reviews and continues to reject stale
 generation candidate pins. When `listReviews` reports `generationStale`, the host
 omits obsolete generation output and renders authorized saved reviews/results.
-Completed-only pages do not need generation output. Stale entries expose handler
+Completed saved actions do not hide healthy unprepared suggestions. The saved-binding hint is not
+an authoritative generation-availability check: a fresh human preview can bind a
+current target while the immutable generation still pins its former revision.
+`getCompletedAnalysis` remains strict and throws server-only
+`GenerationSnapshotStaleError` only after every current catalog/provider/candidate
+read is authorized and an immutable candidate revision differs. The maintained
+host catches only that class, reacquires `listReviews` under current owning
+authority, and returns that new page without generation output. It never reuses
+the earlier page after an error. Denials and unknown failures propagate; healthy
+generation still exposes unprepared sibling suggestions. Stale entries expose handler
 and attempt identity only when that attempt is still the current completed/partial
 analysis. An empty-args editor submits fresh explicit human arguments through
 `previewProposal` or `previewPlan` with the saved CAS; it never reuses old generated

@@ -34,6 +34,7 @@ import type {
   ProposalCandidate,
   ProposalCatalogEntry,
 } from './proposal-dto.js';
+import { GenerationSnapshotStaleError } from './proposal-errors.js';
 import {
   record,
   safeUsage,
@@ -207,7 +208,17 @@ export class IngestionProposalService {
     const discover: DiscoveryGate =
       scope?.authorize ??
       ((id, version, work) =>
-        this.execution.withDiscoveryContext(itemId, id, version, work));
+        this.execution.withDiscoveryContext(itemId, id, version, (context) =>
+          work(context, (model, targetId) =>
+            this.options.execution!.assertTarget({
+              db: context.db,
+              scope: context.scope,
+              itemId,
+              model,
+              id: targetId,
+            }),
+          ),
+        ));
     const entries: Array<{
       handler: ProposalCatalogEntry;
       policyVersions: string[];
@@ -919,6 +930,7 @@ export class IngestionProposalService {
         digest(output.source)
     )
       throw new Error('Generation visibility changed');
+    let stale = false;
     for (const entry of output.offered) {
       if (
         !catalog.some(
@@ -929,18 +941,18 @@ export class IngestionProposalService {
       await authorize(
         entry.handler.id,
         entry.handler.version,
-        async (context) => {
+        async (context, currentTarget) => {
           if (!this.allowedProviders(context))
             throw new Error('Provider unavailable');
-          for (const candidate of entry.candidates)
-            await context.assertTarget(
-              candidate.model,
-              candidate.id,
-              candidate.revision,
-            );
+          for (const candidate of entry.candidates) {
+            const current = await currentTarget(candidate.model, candidate.id);
+            if (current.revision !== candidate.revision) stale = true;
+          }
         },
       );
     }
+    // Never classify an authorization/catalog/provider denial as mere staleness.
+    if (stale) throw new GenerationSnapshotStaleError();
   }
   async preview(input: PreviewGeneratedInput): Promise<GeneratedPreview[]> {
     if (

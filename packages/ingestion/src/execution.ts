@@ -521,7 +521,16 @@ export class IntakeExecutionService {
             itemId,
             handlerId,
             handlerVersion,
-            callback,
+            (context) =>
+              callback(context, (model, id) =>
+                this.config.assertTarget({
+                  db,
+                  scope: this.scope,
+                  itemId,
+                  model,
+                  id,
+                }),
+              ),
             requireReview,
           );
         const result = await work(db, authorize);

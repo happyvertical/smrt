@@ -495,7 +495,13 @@ export class ReferenceReviewHost {
   ): Promise<ItemReviewView> {
     const { service } = await this.service(scope);
     const item = await service.getItem(itemId);
-    const reviews = await service.listReviews(itemId, { cursor });
+    const initialReviews = await service.listReviews(itemId, { cursor });
+    const { reviews, analysis } = await loadReviewAnalysis(
+      service,
+      item,
+      initialReviews,
+      cursor,
+    );
     const states = reviews.actions.map((action) => action.review.state);
     const state: InboxState = states.length
       ? states.every((s) => s === 'succeeded')
@@ -512,7 +518,6 @@ export class ReferenceReviewHost {
         : item.processingState === 'needs_attention'
           ? 'failed'
           : 'unresolved';
-    const analysis = await loadReviewAnalysis(service, item, reviews);
     const evidence = await service.getEvidence(itemId);
     const views = [];
     for (const part of evidence) {

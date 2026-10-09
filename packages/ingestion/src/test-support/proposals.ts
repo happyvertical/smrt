@@ -36,6 +36,7 @@ import type {
 import type { GenerationOutput } from '../proposal-dto.js';
 import {
   type AnalysisLease,
+  GenerationSnapshotStaleError,
   type IngestionOptions,
   IngestionService,
 } from '../server.js';
@@ -1274,6 +1275,60 @@ export function proposalSuite(
       ).toEqual([{ title: 'Draft', status: 'draft' }]);
       await expect(service.generateProposals(input.lease)).rejects.toThrow();
     });
+    it('keeps healthy unprepared suggestions available after saved actions complete', async () => {
+      chooseCreate();
+      const original = calls.getMockImplementation()!;
+      calls.mockImplementation(async (...args) => {
+        const response = await original(...args);
+        const suggestion = (response.output as GenerationOutput).suggestions[0];
+        (response.output as GenerationOutput).suggestions.push({
+          ...suggestion,
+          args: { title: 'Unprepared sibling', body: 'Separate draft' },
+        });
+        return response;
+      });
+      const input = await generate();
+      const [preview] = await service.previewGeneratedProposals({
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        selections: [
+          {
+            index: 0,
+            intentionKey: 'first-draft',
+            expectedRevision: 0,
+            requestId: 'preview-first',
+          },
+        ],
+      });
+      if (preview.kind !== 'operation') throw new Error('Expected operation');
+      await service.submitDecision({
+        actionId: preview.review.actionId,
+        expectedRevision: preview.review.revision,
+        expectedReviewVersion: preview.review.reviewVersion,
+        bindingHash: preview.review.bindingHash,
+        requestId: 'approve-first',
+        decision: 'approve',
+      });
+      expect((await service.applyAction(preview.review.actionId)).state).toBe(
+        'succeeded',
+      );
+      const loaded = await loadReviewAnalysis(
+        service,
+        await service.getItem(input.itemId),
+        await service.listReviews(input.itemId),
+      );
+      expect(loaded.reviews.actions).toHaveLength(1);
+      expect(loaded.reviews.actions[0].result?.state).toBe('succeeded');
+      expect(
+        (
+          loaded.analysis!.result.output
+            .proposals as unknown as GenerationOutput
+        ).suggestions,
+      ).toHaveLength(2);
+      expect((await db.query('SELECT title FROM contents')).rows).toEqual([
+        { title: 'Draft' },
+      ]);
+    });
     it('filters actors, tenants, confidential scope, handlers and providers before sending any model input', async () => {
       chooseCreate();
       const input = await source();
@@ -1794,15 +1849,65 @@ export function proposalSuite(
         else await expect(preview).resolves.toHaveLength(1);
       }
     });
-    it('reloads stale generated targets without output disclosure and explicitly re-previews fresh user arguments', async () => {
+    it.each([
+      'operation',
+      'plan',
+    ] as const)('reloads stale generated targets for %s before and after explicit re-preview', async (kind) => {
       const target = await document('Existing');
+      const otherCandidate = await document('Another authorized document');
+      const attach = handlers.find(
+        (handler) => handler.id === ATTACH,
+      ) as OperationHandler;
+      let handlerId = ATTACH;
+      if (kind === 'plan') {
+        const key = `recovery-${randomUUID()}`;
+        definePlaybook({
+          key,
+          title: 'Attach retained evidence',
+          description: 'Attach current authorized evidence to a document',
+          steps: [{ kind: 'operation', model: CONTENT, action: 'addAsset' }],
+        });
+        const resolved = await resolvePlaybook(key, {
+          db,
+          tenantId: tenant,
+          plane: 'server',
+          classifier: () => attach.capability,
+        });
+        if (!resolved.ok) throw new Error('Plan unavailable');
+        handlerId = '@test/proposals:attach-plan';
+        handlers.push({
+          id: handlerId,
+          version: '1',
+          description: 'Attach retained evidence',
+          operation: {
+            playbookKey: key,
+            definitionHash: intakeBindingDigest(resolved.plan),
+          },
+          discovery: attach.discovery,
+          argsSchema: attach.argsSchema,
+          resultSchema: { type: 'object', additionalProperties: false },
+          resultModels: {},
+          validate: attach.validate,
+          preview: attach.preview,
+          expand: async (args) => [
+            {
+              stepIndex: 0,
+              handlerId: ATTACH,
+              handlerVersion: '1',
+              args,
+              resultBindings: {},
+            },
+          ],
+        } as PlanHandler);
+      }
+
       calls.mockImplementation(async (input) => ({
         completion: 'complete',
         output: {
           outcome: 'proposals',
           suggestions: [
             {
-              handlerId: ATTACH,
+              handlerId,
               handlerVersion: '1',
               args: {
                 contentId: target.id,
@@ -1817,6 +1922,20 @@ export function proposalSuite(
               alternatives: [],
               missingFields: [],
               explanation: 'Attach',
+            },
+            {
+              handlerId: CREATE,
+              handlerVersion: '1',
+              args: { title: 'Unprepared sibling', body: 'Body' },
+              evidence: [
+                {
+                  evidenceId: input.evidence[0].evidenceId,
+                  location: { kind: 'source' },
+                },
+              ],
+              alternatives: [],
+              missingFields: [],
+              explanation: 'Create another draft',
             },
           ],
           splits: [],
@@ -1836,8 +1955,8 @@ export function proposalSuite(
           },
         ],
       });
-      if (saved.kind !== 'operation') throw new Error('operation required');
-      const first = saved.review;
+      const first =
+        saved.kind === 'operation' ? saved.review : saved.review.steps[0];
       await service.submitDecision({
         actionId: first.actionId,
         expectedRevision: first.revision,
@@ -1846,6 +1965,18 @@ export function proposalSuite(
         requestId: 'approve',
         decision: 'approve',
       });
+      const healthy = await loadReviewAnalysis(
+        service,
+        await service.getItem(input.itemId),
+        await service.listReviews(input.itemId),
+      );
+      expect(healthy.reviews.actions).toHaveLength(1);
+      expect(
+        (
+          healthy.analysis!.result.output
+            .proposals as unknown as GenerationOutput
+        ).suggestions,
+      ).toHaveLength(2);
       target.title = 'New authorized title';
       await target.save();
       const page = await service.listReviews(input.itemId);
@@ -1854,11 +1985,13 @@ export function proposalSuite(
       expect(stale.review.state).toBe('stale');
       expect(stale.args).toBeUndefined();
       expect(
-        await loadReviewAnalysis(
-          service,
-          await service.getItem(input.itemId),
-          page,
-        ),
+        (
+          await loadReviewAnalysis(
+            service,
+            await service.getItem(input.itemId),
+            page,
+          )
+        ).analysis,
       ).toBeUndefined();
       await expect(
         service.getCompletedAnalysis(input.itemId),
@@ -1877,21 +2010,95 @@ export function proposalSuite(
           ],
         }),
       ).rejects.toThrow();
-      const fresh = await service.previewProposal({
+      const freshArgs = {
+        contentId: target.id!,
+        evidenceId: (await service.getEvidence(input.itemId))[0].id,
+      };
+      const common = {
         itemId: input.itemId,
         attemptId: stale.attemptId!,
-        actionId: stale.review.actionId,
-        handlerId: stale.handlerId!,
-        handlerVersion: stale.handlerVersion!,
-        expectedRevision: stale.review.revision,
         requestId: 'explicit-fresh',
-        args: {
-          contentId: target.id!,
-          evidenceId: (await service.getEvidence(input.itemId))[0].id,
-        },
-      });
+        args: freshArgs,
+      };
+      const fresh = stale.stalePlan
+        ? (
+            await service.previewPlan({
+              ...common,
+              planKey: stale.stalePlan.key,
+              handlerId: stale.stalePlan.handlerId,
+              handlerVersion: stale.stalePlan.handlerVersion,
+              expectedRevision: stale.stalePlan.revision,
+            })
+          ).steps[0]
+        : await service.previewProposal({
+            ...common,
+            actionId: stale.review.actionId,
+            handlerId: stale.handlerId!,
+            handlerVersion: stale.handlerVersion!,
+            expectedRevision: stale.review.revision,
+          });
       expect(fresh.actionId).toBe(first.actionId);
       expect(fresh.state).toBe('waiting_review');
+      const waiting = await service.listReviews(input.itemId);
+      expect(waiting.generationStale).toBeUndefined();
+      const currentItem = await service.getItem(input.itemId);
+      for (let reload = 0; reload < 2; reload++) {
+        const loaded = await loadReviewAnalysis(service, currentItem, waiting);
+        expect(loaded.analysis).toBeUndefined();
+        expect(loaded.reviews.actions[0].review).toEqual(fresh);
+        expect(loaded.reviews.actions[0].args).toEqual(freshArgs);
+      }
+      expect(
+        input.output.offered.some((entry) =>
+          entry.candidates.some(
+            (candidate) => candidate.id === otherCandidate.id,
+          ),
+        ),
+      ).toBe(true);
+      const assertTarget = options.execution!.assertTarget;
+      options.execution!.assertTarget = async (request) => {
+        if (request.id === otherCandidate.id)
+          throw new Error('Candidate revoked');
+        return assertTarget(request);
+      };
+      await expect(
+        loadReviewAnalysis(service, currentItem, waiting),
+      ).rejects.toThrow('Candidate revoked');
+      options.execution!.assertTarget = assertTarget;
+      const read = service.getCompletedAnalysis.bind(service);
+      const pausedRead = vi
+        .spyOn(service, 'getCompletedAnalysis')
+        .mockImplementation(async (...args) => {
+          try {
+            return await read(...args);
+          } catch (error) {
+            if (error instanceof GenerationSnapshotStaleError) allowed = false;
+            throw error;
+          }
+        });
+      await expect(
+        loadReviewAnalysis(service, currentItem, waiting),
+      ).rejects.toThrow();
+      expect(allowed).toBe(false);
+      pausedRead.mockRestore();
+      allowed = true;
+      const unavailable = vi
+        .spyOn(service, 'getCompletedAnalysis')
+        .mockRejectedValueOnce(new Error('transport unavailable'));
+      await expect(
+        loadReviewAnalysis(service, currentItem, waiting),
+      ).rejects.toThrow('transport unavailable');
+      unavailable.mockRestore();
+      providerAllowed = false;
+      await expect(
+        loadReviewAnalysis(service, currentItem, waiting),
+      ).rejects.toThrow('Generation visibility changed');
+      providerAllowed = true;
+      expect(waiting.actions[0].review).toEqual(fresh);
+      expect(waiting.actions[0].args).toEqual({
+        contentId: target.id!,
+        evidenceId: (await service.getEvidence(input.itemId))[0].id,
+      });
       await expect(service.applyAction(first.actionId)).rejects.toThrow();
       await service.submitDecision({
         actionId: fresh.actionId,
@@ -1907,11 +2114,13 @@ export function proposalSuite(
       const completed = await service.listReviews(input.itemId);
       expect(completed.actions[0].result?.state).toBe('succeeded');
       expect(
-        await loadReviewAnalysis(
-          service,
-          await service.getItem(input.itemId),
-          completed,
-        ),
+        (
+          await loadReviewAnalysis(
+            service,
+            await service.getItem(input.itemId),
+            completed,
+          )
+        ).analysis,
       ).toBeUndefined();
       target.context = 'revoked';
       await target.save();

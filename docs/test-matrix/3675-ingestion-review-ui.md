@@ -67,3 +67,24 @@ databases, components, owning TS/Svelte/build, maintained Chromium, packed consu
 and affected static/knowledge checks. Unchanged foundation/source/extraction/provider
 suites and unrelated root runtime/types retain exact prior evidence; no schema,
 dependency, export map or other-package runtime changes occur in this delta.
+
+## Accepted round-two post-preview reload regression
+
+Operation and real parent-plan baselines fail on both databases immediately after
+fresh preview and before approval: saved target bindings become fresh while the
+immutable generation candidate pin remains stale. The maintained host helper now
+distinguishes only the owning typed stale-snapshot error, reacquires current saved
+reviews, and withholds generation output. Tests cover two repeated pre-approval
+reloads with fresh waiting arguments, fresh approval/application/subsequent reload,
+healthy unprepared sibling suggestions, later-candidate denial despite an earlier
+stale pin, provider/unknown failures and revocation between classification and
+review reacquisition. No strict snapshot/preview freshness gate is relaxed.
+
+Fresh complete execution/proposal PostgreSQL coverage precedes the final reference
+helper refinement that preserves healthy unprepared suggestions after saved actions
+complete. Final helper lifecycle cases run on both databases; the complete affected
+SQLite suite runs after that refinement. Evidence records the PostgreSQL source
+hashes and narrower final-helper scope separately. Owning TS/Svelte/build, maintained
+browser, server-only error packed export/import and static gates cover the final
+tree. Unchanged component presentation, provider adapters and unrelated root suites
+carry prior exact committed evidence explicitly.
