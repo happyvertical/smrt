@@ -39,6 +39,17 @@ const menu = () => screen.getByRole('list', { name: 'Content entries' });
 const edit = (user: ReturnType<typeof userEvent.setup>) =>
   user.click(screen.getByRole('button', { name: 'Edit layout' }));
 
+describe('section menu row icons', () => {
+  it('draws an entry icon on rows that have one, decoratively', () => {
+    mount();
+    const rows = within(menu()).getAllByRole('listitem');
+    const icon = rows[0].querySelector('.smrt-shell-section-icon');
+    expect(icon?.getAttribute('aria-hidden')).toBe('true');
+    expect(icon?.querySelector('svg')).not.toBeNull();
+    expect(rows[1].querySelector('.smrt-shell-section-icon')).toBeNull();
+  });
+});
+
 describe('navMode sections (sidebar)', () => {
   it('lists only sections, one link each, with no entries', () => {
     mount();

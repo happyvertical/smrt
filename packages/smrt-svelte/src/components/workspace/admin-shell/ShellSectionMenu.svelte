@@ -218,6 +218,8 @@ function onmove(move: SortableItemMove<SortableItem>): void {
   .smrt-section-menu__meta { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size); }
   .smrt-section-menu__actions { position: relative; z-index: 1; flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); }
   .smrt-section-menu__chevron { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); }
+  /* Fixed icon column so labels align whatever the glyph (or a missing one). */
+  .smrt-section-menu :global(.smrt-shell-section-icon) { inline-size: 20px; block-size: 20px; }
   .smrt-section-menu__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
 
   /* Edit mode: the generic Sortable reads as the same rows. */
