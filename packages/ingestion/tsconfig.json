@@ -15,6 +15,7 @@
   ],
   "exclude": [
     "**/*.test.ts",
-    "src/test-support/**"
+    "src/test-support/**",
+    "src/svelte/**"
   ]
 }

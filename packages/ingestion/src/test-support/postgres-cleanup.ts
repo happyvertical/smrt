@@ -18,7 +18,7 @@ export async function dropExecutionDatabase(
   name: string,
   timeoutMs = 10000,
 ): Promise<void> {
-  if (!/^exec_[a-f0-9]{32}$/.test(name))
+  if (!/^(?:exec|ing|ext|sources)_[a-f0-9]{32}$/.test(name))
     throw new Error('Invalid fixture database');
   const deadline = Date.now() + timeoutMs;
   for (;;) {

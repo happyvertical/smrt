@@ -3,10 +3,19 @@
   "compilerOptions": {
     "composite": false,
     "rootDir": ".",
-    "noEmit": true
+    "noEmit": true,
+    "types": [
+      "node",
+      "svelte",
+      "vite/client"
+    ]
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "reference/**/*.ts",
+    "e2e/review/*.ts"
   ],
-  "exclude": []
+  "exclude": [
+    "src/svelte/**"
+  ]
 }

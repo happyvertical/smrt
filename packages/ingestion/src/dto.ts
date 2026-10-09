@@ -70,3 +70,7 @@ export interface AnalysisOutput {
   error?: IntakeFailure;
   confidence?: number;
 }
+
+export type * from './proposal-dto.js';
+
+export type * from './review-dto.js';

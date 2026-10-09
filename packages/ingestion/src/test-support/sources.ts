@@ -25,6 +25,7 @@ import {
   EmailSourceAdapter,
   WatchFolderSourceAdapter,
 } from '../sources/index.js';
+import { dropExecutionDatabase } from './postgres-cleanup.js';
 
 const tenant = '11111111-1111-4111-8111-111111111111';
 export function sourcesSuite(
@@ -126,9 +127,7 @@ export function sourcesSuite(
     afterEach(async () => {
       await db?.close?.();
       if (admin) {
-        await admin.query(
-          `DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`,
-        );
+        await dropExecutionDatabase(admin, databaseName);
         await admin.close?.();
         admin = undefined;
       }

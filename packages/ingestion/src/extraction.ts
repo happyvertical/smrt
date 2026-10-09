@@ -101,8 +101,16 @@ export function createSDKExtractionAdapter(
       }
       running++;
       return new Promise<ExtractionResult>((resolve) => {
+        // A public entry can move shared code into chunks; resolve without loading it.
         const child = fork(
-          join(dirname(fileURLToPath(import.meta.url)), 'extraction-worker.js'),
+          join(
+            dirname(
+              fileURLToPath(
+                import.meta.resolve('@happyvertical/smrt-ingestion/server'),
+              ),
+            ),
+            'extraction-worker.js',
+          ),
           [],
           {
             serialization: 'advanced',

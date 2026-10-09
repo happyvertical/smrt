@@ -1,15 +1,18 @@
 {
   "name": "@happyvertical/smrt-ingestion",
-  "version": "0.55.5",
+  "version": "0.55.6",
   "description": "Durable tenant-scoped intake and evidence foundations",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "agents",
     "AGENTS.md",
     "CLAUDE.md",
-    "EXTRACTION.md"
+    "EXTRACTION.md",
+    "PROPOSALS.md",
+    "REVIEW.md"
   ],
   "exports": {
     ".": {
@@ -33,17 +36,27 @@
     "./execution": {
       "types": "./dist/execution.d.ts",
       "import": "./dist/execution.js"
+    },
+    "./proposals": {
+      "types": "./dist/proposals.d.ts",
+      "import": "./dist/proposals.js"
+    },
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "svelte": "./dist/svelte/index.js",
+      "import": "./dist/svelte/index.js",
+      "default": "./dist/svelte/index.js"
     }
   },
   "scripts": {
-    "build": "vite build --mode library && node scripts/check-browser.mjs",
-    "test": "vitest run",
+    "build": "vite build --mode library && node scripts/check-browser.mjs && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
+    "test": "vitest run && pnpm test:components",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run --config vitest.postgres.config.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "prepack": "node ../../scripts/prepack-package.js",
-    "test:providers": "vitest run src/extraction.providers.test.ts",
-    "test:components": "node scripts/unavailable-lane.mjs components",
-    "test:e2e": "node scripts/unavailable-lane.mjs e2e",
+    "test:providers": "vitest run src/extraction.providers.test.ts src/proposals.providers.test.ts",
+    "test:components": "vitest run --config vitest.components.config.ts",
+    "test:e2e": "playwright test -c e2e/review/playwright.config.ts",
     "test:evaluation": "node scripts/unavailable-lane.mjs evaluation"
   },
   "dependencies": {
@@ -60,7 +73,8 @@
     "sharp": "catalog:",
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-playbooks": "workspace:*",
-    "ajv": "8.20.0"
+    "ajv": "8.20.0",
+    "@happyvertical/smrt-ui": "workspace:*"
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
@@ -69,7 +83,15 @@
     "vite": "8.1.4",
     "vitest": "4.1.10",
     "@happyvertical/smrt-content": "workspace:*",
-    "@happyvertical/smrt-users": "workspace:*"
+    "@happyvertical/smrt-users": "workspace:*",
+    "@sveltejs/package": "^2.5.8",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "@testing-library/svelte": "^5.4.2",
+    "@testing-library/user-event": "^14.6.7",
+    "jsdom": "^29.1.1",
+    "@playwright/test": "^1.63.0"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
@@ -80,5 +102,13 @@
     "type": "git",
     "url": "https://github.com/happyvertical/smrt.git",
     "directory": "packages/ingestion"
+  },
+  "peerDependencies": {
+    "svelte": "^5.57.0"
+  },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    }
   }
 }

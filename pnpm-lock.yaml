@@ -1614,6 +1614,9 @@ importers:
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types
+      '@happyvertical/smrt-ui':
+        specifier: workspace:*
+        version: link:../smrt-ui
       '@happyvertical/speech':
         specifier: ^0.102.5
         version: 0.102.5(@huggingface/transformers@4.3.0(@types/node@24.13.2))
@@ -1636,9 +1639,33 @@ importers:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
+      '@playwright/test':
+        specifier: ^1.63.0
+        version: 1.63.0
+      '@sveltejs/package':
+        specifier: ^2.5.8
+        version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
+      '@sveltejs/vite-plugin-svelte':
+        specifier: ^7.3.0
+        version: 7.3.0(svelte@5.57.1)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+      '@testing-library/svelte':
+        specifier: ^5.4.2
+        version: 5.4.2(svelte@5.57.1)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))(vitest@4.1.10)
+      '@testing-library/user-event':
+        specifier: ^14.6.7
+        version: 14.6.7(@testing-library/dom@10.4.1)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
+      jsdom:
+        specifier: ^29.1.1
+        version: 29.1.1(@noble/hashes@2.4.0)
+      svelte:
+        specifier: ^5.57.1
+        version: 5.57.1
+      svelte-check:
+        specifier: ^4.7.6
+        version: 4.7.6(picomatch@4.0.5)(svelte@5.57.1)(typescript@6.0.3)
       typescript:
         specifier: 6.0.3
         version: 6.0.3

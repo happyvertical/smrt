@@ -3,6 +3,7 @@
 import './__smrt-register__.js';
 
 import {
+  detectEngine,
   ensureJobEventsSystemTableCompatibility,
   field,
   foreignKey,
@@ -15,6 +16,7 @@ import {
   TenantScoped,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
+import type { DatabaseInterface } from '@happyvertical/sql';
 
 export type SmrtJobEventType = 'status' | 'progress' | 'log' | 'error' | string;
 
@@ -45,6 +47,42 @@ export interface ListJobEventsOptions {
   cursor?: string | JobEventCursor;
 }
 
+export type SmrtJobTerminalStatus = 'completed' | 'failed' | 'cancelled';
+
+export interface SmrtJobTerminalOutcome {
+  eventId: string;
+  jobId: string;
+  tenantId: string | null;
+  status: SmrtJobTerminalStatus;
+  queue: string;
+  objectType: string;
+  method: string;
+  attempts: number;
+  failureKind?: 'execution' | 'timeout' | 'stale-recovery';
+  completedAt: string;
+  cursor: string;
+}
+
+export interface ListTerminalOutcomesOptions {
+  /** Explicit tenant boundary. Pass null only for global jobs. */
+  tenantId: string | null;
+  limit?: number;
+  since?: string | Date;
+  before?: string | JobEventCursor;
+  statuses?: SmrtJobTerminalStatus[];
+  queues?: string[];
+  objectTypes?: string[];
+  methods?: string[];
+}
+
+export interface SmrtJobTerminalOutcomePage {
+  outcomes: SmrtJobTerminalOutcome[];
+  limit: number;
+  candidateLimit: 1000;
+  truncated: boolean;
+  nextCursor: string | null;
+}
+
 const JOB_EVENT_STORAGE_COLUMNS = [
   'id',
   'slug',
@@ -60,6 +98,7 @@ const JOB_EVENT_STORAGE_COLUMNS = [
   'message',
   'data',
 ].join(', ');
+const TERMINAL_OUTCOME_CANDIDATE_LIMIT = 1000 as const;
 
 @smrt({
   tableName: '_smrt_job_events',
@@ -162,11 +201,27 @@ function normalizeCursorDate(value: string | Date): string {
   return value;
 }
 
-function usesSqliteDateFunctions(dbUrl: string): boolean {
-  const normalized = dbUrl.toLowerCase();
-  return !(
-    normalized.startsWith('postgres:') || normalized.startsWith('postgresql:')
+function databaseEngine(
+  db: DatabaseInterface,
+): ReturnType<typeof detectEngine> {
+  const configured = db as DatabaseInterface & {
+    config?: { type?: string; url?: string };
+    type?: string;
+    client?: { constructor?: { name?: string }; connection?: unknown };
+  };
+  const engine = detectEngine(
+    db.url || configured.config?.url || '',
+    configured.type || configured.config?.type,
   );
+  const clientName = configured.client?.constructor?.name?.toLowerCase() ?? '';
+  if (
+    engine === 'sqlite' &&
+    (clientName.includes('duckdb') ||
+      configured.client?.connection !== undefined)
+  ) {
+    return 'duckdb';
+  }
+  return engine;
 }
 
 function getQueryRows(result: unknown): Record<string, unknown>[] {
@@ -298,6 +353,85 @@ export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
     return latestByJobId;
   }
 
+  /**
+   * Read the newest safe, authoritative terminal outcomes for one tenant.
+   *
+   * The projection is built only from versioned terminal events written in the
+   * same transaction as their job status. It never returns job arguments,
+   * object ids, results, raw errors, or stack traces. Events follow the package
+   * retention policy (30 days by default), independently of job-row cleanup.
+   */
+  async listTerminalOutcomes(
+    options: ListTerminalOutcomesOptions,
+  ): Promise<SmrtJobTerminalOutcomePage> {
+    if (!Object.hasOwn(options, 'tenantId') || options.tenantId === undefined) {
+      throw new Error(
+        'Terminal outcome queries require tenantId or tenantId: null',
+      );
+    }
+    const limit = normalizeLimit(options.limit ?? 100);
+    const where = [
+      "stage IN ('completed', 'failed', 'cancelled', 'stale-recovery')",
+    ];
+    const params: unknown[] = [];
+    this.addTenantPredicate(where, params, options);
+
+    if (options.statuses?.length) {
+      const stages = options.statuses.flatMap((status) =>
+        status === 'failed' ? ['failed', 'stale-recovery'] : [status],
+      );
+      where.push(`stage IN (${stages.map(() => '?').join(', ')})`);
+      params.push(...stages);
+    }
+    if (options.since) {
+      where.push(`${this.createdAtComparableExpression()} > ?`);
+      params.push(normalizeCursorDate(options.since));
+    }
+    if (options.before) {
+      const cursor = parseCursor(options.before);
+      const createdAt = await this.resolveCursorCreatedAt(cursor, options);
+      const expression = this.createdAtComparableExpression();
+      where.push(`(${expression} < ? OR (${expression} = ? AND id < ?))`);
+      params.push(createdAt, createdAt, cursor.id);
+    }
+
+    params.push(TERMINAL_OUTCOME_CANDIDATE_LIMIT);
+    const expression = this.createdAtComparableExpression();
+    const candidates = await this.query(
+      `SELECT ${JOB_EVENT_STORAGE_COLUMNS}
+         FROM _smrt_job_events
+        WHERE ${where.join(' AND ')}
+        ORDER BY ${expression} DESC, id DESC
+        LIMIT ?`,
+      params,
+      { allowRawOnTenantScoped: true },
+    );
+
+    const outcomes: SmrtJobTerminalOutcome[] = [];
+    let scanned: SmrtJobEvent | undefined;
+    for (const event of candidates) {
+      scanned = event;
+      const outcome = terminalOutcome(event);
+      if (!outcome || !matchesTerminalOutcome(outcome, options)) continue;
+      outcomes.push(outcome);
+      if (outcomes.length === limit) break;
+    }
+    const stoppedAtLimit = outcomes.length === limit;
+    const candidateBoundReached =
+      candidates.length === TERMINAL_OUTCOME_CANDIDATE_LIMIT;
+
+    return {
+      outcomes,
+      limit,
+      candidateLimit: TERMINAL_OUTCOME_CANDIDATE_LIMIT,
+      truncated: stoppedAtLimit || candidateBoundReached,
+      nextCursor:
+        (stoppedAtLimit || candidateBoundReached) && scanned
+          ? scanned.toCursor()
+          : null,
+    };
+  }
+
   private addTenantPredicate(
     where: string[],
     params: unknown[],
@@ -366,8 +500,12 @@ export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
   }
 
   private createdAtComparableExpression(): string {
-    if (usesSqliteDateFunctions(this.db.url)) {
+    const engine = databaseEngine(this.db);
+    if (engine === 'sqlite') {
       return "strftime('%Y-%m-%dT%H:%M:%fZ', created_at)";
+    }
+    if (engine === 'duckdb') {
+      return "strftime(created_at, '%Y-%m-%dT%H:%M:%S.%gZ')";
     }
 
     return 'created_at';
@@ -402,6 +540,85 @@ export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
       ? cursorCreatedAt
       : normalizeCursorDate(cursor.createdAt);
   }
+}
+
+function terminalOutcome(event: SmrtJobEvent): SmrtJobTerminalOutcome | null {
+  const data = event.data;
+  if (
+    data?.version !== 1 ||
+    data.terminal !== true ||
+    !isTerminalStatus(data.status) ||
+    !matchesTerminalStage(data.status, data.failureKind, event.stage) ||
+    typeof data.queue !== 'string' ||
+    typeof data.objectType !== 'string' ||
+    typeof data.method !== 'string' ||
+    typeof data.attempts !== 'number' ||
+    !Number.isSafeInteger(data.attempts) ||
+    data.attempts < 0 ||
+    typeof data.completedAt !== 'string' ||
+    Number.isNaN(Date.parse(data.completedAt)) ||
+    (data.status === 'failed'
+      ? !isFailureKind(data.failureKind)
+      : data.failureKind !== undefined) ||
+    !event.id
+  ) {
+    return null;
+  }
+  const failureKind =
+    data.status === 'failed'
+      ? (data.failureKind as SmrtJobTerminalOutcome['failureKind'])
+      : undefined;
+
+  return {
+    eventId: event.id,
+    jobId: event.jobId,
+    tenantId: event.tenantId ?? null,
+    status: data.status,
+    queue: data.queue,
+    objectType: data.objectType,
+    method: data.method,
+    attempts: data.attempts,
+    ...(failureKind ? { failureKind } : {}),
+    completedAt: new Date(data.completedAt).toISOString(),
+    cursor: event.toCursor(),
+  };
+}
+
+function isFailureKind(
+  value: unknown,
+): value is 'execution' | 'timeout' | 'stale-recovery' {
+  return (
+    value === 'execution' || value === 'timeout' || value === 'stale-recovery'
+  );
+}
+
+function isTerminalStatus(value: unknown): value is SmrtJobTerminalStatus {
+  return value === 'completed' || value === 'failed' || value === 'cancelled';
+}
+
+function matchesTerminalStage(
+  status: SmrtJobTerminalStatus,
+  failureKind: unknown,
+  stage: string | null,
+): boolean {
+  return (
+    stage === status ||
+    (status === 'failed' &&
+      failureKind === 'stale-recovery' &&
+      stage === 'stale-recovery')
+  );
+}
+
+function matchesTerminalOutcome(
+  outcome: SmrtJobTerminalOutcome,
+  options: ListTerminalOutcomesOptions,
+): boolean {
+  return (
+    (!options.queues?.length || options.queues.includes(outcome.queue)) &&
+    (!options.objectTypes?.length ||
+      options.objectTypes.includes(outcome.objectType)) &&
+    (!options.methods?.length || options.methods.includes(outcome.method))
+  );
 }
 
 export default SmrtJobEvent;

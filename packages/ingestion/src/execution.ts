@@ -27,7 +27,13 @@ import type {
   ResultReference,
   ReviewInput,
 } from './execution-contracts.js';
+import {
+  type DiscoveryGate,
+  discoveryTransaction,
+  type TransactionRunner,
+} from './execution-internal.js';
 import { intersect, resolveIntakePolicy } from './policy.js';
+import type { ReviewAction, ReviewPage } from './review-dto.js';
 import type { IngestionOptions } from './server.js';
 
 export type * from './execution-contracts.js';
@@ -142,17 +148,16 @@ export class IntakeExecutionService {
     return this.options.now?.() ?? new Date();
   }
   private async tx<T>(work: (db: DatabaseInterface) => Promise<T>): Promise<T> {
+    return this.withRetention(() =>
+      withEmbeddedWriteTransaction(this.db, isEmbeddedDatabase(this.db), work),
+    );
+  }
+  private async withRetention<T>(work: () => Promise<T>): Promise<T> {
     // Authorized privacy ceilings survive business rollback, including savepoints.
     // Keep intents local to this async transaction; concurrent calls cannot share them.
     const intents = new Map<string, number>();
     try {
-      return await this.retentionIntents.run(intents, () =>
-        withEmbeddedWriteTransaction(
-          this.db,
-          isEmbeddedDatabase(this.db),
-          work,
-        ),
-      );
+      return await this.retentionIntents.run(intents, work);
     } catch (error) {
       // Early expired apply has already authorized/locked the item, but has
       // not entered policy access. Its redaction must survive rollback too.
@@ -451,7 +456,7 @@ export class IntakeExecutionService {
     db: DatabaseInterface,
     item: Row,
     handler: OperationHandler,
-    operation: 'execute' | 'reconcile',
+    operation: 'execute' | 'reconcile' | 'preview',
     work: (context: HandlerContext) => Promise<T>,
   ): Promise<T> {
     const access = await this.access(db, item, handler, operation);
@@ -470,7 +475,8 @@ export class IntakeExecutionService {
         permissions: access.permissions,
         postgresRls: false,
         onBehalfOfUserId: this.scope.actorId,
-        action: 'ingestion.execute',
+        action:
+          operation === 'preview' ? 'ingestion.discovery' : 'ingestion.execute',
         auditMetadata: { itemId: item.id, handler: handler.id },
         audit: async () => {},
       },
@@ -485,6 +491,150 @@ export class IntakeExecutionService {
       },
     );
   }
+  /** Current discovery authority. Trusted callbacks use context.db for bounded reads. */
+  async withDiscoveryContext<T>(
+    itemId: string,
+    handlerId: string,
+    handlerVersion: string,
+    work: (context: HandlerContext) => Promise<T>,
+  ): Promise<T> {
+    return this.tx((db) =>
+      this.discoveryContext(db, itemId, handlerId, handlerVersion, work),
+    );
+  }
+  /** Keep retention restoration outside the supplied foundation transaction. */
+  [discoveryTransaction]<T>(
+    run: TransactionRunner<T>,
+    itemId: string,
+    work: (db: DatabaseInterface, authorize: DiscoveryGate) => Promise<T>,
+    requireReview = false,
+  ): Promise<T> {
+    return this.withRetention(() =>
+      run(async (db) => {
+        const authorize: DiscoveryGate = (
+          handlerId,
+          handlerVersion,
+          callback,
+        ) =>
+          this.discoveryContext(
+            db,
+            itemId,
+            handlerId,
+            handlerVersion,
+            (context) =>
+              callback(context, (model, id) =>
+                this.config.assertTarget({
+                  db,
+                  scope: this.scope,
+                  itemId,
+                  model,
+                  id,
+                }),
+              ),
+            requireReview,
+          );
+        const result = await work(db, authorize);
+        // A foundation retry must retain the narrowest authorized privacy ceiling.
+        for (const [
+          retainedItemId,
+          deadline,
+        ] of this.retentionIntents.getStore() ?? []) {
+          const item = await this.restoreRetention(
+            db,
+            retainedItemId,
+            deadline,
+          );
+          if (!this.retained(item))
+            throw new RetentionExpired(retainedItemId, deadline);
+        }
+        return result;
+      }),
+    );
+  }
+  private async discoveryContext<T>(
+    db: DatabaseInterface,
+    itemId: string,
+    handlerId: string,
+    handlerVersion: string,
+    work: (context: HandlerContext) => Promise<T>,
+    requireReview = false,
+  ): Promise<T> {
+    const review = async () => {
+      const item = await this.item(db, itemId, true);
+      await this.access(
+        db,
+        item,
+        this.handler(handlerId, handlerVersion),
+        'review',
+      );
+    };
+    const authorize = async <R>(
+      callback: (context: HandlerContext) => Promise<R>,
+    ) => {
+      const item = await this.item(db, itemId, true);
+      const handler = this.handler(handlerId, handlerVersion);
+      if ('execution' in handler)
+        return this.principal(
+          db,
+          item,
+          this.operation(handler),
+          'preview',
+          callback,
+        );
+      const { context } = await this.access(db, item, handler, 'preview');
+      const resolved = await resolvePlaybook(handler.operation.playbookKey, {
+        db,
+        tenantId: this.scope.tenantId,
+        plane: 'server',
+        classifier: ({ model, action }) => {
+          const found = this.config.handlers.find(
+            (entry) =>
+              'execution' in entry &&
+              entry.operation.model === model &&
+              entry.operation.action === action,
+          );
+          return found && 'execution' in found ? found.capability : undefined;
+        },
+      });
+      if (
+        !resolved.ok ||
+        intakeBindingDigest(resolved.plan) !==
+          handler.operation.definitionHash ||
+        resolved.plan.steps.some(
+          (step) =>
+            step.step.kind !== 'operation' || !step.classificationDeclared,
+        )
+      )
+        throw new Error('Playbook unavailable');
+      for (const entry of resolved.plan.steps) {
+        const operation = entry.step;
+        if (operation.kind !== 'operation')
+          throw new Error('Playbook unavailable');
+        const found = this.config.handlers.find(
+          (candidate) =>
+            'execution' in candidate &&
+            candidate.operation.model === operation.model &&
+            candidate.operation.action === operation.action,
+        );
+        if (!found) throw new Error('Handler unavailable');
+        await this.principal(
+          db,
+          item,
+          this.operation(found),
+          'preview',
+          async () => {},
+        );
+      }
+      return callback(context);
+    };
+    if (requireReview) await review();
+    const result = await authorize(work);
+    // A long database callback may cross retention or a current-grant boundary.
+    await authorize(async () => {});
+    if (requireReview) await review();
+    return result;
+  }
+
   private async bound(
     db: DatabaseInterface,
     actionId: string,
@@ -557,6 +707,234 @@ export class IntakeExecutionService {
       await this.access(db, bound.item, bound.handler, 'read');
       if (!this.retained(bound.item)) return expiredReview();
       return this.review(bound);
+    });
+  }
+  /** Bounded reload discovery. The cursor is an opaque action ID, never authority. */
+  async listReviews(
+    itemId: string,
+    input: { cursor?: string; limit?: number } = {},
+  ): Promise<ReviewPage> {
+    const limit = input.limit ?? 20;
+    if (
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 50 ||
+      (input.cursor !== undefined && !/^[0-9a-f-]{36}$/i.test(input.cursor))
+    )
+      throw new Error('Invalid review page');
+    return this.tx(async (db) => {
+      const item = await this.item(db, itemId, true, true);
+      const rows = (
+        await db.query(
+          `SELECT * FROM intake_actions WHERE tenant_id=? AND confidential_scope_id=? AND item_id=?${input.cursor ? ' AND id>?' : ''} ORDER BY id LIMIT ?`,
+          this.scope.tenantId,
+          this.scope.confidentialScopeId,
+          itemId,
+          ...(input.cursor ? [input.cursor] : []),
+          limit + 1,
+        )
+      ).rows;
+      const actions: ReviewAction[] = [];
+      let generationStale = false;
+      for (const action of rows.slice(0, limit)) {
+        const [proposal] = await this.rows(
+          db,
+          'intake_proposals',
+          'action_id=? AND revision=?',
+          [action.id, action.proposal_revision],
+        );
+        if (!proposal) {
+          actions.push({
+            review: {
+              actionId: String(action.id),
+              proposalId: '',
+              revision: Number(action.proposal_revision),
+              reviewVersion: Number(action.review_version),
+              bindingHash: '',
+              display: {},
+              state: this.retained(item) ? 'proposed' : 'expired',
+            },
+          });
+          continue;
+        }
+        const tombstone = (state: string): ReviewAction => ({
+          review: {
+            actionId: String(action.id),
+            proposalId: String(proposal.id),
+            revision: Number(proposal.revision),
+            reviewVersion: Number(action.review_version),
+            bindingHash: String(proposal.binding_hash),
+            display: {},
+            state,
+          },
+        });
+        if (!this.retained(item)) {
+          actions.push(tombstone('expired'));
+          continue;
+        }
+        const bound = await this.bound(db, String(action.id));
+        await this.access(db, bound.item, bound.handler, 'read');
+        item.expires_at = bound.item.expires_at;
+        if (!this.retained(bound.item)) {
+          actions.push(tombstone('expired'));
+          continue;
+        }
+        let stale = false;
+        let recoveryAttemptId: string | undefined;
+        const authorizeTargets = async (
+          targets: Array<{ model: string; id: string; revision: string }>,
+        ) => {
+          for (const target of targets) {
+            // Read authority is current. Historical execution preconditions are
+            // freshness fences, not a reason to hide an authorized result/page.
+            const current = await this.config.assertTarget({
+              db,
+              scope: this.scope,
+              itemId,
+              model: target.model,
+              id: target.id,
+            });
+            if (current.revision !== target.revision) {
+              generationStale = true;
+              if (bound.action.state !== 'succeeded') stale = true;
+            }
+          }
+        };
+        await authorizeTargets(bound.binding.targetPreconditions);
+        if (!this.retained(bound.item)) {
+          actions.push(tombstone('expired'));
+          continue;
+        }
+        if (bound.action.state !== 'succeeded') {
+          const [analysis] = await this.rows(db, 'intake_analyses', 'id=?', [
+            proposal.analysis_id,
+          ]);
+          if (
+            !analysis ||
+            Number(analysis.revision) !== Number(item.analysis_revision)
+          )
+            stale = true;
+          else {
+            await this.verifyEvidence(db, bound);
+            const [attempt] = await this.rows(
+              db,
+              'intake_analysis_attempts',
+              'id=? AND analysis_id=?',
+              [proposal.analysis_attempt_id, analysis.id],
+            );
+            if (
+              attempt &&
+              ['completed', 'partial'].includes(String(attempt.state)) &&
+              String(analysis.current_attempt_id) === String(attempt.id)
+            )
+              recoveryAttemptId = String(attempt.id);
+          }
+        }
+        const entry: ReviewAction = {
+          review: this.review(bound),
+          args: structuredClone(bound.binding.args),
+          handlerId: bound.handler.id,
+          handlerVersion: bound.handler.version,
+          attemptId: String(proposal.analysis_attempt_id),
+          dependencies: structuredClone(bound.binding.dependencies),
+        };
+        if (action.state === 'succeeded')
+          entry.result = await this.successful(db, action, item);
+        if (bound.binding.plan) {
+          const [plan] = await this.rows(
+            db,
+            'intake_plans',
+            bound.action.state === 'succeeded'
+              ? 'item_id=? AND plan_key=? AND revision=?'
+              : 'item_id=? AND plan_key=? ORDER BY revision DESC LIMIT 1',
+            bound.action.state === 'succeeded'
+              ? [itemId, bound.binding.plan.key, bound.binding.plan.revision]
+              : [itemId, bound.binding.plan.key],
+          );
+          if (!plan) throw new Error('Plan unavailable');
+          if (
+            bound.action.state !== 'succeeded' &&
+            Number(plan.revision) !== bound.binding.plan.revision
+          )
+            stale = true;
+          const planData = object(plan.data);
+          const parent = this.handler(
+            String(planData.handlerId),
+            String(planData.handlerVersion),
+          );
+          const parentPreview = object(planData.preview);
+          await this.discoveryContext(
+            db,
+            itemId,
+            parent.id,
+            parent.version,
+            async () => {
+              await authorizeTargets(
+                parentPreview.targetPreconditions as Array<{
+                  model: string;
+                  id: string;
+                  revision: string;
+                }>,
+              );
+            },
+          );
+          const steps = planData.steps as Array<{ actionId: string }>;
+          entry.plan = {
+            id: String(plan.id),
+            key: String(plan.plan_key),
+            revision: Number(plan.revision),
+            stepIndex: steps.findIndex((step) => step.actionId === action.id),
+            args: object(planData.args),
+            handlerId: parent.id,
+            handlerVersion: parent.version,
+            attemptId: String(proposal.analysis_attempt_id),
+          };
+        }
+        await this.access(db, bound.item, bound.handler, 'read');
+        actions.push(
+          !this.retained(bound.item)
+            ? tombstone('expired')
+            : stale
+              ? {
+                  ...tombstone('stale'),
+                  ...(recoveryAttemptId
+                    ? {
+                        attemptId: recoveryAttemptId,
+                        handlerId: bound.handler.id,
+                        handlerVersion: bound.handler.version,
+                      }
+                    : {}),
+                  ...(entry.plan
+                    ? {
+                        stalePlan: {
+                          id: entry.plan.id,
+                          key: entry.plan.key,
+                          revision: entry.plan.revision,
+                          handlerId: entry.plan.handlerId,
+                          handlerVersion: entry.plan.handlerVersion,
+                        },
+                      }
+                    : {}),
+                }
+              : entry,
+        );
+      }
+      // Later callbacks can cross the shared deadline; publish no earlier payload then.
+      const current = await this.item(db, itemId, false, true);
+      if (!this.retained(current)) {
+        await this.redactExecution(db, current);
+        for (let index = 0; index < actions.length; index++)
+          actions[index] = {
+            review: { ...actions[index].review, display: {}, state: 'expired' },
+          };
+      }
+      return {
+        actions,
+        ...(generationStale ? { generationStale: true } : {}),
+        ...(rows.length > limit
+          ? { nextCursor: String(rows[limit - 1].id) }
+          : {}),
+      };
     });
   }
   private async buildBinding(

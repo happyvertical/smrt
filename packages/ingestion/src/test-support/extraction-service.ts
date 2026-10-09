@@ -27,6 +27,7 @@ import {
   recordedToneWAV,
   scannedPDF,
 } from './extraction-fixtures.js';
+import { dropExecutionDatabase } from './postgres-cleanup.js';
 
 export function extractionServiceSuite(dialect: 'sqlite' | 'postgres') {
   describe(`extraction authority and publication on ${dialect}`, () => {
@@ -172,9 +173,7 @@ export function extractionServiceSuite(dialect: 'sqlite' | 'postgres') {
     afterEach(async () => {
       await db?.close?.();
       if (admin) {
-        await admin.query(
-          `DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`,
-        );
+        await dropExecutionDatabase(admin, databaseName);
         await admin.close?.();
         admin = undefined;
       }

@@ -3,6 +3,7 @@ import type { CapabilityDeclaration } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { ExecutionCeiling, IntakeValues } from './execution-dto.js';
 import type { IntakePolicy, IntakePolicyLayer } from './policy.js';
+import type { HandlerDiscovery } from './proposal-contracts.js';
 import type { IngestionScope } from './server.js';
 
 export type * from './execution-dto.js';
@@ -21,6 +22,8 @@ export interface HandlerPreview {
   targetPreconditions: Array<{ model: string; id: string; revision: string }>;
 }
 interface HandlerBase {
+  /** Optional proposal discovery on this same authoritative execution catalog. */
+  discovery?: HandlerDiscovery;
   id: string;
   version: string;
   description: string;
