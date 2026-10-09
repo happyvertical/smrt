@@ -77,6 +77,27 @@ persisted. Assistant tools are in `@happyvertical/smrt-chat`. The full
 contract, authority model, and deferred work are in
 [agents/runtime-reports.md](agents/runtime-reports.md).
 
+## Recipes (#3719)
+
+`src/recipes.ts` declares `reports.materialized` (`MaterializedReportsRecipe`),
+emitted into the built `manifest.json` and `smrt-knowledge.json` `recipes`. It
+brings only the internal refresh bookkeeping tables (runs, watermarks, locks,
+schedules, refresh tasks); an app's own `@report` classes are not listed because
+they belong to the app. Those tables have no REST or MCP surface, so the recipe
+has no `nav`. It declares `runtime: 'server'` (SQL aggregation, jobs) and no
+`surfaces`: this package ships no Svelte components, and declaring one that does
+not exist is a scan-time lie. Do not add a surface until a real export exists.
+
+User-facing help is `src/materialized.recipe.md` (#3591). It explains how the
+assistant reads declared reports (`data.discover`/`data.inspect` and
+`reports.query`/`reports.refresh` from `@happyvertical/smrt-agents`) and how
+runtime reports (`reports.runtime.*` in `@happyvertical/smrt-chat`) differ: live,
+never stored, saved only after a person confirms. Keep that split accurate when
+either tool set changes. `{field:...}` references need a `@field({ description })`
+on `state.ts` so the glossary can explain them. `src/__tests__/recipes.test.ts`
+runs the real scan, manifest and generation passes in memory and renders the help.
+See [core recipes](../core/agents/recipes.md).
+
 ## Conventions
 
 - Report cache tables are normal `@smrt()` tables. Runtime refresh must not create schema.

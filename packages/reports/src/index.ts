@@ -87,6 +87,7 @@ export {
   previewReportRefresh,
   reportRefreshOutcome,
 } from './lifecycle.js';
+export { MaterializedReportsRecipe } from './recipes.js';
 export {
   refreshReport,
   reportRowIdentity,

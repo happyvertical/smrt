@@ -113,7 +113,8 @@ via the persona conversation `extraTools` seam; they use the same fail-closed
 
 ## Not done (needs #3708 or a design call)
 
-- Surface/provider declarations for the `reports.materialized` /
-  `analytics.reports` recipes (a separate item; waits on #3708).
+- A `reports.runtime` recipe for `RuntimeReport` itself. `reports.materialized`
+  (see `AGENTS.md`) covers declared reports only and its help points at the
+  `reports.runtime.*` tools; `RuntimeReport` has no recipe of its own yet.
 - A browser UI for the confirmation host and for rendering the chart hint.
 - Archive/rename tools, scheduling a runtime report, exporting its rows.
