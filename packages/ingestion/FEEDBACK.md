@@ -83,11 +83,48 @@ correctness/decision/outcome signals and strict confidential-scope eligibility.
 
 ## Routing suggestions and adoption
 
-`suggestRoutingRule` requires repeated current explicit positive judgments with
+`suggestRoutingRule` requires repeated current explicit positive judgments
 from distinct source items with matching handler/version and arguments, and returns supporting immutable IDs,
 shared query terms and the policy owner's preview/version. Suggestions cannot
 execute or modify policy. `getRoutingRule` rechecks the displayed binding and all
 supporting examples. Arguments are routing preferences, never executable grants.
+
+By default matching compares **all** action arguments, preserving existing host
+behavior. Create handlers commonly have per-document content and idempotency
+keys, which must remain distinct. Such hosts can explicitly declare a routing-only
+subset in trusted server configuration before capturing judgments:
+
+```ts
+feedback: {
+  // ...existing limits, authorize and policy owner
+  routing: [{
+    handlerId: 'host:create-document',
+    handlerVersion: '1',
+    version: 'routing-fields-1',
+    fields: ['destinationId', 'category'],
+  }],
+}
+```
+
+Each declaration must name a configured handler/version and a nonempty, unique
+allowlist of its top-level `argsSchema.properties`; duplicate declarations,
+unknown properties and prototype keys reject. There are no dotted paths,
+caller-supplied selectors or implicit exclusions (including request IDs).
+Optional absent fields stay absent and differ from explicit `null`; at least one
+selected value must be present. The host must select preferences only, never
+grants, provider permissions or automation controls.
+
+Capture retains the full immutable action arguments and binding plus the
+versioned subset. For opted-in handlers `RoutingRule.args` contains only selected
+values and `RoutingRule.projection` carries the canonical sorted fields and
+version. Independent support must match that entire contract and those values;
+full original source arguments, provenance and current access are still checked.
+Existing unprojected feedback is not retroactively reinterpreted: record fresh
+explicit judgments after enabling or changing a declaration. Changing a version,
+field list or selected value invalidates old suggestions on reads, adoption and
+replay, including changes inside policy-owner callbacks. Full argument feedback
+retrieval remains unchanged; hosts may present matching examples from
+`retrieveFeedback`, but suggestion creation revalidates every supplied ID.
 
 `adoptRoutingRule` requires the exact suggestion digest and expected policy
 version plus current reviewer and adoption authority. The configured policy owner
@@ -110,7 +147,9 @@ maintained browser fixture demonstrates this transport with CSRF protection and
 rejects substituted revisions.
 
 See [the behavior matrix](../../docs/test-matrix/3676-ingestion-feedback.md) for
-validation and the frozen learning protocol. The small authored deterministic
+validation and the frozen learning protocol, and the
+[routing projection matrix](../../docs/test-matrix/3732-ingestion-routing-projection.md)
+for the optional subset contract. The small authored deterministic
 cohort demonstrates contract-level influence, not provider quality or measured
 production improvement. Real-provider evaluation belongs to #3677. There are no
 sampled automatic outcomes in this feature; reporting that stratum as unavailable

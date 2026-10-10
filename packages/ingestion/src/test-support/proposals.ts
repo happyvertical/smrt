@@ -1820,6 +1820,303 @@ export function proposalSuite(
         service.getCompletedAnalysis(input.itemId),
       ).rejects.toThrow();
     });
+    async function routingProjectionFixture(
+      projected = true,
+      secondTitle = 'Finance',
+    ) {
+      enableFeedback();
+      const revoked = new Set<string>();
+      const authorize = options.feedback!.authorize;
+      options.feedback!.authorize = async (input) =>
+        !revoked.has(input.itemId) && (await authorize(input));
+      const handler = handlers.find((handler) => handler.id === CREATE)!;
+      (handler.argsSchema.properties as Record<string, unknown>).requestId = {
+        type: 'string',
+      };
+      if (projected)
+        options.feedback!.routing = [
+          {
+            handlerId: CREATE,
+            handlerVersion: '1',
+            version: 'routing-fields-1',
+            fields: ['title'],
+          },
+        ];
+      const policy = await document('routing-v1');
+      const adopt = vi.fn(
+        async ({
+          db: executor,
+          expectedVersion,
+          requestId,
+        }: {
+          db: DatabaseInterface;
+          expectedVersion: string;
+          requestId: string;
+        }) => {
+          const changed = await executor.query(
+            'UPDATE contents SET title=?,body=? WHERE id=? AND title=? RETURNING id',
+            'routing-v2',
+            requestId,
+            policy.id,
+            expectedVersion,
+          );
+          if (changed.rows.length !== 1) throw new Error('Policy CAS');
+          return { version: 'routing-v2', auditId: requestId };
+        },
+      );
+      options.feedback!.policy = {
+        preview: async ({ db: executor }) => ({
+          version: String(
+            (
+              await executor.query(
+                'SELECT title FROM contents WHERE id=?',
+                policy.id,
+              )
+            ).rows[0].title,
+          ),
+          preview: 'Reviewed routing preferences only',
+        }),
+        adopt,
+      };
+      chooseCreate({
+        title: 'Finance',
+        body: 'Invoice 17 for 125.00',
+        requestId: 'document-17',
+      });
+      const first = await feedbackCase();
+      chooseCreate({
+        title: secondTitle,
+        body: 'Receipt 42 for 319.20',
+        requestId: 'document-42',
+      });
+      const second = await feedbackCase();
+      const one = await service.recordFeedback({
+        ...first.binding,
+        judgment: 'correct',
+        requestId: 'one',
+      });
+      const two = await service.recordFeedback({
+        ...second.binding,
+        judgment: 'correct',
+        requestId: 'two',
+      });
+      const input = {
+        ...second.binding,
+        supportingFeedbackIds: [one.id, two.id],
+        requestId: 'suggest-projection',
+      };
+      return { first, second, one, two, policy, adopt, input, revoked };
+    }
+    it('feedback routing projection learns independent documents with distinct request IDs and content and adopts once', async () => {
+      const fixture = await routingProjectionFixture();
+      const suggestion = await service.suggestRoutingRule(fixture.input);
+      expect(suggestion.rule).toEqual({
+        handlerId: CREATE,
+        handlerVersion: '1',
+        matchTerms: expect.any(Array),
+        args: { title: 'Finance' },
+        projection: { version: 'routing-fields-1', fields: ['title'] },
+      });
+      const saved = (
+        await db.query(
+          'SELECT data FROM intake_feedback WHERE id=?',
+          fixture.one.id,
+        )
+      ).rows[0].data;
+      const data = typeof saved === 'string' ? JSON.parse(saved) : saved;
+      expect(data.args).toEqual({
+        title: 'Finance',
+        body: 'Invoice 17 for 125.00',
+        requestId: 'document-17',
+      });
+      expect(data.routing).toEqual({
+        args: { title: 'Finance' },
+        projection: suggestion.rule.projection,
+      });
+      expect(await service.suggestRoutingRule(fixture.input)).toEqual(
+        suggestion,
+      );
+      expect(
+        await service.getRoutingRule({
+          ...fixture.second.binding,
+          suggestionId: suggestion.id,
+        }),
+      ).toEqual(suggestion);
+      const input = {
+        ...fixture.second.binding,
+        suggestionId: suggestion.id,
+        expectedDigest: suggestion.digest,
+        expectedPolicyVersion: suggestion.expectedPolicyVersion,
+        requestId: 'adopt-projection',
+      };
+      reviewerAllowed = false;
+      await expect(service.adoptRoutingRule(input)).rejects.toThrow();
+      reviewerAllowed = true;
+      await expect(
+        service.adoptRoutingRule({ ...input, expectedDigest: 'tampered' }),
+      ).rejects.toThrow('Stale rule');
+      const result = await service.adoptRoutingRule(input);
+      expect(result.automaticActionEligible).toBe(false);
+      expect(await service.adoptRoutingRule(input)).toEqual(result);
+      expect(fixture.adopt).toHaveBeenCalledTimes(1);
+      options.feedback!.routing![0].version = 'routing-fields-2';
+      await expect(service.adoptRoutingRule(input)).rejects.toThrow(
+        'Rule routing projection changed',
+      );
+      expect(fixture.adopt).toHaveBeenCalledTimes(1);
+      expect(
+        (await db.query('SELECT id FROM intake_executions')).rows,
+      ).toHaveLength(0);
+    });
+    it.each([
+      'default',
+      'changed-route',
+      'old-capture',
+    ] as const)('feedback routing projection rejects %s incompatible support', async (mode) => {
+      const fixture = await routingProjectionFixture(
+        mode === 'changed-route',
+        mode === 'changed-route' ? 'Legal' : 'Finance',
+      );
+      if (mode === 'old-capture')
+        options.feedback!.routing = [
+          {
+            handlerId: CREATE,
+            handlerVersion: '1',
+            version: 'routing-fields-1',
+            fields: ['title'],
+          },
+        ];
+      await expect(service.suggestRoutingRule(fixture.input)).rejects.toThrow(
+        'Rule evidence unavailable',
+      );
+      expect(fixture.adopt).not.toHaveBeenCalled();
+    });
+    it.each([
+      'version',
+      'fields',
+      'full-args',
+      'digest',
+      'revocation',
+      'retention',
+      'scope',
+      'tenant',
+    ] as const)('feedback routing projection invalidates saved suggestion on %s change', async (mode) => {
+      const fixture = await routingProjectionFixture();
+      const suggestion = await service.suggestRoutingRule(fixture.input);
+      if (mode === 'version')
+        options.feedback!.routing![0].version = 'routing-fields-2';
+      if (mode === 'fields')
+        options.feedback!.routing![0].fields = ['title', 'body'];
+      if (mode === 'full-args' || mode === 'digest') {
+        const row = (
+          await db.query(
+            'SELECT data FROM intake_feedback WHERE id=?',
+            fixture.one.id,
+          )
+        ).rows[0];
+        const data =
+          typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+        data.args.requestId = 'forged-original-document';
+        if (mode === 'full-args') {
+          const { digest: _stored, ...body } = data;
+          data.digest = intakeBindingDigest(body);
+        }
+        await db.query(
+          'UPDATE intake_feedback SET data=? WHERE id=?',
+          JSON.stringify(data),
+          fixture.one.id,
+        );
+      }
+      if (mode === 'revocation')
+        options.feedback!.authorize = async ({ itemId }) =>
+          itemId !== fixture.first.binding.itemId;
+      if (mode === 'retention')
+        await service.expire(fixture.first.binding.itemId);
+      if (mode === 'scope' || mode === 'tenant')
+        service = new IngestionService({
+          ...options,
+          scope: {
+            ...options.scope,
+            ...(mode === 'scope'
+              ? { confidentialScopeId: 'elsewhere' }
+              : { tenantId: '99999999-9999-4999-8999-999999999999' }),
+          },
+        });
+      await expect(
+        service.getRoutingRule({
+          ...fixture.second.binding,
+          suggestionId: suggestion.id,
+        }),
+      ).rejects.toThrow();
+      await expect(service.suggestRoutingRule(fixture.input)).rejects.toThrow();
+      await expect(
+        service.adoptRoutingRule({
+          ...fixture.second.binding,
+          suggestionId: suggestion.id,
+          expectedDigest: suggestion.digest,
+          expectedPolicyVersion: suggestion.expectedPolicyVersion,
+          requestId: 'stale-adopt',
+        }),
+      ).rejects.toThrow();
+      expect(fixture.adopt).not.toHaveBeenCalled();
+    });
+    it.each([
+      'version',
+      'source-revocation',
+    ] as const)('feedback routing projection rolls back same-executor policy mutation on final %s change', async (mode) => {
+      const fixture = await routingProjectionFixture();
+      const suggestion = await service.suggestRoutingRule(fixture.input);
+      options.feedback!.policy!.adopt = async (input) => {
+        const result = await fixture.adopt(input);
+        if (mode === 'version')
+          options.feedback!.routing![0].version = 'routing-fields-2';
+        else fixture.revoked.add(fixture.first.binding.itemId);
+        return result;
+      };
+      await expect(
+        service.adoptRoutingRule({
+          ...fixture.second.binding,
+          suggestionId: suggestion.id,
+          expectedDigest: suggestion.digest,
+          expectedPolicyVersion: suggestion.expectedPolicyVersion,
+          requestId: 'changing-adopt',
+        }),
+      ).rejects.toThrow();
+      expect(
+        (
+          await db.query(
+            'SELECT title FROM contents WHERE id=?',
+            fixture.policy.id,
+          )
+        ).rows[0].title,
+      ).toBe('routing-v1');
+      expect(
+        (
+          await db.query(
+            "SELECT id FROM intake_feedback WHERE kind='rule_adoption'",
+          )
+        ).rows,
+      ).toHaveLength(0);
+    });
+    it.each([
+      'empty',
+      'unknown',
+      'duplicate',
+      'handler',
+      'version',
+      'prototype',
+    ] as const)('feedback routing projection rejects malformed %s host declaration', async (mode) => {
+      const fixture = await routingProjectionFixture();
+      const entry = options.feedback!.routing![0];
+      if (mode === 'empty') entry.fields = [];
+      if (mode === 'unknown') entry.fields = ['notInSchema'];
+      if (mode === 'duplicate') entry.fields = ['title', 'title'];
+      if (mode === 'handler') entry.handlerId = 'unknown';
+      if (mode === 'version') entry.version = '';
+      if (mode === 'prototype') entry.fields = ['__proto__'];
+      await expect(service.suggestRoutingRule(fixture.input)).rejects.toThrow();
+      expect(fixture.adopt).not.toHaveBeenCalled();
+    });
     it('feedback routing suggestions are inert, policy adoption is authorized versioned and audited, and replay cannot adopt twice', async () => {
       enableFeedback();
       const policy = await document('routing-v1');
@@ -2787,7 +3084,9 @@ export function proposalSuite(
         original,
       );
     });
-    function chooseCreate() {
+    function chooseCreate(
+      args: Record<string, unknown> = { title: 'Draft', body: 'Body' },
+    ) {
       calls.mockImplementation(async (input) => ({
         completion: 'complete',
         output: {
@@ -2796,7 +3095,7 @@ export function proposalSuite(
             {
               handlerId: CREATE,
               handlerVersion: '1',
-              args: { title: 'Draft', body: 'Body' },
+              args: structuredClone(args),
               evidence: [
                 {
                   evidenceId: input.evidence[0].evidenceId,
