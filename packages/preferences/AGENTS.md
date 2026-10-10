@@ -65,15 +65,22 @@ DuckDB cannot create.
   a collection `create()` or `row.setPayload(); row.save()` never store an
   unvalidated payload. Tests seed corrupt storage with raw SQL
   (`src/__tests__/raw-rows.ts`). This guards in-process callers, not raw SQL.
-- **Owner-safe reads.** A principal never reads another user's row. An
-  interceptor (`src/read-guard.ts`, registered when the model loads and
-  again before every store read) drops other users' user-scope rows from
-  every collection `list` / `get` / `query`, after tenancy has confined the
-  read to the tenant; tenant rows stay visible to the whole tenant, and a
-  row whose scope it cannot tell (a narrow `select`) is dropped. Single-row
-  hydration (`new UiPreferenceRecord({ id }).initialize()`) is checked in the
-  model (`loadFromId` / `loadFromSlug`). A principal without a user id sees
-  no user rows.
+- **Owner-safe reads, in the predicate.** A principal never reads another
+  user's row. `src/read-guard.ts` (registered when the model loads and again
+  before every store read) adds `scope_key IN ('__tenant__', <own user id>)`
+  (tenant rows only without a user id) to the read predicate BEFORE SQL
+  runs, intersecting any caller `scopeKey in`. Core's read entry points and
+  the hook each runs: `list`, `listByIds`, `findAll`, `listWithLatestRelated`
+  (`beforeList` + `afterList`); `get`, `findById`, `findOne`, `getOrUpsert`,
+  `update` / `delete` lookups, and model hydration `loadFromId` /
+  `loadFromSlug` (`beforeGet`; collection `get` also `afterGet`); `count`,
+  `counts`, `facets` (`beforeList` only, so ownership must be in the
+  predicate); `semanticSearch*`, `findSimilar*` (`beforeList`, some also
+  `afterList`); `query` (`beforeQuery` + `afterQuery`; raw SQL cannot carry
+  the predicate, so the guard refuses it). Every read path runs at least one
+  hook. The after-read hooks re-check hydrated rows as defence in depth (a
+  row whose scope cannot be told is dropped), and hydration also re-checks in
+  the model. `count()` and `facets()` therefore count only visible rows.
 - **Not an app API.** `UiPreferenceRecord` stays a root export only because
   generated consumer registration imports every public manifest object from
   the root; the collection is not exported. Apps use `createPreferenceStore`,

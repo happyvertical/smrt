@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import {
   createWidgetRegistry,
   defineOverview,
@@ -401,6 +402,13 @@ export function overviewStoreSuite(
             await UiPreferenceRecordCollection.create({ db })
           ).list({});
           expect(rows).toHaveLength(1);
+          const own = await new UiPreferenceRecord({
+            db,
+            id: rows[0]?.id,
+          } as ConstructorParameters<
+            typeof UiPreferenceRecord
+          >[0]).initialize();
+          expect(own.kind).toBe('overview');
           return rows[0]?.id as string;
         },
       );
@@ -411,14 +419,52 @@ export function overviewStoreSuite(
         expect(await records.list({ where: { scopeType: 'user' } })).toEqual(
           [],
         );
+        // Hydration by id runs the same predicate: nothing is loaded.
+        const hydrated = await new UiPreferenceRecord({
+          db,
+          id: aliceRowId,
+        } as ConstructorParameters<typeof UiPreferenceRecord>[0]).initialize();
+        expect(hydrated.kind).toBe('');
+        expect(hydrated.payloadJson).toBe('');
+      });
+      // Aggregates are filtered before SQL runs, not after: Bob's facets and
+      // count over the registered collection never see Alice's row.
+      await as({ tenantId: tenantA, userId: bob }, async () => {
+        const registered =
+          await ObjectRegistry.getCollection<UiPreferenceRecord>(
+            '@happyvertical/smrt-preferences:UiPreferenceRecord',
+            { db },
+          );
+        const facets = await registered.facets({
+          fields: ['payloadJson', 'userId'],
+          where: { userId: alice },
+        });
+        expect(facets.flatMap((facet) => facet.values)).toEqual([]);
+        const all = await registered.facets({
+          fields: ['payloadJson', 'userId', 'scopeType'],
+        });
+        expect(JSON.stringify(all)).not.toContain(alice);
+        expect(JSON.stringify(all)).not.toContain('w2');
+        expect(await registered.count({ where: { userId: alice } })).toBe(0);
+        expect(await registered.count({})).toBe(0);
+        // Raw SQL cannot carry the owner predicate and is refused.
         await expect(
-          new UiPreferenceRecord({
-            db,
-            id: aliceRowId,
-          } as ConstructorParameters<
-            typeof UiPreferenceRecord
-          >[0]).initialize(),
-        ).rejects.toBeInstanceOf(PreferenceAccessError);
+          registered.query('SELECT * FROM _smrt_ui_preferences'),
+        ).rejects.toThrow();
+        // A caller-supplied scope key cannot widen the predicate either.
+        expect(
+          await registered.count({
+            where: { 'scopeKey in': [alice, '__tenant__'] },
+          } as Parameters<typeof registered.count>[0]),
+        ).toBe(0);
+      });
+      await as({ tenantId: tenantA, userId: alice }, async () => {
+        const registered =
+          await ObjectRegistry.getCollection<UiPreferenceRecord>(
+            '@happyvertical/smrt-preferences:UiPreferenceRecord',
+            { db },
+          );
+        expect(await registered.count({})).toBe(1);
       });
       // A principal without a user id sees no user rows at all, while the
       // tenant default stays visible to everyone in the tenant.
@@ -440,6 +486,16 @@ export function overviewStoreSuite(
           await UiPreferenceRecordCollection.create({ db })
         ).list({});
         expect(rows.map((row) => row.scopeType)).toEqual(['tenant']);
+        const registered =
+          await ObjectRegistry.getCollection<UiPreferenceRecord>(
+            '@happyvertical/smrt-preferences:UiPreferenceRecord',
+            { db },
+          );
+        expect(await registered.count({})).toBe(1);
+        const facets = await registered.facets({
+          fields: ['scopeType'],
+        });
+        expect(facets[0]?.values).toEqual([{ value: 'tenant', count: 1 }]);
       });
       // Nor can Bob write a row onto Alice around the store.
       await expect(

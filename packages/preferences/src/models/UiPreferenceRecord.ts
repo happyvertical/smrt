@@ -102,9 +102,11 @@ export class UiPreferenceRecord extends SmrtObject {
   userId: string | null = null;
 
   /**
-   * `userId ?? '__tenant__'`, set on save. Exists only to keep the
-   * `conflictColumns` unique index total while `userId` is nullable (NULLs
-   * are distinct in a unique index). Never read it for scoping.
+   * `userId ?? '__tenant__'`, set on save. Keeps the `conflictColumns`
+   * unique index total while `userId` is nullable (NULLs are distinct in a
+   * unique index). Kept in lockstep with
+   * `scopeType` / `userId` on every write, so the owner read predicate
+   * (`read-guard.ts`) can filter on it in one condition.
    */
   @field({ type: 'text', required: true })
   scopeKey: string = '';
