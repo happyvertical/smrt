@@ -56,8 +56,9 @@ field vocabulary; there is no query, filter expression, URL or SQL anywhere.
   lands between `host.open` and the write is a `conflict`: apply answers 409
   `conflict` (describe again, rebuild the batch), undo answers 409
   `changed_since` and keeps its entry. smrt-svelte's surface takes the loaded
-  `revision` and passes `{ revision }` to its `persist` option, so the phase-3
-  store's revision-guarded `save` plugs in directly.
+  `revision` and passes `{ revision }` to its `persist` option, so the
+  revision-guarded `save` of `@happyvertical/smrt-preferences`'
+  `createOverviewStore` plugs in directly (see below).
 - **Undo** is single-step. Apply stores `{ token, before, after }` under
   `[tenantId, userId, pageId]` of the calling run; undo looks it up under the
   calling run only, so another principal's (or tenant's) token is simply not
@@ -79,41 +80,66 @@ field vocabulary; there is no query, filter expression, URL or SQL anywhere.
 
 ## Wiring to persistence (phase 3)
 
-The surface is the only seam; this package has no table and no smrt-svelte
-dependency (smrt-svelte depends on chat for tests, so the types are
-structural). With the phase-3 store:
+The surface is the only seam; this package has no table and no dependency on
+smrt-svelte or `@happyvertical/smrt-preferences` (smrt-svelte depends on chat
+for tests, so the types are structural). Phase 3 stores overview layouts in
+`@happyvertical/smrt-preferences` (table `_smrt_ui_preferences`, preference
+kind `overview`); its overview layer is `createOverviewStore({ db })`, built
+over the generic `createPreferenceStore({ db })` (pass `preferences` to share
+one). Every store call acts as the ambient principal, which is the run's
+principal inside the tool loop, under the tenant the tools enter.
 
 ```ts
+import { createOverviewTools } from '@happyvertical/smrt-chat';
+import {
+  createOverviewStore,
+  withTenantDefaults,
+} from '@happyvertical/smrt-preferences';
+import { createOverviewAssistantSurface } from '@happyvertical/smrt-svelte/overview/server';
+
 // Module scope: created once, shared by every turn and request.
 const overviewUndo = createSharedOverviewUndoStore(); // or omit for the process default
 
-const overviewTools = (/* per turn */) => createOverviewTools({
-  undoStore: overviewUndo,
-  host: {
-    async open(run, pageId) {
-      const definition = overviewDefinitions.get(pageId);
-      if (!definition) return null;
-      const state = await store.load(definition, registry);
-      if (!state.user) return null;
-      return createOverviewAssistantSurface({
-        definition: withTenantDefaults(definition, state.tenant.document),
-        registry,
-        override: state.user.override,
-        revision: state.user.revision,
-        canCustomize: state.canCustomize.user,
-        persist: (override, { revision }) =>
-          store.save(definition, registry, { scope: 'user', override, revision }),
-      });
+const overviewTools = (db: DatabaseInterface /* per turn */) => {
+  const store = createOverviewStore({ db });
+  return createOverviewTools({
+    undoStore: overviewUndo,
+    host: {
+      async open(run, pageId) {
+        const definition = overviewDefinitions.get(pageId);
+        if (!definition) return null;
+        const state = await store.load(definition, registry);
+        if (!state.user) return null;
+        return createOverviewAssistantSurface({
+          // The user tier is a delta over the tenant default.
+          definition: withTenantDefaults(definition, state.tenant.document),
+          registry,
+          override: state.user.override,
+          revision: state.user.revision,
+          canCustomize: state.canCustomize.user,
+          // The page definition: the store merges the tenant tier itself.
+          persist: (override, { revision }) =>
+            store.save(definition, registry, { scope: 'user', override, revision }),
+        });
+      },
     },
-  },
-});
+  });
+};
 ```
 
 `createSharedOverviewUndoStore` stands for the host's own shared store (any
-`OverviewUndoStore`). `store` is phase 3's `createOverviewStore` (`@happyvertical/smrt-overviews`):
-its `save` validates like the save endpoint and refuses a stale revision with
-`conflict`. Add the three slugs to the
-persona's / route's `allowedTools`.
+`OverviewUndoStore`). How the store's answer maps onto the tools:
+
+| `store.save(definition, registry, { scope, override, revision })` (`OverviewSaveResult`) | Surface / tool |
+|---|---|
+| `{ ok: true, override, revision }` | the surface follows the new `revision`; apply answers `changed: true` |
+| `{ ok: false, reason: 'conflict' }` (the loaded `revision` is stale, or a first write raced another; nothing is overwritten) | apply: 409 `conflict`; undo: 409 `changed_since`, entry kept |
+| `{ ok: false, reason: 'not_allowed' }` (no `overviews.personalize` / `overviews.customize`) | 403 `not_allowed` |
+| `{ ok: false, reason: 'invalid', issues }` (`checkOverviewOverride` refused it) | 422 `invalid_operations` |
+
+`revision` is `null` when the principal had no row yet; the first write then
+creates it, and a concurrent first write answers `conflict`. Add the three
+slugs to the persona's / route's `allowedTools`.
 
 ## In the browser
 

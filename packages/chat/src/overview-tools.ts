@@ -103,7 +103,8 @@ export interface OverviewToolSurface {
 
 /**
  * Outcome of {@link OverviewToolSurface.persist}. Structurally the phase-3
- * store's save result (`@happyvertical/smrt-overviews` `OverviewSaveResult`).
+ * store's save result (`OverviewSaveResult` of `@happyvertical/smrt-preferences`'
+ * `createOverviewStore`).
  */
 export type OverviewToolPersistResult =
   | { ok: true }

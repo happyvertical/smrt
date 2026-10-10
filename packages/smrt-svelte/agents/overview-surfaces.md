@@ -270,8 +270,13 @@ and the person can undo the change.
   conditional: `persist(override, { revision })` must write only if the
   stored row is still the loaded `revision` and answer
   `{ ok: false, reason: 'conflict' }` otherwise
-  (`OverviewAssistantPersistResult`, structurally the phase-3 store's save
-  result); on success the surface follows the returned `revision`. It is the adapter
+  (`OverviewAssistantPersistResult`, structurally `OverviewSaveResult` of
+  `@happyvertical/smrt-preferences`); on success the surface follows the
+  returned `revision`. With phase 3:
+  `persist: (override, { revision }) => store.save(definition, registry, { scope: 'user', override, revision })`
+  where `store = createOverviewStore({ db })` from `@happyvertical/smrt-preferences`,
+  `override` / `revision` come from `store.load(...)`'s `state.user`, and the
+  surface's `definition` is `withTenantDefaults(definition, state.tenant.document)`. It is the adapter
   `@happyvertical/smrt-chat`'s `createOverviewTools()` drives (typed
   structurally there; see
   [chat overview-tools.md](../../chat/agents/overview-tools.md) for the tool
@@ -307,7 +312,8 @@ and the person can undo the change.
 
 - **Phase 2, package widgets (#3727, done).** See "Recipe widgets" below.
 - **Phase 3, production persistence.** Implement the `override` getter /
-  `onchange` pair against the `_smrt_` table (tenant tier merged into
+  `onchange` pair against `@happyvertical/smrt-preferences` (`createOverviewStore`,
+  table `_smrt_ui_preferences`, kind `overview`) (tenant tier merged into
   `definition.defaults`, user tier as the override), validate saves with
   `checkOverviewOverride` and persist its canonical `override`, run
   `loadOverview` in the page load, and supply `loadWidget` as a remote function

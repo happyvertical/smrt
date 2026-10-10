@@ -43,7 +43,8 @@ export interface OverviewAssistantSurfaceOptions {
   /**
    * The concurrency token of the stored row the host loaded `override` from
    * (`null` when it loaded no row), echoed back to `persist`. With the
-   * phase-3 store this is the tier's `revision`.
+   * phase-3 store (`createOverviewStore` of `@happyvertical/smrt-preferences`)
+   * this is `state.user.revision` from its `load`.
    */
   revision: string | null;
   /** Whether this principal may customize this page (the role gate). */
@@ -54,7 +55,8 @@ export interface OverviewAssistantSurfaceOptions {
    * stored one: a save that landed since must answer
    * `{ ok: false, reason: 'conflict' }`, never be overwritten. The phase-3
    * store plugs in directly:
-   * `(override, { revision }) => store.save(definition, registry, { scope: 'user', override, revision })`.
+   * `(override, { revision }) => store.save(definition, registry, { scope: 'user', override, revision })`
+   * with `store = createOverviewStore({ db })` from `@happyvertical/smrt-preferences`.
    */
   persist: (
     override: OverviewOverride | null,
@@ -69,7 +71,8 @@ export interface OverviewAssistantSurfaceOptions {
 /**
  * A conditional write's outcome. `revision` is the stored row's new token
  * (`null` when the write removed the row); omitted, the surface keeps the
- * token it had. Structurally the phase-3 store's `OverviewSaveResult`.
+ * token it had. Structurally `OverviewSaveResult` of
+ * `@happyvertical/smrt-preferences`.
  */
 export type OverviewAssistantPersistResult =
   | { ok: true; revision?: string | null }
