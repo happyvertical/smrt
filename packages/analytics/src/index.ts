@@ -39,6 +39,8 @@ export {
   smrtAnalyticsAnalyzeResultsPrompt,
   smrtAnalyticsHasPositiveTrendsPrompt,
 } from './prompts.js';
+// Recipes
+export { AnalyticsReportsRecipe } from './recipes.js';
 // Re-export SDK types for convenience
 export type {
   AnalyticsCapabilities,

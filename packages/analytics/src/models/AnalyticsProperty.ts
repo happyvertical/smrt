@@ -81,22 +81,34 @@ export class AnalyticsProperty extends SmrtObject {
   /**
    * Human-readable display name
    */
+  @field({ description: 'The name people see for this website or app.' })
   displayName: string = '';
 
   /**
    * Analytics provider (ga4, plausible, matomo)
    */
+  @field({
+    description:
+      'Which analytics service tracks it: Google Analytics 4, Plausible or Matomo.',
+  })
   provider: AnalyticsProvider = AnalyticsProvider.GA4;
 
   /**
    * External ID from the provider (e.g., "properties/123456789" for GA4,
    * idSite for Matomo)
    */
+  @field({
+    description:
+      'The id the analytics service gives the property, such as properties/123456789 or a Matomo site id.',
+  })
   externalId: string = '';
 
   /**
    * Measurement ID for GA4 (G-XXXXXXXXXX)
    */
+  @field({
+    description: 'The tracking id for a web stream, such as G-XXXXXXXXXX.',
+  })
   measurementId: string = '';
 
   /**
@@ -105,22 +117,31 @@ export class AnalyticsProperty extends SmrtObject {
    * Sensitive (#1540): excluded from generated API/MCP responses and rejected
    * as a `where` filter key so it can't be probed.
    */
-  @field({ sensitive: true })
+  @field({
+    sensitive: true,
+    description:
+      'The secret key your analytics service issues for this property. It is kept out of responses and tool results, but it is not encrypted in the database.',
+  })
   apiSecret: string = '';
 
   /**
    * Site domain for Plausible/Matomo
    */
+  @field({ description: 'The website address, used by Plausible and Matomo.' })
   siteDomain: string = '';
 
   /**
    * Property timezone
    */
+  @field({ description: 'The time zone the figures are reported in.' })
   timeZone: string = 'America/Los_Angeles';
 
   /**
    * Currency code (e.g., 'USD', 'EUR')
    */
+  @field({
+    description: 'The currency used for revenue figures, such as USD.',
+  })
   currencyCode: string = 'USD';
 
   /**
@@ -136,11 +157,18 @@ export class AnalyticsProperty extends SmrtObject {
   /**
    * Property status
    */
+  @field({
+    description: 'Whether tracking is active, inactive or still being set up.',
+  })
   status: AnalyticsPropertyStatus = AnalyticsPropertyStatus.ACTIVE;
 
   /**
    * Last sync timestamp with provider
    */
+  @field({
+    description:
+      'When the property was last synced with the analytics service.',
+  })
   lastSyncAt: Date | null = null;
 
   /**
@@ -149,7 +177,11 @@ export class AnalyticsProperty extends SmrtObject {
    * Sensitive (#1540): may carry provider credentials/tokens, so it is excluded
    * from generated API/MCP responses and rejected as a `where` filter key.
    */
-  @field({ sensitive: true })
+  @field({
+    sensitive: true,
+    description:
+      'Extra connection details from your analytics service. They are kept out of responses and tool results, but they are not encrypted in the database.',
+  })
   providerMetadata: string = '{}';
 
   constructor(options: AnalyticsPropertyOptions = {}) {

@@ -140,9 +140,11 @@ export abstract class SmrtRecipe {
    */
   static help?: string;
   /**
-   * Non-model surfaces (#3708): shell widgets, routes, settings panels and
-   * playground entries. Components are referenced by
+   * Non-model surfaces (#3708): shell widgets, routes, settings panels,
+   * playground entries and overview `widget`s (#3727, with an options schema,
+   * data needs and allowed overview ids). Components are referenced by
    * `'<module specifier>#<ExportName>'`, never imported by the manifest.
+   * Write the array `as const` so literal kinds and slots survive.
    */
   static surfaces?: readonly RecipeSurface[];
   /** Providers and secrets the recipe needs or can use (#3708). */

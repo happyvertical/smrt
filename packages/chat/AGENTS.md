@@ -97,6 +97,31 @@ fail-closed `allowedTools` offer/execution gates; RBAC, tenant, redaction,
 bounded query results, and audit authority remain in the authenticated
 `PrincipalRun` supplied by `@happyvertical/smrt-agents`.
 
+## Runtime report tools (#3711)
+
+`createRuntimeReportTools()` (`runtime-report-tools.ts`) returns four
+`PrincipalTool`s for the persona `extraTools` seam: `reports.runtime.sources`,
+`reports.runtime.define` (`preview` / `apply`), `reports.runtime.list`, and
+`reports.runtime.run`. The model supplies only a declarative
+`RuntimeReportSpec` from `@happyvertical/smrt-reports`; sources are a
+server-owned allow-list gated by `run.assertOperation(collection, 'read')`, and
+field policy, `readPermission`, and tenancy are enforced by the compiler against
+the live run on every compile and every stored-report run. `apply` needs the
+`specHash` of the previewed spec plus an app-owned `confirmation` host that
+resolves only after a human approved that exact spec; with no host the tools are
+propose-only and a model-supplied `confirmed` flag is ignored. Saving also needs
+`create` on the `RuntimeReport` collection, and `list`/`run` need `read`; the
+default `reportsCollection` is the `RuntimeReport` class itself, which resolves
+to the catalog slug. A string `collection`/`reportsCollection` is used verbatim
+as a catalog slug (never a class name); tests must run the tools under the real
+`assertOperationPermission` guard so a wrong slug fails. A stored report is
+written only by this confirmed `apply`: the model layer refuses every other
+insert/spec change, and the generic manifest tools (`buildManifestToolCatalog`,
+`invokeManifestTool`) never offer or run a `RuntimeReport` write. Stored-report
+reads/saves run under the principal's tenant (`withPrincipalTenant`), refuse a
+mismatching ambient tenant, and filter by the principal tenant explicitly. Contract and authority model:
+[`packages/reports/agents/runtime-reports.md`](../reports/agents/runtime-reports.md).
+
 ## Conversational Harness (L3, #1891)
 
 The `AgentSession` runtime depends on personas, agents, and users. Keep those
@@ -115,13 +140,12 @@ The gateway bearer token proves only "this request came from the gateway"; it ne
 
 ## Token Streaming (SSE, #1936)
 
-`chat-stream.ts` is the SSE seam for embeddable conversational UIs (first consumer: the Happy chat widget, `animation#5`): a client POSTs the conversation so far and receives a `text/event-stream` of `data: <json>` frames — `token` deltas as the model generates, then a final `done` frame with the message. The wire `ChatStreamEvent` union also declares `emotion` and `control` (#1921 host-page control commands) lanes for forward compatibility; the v1 engine emits `token`/`done`/`error`.
-
-- **`runChatConversationStream({ context, messages })`** — the transport-agnostic engine (an `AsyncGenerator<ChatStreamEvent>`). Dispatches on `context.binding`: **persona-bound** runs the full `runPersonaConversationTurn` with a token sink wired through the tool loop (`onToken` → `ai.chat({ stream: true, onProgress })`), then persists via `ChatService` and emits the persisted message as `done`; **plain/unbound** streams `ai.stream()` directly and emits a synthesized (unpersisted) `done`. Streamed tokens are a live PREVIEW (a tool-call round may narrate before acting); the `done` message is authoritative. Failures surface as an in-band `error` event, never a throw (the 200 has already committed once streaming starts).
-- **`createChatStreamHandler({ authorize, allowedOrigins?, allowCredentials? })`** — a Fetch-compatible handler returning `text/event-stream` (mirrors `createVoiceGatewayTurnHandler`). `authorize(request, body)` is the SOLE trust boundary and works exactly like the voice gateway: this module NEVER authorizes from the request's `session` metadata — the app validates the caller (bearer session id / cookie / same-origin) and the claimed ids against the authenticated principal, and returns an already-authorized `ChatStreamContext`. Generation caps (`model`/`maxTokens`/`maxSteps`) live on the context (server-resolved), never on the request. Cross-origin embedding uses the same fail-closed CORS posture as core `_events` (#1861): the `Origin` is echoed only when allow-listed (never `*`), credentials only when opted in.
-- **`SmrtChatBackend` (`@happyvertical/smrt-chat/client`)** — the consume side of the same contract: a browser SSE client (`src/client.ts`) that POSTs the conversation and dispatches `token`/`emotion`/`done`/`error` frames to streaming handlers, tolerating heartbeat comments and frames split across chunks. The subpath is BROWSER-SAFE and dependency-free (no server runtime, no workspace imports — keep it that way), and its widget-facing types are structurally identical to `@happyvertical/animation`'s `ChatBackend` contract so an instance plugs straight into the floating chat widget. `src/client.contract.ts` carries the compile-time locks pinning it to `chat-stream.ts`'s `ChatStreamEvent`/`ChatStreamSession` — a NON-test module precisely so `pnpm typecheck` actually enforces them (`tsconfig.typecheck.json` excludes `.test.ts` files, and Vitest transpiles without typechecking). A clean close without a `done` frame surfaces as an error (never an empty reply), and a settled turn cancels the reader so the connection is released promptly.
-- **Persona path reuses the harness's own gates unchanged** — persona principal, fail-closed `allowedTools` offer+execution gates, tenant binding. `onToken` is best-effort telemetry threaded through `runToolLoop`; it never changes what the loop persists or authorizes.
-- **Custom tools stream via `binding.extraTools`** — the persona binding threads an optional `extraTools?: PrincipalTool[]` down to `runPersonaConversationTurn`, so a *streamed* persona chat can offer non-manifest, service-backed tools (the persona messaging tool `messages.send`, or an assistance-request/lead-ticket tool wrapping a `@smrt({ api:false, mcp:false })` service) and thus *act*, not only answer — matching the non-streaming persona path. It is resolved server-side by `authorize` (trusted), never from request input, and stays fully gated: each tool is filtered by the persona's `allowedTools` (offer gate) and re-asserts the bound principal's authority in `execute` (execution gate). Offering a tool is not authorizing it.
+`chat-stream.ts` is the SSE seam for embeddable conversational UIs:
+`runChatConversationStream()` (engine), `createChatStreamHandler({ authorize })`
+(Fetch handler; `authorize` is the sole trust boundary), and the browser-safe
+`SmrtChatBackend` (`./client`). Persona-bound streams reuse the harness gates
+unchanged, and `binding.extraTools` is resolved server-side. Full contract:
+[agents/token-streaming.md](agents/token-streaming.md).
 
 ## Streamed assistant turns with browser tools (#2908)
 
@@ -159,6 +183,13 @@ the config `ai` block. Pass `runtime`: a turn never keeps the RLS request tx
 (own `runAsPrincipal` tx). `clientRequestId` makes the row id a UUIDv5
 (`clientRequestMessageId`): the PK is the retry reservation. See
 [docs](../../docs/assistant-dock.md).
+
+## Recipes (#3719)
+
+`src/recipes.ts` declares `chat.assistant` (the AssistantDock as a `header.end`
+shell widget, an `llm` provider, runtime `both`; help in
+`src/assistant.recipe.md`). Keep each recipe class self-contained. Details:
+[agents/recipes.md](agents/recipes.md).
 
 ## Gotchas
 

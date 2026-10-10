@@ -149,6 +149,17 @@ queue is restricted to `fields.policy.manage`. See the
 [field policy guide](https://happyvertical.github.io/smrt/field-policies#usage-learning-and-suggestions)
 for the capture, privacy, retention, and schedule contract.
 
+## Feature recipe
+
+The package declares one feature recipe, `fields.form-customization`
+(`FormCustomizationRecipe`), with end-user help in
+`src/form-customization.recipe.md`. Its management screen is the
+`settings-panel` surface `@happyvertical/smrt-fields/svelte#FieldPolicyControlPanel`;
+the host still supplies the settings catalog shell and the generated-client
+adapter described above. The recipe declares `runtime: 'server'`: the package
+root entry still imports node-only helpers (#3618), while the `/svelte`
+components only render a policy that was resolved on the server.
+
 ## Example application
 
 The [s-m-r-t SaaS starter field-policy walkthrough](https://github.com/happyvertical/smrt-saas-starter/pull/51)

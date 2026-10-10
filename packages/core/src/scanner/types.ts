@@ -2,7 +2,10 @@
  * Type definitions for AST scanning and manifest generation
  */
 
-import type { RecipeDefinition } from '@happyvertical/smrt-types';
+import type {
+  PackageBrowserCapability,
+  RecipeDefinition,
+} from '@happyvertical/smrt-types';
 import type { SmartObjectConfig } from '../registry.js';
 
 /**
@@ -647,6 +650,12 @@ export interface SmartObjectManifest {
    * Omitted when the package declares none.
    */
   recipes?: RecipeDefinition[];
+  /**
+   * Whether this package's root entry builds for a browser (#3709), derived
+   * from the bundle-gate ratchet. Omitted for packages the gate does not
+   * measure (a consumer app, a UI package).
+   */
+  browser?: PackageBrowserCapability;
   /**
    * Selector slots keyed by slot id (#3599). Look one up for a model with
    * `findSelectorFor` from `@happyvertical/smrt-core/ui-metadata`.
