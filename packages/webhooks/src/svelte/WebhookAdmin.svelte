@@ -8,15 +8,20 @@ import type {
 } from '../types.js';
 
 interface Props {
+  /** Safe subscription summaries for the authenticated administrator. */
   subscriptions: WebhookSubscriptionRecord[];
+  /** Recent delivery outcomes without payloads, credentials, or lease tokens. */
   deliveries: WebhookDeliveryRecord[];
+  /** Create a subscription through the host's authorized server endpoint. */
   onCreate: (input: {
     url: string;
     events: string[];
     models: string[];
     secret: string;
   }) => Promise<void>;
+  /** Enable or pause the selected subscription through the authorized host. */
   onToggle: (id: string, enabled: boolean) => Promise<void>;
+  /** Retry a failed delivery after the host verifies administrator access. */
   onReplay: (id: string) => Promise<void>;
 }
 let { subscriptions, deliveries, onCreate, onToggle, onReplay }: Props =
@@ -99,10 +104,10 @@ async function submit() {
   </section>
 </Card>
 <style>
-  form { display: grid; gap: var(--smrt-space-2, 0.5rem); }
-  li { display: flex; gap: var(--smrt-space-2, 0.5rem); align-items: center; flex-wrap: wrap; }
+  form { display: grid; gap: var(--smrt-spacing-2, 0.5rem); }
+  li { display: flex; gap: var(--smrt-spacing-2, 0.5rem); align-items: center; flex-wrap: wrap; }
   code { overflow-wrap: anywhere; }
   .table-scroll { overflow-x: auto; }
   table { width: 100%; text-align: left; }
-  th, td { padding: var(--smrt-space-2, 0.5rem); }
+  th, td { padding: var(--smrt-spacing-2, 0.5rem); }
 </style>

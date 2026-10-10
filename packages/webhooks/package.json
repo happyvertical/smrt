@@ -1,5 +1,6 @@
 {
   "name": "@happyvertical/smrt-webhooks",
+  "author": "HappyVertical",
   "version": "0.55.7",
   "smrtJsdoc": "strict",
   "description": "Outbound webhook subscriptions, signed delivery, and durable retries",

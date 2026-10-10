@@ -74,6 +74,7 @@
       "@happyvertical/smrt-video",
       "@happyvertical/smrt-voice",
       "@happyvertical/smrt-web",
+      "@happyvertical/smrt-webhooks",
       "@happyvertical/smrt-workbench"
     ]
   ],

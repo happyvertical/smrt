@@ -36,13 +36,13 @@ client-supplied tenant ID. Unregister optional hooks and call `unregisterWebhook
 
 Lifecycle subscriptions use qualified model names. The recommended durable path is
 `WebhookChangeFeed`: map physical application tables to model names and poll in
-each tenant context. It reads SMRT's committed change feed (including delete
+each tenant context. It reads s-m-r-t's committed change feed (including delete
 tombstones), publishes identity-only `{ id }` payloads, and advances a persisted
 tenant/runtime cursor only after outbox/jobs are durable. Partial failure or
 process death before cursor advancement replays stable change-sequence IDs,
 which deduplicate against already enqueued deliveries. Global records and other
 tenants are excluded. Shared STI tables must map to their base model: the feed
-does not encode a child discriminator. Custom SQL that bypasses SMRT persistence
+does not encode a child discriminator. Custom SQL that bypasses s-m-r-t persistence
 must explicitly append its domain event or core change-feed entry.
 
 Poll more frequently than core change-feed retention. A pruned cursor raises
