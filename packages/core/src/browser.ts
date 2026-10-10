@@ -402,6 +402,19 @@ export {
   type SmrtRecipeNavEntry,
 } from './recipe';
 export {
+  deriveRecipeDemo,
+  effectiveRecipeDemo,
+  hasBrowserOption,
+  isMockableProvider,
+  isServerProvider,
+  MOCK_PROVIDER_OPTION,
+  type PackageBrowserCapability,
+  RECIPE_DEMO_MODES,
+  type RecipeDemo,
+  type RecipeDemoDerivation,
+  type RecipeDemoMode,
+} from './recipe-demo';
+export {
   buildConnectSection,
   buildGlossary,
   type ConnectSection,

@@ -20,3 +20,13 @@ Hierarchical tagging with context-scoped slugs and multi-language aliases.
 - **Slug stored in protected `_slug`**: has override getter/setter (not standard SmrtObject slug behavior)
 - **Context defaults to 'global'**: if not specified
 - **Optional tenancy** with nullable tenantId
+
+## Recipes (#3719)
+
+`src/recipes.ts` declares `tags.taxonomy` (`TaxonomyRecipe`: Tag and TagAlias,
+no prerequisites), emitted into the built `manifest.json` and
+`smrt-knowledge.json` `recipes`. It is the first app-wide feature recipe and the
+pipeline proof for the epic. User-facing help lives in `src/taxonomy.recipe.md`
+(#3591); keep it and the `@field({ description })` text on Tag/TagAlias in plain
+language. Surfaces, providers, and demo data come once #3708 lands. See
+[core recipes](../core/agents/recipes.md).

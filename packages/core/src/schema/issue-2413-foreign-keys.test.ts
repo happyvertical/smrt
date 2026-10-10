@@ -26,6 +26,7 @@ function schema(
     column: string;
     table: string;
     onDelete?: ForeignKeyAction;
+    onUpdate?: ForeignKeyAction;
   },
 ): SchemaDefinition {
   const columns: SchemaDefinition['columns'] = {
@@ -38,7 +39,7 @@ function schema(
         table: foreignKey.table,
         column: 'id',
         onDelete: foreignKey.onDelete ?? 'NO ACTION',
-        onUpdate: 'CASCADE',
+        onUpdate: foreignKey.onUpdate ?? 'CASCADE',
       },
     };
   }
@@ -1184,5 +1185,74 @@ describe('PostgreSQL foreign-key provisioning across uuid/text drift (#2608)', (
     expect(mock.queries.some((sql) => sql.includes('ADD CONSTRAINT'))).toBe(
       true,
     );
+  });
+});
+
+describe('DuckDB restrictive update actions (#3717)', () => {
+  it.each([
+    'RESTRICT',
+    'NO ACTION',
+  ] as const)('plans and enforces ON UPDATE %s without weakening the relationship', async (action) => {
+    const parent = schema('restrict_parents');
+    const child = schema('restrict_children', {
+      column: 'parent_id',
+      table: parent.tableName,
+      onDelete: 'RESTRICT',
+      onUpdate: action,
+    });
+    for (const engine of ['duckdb', 'json'] as const) {
+      const plan = planForeignKeyCreation([child, parent], engine);
+      expect(plan.schemas.map((item) => item.tableName)).toEqual([
+        parent.tableName,
+        child.tableName,
+      ]);
+      expect(generateDDLForEngine(child, engine).createTable).toContain(
+        `ON UPDATE ${action}`,
+      );
+    }
+    const db = await getDatabase({ type: 'duckdb', url: ':memory:' });
+    try {
+      for (const item of planForeignKeyCreation([child, parent], 'duckdb')
+        .schemas) {
+        await db.query(generateDDLForEngine(item, 'duckdb').createTable);
+      }
+      await db.query("INSERT INTO restrict_parents (id) VALUES ('parent')");
+      await db.query(
+        "INSERT INTO restrict_children (id, parent_id) VALUES ('child', 'parent')",
+      );
+      await expect(
+        db.query(
+          "UPDATE restrict_parents SET id = 'other' WHERE id = 'parent'",
+        ),
+      ).rejects.toThrow(/constraint/i);
+      await expect(
+        db.query("DELETE FROM restrict_parents WHERE id = 'parent'"),
+      ).rejects.toThrow(/constraint/i);
+      await expect(
+        db.query(
+          "INSERT INTO restrict_children (id, parent_id) VALUES ('orphan', 'missing')",
+        ),
+      ).rejects.toThrow(/constraint/i);
+    } finally {
+      await db.close?.();
+    }
+  });
+  it.each([
+    'CASCADE',
+    'SET NULL',
+  ] as const)('continues rejecting unsupported ON UPDATE %s', (action) => {
+    const child = schema('children', {
+      column: 'parent_id',
+      table: 'parents',
+      onUpdate: action,
+    });
+    for (const engine of ['duckdb', 'json'] as const) {
+      expect(() => planForeignKeyCreation([child], engine)).toThrow(
+        /does not support/,
+      );
+      expect(() => generateDDLForEngine(child, engine)).toThrow(
+        /does not support/,
+      );
+    }
   });
 });

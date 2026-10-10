@@ -162,7 +162,10 @@ export function planForeignKeyCreation(
             `[DDL:${engine}] Foreign key ${source}.${foreignKey.column} uses ON DELETE ${foreignKey.onDelete}, which DuckDB does not support. Use PostgreSQL/SQLite or keep this relationship app-side only with @crossPackageRef.`,
           );
         }
-        if (foreignKey.onUpdate !== undefined) {
+        if (
+          foreignKey.onUpdate === 'CASCADE' ||
+          foreignKey.onUpdate === 'SET NULL'
+        ) {
           throw new Error(
             `[DDL:${engine}] Foreign key ${source}.${foreignKey.column} uses ON UPDATE ${foreignKey.onUpdate}, which DuckDB does not support. DuckDB cannot preserve SMRT's ON UPDATE CASCADE contract; use PostgreSQL/SQLite or keep this relationship app-side only with @crossPackageRef.`,
           );

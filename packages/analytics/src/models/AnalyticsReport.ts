@@ -4,6 +4,7 @@
  */
 
 import {
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -65,8 +66,8 @@ export interface AnalyticsReportOptions
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
-  api: { include: ['list', 'get', 'create', 'update', 'run'] },
-  mcp: { include: ['list', 'get', 'run', 'analyze'] },
+  api: { include: ['list', 'get', 'create', 'update'] },
+  mcp: { include: ['list', 'get'] },
   cli: { skipApiCheck: true },
 })
 export class AnalyticsReport extends SmrtObject {
@@ -85,37 +86,58 @@ export class AnalyticsReport extends SmrtObject {
   /**
    * Parent property ID (references AnalyticsProperty)
    */
-  @foreignKey('AnalyticsProperty')
+  @foreignKey('AnalyticsProperty', {
+    description: 'The website or app this report is about.',
+  })
   propertyId: string = '';
 
   /**
    * Report name
    */
+  @field({
+    description: 'A short name for the report, such as Weekly traffic.',
+  })
   name: string = '';
 
   /**
    * Report description
    */
+  @field({ description: 'What the report is for.' })
   description: string = '';
 
   /**
    * Dimensions to group by (JSON array)
    */
+  @field({
+    description:
+      'What to break the figures down by, such as country or device, as a list.',
+  })
   dimensions: string = '[]';
 
   /**
    * Metrics to retrieve (JSON array)
    */
+  @field({
+    description: 'What to count, such as active users or sessions, as a list.',
+  })
   metrics: string = '[]';
 
   /**
    * Date range start (relative or absolute)
    */
+  @field({
+    description:
+      'Where the period begins: a date, or a relative value such as 7daysAgo.',
+  })
   dateRangeStart: string = '7daysAgo';
 
   /**
    * Date range end (relative or absolute)
    */
+  @field({
+    description:
+      'Where the period ends: a date, or a relative value such as today.',
+  })
   dateRangeEnd: string = 'today';
 
   /**
@@ -141,21 +163,31 @@ export class AnalyticsReport extends SmrtObject {
   /**
    * Report status
    */
+  @field({
+    description:
+      'Where the report stands: draft, scheduled, running, completed or failed.',
+  })
   status: ReportStatus = ReportStatus.DRAFT;
 
   /**
    * Scheduling frequency
    */
+  @field({
+    description:
+      'How often the report repeats: once, daily, weekly or monthly.',
+  })
   frequency: ReportFrequency = ReportFrequency.ONCE;
 
   /**
    * Last run timestamp
    */
+  @field({ description: 'When the report last ran.' })
   lastRunAt: Date | null = null;
 
   /**
    * Next scheduled run
    */
+  @field({ description: 'When the report is next due to run.' })
   nextRunAt: Date | null = null;
 
   /**
@@ -166,11 +198,13 @@ export class AnalyticsReport extends SmrtObject {
   /**
    * Row count from last run
    */
+  @field({ description: 'How many rows the last run returned.' })
   rowCount: number = 0;
 
   /**
    * Error message from last failed run
    */
+  @field({ description: 'Why the last run failed. Empty when it worked.' })
   lastError: string = '';
 
   constructor(options: AnalyticsReportOptions = {}) {

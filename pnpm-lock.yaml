@@ -323,6 +323,9 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
     devDependencies:
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -724,6 +727,9 @@ importers:
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles
+      '@happyvertical/smrt-reports':
+        specifier: workspace:*
+        version: link:../reports
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -743,6 +749,9 @@ importers:
       '@happyvertical/smrt-playground':
         specifier: workspace:*
         version: link:../smrt-playground
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -1410,6 +1419,9 @@ importers:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
         version: link:../cli
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -2656,6 +2668,9 @@ importers:
         specifier: ^0.102.7
         version: 0.102.7(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

@@ -97,6 +97,7 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-personas": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
+    "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
@@ -113,6 +114,7 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",
+    "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/smrt-web": "workspace:*",
     "@mlc-ai/web-llm": "^0.2.85",

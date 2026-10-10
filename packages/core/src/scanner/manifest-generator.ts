@@ -49,6 +49,7 @@ import {
   isQualifiedNameAliasFormat,
   readPreviousQualifiedNames,
 } from '../utils/qualified-names.js';
+import { applyRecipeDemo } from './recipe-demo-pass.js';
 import { isTestFile } from './test-file-patterns.js';
 import type {
   AgentAdminRouteManifest,
@@ -437,6 +438,8 @@ export class ManifestGenerator {
     // Recipe options may only name fields the merged model declares (#3590).
     this.assertRecipeOptions(manifest);
     this.assertRecipeHelp(manifest);
+    // Browser capability of the package and the demo mode of its recipes (#3709).
+    applyRecipeDemo(manifest, options?.packageName);
 
     // Presentation metadata (#3599): widget hints, display label, selector
     // bindings. After inheritance so a label may name an inherited STI column.

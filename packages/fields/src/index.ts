@@ -79,6 +79,7 @@ export {
   MANAGE_FIELD_POLICY_PERMISSION,
   PERSONALIZE_FIELD_POLICY_PERMISSION,
 } from './permissions.js';
+export { FormCustomizationRecipe } from './recipes.js';
 export {
   type BuildFieldPolicySettingsCatalogOptions,
   buildFieldPolicySettingsCatalog,
