@@ -596,6 +596,12 @@ export function getWorkspaceViteAliases(
         '@happyvertical/smrt-ui/theme',
         join(packageRoot, 'src/theme/index.ts'),
       );
+      // Before `/themes`: Vite alias keys match by prefix.
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-ui/themes/presets',
+        join(packageRoot, 'src/themes/presets.ts'),
+      );
       addAliasIfPresent(
         aliases,
         '@happyvertical/smrt-ui/themes',
