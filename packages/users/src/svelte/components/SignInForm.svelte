@@ -26,7 +26,7 @@ async function submit() {
   try {
     await adapter.signInWithPassword({ email, password });
   } catch (cause) {
-    error = messageFrom(cause, 'Unable to sign in.');
+    error = messageFrom(cause, t('users.auth.unable_to_sign_in'));
   } finally {
     pending = false;
   }

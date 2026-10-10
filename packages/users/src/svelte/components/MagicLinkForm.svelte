@@ -26,14 +26,14 @@ async function submit() {
     if (token) {
       if (!adapter.confirmMagicLink) return;
       await adapter.confirmMagicLink({ token });
-      notice = 'Your sign-in link was confirmed.';
+      notice = t('users.auth.link_confirmed');
     } else {
       if (!adapter.requestMagicLink) return;
       await adapter.requestMagicLink({ email });
-      notice = 'Check your email for a sign-in link.';
+      notice = t('users.auth.link_sent');
     }
   } catch (cause) {
-    error = messageFrom(cause, 'Unable to continue with the sign-in link.');
+    error = messageFrom(cause, t('users.auth.unable_to_continue_link'));
   } finally {
     pending = false;
   }

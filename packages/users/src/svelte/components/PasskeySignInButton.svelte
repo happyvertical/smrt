@@ -1,4 +1,5 @@
-<script lang="ts">import { Button } from '@happyvertical/smrt-ui/ui';
+<script lang="ts">import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { UsersAuthAdapter } from '../auth.js';
 import { messageFrom } from '../auth.js';
 export interface Props {
@@ -7,7 +8,8 @@ export interface Props {
   /** Visible text for the capability-gated control. */
   label?: string;
 }
-let { adapter, label = 'Sign in with a passkey' }: Props = $props();
+let { adapter, label }: Props = $props();
+const { t } = useI18n();
 let error = $state('');
 let pending = $state(false);
 async function signIn() {
@@ -17,10 +19,10 @@ async function signIn() {
   try {
     await adapter.signInWithPasskey();
   } catch (cause) {
-    error = messageFrom(cause, 'Passkey sign-in was not completed.');
+    error = messageFrom(cause, t('users.auth.passkey_not_completed'));
   } finally {
     pending = false;
   }
 }
 </script>
-{#if adapter.signInWithPasskey}<div class="passkey"><Button variant="secondary" fullWidth onclick={signIn} loading={pending}>{label}</Button>{#if error}<p role="alert">{error}</p>{/if}</div>{/if}<style>.passkey{display:grid;gap:var(--smrt-spacing-sm,.5rem)}p{margin:0;color:var(--smrt-color-error)}</style>
+{#if adapter.signInWithPasskey}<div class="passkey"><Button variant="secondary" fullWidth onclick={signIn} loading={pending}>{label ?? t('users.auth.passkey_sign_in')}</Button>{#if error}<p role="alert">{error}</p>{/if}</div>{/if}<style>.passkey{display:grid;gap:var(--smrt-spacing-sm,.5rem)}p{margin:0;color:var(--smrt-color-error)}</style>

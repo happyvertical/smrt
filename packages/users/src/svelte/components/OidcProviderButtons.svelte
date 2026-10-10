@@ -19,7 +19,7 @@ async function signIn(providerId: string) {
   try {
     await adapter.signInWithOidc({ providerId });
   } catch (cause) {
-    error = messageFrom(cause, 'Unable to start single sign-on.');
+    error = messageFrom(cause, t('users.auth.unable_to_start_sso'));
   } finally {
     pending = null;
   }

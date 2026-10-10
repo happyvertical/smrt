@@ -20,7 +20,7 @@ let pending = $state(false);
 async function submit() {
   error = '';
   if (password !== confirm) {
-    error = 'Passwords do not match.';
+    error = t('users.auth.passwords_do_not_match');
     return;
   }
   if (!adapter.signUp) return;
@@ -28,7 +28,7 @@ async function submit() {
   try {
     await adapter.signUp({ email, password });
   } catch (cause) {
-    error = messageFrom(cause, 'Unable to create account.');
+    error = messageFrom(cause, t('users.auth.unable_to_create_account'));
   } finally {
     pending = false;
   }
