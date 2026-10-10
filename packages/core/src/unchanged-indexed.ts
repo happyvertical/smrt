@@ -61,29 +61,107 @@ export function collectIndexedColumns(
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
-const ZONED_TIMESTAMP = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/iu;
+const TIMESTAMP_TEXT =
+  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?\s*(Z|[+-]\d{2}(?::?\d{2})?)?$/iu;
 
 function isNullish(value: unknown): value is null | undefined {
   return value === null || value === undefined;
 }
 
-function instantOf(value: unknown): number | undefined {
+/**
+ * An instant as whole microseconds since the epoch, or `undefined` when it
+ * cannot be established exactly.
+ *
+ * A `Date` holds milliseconds. Text is read at its full written precision;
+ * digits beyond microseconds must be zero. Text without a zone is a wall
+ * clock in the process zone unless `naiveIsUtc` (DuckDB's `TIMESTAMP` text,
+ * which this runtime always writes as UTC).
+ */
+export function timestampMicros(
+  value: unknown,
+  naiveIsUtc = false,
+): bigint | undefined {
   if (value instanceof Date) {
     const time = value.getTime();
-    return Number.isNaN(time) ? undefined : time;
+    return Number.isNaN(time) ? undefined : BigInt(time) * 1000n;
   }
-  // An unzoned string would be read in the process zone; only a string that
-  // names its own zone identifies an instant.
-  if (typeof value === 'string' && ZONED_TIMESTAMP.test(value.trim())) {
-    const time = Date.parse(value);
-    return Number.isNaN(time) ? undefined : time;
+  if (typeof value !== 'string') return undefined;
+  const match = TIMESTAMP_TEXT.exec(value.trim());
+  if (!match) return undefined;
+  const [, year, month, day, hour, minute, second, fraction = '', zone] = match;
+  if (fraction.length > 6 && /[1-9]/u.test(fraction.slice(6))) return undefined;
+  if (zone === undefined && !naiveIsUtc) return undefined;
+  // `Date.UTC` maps years 0-99 onto 1900-1999; set the literal year instead.
+  const date = new Date(0);
+  date.setUTCFullYear(Number(year), Number(month) - 1, Number(day));
+  date.setUTCHours(Number(hour), Number(minute), Number(second), 0);
+  const wall = date.getTime();
+  if (Number.isNaN(wall)) return undefined;
+  // Date rolls impossible fields over (month 13, minute 60, Feb 30); a field
+  // that does not survive the round trip makes the text unprovable.
+  if (
+    date.getUTCFullYear() !== Number(year) ||
+    date.getUTCMonth() !== Number(month) - 1 ||
+    date.getUTCDate() !== Number(day) ||
+    date.getUTCHours() !== Number(hour) ||
+    date.getUTCMinutes() !== Number(minute) ||
+    date.getUTCSeconds() !== Number(second)
+  ) {
+    return undefined;
   }
-  return undefined;
+  let offsetMinutes = 0;
+  if (zone && zone.toUpperCase() !== 'Z') {
+    const digits = zone.slice(1).replace(':', '');
+    const offsetHours = Number(digits.slice(0, 2));
+    const offsetRest = Number(digits.slice(2) || '0');
+    if (offsetHours > 23 || offsetRest > 59) return undefined;
+    offsetMinutes =
+      (zone.startsWith('-') ? -1 : 1) * (offsetHours * 60 + offsetRest);
+  }
+  const micros = BigInt(fraction.slice(0, 6).padEnd(6, '0'));
+  return (BigInt(wall) - BigInt(offsetMinutes) * 60000n) * 1000n + micros;
+}
+
+const JSON_NUMBER = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+
+/**
+ * Whether every number literal in JSON text survives `JSON.parse` exactly.
+ *
+ * `JSON.parse` reads numbers as doubles, so `9007199254740993` and
+ * `9007199254740992` parse to the same value. A literal is exact when the
+ * double it parses to prints back as the same text; anything else (unsafe
+ * integers, more digits than a double holds, `1.0`, `1e2`) makes the text
+ * unprovable. Digits inside JSON strings are not numbers and are skipped.
+ */
+export function jsonNumbersRoundTrip(text: string): boolean {
+  let inString = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (char === '\\') index += 1;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === '-' || (char >= '0' && char <= '9')) {
+      JSON_NUMBER.lastIndex = index;
+      const match = JSON_NUMBER.exec(text);
+      if (!match) return false;
+      const literal = match[0];
+      if (JSON.stringify(Number(literal)) !== literal) return false;
+      index += literal.length - 1;
+    }
+  }
+  return true;
 }
 
 function canonicalJson(value: unknown): string | undefined {
   let parsed = value;
   if (typeof value === 'string') {
+    if (!jsonNumbersRoundTrip(value)) return undefined;
     try {
       parsed = JSON.parse(value);
     } catch {
@@ -117,14 +195,18 @@ export function storedValueEquals(
   columnType: string | undefined,
   next: unknown,
   stored: unknown,
+  exactStoredTimestamp?: string,
 ): boolean {
   if (isNullish(next) || isNullish(stored)) {
     return isNullish(next) && isNullish(stored);
   }
   const type = (columnType ?? '').toUpperCase();
   if (type === 'TIMESTAMP') {
-    const a = instantOf(next);
-    const b = instantOf(stored);
+    // A hydrated `Date` has already lost anything below the millisecond, so
+    // only the stored value as the database writes it can prove equality.
+    if (exactStoredTimestamp === undefined) return false;
+    const a = timestampMicros(next);
+    const b = timestampMicros(exactStoredTimestamp, true);
     return a !== undefined && b !== undefined && a === b;
   }
   if (type === 'JSON') {
@@ -157,6 +239,27 @@ export function storedValueEquals(
 }
 
 /**
+ * `TIMESTAMP` columns of `data` whose equality needs the stored value at full
+ * precision (see {@link storedValueEquals}); the caller reads them as text.
+ */
+export function timestampColumnsToProve(
+  data: Readonly<Record<string, unknown>>,
+  stored: Readonly<Record<string, unknown>>,
+  indexedColumns: ReadonlySet<string>,
+  columnTypes: Readonly<Record<string, { type?: string } | undefined>>,
+): string[] {
+  return Object.keys(data).filter(
+    (column) =>
+      !ALWAYS_ASSIGNED.has(column) &&
+      indexedColumns.has(column) &&
+      Object.hasOwn(stored, column) &&
+      !isNullish(data[column]) &&
+      !isNullish(stored[column]) &&
+      (columnTypes[column]?.type ?? '').toUpperCase() === 'TIMESTAMP',
+  );
+}
+
+/**
  * Indexed columns of `data` whose value provably equals the stored row's, in
  * snake_case column names. `id` and `updated_at` are never reported: the
  * revision token always advances, and `id` is the write's key.
@@ -166,13 +269,21 @@ export function unchangedIndexedColumns(
   stored: Readonly<Record<string, unknown>>,
   indexedColumns: ReadonlySet<string>,
   columnTypes: Readonly<Record<string, { type?: string } | undefined>>,
+  exactTimestamps: Readonly<Record<string, string>> = {},
 ): Set<string> {
   const unchanged = new Set<string>();
   for (const [column, value] of Object.entries(data)) {
     if (ALWAYS_ASSIGNED.has(column) || !indexedColumns.has(column)) continue;
     // A column the stored row does not carry cannot be compared.
     if (!Object.hasOwn(stored, column)) continue;
-    if (storedValueEquals(columnTypes[column]?.type, value, stored[column])) {
+    if (
+      storedValueEquals(
+        columnTypes[column]?.type,
+        value,
+        stored[column],
+        exactTimestamps[column],
+      )
+    ) {
       unchanged.add(column);
     }
   }

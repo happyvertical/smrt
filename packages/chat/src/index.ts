@@ -137,6 +137,41 @@ export {
 // Principal-bound data discovery/inspection/query tools are offered through
 // the same `extraTools` seam as invoke-agent; authority remains in agents.
 export * from './data-surface-tools.js';
+// Browser-safe helper preference DTOs are deliberately separate from the
+// Profile-backed server adapter below, so browser consumers cannot pull SQL or
+// Profile runtime dependencies into their bundle.
+export {
+  HELPER_CLEARED_PREFERENCES,
+  HELPER_PREFERENCES_VERSION,
+  type HelperClearedPreferences,
+  type HelperClient,
+  type HelperContext,
+  type HelperOffering,
+  type HelperPlacement,
+  type HelperPolicy,
+  type HelperPreferenceField,
+  type HelperPreferenceStore,
+  type HelperPreferences,
+  type HelperRecovery,
+  type HelperSelectionPolicy,
+  type HelperSnapshot,
+  type HelperVoiceOption,
+  helperPreferenceFields,
+  isHelperClearedPreferences,
+  parseHelperPreferences,
+} from './helper-preferences.js';
+export {
+  HelperPreferencesAuthorizationError,
+  HelperPreferencesService,
+  type HelperPreferencesServiceOptions,
+  HelperPreferencesValidationError,
+} from './helper-preferences-service.js';
+export {
+  createHelperProfilePreferenceStore,
+  type HelperProfilePreferenceStoreOptions,
+  HelperProfileStoreError,
+  ProfileHelperPreferenceStore,
+} from './helper-profile-store.js';
 // Models
 export {
   AgentSession,
@@ -148,6 +183,30 @@ export {
   VoiceGatewayTurn,
   VoiceSession,
 } from './models/index.js';
+// Assistant tools that change customizable overview pages (#3727 phase 4).
+export {
+  createMemoryOverviewUndoStore,
+  createOverviewTools,
+  defaultOverviewUndoStore,
+  formatOverviewIssues,
+  OVERVIEW_APPLY_FUNCTION_NAME,
+  OVERVIEW_APPLY_TOOL_SLUG,
+  OVERVIEW_DESCRIBE_FUNCTION_NAME,
+  OVERVIEW_DESCRIBE_TOOL_SLUG,
+  OVERVIEW_TOOL_MAX_OPERATIONS,
+  OVERVIEW_UNDO_FUNCTION_NAME,
+  OVERVIEW_UNDO_TOOL_SLUG,
+  type OverviewToolAuditEntry,
+  type OverviewToolCheck,
+  OverviewToolError,
+  type OverviewToolPersistResult,
+  type OverviewToolPlan,
+  type OverviewToolSurface,
+  type OverviewToolsHost,
+  type OverviewToolsOptions,
+  type OverviewUndoEntry,
+  type OverviewUndoStore,
+} from './overview-tools.js';
 export {
   type AuthoredConversationMessages,
   type BindPersonaToSessionOptions,

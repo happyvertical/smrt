@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-chat",
-  "version": "0.55.7",
+  "version": "0.55.9",
   "smrtJsdoc": "strict",
   "description": "Chat rooms, DMs, threads, and agent conversations for the SMRT framework",
   "type": "module",
@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./helper-preferences": {
+      "types": "./dist/helper-preferences.d.ts",
+      "import": "./dist/helper-preferences.js"
     },
     "./client": {
       "types": "./dist/client.d.ts",
@@ -69,7 +73,7 @@
     "test:e2e": "playwright test -c playwright.config.ts",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/agent-reply-postgres.test.ts src/sveltekit.postgres.test.ts",
     "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.kit.json",
-    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js . && node ../../scripts/verify-packed-chat-helper-preferences.mjs"
   },
   "keywords": [
     "smrt",
@@ -91,8 +95,12 @@
     "access": "public"
   },
   "dependencies": {
+    "@happyvertical/animation": "0.5.0",
     "@happyvertical/ai": "catalog:",
+    "@happyvertical/speech": "catalog:",
+    "@happyvertical/smrt-images": "workspace:*",
     "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-personas": "workspace:*",
@@ -102,7 +110,9 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
-    "@happyvertical/sql": "catalog:"
+    "@happyvertical/sql": "catalog:",
+    "@happyvertical/images": "catalog:",
+    "gsap": "^3.13.0"
   },
   "peerDependencies": {
     "svelte": "^5.57.0"

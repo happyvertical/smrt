@@ -3,7 +3,10 @@ import type { SchemaDefinition } from '../schema/types';
 import {
   buildDuckDbIdUpdate,
   collectIndexedColumns,
+  jsonNumbersRoundTrip,
   storedValueEquals,
+  timestampColumnsToProve,
+  timestampMicros,
   unchangedIndexedColumns,
 } from '../unchanged-indexed';
 
@@ -97,23 +100,118 @@ describe('storedValueEquals (#3737)', () => {
     expect(storedValueEquals('TEXT', id.toUpperCase(), id)).toBe(false);
   });
 
-  it('compares timestamps as instants and refuses unzoned strings', () => {
+  it('proves timestamps only against the stored text, at full precision', () => {
     const at = new Date('2026-01-02T03:04:05.678Z');
-    expect(storedValueEquals('TIMESTAMP', at, new Date(at))).toBe(true);
-    expect(storedValueEquals('TIMESTAMP', at, at.toISOString())).toBe(true);
+    // No stored text, no proof: a hydrated Date has lost sub-ms digits.
+    expect(storedValueEquals('TIMESTAMP', at, new Date(at))).toBe(false);
+    const equal = (next: unknown, stored: string) =>
+      storedValueEquals('TIMESTAMP', next, new Date(0), stored);
+    expect(equal(at, '2026-01-02 03:04:05.678')).toBe(true);
+    expect(equal(at, '2026-01-02 03:04:05.678000')).toBe(true);
+    expect(equal(at, at.toISOString())).toBe(true);
+    expect(equal(at.toISOString(), '2026-01-02 03:04:05.678')).toBe(true);
     expect(
-      storedValueEquals('TIMESTAMP', at, '2026-01-02T04:04:05.678+01:00'),
+      equal('2026-01-02T04:04:05.678+01:00', '2026-01-02 03:04:05.678'),
     ).toBe(true);
-    expect(storedValueEquals('TIMESTAMP', at, new Date(at.getTime() + 1))).toBe(
+    // Same millisecond, different microseconds: changed.
+    expect(equal(at, '2026-01-02 03:04:05.678901')).toBe(false);
+    expect(
+      equal('2026-01-02T03:04:05.678901Z', '2026-01-02 03:04:05.678'),
+    ).toBe(false);
+    // Identical at full precision: provable.
+    expect(
+      equal('2026-01-02T03:04:05.678901Z', '2026-01-02 03:04:05.678901'),
+    ).toBe(true);
+    expect(equal(at, '2026-01-02 03:04:05.679')).toBe(false);
+    // Unzoned requested text, or digits finer than microseconds, are unprovable.
+    expect(equal('2026-01-02 03:04:05.678', '2026-01-02 03:04:05.678')).toBe(
       false,
     );
-    expect(storedValueEquals('TIMESTAMP', at, '2026-01-02 03:04:05.678')).toBe(
-      false,
+    expect(
+      equal('2026-01-02T03:04:05.6780001Z', '2026-01-02 03:04:05.678'),
+    ).toBe(false);
+    expect(equal('garbage', 'garbage')).toBe(false);
+    expect(equal(new Date(Number.NaN), '2026-01-02 03:04:05.678')).toBe(false);
+  });
+
+  it('keeps the literal year for years 0000-0099', () => {
+    const at1999 = new Date('1999-01-02T03:04:05Z');
+    // A stored year 99 is not 1999.
+    expect(
+      storedValueEquals(
+        'TIMESTAMP',
+        at1999,
+        new Date(0),
+        '0099-01-02 03:04:05',
+      ),
+    ).toBe(false);
+    expect(
+      storedValueEquals(
+        'TIMESTAMP',
+        '0099-01-02T03:04:05Z',
+        new Date(0),
+        '1999-01-02 03:04:05',
+      ),
+    ).toBe(false);
+    // The same early instant on both sides is still provable.
+    const year99 = new Date(Date.UTC(2000, 0, 2, 3, 4, 5));
+    year99.setUTCFullYear(99);
+    expect(timestampMicros('0099-01-02 03:04:05', true)).toBe(
+      BigInt(year99.getTime()) * 1000n,
     );
-    expect(storedValueEquals('TIMESTAMP', 'garbage', 'garbage')).toBe(false);
-    expect(storedValueEquals('TIMESTAMP', new Date(Number.NaN), at)).toBe(
-      false,
+    expect(
+      storedValueEquals(
+        'TIMESTAMP',
+        year99,
+        new Date(0),
+        '0099-01-02 03:04:05',
+      ),
+    ).toBe(true);
+    const year0 = new Date(Date.UTC(2000, 0, 1));
+    year0.setUTCFullYear(0);
+    expect(timestampMicros('0000-01-01T00:00:00Z')).toBe(
+      BigInt(year0.getTime()) * 1000n,
     );
+    // Negative years and DuckDB's BC rendering are unprovable.
+    expect(timestampMicros('-0001-01-02 03:04:05', true)).toBeUndefined();
+    expect(timestampMicros('0001-01-02 03:04:05 (BC)', true)).toBeUndefined();
+  });
+
+  it('refuses impossible timestamp fields instead of rolling them over', () => {
+    // Month 13 would roll to 2027-01; it must not prove equal to that.
+    expect(
+      storedValueEquals(
+        'TIMESTAMP',
+        '2026-13-02T03:04:05.678Z',
+        new Date(0),
+        '2027-01-02 03:04:05.678',
+      ),
+    ).toBe(false);
+    // Minute 60 would roll to the next hour.
+    expect(
+      storedValueEquals(
+        'TIMESTAMP',
+        '2026-01-02T03:60:05Z',
+        new Date(0),
+        '2026-01-02 04:00:05',
+      ),
+    ).toBe(false);
+    expect(timestampMicros('2026-02-30T00:00:00Z')).toBeUndefined();
+    expect(timestampMicros('2026-01-02T24:00:00Z')).toBeUndefined();
+    expect(timestampMicros('2026-01-02T03:04:60Z')).toBeUndefined();
+    expect(timestampMicros('2026-01-02T03:04:05+25:00')).toBeUndefined();
+    expect(timestampMicros('2026-01-02 03:04:05', true)).toBeDefined();
+  });
+
+  it('reads timestamp text exactly', () => {
+    expect(timestampMicros('2026-01-02 03:04:05.5', true)).toBe(
+      BigInt(Date.UTC(2026, 0, 2, 3, 4, 5)) * 1000n + 500000n,
+    );
+    expect(timestampMicros('2026-01-02 03:04:05')).toBeUndefined();
+    expect(timestampMicros('2026-01-02T03:04:05-0230')).toBe(
+      BigInt(Date.UTC(2026, 0, 2, 5, 34, 5)) * 1000n,
+    );
+    expect(timestampMicros(42)).toBeUndefined();
   });
 
   it('compares JSON structurally and refuses unparseable text', () => {
@@ -123,6 +221,52 @@ describe('storedValueEquals (#3737)', () => {
     expect(storedValueEquals('JSON', ['x'], '["x"]')).toBe(true);
     expect(storedValueEquals('JSON', ['x'], '["y"]')).toBe(false);
     expect(storedValueEquals('JSON', 'not json', 'not json')).toBe(false);
+  });
+
+  it('never proves JSON equal through numbers a double cannot hold', () => {
+    const big = '{"n":9007199254740992}';
+    const bigger = '{"n":9007199254740993}';
+    // Requested side and stored side.
+    expect(storedValueEquals('JSON', bigger, big)).toBe(false);
+    expect(storedValueEquals('JSON', big, bigger)).toBe(false);
+    expect(storedValueEquals('JSON', { n: 9007199254740992 }, bigger)).toBe(
+      false,
+    );
+    // Nested objects and arrays.
+    expect(
+      storedValueEquals(
+        'JSON',
+        '{"a":{"b":[1,{"c":9007199254740993}]}}',
+        '{"a":{"b":[1,{"c":9007199254740992}]}}',
+      ),
+    ).toBe(false);
+    expect(
+      storedValueEquals('JSON', '[0.1000000000000000000001]', '[0.1]'),
+    ).toBe(false);
+    // Digits inside strings are text, not numbers.
+    expect(
+      storedValueEquals(
+        'JSON',
+        '{"id":"9007199254740993"}',
+        '{"id":"9007199254740993"}',
+      ),
+    ).toBe(true);
+    expect(jsonNumbersRoundTrip('{"s":"x\\"9007199254740993"}')).toBe(true);
+    // Ordinary numbers are still provable.
+    expect(
+      storedValueEquals('JSON', { a: 1, b: [2.5, -3] }, '{"b":[2.5,-3],"a":1}'),
+    ).toBe(true);
+    expect(jsonNumbersRoundTrip('{"n":9007199254740991}')).toBe(true);
+    expect(jsonNumbersRoundTrip('[1e2]')).toBe(false);
+  });
+
+  it('compares bigint and number exactly', () => {
+    expect(
+      storedValueEquals('INTEGER', 9007199254740992, 9007199254740993n),
+    ).toBe(false);
+    expect(
+      storedValueEquals('INTEGER', 9007199254740992, 9007199254740992n),
+    ).toBe(true);
   });
 
   it('compares booleans and numbers, across bigint and number', () => {
@@ -147,6 +291,7 @@ describe('unchangedIndexedColumns (#3737)', () => {
   const types = {
     tenant_id: { type: 'UUID' },
     updated_at: { type: 'TIMESTAMP' },
+    created_at: { type: 'TIMESTAMP' },
   };
 
   it('reports only indexed columns whose value provably equals the stored one', () => {
@@ -171,6 +316,29 @@ describe('unchangedIndexedColumns (#3737)', () => {
       types,
     );
     expect([...unchanged]).toEqual(['slug', 'tenant_id']);
+  });
+
+  it('needs the stored text to skip an indexed timestamp', () => {
+    const at = new Date('2026-01-02T03:04:05.678Z');
+    const indexedWithCreated = new Set([...indexed, 'created_at']);
+    const data = { id: 'x', created_at: at, updated_at: new Date() };
+    const stored = { id: 'x', created_at: new Date(at), updated_at: at };
+    expect(
+      timestampColumnsToProve(data, stored, indexedWithCreated, types),
+    ).toEqual(['created_at']);
+    expect([
+      ...unchangedIndexedColumns(data, stored, indexedWithCreated, types),
+    ]).toEqual([]);
+    expect([
+      ...unchangedIndexedColumns(data, stored, indexedWithCreated, types, {
+        created_at: '2026-01-02 03:04:05.678',
+      }),
+    ]).toEqual(['created_at']);
+    expect([
+      ...unchangedIndexedColumns(data, stored, indexedWithCreated, types, {
+        created_at: '2026-01-02 03:04:05.678901',
+      }),
+    ]).toEqual([]);
   });
 
   it('skips a column the stored row does not carry', () => {

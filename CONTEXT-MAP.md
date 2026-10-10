@@ -5,12 +5,12 @@ SMRT is a multi-context monorepo. Use this map to find the package-level contrac
 | Context | Packages | Domain sources |
 | --- | --- | --- |
 | Framework foundations | `core`, `config`, `cli`, `types`, `scanner`, `tenancy`, `vitest` | Package `AGENTS.md` files, [`docs/adr/0003-smrt-add-declarative-package-install.md`](docs/adr/0003-smrt-add-declarative-package-install.md) |
-| Agent runtime, identity, and communications | `agents`, `jobs`, `users`, `profiles`, `personas`, `messages`, `chat`, `secrets` | [`packages/messages/CONTEXT.md`](packages/messages/CONTEXT.md), package `AGENTS.md` files, [`docs/adr/0001-persona-scoped-messaging.md`](docs/adr/0001-persona-scoped-messaging.md) |
+| Agent runtime, identity, and communications | `agents`, `approvals`, `jobs`, `users`, `profiles`, `personas`, `messages`, `chat`, `secrets` | [`packages/messages/CONTEXT.md`](packages/messages/CONTEXT.md), package `AGENTS.md` files, [`docs/adr/0001-persona-scoped-messaging.md`](docs/adr/0001-persona-scoped-messaging.md) |
 | Content and media | `content`, `assets`, `images`, `video`, `voice`, `social` | Package `AGENTS.md` files |
 | Business capabilities | `commerce`, `expenses`, `timesheets`, `human-resources`, `products`, `ads`, `affiliates`, `ledgers`, `analytics`, `reports`, `subscriptions` | Package `AGENTS.md` files |
 | Domain capabilities | `events`, `places`, `facts`, `sites`, `properties`, `tags` | Package `AGENTS.md` files |
 | Mobile | `smrt-mobile`, `smrt-android`, `smrt-ios`, `smrt-mobile-contract` | Package `AGENTS.md` files |
-| Web and application tooling | `smrt-web`, `smrt-svelte`, `smrt-ui`, `smrt-app-cli`, `smrt-dev-mcp`, `smrt-app-mcp`, templates | Package `AGENTS.md` files, [`docs/adr/0003-smrt-add-declarative-package-install.md`](docs/adr/0003-smrt-add-declarative-package-install.md) |
+| Web and application tooling | `smrt-web`, `smrt-svelte`, `preferences`, `smrt-ui`, `smrt-app-cli`, `smrt-dev-mcp`, `smrt-app-mcp`, templates | Package `AGENTS.md` files, [`docs/adr/0003-smrt-add-declarative-package-install.md`](docs/adr/0003-smrt-add-declarative-package-install.md) |
 | Admin Shell | `smrt-svelte` workspace and shell surfaces | Root `CONTEXT.md` |
 
 For cross-context work, read every affected row. System-wide decisions belong in root `docs/adr/`; context-local decisions should live beside the relevant context.

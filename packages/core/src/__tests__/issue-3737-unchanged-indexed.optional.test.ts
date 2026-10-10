@@ -16,6 +16,9 @@
  * it can prove unchanged. PostgreSQL runs when `SMRT_TEST_POSTGRES_URL` is set.
  */
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { field } from '../decorators/index.js';
@@ -82,6 +85,13 @@ class Issue3737Shape extends SmrtObject {
 class Issue3737Circle extends Issue3737Shape {
   @field({ type: 'integer' })
   radius = 1;
+}
+
+/** An indexed JSON column, provisioned by hand in the DuckDB lane. */
+@smrt({ tableName: 'issue3737_json_keyed' })
+class Issue3737JsonKeyed extends SmrtObject {
+  @field({ type: 'json', indexed: true })
+  payload: unknown = {};
 }
 
 /** Columns named after SQL reserved words. */
@@ -590,6 +600,98 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
       });
     });
 
+    describe.skipIf(dialect !== 'duckdb')('exact proofs (DuckDB)', () => {
+      const storedText = async (id: string) =>
+        String(
+          (
+            await db.query(
+              'SELECT CAST(created_at AS VARCHAR) AS at FROM issue3737_parents WHERE id = ?',
+              id,
+            )
+          ).rows[0].at,
+        );
+
+      it('writes a changed sub-millisecond value instead of treating it as unchanged', async () => {
+        const created = await newParent();
+        await db.query(
+          "UPDATE issue3737_parents SET created_at = TIMESTAMP '2026-01-02 03:04:05.678901' WHERE id = ?",
+          created.id,
+        );
+        expect(await storedText(created.id as string)).toBe(
+          '2026-01-02 03:04:05.678901',
+        );
+
+        const loaded = await load(created.id as string);
+        // Same millisecond, different microseconds: a change, not a no-op.
+        loaded.created_at = new Date('2026-01-02T03:04:05.678Z');
+        await loaded.save();
+
+        expect(await storedText(created.id as string)).toBe(
+          '2026-01-02 03:04:05.678',
+        );
+      });
+
+      it('still skips an indexed timestamp stored at the same precision', async () => {
+        const created = await newParent();
+        await db.query(
+          "UPDATE issue3737_parents SET created_at = TIMESTAMP '2026-01-02 03:04:05.678' WHERE id = ?",
+          created.id,
+        );
+        await reference('issue3737_children', created.id as string);
+        const loaded = await load(created.id as string);
+        loaded.created_at = new Date('2026-01-02T03:04:05.678Z');
+        loaded.enabled = false;
+        // created_at is indexed and referenced: assigning it would be refused.
+        await loaded.save();
+        expect((await load(created.id as string)).enabled).toBe(false);
+      });
+
+      it('writes an indexed JSON value whose numbers differ beyond double precision', async () => {
+        await db.query('DROP TABLE IF EXISTS issue3737_json_keyed');
+        await db.query(
+          `CREATE TABLE issue3737_json_keyed (id UUID PRIMARY KEY, slug TEXT NOT NULL, context TEXT NOT NULL DEFAULT '', created_at TIMESTAMP NOT NULL DEFAULT current_timestamp, updated_at TIMESTAMP NOT NULL DEFAULT current_timestamp, payload JSON, UNIQUE (slug, context))`,
+        );
+        const row = new Issue3737JsonKeyed({ db, slug: 'json-1' });
+        await row.initialize();
+        row.payload = '{"n":9007199254740992}';
+        await row.save();
+
+        const loaded = new Issue3737JsonKeyed({ db, id: row.id as string });
+        await loaded.initialize();
+        // Same double, different number: an explicit change.
+        loaded.payload = '{"n":9007199254740993}';
+        await loaded.save();
+
+        const stored = await db.query(
+          'SELECT CAST(payload AS VARCHAR) AS payload FROM issue3737_json_keyed WHERE id = ?',
+          row.id,
+        );
+        expect(String(stored.rows[0].payload)).toContain('9007199254740993');
+      });
+
+      it('fails closed when the driver reports no affected-row count', async () => {
+        const created = await newParent();
+        const original = db.query.bind(db);
+        vi.spyOn(db, 'query').mockImplementation(async (sql, ...values) => {
+          const result = await original(sql, ...values);
+          return String(sql).startsWith('UPDATE "')
+            ? { ...result, rows: [] }
+            : result;
+        });
+
+        const loaded = await load(created.id as string);
+        loaded.enabled = false;
+        await expect(loaded.save()).rejects.toMatchObject({
+          code: 'RUNTIME_INVALID_STATE',
+        });
+
+        const claimant = await load(created.id as string);
+        await expect(
+          claimant.claimRevision(claimant.updated_at as Date),
+        ).rejects.toMatchObject({ code: 'RUNTIME_INVALID_STATE' });
+      });
+    });
+
     describe('STI subclasses', () => {
       it('toggles a field of a referenced STI row', async () => {
         const circle = new Issue3737Circle({ db, slug: 'circle-1' });
@@ -618,3 +720,104 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
     });
   });
 }
+
+/**
+ * The JSON adapter wraps the same DuckDB connection but persists a table to
+ * `<table>.json` only from its own insert/update/upsert/delete; a raw
+ * `query()` never does. A raw write there is visible in-process and lost on
+ * the next one, so the DuckDB-only path must not run on it.
+ */
+describe('JSON adapter keeps persisting existing-row writes (#3737)', () => {
+  let dir: string;
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'issue3737-json-'));
+    db = await getTestDatabase({
+      type: 'json',
+      url: dir,
+      classes: ['Issue3737Parent', 'Issue3737Import'],
+    });
+  });
+
+  afterEach(async () => {
+    await db?.close?.();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** What the next process sees: the table file, and a fresh connection. */
+  const persisted = async (table: string, id: string) => {
+    const file = JSON.parse(readFileSync(join(dir, `${table}.json`), 'utf8'));
+    const fresh = await getDatabase({ type: 'json', url: dir });
+    try {
+      const row = (await fresh.get(table, { id })) as Record<string, unknown>;
+      return {
+        file: file.find((entry: { id: string }) => entry.id === id),
+        row,
+      };
+    } finally {
+      await fresh.close?.();
+    }
+  };
+
+  it('persists a toggle of an existing row', async () => {
+    const created = new Issue3737Parent({ db, slug: 'parent-1' });
+    await created.initialize();
+    await created.save();
+
+    const loaded = new Issue3737Parent({ db, id: created.id as string });
+    await loaded.initialize();
+    loaded.enabled = false;
+    await loaded.save();
+
+    const { file, row } = await persisted(
+      'issue3737_parents',
+      created.id as string,
+    );
+    expect(file.enabled).toBe(false);
+    expect(row.enabled).toBe(false);
+  });
+
+  it('persists a natural-key adoption of an existing row', async () => {
+    const created = new Issue3737Import({ db, slug: 'import-1' });
+    await created.initialize();
+    created.externalId = 'ext-1';
+    await created.save();
+
+    const reimport = new Issue3737Import({ db, slug: 'import-1' });
+    await reimport.initialize();
+    reimport.externalId = 'ext-1';
+    reimport.active = false;
+    await reimport.save();
+    expect(reimport.id).toBe(created.id);
+
+    const { file, row } = await persisted(
+      'issue3737_imports',
+      created.id as string,
+    );
+    expect(file.active).toBe(false);
+    expect(row.active).toBe(false);
+  });
+
+  it('persists a revision claim', async () => {
+    const created = new Issue3737Parent({ db, slug: 'parent-1' });
+    await created.initialize();
+    await created.save();
+    const claimant = new Issue3737Parent({ db, id: created.id as string });
+    await claimant.initialize();
+    const before = claimant.updated_at as Date;
+
+    await claimant.claimRevision(before);
+
+    const { file, row } = await persisted(
+      'issue3737_parents',
+      created.id as string,
+    );
+    expect(
+      new Date(String(file.updated_at).replace(' ', 'T') + 'Z').getTime(),
+    ).toBeGreaterThan(before.getTime());
+    expect(new Date(row.updated_at as string).getTime()).toBeGreaterThan(
+      before.getTime(),
+    );
+  });
+});

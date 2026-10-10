@@ -31,6 +31,15 @@ export const M = defineMessages({
   'ui.overview.announce_configured': 'Updated {widget}.',
   'ui.overview.announce_reset': 'Overview reset to its default.',
   'ui.overview.announce_denied': 'You cannot change this overview.',
+  // Assistant changes (phase 4)
+  'ui.overview.assistant_applied': 'The assistant updated this overview.',
+  'ui.overview.assistant_undo': 'Undo',
+  'ui.overview.assistant_dismiss': 'Dismiss',
+  'ui.overview.assistant_undone': 'The assistant change was undone.',
+  'ui.overview.assistant_changed_since':
+    'The overview changed after the assistant edit, so it was not undone.',
+  'ui.overview.assistant_undo_failed':
+    'The assistant change could not be undone.',
   // Widget states
   'ui.overview.loading': 'Loading',
   'ui.overview.error': 'This widget could not be loaded.',

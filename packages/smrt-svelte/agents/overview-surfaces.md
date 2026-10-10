@@ -11,15 +11,16 @@ its default arrangement; admins (or users, per role) add, reorder, resize,
 configure and remove widgets inside that confined set, and reset returns to the
 default. Phase 1 (this module) is the surface, the registry, the data model, the
 server load contract and five core widgets; phase 2 adds package widgets from
-recipes ("Recipe widgets"). Persistence and assistant operations are later
-phases (see "Extension points").
+recipes ("Recipe widgets"); phase 3 is production persistence in
+`@happyvertical/smrt-preferences` ("Production persistence"); phase 4 adds
+assistant operations with Undo ("Assistant operations").
 
 ## Two entries
 
 | Entry | Contents |
 |---|---|
-| `./overview/server` (`server.ts`) | Svelte-free: types, `validateWidgetOptions`, the model (`resolveOverview`, `checkOverviewOverride`, `applyOverviewOverride`, `diffOverview`, `sanitizeOverview`, ...), `WidgetRegistry` / `registerWidget`, `loadOverview`. Safe in a `+page.server.ts` or a save endpoint. |
-| `./overview` (`index.ts`) | Everything above plus `OverviewGrid`, `createOverview` (controller), `WidgetOptionsForm`, the core widgets and `registerCoreWidgets`, `shortcutsFromNav`, `formatWidgetValue`, `parseMarkdown` / `safeHref`. |
+| `./overview/server` (`server.ts`) | Svelte-free: types, `validateWidgetOptions`, the model (`resolveOverview`, `checkOverviewOverride`, `applyOverviewOverride`, `diffOverview`, `sanitizeOverview`, ...), `WidgetRegistry` / `registerWidget`, `loadOverview`, the operations (`planOverviewOperations`, `describeOverview`) and `createOverviewAssistantSurface`. Safe in a `+page.server.ts` or a save endpoint. |
+| `./overview` (`index.ts`) | Everything above plus `OverviewGrid`, `createOverview` (controller), `WidgetOptionsForm`, the core widgets and `registerCoreWidgets`, `shortcutsFromNav`, `formatWidgetValue`, `parseMarkdown` / `safeHref`, `createOverviewAssistant` / `useOverviewAssistantTools` / `OverviewAssistantUndo`. |
 
 ## Data model (`types.ts`, `model.ts`)
 
@@ -50,7 +51,8 @@ against (absent means 1).
   (they would stop incrementing), and an exhausted high end restarts at `w1`.
 - **Tiers.** `resolveOverview` merges one override. A host with tenant defaults
   and user overrides merges the tenant tier into the definition's `defaults`
-  first (phase 3); the user override then applies to that.
+  first; the user override then applies to that (smrt-preferences'
+  `withTenantDefaults`).
 - **Reset** is `controller.reset()` (store `null`) or `resetWidget(id)`.
 
 ## Validation: what keeps a stored overview from running anything
@@ -136,7 +138,11 @@ return { overview };   // LoadedOverview: JSON, serializable
 loaded?, loadWidget? })`, the `ShellLayout` pattern: **persistence is host-owned**.
 With an `override` getter the host is the source of truth and feeds each edit back
 (`onchange(override | null)`); without it the value is kept in memory. Reactive
-reads: `document`, `base`, `override`, `issues`, `customized`, `canCustomize`,
+reads: `document`, `base`, `override`, `committedOverride` (with a host-owned
+getter: the newest value handed to `onchange` that the getter has not fed back
+yet, else `override`; emissions are acknowledged in order, so several saves in
+flight never regress it, and a getter value matching none of them and not the
+value before them is a change from elsewhere that drops the queue), `issues`, `customized`, `canCustomize`,
 `addable`, `full`, `entry(widget)`. Operations, each returning
 `{ ok: true, id } | { ok: false, reason, issues? }` and refused with
 `not_allowed` when `canCustomize()` is false (the role gate; the server must check
@@ -239,17 +245,116 @@ turns the manifest's widget surfaces into `registry.register(...)` calls:
   and a type-level assertion here keeps `RecipeWidgetOptionType` equal to
   `WidgetOptionType`.
 
+## Production persistence (phase 3, `@happyvertical/smrt-preferences`)
+
+Overrides are stored as the `overview` kind of the generic user-interface
+preference table `_smrt_ui_preferences` in
+[smrt-preferences](../../preferences/AGENTS.md) (one row per tenant, kind,
+surface id = `OverviewDefinition.id`, and tier; the kind contract is in its
+[preference-kinds.md](../../preferences/agents/preference-kinds.md)). This
+package stays free of database code: its overview entries import nothing from
+core, tenancy or users. The `overview` kind validates with this package's
+`checkOverviewOverride` on save (only the canonical override is stored) and
+`resolveOverview` on load (bad entries dropped and reported per tier).
+`createOverviewStore({ db })` is the overview-shaped layer over the generic
+store and acts as the ambient principal:
+
+| Call | Does |
+| --- | --- |
+| `load(definition, registry)` | Both tiers resolved page defaults < tenant < user; each tier's `override`, `revision`, `issues`, the merged `document` and `canCustomize: { tenant, user }` |
+| `save(definition, registry, { scope, override, revision })` | Strict validation against the tier's definition (user: tenant-merged); `invalid` / `conflict` / `not_allowed` otherwise |
+| `reset(definition, { scope, revision? })` | Deletes that tier's row |
+| `loadPage(definition, registry, ctx, { scope? })` | `load` plus `loadOverview` of the tier's document, for `+page.server.ts` |
+| `loadWidget(definition, registry, widget, ctx)` | One widget's data for the controller's `loadWidget` remote function (throw on `ok: false`) |
+
+Host wiring for the personal layer: `createOverview({ definition:
+withTenantDefaults(definition, data.overview.tenant.document), override: () =>
+data.overview.user?.override ?? null, onchange: (next) => save({ scope:
+'user', override: next, revision }), canCustomize: () =>
+data.overview.canCustomize.user, loaded: data.overview.loaded, loadWidget })`;
+the organization layer uses the page definition, `tenant.override` and
+`canCustomize.tenant`. Keep the returned `revision` for the next save; on
+`conflict` reload the page data. Permissions are `overviews.customize` (tenant
+default) and `overviews.personalize` (own layout).
+
+Known model limit: a tenant default that later adds a widget whose id equals
+an id a user override already added hides the user's widget (an added widget
+colliding with a base id is skipped). `nextWidgetId` avoids it within one tier
+only.
+
+## Assistant operations (`operations.ts`, `assistant-surface.ts`, `assistant.svelte.ts`)
+
+Phase 4: the assistant adds and configures widgets with structured operations,
+and the person can undo the change.
+
+- **Operations** are data: `add { type, span?, options?, index? }`,
+  `configure { id, options }` (merged onto the current options; `null` clears a
+  key to its default), `move { id, index }`, `resize { id, span }`,
+  `remove { id }`. `OVERVIEW_OPERATION_SCHEMA` is their JSON schema.
+- **`planOverviewOperations({ definition, registry, override, operations })`**
+  plans a batch (at most 20) against the current override. Strict: unknown ops
+  or fields, unregistered or disallowed types (`allowed`, `allowedIn`), invalid
+  options (including a `model` outside `definition.models`), spans outside the
+  type's range, unknown widget ids and the cap are `OverviewOperationIssue`s
+  (`index`, `op`, `widgetId`, `code`, `message`, `options`). The result is then
+  run through `checkOverviewOverride`, so it is always an override a save
+  accepts. **Atomic**: any issue rejects the batch and returns nothing to
+  apply. Later operations see earlier ones; an `add` takes the next free id
+  (`nextWidgetId`, never a removed default's). Total, never throws.
+- **`describeOverview(...)`** is what a model reads first: allowed types with
+  option fields (type, required, default, range, `choices`, the page
+  `models`), span ranges, the current widgets with their index and title.
+  `translate` resolves i18n-key titles and labels.
+- **Server: `createOverviewAssistantSurface({ definition, registry, override,
+  revision, canCustomize, persist })`** is one page for one principal:
+  `describe`, `current`, `plan`, `check` and `persist`. Writes are
+  conditional: `persist(override, { revision })` must write only if the
+  stored row is still the loaded `revision` and answer
+  `{ ok: false, reason: 'conflict' }` otherwise
+  (`OverviewAssistantPersistResult`, structurally `OverviewSaveResult` of
+  `@happyvertical/smrt-preferences`); on success the surface follows the
+  returned `revision`. With phase 3:
+  `persist: (override, { revision }) => store.save(definition, registry, { scope: 'user', override, revision })`
+  where `store = createOverviewStore({ db })` from `@happyvertical/smrt-preferences`,
+  `override` / `revision` come from `store.load(...)`'s `state.user`, and the
+  surface's `definition` is `withTenantDefaults(definition, state.tenant.document)`. It is the adapter
+  `@happyvertical/smrt-chat`'s `createOverviewTools()` drives (typed
+  structurally there; see
+  [chat overview-tools.md](../../chat/agents/overview-tools.md) for the tool
+  contract, error codes and principal/page-scoped Undo). Phase 3 supplies the
+  stored override, the role and `persist`.
+- **Browser: `createOverviewAssistant(controller, { toolPrefix?, toaster?,
+  translate? })`** applies a batch through `controller.restore(plan.override)`,
+  so the grid updates live and the host's `onchange` persists it like any edit.
+  It refuses with `not_allowed` when `canCustomize` is false. `lastBatch`
+  (reactive) keeps `{ id, results, counts, before, after }`; `undo(id?)`
+  restores `before` exactly, once, and refuses with `changed_since` when the
+  override is no longer `after` (the person edited since). Both read
+  `controller.committedOverride`, so in host-owned mode a batch whose save the
+  host has not fed back yet is not mistaken for a change made elsewhere.
+  `useOverviewAssistantTools(assistant)` registers `<prefix>_describe` (read),
+  `<prefix>_apply` and `<prefix>_undo` (write) through `useWebMcpTool`, so the
+  AssistantDock offers them as page tools: the Provider's `webmcp.effects` must
+  allow `write`, the server's `clientToolAllowList` must list `overview_*`, and
+  the dock asks the person to Allow each write unless the host policy says
+  otherwise. Results are JSON strings (`{ ok: false, error, issues }` on a
+  rejected batch).
+- **Undo affordance.** `OverviewAssistantUndo` (`assistant`, optional
+  `message`) shows the last batch with Undo and Dismiss buttons and announces
+  the outcome in its own polite live region; or pass a smrt-ui `toaster` and
+  each batch shows as a toast with an Undo action (the host mounts
+  `ToastViewport`). Strings are `ui.overview.assistant_*`.
+- Tests: `__tests__/operations.test.ts`, `__tests__/assistant.test.ts` (live
+  grid update, Undo, the component with axe) and
+  `__tests__/assistant-tools.integration.test.ts` (chat's tools over this
+  model).
+
 ## Extension points left for later phases
 
-- **Phase 2, package widgets (#3727, done).** See "Recipe widgets" below.
-- **Phase 3, production persistence.** Implement the `override` getter /
-  `onchange` pair against the `_smrt_` table (tenant tier merged into
-  `definition.defaults`, user tier as the override), validate saves with
-  `checkOverviewOverride` and persist its canonical `override`, run
-  `loadOverview` in the page load, and supply `loadWidget` as a remote function
-  that calls the same `load`. Role gating = `canCustomize` plus the same check in
-  the save endpoint. No migration or table lives in this package.
-- **Phase 4, assistant.** The controller methods are the structured operations;
-  `restore(override)` plus the `override` getter give Undo (snapshot before,
-  restore after). `OverviewOpResult.issues` is the validation feedback to return.
+- **Phase 2, package widgets (#3727, done).** See "Recipe widgets" above.
+- **Phase 3, production persistence (#3727, done).** See "Production
+  persistence" above.
+- **Phase 4, assistant (#3727, done).** See "Assistant operations" above;
+  `createOverviewAssistantSurface` is wired to the stored user tier through
+  `createOverviewStore(...).save` as shown there.
 - **Not built:** the activity widget (Track B, #3710) and agenda.

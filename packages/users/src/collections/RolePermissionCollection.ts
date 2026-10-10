@@ -79,10 +79,16 @@ const DEFAULT_MEMBER_CREATE_DENIED_RESOURCES = new Set([
   'usersmagiclinktokens',
 ]);
 
-// Self-personalization is deliberately available to every built-in role. It
-// is appended only when the contributing package has registered the catalog
-// definition, so users-only applications do not report an unmatched pattern.
-const DEFAULT_SELF_PERSONALIZATION_PERMISSION = 'fields.policy.personalize';
+// Self-personalization is deliberately available to every built-in role. Each
+// slug is appended only when its contributing package has registered the
+// catalog definition, so users-only applications do not report an unmatched
+// pattern (smrt-fields' form defaults, smrt-preferences' personal overview
+// and shell layouts).
+const DEFAULT_SELF_PERSONALIZATION_PERMISSIONS = [
+  'fields.policy.personalize',
+  'overviews.personalize',
+  'shell.personalize',
+] as const;
 
 function isBuiltInDefaultRoleSlug(
   roleSlug: string,
@@ -344,17 +350,16 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
         }
       }
 
-      if (
-        isBuiltInDefaultRoleSlug(roleSlug) &&
-        role.tenantId === null &&
-        role.isSystem === true &&
-        catalogSlugs.includes(DEFAULT_SELF_PERSONALIZATION_PERMISSION) &&
-        shouldSeedDefaultRolePermission(
-          roleSlug,
-          DEFAULT_SELF_PERSONALIZATION_PERMISSION,
-        )
-      ) {
-        matchedSlugs.add(DEFAULT_SELF_PERSONALIZATION_PERMISSION);
+      for (const slug of DEFAULT_SELF_PERSONALIZATION_PERMISSIONS) {
+        if (
+          isBuiltInDefaultRoleSlug(roleSlug) &&
+          role.tenantId === null &&
+          role.isSystem === true &&
+          catalogSlugs.includes(slug) &&
+          shouldSeedDefaultRolePermission(roleSlug, slug)
+        ) {
+          matchedSlugs.add(slug);
+        }
       }
 
       const sortedMatchedSlugs = Array.from(matchedSlugs).sort();

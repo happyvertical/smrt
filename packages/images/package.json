@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-images",
-  "version": "0.55.7",
+  "version": "0.55.9",
   "description": "Image asset management with AI-powered categorization, search, editing, and metadata extraction for SMRT framework",
   "type": "module",
   "smrtRawPrimitives": "strict",
@@ -50,6 +50,7 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
+    "@happyvertical/animation": "0.5.0",
     "@happyvertical/ai": "catalog:",
     "@happyvertical/images": "catalog:",
     "@happyvertical/smrt-assets": "workspace:*",
@@ -67,6 +68,7 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@sveltejs/kit": "2.69.1",

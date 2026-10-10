@@ -74,8 +74,17 @@ toggling one plain field of a referenced parent used to assign `slug`,
 `context`, `tenant_id` and `created_at` unchanged and fail. Unchanged indexed
 columns are therefore left out of the write:
 
-- **Where.** Only native DuckDB (`isNativeDuckDb()`), and only the three
-  existing-row writers: the embedded revision write in `save()`
+- **Where.** Only POSITIVELY native DuckDB (`isPositivelyNativeDuckDb()`: not the
+  JSON adapter, which shares the DuckDB client and dialect but persists to
+  `<table>.json` only from its own insert/update/upsert/delete, so a raw write
+  would be lost on the next process). Identification (`src/native-duckdb.ts`)
+  is deterministic: a root is native by structure (`getTableSchema`, no
+  JSON-only capability, or an explicit `duckdb` hint), and a transaction
+  handle, which carries only the root's `client`, is recognized through the
+  root core noted before binding it (`initialize()`, `withDatabase()`,
+  `withEmbeddedWriteTransaction()`). A transaction handle of a root core never
+  saw stays unidentified and keeps the adapter `upsert`. It applies to the three
+  existing-row writers only: the embedded revision write in `save()`
   (`writeEmbeddedRevisionRow`), a new object's natural-key save that adopts an
   existing row (`writeNaturalKeyUpsert`), and `claimRevision()`, which assigns
   only `updated_at`. SQLite and PostgreSQL keep writing exactly what they
@@ -94,8 +103,17 @@ columns are therefore left out of the write:
   text exactly, UUIDs case-insensitively, timestamps as instants (a string
   must carry its zone), JSON structurally, booleans and numbers by value;
   `null`/`undefined` match each other, never `''`. Binary values, unzoned
-  timestamp strings and anything of a different type are *not* equal. Any
-  doubt means "assign it as before". `id` and `updated_at` are always written.
+  timestamp strings and anything of a different type are *not* equal. An
+  indexed timestamp is proven against the stored value read as text
+  (`CAST(col AS VARCHAR)`), at microsecond precision: a hydrated `Date` has
+  already lost sub-millisecond digits, so `.678901` stored versus `.678`
+  requested is a change and is written. JSON text is only proven when every
+  number literal outside its strings round-trips through a double exactly
+  (`jsonNumbersRoundTrip()`): `9007199254740993` and `9007199254740992` parse
+  to the same double, so text holding an unsafe integer, more digits than a
+  double holds, or a non-canonical form such as `1.0`/`1e2` is unprovable and
+  assigned. A `bigint` and a `number` compare exactly (`==`), never through a
+  double. Any doubt means "assign it as before". `id` and `updated_at` are always written.
 - **How.** The adapter's `upsert` cannot restrict its `DO UPDATE SET`, and its
   generic `update()` neither quotes column names (a column named `order` is a
   syntax error) nor binds dates and structures. So the remaining columns go
@@ -103,7 +121,9 @@ columns are therefore left out of the write:
   (`buildDuckDbIdUpdate`): every identifier quoted, values bound as the DuckDB
   `upsert` binds them (`NULL` literals, `''` as `CAST(? AS TEXT)`, ISO dates,
   `CAST(? AS JSON)` text). The revision was already verified in-process, so the
-  statement carries no revision predicate. When nothing is provably unchanged
+  statement carries no revision predicate. Its affected-row count must be
+  reported by the driver; an absent or non-numeric count raises
+  `RUNTIME_INVALID_STATE` (never retried) instead of reading as success. When nothing is provably unchanged
   the plain `upsert` runs as before.
 - **A changed indexed column is still assigned** and DuckDB still refuses it
   for a referenced parent (a real key change). Tenant isolation is untouched:

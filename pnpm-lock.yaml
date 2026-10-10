@@ -431,6 +431,37 @@ importers:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
 
+  packages/approvals:
+    dependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@happyvertical/smrt-users':
+        specifier: workspace:*
+        version: link:../users
+      '@happyvertical/sql':
+        specifier: ^0.103.1
+        version: 0.103.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+    devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
+      '@types/node':
+        specifier: 24.13.2
+        version: 24.13.2
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vite:
+        specifier: 8.1.4
+        version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+
   packages/assets:
     dependencies:
       '@happyvertical/ai':
@@ -562,6 +593,9 @@ importers:
       '@happyvertical/smrt-analytics':
         specifier: workspace:*
         version: link:../analytics
+      '@happyvertical/smrt-approvals':
+        specifier: workspace:*
+        version: link:../approvals
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -634,6 +668,9 @@ importers:
       '@happyvertical/smrt-playbooks':
         specifier: workspace:*
         version: link:../playbooks
+      '@happyvertical/smrt-preferences':
+        specifier: workspace:*
+        version: link:../preferences
       '@happyvertical/smrt-products':
         specifier: workspace:*
         version: link:../products
@@ -718,15 +755,27 @@ importers:
       '@happyvertical/ai':
         specifier: ^0.103.1
         version: 0.103.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/animation':
+        specifier: 0.5.0
+        version: 0.5.0(gsap@3.15.0)
+      '@happyvertical/images':
+        specifier: ^0.103.1
+        version: 0.103.1(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
+      '@happyvertical/smrt-assets':
+        specifier: workspace:*
+        version: link:../assets
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-images':
+        specifier: workspace:*
+        version: link:../images
       '@happyvertical/smrt-personas':
         specifier: workspace:*
         version: link:../personas
@@ -748,9 +797,15 @@ importers:
       '@happyvertical/smrt-users':
         specifier: workspace:*
         version: link:../users
+      '@happyvertical/speech':
+        specifier: ^0.103.1
+        version: 0.103.1(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@happyvertical/sql':
         specifier: ^0.103.1
         version: 0.103.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      gsap:
+        specifier: ^3.13.0
+        version: 3.15.0
     devDependencies:
       '@happyvertical/smrt-playground':
         specifier: workspace:*
@@ -1590,6 +1645,9 @@ importers:
       '@happyvertical/ai':
         specifier: ^0.103.1
         version: 0.103.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/animation':
+        specifier: 0.5.0
+        version: 0.5.0(gsap@3.15.0)
       '@happyvertical/images':
         specifier: ^0.103.1
         version: 0.103.1(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
@@ -1624,6 +1682,9 @@ importers:
       '@happyvertical/smrt-playground':
         specifier: workspace:*
         version: link:../smrt-playground
+      '@happyvertical/smrt-profiles':
+        specifier: workspace:*
+        version: link:../profiles
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -2378,6 +2439,43 @@ importers:
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vite:
+        specifier: 8.1.4
+        version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+
+  packages/preferences:
+    dependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-svelte':
+        specifier: workspace:*
+        version: link:../smrt-svelte
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@happyvertical/smrt-users':
+        specifier: workspace:*
+        version: link:../users
+      '@happyvertical/sql':
+        specifier: ^0.103.1
+        version: 0.103.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+    devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
+      '@types/node':
+        specifier: 24.13.2
+        version: 24.13.2
+      svelte:
+        specifier: ^5.57.1
+        version: 5.57.1
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -5073,6 +5171,11 @@ packages:
     peerDependenciesMeta:
       '@mlc-ai/web-llm':
         optional: true
+
+  '@happyvertical/animation@0.5.0':
+    resolution: {integrity: sha512-GyLXc7t3GClDTGSjiujQ9bBb0XNpmsYHCyq7ViXN/LR4ENSCivlu19Y6FgPPdAAaX0thUBbKsvyLo4OKMnqnxA==}
+    peerDependencies:
+      gsap: '>=3.13.0'
 
   '@happyvertical/cache@0.103.1':
     resolution: {integrity: sha512-tNU77XavBFHuxa6S8VRvLSywABXMI7LggQmVRAN0PO6ByVy73cMdbYHACJGCtG871ccIu/T/CGTvicz/AL8u+A==}
@@ -8750,6 +8853,9 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  gsap@3.15.0:
+    resolution: {integrity: sha512-dMW4CWBTUK1AEEDeZc1g4xpPGIrSf9fJF960qbTZmN/QwZIWY5wgliS6JWl9/25fpTGJrMRtSjGtOmPnfjZB+A==}
 
   gtoken@7.1.0:
     resolution: {integrity: sha512-pCcEwRi+TKpMlxAQObHDQ56KawURgyAf6jtIY046fJ5tIv3zDe/LEIubckAO8fj6JnAxLdmWkUfNyulQ2iKdEw==}
@@ -12688,6 +12794,10 @@ snapshots:
       - ws
       - zod
 
+  '@happyvertical/animation@0.5.0(gsap@3.15.0)':
+    dependencies:
+      gsap: 3.15.0
+
   '@happyvertical/cache@0.103.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@aws-sdk/client-s3': 3.1034.0
@@ -16434,6 +16544,8 @@ snapshots:
       type-fest: 4.41.0
 
   graceful-fs@4.2.11: {}
+
+  gsap@3.15.0: {}
 
   gtoken@7.1.0(supports-color@10.2.2):
     dependencies:

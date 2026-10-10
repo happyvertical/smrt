@@ -69,3 +69,72 @@ are non-obvious and cost time to find:
   programmatic `element.click()` (`event.isTrusted === false`) for `apply`, which
   is the stage→apply consent split doing its job. Verification must use a real
   input event, not `evaluate(() => button.click())`.
+
+## Voice and local character persistence
+
+The root workbench also has a dev-only voice conversation mode. It reads voice
+gateway connection details through `/api/dev-voice/config`, streams browser mic
+audio to `WS /ws/voice` as PCM16 mono, appends gateway transcripts/responses to
+the chat, and plays returned TTS audio. Exposing
+`SMRT_CHAT_DEV_VOICE_GATEWAY_TOKEN` to the browser requires
+`SMRT_CHAT_DEV_VOICE_GATEWAY_EXPOSE_TOKEN=true`; keep that local-only.
+
+### Local character persistence
+
+`/api/dev-character-persistence` is an opt-in loopback-only demo bridge for
+the photographic character workbench. It is disabled unless
+`SMRT_CHAT_DEV_CHARACTER_PERSISTENCE=true`; it accepts neither actor, tenant,
+nor profile ids from the browser. Its server configuration names one
+pre-provisioned profile and tenant plus a temporary SQLite database and asset
+directory, all under the operating system temporary directory. First run
+`DATABASE_URL=<the same SQLite path> pnpm smrt db:migrate`, then run
+`pnpm exec tsx src/scripts/provision-dev-character-persistence.ts` with the
+`SMRT_CHAT_DEV_CHARACTER_*` variables set. The route never creates schema.
+Use fresh UUIDs for `SMRT_CHAT_DEV_CHARACTER_PROFILE_ID` and
+`SMRT_CHAT_DEV_CHARACTER_TENANT_ID`; keep the database and asset directory in
+the OS temporary directory, for example `/tmp/smrt-character-setup/` on Linux
+or the path reported by `node -p "require('node:os').tmpdir()"` on macOS.
+
+This is not production authentication. A production host must provide its
+authenticated principal, tenant, and authorization policy to
+`PhotoCutoutProfileStore`; it must not copy this fixed local identity pattern.
+
+### Local helper control panel
+
+`/api/dev-helper` uses the same loopback-only identity and durable Profile
+metadata store. Provisioning also creates its application-scoped metafield;
+the route never creates schema or accepts actor, tenant, policy, provider, or
+asset URL fields from the browser. It resolves the current gallery, allowed
+voice, and helper policy on every load/save/reset. Its whole-value persistence
+semantic is last-successful-write-wins, so a production host with concurrent
+editors must serialize writes per profile/application or supply a stronger
+adapter. The speech route resolves the saved offered voice server-side; clients
+submit only text. Helper preference loading never starts audio or a microphone.
+
+### Character conversation lifecycle
+
+The Character conversation tab refreshes the persisted rig each time it becomes
+active, retaining its AssistantDock controller and history. Leaving the tab stops
+microphone input and reply playback; listening mode requires an explicit restart.
+An outstanding turn keeps both the listening input and full dock composer busy
+across mode changes and restarts until it settles. Both inputs share the retained
+controller’s pending-send state; microphone Stop remains reachable. Polling
+retains active sends until their transport completes, even when older history
+contains the same message text.
+Late persistence loads and cancelled speech responses cannot replace the current
+rig or audio. Spoken captions begin only when SDK playback actually starts.
+Listening mode also keeps the newest assistant reply in a dedicated reply
+region, so a muted or failed spoken reply is still readable while history stays
+hidden. A speech failure is shown beside the conversation controls; disabling
+spoken replies aborts its outstanding request and playback. While the tab is
+inactive, its fixed dock is hidden and polling is paused.
+
+The development workbench links the SDK speech and animation packages from
+sibling worktrees. Keep those worktrees available until their released package
+versions replace the links; a fresh browser or Vite load cannot resolve a
+linked package whose sibling checkout is absent.
+
+The development transport sends at most 24 context messages within a 16 KiB UTF-8
+JSON body, dropping oldest context first. Failed turns are not committed to its
+history, so retrying does not duplicate them. Draft proposals use one shared
+200-character limit in the model tool, route, preview, and execution boundary.

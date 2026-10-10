@@ -95,13 +95,27 @@ export class OverviewController {
   #local = $state.raw<unknown>(null);
   #entries = $state.raw<Record<string, KeyedEntry>>({});
   readonly #pending = new Map<string, AbortController>();
-  readonly #resolved = $derived.by(() =>
-    resolveOverview(
+  /**
+   * Overrides handed to `onchange` that a host-owned getter has not fed back
+   * yet, oldest first, and what the getter answered before the oldest of
+   * them (`prior`). Hosts acknowledge in order.
+   */
+  #outstanding: {
+    prior: OverviewOverride | null;
+    values: Array<OverviewOverride | null>;
+  } | null = null;
+  readonly #resolved = $derived.by(() => {
+    const resolved = resolveOverview(
       this.#options.definition,
       this.#options.override ? this.#options.override() : this.#local,
       this.#registry,
-    ),
-  );
+    );
+    // Every host feed-back passes here (the grid reads `document`), so a
+    // pending edit is retired as soon as the getter moves off its prior
+    // value, even if nothing reads `committedOverride` in between.
+    this.#retire(diffOverview(resolved.base, resolved.document));
+    return resolved;
+  });
 
   constructor(options: OverviewControllerOptions) {
     this.#options = options;
@@ -145,6 +159,64 @@ export class OverviewController {
   /** The canonical override currently applied; `null` when on defaults. */
   get override(): OverviewOverride | null {
     return diffOverview(this.#resolved.base, this.#resolved.document);
+  }
+
+  /**
+   * The override this controller last committed: {@link override}, or, while
+   * a host-owned getter still answers the value from before the last edit
+   * (the host has not fed it back yet), the value handed to `onchange`. An
+   * Undo compares against this so a pending save is not mistaken for a
+   * change made elsewhere.
+   */
+  get committedOverride(): OverviewOverride | null {
+    const current = this.override;
+    this.#retire(current);
+    const outstanding = this.#outstanding;
+    return outstanding
+      ? (outstanding.values.at(-1) as OverviewOverride | null)
+      : current;
+  }
+
+  /**
+   * Acknowledge what the host getter now answers. Still the value from before
+   * the oldest outstanding emission: nothing was fed back yet. Equal to an
+   * outstanding emission: that one and every older one are acknowledged (in
+   * order), and the getter's value becomes the prior of the rest. Anything
+   * else is a change made elsewhere: the queue is dropped, so the mask only
+   * ever covers this controller's own unacknowledged saves.
+   */
+  #retire(current: OverviewOverride | null): void {
+    const outstanding = this.#outstanding;
+    if (!outstanding || sameJson(current, outstanding.prior)) return;
+    const index = outstanding.values.findIndex((value) =>
+      sameJson(value, current),
+    );
+    if (index < 0 || index === outstanding.values.length - 1) {
+      this.#outstanding = null;
+      return;
+    }
+    this.#outstanding = {
+      prior: current,
+      values: outstanding.values.slice(index + 1),
+    };
+  }
+
+  /** Hand a canonical override to the host, queueing it until fed back. */
+  #emit(override: OverviewOverride | null): void {
+    if (this.#options.override) {
+      const current = this.override;
+      this.#retire(current);
+      const outstanding = this.#outstanding;
+      this.#outstanding = outstanding
+        ? {
+            prior: outstanding.prior,
+            values: [...outstanding.values, override],
+          }
+        : { prior: current, values: [override] };
+    } else {
+      this.#local = override;
+    }
+    void this.#options.onchange?.(override);
   }
 
   /** What was dropped or reported while resolving. */
@@ -200,11 +272,10 @@ export class OverviewController {
       definition: this.#options.definition,
     });
     const override = diffOverview(this.#resolved.base, sanitized.document);
-    if (sameJson(override, this.override)) {
+    if (sameJson(override, this.committedOverride)) {
       return { ok: false, reason: 'unchanged' };
     }
-    if (!this.#options.override) this.#local = override;
-    void this.#options.onchange?.(override);
+    this.#emit(override);
     // The derived document reflects a host-owned override only after the host
     // feeds it back, so sync against what was just committed.
     this.#syncWidgets(sanitized.document.widgets);
@@ -345,9 +416,10 @@ export class OverviewController {
   reset(): OverviewOpResult {
     const denied = this.#gate();
     if (denied) return denied;
-    if (!this.customized) return { ok: false, reason: 'unchanged' };
-    if (!this.#options.override) this.#local = null;
-    void this.#options.onchange?.(null);
+    if (isEmptyOverride(this.committedOverride)) {
+      return { ok: false, reason: 'unchanged' };
+    }
+    this.#emit(null);
     this.#syncWidgets(this.#resolved.base.widgets);
     return { ok: true, id: '' };
   }
@@ -366,11 +438,10 @@ export class OverviewController {
       this.#registry,
     );
     const canonical = diffOverview(next.base, next.document);
-    if (sameJson(canonical, this.override)) {
+    if (sameJson(canonical, this.committedOverride)) {
       return { ok: false, reason: 'unchanged' };
     }
-    if (!this.#options.override) this.#local = canonical;
-    void this.#options.onchange?.(canonical);
+    this.#emit(canonical);
     this.#syncWidgets(next.document.widgets);
     return { ok: true, id: '' };
   }

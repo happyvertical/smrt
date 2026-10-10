@@ -53,6 +53,7 @@ import {
   GlobalInterceptors,
   resolveGetStringFilter,
 } from './interceptors';
+import { isKnownNativeDuckDbHandle } from './native-duckdb';
 import { getBoxedPrimitiveKind, isRawJSON } from './plain-json';
 import { ObjectRegistry } from './registry';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
@@ -72,6 +73,7 @@ import {
 import {
   buildDuckDbIdUpdate,
   collectIndexedColumns,
+  timestampColumnsToProve,
   unchangedIndexedColumns,
 } from './unchanged-indexed';
 import { fieldsFromClass, tableNameFromClass, toSnakeCase } from './utils';
@@ -107,11 +109,6 @@ interface AdoptedNaturalKeyRow {
   createdAt?: unknown;
   existing?: Record<string, unknown>;
 }
-
-// A transaction handle may omit adapter capabilities. Remember only a positively
-// identified native DuckDB client; JSON shares its engine but requires export
-// behavior that a raw multi-row statement must never bypass.
-const nativeJunctionClients = new WeakSet<object>();
 
 function isDuckDbHugeInt(value: unknown): boolean {
   return Boolean(
@@ -1386,6 +1383,28 @@ export class SmrtObject extends SmrtClass {
     return rows[0] ?? null;
   }
 
+  /**
+   * Whether this database is POSITIVELY the native DuckDB adapter, never the
+   * JSON adapter that shares its client class.
+   *
+   * {@link isNativeDuckDb} answers "DuckDB dialect": the JSON adapter wraps the
+   * same `DuckDBConnection`, and even a `json` type hint maps to `duckdb`. The
+   * JSON adapter only persists a table to its `<table>.json` file from its own
+   * `insert`/`update`/`upsert`/`delete`; a raw `query()` never does, so a raw
+   * write there is visible in-process and lost on the next one. Writers that
+   * bypass those methods must therefore gate on this.
+   *
+   * Identification is deterministic, see `native-duckdb.ts`: a root handle is
+   * recognized structurally, and a transaction handle through the root core
+   * noted before binding to it (initialize, withDatabase, transactions).
+   */
+  private isPositivelyNativeDuckDb(): boolean {
+    return (
+      this.isNativeDuckDb() &&
+      isKnownNativeDuckDbHandle(this.db, this.getDatabaseEngineHint())
+    );
+  }
+
   private isNativeDuckDb(): boolean {
     const db = this.db as typeof this.db & {
       config?: { type?: string; url?: string };
@@ -2355,22 +2374,9 @@ export class SmrtObject extends SmrtClass {
       removed.some((item) => !item.id)
     )
       return false;
-    const dbCapabilities = first.db as typeof first.db & {
-      getTableSchema?: unknown;
-      client?: object;
-    };
     if (first.getDatabaseEngineHint() === 'json') return false;
     const duck = first.isNativeDuckDb();
-    if (duck) {
-      const client = dbCapabilities.client;
-      if (!client) return false;
-      if (
-        typeof dbCapabilities.getTableSchema === 'function' ||
-        first.getDatabaseEngineHint() === 'duckdb'
-      )
-        nativeJunctionClients.add(client);
-      if (!nativeJunctionClients.has(client)) return false;
-    }
+    if (duck && !first.isPositivelyNativeDuckDb()) return false;
     const engine = isPostgresDatabase(first.db)
       ? 'postgres'
       : duck
@@ -3017,9 +3023,11 @@ export class SmrtObject extends SmrtClass {
                   if (useEmbeddedRevisionFallback) {
                     // Canonical read: native DuckDB UUIDs come back as text,
                     // so the unchanged-column proof below can compare them.
-                    current = await this.getCanonicalPersistedRow({
-                      id: data.id,
-                    });
+                    current = this.isPositivelyNativeDuckDb()
+                      ? await this.getCanonicalPersistedRow({ id: data.id })
+                      : ((await this.db.get(this.tableName, {
+                          id: data.id,
+                        })) as Record<string, unknown> | null);
                     if (
                       !current ||
                       !this.revisionsEqual(current.updated_at, revisionGuard)
@@ -3206,7 +3214,7 @@ export class SmrtObject extends SmrtClass {
             },
             { updated_at: updatedAt.toISOString() },
           );
-        } else if (this.isNativeDuckDb()) {
+        } else if (this.isPositivelyNativeDuckDb()) {
           // Native DuckDB rewrites a row whose indexed column is assigned, even
           // unchanged, and a referenced parent then refuses it (#3737). The
           // claim changes only the revision, so it assigns only the revision.
@@ -3271,11 +3279,11 @@ export class SmrtObject extends SmrtClass {
    * revision matched the loaded one, so it is the state this save was loaded
    * from. Anything not provably equal stays assigned.
    */
-  private unchangedIndexedColumnsOf(
+  private async unchangedIndexedColumnsOf(
     data: Record<string, unknown>,
     stored: Record<string, unknown> | null,
-  ): Set<string> {
-    if (!stored || !this.isNativeDuckDb()) return new Set();
+  ): Promise<Set<string>> {
+    if (!stored || !this.isPositivelyNativeDuckDb()) return new Set();
     const qualifiedName = this.getResolvedQualifiedName();
     const stiBase = ObjectRegistry.getSTIBase(qualifiedName);
     const schemas = [
@@ -3296,7 +3304,39 @@ export class SmrtObject extends SmrtClass {
         columnTypes[name] ??= column;
       }
     }
-    return unchangedIndexedColumns(data, stored, indexed, columnTypes);
+    // A hydrated Date keeps only milliseconds while the column holds
+    // microseconds, so an indexed timestamp is proven against the stored
+    // text, read in this same queue slot.
+    const exactTimestamps: Record<string, string> = {};
+    const timestamps = timestampColumnsToProve(
+      data,
+      stored,
+      indexed,
+      columnTypes,
+    );
+    if (timestamps.length > 0 && stored.id != null) {
+      const quote = (identifier: string) =>
+        `"${identifier.replaceAll('"', '""')}"`;
+      const { rows } = await this.db.query(
+        `SELECT ${timestamps
+          .map(
+            (column) => `CAST(${quote(column)} AS VARCHAR) AS ${quote(column)}`,
+          )
+          .join(', ')} FROM ${quote(this.tableName)} WHERE ${quote('id')} = ?`,
+        stored.id,
+      );
+      for (const column of timestamps) {
+        const text = rows[0]?.[column];
+        if (typeof text === 'string') exactTimestamps[column] = text;
+      }
+    }
+    return unchangedIndexedColumns(
+      data,
+      stored,
+      indexed,
+      columnTypes,
+      exactTimestamps,
+    );
   }
 
   /**
@@ -3314,7 +3354,7 @@ export class SmrtObject extends SmrtClass {
     data: Record<string, unknown>,
     stored: Record<string, unknown> | null,
   ) {
-    const unchanged = this.unchangedIndexedColumnsOf(data, stored);
+    const unchanged = await this.unchangedIndexedColumnsOf(data, stored);
     if (unchanged.size === 0) {
       return this.db.upsert(this.tableName, ['id'], data);
     }
@@ -3340,7 +3380,7 @@ export class SmrtObject extends SmrtClass {
     conflictColumns: string[],
     existing: Record<string, unknown> | null,
   ) {
-    const unchanged = this.unchangedIndexedColumnsOf(data, existing);
+    const unchanged = await this.unchangedIndexedColumnsOf(data, existing);
     if (!existing || unchanged.size === 0 || existing.id == null) {
       return this.db.upsert(this.tableName, conflictColumns, data);
     }
@@ -3363,8 +3403,7 @@ export class SmrtObject extends SmrtClass {
   /**
    * One id-targeted `UPDATE` on native DuckDB (see {@link buildDuckDbIdUpdate}
    * for the quoting and binding). The caller holds the embedded write queue
-   * and has already matched the row, so `affected` is the driver's own count
-   * when it reports one.
+   * and has already matched the row; `affected` is the driver's own count.
    */
   private async updateDuckDbRowById(
     id: unknown,
@@ -3376,11 +3415,20 @@ export class SmrtObject extends SmrtClass {
       assignments,
     );
     const result = await this.db.query(sql, ...values);
-    const count = result?.rows?.[0]?.Count;
-    return {
-      operation: 'update',
-      affected: count === undefined ? 1 : Number(count),
-    };
+    // Fail closed: an absent or non-numeric count must never read as a
+    // success, or a zero-row UPDATE would report a write that did not happen.
+    const reported = result?.rows?.[0]?.Count;
+    const count =
+      typeof reported === 'number' || typeof reported === 'bigint'
+        ? Number(reported)
+        : Number.NaN;
+    if (!Number.isInteger(count) || count < 0) {
+      throw RuntimeError.invalidState(
+        'The DuckDB UPDATE did not report an affected-row count',
+        { className: this.getResolvedClassName(), tableName: this.tableName },
+      );
+    }
+    return { operation: 'update', affected: count };
   }
 
   /**
@@ -3510,6 +3558,9 @@ export class SmrtObject extends SmrtClass {
    */
   private toTypedWriteError(error: unknown, operation: string): unknown {
     if (!(error instanceof Error)) return error;
+    // The writer's own invalid-state refusal is not a database failure.
+    if (error instanceof RuntimeError && error.code === 'RUNTIME_INVALID_STATE')
+      return error;
     const classification = classifyDatabaseError(error);
     if (classification.kind === 'unique_violation') {
       const field = this.extractConstraintFieldFromChain(error, classification);
