@@ -20,9 +20,16 @@ Each transition in `src/service.ts`:
 
 1. Validates input and the principal (`id`, UUID `tenantId`, `type`, `can`).
 2. Refuses a principal whose tenant differs from an active tenant context.
-3. Opens a transaction (serialized per database on SQLite and DuckDB, which
-   multiplex every transaction over one connection; PostgreSQL uses its
-   pooled per-transaction connection).
+3. Opens a transaction through core's `withEmbeddedWriteTransaction(db,
+   isEmbeddedDatabase(db), fn)`. On embedded engines (SQLite, DuckDB, libsql)
+   it takes the embedded write queue for the database first, then the
+   adapter's connection lock; the event insert and change-feed append inside
+   re-enter that hold. The reverse order (a raw `db.transaction()`) deadlocks
+   against an unrelated NULL-tenant save, which holds the queue and then
+   opens its own write transaction, until the 30 s transaction-queue timeout,
+   and lets other root writes land inside the transaction. The queue also
+   serializes transitions per database, so no separate chain exists.
+   PostgreSQL is not queued: each transaction gets its own pooled connection.
 4. Reads the request through a transaction-bound collection with an explicit
    `tenantId` filter, and classifies refusals from that read.
 5. Runs the guarded UPDATE with the version it read. Zero rows: the
@@ -39,6 +46,9 @@ are a second line: a violation aborts the attempt and it retries.
 
 `consume({ transaction })` runs steps 4 to 6 on the caller's open
 transaction, once, without retry or serialization; the caller owns commit.
+On embedded engines that handle must come from `withEmbeddedWriteTransaction`
+or `SmrtObject.withTransaction()`, never a raw `db.transaction()`, for the
+lock-order reason in step 3.
 
 ## Raw SQL boundaries
 

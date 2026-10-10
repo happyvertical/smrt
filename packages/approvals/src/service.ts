@@ -14,10 +14,11 @@
  *   (`not_pending`, `already_decided`, `already_consumed`).
  * - PostgreSQL runs each transaction on its own pooled connection; the
  *   UPDATE's row lock serializes writers and READ COMMITTED re-evaluates the
- *   predicate after the winner commits. SQLite and DuckDB multiplex every
- *   transaction over one connection, so transactions are chained per
- *   database instance (interleaved `BEGIN`/`COMMIT` pairs would corrupt
- *   each other); the predicate still decides.
+ *   predicate after the winner commits. On embedded engines (SQLite,
+ *   DuckDB) each transaction runs through core's embedded write queue
+ *   (`withEmbeddedWriteTransaction`), which takes the queue before the
+ *   connection lock and serializes writers per database; the predicate
+ *   still decides.
  * - Every statement names the tenant explicitly and the work runs inside
  *   `withTenant(principal.tenantId)`, so tenancy interceptors and the raw
  *   predicate both pin the row; a cross-tenant id is `not_found`.
@@ -28,7 +29,12 @@
  * @packageDocumentation
  */
 
-import { appendChange, isUniqueViolationError } from '@happyvertical/smrt-core';
+import {
+  appendChange,
+  isEmbeddedDatabase,
+  isUniqueViolationError,
+  withEmbeddedWriteTransaction,
+} from '@happyvertical/smrt-core';
 import {
   getTenantId,
   isSystemContext,
@@ -83,15 +89,7 @@ type TransactionCapableDatabase = DatabaseInterface & {
   transaction?: <T>(
     callback: (tx: DatabaseInterface) => Promise<T>,
   ) => Promise<T>;
-  acquireSession?: unknown;
 };
-
-/**
- * Per-database promise chain serializing transactions on engines that
- * multiplex every transaction over one connection (SQLite, DuckDB).
- * PostgreSQL (pooled per-transaction connections) skips it.
- */
-const singleConnectionTails = new WeakMap<object, Promise<unknown>>();
 
 /** What a transaction body reports across the commit boundary (ids only). */
 type TxOutcome =
@@ -144,9 +142,11 @@ export interface ConsumeOptions {
   /**
    * Run inside the caller's open transaction (a `db.transaction()` callback
    * handle) so the consumer's own write commits or rolls back together with
-   * the consumption. The caller owns the transaction. On SQLite and DuckDB
-   * the caller must not run other approval transitions on the same
-   * connection while its transaction is open.
+   * the consumption. The caller owns the transaction. On embedded engines
+   * (SQLite, DuckDB, libsql) the handle must come from
+   * `withEmbeddedWriteTransaction(db, isEmbeddedDatabase(db), fn)` or
+   * `SmrtObject.withTransaction()` so it holds core's embedded write queue;
+   * a raw `db.transaction()` handle can deadlock against concurrent saves.
    */
   transaction?: DatabaseInterface;
 }
@@ -1035,29 +1035,28 @@ export class ApprovalService {
     return await withTenant({ tenantId: principal.tenantId }, fn);
   }
 
-  /** Run `fn` in a transaction, serialized per connection where required. */
+  /**
+   * Run `fn` in a transaction through core's embedded write queue.
+   *
+   * On embedded engines (SQLite, DuckDB, libsql) the transaction takes the
+   * queue for its database BEFORE the adapter's connection lock, and the
+   * model writes inside it (event inserts, change-feed appends) re-enter that
+   * hold. Taking the connection lock first deadlocks against an unrelated
+   * save that holds the queue and then opens its own write transaction, and
+   * lets other root writes land inside this BEGIN..COMMIT. The queue also
+   * serializes these transactions per database in-process, which is what
+   * the former per-handle promise chain did, so that chain is gone.
+   * PostgreSQL is not queued: each transaction has its own pooled
+   * connection and the guarded UPDATE's row lock arbitrates.
+   */
   private async runTransaction<T>(
     fn: (tx: DatabaseInterface) => Promise<T>,
   ): Promise<T> {
-    const db = this.db;
-    const runTx = () =>
-      (
-        db.transaction as NonNullable<TransactionCapableDatabase['transaction']>
-      )(fn);
-    if (typeof db.acquireSession === 'function') {
-      return await runTx();
-    }
-    const previous = singleConnectionTails.get(db) ?? Promise.resolve();
-    // Chain regardless of the predecessor's outcome.
-    const turn = previous.then(runTx, runTx);
-    singleConnectionTails.set(
-      db,
-      turn.then(
-        () => undefined,
-        () => undefined,
-      ),
+    return await withEmbeddedWriteTransaction(
+      this.db,
+      isEmbeddedDatabase(this.db),
+      fn,
     );
-    return await turn;
   }
 
   /** A collection bound to a transaction database. */

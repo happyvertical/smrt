@@ -76,7 +76,10 @@ Every transition returns `{ outcome, request, refusal? }`. `outcome` is
 nothing.
 
 To consume inside your own transaction, so the domain write and the
-consumption commit together, pass `{ transaction: tx }` to `consume`.
+consumption commit together, pass `{ transaction: tx }` to `consume`. On
+SQLite and DuckDB open that transaction with `withEmbeddedWriteTransaction`
+from `@happyvertical/smrt-core` (or `SmrtObject.withTransaction()`), not a raw
+`db.transaction()`, so it holds the embedded write queue.
 
 Expiry: `expire(principal, id)` and `expireDue(principal)` record expiry for
 requests whose deadline passed; a job can call them. Decisions and

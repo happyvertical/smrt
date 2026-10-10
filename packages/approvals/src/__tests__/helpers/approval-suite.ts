@@ -9,7 +9,11 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { GlobalInterceptors } from '@happyvertical/smrt-core';
+import {
+  GlobalInterceptors,
+  isEmbeddedDatabase,
+  withEmbeddedWriteTransaction,
+} from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import {
   disableTenancy,
@@ -556,20 +560,19 @@ export function defineApprovalSuite(getDb: () => DatabaseInterface): void {
       const w = world();
       const executor = w.principal('service', []);
       const id = await approved(w);
-      const db = w.db as DatabaseInterface & {
-        transaction: <T>(
-          fn: (tx: DatabaseInterface) => Promise<T>,
-        ) => Promise<T>;
-      };
       await expect(
         withTenant({ tenantId: w.tenantId }, () =>
-          db.transaction(async (tx) => {
-            const result = await w.service.consume(executor, id, 'rev-1', {
-              transaction: tx,
-            });
-            expect(result.outcome).toBe('transitioned');
-            throw new Error('domain write failed');
-          }),
+          withEmbeddedWriteTransaction(
+            w.db,
+            isEmbeddedDatabase(w.db),
+            async (tx) => {
+              const result = await w.service.consume(executor, id, 'rev-1', {
+                transaction: tx,
+              });
+              expect(result.outcome).toBe('transitioned');
+              throw new Error('domain write failed');
+            },
+          ),
         ),
       ).rejects.toThrow('domain write failed');
       expect((await w.service.getRequest(executor, id))?.isConsumed()).toBe(
