@@ -167,7 +167,13 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js",
       "default": "./dist/testing.js"
-    }
+    },
+    "./cookbook": {
+      "types": "./dist/cookbook/index.d.ts",
+      "import": "./dist/cookbook/index.js",
+      "default": "./dist/cookbook/index.js"
+    },
+    "./cookbook/v1.schema.json": "./dist/cookbook/v1.schema.json"
   },
   "browser": {
     "./dist/host.js": "./dist/host.browser.js",
@@ -202,7 +208,7 @@
     "test:postgres": "node scripts/generate-test-manifest.js && NODE_OPTIONS=--trace-deprecation node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run optional.test.ts",
     "test:integration": "TEST_INTEGRATION=1 vitest run src/__tests__/full-registry-integration.test.ts src/__tests__/manifest-no-leak.test.ts",
     "test:watch": "node scripts/generate-test-manifest.js && vitest",
-    "build": "node scripts/generate-manifest.js && vite build && cp -r src/vite-plugin/templates dist/vite-plugin/ && cp -r scripts dist/ && cp src/manifest/static-manifest.json dist/manifest.json && cp src/manifest/smrt-knowledge.json dist/smrt-knowledge.json",
+    "build": "node scripts/generate-manifest.js && vite build && cp -r src/vite-plugin/templates dist/vite-plugin/ && cp -r scripts dist/ && cp src/manifest/static-manifest.json dist/manifest.json && cp src/manifest/smrt-knowledge.json dist/smrt-knowledge.json && cp src/cookbook/v1.schema.json dist/cookbook/v1.schema.json",
     "build:watch": "vite build --watch",
     "clean": "rm -rf dist docs",
     "dev": "npm run build:watch & npm run test:watch",
@@ -231,6 +237,7 @@
     "@types/node": "24.13.6",
     "@types/pluralize": "^0.0.33",
     "@xenova/transformers": "^2.17.2",
+    "ajv": "8.20.0",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "6.0.3",

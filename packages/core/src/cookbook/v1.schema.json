@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+  "title": "SMRT cookbook v1",
+  "description": "What an app is made of: recipes, features, field policies, exposure, shell layout, theme and overview pages. New optional fields are added within v1; readers ignore unknown keys.",
+  "type": "object",
+  "required": ["version", "recipes", "policies"],
+  "properties": {
+    "$schema": {
+      "enum": [
+        "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "https://s-m-r-t.dev/schemas/blueprint/v1.json"
+      ]
+    },
+    "version": { "const": 1 },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "recipes": { "type": "array", "items": { "type": "string" } },
+    "features": { "type": "array", "items": { "type": "string" } },
+    "policies": { "type": "array", "items": { "$ref": "#/$defs/policyRow" } },
+    "exposure": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "enum": ["api", "mcp", "cli"] }
+      }
+    },
+    "layout": { "$ref": "#/$defs/layout" },
+    "theme": { "$ref": "#/$defs/theme" },
+    "overviews": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/overviewOverride" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "stringList": { "type": "array", "items": { "type": "string" } },
+    "policyRow": {
+      "type": "object",
+      "required": ["objectRef", "fieldName", "scopeType"],
+      "properties": {
+        "objectRef": { "type": "string", "minLength": 1 },
+        "fieldName": { "type": "string", "minLength": 1 },
+        "scopeType": { "const": "app" },
+        "defaultValue": { "type": ["string", "null"] },
+        "visibility": { "enum": ["basic", "advanced", "hidden", null] },
+        "help": { "type": ["string", "null"] },
+        "label": { "type": ["string", "null"] },
+        "displayOrder": { "type": ["number", "null"] },
+        "locked": { "type": ["boolean", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "layout": {
+      "type": "object",
+      "required": ["version"],
+      "properties": {
+        "version": { "const": 1 },
+        "sectionOrder": { "$ref": "#/$defs/stringList" },
+        "hidden": { "$ref": "#/$defs/stringList" },
+        "itemOrder": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/stringList" }
+        },
+        "moved": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "placements": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "sections": {
+          "type": "object",
+          "additionalProperties": { "type": "object" }
+        },
+        "items": {
+          "type": "object",
+          "additionalProperties": { "type": "object" }
+        },
+        "panels": {
+          "type": "object",
+          "additionalProperties": { "type": "object" }
+        },
+        "customSections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "label"],
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" }
+            }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "theme": {
+      "type": "object",
+      "properties": {
+        "preset": { "type": "string" },
+        "colorScheme": { "enum": ["light", "dark", "system"] },
+        "custom": {
+          "type": "object",
+          "required": ["primary"],
+          "properties": {
+            "primary": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+            "fontFamily": { "type": "string" }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "overviewOverride": {
+      "type": "object",
+      "required": ["version"],
+      "properties": {
+        "version": { "const": 1 },
+        "order": { "$ref": "#/$defs/stringList" },
+        "removed": { "$ref": "#/$defs/stringList" },
+        "added": { "type": "array", "items": { "type": "object" } },
+        "changed": {
+          "type": "object",
+          "additionalProperties": { "type": "object" }
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

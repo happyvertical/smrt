@@ -24,6 +24,16 @@ export type {
   CapabilityDeclaration,
   CapabilityEffect,
 } from './capability.js';
+// Cookbook v1 document contract (parser: smrt-core/cookbook)
+export type {
+  Cookbook,
+  CookbookExposureSurface,
+  CookbookFieldVisibility,
+  CookbookLayout,
+  CookbookOverviewOverride,
+  CookbookPolicyRow,
+  CookbookTheme,
+} from './cookbook.js';
 // Cross-package identity & tenancy data contracts (zero-runtime structural
 // interfaces; runtime classes live in smrt-users / smrt-profiles)
 export type {

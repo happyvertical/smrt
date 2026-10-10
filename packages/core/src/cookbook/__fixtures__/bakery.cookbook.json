@@ -1,0 +1,187 @@
+{
+  "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+  "version": 1,
+  "theme": {
+    "custom": {
+      "primary": "#b45309",
+      "fontFamily": "Georgia"
+    }
+  },
+  "recipes": [
+    "commerce.customers",
+    "commerce.invoicing",
+    "commerce.purchases",
+    "commerce.sales",
+    "commerce.vendors",
+    "commerce.wholesale",
+    "inventory.stock",
+    "ledgers.bookkeeping",
+    "products.ingredients",
+    "products.simple"
+  ],
+  "features": [
+    "@happyvertical/smrt-commerce:ProductionOrder"
+  ],
+  "policies": [
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Customer",
+      "fieldName": "paymentTerms",
+      "scopeType": "app",
+      "defaultValue": "\"Net 15\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Invoice",
+      "fieldName": "currency",
+      "scopeType": "app",
+      "defaultValue": "\"USD\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Invoice",
+      "fieldName": "terms",
+      "scopeType": "app",
+      "defaultValue": "\"Net 15\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Order",
+      "fieldName": "terms",
+      "scopeType": "app",
+      "defaultValue": "\"Net 15\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
+      "fieldName": "channelId",
+      "scopeType": "app",
+      "visibility": "hidden"
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
+      "fieldName": "customerId",
+      "scopeType": "app",
+      "visibility": "hidden"
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
+      "fieldName": "expiryDate",
+      "scopeType": "app",
+      "visibility": "hidden"
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
+      "fieldName": "vendorId",
+      "scopeType": "app",
+      "visibility": "hidden"
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+      "fieldName": "terms",
+      "scopeType": "app",
+      "defaultValue": "\"Net 15\""
+    }
+  ],
+  "layout": {
+    "version": 1,
+    "sectionOrder": [
+      "custom:shop",
+      "custom:wholesale",
+      "custom:kitchen",
+      "custom:buying",
+      "section:accounting"
+    ],
+    "itemOrder": {
+      "custom:shop": [
+        "item:commerce:Order",
+        "item:commerce:Customer"
+      ],
+      "custom:wholesale": [
+        "item:commerce:WholesaleOrder",
+        "item:commerce:Invoice",
+        "item:commerce:Payment"
+      ],
+      "custom:kitchen": [
+        "item:products:Product",
+        "item:products:Product:ingredients",
+        "item:inventory:StockLevel",
+        "item:commerce:ProductionOrder"
+      ],
+      "custom:buying": [
+        "item:commerce:Vendor",
+        "item:commerce:PurchaseOrder"
+      ]
+    },
+    "hidden": [
+      "item:inventory:InventoryLocation",
+      "item:inventory:StockMovement"
+    ],
+    "moved": {
+      "item:commerce:Order": "custom:shop",
+      "item:commerce:Customer": "custom:shop",
+      "item:commerce:WholesaleOrder": "custom:wholesale",
+      "item:commerce:Invoice": "custom:wholesale",
+      "item:commerce:Payment": "custom:wholesale",
+      "item:products:Product": "custom:kitchen",
+      "item:inventory:StockLevel": "custom:kitchen",
+      "item:commerce:ProductionOrder": "custom:kitchen",
+      "item:commerce:Vendor": "custom:buying",
+      "item:commerce:PurchaseOrder": "custom:buying",
+      "item:products:Product:ingredients": "custom:kitchen"
+    },
+    "customSections": [
+      {
+        "id": "custom:shop",
+        "label": "Shop"
+      },
+      {
+        "id": "custom:wholesale",
+        "label": "Wholesale"
+      },
+      {
+        "id": "custom:kitchen",
+        "label": "Kitchen"
+      },
+      {
+        "id": "custom:buying",
+        "label": "Buying"
+      }
+    ],
+    "items": {
+      "item:commerce:Order": {
+        "label": "Orders",
+        "description": "Orders from your shop and website customers."
+      },
+      "item:commerce:WholesaleOrder": {
+        "label": "Cafe orders",
+        "description": "Standing and one-off orders from cafes and shops."
+      },
+      "item:inventory:StockLevel": {
+        "label": "Stock",
+        "description": "Baked goods and supplies on hand today."
+      },
+      "item:commerce:ProductionOrder": {
+        "label": "Batches",
+        "description": "What you plan to bake, with the amounts and the day."
+      },
+      "item:commerce:Vendor": {
+        "label": "Suppliers",
+        "description": "The mills, dairies and suppliers you buy from."
+      },
+      "item:products:Product:ingredients": {
+        "label": "Ingredients",
+        "description": "Flour, butter, sugar and the rest, with costs and units."
+      }
+    },
+    "sections": {
+      "custom:shop": {
+        "icon": "shoppingBag"
+      },
+      "custom:wholesale": {
+        "icon": "briefcase"
+      },
+      "custom:kitchen": {
+        "icon": "package"
+      },
+      "custom:buying": {
+        "icon": "truck"
+      }
+    }
+  }
+}

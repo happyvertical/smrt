@@ -1,0 +1,177 @@
+{
+  "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+  "version": 1,
+  "theme": {
+    "preset": "studio"
+  },
+  "recipes": [
+    "commerce.agreements",
+    "commerce.customers",
+    "commerce.estimates",
+    "commerce.invoicing",
+    "commerce.purchases",
+    "commerce.sales",
+    "commerce.vendors",
+    "events.calendar",
+    "inventory.stock",
+    "ledgers.bookkeeping",
+    "products.simple"
+  ],
+  "features": [],
+  "policies": [
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Agreement",
+      "fieldName": "terms",
+      "scopeType": "app",
+      "defaultValue": "\"50% deposit, balance on completion\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Customer",
+      "fieldName": "paymentTerms",
+      "scopeType": "app",
+      "defaultValue": "\"50% deposit, balance on completion\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Estimate",
+      "fieldName": "terms",
+      "scopeType": "app",
+      "defaultValue": "\"50% deposit, balance on completion\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Invoice",
+      "fieldName": "currency",
+      "scopeType": "app",
+      "defaultValue": "\"USD\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Invoice",
+      "fieldName": "terms",
+      "scopeType": "app",
+      "defaultValue": "\"50% deposit, balance on completion\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Order",
+      "fieldName": "terms",
+      "scopeType": "app",
+      "defaultValue": "\"50% deposit, balance on completion\""
+    }
+  ],
+  "layout": {
+    "version": 1,
+    "sectionOrder": [
+      "custom:jobs",
+      "custom:material",
+      "custom:billing",
+      "custom:schedule",
+      "section:accounting"
+    ],
+    "itemOrder": {
+      "custom:jobs": [
+        "item:commerce:Order",
+        "item:commerce:Customer",
+        "item:commerce:Estimate",
+        "item:commerce:Agreement"
+      ],
+      "custom:material": [
+        "item:products:Product",
+        "item:inventory:StockLevel",
+        "item:commerce:Vendor",
+        "item:commerce:PurchaseOrder"
+      ],
+      "custom:billing": [
+        "item:commerce:Invoice",
+        "item:commerce:Payment"
+      ],
+      "custom:schedule": [
+        "item:events:Event",
+        "item:events:EventType"
+      ]
+    },
+    "hidden": [
+      "item:commerce:Contract",
+      "item:events:EventSeries",
+      "item:inventory:InventoryLocation",
+      "item:inventory:StockMovement"
+    ],
+    "moved": {
+      "item:commerce:Customer": "custom:jobs",
+      "item:commerce:Estimate": "custom:jobs",
+      "item:commerce:Agreement": "custom:jobs",
+      "item:products:Product": "custom:material",
+      "item:inventory:StockLevel": "custom:material",
+      "item:commerce:Vendor": "custom:material",
+      "item:commerce:PurchaseOrder": "custom:material",
+      "item:commerce:Invoice": "custom:billing",
+      "item:commerce:Payment": "custom:billing",
+      "item:events:Event": "custom:schedule",
+      "item:events:EventType": "custom:schedule",
+      "item:commerce:Order": "custom:jobs"
+    },
+    "customSections": [
+      {
+        "id": "custom:jobs",
+        "label": "Jobs"
+      },
+      {
+        "id": "custom:material",
+        "label": "Material"
+      },
+      {
+        "id": "custom:billing",
+        "label": "Billing"
+      },
+      {
+        "id": "custom:schedule",
+        "label": "Schedule"
+      }
+    ],
+    "items": {
+      "item:commerce:Estimate": {
+        "label": "Quotes",
+        "description": "Quotes for jobs, ready to turn into orders when accepted."
+      },
+      "item:products:Product": {
+        "label": "Materials",
+        "description": "Steel, rod, gas and other materials you stock and charge for."
+      },
+      "item:inventory:StockLevel": {
+        "label": "Material on hand",
+        "description": "Material on hand, so you know what to buy before the next job."
+      },
+      "item:commerce:Vendor": {
+        "label": "Suppliers",
+        "description": "The suppliers you buy metal and gas from."
+      },
+      "item:commerce:PurchaseOrder": {
+        "label": "Material orders",
+        "description": "Material you have ordered and when it lands."
+      },
+      "item:events:Event": {
+        "label": "Site visits",
+        "description": "Visits to measure, quote or install on site, by day."
+      },
+      "item:events:EventType": {
+        "label": "Visit types",
+        "description": "The kinds of visit you make, like a quote visit or install."
+      },
+      "item:commerce:Order": {
+        "label": "Jobs",
+        "description": "Every job you have won, from start to final invoice."
+      }
+    },
+    "sections": {
+      "custom:jobs": {
+        "icon": "wrench"
+      },
+      "custom:material": {
+        "icon": "layers"
+      },
+      "custom:billing": {
+        "icon": "receipt"
+      },
+      "custom:schedule": {
+        "icon": "calendar"
+      }
+    }
+  }
+}
