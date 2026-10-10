@@ -18,6 +18,8 @@ import {
   createRecipeIndex,
   loadManifestPath,
   loadRegistryManifest,
+  manifestPathForPackageDir,
+  registryForPackage,
   resolveRecipeIndex,
 } from '../cookbook/recipe-index.js';
 import {
@@ -147,6 +149,16 @@ const doc = (extra: Record<string, unknown>) =>
 
 const readJson = (file: string) => JSON.parse(readFileSync(file, 'utf-8'));
 
+/** Validate against the real workspace manifests (built locally). */
+async function validateReal(text: string) {
+  const index = await resolveRecipeIndex(parseForResolution(text), {
+    dir: dirname(fileURLToPath(import.meta.url)),
+    registry: false,
+  });
+  return validateCookbookText(text, index);
+}
+
+/** Validate against stub manifests, for error cases. */
 async function validate(text: string) {
   const index = await resolveRecipeIndex(parseForResolution(text), {
     dir: work,
@@ -170,11 +182,14 @@ afterEach(() => {
 });
 
 describe('cookbook validate', () => {
-  it.each(FIXTURES)('accepts the %s cookbook', async (name) => {
-    const report = await validate(readFixture(name));
+  it.each(
+    FIXTURES,
+  )('accepts the %s cookbook (real manifests)', async (name) => {
+    const report = await validateReal(readFixture(name));
     expect(report.errors).toEqual([]);
     expect(report.ok).toBe(true);
     expect(report.packages).toContain('@happyvertical/smrt-commerce');
+    expect(report.packages).toContain('@happyvertical/smrt-products');
   });
 
   it('rejects an unknown recipe', async () => {
@@ -253,7 +268,8 @@ describe('cookbook apply', () => {
     dir: string,
     extra: Partial<Parameters<typeof applyCookbook>[0]> = {},
   ) {
-    const report = await validate(readFixture(name));
+    const report = await validateReal(readFixture(name));
+    expect(report.errors).toEqual([]);
     expect(report.ok).toBe(true);
     return {
       report,
@@ -301,6 +317,7 @@ describe('cookbook apply', () => {
       recipes: ['commerce.customers'],
     });
     const report = await validate(text);
+    expect(report.ok).toBe(true);
     applyCookbook({
       cookbook: report.cookbook as Cookbook,
       packages: report.packages,
@@ -397,9 +414,13 @@ describe('cookbook apply', () => {
 });
 
 describe('registry fallback', () => {
-  it('reads dist/manifest.json from the package tarball', async () => {
-    const pkgDir = join(work, 'tarball', 'package', 'dist');
+  it('reads the exported manifest from the package tarball', async () => {
+    const pkgDir = join(work, 'tarball', 'package', 'dist', 'lib');
     mkdirSync(pkgDir, { recursive: true });
+    writeFileSync(
+      join(work, 'tarball', 'package', 'package.json'),
+      JSON.stringify({ exports: { './manifest': './dist/lib/manifest.json' } }),
+    );
     writeFileSync(
       join(pkgDir, 'manifest.json'),
       JSON.stringify({
@@ -445,5 +466,48 @@ describe('registry fallback', () => {
     expect(urls[0]).toBe(
       'https://registry.example/@happyvertical%2Fsmrt-widgets/0.5.0',
     );
+  });
+});
+
+describe('manifest and registry resolution', () => {
+  it('resolves the manifest through package.json exports, then fallbacks', () => {
+    const lib = join(work, 'lib-pkg');
+    mkdirSync(join(lib, 'dist', 'lib'), { recursive: true });
+    writeFileSync(join(lib, 'dist', 'lib', 'manifest.json'), '{}');
+    writeFileSync(
+      join(lib, 'package.json'),
+      JSON.stringify({ exports: { './manifest': './dist/lib/manifest.json' } }),
+    );
+    expect(manifestPathForPackageDir(lib)).toBe(
+      join(lib, 'dist', 'lib', 'manifest.json'),
+    );
+    const plain = join(work, 'plain-pkg');
+    mkdirSync(join(plain, 'dist'), { recursive: true });
+    writeFileSync(join(plain, 'dist', 'manifest.json'), '{}');
+    expect(manifestPathForPackageDir(plain)).toBe(
+      join(plain, 'dist', 'manifest.json'),
+    );
+    expect(manifestPathForPackageDir(join(work, 'nope'))).toBeNull();
+  });
+
+  it('reads the scope registry from .npmrc before npm_config_registry', () => {
+    writeFileSync(
+      join(work, '.npmrc'),
+      '@happyvertical:registry=https://npm.example.test/\n//npm.example.test/:_authToken=sekret\n',
+    );
+    vi.stubEnv('npm_config_registry', 'https://env.example.test/');
+    expect(registryForPackage('@happyvertical/smrt-products', work)).toEqual({
+      url: 'https://npm.example.test',
+      token: 'sekret',
+    });
+    vi.unstubAllEnvs();
+  });
+
+  it('falls back to npm_config_registry for an unscoped package', () => {
+    vi.stubEnv('npm_config_registry', 'https://env.example.test/');
+    expect(registryForPackage('left-pad', work).url).toBe(
+      'https://env.example.test',
+    );
+    vi.unstubAllEnvs();
   });
 });

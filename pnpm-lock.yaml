@@ -913,6 +913,18 @@ importers:
         specifier: ^7.5.22
         version: 7.5.22
     devDependencies:
+      '@happyvertical/smrt-commerce':
+        specifier: workspace:*
+        version: link:../commerce
+      '@happyvertical/smrt-events':
+        specifier: workspace:*
+        version: link:../events
+      '@happyvertical/smrt-inventory':
+        specifier: workspace:*
+        version: link:../inventory
+      '@happyvertical/smrt-products':
+        specifier: workspace:*
+        version: link:../products
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2

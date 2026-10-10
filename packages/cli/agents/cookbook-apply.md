@@ -7,15 +7,19 @@ Code: `src/commands/cookbook.ts` (registration), `src/commands/cookbook/`
 ## Recipe index
 
 Recipes and the objects policies point at come from each package's published
-`dist/manifest.json` (`recipes[]`, `objects`), read in order:
+manifest (`recipes[]`, `objects`), found through its `package.json`
+`exports['./manifest']` (`dist/lib/manifest.json` for SvelteKit-library packages such as
+products), falling back to `dist/manifest.json`, `dist/lib/manifest.json`, `manifest.json`. Read in order:
 
 1. `--manifests <file|dir>` (repeatable): a manifest, a dir of manifests, or a dir of package dirs.
-2. The SMRT workspace around the target (`packages/*/dist/manifest.json`).
-3. `node_modules/@happyvertical/smrt-*/dist/manifest.json` walking up from the target.
-4. The npm registry (`SMRT_REGISTRY_URL` / `npm_config_registry`), only for
+2. The SMRT workspace around the target (`packages/*`).
+3. `node_modules/@happyvertical/smrt-*` walking up from the target.
+4. The package's registry, resolved as npm does (`@scope:registry` from the `.npmrc` chain or `npm config`,
+   then `npm_config_registry`, then npmjs; an `_authToken` for that host is sent). `@happyvertical` resolves to
+   npm.happyvertical.com, since npmjs lags. Only for
    packages still unresolved: `@happyvertical/smrt-<recipe-id prefix>` and the
    packages named by `features`/`policies`. The tarball is fetched and only
-   `dist/manifest.json` is extracted; nothing is installed. `--no-registry` skips it.
+   the manifest is extracted; nothing is installed. `--no-registry` skips it.
 
 `validate` fails (exit 1, `--json` for machines) on: structural errors (core's
 `validateCookbook`), unknown recipe ids, a `requires` id missing from the

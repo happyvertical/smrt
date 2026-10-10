@@ -1,14 +1,15 @@
 /**
  * Recipe index for `smrt cookbook validate|apply` (#3748).
  *
- * Source of truth: each package's published `dist/manifest.json` (the
- * `./manifest` export), which carries `recipes[]` and the `objects` the
+ * Source of truth: each package's published manifest (its
+ * `./manifest` export; `dist/manifest.json` or `dist/lib/manifest.json`), which carries `recipes[]` and the `objects` the
  * cookbook's policies and features point at. Manifests are read from, in
  * order: explicit `--manifests` paths, the SMRT workspace around the working
  * directory, the project's `node_modules`, and finally (opt-out with
  * `--no-registry`) the npm registry for packages that are not installed yet.
  */
 
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -17,7 +18,7 @@ import {
   readFileSync,
   statSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { extract } from 'tar';
@@ -122,6 +123,47 @@ export function addManifest(
   return true;
 }
 
+const MANIFEST_FALLBACKS = [
+  'dist/manifest.json',
+  'dist/lib/manifest.json',
+  'manifest.json',
+];
+
+function exportTarget(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return exportTarget(record.default ?? record.import ?? record.require);
+  }
+  return undefined;
+}
+
+/**
+ * A package directory's manifest file: its `exports['./manifest']` (or
+ * `./manifest.json`) target, else the known locations. SvelteKit-library
+ * packages publish at `dist/lib/manifest.json`, not `dist/manifest.json`.
+ */
+export function manifestPathForPackageDir(dir: string): string | null {
+  try {
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8'));
+    const exports = pkg.exports as Record<string, unknown> | undefined;
+    const target =
+      exportTarget(exports?.['./manifest']) ??
+      exportTarget(exports?.['./manifest.json']);
+    if (target) {
+      const file = resolve(dir, target);
+      if (existsSync(file)) return file;
+    }
+  } catch {
+    // no readable package.json: use the fallbacks
+  }
+  for (const relative of MANIFEST_FALLBACKS) {
+    const file = join(dir, relative);
+    if (existsSync(file)) return file;
+  }
+  return null;
+}
+
 function readManifestFile(
   index: RecipeIndex,
   file: string,
@@ -155,23 +197,18 @@ export function loadManifestPath(
     readManifestFile(index, target, warn);
     return;
   }
-  for (const candidate of [
-    join(target, 'dist', 'manifest.json'),
-    join(target, 'manifest.json'),
-  ]) {
-    if (existsSync(candidate)) {
-      readManifestFile(index, candidate, warn);
-      return;
-    }
+  const own = manifestPathForPackageDir(target);
+  if (own) {
+    readManifestFile(index, own, warn);
+    return;
   }
   for (const entry of readdirSync(target).sort()) {
     const child = join(target, entry);
     if (entry.endsWith('.json')) {
       readManifestFile(index, child, warn);
-    } else if (existsSync(join(child, 'dist', 'manifest.json'))) {
-      readManifestFile(index, join(child, 'dist', 'manifest.json'), warn);
-    } else if (existsSync(join(child, 'manifest.json'))) {
-      readManifestFile(index, join(child, 'manifest.json'), warn);
+    } else if (statSync(child).isDirectory()) {
+      const file = manifestPathForPackageDir(child);
+      if (file) readManifestFile(index, file, warn);
     }
   }
 }
@@ -202,8 +239,8 @@ export function loadLocalManifests(
   if (workspace) {
     const packagesDir = join(workspace, 'packages');
     for (const entry of readdirSync(packagesDir).sort()) {
-      const manifest = join(packagesDir, entry, 'dist', 'manifest.json');
-      if (existsSync(manifest)) readManifestFile(index, manifest, warn);
+      const manifest = manifestPathForPackageDir(join(packagesDir, entry));
+      if (manifest) readManifestFile(index, manifest, warn);
     }
   }
   let current = resolve(dir);
@@ -212,8 +249,8 @@ export function loadLocalManifests(
     if (existsSync(scope)) {
       for (const entry of readdirSync(scope).sort()) {
         if (!entry.startsWith(PACKAGE_PREFIX)) continue;
-        const manifest = join(scope, entry, 'dist', 'manifest.json');
-        if (existsSync(manifest)) readManifestFile(index, manifest, warn);
+        const manifest = manifestPathForPackageDir(join(scope, entry));
+        if (manifest) readManifestFile(index, manifest, warn);
       }
     }
     const parent = dirname(current);
@@ -251,22 +288,88 @@ export type FetchLike = (
 }>;
 
 export interface RegistryOptions {
+  /** Force one registry for every package (tests, mirrors). */
   registryUrl?: string;
+  /** Directory whose `.npmrc` chain is consulted. */
+  dir?: string;
   /** Exact version to try first (the framework line); falls back to latest. */
   versionHint?: string;
   fetchImpl?: FetchLike;
 }
 
-export function defaultRegistryUrl(): string {
-  return (
-    process.env.SMRT_REGISTRY_URL ||
+interface NpmrcEntries {
+  values: Map<string, string>;
+}
+
+function expandEnv(value: string): string {
+  return value.replace(/\$\{([^}]+)\}/g, (_m, name) => process.env[name] ?? '');
+}
+
+/** Parse the `.npmrc` chain: project files up the tree first, then the user's. */
+function readNpmrcChain(dir: string): NpmrcEntries {
+  const files: string[] = [];
+  let current = resolve(dir);
+  while (true) {
+    files.push(join(current, '.npmrc'));
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  files.push(join(homedir(), '.npmrc'));
+  const values = new Map<string, string>();
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    for (const line of readFileSync(file, 'utf-8').split(/\r?\n/)) {
+      const match = /^\s*([^#;=\s][^=]*?)\s*=\s*(.*?)\s*$/.exec(line);
+      if (match && !values.has(match[1])) {
+        values.set(match[1], expandEnv(match[2]));
+      }
+    }
+  }
+  return { values };
+}
+
+const trimSlash = (url: string) => url.replace(/\/+$/, '');
+
+/**
+ * The registry for a package, the way npm and pnpm pick it: the scope's
+ * `@scope:registry` (`.npmrc` chain, then `npm config`), then
+ * `npm_config_registry`, then an unscoped `registry=`, then npmjs.
+ * Also returns an auth token configured for that registry's host.
+ */
+export function registryForPackage(
+  packageName: string,
+  dir: string = process.cwd(),
+): { url: string; token?: string } {
+  const scope = packageName.startsWith('@') ? packageName.split('/')[0] : null;
+  const rc = readNpmrcChain(dir);
+  let url = scope ? rc.values.get(`${scope}:registry`) : undefined;
+  if (scope && !url) {
+    try {
+      const out = execFileSync('npm', ['config', 'get', `${scope}:registry`], {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 10_000,
+      }).trim();
+      if (/^https?:\/\//.test(out)) url = out;
+    } catch {
+      // npm unavailable: fall through
+    }
+  }
+  url ||=
     process.env.npm_config_registry ||
-    'https://registry.npmjs.org'
-  ).replace(/\/+$/, '');
+    rc.values.get('registry') ||
+    'https://registry.npmjs.org/';
+  url = trimSlash(url);
+  const hostPath = url.replace(/^https?:/, '');
+  const token =
+    rc.values.get(`${hostPath}/:_authToken`) ??
+    rc.values.get(`${hostPath.replace(/\/[^/]*$/, '')}/:_authToken`);
+  return { url, token: token || undefined };
 }
 
 /**
- * Fetch a package's `dist/manifest.json` from the registry without
+ * Fetch a package's manifest from the registry that owns its scope, without
  * installing it. Returns false when the package or its manifest is missing.
  */
 export async function loadRegistryManifest(
@@ -275,7 +378,13 @@ export async function loadRegistryManifest(
   options: RegistryOptions = {},
 ): Promise<boolean> {
   const fetchImpl = options.fetchImpl ?? (fetch as unknown as FetchLike);
-  const base = options.registryUrl ?? defaultRegistryUrl();
+  const resolved = options.registryUrl
+    ? { url: trimSlash(options.registryUrl), token: undefined }
+    : registryForPackage(packageName, options.dir);
+  const base = resolved.url;
+  const headers: Record<string, string> = resolved.token
+    ? { authorization: `Bearer ${resolved.token}` }
+    : {};
   const encoded = packageName.replace('/', '%2F');
   interface RegistryMeta {
     version?: string;
@@ -285,7 +394,9 @@ export async function loadRegistryManifest(
   for (const version of [options.versionHint, 'latest']) {
     if (!version) continue;
     try {
-      const response = await fetchImpl(`${base}/${encoded}/${version}`);
+      const response = await fetchImpl(`${base}/${encoded}/${version}`, {
+        headers,
+      });
       if (response.ok) {
         meta = (await response.json()) as RegistryMeta;
         break;
@@ -296,14 +407,15 @@ export async function loadRegistryManifest(
   }
   const tarball = meta?.dist?.tarball;
   if (!tarball) return false;
-  const response = await fetchImpl(tarball);
+  const response = await fetchImpl(tarball, { headers });
   if (!response.ok) return false;
   const work = mkdtempSync(join(tmpdir(), 'smrt-cookbook-'));
   mkdirSync(work, { recursive: true });
   await new Promise<void>((done, fail) => {
     const sink = extract({
       cwd: work,
-      filter: (path) => path === 'package/dist/manifest.json',
+      filter: (path) =>
+        path === 'package/package.json' || path.endsWith('manifest.json'),
     });
     sink.on('close', () => done());
     sink.on('error', fail);
@@ -311,8 +423,8 @@ export async function loadRegistryManifest(
       Readable.from(Buffer.from(buffer)).pipe(sink);
     }, fail);
   });
-  const file = join(work, 'package', 'dist', 'manifest.json');
-  if (!existsSync(file)) return false;
+  const file = manifestPathForPackageDir(join(work, 'package'));
+  if (!file) return false;
   return addManifest(
     index,
     JSON.parse(readFileSync(file, 'utf-8')),
@@ -383,11 +495,10 @@ export async function resolveRecipeIndex(
     const needed = neededPackages(index, cookbook);
     if (needed.length === 0) break;
     for (const name of needed) {
-      const loaded = await loadRegistryManifest(
-        index,
-        name,
-        options.registryOptions,
-      );
+      const loaded = await loadRegistryManifest(index, name, {
+        dir: options.dir,
+        ...options.registryOptions,
+      });
       if (!loaded) index.missing.add(name);
     }
   }

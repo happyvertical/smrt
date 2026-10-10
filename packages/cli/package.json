@@ -60,6 +60,10 @@
     "ajv": "8.20.0"
   },
   "devDependencies": {
+    "@happyvertical/smrt-commerce": "workspace:*",
+    "@happyvertical/smrt-events": "workspace:*",
+    "@happyvertical/smrt-inventory": "workspace:*",
+    "@happyvertical/smrt-products": "workspace:*",
     "@types/node": "24.13.6",
     "tsx": "^4.23.13",
     "typescript": "6.0.3",
