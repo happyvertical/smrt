@@ -4,6 +4,7 @@ import {
   type OAuthAuthorizationCodeGrant,
   type OAuthRefreshGrant,
 } from '@happyvertical/auth/server';
+import { getRetentionTasks } from '@happyvertical/smrt-core';
 import {
   createIsolatedTestDbFromManifest,
   getTestDbConfig,
@@ -28,8 +29,17 @@ import { RolePermissionCollection } from '../collections/RolePermissionCollectio
 import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
+import {
+  OAUTH_CREDENTIALS_RETENTION_TASK,
+  registerUserRetentionTasks,
+  unregisterUserRetentionTasks,
+} from '../retention.js';
 import { SmrtOAuthAuthorizationService } from '../services/OAuthAuthorizationService.js';
 import { SmrtOAuthAuthorizationStorage } from '../services/OAuthAuthorizationStorage.js';
+import {
+  OAUTH_REFRESH_REPLAY_RETENTION_MS,
+  pruneOAuthCredentials,
+} from '../services/oauth-retention.js';
 import { SessionService } from '../services/SessionService.js';
 import { createOAuthHandlers } from '../sveltekit/oauth-handlers.js';
 import { MembershipStatus, TenantStatus, UserStatus } from '../types/index.js';
@@ -114,6 +124,7 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
   let storage: SmrtOAuthAuthorizationStorage;
   let replica: SmrtOAuthAuthorizationStorage;
   let connections: DatabaseInterface[];
+  let reconnect: () => Promise<DatabaseInterface>;
   beforeEach(async () => {
     isolated = await createIsolatedTestDbFromManifest({
       includeObjects: objects,
@@ -138,6 +149,7 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
         await db.query('PRAGMA foreign_keys = ON');
       return db;
     };
+    reconnect = recoverDatabase;
     storage = await SmrtOAuthAuthorizationStorage.create({
       db: isolated.baseDb,
       recoverDatabase,
@@ -153,6 +165,196 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
         db as DatabaseInterface & { close?: () => Promise<void> }
       ).close?.();
     await isolated?.cleanup();
+  });
+
+  it('registers OAuth retention and previews expiry without mutating live authority', async () => {
+    const now = new Date();
+    const old = new Date(
+      now.getTime() - OAUTH_REFRESH_REPLAY_RETENTION_MS - 1000,
+    );
+    const expiredCode = { ...code(), expiresAt: old };
+    const liveCode = code();
+    await storage.createAuthorizationCode(expiredCode);
+    await storage.createAuthorizationCode(liveCode);
+    await storage.revokeAccessToken({ jti: 'expired', expiresAt: old });
+    await storage.revokeAccessToken({ jti: 'live', expiresAt: expiresAt() });
+    const dead = { ...refresh(), expiresAt: old };
+    const grace = { ...refresh(), expiresAt: new Date(now.getTime() - 1000) };
+    const live = refresh();
+    await storage.createRefreshGrant(dead);
+    await storage.createRefreshGrant(grace);
+    await storage.createRefreshGrant(live);
+    const db = isolated.baseDb;
+    const before = await db.query(
+      'SELECT * FROM users_oauth_refresh_families ORDER BY id',
+    );
+    registerUserRetentionTasks();
+    const task = getRetentionTasks().find(
+      (entry) => entry.name === OAUTH_CREDENTIALS_RETENTION_TASK,
+    );
+    if (!task) throw new Error('OAuth retention task was not registered');
+    expect(await task.run(db, { dryRun: true, now })).toBe(4);
+    expect(
+      (await db.query('SELECT * FROM users_oauth_refresh_families ORDER BY id'))
+        .rows,
+    ).toEqual(before.rows);
+    expect(await task.run(db, { dryRun: false, now })).toBe(4);
+    expect(await pruneOAuthCredentials(db, { now })).toBe(0);
+    expect(
+      (await db.query('SELECT id FROM users_oauth_refresh_grants')).rows,
+    ).toHaveLength(2);
+    expect(await storage.isAccessTokenRevoked('live', now)).toBe(true);
+    expect(
+      (await storage.consumeAuthorizationCode({ ...liveCode, now })).status,
+    ).toBe('consumed');
+    expect(
+      (
+        await storage.rotateRefreshGrant({
+          ...live,
+          replacement: replacement(),
+          now,
+        })
+      ).status,
+    ).toBe('rotated');
+    unregisterUserRetentionTasks();
+    expect(
+      getRetentionTasks().some(
+        (entry) => entry.name === OAUTH_CREDENTIALS_RETENTION_TASK,
+      ),
+    ).toBe(false);
+  });
+
+  it('bounds old family history while preserving valid and grace-window replay detection', async () => {
+    const now = new Date();
+    const old = {
+      ...refresh(),
+      expiresAt: new Date(
+        now.getTime() - OAUTH_REFRESH_REPLAY_RETENTION_MS - 1000,
+      ),
+    };
+    await storage.createRefreshGrant(old);
+    const live = replacement();
+    // Model a long-lived family: this rotation happened before the old expiry.
+    expect(
+      (
+        await storage.rotateRefreshGrant({
+          ...old,
+          replacement: live,
+          now: new Date(old.expiresAt.getTime() - 1000),
+        })
+      ).status,
+    ).toBe('rotated');
+    expect(await pruneOAuthCredentials(isolated.baseDb, { now })).toBe(1);
+    expect(
+      (
+        await storage.rotateRefreshGrant({
+          ...live,
+          clientId: old.clientId,
+          replacement: replacement(),
+          now,
+        })
+      ).status,
+    ).toBe('rotated');
+    // The live consumed hash survives cleanup and replay still revokes all descendants.
+    await pruneOAuthCredentials(isolated.baseDb, { now });
+    expect(
+      (
+        await replica.rotateRefreshGrant({
+          ...live,
+          clientId: old.clientId,
+          replacement: replacement(),
+          now,
+        })
+      ).status,
+    ).toBe('replayed');
+    const grace = { ...refresh(), expiresAt: new Date(now.getTime() - 1000) };
+    await storage.createRefreshGrant(grace);
+    await storage.rotateRefreshGrant({
+      ...grace,
+      replacement: replacement(),
+      now: new Date(grace.expiresAt.getTime() - 1000),
+    });
+    await pruneOAuthCredentials(isolated.baseDb, { now });
+    expect(
+      (
+        await replica.rotateRefreshGrant({
+          ...grace,
+          replacement: replacement(),
+          now,
+        })
+      ).status,
+    ).toBe('replayed');
+  });
+
+  it('serializes cleanup with rotation without orphaning the replacement family', async () => {
+    const now = new Date();
+    const old = {
+      ...refresh(),
+      expiresAt: new Date(
+        now.getTime() - OAUTH_REFRESH_REPLAY_RETENTION_MS - 1000,
+      ),
+    };
+    await storage.createRefreshGrant(old);
+    const live = replacement();
+    await storage.rotateRefreshGrant({
+      ...old,
+      replacement: live,
+      now: new Date(old.expiresAt.getTime() - 1000),
+    });
+    const next = replacement();
+    const [swept, rotated] = await Promise.allSettled([
+      pruneOAuthCredentials(await reconnect(), { now }),
+      replica.rotateRefreshGrant({
+        ...live,
+        clientId: old.clientId,
+        replacement: next,
+        now,
+      }),
+    ]);
+    expect(rotated.status).toBe('fulfilled');
+    if (rotated.status !== 'fulfilled') throw rotated.reason;
+    expect(rotated.value.status).toBe('rotated');
+    if (swept.status === 'rejected') {
+      // SQLite deliberately invalidates a connection on contended rollback.
+      // The sweep reports failure instead of reusing it or deleting unsafely;
+      // its host must acquire a fresh connection before retrying.
+      expect(isolated.config.type).toBe('sqlite');
+      const failures: Array<{
+        code?: string;
+        connectionInvalidated?: boolean;
+        message?: string;
+      }> = [];
+      for (
+        let failure = swept.reason;
+        failure && failures.length < 6;
+        failure = failure.cause
+      ) {
+        failures.push({
+          code: failure.code,
+          connectionInvalidated: failure.connectionInvalidated,
+          message: failure.message,
+        });
+      }
+      expect(failures).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'SQLITE_BUSY',
+            connectionInvalidated: true,
+          }),
+        ]),
+      );
+      await pruneOAuthCredentials(await reconnect(), { now });
+    }
+    expect(
+      (
+        await storage.rotateRefreshGrant({
+          ...next,
+          clientId: old.clientId,
+          replacement: replacement(),
+          now,
+        })
+      ).status,
+    ).toBe('rotated');
   });
 
   it('persists client metadata and allows exactly one concurrent code consume', async () => {
