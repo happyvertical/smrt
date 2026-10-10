@@ -43,7 +43,14 @@ export function getCoreEntries() {
     }
 
     // Convert export key to entry name: '.' → 'index', './fields' → 'fields'
-    const entryName = key === '.' ? 'index' : key.replace(/^\.\//, '');
+    // A directory index export (`./dist/cookbook/index.js`) keeps its path so
+    // the built file lands where the exports map points.
+    const entryName =
+      key === '.'
+        ? 'index'
+        : exportPath.endsWith('/index.js')
+          ? exportPath.replace(/^\.\/dist\//, '').replace(/\.js$/, '')
+          : key.replace(/^\.\//, '');
 
     // Convert dist path to source path: './dist/fields.js' → 'src/fields.ts'
     const sourcePath = exportPath

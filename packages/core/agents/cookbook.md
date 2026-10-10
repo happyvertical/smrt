@@ -32,3 +32,13 @@ planner-side.
   the rest is the CLI's job.
 - Keep the JSON Schema and `validate.ts` in step; the test validates the same
   fixtures against both.
+
+## Applying a cookbook
+
+`smrt cookbook validate <file|url>` and `smrt cookbook apply <file|url> [dir]`
+(`packages/cli/agents/cookbook-apply.md`) are the consumers. Apply writes
+`smrt.cookbook.json` at the project root, plus the packages the recipes,
+features and policies need, into `package.json`. The file is the cookbook
+verbatim (legacy `$schema` rewritten); apps read it, apply does not interpret it.
+`policies` is required by the validator (use `[]`). The cookbook carries no package
+versions, so apply uses the project's smrt line.

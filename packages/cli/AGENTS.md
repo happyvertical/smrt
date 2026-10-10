@@ -40,6 +40,7 @@ smrt generate-types          # Generate TypeScript declarations (alias: generate
 smrt generate-routes         # Generate SvelteKit API routes (aliases: routes, generate:routes)
 smrt config:export           # Export agent config for SSG
 smrt init                    # Init new project
+smrt cookbook validate|apply # Cookbook check / project create: agents/cookbook-apply.md
 smrt gnode                   # Scaffold gnode site
 smrt dispatch:*              # Dispatch management (list/process/retry/cleanup)
 smrt app <op>                # App install/setup/start/migrate/worker…: agents/app-commands.md
@@ -120,25 +121,13 @@ included using the generator's own exhaustive-include rule.
 `renderAgentSurfaceReport(report)` returns the printed lines; both are exported
 so the shape is testable without running the command.
 
-**Known live over-exposure for an STI class with a bare `true`/omitted
-`mcp`/`cli` config, tracked as #2624:** the *scanner's* STI method merge in
-`manifest-generator.ts` walks the full inheritance chain unconditionally, so
-an STI class's `object.methods` already (incorrectly) contains its framework
-base classes' own internal methods (`save`, `toJSON`, `withTransaction`,
-`generateEmbeddings`, `destroy`, ...). This is not only a manifest
-artifact concern: `ObjectRegistry.getAllMethods()`'s runtime chain walk
-(`registry/inheritance-resolver.ts`) never actually filters it back out —
-its `SmrtObject`/`SmrtClass`/`SmrtCollection` ancestor-skip only fires for a
-chain entry literally named one of those three, and `getInheritanceChain()`
-already stops *before* adding such an ancestor to the chain, so that name
-never appears there to be skipped. The STI class itself is always the last
-chain entry, contributing its own (already-polluted) `methods` map
-unfiltered. So `CLIGenerator`/`MCPGenerator` genuinely register
-`<object>:save`, `<object>:withTransaction`, etc. as real, callable
-commands/tools **today, in a running application** — `configuredSurfaces()`
-here is reporting a real exposed surface, not fabricating one. #2624 tracks
-narrowing the scanner's STI method merge (or making the runtime skip
-actually reachable).
+**Known live over-exposure (#2624):** the scanner's STI method merge walks the full
+inheritance chain, so an STI class's `object.methods` contains its framework base
+classes' internal methods (`save`, `toJSON`, `withTransaction`, `destroy`, ...), and
+`ObjectRegistry.getAllMethods()` never filters them back out (its ancestor skip
+cannot fire: `getInheritanceChain()` stops before adding those ancestors). So
+`CLIGenerator`/`MCPGenerator` really register `<object>:save` etc. in a running
+app; `configuredSurfaces()` reports a real surface. #2624 tracks the fix.
 
 Sample output:
 
