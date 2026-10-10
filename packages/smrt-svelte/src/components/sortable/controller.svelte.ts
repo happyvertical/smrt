@@ -88,6 +88,15 @@ export interface SortableControllerOptions {
    */
   orientation?: () => 'horizontal' | 'vertical';
   /**
+   * `true` for a single list laid out as a wrapping flow (a CSS grid of
+   * tiles): every arrow key steps one position along the reading order
+   * (Left/Right mirrored in right-to-left), and a pointer drop over an item
+   * that shares its row with others decides before/after by the horizontal
+   * midpoint; an item that fills the row (stacked layouts) still uses the
+   * vertical midpoint.
+   */
+  flow?: () => boolean;
+  /**
    * Persist a move. May be async; a rejection restores the presentation and
    * is announced. The engine allows the next move only after it settles.
    */
@@ -226,6 +235,14 @@ export class SortableController {
     if (drag?.mode !== 'keyboard') return;
     const vertical = this.options.orientation?.() === 'vertical';
     const target = { ...drag.target };
+    if (this.options.flow?.()) {
+      const mirrored = direction === 'horizontal' && this.isRtl();
+      const max = this.itemsIn(target.containerId, drag.itemId).length;
+      target.index = clamp(target.index + (mirrored ? -delta : delta), max);
+      this.drag = { ...drag, target };
+      this.announcePosition(this.drag);
+      return;
+    }
     // With same-container reordering off, the source container pins the
     // position (as it does for pointer moves): a vertical step leaves it.
     const pinned =
@@ -277,6 +294,15 @@ export class SortableController {
     }
     this.drag = { ...drag, target };
     this.announcePosition(this.drag);
+  }
+
+  private isRtl(): boolean {
+    const root = this.options.root();
+    return (
+      root !== undefined &&
+      typeof getComputedStyle === 'function' &&
+      getComputedStyle(root).direction === 'rtl'
+    );
   }
 
   async drop(): Promise<void> {
@@ -446,6 +472,7 @@ export class SortableController {
   private setPointerTargetFromElement(
     element: Element | null,
     clientY: number,
+    clientX?: number,
   ): SortableContainerInfo | undefined {
     // Container ids belong to the host's domain and may repeat in another
     // instance. Pointer hit-testing must never escape this one's root.
@@ -471,7 +498,7 @@ export class SortableController {
     if (rawIndex < 0) return container;
     this.pointerTarget(
       containerId,
-      this.insertionIndex(containerId, rawIndex, itemElement, clientY),
+      this.insertionIndex(containerId, rawIndex, itemElement, clientY, clientX),
     );
     return container;
   }
@@ -482,9 +509,18 @@ export class SortableController {
     rawIndex: number,
     itemElement: Element,
     clientY: number,
+    clientX?: number,
   ): number {
     const rect = itemElement.getBoundingClientRect();
-    const before = clientY < rect.top + rect.height / 2;
+    let before = clientY < rect.top + rect.height / 2;
+    if (this.options.flow?.() && clientX !== undefined) {
+      const rootWidth = this.options.root()?.getBoundingClientRect().width ?? 0;
+      // A tile narrower than the list shares its row: order is horizontal.
+      if (rect.width < rootWidth * 0.95) {
+        const mid = rect.left + rect.width / 2;
+        before = this.isRtl() ? clientX > mid : clientX < mid;
+      }
+    }
     let targetIndex = rawIndex + (before ? 0 : 1);
     const drag = this.drag;
     if (
@@ -511,6 +547,7 @@ export class SortableController {
     const container = this.setPointerTargetFromElement(
       this.elementAtPointer(event),
       event.clientY,
+      event.clientX,
     );
     if (container?.disabled) {
       this.say({ type: 'unavailable', container: container.label });
@@ -548,6 +585,7 @@ export class SortableController {
     this.setPointerTargetFromElement(
       this.elementAtPointer(event),
       event.clientY,
+      event.clientX,
     );
   }
 
@@ -583,6 +621,7 @@ export class SortableController {
         rawIndex,
         event.currentTarget as HTMLElement,
         event.clientY,
+        event.clientX,
       ),
     );
     void this.drop();

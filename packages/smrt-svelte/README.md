@@ -32,6 +32,50 @@ pipeline (`opportunity.stage`) without importing `@happyvertical/smrt-projects`.
 
 Svelte 5 component library for the s-m-r-t framework. Provides UI components, browser AI integration (STT/TTS/LLM with warm cache), a theme system, permission-aware rendering, and module UI registry for agent admin panels.
 
+## Import and export
+
+`@happyvertical/smrt-svelte/import-export` provides `ImportExport`, a CSV and
+TSV import/export panel for any collection. Spreadsheet users save as CSV;
+there is no `.xlsx` reader. Import is a guided flow: pick a file, map each
+column to a field (auto-detected from the field name, label, or alias),
+check a validation preview, then import. The preview is the dry run and writes
+nothing. Rows that fail validation are listed by file line with the offending
+value, and are downloadable as a CSV error report. Valid rows are created one
+request each, so a server rejection fails only that row. Export lets the user
+choose columns, delimiter, and header style; the default `name` headers
+re-import cleanly.
+
+The columns come from the same sources as the generated forms:
+`fieldsFromCollectionDefinition(definition, { policy })` reads the collection
+definition (the manifest) and a resolved field policy. A policy-`hidden` field
+is neither imported nor exported, a `locked` field is never overwritten, and a
+resolved default fills an empty or unmapped cell. `createCollectionImportExport`
+binds the panel to the generated CRUD fetchers, so import and export go through
+the same authorized REST routes as every other client.
+
+```svelte
+<script lang="ts">
+  import {
+    ImportExport,
+    createCollectionImportExport,
+  } from '@happyvertical/smrt-svelte/import-export';
+
+  const io = createCollectionImportExport({ definition, fetchers, fieldOptions: { policy } });
+</script>
+
+<ImportExport
+  fields={io.fields}
+  createRecord={io.createRecord}
+  loadRows={io.loadRows}
+  filename="products"
+/>
+```
+
+The CSV layer (`parseTable`, `validateRows`, `buildExportFile`, `runImport`)
+is pure and runs in Node. Exports neutralize spreadsheet formulas in text
+cells. See [agents/import-export.md](./agents/import-export.md) for the
+contract.
+
 ## Sortable and shell layout
 
 `@happyvertical/smrt-svelte/sortable` provides `Sortable`, an accessible
@@ -590,9 +634,66 @@ keys the shell renders exactly as before.
 - **Migration guide** (first-generation `WorkspaceShell`/`RoleShell` →
   `AdminShell`; adoption is additive and non-breaking):
   [`src/components/workspace/MIGRATION.md`](./src/components/workspace/MIGRATION.md)
-- **Playground demos**: `playground/src/routes/admin-shell` exercises all four
+- **Playground demos**: `playground/src/routes/command-palette` shows the palette in the header slot;
+  `playground/src/routes/admin-shell` exercises all four
   scopes, focus tools, and activities; `admin-shell-activity-feed` and
   `admin-shell-system-feed` show live feeds.
+
+### Command palette and global search
+
+`@happyvertical/smrt-svelte/command-palette` is a keyboard-first "find anything"
+dialog (Ctrl/Cmd+K) with a provider contract. Anything can register rows: the
+shell navigation, "New invoice" commands and cross-model record search derived
+from the manifest, or your own commands.
+
+```ts
+import {
+  CommandPalette,
+  createCommandPalette,
+  createModelProviders,
+  createNavigationProvider,
+} from '@happyvertical/smrt-svelte/command-palette';
+
+const palette = createCommandPalette({
+  navigate: goto,
+  providers: [
+    createNavigationProvider({ nav, groups }),
+    ...createModelProviders({ manifest, pagesBasePath: '/app' }),
+  ],
+});
+```
+
+Render `<CommandPalette {palette} />` as an `AppShell` `slotItems` entry
+(usually `header.center`). See
+[`agents/command-palette.md`](./agents/command-palette.md) for the provider
+contract, accessibility behavior, and the record-search limits.
+
+### Customizable overviews
+
+`@happyvertical/smrt-svelte/overview` turns an overview page into a grid of
+registered widgets (metric, chart, record list, shortcuts, note) that admins
+reorder, resize, configure, add and remove in the shell's layout edit mode,
+inside an allowed set the page declares. A saved overview is declarative data:
+widget options are validated against versioned schemas on save and on load, and
+widget data comes from a server `load(options, ctx)` that runs inside the page's
+load with the user's permissions, so the page renders fully on the server.
+Persistence is host-owned (the same pattern as the shell layout).
+
+```ts
+import {
+  createOverview,
+  OverviewGrid,
+  registerCoreWidgets,
+} from '@happyvertical/smrt-svelte/overview';
+import {
+  defineOverview,
+  loadOverview,
+  resolveOverview,
+} from '@happyvertical/smrt-svelte/overview/server';
+```
+
+See [`agents/overview-surfaces.md`](./agents/overview-surfaces.md) for the data
+model, the validation rules, the server load contract and the extension points.
 
 ## Exports
 
@@ -605,10 +706,15 @@ importable, even if it appears in `dist/`.
 |-------------|----------|
 | `@happyvertical/smrt-svelte` | `Provider`, hooks (`useAppState`, `useAuth`, `useLLM`, `useSocket`, `useSTT`, `useTheme`, `useTTS`), app state/context, `ModulePanel`, and the form components below |
 | `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, DateTimeInput, Toggle, etc.) |
+| `@happyvertical/smrt-svelte/import-export` | `ImportExport` (CSV/TSV import with column mapping, validation preview and error report; export with column selection), `createCollectionImportExport`, `fieldsFromCollectionDefinition`, and the pure CSV layer |
 | `@happyvertical/smrt-svelte/settings` | Server-paged settings search, selection, and list/detail layout (`SettingsCatalog`, `paginateSettingsCatalog`) |
+| `@happyvertical/smrt-svelte/screens` | List, view, create and edit screens derived from a generated web definition and resolved field policy (`RecipeScreens`, `ListScreen`, `DetailScreen`, `EditForm`) |
 | `@happyvertical/smrt-svelte/workspace` | AdminShell, ShellState, tenant nav, focus tools, settings, activities, and system/app panels |
 | `@happyvertical/smrt-svelte/app` | `AppShell` (Provider + themes + AdminShell + nav/dock slots, `dockToggles` buttons and host `slots` for the header/footer/sidebar regions), `OwnerSetupForm` (first-run owner setup), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp` |
 | `@happyvertical/smrt-svelte/app/runtime-diagnostics` | Svelte-free diagnostics WebMCP registration and its tool name/endpoint constants, importable from server routes |
+| `@happyvertical/smrt-svelte/command-palette` | Global search and command palette: `CommandPalette` (shell-slot trigger plus dialog), `createCommandPalette`, the provider contract, and the navigation and manifest-driven model providers |
+| `@happyvertical/smrt-svelte/overview` | Customizable overview surfaces: `OverviewGrid` (flow grid with keyboard reorder and resize), `createOverview` (host-owned controller), the widget registry (`registerWidget`), `registerCoreWidgets` (metric, chart, record list, shortcuts, note) and `shortcutsFromNav` |
+| `@happyvertical/smrt-svelte/overview/server` | Svelte-free half of the overview surface: the data model (`resolveOverview`, `checkOverviewOverride`), option-schema validation, `WidgetRegistry`, and `loadOverview` for a page's server load |
 | `@happyvertical/smrt-svelte/workspace/legacy` | Opt-in ToolsDock compatibility surface for applications migrating to AdminShell |
 | `@happyvertical/smrt-svelte/workspace/server` | Server-side workspace helpers (Node only) |
 | `@happyvertical/smrt-svelte/workspace/live` | `systemFeed` — the AdminShell system scope (jobs/schedules/dispatch) polled from an app status endpoint; deliberately carries no `smrt-web` dependency |

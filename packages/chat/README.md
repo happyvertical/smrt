@@ -299,6 +299,14 @@ In the page, `createAssistantHttpTransport({ endpoint: '/api/assistant' })`
 is the dock's `transport`, and `createAssistantHttpActionClient` its
 `actionClient` when the route is given `actions: { adapter }`.
 
+### Recipes
+
+`AssistantRecipe` (`chat.assistant`) declares the assistant dock for app and
+agent catalogs: a shell widget in `header.end` that mounts `AssistantDock`
+from `@happyvertical/smrt-chat/svelte`, an `llm` provider (hosted keys
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`, or a browser model
+with no key), and user-facing help. See `agents/recipes.md`.
+
 ## API
 
 ### Models

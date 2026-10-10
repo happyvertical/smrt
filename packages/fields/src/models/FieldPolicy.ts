@@ -217,19 +217,36 @@ export class FieldPolicy extends SmrtObject {
   scopeKey: string = '';
 
   /** JSON-encoded default value; NULL = inherit. JSON `null` = "default to null". */
-  @field({ type: 'text', nullable: true })
+  @field({
+    type: 'text',
+    nullable: true,
+    description: 'The value a new record starts with for this field.',
+  })
   defaultValue: string | null = null;
 
   /** Visibility override ('basic' | 'advanced' | 'hidden'); NULL = inherit. */
-  @field({ type: 'text', nullable: true })
+  @field({
+    type: 'text',
+    nullable: true,
+    description:
+      'Whether the field is always shown, tucked under advanced, or hidden.',
+  })
   visibility: FieldPolicyVisibility | null = null;
 
   /** Help text override; NULL = inherit (code seed: field description). */
-  @field({ type: 'text', nullable: true })
+  @field({
+    type: 'text',
+    nullable: true,
+    description: 'The hint shown beside the field on the form.',
+  })
   help: string | null = null;
 
   /** Label override; NULL = inherit (consumers derive from the field name). */
-  @field({ type: 'text', nullable: true })
+  @field({
+    type: 'text',
+    nullable: true,
+    description: 'The name people see for the field on forms.',
+  })
   label: string | null = null;
 
   /**
@@ -237,7 +254,12 @@ export class FieldPolicy extends SmrtObject {
    * `displayOrder` because a column literally named `order` is an SQL keyword
    * the runtime INSERT path does not quote; resolved output exposes `order`.
    */
-  @field({ type: 'integer', nullable: true })
+  @field({
+    type: 'integer',
+    nullable: true,
+    description:
+      'Where the field appears on the form; lower numbers come first.',
+  })
   displayOrder: number | null = null;
 
   /**
@@ -245,7 +267,12 @@ export class FieldPolicy extends SmrtObject {
    * user tier may not override this field. NULL = inherit (code seed:
    * `ui.locked`); org rows may set `false` to explicitly unlock.
    */
-  @field({ type: 'boolean', nullable: true })
+  @field({
+    type: 'boolean',
+    nullable: true,
+    description:
+      'Stops individual people from changing this field for themselves.',
+  })
   locked: boolean | null = null;
 
   /** Audit attribution for #2050 ("who changed what"); not validated. */

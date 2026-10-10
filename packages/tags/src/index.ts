@@ -11,6 +11,8 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+// Export recipes
+export { TaxonomyRecipe } from './recipes';
 // Export models
 export { Tag } from './tag';
 export { TagAlias } from './tag-alias';

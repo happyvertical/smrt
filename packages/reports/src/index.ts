@@ -87,11 +87,70 @@ export {
   previewReportRefresh,
   reportRefreshOutcome,
 } from './lifecycle.js';
+export { MaterializedReportsRecipe } from './recipes.js';
 export {
   refreshReport,
   reportRowIdentity,
 } from './refresh.js';
 export { SmrtReport, SmrtReportCollection } from './report.js';
+export type {
+  CompiledRuntimeReport,
+  RunRuntimeReportOptions,
+  RuntimeReportColumn,
+  RuntimeReportColumnType,
+  RuntimeReportCompileContext,
+  RuntimeReportResult,
+  RuntimeReportSourceDefinition,
+  RuntimeReportSourceDescription,
+} from './runtime-compiler.js';
+export {
+  compileRuntimeReportSpec,
+  describeRuntimeReportSource,
+  runRuntimeReport,
+} from './runtime-compiler.js';
+export type {
+  RuntimeReportStatus,
+  RuntimeReportStoreOptions,
+  SaveRuntimeReportOptions,
+} from './runtime-report.js';
+export {
+  archiveRuntimeReport,
+  getRuntimeReport,
+  listRuntimeReports,
+  RuntimeReport,
+  RuntimeReportCollection,
+  runStoredRuntimeReport,
+  saveRuntimeReport,
+} from './runtime-report.js';
+export type {
+  RuntimeReportBucket,
+  RuntimeReportChart,
+  RuntimeReportChartType,
+  RuntimeReportDimension,
+  RuntimeReportErrorCode,
+  RuntimeReportFilter,
+  RuntimeReportFilterOp,
+  RuntimeReportHaving,
+  RuntimeReportHavingOp,
+  RuntimeReportMeasure,
+  RuntimeReportMeasureFn,
+  RuntimeReportScalar,
+  RuntimeReportSort,
+  RuntimeReportSpec,
+} from './runtime-spec.js';
+export {
+  parseRuntimeReportSpec,
+  RUNTIME_REPORT_BUCKETS,
+  RUNTIME_REPORT_CHART_TYPES,
+  RUNTIME_REPORT_FILTER_OPS,
+  RUNTIME_REPORT_HAVING_OPS,
+  RUNTIME_REPORT_LIMITS,
+  RUNTIME_REPORT_MEASURE_FNS,
+  RUNTIME_REPORT_SPEC_VERSION,
+  RuntimeReportError,
+  runtimeReportSpecHash,
+  serializeRuntimeReportSpec,
+} from './runtime-spec.js';
 export type {
   EnqueueReportRefreshOptions,
   EnsureReportSchedulesOptions,

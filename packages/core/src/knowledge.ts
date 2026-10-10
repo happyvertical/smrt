@@ -234,6 +234,7 @@ export function buildDomainKnowledgeManifest(
     ...(options.manifest.recipes && options.manifest.recipes.length > 0
       ? { recipes: options.manifest.recipes }
       : {}),
+    ...(options.manifest.browser ? { browser: options.manifest.browser } : {}),
   };
 }
 
