@@ -30,7 +30,11 @@ export type {
   CookbookExposureSurface,
   CookbookFieldVisibility,
   CookbookLayout,
+  CookbookLayoutItem,
+  CookbookLayoutPanel,
+  CookbookLayoutSection,
   CookbookOverviewOverride,
+  CookbookOverviewWidget,
   CookbookPolicyRow,
   CookbookTheme,
 } from './cookbook.js';

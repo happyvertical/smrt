@@ -9,6 +9,7 @@ app shell read the same thing.
 | Types (type-only) | `@happyvertical/smrt-types`: `Cookbook`, `CookbookPolicyRow`, `CookbookLayout`, `CookbookTheme`, `CookbookOverviewOverride`, `CookbookExposureSurface` |
 | Parse / validate / migrate (browser-safe) | `@happyvertical/smrt-core/cookbook`: `validateCookbook(doc, { recipes? })`, `parseCookbookText`, `COOKBOOK_SCHEMA_URL`, `COOKBOOK_LEGACY_SCHEMA_URL`, `COOKBOOK_VERSION` |
 | JSON Schema | `@happyvertical/smrt-core/cookbook/v1.schema.json` (`$id` is the `$schema` URL; s-m-r-t.dev hosts it later) |
+| App shell | `@happyvertical/smrt-svelte/cookbook` renders a cookbook; `loadCookbookApp` in `/cookbook/server` loads and validates it ([cookbook-shell.md](../../smrt-svelte/agents/cookbook-shell.md)) |
 | Fixtures | `src/cookbook/__fixtures__/` (the planner's bakery, mechanic, welder, yoga-studio documents) |
 
 Fields: `$schema`, `version: 1`, optional `name`/`description`, `recipes`,
@@ -24,8 +25,9 @@ planner-side.
   unknown keys (`additionalProperties: true`). A breaking change is `version: 2`.
 - Layout and overview values are typed structurally so smrt-types and core never
   depend on smrt-svelte; smrt-svelte owns deep validation (widgets against page
-  definitions, nav ids). Keep `CookbookLayout`/`CookbookOverviewOverride`
-  assignable from the smrt-svelte types.
+  definitions, nav ids). `CookbookLayout`/`CookbookOverviewOverride` are
+  identical to the smrt-svelte types; a typechecked assertion in smrt-svelte
+  (`cookbook/__tests__/contract-types.ts`) fails when either side adds a field.
 - Legacy `.../blueprint/v1.json` is accepted on read and rewritten; never written.
 - Recipe existence, `requires`/`requiresAny` and setting targets need manifests:
   `validateCookbook(doc, { recipes })` checks ids when a catalog is passed;
