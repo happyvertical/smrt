@@ -693,6 +693,19 @@ export function getWorkspaceViteAliases(
         '@happyvertical/smrt-svelte/browser-ai',
         join(packageRoot, 'src/browser-ai/index.ts'),
       );
+      // The cookbook app shell (#3749). A consumer test that builds a cookbook
+      // shell must exercise the source under test, not the last built `dist`,
+      // and an unaliased subpath is unresolvable in a worktree with no build.
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-svelte/cookbook/server',
+        join(packageRoot, 'src/components/cookbook/server.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-svelte/cookbook',
+        join(packageRoot, 'src/components/cookbook/index.ts'),
+      );
     }
   }
 

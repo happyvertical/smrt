@@ -63,6 +63,17 @@
       "import": "./dist/components/overview/index.js",
       "default": "./dist/components/overview/index.js"
     },
+    "./cookbook": {
+      "types": "./dist/components/cookbook/index.d.ts",
+      "svelte": "./dist/components/cookbook/index.js",
+      "import": "./dist/components/cookbook/index.js",
+      "default": "./dist/components/cookbook/index.js"
+    },
+    "./cookbook/server": {
+      "types": "./dist/components/cookbook/server.d.ts",
+      "import": "./dist/components/cookbook/server.js",
+      "default": "./dist/components/cookbook/server.js"
+    },
     "./overview/server": {
       "types": "./dist/components/overview/server.d.ts",
       "import": "./dist/components/overview/server.js",
