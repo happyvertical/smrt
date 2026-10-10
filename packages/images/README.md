@@ -64,7 +64,7 @@ result against the actual crop: valid geometry does not guarantee accurate
 mouth placement. The UI never exposes provider credentials or model selection.
 
 The helper release consumes the published SDK family through the workspace catalog.
-SMRT keeps the SDK catalog and overrides aligned atomically; the
+s-m-r-t keeps the SDK catalog and overrides aligned atomically; the
 `bash scripts/check-sdk-versions.sh` release gate enforces that boundary.
 
 ## Installation
