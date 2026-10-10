@@ -135,6 +135,14 @@ describe('PhotoCutoutProfileStore', () => {
     const loaded = await store.load(input);
 
     expect(saved.assetId).toBe('cutout-asset');
+    expect(vi.mocked(runtime.storeSourceAsset)).toHaveBeenCalledWith(
+      expect.any(String),
+      bytes,
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        ownerProfileId: 'profile-owner',
+      }),
+    );
     expect(asset.ownerProfileId).toBe('profile-owner');
     expect(asset.tenantId).toBe('tenant-a');
     expect(asset.metadata).toContain('"version":1');

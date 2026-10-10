@@ -83,6 +83,20 @@ describe('caption state', () => {
     expect(captions.lines.every((line) => line.speaker === 'heard')).toBe(true);
   });
 
+  it('shows a spoken transcript at playback start when no boundary arrives', () => {
+    const captions = createCaptionChannel('spoken');
+    const callbacks = createSpokenCaptionCallbacks(captions);
+    callbacks.onStart('one', 'Visible while speaking');
+    expect(captions.interim).toBe('Visible while speaking');
+    callbacks.onBoundary('one', 0, 7);
+    expect(captions.interim).toBe('Visible');
+    callbacks.onEnd('one');
+    expect(captions.interim).toBe('');
+    expect(captions.lines.map((line) => line.text)).toEqual([
+      'Visible while speaking',
+    ]);
+  });
+
   it('expires bounded caption history and clears its timer when disposed', () => {
     vi.useFakeTimers();
     const captions = createCaptionChannel('heard', { ttlMs: 100 });
@@ -171,6 +185,7 @@ describe('caption state', () => {
     tts.end();
     expect(captions.lines).toEqual([]);
     tts.start();
+    expect(captions.interim).toBe('Read this aloud');
     tts.boundary(0, 4);
     expect(captions.interim).toBe('Read');
     tts.end();
@@ -234,7 +249,7 @@ describe('caption state', () => {
     for (const callback of stale.boundaries) callback(0, 10);
     for (const callback of stale.errors) callback(new Error('old failure'));
     for (const callback of stale.ends) callback();
-    expect(captions.interim).toBe('');
+    expect(captions.interim).toBe('New speech');
     tts.boundary(0, 3);
     expect(captions.interim).toBe('New');
     tts.end();
@@ -252,7 +267,7 @@ describe('caption state', () => {
     tts.start();
     tts.boundary(-1, 100);
     tts.boundary(Number.NaN, 10);
-    expect(captions.interim).toBe('');
+    expect(captions.interim).toBe('A reply');
     tts.boundary(0, 3);
     expect(captions.interim).toBe('A');
     tts.error();
@@ -273,7 +288,7 @@ describe('caption state', () => {
     events.onBoundary('one', 0, 10);
     events.onEnd('one');
     events.onCancel('one');
-    expect(captions.interim).toBe('');
+    expect(captions.interim).toBe('New speech');
     events.onBoundary('two', 0, 3);
     expect(captions.interim).toBe('New');
     events.onEnd('two');

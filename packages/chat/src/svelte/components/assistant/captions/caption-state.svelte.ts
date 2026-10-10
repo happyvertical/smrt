@@ -173,7 +173,7 @@ export function createSpokenCaptionCallbacks(
     onStart(id, text) {
       if (disposed) return;
       current = { id, text };
-      captions.setInterim('');
+      captions.setInterim(text);
     },
     onBoundary(id, index, length) {
       if (
@@ -251,7 +251,10 @@ export function createSpokenCaptionSession(
       const active = () => !disposed && current === generation;
       remove = [
         adapter.onStart(() => {
-          if (active()) started = true;
+          if (active()) {
+            started = true;
+            captions.setInterim(text);
+          }
         }),
         adapter.onBoundary((charIndex, charLength) => {
           if (!active() || !started) return;

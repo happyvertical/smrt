@@ -113,6 +113,8 @@ export class PhotoCutoutProfileStore {
       {
         mimeType: 'image/png',
         typeSlug: 'photo-cutout',
+        tenantId: input.tenantId,
+        ownerProfileId: input.profileId,
         metadata: { photoCutoutPersistenceId: persistenceId },
       },
     );
