@@ -1,5 +1,16 @@
 # @happyvertical/smrt-voice
 
+## 0.55.8
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.8
+  - @happyvertical/smrt-assets@0.55.8
+  - @happyvertical/smrt-content@0.55.8
+  - @happyvertical/smrt-tenancy@0.55.8
+  - @happyvertical/smrt-config@0.55.8
+
 ## 0.55.7
 
 ### Patch Changes

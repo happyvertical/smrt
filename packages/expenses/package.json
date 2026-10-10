@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-expenses",
-  "version": "0.55.7",
+  "version": "0.55.8",
   "description": "Expense records for the SMRT framework - reviewed costs against a cost object, deduplicated receipts, and commitment drawdown",
   "type": "module",
   "main": "./dist/index.js",
