@@ -16,6 +16,9 @@
  * it can prove unchanged. PostgreSQL runs when `SMRT_TEST_POSTGRES_URL` is set.
  */
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { field } from '../decorators/index.js';
@@ -618,3 +621,104 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
     });
   });
 }
+
+/**
+ * The JSON adapter wraps the same DuckDB connection but persists a table to
+ * `<table>.json` only from its own insert/update/upsert/delete; a raw
+ * `query()` never does. A raw write there is visible in-process and lost on
+ * the next one, so the DuckDB-only path must not run on it.
+ */
+describe('JSON adapter keeps persisting existing-row writes (#3737)', () => {
+  let dir: string;
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'issue3737-json-'));
+    db = await getTestDatabase({
+      type: 'json',
+      url: dir,
+      classes: ['Issue3737Parent', 'Issue3737Import'],
+    });
+  });
+
+  afterEach(async () => {
+    await db?.close?.();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** What the next process sees: the table file, and a fresh connection. */
+  const persisted = async (table: string, id: string) => {
+    const file = JSON.parse(readFileSync(join(dir, `${table}.json`), 'utf8'));
+    const fresh = await getDatabase({ type: 'json', url: dir });
+    try {
+      const row = (await fresh.get(table, { id })) as Record<string, unknown>;
+      return {
+        file: file.find((entry: { id: string }) => entry.id === id),
+        row,
+      };
+    } finally {
+      await fresh.close?.();
+    }
+  };
+
+  it('persists a toggle of an existing row', async () => {
+    const created = new Issue3737Parent({ db, slug: 'parent-1' });
+    await created.initialize();
+    await created.save();
+
+    const loaded = new Issue3737Parent({ db, id: created.id as string });
+    await loaded.initialize();
+    loaded.enabled = false;
+    await loaded.save();
+
+    const { file, row } = await persisted(
+      'issue3737_parents',
+      created.id as string,
+    );
+    expect(file.enabled).toBe(false);
+    expect(row.enabled).toBe(false);
+  });
+
+  it('persists a natural-key adoption of an existing row', async () => {
+    const created = new Issue3737Import({ db, slug: 'import-1' });
+    await created.initialize();
+    created.externalId = 'ext-1';
+    await created.save();
+
+    const reimport = new Issue3737Import({ db, slug: 'import-1' });
+    await reimport.initialize();
+    reimport.externalId = 'ext-1';
+    reimport.active = false;
+    await reimport.save();
+    expect(reimport.id).toBe(created.id);
+
+    const { file, row } = await persisted(
+      'issue3737_imports',
+      created.id as string,
+    );
+    expect(file.active).toBe(false);
+    expect(row.active).toBe(false);
+  });
+
+  it('persists a revision claim', async () => {
+    const created = new Issue3737Parent({ db, slug: 'parent-1' });
+    await created.initialize();
+    await created.save();
+    const claimant = new Issue3737Parent({ db, id: created.id as string });
+    await claimant.initialize();
+    const before = claimant.updated_at as Date;
+
+    await claimant.claimRevision(before);
+
+    const { file, row } = await persisted(
+      'issue3737_parents',
+      created.id as string,
+    );
+    expect(
+      new Date(String(file.updated_at).replace(' ', 'T') + 'Z').getTime(),
+    ).toBeGreaterThan(before.getTime());
+    expect(new Date(row.updated_at as string).getTime()).toBeGreaterThan(
+      before.getTime(),
+    );
+  });
+});

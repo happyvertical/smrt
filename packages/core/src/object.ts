@@ -1386,6 +1386,49 @@ export class SmrtObject extends SmrtClass {
     return rows[0] ?? null;
   }
 
+  /**
+   * Whether this database is POSITIVELY the native DuckDB adapter, never the
+   * JSON adapter that shares its client class.
+   *
+   * {@link isNativeDuckDb} answers "DuckDB dialect": the JSON adapter wraps the
+   * same `DuckDBConnection`, and even a `json` type hint maps to `duckdb`. The
+   * JSON adapter only persists a table to its `<table>.json` file from its own
+   * `insert`/`update`/`upsert`/`delete`; a raw `query()` never does, so a raw
+   * write there is visible in-process and lost on the next one. Writers that
+   * bypass those methods must therefore gate on this.
+   *
+   * Native identification is structural: the native adapter exposes
+   * `getTableSchema` (the JSON adapter does not). A transaction handle may omit
+   * adapter capabilities, so a client once identified by the adapter, or by an
+   * explicit `duckdb` hint, is remembered and recognized through its handles.
+   */
+  private isPositivelyNativeDuckDb(): boolean {
+    if (this.getDatabaseEngineHint() === 'json') return false;
+    if (!this.isNativeDuckDb()) return false;
+    const db = this.db as typeof this.db & {
+      getTableSchema?: unknown;
+      client?: object;
+      inferSchemaFromJSON?: unknown;
+      getTableLoadErrors?: unknown;
+    };
+    // JSON-only capabilities: never native, whatever else it shares.
+    if (
+      typeof db.inferSchemaFromJSON === 'function' ||
+      typeof db.getTableLoadErrors === 'function'
+    ) {
+      return false;
+    }
+    const client = db.client;
+    if (!client) return false;
+    if (
+      typeof db.getTableSchema === 'function' ||
+      this.getDatabaseEngineHint() === 'duckdb'
+    ) {
+      nativeJunctionClients.add(client);
+    }
+    return nativeJunctionClients.has(client);
+  }
+
   private isNativeDuckDb(): boolean {
     const db = this.db as typeof this.db & {
       config?: { type?: string; url?: string };
@@ -2355,22 +2398,9 @@ export class SmrtObject extends SmrtClass {
       removed.some((item) => !item.id)
     )
       return false;
-    const dbCapabilities = first.db as typeof first.db & {
-      getTableSchema?: unknown;
-      client?: object;
-    };
     if (first.getDatabaseEngineHint() === 'json') return false;
     const duck = first.isNativeDuckDb();
-    if (duck) {
-      const client = dbCapabilities.client;
-      if (!client) return false;
-      if (
-        typeof dbCapabilities.getTableSchema === 'function' ||
-        first.getDatabaseEngineHint() === 'duckdb'
-      )
-        nativeJunctionClients.add(client);
-      if (!nativeJunctionClients.has(client)) return false;
-    }
+    if (duck && !first.isPositivelyNativeDuckDb()) return false;
     const engine = isPostgresDatabase(first.db)
       ? 'postgres'
       : duck
@@ -3017,9 +3047,11 @@ export class SmrtObject extends SmrtClass {
                   if (useEmbeddedRevisionFallback) {
                     // Canonical read: native DuckDB UUIDs come back as text,
                     // so the unchanged-column proof below can compare them.
-                    current = await this.getCanonicalPersistedRow({
-                      id: data.id,
-                    });
+                    current = this.isPositivelyNativeDuckDb()
+                      ? await this.getCanonicalPersistedRow({ id: data.id })
+                      : ((await this.db.get(this.tableName, {
+                          id: data.id,
+                        })) as Record<string, unknown> | null);
                     if (
                       !current ||
                       !this.revisionsEqual(current.updated_at, revisionGuard)
@@ -3206,7 +3238,7 @@ export class SmrtObject extends SmrtClass {
             },
             { updated_at: updatedAt.toISOString() },
           );
-        } else if (this.isNativeDuckDb()) {
+        } else if (this.isPositivelyNativeDuckDb()) {
           // Native DuckDB rewrites a row whose indexed column is assigned, even
           // unchanged, and a referenced parent then refuses it (#3737). The
           // claim changes only the revision, so it assigns only the revision.
@@ -3275,7 +3307,7 @@ export class SmrtObject extends SmrtClass {
     data: Record<string, unknown>,
     stored: Record<string, unknown> | null,
   ): Set<string> {
-    if (!stored || !this.isNativeDuckDb()) return new Set();
+    if (!stored || !this.isPositivelyNativeDuckDb()) return new Set();
     const qualifiedName = this.getResolvedQualifiedName();
     const stiBase = ObjectRegistry.getSTIBase(qualifiedName);
     const schemas = [
