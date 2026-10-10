@@ -324,7 +324,7 @@ for (const type of dialects)
       try {
         await tenant(async () => {
           const records = await Records.create({ db });
-          const record = await records.create({ slug: 'record' });
+          const record = await records.create({ slug: 'record', tenantId: A });
           await record.save();
           await record.delete();
           const deliveries = await dispatcher.store.deliveries();
@@ -393,7 +393,7 @@ for (const type of dialects)
     it('recovers committed source changes and tombstones after partial publication or restart', async () => {
       const records = await Records.create({ db });
       await tenant(async () => {
-        await records.create({ slug: 'other-tenant' });
+        await records.create({ slug: 'other-tenant', tenantId: B });
       }, B);
       await bumpChangeFeed(db, {
         table: 'webhook_test_records',
@@ -402,7 +402,10 @@ for (const type of dialects)
         tenantId: null,
       });
       await tenant(async () => {
-        const record = await records.create({ slug: 'recoverable' });
+        const record = await records.create({
+          slug: 'recoverable',
+          tenantId: A,
+        });
         await record.save();
         await record.delete();
         const mapping = { webhook_test_records: 'Order' };
@@ -436,8 +439,8 @@ for (const type of dialects)
     it('fails closed for pruned source history until an operator reconciles it', async () => {
       await tenant(async () => {
         const records = await Records.create({ db });
-        await records.create({ slug: 'old' });
-        await records.create({ slug: 'new' });
+        await records.create({ slug: 'old', tenantId: A });
+        await records.create({ slug: 'new', tenantId: A });
         await pruneChangeFeed(db, { maxRows: 1 });
         const feed = new WebhookChangeFeed(dispatcher, {
           webhook_test_records: 'Order',
