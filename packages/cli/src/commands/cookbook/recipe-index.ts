@@ -9,19 +9,28 @@
  * `--no-registry`) the npm registry for packages that are not installed yet.
  */
 
-import { execFileSync } from 'node:child_process';
 import {
   existsSync,
-  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
 } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { Readable } from 'node:stream';
-import { extract } from 'tar';
+import {
+  extractTarball,
+  fetchPackageTarball,
+  type RegistryOptions,
+} from './registry.js';
+
+// Re-exported: these lived here before `smrt kitchen` shared them.
+export {
+  type FetchLike,
+  type RegistryOptions,
+  registryForPackage,
+} from './registry.js';
 
 export const SMRT_SCOPE = '@happyvertical';
 const PACKAGE_PREFIX = 'smrt-';
@@ -150,7 +159,8 @@ export function manifestPathForPackageDir(dir: string): string | null {
     const target =
       exportTarget(exports?.['./manifest']) ??
       exportTarget(exports?.['./manifest.json']);
-    if (target) {
+    // `./manifest` can point at a JS module (core); only JSON is a manifest.
+    if (target?.endsWith('.json')) {
       const file = resolve(dir, target);
       if (existsSync(file)) return file;
     }
@@ -277,97 +287,6 @@ export function packageOfQualifiedName(ref: string): string | null {
   return ref.slice(0, at);
 }
 
-export type FetchLike = (
-  url: string,
-  init?: { headers?: Record<string, string> },
-) => Promise<{
-  ok: boolean;
-  status: number;
-  json(): Promise<unknown>;
-  arrayBuffer(): Promise<ArrayBuffer>;
-}>;
-
-export interface RegistryOptions {
-  /** Force one registry for every package (tests, mirrors). */
-  registryUrl?: string;
-  /** Directory whose `.npmrc` chain is consulted. */
-  dir?: string;
-  /** Exact version to try first (the framework line); falls back to latest. */
-  versionHint?: string;
-  fetchImpl?: FetchLike;
-}
-
-interface NpmrcEntries {
-  values: Map<string, string>;
-}
-
-function expandEnv(value: string): string {
-  return value.replace(/\$\{([^}]+)\}/g, (_m, name) => process.env[name] ?? '');
-}
-
-/** Parse the `.npmrc` chain: project files up the tree first, then the user's. */
-function readNpmrcChain(dir: string): NpmrcEntries {
-  const files: string[] = [];
-  let current = resolve(dir);
-  while (true) {
-    files.push(join(current, '.npmrc'));
-    const parent = dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  files.push(join(homedir(), '.npmrc'));
-  const values = new Map<string, string>();
-  for (const file of files) {
-    if (!existsSync(file)) continue;
-    for (const line of readFileSync(file, 'utf-8').split(/\r?\n/)) {
-      const match = /^\s*([^#;=\s][^=]*?)\s*=\s*(.*?)\s*$/.exec(line);
-      if (match && !values.has(match[1])) {
-        values.set(match[1], expandEnv(match[2]));
-      }
-    }
-  }
-  return { values };
-}
-
-const trimSlash = (url: string) => url.replace(/\/+$/, '');
-
-/**
- * The registry for a package, the way npm and pnpm pick it: the scope's
- * `@scope:registry` (`.npmrc` chain, then `npm config`), then
- * `npm_config_registry`, then an unscoped `registry=`, then npmjs.
- * Also returns an auth token configured for that registry's host.
- */
-export function registryForPackage(
-  packageName: string,
-  dir: string = process.cwd(),
-): { url: string; token?: string } {
-  const scope = packageName.startsWith('@') ? packageName.split('/')[0] : null;
-  const rc = readNpmrcChain(dir);
-  let url = scope ? rc.values.get(`${scope}:registry`) : undefined;
-  if (scope && !url) {
-    try {
-      const out = execFileSync('npm', ['config', 'get', `${scope}:registry`], {
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-        timeout: 10_000,
-      }).trim();
-      if (/^https?:\/\//.test(out)) url = out;
-    } catch {
-      // npm unavailable: fall through
-    }
-  }
-  url ||=
-    process.env.npm_config_registry ||
-    rc.values.get('registry') ||
-    'https://registry.npmjs.org/';
-  url = trimSlash(url);
-  const hostPath = url.replace(/^https?:/, '');
-  const token =
-    rc.values.get(`${hostPath}/:_authToken`) ??
-    rc.values.get(`${hostPath.replace(/\/[^/]*$/, '')}/:_authToken`);
-  return { url, token: token || undefined };
-}
-
 /**
  * Fetch a package's manifest from the registry that owns its scope, without
  * installing it. Returns false when the package or its manifest is missing.
@@ -377,59 +296,26 @@ export async function loadRegistryManifest(
   packageName: string,
   options: RegistryOptions = {},
 ): Promise<boolean> {
-  const fetchImpl = options.fetchImpl ?? (fetch as unknown as FetchLike);
-  const resolved = options.registryUrl
-    ? { url: trimSlash(options.registryUrl), token: undefined }
-    : registryForPackage(packageName, options.dir);
-  const base = resolved.url;
-  const headers: Record<string, string> = resolved.token
-    ? { authorization: `Bearer ${resolved.token}` }
-    : {};
-  const encoded = packageName.replace('/', '%2F');
-  interface RegistryMeta {
-    version?: string;
-    dist?: { tarball?: string };
-  }
-  let meta: RegistryMeta | undefined;
-  for (const version of [options.versionHint, 'latest']) {
-    if (!version) continue;
-    try {
-      const response = await fetchImpl(`${base}/${encoded}/${version}`, {
-        headers,
-      });
-      if (response.ok) {
-        meta = (await response.json()) as RegistryMeta;
-        break;
-      }
-    } catch {
-      return false;
-    }
-  }
-  const tarball = meta?.dist?.tarball;
+  const tarball = await fetchPackageTarball(packageName, options);
   if (!tarball) return false;
-  const response = await fetchImpl(tarball, { headers });
-  if (!response.ok) return false;
   const work = mkdtempSync(join(tmpdir(), 'smrt-cookbook-'));
-  mkdirSync(work, { recursive: true });
-  await new Promise<void>((done, fail) => {
-    const sink = extract({
-      cwd: work,
-      filter: (path) =>
+  try {
+    await extractTarball(
+      tarball.data,
+      work,
+      (path) =>
         path === 'package/package.json' || path.endsWith('manifest.json'),
-    });
-    sink.on('close', () => done());
-    sink.on('error', fail);
-    response.arrayBuffer().then((buffer) => {
-      Readable.from(Buffer.from(buffer)).pipe(sink);
-    }, fail);
-  });
-  const file = manifestPathForPackageDir(join(work, 'package'));
-  if (!file) return false;
-  return addManifest(
-    index,
-    JSON.parse(readFileSync(file, 'utf-8')),
-    `${base}/${encoded}@${meta?.version ?? 'latest'}`,
-  );
+    );
+    const file = manifestPathForPackageDir(join(work, 'package'));
+    if (!file) return false;
+    return addManifest(
+      index,
+      JSON.parse(readFileSync(file, 'utf-8')),
+      `${tarball.registry}/${packageName.replace('/', '%2F')}@${tarball.version ?? 'latest'}`,
+    );
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
 }
 
 /** What a cookbook needs resolved, for the registry-fill loop. */

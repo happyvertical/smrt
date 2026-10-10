@@ -211,8 +211,11 @@ export function nextSteps(
   const run = pm === 'npm' ? 'npm run' : pm;
   const scripts = (json.scripts as Record<string, string> | undefined) ?? {};
   const steps: string[] = [];
-  if (resolve(dir) !== resolve(cwd))
-    steps.push(`cd ${relative(cwd, dir) || '.'}`);
+  if (resolve(dir) !== resolve(cwd)) {
+    // A directory outside the working tree reads better as an absolute path.
+    const rel = relative(cwd, dir);
+    steps.push(`cd ${rel.startsWith('..') ? resolve(dir) : rel || '.'}`);
+  }
   if (!installed) steps.push(`${pm} install`);
   steps.push(
     scripts['app:setup'] ? `${run} app:setup` : 'npx smrt app setup',

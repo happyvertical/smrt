@@ -2,17 +2,17 @@
  * `smrt cookbook validate|apply` (#3748). See `agents/cookbook.md`.
  */
 
-import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import type { CLICommand } from '../cli-generator.js';
 import { ApplyError, applyCookbook } from './cookbook/apply.js';
-import { resolveRecipeIndex } from './cookbook/recipe-index.js';
 import {
-  type CookbookReport,
-  parseForResolution,
-  validateCookbookText,
-} from './cookbook/validate.js';
+  asList,
+  cliVersion,
+  printApplyResult,
+  readCookbookSource,
+  validateCookbookSource,
+} from './cookbook/shared.js';
+import type { CookbookReport } from './cookbook/validate.js';
 
 interface CookbookCliOptions {
   json?: boolean;
@@ -24,61 +24,16 @@ interface CookbookCliOptions {
   'no-install'?: boolean;
 }
 
-function cliVersion(): string {
-  let current = dirname(fileURLToPath(import.meta.url));
-  while (true) {
-    try {
-      const pkg = JSON.parse(
-        readFileSync(join(current, 'package.json'), 'utf-8'),
-      );
-      if (pkg.name === '@happyvertical/smrt-cli' && pkg.version) {
-        return pkg.version as string;
-      }
-    } catch {
-      // keep walking up
-    }
-    const parent = dirname(current);
-    if (parent === current) return '0.0.0';
-    current = parent;
-  }
-}
-
-async function readSource(source: string): Promise<string> {
-  if (/^https?:\/\//.test(source)) {
-    const response = await fetch(source);
-    if (!response.ok) {
-      throw new ApplyError(
-        `Could not fetch ${source}: HTTP ${response.status}`,
-      );
-    }
-    return response.text();
-  }
-  try {
-    return readFileSync(resolve(source), 'utf-8');
-  } catch {
-    throw new ApplyError(`Could not read cookbook file ${resolve(source)}`);
-  }
-}
-
-const asList = (value: string[] | string | undefined): string[] =>
-  value === undefined ? [] : Array.isArray(value) ? value : [value];
-
 async function loadAndValidate(
   source: string,
   options: CookbookCliOptions,
   dir: string,
 ): Promise<CookbookReport> {
-  const text = await readSource(source);
-  const warnings: string[] = [];
-  const index = await resolveRecipeIndex(parseForResolution(text), {
+  return validateCookbookSource(await readCookbookSource(source), {
     dir,
     manifests: asList(options.manifests),
     registry: !options['no-registry'],
-    warn: (message) => warnings.push(message),
   });
-  const report = validateCookbookText(text, index);
-  report.warnings.push(...warnings);
-  return report;
 }
 
 function printReport(source: string, report: CookbookReport, json?: boolean) {
@@ -216,30 +171,7 @@ export const cookbookCommands: Record<string, CLICommand> = {
           );
           return;
         }
-        for (const warning of report.warnings) {
-          console.warn(`warning: ${warning}`);
-        }
-        const { plan } = result;
-        console.log(
-          `${result.dryRun ? 'Plan (dry run)' : 'Applied'}: ${plan.mode === 'new' ? 'new project' : 'update'} in ${plan.targetDir}`,
-        );
-        if (plan.template) {
-          console.log(
-            `  template: ${plan.template.spec}${plan.template.revision ? ` @ ${plan.template.revision}` : ''}`,
-          );
-        }
-        if (plan.projectName) {
-          console.log(`  project name: ${plan.projectName}`);
-        }
-        for (const [name, range] of Object.entries(plan.addDependencies)) {
-          console.log(`  + ${name}@${range}`);
-        }
-        for (const [name, range] of Object.entries(plan.keptDependencies)) {
-          console.log(`  = ${name}@${range} (already declared)`);
-        }
-        console.log(`  smrt.cookbook.json: ${plan.config}`);
-        console.log('\nNext steps:');
-        for (const step of result.nextSteps) console.log(`  ${step}`);
+        printApplyResult(result, report.warnings);
       } catch (error) {
         if (error instanceof ApplyError) {
           console.error(error.message);

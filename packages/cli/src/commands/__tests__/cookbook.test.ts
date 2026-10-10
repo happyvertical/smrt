@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import type { Cookbook } from '@happyvertical/smrt-types';
 import { create } from 'tar';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyCookbook } from '../cookbook/apply.js';
+import { applyCookbook, nextSteps } from '../cookbook/apply.js';
 import {
   createRecipeIndex,
   loadManifestPath,
@@ -509,5 +509,29 @@ describe('manifest and registry resolution', () => {
       'https://env.example.test',
     );
     vi.unstubAllEnvs();
+  });
+});
+
+describe('drive-by fixes found while building smrt kitchen (#3750)', () => {
+  it('names a project outside the working tree by its absolute path', () => {
+    const cwd = join(work, 'here');
+    expect(nextSteps(join(cwd, 'app'), {}, true, cwd)[0]).toBe('cd app');
+    const outside = join(work, 'elsewhere', 'app');
+    expect(nextSteps(outside, {}, true, cwd)[0]).toBe(`cd ${outside}`);
+  });
+
+  it('does not read a JavaScript ./manifest export as a JSON manifest', () => {
+    const pkg = join(work, 'js-manifest');
+    mkdirSync(join(pkg, 'dist'), { recursive: true });
+    writeFileSync(
+      join(pkg, 'package.json'),
+      JSON.stringify({ exports: { './manifest': './dist/manifest.js' } }),
+    );
+    writeFileSync(join(pkg, 'dist', 'manifest.js'), 'export const x = 1;');
+    expect(manifestPathForPackageDir(pkg)).toBeNull();
+    writeFileSync(join(pkg, 'dist', 'manifest.json'), '{}');
+    expect(manifestPathForPackageDir(pkg)).toBe(
+      join(pkg, 'dist', 'manifest.json'),
+    );
   });
 });
