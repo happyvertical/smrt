@@ -98,3 +98,17 @@ describe('cookbook v1', () => {
     ]);
   });
 });
+
+describe('the ./cookbook package export', () => {
+  it('names a file the build emits (one dist/<export>.js per entry)', () => {
+    const pkg = JSON.parse(
+      readFileSync(join(import.meta.dirname, '../../package.json'), 'utf8'),
+    ) as { exports: Record<string, { import: string } | string> };
+    const entry = pkg.exports['./cookbook'] as { import: string };
+    // vite.config.ts maps `./dist/x.js` to `src/x.ts` and emits `dist/x.js`.
+    const source = entry.import
+      .replace(/^\.\/dist\//, '')
+      .replace(/\.js$/, '.ts');
+    expect(readdirSync(join(import.meta.dirname, '..'))).toContain(source);
+  });
+});

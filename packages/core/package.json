@@ -169,9 +169,9 @@
       "default": "./dist/testing.js"
     },
     "./cookbook": {
-      "types": "./dist/cookbook/index.d.ts",
-      "import": "./dist/cookbook/index.js",
-      "default": "./dist/cookbook/index.js"
+      "types": "./dist/cookbook.d.ts",
+      "import": "./dist/cookbook.js",
+      "default": "./dist/cookbook.js"
     },
     "./cookbook/v1.schema.json": "./dist/cookbook/v1.schema.json"
   },
