@@ -137,8 +137,9 @@ loaded?, loadWidget? })`, the `ShellLayout` pattern: **persistence is host-owned
 With an `override` getter the host is the source of truth and feeds each edit back
 (`onchange(override | null)`); without it the value is kept in memory. Reactive
 reads: `document`, `base`, `override`, `committedOverride` (the value last
-handed to `onchange` while a host-owned getter has not fed it back yet, else
-`override`), `issues`, `customized`, `canCustomize`,
+handed to `onchange` while a host-owned getter still answers the value from
+before that edit, else `override`; the mask ends as soon as the getter moves,
+so a later change back to the old value is seen), `issues`, `customized`, `canCustomize`,
 `addable`, `full`, `entry(widget)`. Operations, each returning
 `{ ok: true, id } | { ok: false, reason, issues? }` and refused with
 `not_allowed` when `canCustomize()` is false (the role gate; the server must check

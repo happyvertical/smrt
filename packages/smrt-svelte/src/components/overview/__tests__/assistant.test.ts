@@ -183,6 +183,36 @@ describe('OverviewAssistant', () => {
     expect(stored.value).toEqual({ version: 1, removed: ['w4'] });
   });
 
+  it('stops masking once the host confirmed an edit, so a later change back to the prior value is seen', () => {
+    const stored = reactiveBox<OverviewOverride | null>(null);
+    const controller = createOverview({
+      definition,
+      registry: coreRegistry(),
+      override: () => stored.value,
+      onchange: (override) => {
+        stored.value = override;
+      },
+    });
+    const assistant = createOverviewAssistant(controller);
+    // An edit the host confirms (feeds back) at once.
+    expect(controller.resize('w1', 3).ok).toBe(true);
+    expect(controller.override).toEqual({
+      version: 1,
+      changed: { w1: { span: 3 } },
+    });
+    // Another tab resets to the defaults: exactly the value before the edit.
+    stored.value = null;
+    expect(controller.override).toBeNull();
+    expect(controller.committedOverride).toBeNull();
+    expect(
+      assistant.describe().widgets.find((widget) => widget.id === 'w1')?.span,
+    ).toBe(1);
+    // Apply plans from the layout the grid shows, not the stale edit.
+    assistant.apply([{ op: 'remove', id: 'w2' }]);
+    expect(stored.value).toEqual({ version: 1, removed: ['w2'] });
+    expect(assistant.lastBatch?.before).toBeNull();
+  });
+
   it('offers no undo for a batch that changes nothing', () => {
     const { assistant, onchange } = make();
     expect(assistant.apply([{ op: 'move', id: 'w1', index: 0 }])).toEqual({

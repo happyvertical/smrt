@@ -103,13 +103,18 @@ export class OverviewController {
     prior: OverviewOverride | null;
     value: OverviewOverride | null;
   } | null = null;
-  readonly #resolved = $derived.by(() =>
-    resolveOverview(
+  readonly #resolved = $derived.by(() => {
+    const resolved = resolveOverview(
       this.#options.definition,
       this.#options.override ? this.#options.override() : this.#local,
       this.#registry,
-    ),
-  );
+    );
+    // Every host feed-back passes here (the grid reads `document`), so a
+    // pending edit is retired as soon as the getter moves off its prior
+    // value, even if nothing reads `committedOverride` in between.
+    this.#retire(diffOverview(resolved.base, resolved.document));
+    return resolved;
+  });
 
   constructor(options: OverviewControllerOptions) {
     this.#options = options;
@@ -164,15 +169,20 @@ export class OverviewController {
    */
   get committedOverride(): OverviewOverride | null {
     const current = this.override;
+    this.#retire(current);
     const pending = this.#unconfirmed;
-    if (
-      pending &&
-      !sameJson(current, pending.value) &&
-      sameJson(current, pending.prior)
-    ) {
-      return pending.value;
-    }
-    return current;
+    return pending ? pending.value : current;
+  }
+
+  /**
+   * End the pending mask once the host getter answers anything but the value
+   * from before the edit: the host fed the edit back, or something else
+   * replaced it. The mask covers only the gap between an emit and its
+   * confirmation; a later change back to `prior` is a real change.
+   */
+  #retire(current: OverviewOverride | null): void {
+    const pending = this.#unconfirmed;
+    if (pending && !sameJson(current, pending.prior)) this.#unconfirmed = null;
   }
 
   /** Hand a canonical override to the host, remembering it until fed back. */
