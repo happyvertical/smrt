@@ -185,6 +185,59 @@ export function preferenceKindsSuite(
       });
     });
 
+    it('contains a validator that throws on load, never on save', async () => {
+      const dispose = registerPreferenceKind({
+        kind: 'test-throws',
+        formatVersion: 1,
+        permissions: { tenant: NOTE_TENANT, user: NOTE_USER },
+        validate(payload, ctx) {
+          if (ctx.phase === 'load' || (payload as { boom?: boolean })?.boom) {
+            throw new Error('validator exploded');
+          }
+          return { ok: true, canonical: payload, issues: [] };
+        },
+      });
+      try {
+        await as(all, async () => {
+          expect(
+            await store.save('test-throws', 'admin', {
+              scope: 'tenant',
+              payload: { secret: 'tenant' },
+              revision: null,
+            }),
+          ).toMatchObject({ ok: true });
+          expect(
+            await store.save('test-throws', 'admin', {
+              scope: 'user',
+              payload: { secret: 'user' },
+              revision: null,
+            }),
+          ).toMatchObject({ ok: true });
+          // Load: each tier is dropped with a validator_error issue, and the
+          // stored payload is never handed back.
+          const state = await store.load('test-throws', 'admin');
+          expect(state.tenant.payload).toBeNull();
+          expect(state.user?.payload).toBeNull();
+          expect(state.tenant.revision).not.toBeNull();
+          expect(state.issues.map((issue) => issue.code)).toEqual([
+            'validator_error',
+            'validator_error',
+          ]);
+          expect(JSON.stringify(state)).not.toContain('secret');
+          // Save: the error still propagates (nothing is stored).
+          await expect(
+            store.save('test-throws', 'other', {
+              scope: 'tenant',
+              payload: { boom: true },
+              revision: null,
+            }),
+          ).rejects.toThrow('validator exploded');
+        });
+      } finally {
+        dispose();
+      }
+    });
+
     it('round-trips the shell layout and validates it both ways', async () => {
       const shell = createShellSettingsPreferences(store);
       const delta = {

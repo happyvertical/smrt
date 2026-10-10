@@ -43,7 +43,9 @@ detail? }`), and `ok`: false whenever anything was removed or refused.
   is `null`.
 - On **load** the store uses `canonical` and reports `issues` per tier; the
   row is not rewritten. Unparseable JSON and rows from a newer
-  `formatVersion` are dropped before `validate` runs.
+  `formatVersion` are dropped before `validate` runs. A `validate` that
+  throws on load drops the tier with a `validator_error` issue; on save the
+  error propagates and nothing is stored. Validators should not throw.
 - A payload is data, never code: no query strings, URLs or expressions a
   reader would execute. Authorization happens where the data is read, never
   through payload values.

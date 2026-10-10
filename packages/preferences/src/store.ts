@@ -196,15 +196,33 @@ function readTier(
       ],
     };
   }
-  const checked = kind.validate(payload, {
-    kind: kind.kind,
-    surfaceId,
-    scope,
-    phase: 'load',
-    formatVersion: row.formatVersion,
-    ...(scope === 'user' ? { tenant: tenant ?? null } : {}),
-    options,
-  });
+  let checked: ReturnType<PreferenceKindDefinition['validate']>;
+  try {
+    checked = kind.validate(payload, {
+      kind: kind.kind,
+      surfaceId,
+      scope,
+      phase: 'load',
+      formatVersion: row.formatVersion,
+      ...(scope === 'user' ? { tenant: tenant ?? null } : {}),
+      options,
+    });
+  } catch {
+    // A load must degrade, never fail the page or hand back a payload no
+    // validator accepted: the tier is dropped and reported. (A save lets the
+    // error propagate: nothing is stored.)
+    return {
+      payload: null,
+      revision,
+      issues: [
+        {
+          path: null,
+          code: 'validator_error',
+          message: 'the preference kind failed to validate the stored payload',
+        },
+      ],
+    };
+  }
   return { payload: checked.canonical, revision, issues: checked.issues };
 }
 
