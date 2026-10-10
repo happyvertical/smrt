@@ -1,0 +1,15 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "dependsOn": [
+        "$TURBO_EXTENDS$",
+        "@happyvertical/smrt-commerce#build",
+        "@happyvertical/smrt-events#build",
+        "@happyvertical/smrt-inventory#build",
+        "@happyvertical/smrt-products#build"
+      ]
+    }
+  }
+}
