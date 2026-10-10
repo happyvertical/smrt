@@ -148,7 +148,7 @@ export class OverviewAssistant {
     return describeOverview({
       definition: this.controller.definition,
       registry: this.controller.registry,
-      override: this.controller.override,
+      override: this.controller.committedOverride,
       canCustomize: this.controller.canCustomize,
       translate: this.#options.translate,
       maxOperations: this.#options.maxOperations,
@@ -161,7 +161,9 @@ export class OverviewAssistant {
     if (!controller.canCustomize) {
       return { ok: false, reason: 'not_allowed', issues: [] };
     }
-    const before = controller.override;
+    // What the controller last committed, even if the host has not fed it
+    // back yet.
+    const before = controller.committedOverride;
     const plan = planOverviewOperations({
       definition: controller.definition,
       registry: controller.registry,
@@ -210,7 +212,7 @@ export class OverviewAssistant {
     }
     const controller = this.controller;
     if (!controller.canCustomize) return { ok: false, reason: 'not_allowed' };
-    if (!sameJson(controller.override, batch.after)) {
+    if (!sameJson(controller.committedOverride, batch.after)) {
       this.dismiss();
       return { ok: false, reason: 'changed_since' };
     }

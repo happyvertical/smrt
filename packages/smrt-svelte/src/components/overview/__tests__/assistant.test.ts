@@ -11,6 +11,7 @@ import { createOverview } from '../controller.svelte.js';
 import type { OverviewOverride } from '../types.js';
 import { coreRegistry, definition, loadedFor } from './app-fixtures.js';
 import Harness from './assistant-harness.svelte';
+import { reactiveBox } from './reactive-box.svelte.js';
 
 const make = (extra: Record<string, unknown> = {}) => {
   const onchange = vi.fn();
@@ -118,6 +119,68 @@ describe('OverviewAssistant', () => {
     const edited = controller.override;
     expect(assistant.undo()).toEqual({ ok: false, reason: 'changed_since' });
     expect(controller.override).toEqual(edited);
+  });
+
+  it('undoes in host-owned mode while the host has not fed the batch back yet', async () => {
+    // The documented phase-3 wiring: the host saves, then feeds the value back.
+    const stored = reactiveBox<OverviewOverride | null>(null);
+    const saves: Array<OverviewOverride | null> = [];
+    const controller = createOverview({
+      definition,
+      registry: coreRegistry(),
+      override: () => stored.value,
+      onchange: (override) => {
+        saves.push(override);
+      },
+    });
+    const assistant = createOverviewAssistant(controller);
+    const applied = assistant.apply([{ op: 'remove', id: 'w2' }]);
+    if (!applied.ok || !applied.batchId) throw new Error('expected a batch');
+    const after = saves.at(-1) ?? null;
+    expect(after).not.toBeNull();
+    // Feedback still pending: the host getter still answers the old value.
+    expect(assistant.undo(applied.batchId)).toEqual({ ok: true });
+    expect(saves.at(-1)).toBeNull();
+    // The saves land in order; the last one is the restored value.
+    for (const value of saves) stored.value = value;
+    expect(controller.override).toBeNull();
+  });
+
+  it('undoes in host-owned mode once the host fed the batch back', () => {
+    const stored = reactiveBox<OverviewOverride | null>({
+      version: 1,
+      removed: ['w4'],
+    });
+    const controller = createOverview({
+      definition,
+      registry: coreRegistry(),
+      override: () => stored.value,
+      onchange: (override) => {
+        stored.value = override;
+      },
+    });
+    const assistant = createOverviewAssistant(controller);
+    const before = controller.override;
+    assistant.apply([{ op: 'remove', id: 'w2' }]);
+    expect(controller.override).not.toEqual(before);
+    expect(assistant.undo()).toEqual({ ok: true });
+    expect(stored.value).toEqual(before);
+  });
+
+  it('refuses the undo when a host-owned overview changed elsewhere', () => {
+    const stored = reactiveBox<OverviewOverride | null>(null);
+    const controller = createOverview({
+      definition,
+      registry: coreRegistry(),
+      override: () => stored.value,
+      onchange: () => {},
+    });
+    const assistant = createOverviewAssistant(controller);
+    assistant.apply([{ op: 'remove', id: 'w2' }]);
+    // Another tab saved something else; the host feeds that back.
+    stored.value = { version: 1, removed: ['w4'] };
+    expect(assistant.undo()).toEqual({ ok: false, reason: 'changed_since' });
+    expect(stored.value).toEqual({ version: 1, removed: ['w4'] });
   });
 
   it('offers no undo for a batch that changes nothing', () => {

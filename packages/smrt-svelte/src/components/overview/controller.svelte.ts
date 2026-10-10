@@ -95,6 +95,14 @@ export class OverviewController {
   #local = $state.raw<unknown>(null);
   #entries = $state.raw<Record<string, KeyedEntry>>({});
   readonly #pending = new Map<string, AbortController>();
+  /**
+   * The last override handed to `onchange` while a host-owned getter has not
+   * fed it back yet (`prior` is what the getter answered then).
+   */
+  #unconfirmed: {
+    prior: OverviewOverride | null;
+    value: OverviewOverride | null;
+  } | null = null;
   readonly #resolved = $derived.by(() =>
     resolveOverview(
       this.#options.definition,
@@ -145,6 +153,36 @@ export class OverviewController {
   /** The canonical override currently applied; `null` when on defaults. */
   get override(): OverviewOverride | null {
     return diffOverview(this.#resolved.base, this.#resolved.document);
+  }
+
+  /**
+   * The override this controller last committed: {@link override}, or, while
+   * a host-owned getter still answers the value from before the last edit
+   * (the host has not fed it back yet), the value handed to `onchange`. An
+   * Undo compares against this so a pending save is not mistaken for a
+   * change made elsewhere.
+   */
+  get committedOverride(): OverviewOverride | null {
+    const current = this.override;
+    const pending = this.#unconfirmed;
+    if (
+      pending &&
+      !sameJson(current, pending.value) &&
+      sameJson(current, pending.prior)
+    ) {
+      return pending.value;
+    }
+    return current;
+  }
+
+  /** Hand a canonical override to the host, remembering it until fed back. */
+  #emit(override: OverviewOverride | null): void {
+    const prior = this.override;
+    this.#unconfirmed = this.#options.override
+      ? { prior, value: override }
+      : null;
+    if (!this.#options.override) this.#local = override;
+    void this.#options.onchange?.(override);
   }
 
   /** What was dropped or reported while resolving. */
@@ -200,11 +238,10 @@ export class OverviewController {
       definition: this.#options.definition,
     });
     const override = diffOverview(this.#resolved.base, sanitized.document);
-    if (sameJson(override, this.override)) {
+    if (sameJson(override, this.committedOverride)) {
       return { ok: false, reason: 'unchanged' };
     }
-    if (!this.#options.override) this.#local = override;
-    void this.#options.onchange?.(override);
+    this.#emit(override);
     // The derived document reflects a host-owned override only after the host
     // feeds it back, so sync against what was just committed.
     this.#syncWidgets(sanitized.document.widgets);
@@ -345,9 +382,10 @@ export class OverviewController {
   reset(): OverviewOpResult {
     const denied = this.#gate();
     if (denied) return denied;
-    if (!this.customized) return { ok: false, reason: 'unchanged' };
-    if (!this.#options.override) this.#local = null;
-    void this.#options.onchange?.(null);
+    if (isEmptyOverride(this.committedOverride)) {
+      return { ok: false, reason: 'unchanged' };
+    }
+    this.#emit(null);
     this.#syncWidgets(this.#resolved.base.widgets);
     return { ok: true, id: '' };
   }
@@ -366,11 +404,10 @@ export class OverviewController {
       this.#registry,
     );
     const canonical = diffOverview(next.base, next.document);
-    if (sameJson(canonical, this.override)) {
+    if (sameJson(canonical, this.committedOverride)) {
       return { ok: false, reason: 'unchanged' };
     }
-    if (!this.#options.override) this.#local = canonical;
-    void this.#options.onchange?.(canonical);
+    this.#emit(canonical);
     this.#syncWidgets(next.document.widgets);
     return { ok: true, id: '' };
   }
