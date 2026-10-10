@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -6,7 +7,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -24,8 +25,21 @@ import {
 import { runtimeMigrationStatus } from './tools/runtime/tools.js';
 
 const roots: string[] = [];
+// Node lookup includes ancestor node_modules: a temp directory alone is not
+// isolation. Keep the same admission rule as scripts/packed-consumer.mjs.
+function hasCleanAncestors(directory: string): boolean {
+  for (let current = resolve(directory); ; current = dirname(current)) {
+    if (existsSync(join(current, 'node_modules'))) return false;
+    if (dirname(current) === current) return true;
+  }
+}
 function project(): string {
-  const root = mkdtempSync(join(tmpdir(), 'smrt-project-runtime-'));
+  const parent = [tmpdir(), homedir()].find(hasCleanAncestors);
+  if (!parent)
+    throw new Error(
+      'Choose a TMPDIR with no ancestor node_modules directories',
+    );
+  const root = mkdtempSync(join(parent, 'smrt-project-runtime-'));
   roots.push(root);
   writeFileSync(
     join(root, 'package.json'),
@@ -62,6 +76,14 @@ afterEach(() => {
 });
 
 describe('selected project runtime boundary (#2961)', () => {
+  it('rejects fixture parents with an ancestor node_modules directory', () => {
+    const parent = project();
+    expect(hasCleanAncestors(parent)).toBe(true);
+    mkdirSync(join(parent, 'node_modules'));
+    expect(hasCleanAncestors(parent)).toBe(false);
+    expect(hasCleanAncestors(join(parent, 'nested', 'consumer'))).toBe(false);
+  });
+
   it('keeps static manifest introspection independent of runtime installation', async () => {
     const root = project();
     mkdirSync(join(root, '.smrt'));

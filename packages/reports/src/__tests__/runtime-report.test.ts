@@ -871,6 +871,87 @@ describe('RuntimeReport storage', () => {
     });
   });
 
+  it('filters authors before limiting without weakening tenant ownership', async () => {
+    const otherUser = '44444444-4444-4444-8444-444444444444';
+    const compiled = await compile();
+    const own = await withTenant({ tenantId: TENANT_A }, () =>
+      saveConfirmed({ db, compiled, createdByUserId: USER }),
+    );
+    await withTenant({ tenantId: TENANT_A }, async () => {
+      for (let index = 0; index < 3; index += 1) {
+        await saveConfirmed({ db, compiled, createdByUserId: otherUser });
+      }
+      expect(
+        (await listRuntimeReports({ db, createdByUserId: USER, limit: 1 })).map(
+          (row) => row.id,
+        ),
+      ).toEqual([own.id]);
+      expect(
+        await listRuntimeReports({ db, createdByUserId: otherUser }),
+      ).toHaveLength(3);
+      expect(await listRuntimeReports({ db, createdByUserId: '' })).toEqual([]);
+    });
+    await withTenant({ tenantId: TENANT_B }, async () => {
+      expect(await listRuntimeReports({ db, createdByUserId: USER })).toEqual(
+        [],
+      );
+    });
+    await withSystemContext(async () => {
+      expect(
+        await listRuntimeReports({
+          db,
+          tenantId: TENANT_B,
+          createdByUserId: USER,
+        }),
+      ).toEqual([]);
+      expect(
+        (
+          await listRuntimeReports({
+            db,
+            tenantId: TENANT_A,
+            createdByUserId: USER,
+          })
+        ).map((row) => row.id),
+      ).toEqual([own.id]);
+    });
+  });
+
+  it('finds an exact normalized spec with author, tenant and status predicates conjunctively', async () => {
+    const otherUser = '44444444-4444-4444-8444-444444444444';
+    const compiled = await compile();
+    const changed = await compile({ title: 'Different saved report' });
+    await withTenant({ tenantId: TENANT_A }, async () => {
+      const own = await saveConfirmed({ db, compiled, createdByUserId: USER });
+      await saveConfirmed({ db, compiled, createdByUserId: otherUser });
+      await saveConfirmed({ db, compiled: changed, createdByUserId: USER });
+      const filters = {
+        db,
+        tenantId: TENANT_A,
+        createdByUserId: USER,
+        specHash: compiled.specHash,
+      };
+      expect((await listRuntimeReports(filters)).map((row) => row.id)).toEqual([
+        own.id,
+      ]);
+      expect(await listRuntimeReports({ ...filters, specHash: '' })).toEqual(
+        [],
+      );
+      expect(
+        await listRuntimeReports({ ...filters, specHash: 'unknown-hash' }),
+      ).toEqual([]);
+      await expect(
+        listRuntimeReports({ ...filters, tenantId: TENANT_B }),
+      ).rejects.toThrow('Tenant isolation violation');
+      await archiveRuntimeReport({ db, ref: own.id as string });
+      expect(await listRuntimeReports(filters)).toEqual([]);
+      expect(
+        (await listRuntimeReports({ ...filters, status: 'archived' })).map(
+          (row) => row.id,
+        ),
+      ).toEqual([own.id]);
+    });
+  });
+
   it('requires a tenant to save', async () => {
     await expectRejected(
       saveConfirmed({

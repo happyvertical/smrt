@@ -41,6 +41,8 @@ let {
   editing: editingProp,
   label,
   headingLevel = 2,
+  heading,
+  presentation = 'card',
   models,
   iconComponent,
 }: OverviewGridProps = $props();
@@ -348,7 +350,7 @@ const headingTag = $derived(`h${headingLevel}`);
 {#snippet body(row: Row)}
   {@const Widget = components?.get(row.widget.type) ?? row.def?.component}
   <article class="smrt-overview__widget" aria-labelledby="{uid}-title-{row.widget.id}">
-    <svelte:element this={headingTag} class="smrt-overview__title" id="{uid}-title-{row.widget.id}">{row.title}</svelte:element>
+    <svelte:element this={headingTag} class="smrt-overview__title" id="{uid}-title-{row.widget.id}">{#if heading}{@render heading(row.widget, row.title)}{:else}{row.title}{/if}</svelte:element>
     <div class="smrt-overview__content" aria-busy={row.status === 'loading'}>
       {#if !row.def}
         <p class="smrt-overview__state">{t(M['ui.overview.unavailable'])}</p>
@@ -376,7 +378,7 @@ const headingTag = $derived(`h${headingLevel}`);
   </article>
 {/snippet}
 
-<div class="smrt-overview" bind:this={rootEl} data-editing={editing ? '' : undefined}>
+<div class="smrt-overview" bind:this={rootEl} data-editing={editing ? '' : undefined} data-presentation={presentation}>
   {#if editing}
     <div class="smrt-overview__toolbar" role="toolbar" aria-label={t(M['ui.overview.toolbar'])}>
       <ShellIconButton
@@ -547,6 +549,7 @@ const headingTag = $derived(`h${headingLevel}`);
   .smrt-overview__item[data-drop='before']::before { inset-inline-start: 0; }
   .smrt-overview__item[data-drop='after']::before { inset-inline-end: 0; }
   .smrt-overview__tile { position: relative; block-size: 100%; box-sizing: border-box; padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
+  [data-presentation='plain']:not([data-editing]) .smrt-overview__tile { padding: 0; border: 0; border-radius: 0; background: transparent; }
   [data-editing] .smrt-overview__tile { border-style: dashed; }
   .smrt-overview__widget { display: grid; gap: var(--smrt-spacing-2); align-content: start; min-inline-size: 0; }
   .smrt-overview__title { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-title-small-size, 0.875rem); font-weight: var(--smrt-typography-weight-medium, 500); }
