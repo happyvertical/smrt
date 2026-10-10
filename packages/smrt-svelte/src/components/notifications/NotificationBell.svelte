@@ -1,5 +1,7 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
+import { M } from '../../i18n/strings.notifications.js';
 import type { NotificationProvider } from './types.js';
 
 interface Props {
@@ -10,7 +12,9 @@ interface Props {
   /** Maximum number of recent notifications requested from the provider. */
   limit?: number;
 }
-let { provider, label = 'Notifications', limit = 20 }: Props = $props();
+const { t } = useI18n();
+let { provider, label, limit = 20 }: Props = $props();
+const heading = $derived(label ?? t(M['ui.notification_bell.label']));
 const instanceId = $props.id();
 let panel = $state<HTMLDivElement>();
 let open = $state(false);
@@ -41,7 +45,7 @@ async function refresh(source = provider, epoch = generation) {
     items = nextItems;
   } catch {
     if (!active || epoch !== generation || current !== request) return;
-    error = 'Notifications are unavailable.';
+    error = M['ui.notification_bell.unavailable'];
   } finally {
     if (active && epoch === generation && current === request) loading = false;
   }
@@ -76,7 +80,7 @@ async function mutate(id?: string) {
     await refresh(source, epoch);
   } catch {
     if (active && epoch === generation)
-      error = 'Could not mark notifications read.';
+      error = M['ui.notification_bell.mark_error'];
   }
 }
 $effect(() => {
@@ -91,7 +95,7 @@ $effect(() => {
   try {
     stop = source.subscribe?.(() => void refresh(source, epoch));
   } catch {
-    error = 'Live notifications are unavailable.';
+    error = M['ui.notification_bell.live_error'];
   }
   return () => {
     active = false;
@@ -104,17 +108,17 @@ $effect(() => {
 
 <div class="smrt-notification-bell">
   <Button id={`${instanceId}-trigger`} aria-controls={`${instanceId}-panel`} variant="ghost" aria-haspopup="dialog" aria-expanded={open} onclick={() => (open = !open)}>
-    {label}{#if unread > 0}<span aria-label={`${unread} unread`}> ({unread})</span>{/if}
+    {heading}{#if unread > 0}<span aria-label={t(M['ui.notification_bell.unread'], { count: unread })}> ({unread})</span>{/if}
   </Button>
   {#if open}
-    <div bind:this={panel} id={`${instanceId}-panel`} role="dialog" aria-label={label} tabindex="-1" onkeydown={keydown} class="smrt-notification-bell__panel">
-      <header><strong>{label}</strong><Button variant="ghost" size="sm" disabled={unread === 0 || loading} onclick={() => mutate()}>Mark all read</Button></header>
-      {#if error}<p role="alert">{error}</p>{/if}
-      {#if loading}<p role="status">Loading notifications</p>{:else if items.length === 0}<p>No notifications.</p>{:else}<ol>
+    <div bind:this={panel} id={`${instanceId}-panel`} role="dialog" aria-label={heading} tabindex="-1" onkeydown={keydown} class="smrt-notification-bell__panel">
+      <header><strong>{heading}</strong><Button variant="ghost" size="sm" disabled={unread === 0 || loading} onclick={() => mutate()}>{t(M['ui.notification_bell.mark_all'])}</Button></header>
+      {#if error}<p role="alert">{t(error)}</p>{/if}
+      {#if loading}<p role="status">{t(M['ui.notification_bell.loading'])}</p>{:else if items.length === 0}<p>{t(M['ui.notification_bell.empty'])}</p>{:else}<ol>
         {#each items as item (item.id)}<li data-read={item.readAt ? 'true' : 'false'}>
           {#if safeHref(item.href)}<a href={safeHref(item.href) ?? undefined}>{item.title}</a>{:else}<strong>{item.title}</strong>{/if}
           {#if item.body}<p>{item.body}</p>{/if}
-          {#if !item.readAt}<Button variant="ghost" size="sm" onclick={() => mutate(item.id)}>Mark read</Button>{/if}
+          {#if !item.readAt}<Button variant="ghost" size="sm" onclick={() => mutate(item.id)}>{t(M['ui.notification_bell.mark_one'])}</Button>{/if}
         </li>{/each}
       </ol>{/if}
     </div>

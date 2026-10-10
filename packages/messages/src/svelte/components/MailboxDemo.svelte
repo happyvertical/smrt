@@ -1,54 +1,64 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
+import { M } from '../i18n.messages.js';
 import type { AccountData, ComposeState, MessageData } from '../types.js';
 import ComposeForm from './ComposeForm.svelte';
 import MessageDetail from './MessageDetail.svelte';
 import MessageList from './MessageList.svelte';
 
-const accounts: AccountData[] = [
+const { t } = useI18n();
+const accounts = $state<AccountData[]>([
   {
     id: 'demo-account',
-    name: 'Demo Inbox',
+    name: t(M['messages.mailbox_demo.inbox']),
     providerType: 'email',
     email: 'you@example.com',
     isActive: true,
   },
-];
-let messages = $state<MessageData[]>([
+]);
+$effect(() => {
+  accounts[0].name = t(M['messages.mailbox_demo.inbox']);
+});
+let wasRead = $state(false);
+const messages = $derived<MessageData[]>([
   {
     id: 'demo-welcome',
     type: 'email',
     accountId: 'demo-account',
-    subject: 'Welcome to your mailbox',
-    body: 'Open this message, or compose a mock reply. Nothing leaves this browser.',
-    senderName: 'Demo colleague',
+    subject: t(M['messages.mailbox_demo.subject']),
+    body: t(M['messages.mailbox_demo.body']),
+    senderName: t(M['messages.mailbox_demo.sender']),
     senderAddress: 'colleague@example.com',
     recipientAddresses: [{ address: 'you@example.com' }],
     date: '2026-01-01T12:00:00Z',
-    isRead: false,
+    isRead: wasRead,
     isFlagged: false,
     hasAttachments: false,
   },
 ]);
-let selected = $state<MessageData | null>(null);
+let selectedId = $state<string | null>(null);
+const selected = $derived(
+  messages.find((message) => message.id === selectedId),
+);
 let composing = $state(false);
-let status = $state('');
+let sentSubject = $state<string | null>(null);
 function send(state: ComposeState) {
-  status = `Mock send complete: ${state.subject}. No email was delivered.`;
+  sentSubject = state.subject;
   composing = false;
 }
 function open(message: MessageData) {
-  selected = { ...message, isRead: true };
-  messages = messages.map((row) => (row.id === message.id ? selected! : row));
+  selectedId = message.id;
+  wasRead = true;
 }
 </script>
-<p>Demo mailbox. Sending is mocked; no mail server is contacted.</p>
-<Button onclick={() => { composing = true; status = ''; }}>Compose</Button>
-{#if status}<p role="status">{status}</p>{/if}
+<p>{t(M['messages.mailbox_demo.disclaimer'])}</p>
+<Button onclick={() => { composing = true; sentSubject = null; }}>{t(M['messages.mailbox_demo.compose'])}</Button>
+{#if sentSubject !== null}<p role="status">{t(M['messages.mailbox_demo.sent'], { subject: sentSubject })}</p>{/if}
 {#if composing}
   <ComposeForm {accounts} onsend={send} ondiscard={() => (composing = false)} />
 {:else if selected}
-  <Button onclick={() => (selected = null)}>Back to mailbox</Button>
+  <Button onclick={() => (selectedId = null)}>{t(M['messages.mailbox_demo.back'])}</Button>
   <MessageDetail message={selected} account={accounts[0]} onreply={() => (composing = true)} />
 {:else}
   <MessageList {messages} {accounts} onmessageclick={open} />
