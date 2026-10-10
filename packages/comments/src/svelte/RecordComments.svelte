@@ -43,7 +43,8 @@ async function submit() {
     if (generation === submittedGeneration) body = '';
   } catch {
     if (generation === submittedGeneration)
-      error = 'Could not post your comment. Try again.';
+      error =
+        'Could not confirm your comment was posted. Refresh and check the discussion before posting again.';
   } finally {
     if (generation === submittedGeneration) pending = false;
   }

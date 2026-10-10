@@ -30,3 +30,14 @@ verify runtime, playground and demo exports in manifest and knowledge artifacts.
 Persistence and authorization are unchanged; existing three-dialect evidence
 applies. Route/settings/shell/provider contracts are N/A because they cannot
 provide the parent record authorization context.
+
+## Accepted review6084422109 round 1 regressions
+
+- Invalid UUID and 51 distinct mentions: authorized actor, each SQL dialect,
+  failed create must leave zero rows for the record. Baseline failed on SQLite,
+  DuckDB and PostgreSQL; public model setter now validates before the one insert.
+- Actual SQLite CommentService notification rejection composed with the Svelte
+  submit callback: saved row remains, draft remains, alert instructs refresh and
+  checking the discussion before reposting. Baseline produced “Try again”.
+- Commands: full comments `test`, `test:postgres`, `typecheck`, `check`, `build`,
+  and Biome; evidence under `/private/tmp/smrt-track-b-evidence/3714-r1-*`.

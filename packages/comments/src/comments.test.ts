@@ -150,7 +150,10 @@ describe.each([
     expect(RecordCommentsRecipe.id).toBe('comments.records');
     expect(RecordCommentsRecipe.models).toContain(Comment);
   });
-  it('rejects malformed mention identifiers before persistence', async () => {
+  it.each([
+    'malformed',
+    'over-limit',
+  ])('rejects %s mentions without leaving a saved row', async (invalid) => {
     const db = await getTestDatabase({
       classes: ['Comment', 'UserNotification'],
       type: dialect as 'sqlite' | 'duckdb' | 'postgres',
@@ -160,16 +163,22 @@ describe.each([
           : ':memory:',
     });
     dbs.push(db);
+    const service = new CommentService({ ...access, db });
+    const recordId = crypto.randomUUID();
     await expect(
-      new CommentService({ ...access, db }).create({
+      service.create({
         tenantId,
         authorUserId,
         metaType: 'Record',
-        metaId: '1',
+        metaId: recordId,
         body: 'x',
-        mentions: ['not-a-uuid'],
+        mentions:
+          invalid === 'malformed'
+            ? ['not-a-uuid']
+            : Array.from({ length: 51 }, () => crypto.randomUUID()),
       }),
     ).rejects.toThrow('mentions');
+    expect(await service.listForRecord('Record', recordId)).toEqual([]);
   });
 
   it("does not expose another tenant's record comments", async () => {

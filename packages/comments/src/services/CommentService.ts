@@ -1,7 +1,7 @@
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import { CommentCollection } from '../collections/CommentCollection.js';
-import type { Comment } from '../models/Comment.js';
+import { Comment } from '../models/Comment.js';
 import type {
   CommentActorContext,
   CommentMentionNotificationAdapter,
@@ -72,14 +72,19 @@ export class CommentService {
     if (!commentOptions.body?.trim())
       throw new TypeError('Comment body is required.');
     const { mentions, ...input } = commentOptions;
+    // Validate through the model's public setter before collection.create()
+    // persists. Supply its normalized JSON in that single insert.
+    const prepared = new Comment();
+    if (mentions !== undefined) prepared.mentionUserIds = mentions;
     const comment = await withTenant(
       { tenantId: commentOptions.tenantId },
       async () => {
-        const created = await (
-          await CommentCollection.create({ db: this.options.db })
-        ).create(input);
-        if (mentions !== undefined) created.mentionUserIds = mentions;
-        return created.save();
+        return (await CommentCollection.create({ db: this.options.db })).create(
+          {
+            ...input,
+            mentions: prepared.mentions,
+          },
+        );
       },
     );
     if (!this.options.mentionNotifications || !comment.id) return comment;

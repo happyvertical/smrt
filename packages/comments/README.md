@@ -28,9 +28,11 @@ runtime dependency on messages. `canNotify` must check recipient membership and
 record access before exposing the comment. Notifications use a stable per-comment
 source reference so adapter replays deduplicate. Mentions are UUIDs, deduplicated,
 and limited to 50; self-mentions do not notify. No adapter means no notifications.
-The comment is saved before notification delivery. A delivery rejection leaves
+Mention validation finishes before the single comment insert; invalid or over-limit
+mentions leave no saved row. The comment is saved before notification delivery. A delivery rejection leaves
 the comment saved: reload it and retry delivery, not `create`, which creates a
-new comment. Delivery and persistence are deliberately not one transaction.
+new comment. The component warns users to refresh and check the discussion before
+posting again when submission rejects. Delivery and persistence are deliberately not one transaction.
 
 Import `RecordComments` from `@happyvertical/smrt-comments/svelte`. Pass authorized
 comment projections, an `onsubmit(body)` callback, and a `contextKey` containing
