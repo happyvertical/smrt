@@ -156,7 +156,11 @@ export interface OverviewToolAuditEntry {
 
 export interface OverviewToolsOptions {
   host: OverviewToolsHost;
-  /** Defaults to {@link createMemoryOverviewUndoStore}. */
+  /**
+   * Where undo entries live. It must outlive a request and a turn. Defaults
+   * to {@link defaultOverviewUndoStore} (process-wide memory); pass a shared
+   * store when several replicas serve one assistant.
+   */
   undoStore?: OverviewUndoStore;
   audit?: (entry: OverviewToolAuditEntry) => void | Promise<void>;
   /** Batch cap (default 20); keep it equal to the surface's. */
@@ -228,6 +232,20 @@ export function createMemoryOverviewUndoStore(
       entries.delete(key);
     },
   };
+}
+
+let processUndoStore: OverviewUndoStore | undefined;
+
+/**
+ * The process-wide in-memory undo store `createOverviewTools` uses when no
+ * `undoStore` is passed. It outlives every tool set, so tools built per turn
+ * (`extraTools: (context) => createOverviewTools(...)`) can undo a batch an
+ * earlier turn applied. Keys carry tenant, user and page, so sharing it is
+ * safe; it is per process, so a multi-replica host passes a shared store.
+ */
+export function defaultOverviewUndoStore(): OverviewUndoStore {
+  processUndoStore ??= createMemoryOverviewUndoStore();
+  return processUndoStore;
 }
 
 function principalFromRun(run: PrincipalRun): {
@@ -358,7 +376,7 @@ export function createOverviewTools(
   options: OverviewToolsOptions,
 ): PrincipalTool[] {
   const { host } = options;
-  const undoStore = options.undoStore ?? createMemoryOverviewUndoStore();
+  const undoStore = options.undoStore ?? defaultOverviewUndoStore();
   const maxOperations = options.maxOperations ?? OVERVIEW_TOOL_MAX_OPERATIONS;
   const createToken = options.createToken ?? (() => crypto.randomUUID());
   const onError =

@@ -56,14 +56,18 @@ field vocabulary; there is no query, filter expression, URL or SQL anywhere.
   found. It refuses when the stored override is no longer `after` (someone
   changed the page since), re-checks `before` with `check`, persists it
   conditionally, and deletes the entry only after that write succeeded.
+- **The undo store must outlive a request and a turn.** Without `undoStore`
+  the tools use `defaultOverviewUndoStore()`, one in-memory store per process
+  (30-minute TTL, 1000 keys), so tools built per turn
+  (`extraTools: (context) => createOverviewTools(...)`) still undo an earlier
+  turn's batch. Never pass a store created inside the per-turn factory. A
+  multi-replica host passes one shared `OverviewUndoStore`, created once.
 - **After a successful write the call never fails.** The undo entry is written
   after the write; if the store throws, apply still answers `changed: true`
   with `undoToken: null` and a `note` not to apply the batch again (a lost entry
   only costs the Undo, while an entry written first could later restore over a
   value the batch never wrote). Audit is best effort; failures go to
-  `onError` (default `console.warn`). The default `createMemoryOverviewUndoStore` is in-process
-  (30-minute TTL, 1000 keys); a multi-replica host passes a shared
-  `OverviewUndoStore`.
+  `onError` (default `console.warn`).
 
 ## Wiring to persistence (phase 3)
 
@@ -72,7 +76,11 @@ dependency (smrt-svelte depends on chat for tests, so the types are
 structural). With the phase-3 store:
 
 ```ts
-createOverviewTools({
+// Module scope: created once, shared by every turn and request.
+const overviewUndo = createSharedOverviewUndoStore(); // or omit for the process default
+
+const overviewTools = (/* per turn */) => createOverviewTools({
+  undoStore: overviewUndo,
   host: {
     async open(run, pageId) {
       const definition = overviewDefinitions.get(pageId);
@@ -93,7 +101,8 @@ createOverviewTools({
 });
 ```
 
-`store` is phase 3's `createOverviewStore` (`@happyvertical/smrt-overviews`):
+`createSharedOverviewUndoStore` stands for the host's own shared store (any
+`OverviewUndoStore`). `store` is phase 3's `createOverviewStore` (`@happyvertical/smrt-overviews`):
 its `save` validates like the save endpoint and refuses a stale revision with
 `conflict`. Add the three slugs to the
 persona's / route's `allowedTools`.

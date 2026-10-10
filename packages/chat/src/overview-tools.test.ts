@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createMemoryOverviewUndoStore,
   createOverviewTools,
+  defaultOverviewUndoStore,
   formatOverviewIssues,
   OVERVIEW_APPLY_TOOL_SLUG,
   OVERVIEW_DESCRIBE_TOOL_SLUG,
@@ -147,6 +148,8 @@ function tools(
   const list = createOverviewTools({
     host,
     createToken: () => `t${++n}`,
+    // Isolated per test: the process-wide default would carry entries over.
+    undoStore: createMemoryOverviewUndoStore(),
     ...extra,
   });
   return new Map(list.map((tool) => [tool.slug, tool])) as Map<
@@ -581,6 +584,34 @@ describe('createOverviewTools', () => {
       }),
     );
     expect(error.status).toBe(403);
+  });
+});
+
+describe('the default undo store', () => {
+  it('is one process-wide store', () => {
+    expect(defaultOverviewUndoStore()).toBe(defaultOverviewUndoStore());
+  });
+
+  it('outlives a tool set built per turn', async () => {
+    const { host, store, keyOf } = makeHost();
+    // `extraTools: (context) => createOverviewTools({ host })`: one set per turn.
+    const turn1 = new Map(
+      createOverviewTools({ host }).map((tool) => [tool.slug, tool]),
+    );
+    const applied = (await call(turn1, OVERVIEW_APPLY_TOOL_SLUG, alice, {
+      page: 'events.home',
+      operations: [{ op: 'remove', id: 'w2' }],
+    })) as { undoToken: string };
+    const turn2 = new Map(
+      createOverviewTools({ host }).map((tool) => [tool.slug, tool]),
+    );
+    await expect(
+      call(turn2, OVERVIEW_UNDO_TOOL_SLUG, alice, {
+        page: 'events.home',
+        undoToken: applied.undoToken,
+      }),
+    ).resolves.toMatchObject({ undone: true });
+    expect(store.get(keyOf(alice, 'events.home'))).toBeNull();
   });
 });
 

@@ -152,6 +152,7 @@ export {
 export {
   createMemoryOverviewUndoStore,
   createOverviewTools,
+  defaultOverviewUndoStore,
   formatOverviewIssues,
   OVERVIEW_APPLY_FUNCTION_NAME,
   OVERVIEW_APPLY_TOOL_SLUG,
