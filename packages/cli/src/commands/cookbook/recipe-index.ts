@@ -58,6 +58,8 @@ export interface PackageIndexEntry {
   source: string;
   /** Qualified object name to its field names. */
   objects: Map<string, Set<string>>;
+  /** The manifest as read, for callers that need more than the index keeps. */
+  manifest: ManifestLike;
 }
 
 export interface RecipeIndex {
@@ -71,7 +73,7 @@ export function createRecipeIndex(): RecipeIndex {
   return { recipes: new Map(), packages: new Map(), missing: new Set() };
 }
 
-interface ManifestLike {
+export interface ManifestLike {
   packageName?: string;
   packageVersion?: string;
   objects?: Record<string, { fields?: Record<string, unknown> | unknown[] }>;
@@ -114,6 +116,7 @@ export function addManifest(
     packageVersion: manifest.packageVersion,
     source,
     objects,
+    manifest,
   });
   for (const recipe of manifest.recipes ?? []) {
     if (!recipe.id || index.recipes.has(recipe.id)) continue;

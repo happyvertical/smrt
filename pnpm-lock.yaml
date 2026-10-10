@@ -900,6 +900,9 @@ importers:
       '@happyvertical/utils':
         specifier: ^0.103.1
         version: 0.103.1
+      '@modelcontextprotocol/server':
+        specifier: 2.0.0
+        version: 2.0.0
       acorn:
         specifier: ^8.18.0
         version: 8.18.0
@@ -913,6 +916,9 @@ importers:
         specifier: ^7.5.22
         version: 7.5.22
     devDependencies:
+      '@modelcontextprotocol/client':
+        specifier: 2.2.0
+        version: 2.2.0
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2

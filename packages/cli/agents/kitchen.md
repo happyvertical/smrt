@@ -71,3 +71,41 @@ Otherwise it stops with an error naming `--planner`.
 
 `src/commands/__tests__/kitchen.test.ts` uses a generated fake planner package and a stub model.
 Set `SMRT_PLANNER_DIR=<packaged planner checkout>` to also run the suite against the real `./core`.
+
+## `smrt kitchen mcp` (#3752)
+
+```
+smrt kitchen mcp [--template <t>] [--manifests <p>]... [--no-registry] [--packages <name>]... [--library <dir>]...
+```
+
+A stdio MCP server (`@modelcontextprotocol/server`, `serveStdio`) for the local
+agent plugin in [`plugins/smrt-kitchen`](../../../plugins/smrt-kitchen/README.md).
+The host's model reasons; the server holds plans and calls `createCookbookEngine`
+(`smrt-core/cookbook/engine`). It never calls a model and takes no credential.
+**stdout is the protocol stream**: every notice goes to stderr (this is why the
+`.smrt/register.js` warning in `cli-generator.ts` uses `console.warn`).
+
+Code: `src/commands/kitchen/mcp/` (`tools.ts` definitions + `KitchenSession`, `catalog.ts`,
+`server.ts`). Tests: `__tests__/kitchen-mcp.test.ts` (spawns the CLI over stdio with the SDK
+client), `__tests__/kitchen-plugin.test.ts` (plugin files against the Agent Plugins schemas).
+
+| Tool | Hints | |
+| --- | --- | --- |
+| `list_cookbooks`, `search_recipes` | read-only | library (`cookbooks/*.cookbook.json`, kept equal to core's fixtures by a test; `--library` adds dirs) and catalog recipes |
+| `start_plan` | not read-only, not destructive | empty, or from a library cookbook; returns `planId` |
+| `run_commands` | idempotent | one atomic `engine.batch` (`id`, `expectedRevision` pass through); a lone `undo` runs as a command |
+| `get_plan`, `validate_plan`, `export_plan` | read-only | `validate_plan` = engine `validate` + `validateCookbookText` against the catalog's manifests |
+| `apply_plan` | destructive, idempotent, open-world | `createCookbookApplier` (= `cookbook apply`); absolute `dir`; **writes only with `confirm: true`**, otherwise (or with `dryRun`) a preview + `confirmation_required`; `install` defaults to false |
+
+- **Plans** live in the server process, keyed by `plan-<8 hex>` (20 kept, oldest dropped); a restart
+  forgets them. `smrt.cookbook.json` in the project (written by apply) is the durable copy.
+- **Catalog** is built lazily on first use, once: manifests are resolved for the library's recipes
+  exactly like `cookbook validate` (`--manifests`, workspace, `node_modules`, registry unless
+  `--no-registry`; `--packages` adds more) and turned into `EngineCatalog` (`catalog.ts`: recipes from
+  `manifest.recipes`, models from `manifest.objects`, `exposed` from `decoratorConfig.api`). A package
+  that cannot be found shows up in `warnings` and as `snapshot.unavailable`. Tool schemas are static
+  (no recipe-id enums) so `tools/list` never waits on the network; `search_recipes` is the id source.
+- **Output**: every tool returns compact text for the model plus `structuredContent` that matches its
+  `outputSchema` (`ok` always; `error {code,message,path?,details?}` when false, with `isError`).
+- Not here: the MCP Apps planner widget (see the plugin README), remote/HTTP transport.
+

@@ -97,5 +97,6 @@ ported in `__tests__/engine.test.ts` (`SCRIPT`) over a data catalog.
 5. Overview customisation stays a planner/smrt-svelte concern; hold `overviews`
    in the document via `import_cookbook` and write them with a planner-side
    command until an engine command is agreed.
-6. MCP/Kitchen (#3752): expose `engine.tools` + `engine.batchTool` directly; one
-   engine per plan id, `state()` to disk.
+6. MCP/Kitchen (#3752, done): `smrt kitchen mcp` holds one engine per plan id and
+   serves `engine.batchTool`'s schema as `run_commands`; the plan reaches disk
+   as `smrt.cookbook.json` through `cookbook apply` (`cli/agents/kitchen.md`).

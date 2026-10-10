@@ -64,6 +64,7 @@ export default defineConfig({
         '@happyvertical/utils',
 
         // External dependencies to externalize
+        /^@modelcontextprotocol\//,
         'fast-glob',
         'fdir',
         'picomatch',

@@ -48,6 +48,14 @@ class KitchenStopped extends Error {
 
 const apply = cookbookCommands['cookbook apply'];
 
+interface KitchenMcpCliOptions {
+  template?: string;
+  manifests?: string[] | string;
+  'no-registry'?: boolean;
+  packages?: string[] | string;
+  library?: string[] | string;
+}
+
 export const kitchenCommands: Record<string, CLICommand> = {
   kitchen: {
     name: 'kitchen',
@@ -130,6 +138,54 @@ export const kitchenCommands: Record<string, CLICommand> = {
       } finally {
         dispose();
       }
+    },
+  },
+  'kitchen mcp': {
+    name: 'kitchen mcp',
+    description:
+      'Serve the Kitchen planning tools over stdio MCP for a local agent plugin (ChatGPT, Codex, Claude); no model or credential is used',
+    args: [],
+    options: {
+      template: {
+        type: 'string',
+        description:
+          'Default project template for apply_plan (default github:happyvertical/smrt-start)',
+      },
+      manifests: {
+        type: 'string',
+        description:
+          'Extra package manifests (file or directory); repeatable. Searched before the workspace, node_modules and the registry',
+        multiple: true,
+      },
+      'no-registry': {
+        type: 'boolean',
+        description:
+          'Do not fetch manifests of uninstalled packages from the registry',
+        default: false,
+      },
+      packages: {
+        type: 'string',
+        description:
+          'Extra smrt packages whose recipes to offer (name or @scope/name); repeatable',
+        multiple: true,
+      },
+      library: {
+        type: 'string',
+        description:
+          'Directory of extra <id>.cookbook.json starting points; repeatable',
+        multiple: true,
+      },
+    },
+    handler: async (_args: string[], options: KitchenMcpCliOptions) => {
+      const { runKitchenMcp } = await import('./kitchen/mcp/server.js');
+      await runKitchenMcp({
+        dir: process.cwd(),
+        template: options.template,
+        manifests: asList(options.manifests),
+        registry: !options['no-registry'],
+        packages: asList(options.packages),
+        library: asList(options.library),
+      });
     },
   },
   'kitchen apply': {
