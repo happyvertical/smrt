@@ -37,6 +37,16 @@ describe('tags recipes (#3719)', () => {
     }
   });
 
+  it('declares a described section with an icon for its menu entries', () => {
+    expect(TaxonomyRecipe.section).toEqual({
+      id: 'taxonomy',
+      label: 'Taxonomy',
+      icon: 'tag',
+      description: expect.any(String),
+    });
+    expect(TaxonomyRecipe.section.description.length).toBeGreaterThan(0);
+  });
+
   it('describes the inherited parent tag field through the recipe', () => {
     expect(TaxonomyRecipe.options.Tag.fields.parentId.help).toMatch(
       /broader tag/,
