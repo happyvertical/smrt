@@ -1,7 +1,8 @@
-import type { Component } from 'svelte';
+import type { Component, Snippet } from 'svelte';
 import type { OverviewController } from './controller.svelte.js';
 import type {
   OverviewOptions,
+  OverviewWidget,
   RegisteredWidget,
   WidgetComponentProps,
 } from './types.js';
@@ -31,6 +32,10 @@ export interface OverviewGridProps {
   label?: string;
   /** Heading level of widget titles (default 2). */
   headingLevel?: 2 | 3 | 4;
+  /** Optional title content; the grid retains the heading element and accessible id. */
+  heading?: Snippet<[widget: OverviewWidget, title: string]>;
+  /** Tile presentation outside edit mode (default card). Editing retains its frame. */
+  presentation?: 'card' | 'plain';
   /** Models offered by `model` option fields (else a text box). */
   models?: readonly OverviewModelChoice[];
   /** Host renderer for icon names that are not built in. */
