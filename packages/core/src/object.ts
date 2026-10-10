@@ -3395,8 +3395,7 @@ export class SmrtObject extends SmrtClass {
   /**
    * One id-targeted `UPDATE` on native DuckDB (see {@link buildDuckDbIdUpdate}
    * for the quoting and binding). The caller holds the embedded write queue
-   * and has already matched the row, so `affected` is the driver's own count
-   * when it reports one.
+   * and has already matched the row; `affected` is the driver's own count.
    */
   private async updateDuckDbRowById(
     id: unknown,
@@ -3408,11 +3407,20 @@ export class SmrtObject extends SmrtClass {
       assignments,
     );
     const result = await this.db.query(sql, ...values);
-    const count = result?.rows?.[0]?.Count;
-    return {
-      operation: 'update',
-      affected: count === undefined ? 1 : Number(count),
-    };
+    // Fail closed: an absent or non-numeric count must never read as a
+    // success, or a zero-row UPDATE would report a write that did not happen.
+    const reported = result?.rows?.[0]?.Count;
+    const count =
+      typeof reported === 'number' || typeof reported === 'bigint'
+        ? Number(reported)
+        : Number.NaN;
+    if (!Number.isInteger(count) || count < 0) {
+      throw RuntimeError.invalidState(
+        'The DuckDB UPDATE did not report an affected-row count',
+        { className: this.getResolvedClassName(), tableName: this.tableName },
+      );
+    }
+    return { operation: 'update', affected: count };
   }
 
   /**
@@ -3542,6 +3550,9 @@ export class SmrtObject extends SmrtClass {
    */
   private toTypedWriteError(error: unknown, operation: string): unknown {
     if (!(error instanceof Error)) return error;
+    // The writer's own invalid-state refusal is not a database failure.
+    if (error instanceof RuntimeError && error.code === 'RUNTIME_INVALID_STATE')
+      return error;
     const classification = classifyDatabaseError(error);
     if (classification.kind === 'unique_violation') {
       const field = this.extractConstraintFieldFromChain(error, classification);

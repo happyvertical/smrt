@@ -593,6 +593,40 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
       });
     });
 
+    describe.skipIf(dialect !== 'duckdb')('exact proofs (DuckDB)', () => {
+      const storedText = async (id: string) =>
+        String(
+          (
+            await db.query(
+              'SELECT CAST(created_at AS VARCHAR) AS at FROM issue3737_parents WHERE id = ?',
+              id,
+            )
+          ).rows[0].at,
+        );
+
+      it('fails closed when the driver reports no affected-row count', async () => {
+        const created = await newParent();
+        const original = db.query.bind(db);
+        vi.spyOn(db, 'query').mockImplementation(async (sql, ...values) => {
+          const result = await original(sql, ...values);
+          return String(sql).startsWith('UPDATE "')
+            ? { ...result, rows: [] }
+            : result;
+        });
+
+        const loaded = await load(created.id as string);
+        loaded.enabled = false;
+        await expect(loaded.save()).rejects.toMatchObject({
+          code: 'RUNTIME_INVALID_STATE',
+        });
+
+        const claimant = await load(created.id as string);
+        await expect(
+          claimant.claimRevision(claimant.updated_at as Date),
+        ).rejects.toMatchObject({ code: 'RUNTIME_INVALID_STATE' });
+      });
+    });
+
     describe('STI subclasses', () => {
       it('toggles a field of a referenced STI row', async () => {
         const circle = new Issue3737Circle({ db, slug: 'circle-1' });
