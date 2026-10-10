@@ -64,7 +64,10 @@ inline comment pointing back to this section.
   `tenantScoped: true` form rather than the decorator. Audit reads run in mixed
   contexts (tenant-scoped reports vs. super-admin compliance review). Cross-
   tenant audit queries should be wrapped in `withSuperAdminBypass()` from
-  `@happyvertical/smrt-tenancy` at the call site — there are no such cross-
+  `@happyvertical/smrt-tenancy` at the call site; the bypass applies only to
+  classes declaring `allowSuperAdminBypass: true` (smrt#2973), which this
+  model does not, so it stays tenant-filtered under bypass until a compliance
+  consumer opts it in deliberately — there are no such cross-
   tenant call sites in this package today, but consumers building compliance
   tooling should adopt that pattern explicitly rather than relying on
   decorator-implicit filtering. Its `secretId` relationship is also deliberately

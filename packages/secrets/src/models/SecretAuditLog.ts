@@ -90,7 +90,8 @@ export interface SecretAuditLogOptions extends SmrtObjectOptions {
 // in mixed contexts — under a tenant for tenant-scoped reports, and (prospectively)
 // under super-admin bypass for compliance review. Cross-tenant audit queries should
 // be wrapped in `withSuperAdminBypass()` from `@happyvertical/smrt-tenancy` at the
-// call site; this package has no such call sites today, so the pattern is
+// call site, and the bypass only applies once this model opts in with
+// `allowSuperAdminBypass: true` (smrt#2973; it does not today); this package has no such call sites today, so the pattern is
 // prescriptive guidance for compliance tooling rather than current practice. See
 // `packages/secrets/CLAUDE.md` "Known exceptions to monorepo standards" for context.
 @smrt({
