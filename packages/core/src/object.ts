@@ -72,6 +72,7 @@ import {
 import {
   buildDuckDbIdUpdate,
   collectIndexedColumns,
+  timestampColumnsToProve,
   unchangedIndexedColumns,
 } from './unchanged-indexed';
 import { fieldsFromClass, tableNameFromClass, toSnakeCase } from './utils';
@@ -3303,10 +3304,10 @@ export class SmrtObject extends SmrtClass {
    * revision matched the loaded one, so it is the state this save was loaded
    * from. Anything not provably equal stays assigned.
    */
-  private unchangedIndexedColumnsOf(
+  private async unchangedIndexedColumnsOf(
     data: Record<string, unknown>,
     stored: Record<string, unknown> | null,
-  ): Set<string> {
+  ): Promise<Set<string>> {
     if (!stored || !this.isPositivelyNativeDuckDb()) return new Set();
     const qualifiedName = this.getResolvedQualifiedName();
     const stiBase = ObjectRegistry.getSTIBase(qualifiedName);
@@ -3328,7 +3329,39 @@ export class SmrtObject extends SmrtClass {
         columnTypes[name] ??= column;
       }
     }
-    return unchangedIndexedColumns(data, stored, indexed, columnTypes);
+    // A hydrated Date keeps only milliseconds while the column holds
+    // microseconds, so an indexed timestamp is proven against the stored
+    // text, read in this same queue slot.
+    const exactTimestamps: Record<string, string> = {};
+    const timestamps = timestampColumnsToProve(
+      data,
+      stored,
+      indexed,
+      columnTypes,
+    );
+    if (timestamps.length > 0 && stored.id != null) {
+      const quote = (identifier: string) =>
+        `"${identifier.replaceAll('"', '""')}"`;
+      const { rows } = await this.db.query(
+        `SELECT ${timestamps
+          .map(
+            (column) => `CAST(${quote(column)} AS VARCHAR) AS ${quote(column)}`,
+          )
+          .join(', ')} FROM ${quote(this.tableName)} WHERE ${quote('id')} = ?`,
+        stored.id,
+      );
+      for (const column of timestamps) {
+        const text = rows[0]?.[column];
+        if (typeof text === 'string') exactTimestamps[column] = text;
+      }
+    }
+    return unchangedIndexedColumns(
+      data,
+      stored,
+      indexed,
+      columnTypes,
+      exactTimestamps,
+    );
   }
 
   /**
@@ -3346,7 +3379,7 @@ export class SmrtObject extends SmrtClass {
     data: Record<string, unknown>,
     stored: Record<string, unknown> | null,
   ) {
-    const unchanged = this.unchangedIndexedColumnsOf(data, stored);
+    const unchanged = await this.unchangedIndexedColumnsOf(data, stored);
     if (unchanged.size === 0) {
       return this.db.upsert(this.tableName, ['id'], data);
     }
@@ -3372,7 +3405,7 @@ export class SmrtObject extends SmrtClass {
     conflictColumns: string[],
     existing: Record<string, unknown> | null,
   ) {
-    const unchanged = this.unchangedIndexedColumnsOf(data, existing);
+    const unchanged = await this.unchangedIndexedColumnsOf(data, existing);
     if (!existing || unchanged.size === 0 || existing.id == null) {
       return this.db.upsert(this.tableName, conflictColumns, data);
     }

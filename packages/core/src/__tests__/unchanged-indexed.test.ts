@@ -4,6 +4,8 @@ import {
   buildDuckDbIdUpdate,
   collectIndexedColumns,
   storedValueEquals,
+  timestampColumnsToProve,
+  timestampMicros,
   unchangedIndexedColumns,
 } from '../unchanged-indexed';
 
@@ -97,23 +99,49 @@ describe('storedValueEquals (#3737)', () => {
     expect(storedValueEquals('TEXT', id.toUpperCase(), id)).toBe(false);
   });
 
-  it('compares timestamps as instants and refuses unzoned strings', () => {
+  it('proves timestamps only against the stored text, at full precision', () => {
     const at = new Date('2026-01-02T03:04:05.678Z');
-    expect(storedValueEquals('TIMESTAMP', at, new Date(at))).toBe(true);
-    expect(storedValueEquals('TIMESTAMP', at, at.toISOString())).toBe(true);
+    // No stored text, no proof: a hydrated Date has lost sub-ms digits.
+    expect(storedValueEquals('TIMESTAMP', at, new Date(at))).toBe(false);
+    const equal = (next: unknown, stored: string) =>
+      storedValueEquals('TIMESTAMP', next, new Date(0), stored);
+    expect(equal(at, '2026-01-02 03:04:05.678')).toBe(true);
+    expect(equal(at, '2026-01-02 03:04:05.678000')).toBe(true);
+    expect(equal(at, at.toISOString())).toBe(true);
+    expect(equal(at.toISOString(), '2026-01-02 03:04:05.678')).toBe(true);
     expect(
-      storedValueEquals('TIMESTAMP', at, '2026-01-02T04:04:05.678+01:00'),
+      equal('2026-01-02T04:04:05.678+01:00', '2026-01-02 03:04:05.678'),
     ).toBe(true);
-    expect(storedValueEquals('TIMESTAMP', at, new Date(at.getTime() + 1))).toBe(
+    // Same millisecond, different microseconds: changed.
+    expect(equal(at, '2026-01-02 03:04:05.678901')).toBe(false);
+    expect(
+      equal('2026-01-02T03:04:05.678901Z', '2026-01-02 03:04:05.678'),
+    ).toBe(false);
+    // Identical at full precision: provable.
+    expect(
+      equal('2026-01-02T03:04:05.678901Z', '2026-01-02 03:04:05.678901'),
+    ).toBe(true);
+    expect(equal(at, '2026-01-02 03:04:05.679')).toBe(false);
+    // Unzoned requested text, or digits finer than microseconds, are unprovable.
+    expect(equal('2026-01-02 03:04:05.678', '2026-01-02 03:04:05.678')).toBe(
       false,
     );
-    expect(storedValueEquals('TIMESTAMP', at, '2026-01-02 03:04:05.678')).toBe(
-      false,
+    expect(
+      equal('2026-01-02T03:04:05.6780001Z', '2026-01-02 03:04:05.678'),
+    ).toBe(false);
+    expect(equal('garbage', 'garbage')).toBe(false);
+    expect(equal(new Date(Number.NaN), '2026-01-02 03:04:05.678')).toBe(false);
+  });
+
+  it('reads timestamp text exactly', () => {
+    expect(timestampMicros('2026-01-02 03:04:05.5', true)).toBe(
+      BigInt(Date.UTC(2026, 0, 2, 3, 4, 5)) * 1000n + 500000n,
     );
-    expect(storedValueEquals('TIMESTAMP', 'garbage', 'garbage')).toBe(false);
-    expect(storedValueEquals('TIMESTAMP', new Date(Number.NaN), at)).toBe(
-      false,
+    expect(timestampMicros('2026-01-02 03:04:05')).toBeUndefined();
+    expect(timestampMicros('2026-01-02T03:04:05-0230')).toBe(
+      BigInt(Date.UTC(2026, 0, 2, 5, 34, 5)) * 1000n,
     );
+    expect(timestampMicros(42)).toBeUndefined();
   });
 
   it('compares JSON structurally and refuses unparseable text', () => {
@@ -147,6 +175,7 @@ describe('unchangedIndexedColumns (#3737)', () => {
   const types = {
     tenant_id: { type: 'UUID' },
     updated_at: { type: 'TIMESTAMP' },
+    created_at: { type: 'TIMESTAMP' },
   };
 
   it('reports only indexed columns whose value provably equals the stored one', () => {
@@ -171,6 +200,29 @@ describe('unchangedIndexedColumns (#3737)', () => {
       types,
     );
     expect([...unchanged]).toEqual(['slug', 'tenant_id']);
+  });
+
+  it('needs the stored text to skip an indexed timestamp', () => {
+    const at = new Date('2026-01-02T03:04:05.678Z');
+    const indexedWithCreated = new Set([...indexed, 'created_at']);
+    const data = { id: 'x', created_at: at, updated_at: new Date() };
+    const stored = { id: 'x', created_at: new Date(at), updated_at: at };
+    expect(
+      timestampColumnsToProve(data, stored, indexedWithCreated, types),
+    ).toEqual(['created_at']);
+    expect([
+      ...unchangedIndexedColumns(data, stored, indexedWithCreated, types),
+    ]).toEqual([]);
+    expect([
+      ...unchangedIndexedColumns(data, stored, indexedWithCreated, types, {
+        created_at: '2026-01-02 03:04:05.678',
+      }),
+    ]).toEqual(['created_at']);
+    expect([
+      ...unchangedIndexedColumns(data, stored, indexedWithCreated, types, {
+        created_at: '2026-01-02 03:04:05.678901',
+      }),
+    ]).toEqual([]);
   });
 
   it('skips a column the stored row does not carry', () => {

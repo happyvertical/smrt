@@ -604,6 +604,41 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
           ).rows[0].at,
         );
 
+      it('writes a changed sub-millisecond value instead of treating it as unchanged', async () => {
+        const created = await newParent();
+        await db.query(
+          "UPDATE issue3737_parents SET created_at = TIMESTAMP '2026-01-02 03:04:05.678901' WHERE id = ?",
+          created.id,
+        );
+        expect(await storedText(created.id as string)).toBe(
+          '2026-01-02 03:04:05.678901',
+        );
+
+        const loaded = await load(created.id as string);
+        // Same millisecond, different microseconds: a change, not a no-op.
+        loaded.created_at = new Date('2026-01-02T03:04:05.678Z');
+        await loaded.save();
+
+        expect(await storedText(created.id as string)).toBe(
+          '2026-01-02 03:04:05.678',
+        );
+      });
+
+      it('still skips an indexed timestamp stored at the same precision', async () => {
+        const created = await newParent();
+        await db.query(
+          "UPDATE issue3737_parents SET created_at = TIMESTAMP '2026-01-02 03:04:05.678' WHERE id = ?",
+          created.id,
+        );
+        await reference('issue3737_children', created.id as string);
+        const loaded = await load(created.id as string);
+        loaded.created_at = new Date('2026-01-02T03:04:05.678Z');
+        loaded.enabled = false;
+        // created_at is indexed and referenced: assigning it would be refused.
+        await loaded.save();
+        expect((await load(created.id as string)).enabled).toBe(false);
+      });
+
       it('fails closed when the driver reports no affected-row count', async () => {
         const created = await newParent();
         const original = db.query.bind(db);
