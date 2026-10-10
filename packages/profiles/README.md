@@ -263,3 +263,24 @@ authorization, the owned Profile still returns `profile_owned`.
 - `@noble/curves` -- Nostr cryptography
 - `bech32` -- Bech32 encoding for Nostr keys
 - Peer: `@happyvertical/smrt-tenancy`
+
+### Activity log recipe
+
+`AuditLogRecipe` declares `profiles.audit-log`. After authorizing access through
+`readAuditTrail`, pass the returned records to `auditActivityEntries`, then pass its
+DTOs as `entries` to `ActivityList` from `@happyvertical/smrt-svelte` inside AdminShell.
+The wrapper binds only its own rows into the shell list and removes them when
+replaced or unmounted. Replace entries when the viewer's authorization changes.
+Actor labels and record links are optional host callbacks; the projection never
+infers access rights or exposes before/after payloads. Invalid dates are omitted.
+
+The Activity feature card can be enabled independently of Messaging. Its recipe
+suggests an Activity section without generating a model route; the authorized
+activity binding remains the only UI data source.
+
+The `/activity` surface resolves the public `@happyvertical/smrt-svelte#ActivityList`
+wrapper inside AdminShell. Its required `audit-log` provider means host-authorized
+`readAuditTrail` followed by `auditActivityEntries`; it does not enable generic
+AuditLog routes. The JSON seed supplies fictional `entries` directly to the
+wrapper. `runtime: both` reflects browser rendering plus server-only audit reads;
+seed data is never inserted into an audit database or treated as authorized history.

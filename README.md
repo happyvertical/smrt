@@ -219,6 +219,8 @@ Status legend:
 | [`smrt-voice`](./packages/voice/README.md) | Stable | Voice profiles, synthesis, cloning, and word timing. |
 | [`smrt-messages`](./packages/messages/README.md) | Stable | Provider-neutral multi-channel messages and credentials. |
 | [`smrt-chat`](./packages/chat/README.md) | Stable | Rooms, DMs, threads, sessions, and agent conversations. |
+| [`smrt-comments`](./packages/comments/README.md) | Preview | Record comments and mention notification hooks. |
+| [`smrt-webhooks`](./packages/webhooks/README.md) | Preview | Signed outbound webhooks, durable retries, and delivery administration. |
 | [`smrt-social`](./packages/social/README.md) | Stable | Social account OAuth, publishing, and scheduling. |
 
 ### Business and domain

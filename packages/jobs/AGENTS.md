@@ -199,6 +199,8 @@ the framework retention sweep in `@happyvertical/smrt-core`.
 
 ## Gotchas
 
+- The shared claim/recovery projection casts both job and tenant UUIDs to strings; DuckDB otherwise returns native UUID objects. Preserve NULL for global jobs.
+
 - **Cron not timezone-aware**: cron fields match the server's **local** time, not UTC (set `TZ` for UTC); no missed-run catch-up (fire-once-forward)
 - **At-least-once execution**: a timeout cannot preempt a running handler; timed-out jobs fail without retry but the handler keeps running — make handlers idempotent (see "Timeouts & at-least-once")
 - **No dead letter queue**: failed jobs stay in DB with `status='failed'` — manual intervention

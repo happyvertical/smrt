@@ -1,1 +1,1 @@
-export { default } from './svelte/playground.js';
+export { chatRoomsFixture, default } from './svelte/playground.js';

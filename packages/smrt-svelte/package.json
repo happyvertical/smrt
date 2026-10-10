@@ -21,6 +21,12 @@
       "import": "./dist/components/forms/index.js",
       "default": "./dist/components/forms/index.js"
     },
+    "./notifications": {
+      "types": "./dist/components/notifications/index.d.ts",
+      "svelte": "./dist/components/notifications/index.js",
+      "import": "./dist/components/notifications/index.js",
+      "default": "./dist/components/notifications/index.js"
+    },
     "./settings": {
       "types": "./dist/components/settings/index.d.ts",
       "svelte": "./dist/components/settings/index.js",
