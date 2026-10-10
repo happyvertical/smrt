@@ -624,8 +624,11 @@ export class ManifestAdapter {
       }
     }
 
-    // Generate collection name (pluralize)
-    const collection = this.pluralize(classDef.className);
+    // The declared route/permission namespace is independent of the table name.
+    const collection =
+      typeof classDef.decoratorConfig?.collection === 'string'
+        ? classDef.decoratorConfig.collection
+        : this.pluralize(classDef.className);
 
     // Determine package name (prefer option, then classDef value)
     const packageName = options.packageName || classDef.packageName;
