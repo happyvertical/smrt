@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.55.10
+
+### Patch Changes
+
+- ### Features
+  
+  - release communication and identity recipes (#3739)
+  - smrt-preferences UI-preference persistence (#3727 phase 3) (#3757) (preferences)
+  - assistant overview operations with Undo (#3727 phase 4) (#3746) (overviews)
+  - smrt-approvals core package (slice 1 of #3716) (#3745) (approvals)
+  - add configurable helpers and photo characters (#3733)
+- @happyvertical/smrt-config@0.55.10
+  - @happyvertical/smrt-scanner@0.55.10
+  - @happyvertical/smrt-types@0.55.10
+
 ## 0.55.9
 
 ### Patch Changes

@@ -225,7 +225,7 @@ export {
   runPersonaConversationTurn,
 } from './persona-conversation.js';
 // Declared recipes (#3719)
-export { AssistantRecipe } from './recipes.js';
+export { AssistantRecipe, ChatRoomsRecipe } from './recipes.js';
 // Assistant tools for reports defined at runtime from a user request (#3711).
 export {
   createRuntimeReportTools,

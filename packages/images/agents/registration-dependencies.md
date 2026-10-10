@@ -29,8 +29,18 @@ change; base failure reproduction is N/A. The base comparison instead proves
 that only the two test-only provider names differ. The coordinator owns normal
 full source build/test and final review coverage.
 
-The coordinator-selected images tarball was also compared with current `dist`:
+The coordinator-selected 0.55.9 images tarball was compared with `dist` before
+the later 0.55.10 base integration:
 all 92 files are byte-identical, including source maps and knowledge metadata,
 with no missing or extra files. The application profile already contains the
 correct runtime artifacts; this tracked-source refresh needs no profile repack.
 Detailed hashes/comparison are in `search/images-profile-compare.json`.
+
+Integrating upstream `fef6fd069` required regenerating the conflicting registration
+through the normal images build. The result exactly matches upstream's generated
+file: `packageVersion` advances to 0.55.10, with the same five production providers
+and unchanged Image object payload. The owning build and all 20 boundary tests
+pass again. The application intentionally retains its earlier pinned producer
+profile; this source base advance does not change that installed profile.
+Merge evidence is in `search/images-base-merge-build-r2.log`,
+`search/images-base-merge-boundary.log` and `search/images-base-merge-delta.json`.
