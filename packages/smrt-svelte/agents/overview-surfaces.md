@@ -136,10 +136,11 @@ return { overview };   // LoadedOverview: JSON, serializable
 loaded?, loadWidget? })`, the `ShellLayout` pattern: **persistence is host-owned**.
 With an `override` getter the host is the source of truth and feeds each edit back
 (`onchange(override | null)`); without it the value is kept in memory. Reactive
-reads: `document`, `base`, `override`, `committedOverride` (the value last
-handed to `onchange` while a host-owned getter still answers the value from
-before that edit, else `override`; the mask ends as soon as the getter moves,
-so a later change back to the old value is seen), `issues`, `customized`, `canCustomize`,
+reads: `document`, `base`, `override`, `committedOverride` (with a host-owned
+getter: the newest value handed to `onchange` that the getter has not fed back
+yet, else `override`; emissions are acknowledged in order, so several saves in
+flight never regress it, and a getter value matching none of them and not the
+value before them is a change from elsewhere that drops the queue), `issues`, `customized`, `canCustomize`,
 `addable`, `full`, `entry(widget)`. Operations, each returning
 `{ ok: true, id } | { ok: false, reason, issues? }` and refused with
 `not_allowed` when `canCustomize()` is false (the role gate; the server must check

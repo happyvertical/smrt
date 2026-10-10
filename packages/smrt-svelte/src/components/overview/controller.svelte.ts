@@ -96,12 +96,13 @@ export class OverviewController {
   #entries = $state.raw<Record<string, KeyedEntry>>({});
   readonly #pending = new Map<string, AbortController>();
   /**
-   * The last override handed to `onchange` while a host-owned getter has not
-   * fed it back yet (`prior` is what the getter answered then).
+   * Overrides handed to `onchange` that a host-owned getter has not fed back
+   * yet, oldest first, and what the getter answered before the oldest of
+   * them (`prior`). Hosts acknowledge in order.
    */
-  #unconfirmed: {
+  #outstanding: {
     prior: OverviewOverride | null;
-    value: OverviewOverride | null;
+    values: Array<OverviewOverride | null>;
   } | null = null;
   readonly #resolved = $derived.by(() => {
     const resolved = resolveOverview(
@@ -170,28 +171,51 @@ export class OverviewController {
   get committedOverride(): OverviewOverride | null {
     const current = this.override;
     this.#retire(current);
-    const pending = this.#unconfirmed;
-    return pending ? pending.value : current;
+    const outstanding = this.#outstanding;
+    return outstanding
+      ? (outstanding.values.at(-1) as OverviewOverride | null)
+      : current;
   }
 
   /**
-   * End the pending mask once the host getter answers anything but the value
-   * from before the edit: the host fed the edit back, or something else
-   * replaced it. The mask covers only the gap between an emit and its
-   * confirmation; a later change back to `prior` is a real change.
+   * Acknowledge what the host getter now answers. Still the value from before
+   * the oldest outstanding emission: nothing was fed back yet. Equal to an
+   * outstanding emission: that one and every older one are acknowledged (in
+   * order), and the getter's value becomes the prior of the rest. Anything
+   * else is a change made elsewhere: the queue is dropped, so the mask only
+   * ever covers this controller's own unacknowledged saves.
    */
   #retire(current: OverviewOverride | null): void {
-    const pending = this.#unconfirmed;
-    if (pending && !sameJson(current, pending.prior)) this.#unconfirmed = null;
+    const outstanding = this.#outstanding;
+    if (!outstanding || sameJson(current, outstanding.prior)) return;
+    const index = outstanding.values.findIndex((value) =>
+      sameJson(value, current),
+    );
+    if (index < 0 || index === outstanding.values.length - 1) {
+      this.#outstanding = null;
+      return;
+    }
+    this.#outstanding = {
+      prior: current,
+      values: outstanding.values.slice(index + 1),
+    };
   }
 
-  /** Hand a canonical override to the host, remembering it until fed back. */
+  /** Hand a canonical override to the host, queueing it until fed back. */
   #emit(override: OverviewOverride | null): void {
-    const prior = this.override;
-    this.#unconfirmed = this.#options.override
-      ? { prior, value: override }
-      : null;
-    if (!this.#options.override) this.#local = override;
+    if (this.#options.override) {
+      const current = this.override;
+      this.#retire(current);
+      const outstanding = this.#outstanding;
+      this.#outstanding = outstanding
+        ? {
+            prior: outstanding.prior,
+            values: [...outstanding.values, override],
+          }
+        : { prior: current, values: [override] };
+    } else {
+      this.#local = override;
+    }
     void this.#options.onchange?.(override);
   }
 

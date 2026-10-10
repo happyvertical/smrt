@@ -213,6 +213,77 @@ describe('OverviewAssistant', () => {
     expect(assistant.lastBatch?.before).toBeNull();
   });
 
+  it('keeps two batches in flight in order while the host feeds them back', () => {
+    const stored = reactiveBox<OverviewOverride | null>(null);
+    const saves: Array<OverviewOverride | null> = [];
+    const controller = createOverview({
+      definition,
+      registry: coreRegistry(),
+      override: () => stored.value,
+      onchange: (override) => {
+        saves.push(override);
+      },
+    });
+    const assistant = createOverviewAssistant(controller);
+    assistant.apply([{ op: 'remove', id: 'w2' }]);
+    const second = assistant.apply([{ op: 'remove', id: 'w3' }]);
+    if (!second.ok || !second.batchId) throw new Error('expected a batch');
+    const both = { version: 1, removed: ['w2', 'w3'] };
+    expect(saves).toEqual([{ version: 1, removed: ['w2'] }, both]);
+    expect(controller.committedOverride).toEqual(both);
+
+    // The host feeds back the first save; the second is still pending.
+    stored.value = saves[0] ?? null;
+    expect(controller.committedOverride).toEqual(both);
+    expect(
+      assistant.describe().widgets.map((widget) => widget.id),
+    ).not.toContain('w3');
+
+    // Undo of the second works while its own save is still pending.
+    expect(assistant.undo(second.batchId)).toEqual({ ok: true });
+    expect(saves.at(-1)).toEqual({ version: 1, removed: ['w2'] });
+    expect(controller.committedOverride).toEqual({
+      version: 1,
+      removed: ['w2'],
+    });
+
+    // The remaining saves land in order; nothing regresses.
+    stored.value = saves[1] ?? null;
+    expect(controller.committedOverride).toEqual({
+      version: 1,
+      removed: ['w2'],
+    });
+    stored.value = saves[2] ?? null;
+    expect(controller.committedOverride).toEqual({
+      version: 1,
+      removed: ['w2'],
+    });
+    expect(controller.override).toEqual({ version: 1, removed: ['w2'] });
+  });
+
+  it('drops every pending batch when the host feeds back a change from elsewhere', () => {
+    const stored = reactiveBox<OverviewOverride | null>(null);
+    const controller = createOverview({
+      definition,
+      registry: coreRegistry(),
+      override: () => stored.value,
+      onchange: () => {},
+    });
+    const assistant = createOverviewAssistant(controller);
+    assistant.apply([{ op: 'remove', id: 'w2' }]);
+    const second = assistant.apply([{ op: 'remove', id: 'w3' }]);
+    if (!second.ok || !second.batchId) throw new Error('expected a batch');
+    stored.value = { version: 1, removed: ['w4'] };
+    expect(controller.committedOverride).toEqual({
+      version: 1,
+      removed: ['w4'],
+    });
+    expect(assistant.undo(second.batchId)).toEqual({
+      ok: false,
+      reason: 'changed_since',
+    });
+  });
+
   it('offers no undo for a batch that changes nothing', () => {
     const { assistant, onchange } = make();
     expect(assistant.apply([{ op: 'move', id: 'w1', index: 0 }])).toEqual({
