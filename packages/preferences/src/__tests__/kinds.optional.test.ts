@@ -4,15 +4,15 @@ import {
   isPostgresAvailable,
 } from '@happyvertical/smrt-vitest';
 import { describe } from 'vitest';
-import { overviewStoreSuite } from './store-suite.js';
+import { preferenceKindsSuite } from './kinds-suite.js';
 
 if (isPostgresAvailable()) {
   let isolated: IsolatedTestDbResult | undefined;
-  overviewStoreSuite(
-    'overview store (postgres)',
+  preferenceKindsSuite(
+    'preference kinds (postgres)',
     async () => {
       isolated = await createIsolatedTestDbFromManifest({
-        includeObjects: ['OverviewOverrideRecord'],
+        includeObjects: ['UiPreferenceRecord'],
       });
       if (isolated.config.type !== 'postgres') {
         throw new Error('Expected PostgreSQL');
@@ -25,5 +25,5 @@ if (isPostgresAvailable()) {
     },
   );
 } else {
-  describe.skip('overview store (postgres; needs database)', () => {});
+  describe.skip('preference kinds (postgres; needs database)', () => {});
 }

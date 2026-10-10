@@ -1,5 +1,5 @@
 /**
- * The request principal an overview read or write acts as.
+ * The request principal a preference read or write acts as.
  *
  * Identity always comes from the ambient context, never from a request body:
  * the tenancy ALS (`withTenant`, the SvelteKit/Express adapters) first, and
@@ -14,7 +14,7 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import { getCurrentSessionPermissionContext } from '@happyvertical/smrt-users';
 
-export interface OverviewPrincipal {
+export interface PreferencePrincipal {
   tenantId: string;
   /** Absent for service principals, API keys and background jobs. */
   userId?: string;
@@ -24,8 +24,8 @@ export interface OverviewPrincipal {
   fromTenancy: boolean;
 }
 
-/** The overview principal of the current async context, if any. */
-export function getOverviewPrincipal(): OverviewPrincipal | undefined {
+/** The preference principal of the current async context, if any. */
+export function getPreferencePrincipal(): PreferencePrincipal | undefined {
   const tenant = getCurrentTenant();
   if (tenant?.tenantId) {
     return {
@@ -48,23 +48,23 @@ export function getOverviewPrincipal(): OverviewPrincipal | undefined {
 }
 
 /** Bounded, identifier-free denial; generated transports serialize it as 403. */
-export class OverviewAccessError extends TenantIsolationError {
+export class PreferenceAccessError extends TenantIsolationError {
   readonly status = 403;
   readonly publicMessage: string;
 
   constructor(message: string) {
     super(message);
-    this.name = 'OverviewAccessError';
+    this.name = 'PreferenceAccessError';
     this.publicMessage = message;
   }
 }
 
 /** The principal, or a fail-closed error when there is no tenant identity. */
-export function requireOverviewPrincipal(): OverviewPrincipal {
-  const principal = getOverviewPrincipal();
+export function requirePreferencePrincipal(): PreferencePrincipal {
+  const principal = getPreferencePrincipal();
   if (!principal) {
-    throw new OverviewAccessError(
-      'Overview layouts need an authenticated tenant context',
+    throw new PreferenceAccessError(
+      'User-interface preferences need an authenticated tenant context',
     );
   }
   return principal;
@@ -77,7 +77,7 @@ export function requireOverviewPrincipal(): OverviewPrincipal {
  * under the tenancy adapter. Nothing is widened.
  */
 export async function withPrincipal<T>(
-  principal: OverviewPrincipal,
+  principal: PreferencePrincipal,
   fn: () => Promise<T>,
 ): Promise<T> {
   if (principal.fromTenancy) return fn();

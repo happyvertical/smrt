@@ -15,9 +15,9 @@ import {
   CUSTOMIZE_OVERVIEW_PERMISSION,
   createOverviewStore,
 } from '../index.js';
-import { buildDefinition, buildRegistry } from './store-suite.js';
+import { buildDefinition, buildRegistry } from './overview-suite.js';
 
-const TABLE = '_smrt_overview_overrides';
+const TABLE = '_smrt_ui_preferences';
 
 /**
  * The table ships through the manifest-driven migration path (`smrt
@@ -61,11 +61,12 @@ describe.each(['sqlite', 'duckdb'] as const)('migration (%s)', (type) => {
     expect(Object.keys(schema?.columns ?? {})).toEqual(
       expect.arrayContaining([
         'tenant_id',
-        'overview_id',
+        'kind',
+        'surface_id',
         'scope_type',
         'user_id',
         'scope_key',
-        'override_json',
+        'payload_json',
         'format_version',
         'updated_by',
         'updated_at',
@@ -74,11 +75,12 @@ describe.each(['sqlite', 'duckdb'] as const)('migration (%s)', (type) => {
     const unique = (schema?.indexes ?? []).filter((index) => index.unique);
     expect(unique.map((index) => index.columns)).toContainEqual([
       'tenant_id',
-      'overview_id',
+      'kind',
+      'surface_id',
       'scope_type',
       'scope_key',
     ]);
-    expect(ObjectRegistry.getConfig('OverviewOverrideRecord')).toMatchObject({
+    expect(ObjectRegistry.getConfig('UiPreferenceRecord')).toMatchObject({
       api: { include: [] },
       cli: false,
       mcp: { include: [] },
@@ -93,7 +95,7 @@ describe.each(['sqlite', 'duckdb'] as const)('migration (%s)', (type) => {
 
     const result = await migrateSmrtSchemas({
       db,
-      packageName: '@happyvertical/smrt-overviews',
+      packageName: '@happyvertical/smrt-preferences',
     });
     expect(result.applied).toBe(true);
     expect(result.hasManualDrift).toBe(false);
@@ -135,10 +137,11 @@ describe.each(['sqlite', 'duckdb'] as const)('migration (%s)', (type) => {
         created_at: now,
         updated_at: now,
         tenant_id: tenantId,
-        overview_id: definition.id,
+        kind: 'overview',
+        surface_id: definition.id,
         scope_type: 'tenant',
         scope_key: '__tenant__',
-        override_json: '{"version":1}',
+        payload_json: '{"version":1}',
         format_version: 1,
       }),
     ).rejects.toThrow();

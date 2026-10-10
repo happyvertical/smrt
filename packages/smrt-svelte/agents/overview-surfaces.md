@@ -12,7 +12,7 @@ configure and remove widgets inside that confined set, and reset returns to the
 default. Phase 1 (this module) is the surface, the registry, the data model, the
 server load contract and five core widgets; phase 2 adds package widgets from
 recipes ("Recipe widgets"); phase 3 is production persistence in
-`@happyvertical/smrt-overviews` ("Production persistence"). Assistant
+`@happyvertical/smrt-preferences` ("Production persistence"). Assistant
 operations are phase 4 (see "Extension points").
 
 ## Two entries
@@ -51,7 +51,7 @@ against (absent means 1).
   (they would stop incrementing), and an exhausted high end restarts at `w1`.
 - **Tiers.** `resolveOverview` merges one override. A host with tenant defaults
   and user overrides merges the tenant tier into the definition's `defaults`
-  first; the user override then applies to that (smrt-overviews'
+  first; the user override then applies to that (smrt-preferences'
   `withTenantDefaults`).
 - **Reset** is `controller.reset()` (store `null`) or `resetWidget(id)`.
 
@@ -241,17 +241,24 @@ turns the manifest's widget surfaces into `registry.register(...)` calls:
   and a type-level assertion here keeps `RecipeWidgetOptionType` equal to
   `WidgetOptionType`.
 
-## Production persistence (phase 3, `@happyvertical/smrt-overviews`)
+## Production persistence (phase 3, `@happyvertical/smrt-preferences`)
 
-The table, permissions and server API live in
-[smrt-overviews](../../overviews/AGENTS.md); this package stays free of
-database code (its overview entries import nothing from core, tenancy or
-users). `createOverviewStore({ db })` acts as the ambient principal:
+Overrides are stored as the `overview` kind of the generic user-interface
+preference table `_smrt_ui_preferences` in
+[smrt-preferences](../../preferences/AGENTS.md) (one row per tenant, kind,
+surface id = `OverviewDefinition.id`, and tier; the kind contract is in its
+[preference-kinds.md](../../preferences/agents/preference-kinds.md)). This
+package stays free of database code: its overview entries import nothing from
+core, tenancy or users. The `overview` kind validates with this package's
+`checkOverviewOverride` on save (only the canonical override is stored) and
+`resolveOverview` on load (bad entries dropped and reported per tier).
+`createOverviewStore({ db })` is the overview-shaped layer over the generic
+store and acts as the ambient principal:
 
 | Call | Does |
 | --- | --- |
-| `load(definition, registry)` | Reads the tenant row and the principal's user row from `_smrt_overview_overrides`, resolves page defaults < tenant < user leniently, and returns each tier's `override`, `revision`, `issues`, the merged `document` and `canCustomize: { tenant, user }` |
-| `save(definition, registry, { scope, override, revision })` | `checkOverviewOverride` against the tier's definition (user: tenant-merged); stores only the canonical override, deletes the row when it is `null`; `invalid` / `conflict` / `not_allowed` otherwise |
+| `load(definition, registry)` | Both tiers resolved page defaults < tenant < user; each tier's `override`, `revision`, `issues`, the merged `document` and `canCustomize: { tenant, user }` |
+| `save(definition, registry, { scope, override, revision })` | Strict validation against the tier's definition (user: tenant-merged); `invalid` / `conflict` / `not_allowed` otherwise |
 | `reset(definition, { scope, revision? })` | Deletes that tier's row |
 | `loadPage(definition, registry, ctx, { scope? })` | `load` plus `loadOverview` of the tier's document, for `+page.server.ts` |
 | `loadWidget(definition, registry, widget, ctx)` | One widget's data for the controller's `loadWidget` remote function (throw on `ok: false`) |

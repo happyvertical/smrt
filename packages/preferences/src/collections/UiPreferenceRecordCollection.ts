@@ -1,17 +1,17 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import type { PreferenceScope } from '../kinds.js';
 import {
-  OverviewOverrideRecord,
-  type OverviewScope,
   TENANT_SCOPE_KEY,
-} from '../models/OverviewOverrideRecord.js';
+  UiPreferenceRecord,
+} from '../models/UiPreferenceRecord.js';
 
 /**
- * Reads of {@link OverviewOverrideRecord}. Not decorated: the model has no
+ * Reads of {@link UiPreferenceRecord}. Not decorated: the model has no
  * generated surface, so a decorated collection would only add a second
  * manifest schema for the same table.
  */
-export class OverviewOverrideRecordCollection extends SmrtCollection<OverviewOverrideRecord> {
-  static readonly _itemClass = OverviewOverrideRecord;
+export class UiPreferenceRecordCollection extends SmrtCollection<UiPreferenceRecord> {
+  static readonly _itemClass = UiPreferenceRecord;
 
   /**
    * The row of one tier, or `null`. The tenant predicate is explicit (not
@@ -20,14 +20,15 @@ export class OverviewOverrideRecordCollection extends SmrtCollection<OverviewOve
    */
   async findTier(
     tenantId: string,
-    overviewId: string,
-    scope: OverviewScope,
+    kind: string,
+    surfaceId: string,
+    scope: PreferenceScope,
     userId?: string,
-  ): Promise<OverviewOverrideRecord | null> {
+  ): Promise<UiPreferenceRecord | null> {
     const scopeKey = scope === 'tenant' ? TENANT_SCOPE_KEY : userId;
     if (!scopeKey) return null;
     const rows = await this.list({
-      where: { tenantId, overviewId, scopeType: scope, scopeKey },
+      where: { tenantId, kind, surfaceId, scopeType: scope, scopeKey },
       limit: 1,
     });
     return rows[0] ?? null;

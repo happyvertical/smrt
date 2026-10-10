@@ -1,14 +1,15 @@
 {
-  "name": "@happyvertical/smrt-overviews",
+  "name": "@happyvertical/smrt-preferences",
   "version": "0.55.7",
-  "description": "Tenant defaults and per-user overrides for customizable overview surfaces, with server load and save helpers",
+  "description": "Tenant defaults and per-user overrides for user-interface preferences (overview layouts, shell layout), validated per registered kind",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
     "CLAUDE.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents"
   ],
   "exports": {
     ".": {
@@ -47,9 +48,9 @@
   },
   "keywords": [
     "smrt",
+    "preferences",
     "overview",
-    "dashboard",
-    "widgets",
+    "shell",
     "multi-tenancy"
   ],
   "author": "HappyVertical",
@@ -61,6 +62,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/happyvertical/smrt.git",
-    "directory": "packages/overviews"
+    "directory": "packages/preferences"
   }
 }

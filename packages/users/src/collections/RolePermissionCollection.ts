@@ -82,10 +82,12 @@ const DEFAULT_MEMBER_CREATE_DENIED_RESOURCES = new Set([
 // Self-personalization is deliberately available to every built-in role. Each
 // slug is appended only when its contributing package has registered the
 // catalog definition, so users-only applications do not report an unmatched
-// pattern (smrt-fields' form defaults, smrt-overviews' personal layouts).
+// pattern (smrt-fields' form defaults, smrt-preferences' personal overview
+// and shell layouts).
 const DEFAULT_SELF_PERSONALIZATION_PERMISSIONS = [
   'fields.policy.personalize',
   'overviews.personalize',
+  'shell.personalize',
 ] as const;
 
 function isBuiltInDefaultRoleSlug(

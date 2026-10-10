@@ -101,8 +101,9 @@ membership or tenant DENY to attenuate inherited role authority.
 - When a package adds built-in self-personalization permissions after role
   creation, explicitly call seedDefaultRolePersonalizationPermissions(). It
   upgrades owner/admin/member/viewer idempotently and never grants custom roles.
-  The built-in self-personalization slugs are `fields.policy.personalize` and
-  `overviews.personalize`, each seeded only once its package registered it.
+  The built-in self-personalization slugs are `fields.policy.personalize`,
+  `overviews.personalize` and `shell.personalize`, each seeded only once its
+  package registered it.
 
 ## Guards and RLS
 

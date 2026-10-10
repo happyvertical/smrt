@@ -990,12 +990,17 @@ describe('operation permission guards', () => {
     }
   });
 
-  it('default-grants the overview personalization slug once it is registered (#3727)', async () => {
+  it('default-grants the preference personalization slugs once registered (#3727)', async () => {
     const unregister = registerPermissionDefinitions([
       {
-        category: 'overviews',
+        category: 'preferences',
         name: 'Personalize Overviews',
         slug: 'overviews.personalize',
+      },
+      {
+        category: 'preferences',
+        name: 'Personalize Shell Layout',
+        slug: 'shell.personalize',
       },
     ]);
     cleanupFns.push(unregister);
@@ -1005,6 +1010,7 @@ describe('operation permission guards', () => {
 
     for (const role of ['owner', 'admin', 'member', 'viewer']) {
       expect(seeded.added[role]).toContain('overviews.personalize');
+      expect(seeded.added[role]).toContain('shell.personalize');
     }
     // An unregistered self-personalization slug is never reported unmatched.
     expect(seeded.unmatchedPatterns.viewer ?? []).not.toContain(

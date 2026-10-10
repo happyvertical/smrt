@@ -15,10 +15,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   CUSTOMIZE_OVERVIEW_PERMISSION,
   createOverviewStore,
-  OverviewAccessError,
-  OverviewOverrideRecordCollection,
   type OverviewStore,
   PERSONALIZE_OVERVIEW_PERMISSION,
+  PreferenceAccessError,
+  UiPreferenceRecordCollection,
 } from '../index.js';
 
 const BOTH = [CUSTOMIZE_OVERVIEW_PERMISSION, PERSONALIZE_OVERVIEW_PERMISSION];
@@ -215,10 +215,10 @@ export function overviewStoreSuite(
         override: { version: 1, changed: { w1: { span: 3 } } },
       });
       const rows = await as({ tenantId: tenantA }, async () =>
-        (await OverviewOverrideRecordCollection.create({ db })).list({}),
+        (await UiPreferenceRecordCollection.create({ db })).list({}),
       );
       expect(rows).toHaveLength(1);
-      expect(JSON.parse(rows[0]?.overrideJson ?? 'null')).toEqual({
+      expect(JSON.parse(rows[0]?.payloadJson ?? 'null')).toEqual({
         version: 1,
         changed: { w1: { span: 3 } },
       });
@@ -233,7 +233,7 @@ export function overviewStoreSuite(
       );
       expect(noop).toEqual({ ok: true, override: null, revision: null });
       const left = await as({ tenantId: tenantA }, async () =>
-        (await OverviewOverrideRecordCollection.create({ db })).list({}),
+        (await UiPreferenceRecordCollection.create({ db })).list({}),
       );
       expect(left).toHaveLength(0);
     });
@@ -266,22 +266,23 @@ export function overviewStoreSuite(
         expect(result).toMatchObject({ reason: 'invalid' });
       }
       const rows = await as({ tenantId: tenantA }, async () =>
-        (await OverviewOverrideRecordCollection.create({ db })).list({}),
+        (await UiPreferenceRecordCollection.create({ db })).list({}),
       );
       expect(rows).toHaveLength(0);
     });
 
     it('drops and reports stored entries that no longer validate on load', async () => {
       await as({ tenantId: tenantA, userId: alice }, async () => {
-        const records = await OverviewOverrideRecordCollection.create({ db });
+        const records = await UiPreferenceRecordCollection.create({ db });
         // A row written before the widget type was removed or its schema
         // changed: the model only checks the envelope, the store validates.
         await records.create({
           tenantId: tenantA,
-          overviewId: definition.id,
+          kind: 'overview',
+          surfaceId: definition.id,
           scopeType: 'user',
           userId: alice,
-          overrideJson: JSON.stringify({
+          payloadJson: JSON.stringify({
             version: 1,
             added: [
               { id: 'w5', type: 'retired', span: 1, options: {} },
@@ -329,12 +330,13 @@ export function overviewStoreSuite(
       // The model refuses the same write when the store is bypassed.
       await expect(
         as(member, async () => {
-          const records = await OverviewOverrideRecordCollection.create({ db });
+          const records = await UiPreferenceRecordCollection.create({ db });
           await records.create({
             tenantId: tenantA,
-            overviewId: definition.id,
+            kind: 'overview',
+            surfaceId: definition.id,
             scopeType: 'tenant',
-            overrideJson: JSON.stringify(tenantOverride),
+            payloadJson: JSON.stringify(tenantOverride),
           });
         }),
       ).rejects.toThrow();
@@ -394,31 +396,31 @@ export function overviewStoreSuite(
       // Holding Alice's row (same tenant) does not let Bob change or delete it.
       const aliceRowId = await as({ tenantId: tenantA }, async () => {
         const rows = await (
-          await OverviewOverrideRecordCollection.create({ db })
+          await UiPreferenceRecordCollection.create({ db })
         ).list({});
         return rows[0]?.id as string;
       });
       await expect(
         as({ tenantId: tenantA, userId: bob }, async () => {
-          const records = await OverviewOverrideRecordCollection.create({ db });
+          const records = await UiPreferenceRecordCollection.create({ db });
           const row = await records.get(aliceRowId);
           if (!row) throw new Error('expected the same-tenant row');
-          row.setOverride({ version: 1 });
+          row.setPayload({ version: 1 });
           await row.save();
         }),
-      ).rejects.toBeInstanceOf(OverviewAccessError);
+      ).rejects.toBeInstanceOf(PreferenceAccessError);
       await expect(
         as({ tenantId: tenantA, userId: bob }, async () => {
-          const records = await OverviewOverrideRecordCollection.create({ db });
+          const records = await UiPreferenceRecordCollection.create({ db });
           const row = await records.get(aliceRowId);
           await row?.delete();
         }),
-      ).rejects.toBeInstanceOf(OverviewAccessError);
+      ).rejects.toBeInstanceOf(PreferenceAccessError);
       // Rewriting the owner in memory does not make the row Bob's.
       for (const write of ['save', 'delete'] as const) {
         await expect(
           as({ tenantId: tenantA, userId: bob }, async () => {
-            const records = await OverviewOverrideRecordCollection.create({
+            const records = await UiPreferenceRecordCollection.create({
               db,
             });
             const row = await records.get(aliceRowId);
@@ -426,18 +428,19 @@ export function overviewStoreSuite(
             row.userId = bob;
             await (write === 'save' ? row.save() : row.delete());
           }),
-        ).rejects.toBeInstanceOf(OverviewAccessError);
+        ).rejects.toBeInstanceOf(PreferenceAccessError);
       }
       // Nor can Bob re-scope a row of his own onto Alice.
       await expect(
         as({ tenantId: tenantA, userId: bob }, async () => {
-          const records = await OverviewOverrideRecordCollection.create({ db });
+          const records = await UiPreferenceRecordCollection.create({ db });
           await records.create({
             tenantId: tenantA,
-            overviewId: definition.id,
+            kind: 'overview',
+            surfaceId: definition.id,
             scopeType: 'user',
             userId: alice,
-            overrideJson: JSON.stringify({ version: 1 }),
+            payloadJson: JSON.stringify({ version: 1 }),
           });
         }),
       ).rejects.toThrow();
@@ -453,7 +456,7 @@ export function overviewStoreSuite(
       );
       const rowId = await as({ tenantId: tenantA }, async () => {
         const rows = await (
-          await OverviewOverrideRecordCollection.create({ db })
+          await UiPreferenceRecordCollection.create({ db })
         ).list({});
         return rows[0]?.id as string;
       });
@@ -465,7 +468,7 @@ export function overviewStoreSuite(
       expect(other.tenant.revision).toBeNull();
 
       await as({ tenantId: tenantB, userId: bob }, async () => {
-        const records = await OverviewOverrideRecordCollection.create({ db });
+        const records = await UiPreferenceRecordCollection.create({ db });
         expect(await records.get(rowId)).toBeNull();
         expect(await records.list({})).toEqual([]);
         // Resetting in tenant B never touches tenant A's row.
@@ -476,12 +479,13 @@ export function overviewStoreSuite(
       // Writing a row that names tenant A from tenant B is refused.
       await expect(
         as({ tenantId: tenantB, userId: bob }, async () => {
-          const records = await OverviewOverrideRecordCollection.create({ db });
+          const records = await UiPreferenceRecordCollection.create({ db });
           await records.create({
             tenantId: tenantA,
-            overviewId: definition.id,
+            kind: 'overview',
+            surfaceId: definition.id,
             scopeType: 'tenant',
-            overrideJson: JSON.stringify(tenantOverride),
+            payloadJson: JSON.stringify(tenantOverride),
           });
         }),
       ).rejects.toThrow();
@@ -495,7 +499,7 @@ export function overviewStoreSuite(
 
     it('fails closed without a principal', async () => {
       await expect(store.load(definition, registry)).rejects.toBeInstanceOf(
-        OverviewAccessError,
+        PreferenceAccessError,
       );
       await expect(
         store.save(definition, registry, {
@@ -503,7 +507,7 @@ export function overviewStoreSuite(
           override: tenantOverride,
           revision: null,
         }),
-      ).rejects.toBeInstanceOf(OverviewAccessError);
+      ).rejects.toBeInstanceOf(PreferenceAccessError);
     });
 
     it('refuses a stale revision instead of overwriting', async () => {
