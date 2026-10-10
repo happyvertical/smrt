@@ -57,3 +57,21 @@ reap them.
   marked `expired` by lazy expiry, and consumed history; it retains approved
   requests until exchange so a near-expiry approval cannot orphan its bearer
   session.
+
+## OAuth credential retention
+
+`users-oauth-credentials` prunes expired authorization codes and access-token
+revocations. Refresh grants (including consumed or revoked hashes) remain until
+30 days after their own expiry, so replay within their validity period and this
+grace period still revokes the family. Later replay fails as an unknown token.
+This bounds retained rotation history even for continuously active families.
+The sweep locks each candidate family using the same row as token rotation,
+rechecks its descendants, and deletes the family only when none remain. Live
+grants and revocations are never swept. Each family is a separate transaction;
+rolled-back contention retries follow the OAuth transaction policy. If the SQL
+adapter invalidates a connection (for example SQLite SQLITE_BUSY), the sweep
+reports failure; the host must acquire a fresh connection before retrying. It
+never continues on an invalidated connection. Dry runs write nothing and
+report approximate counts under concurrent writes. Clients and consent records
+remain for application-managed lifecycle/audit. Opt-out and unregister work as
+for the other retention tasks. No raw bearer or credential hash is logged.

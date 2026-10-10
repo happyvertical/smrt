@@ -219,6 +219,15 @@ describePostgres('withPrincipalPermissionContext + Postgres RLS', () => {
       // Policies are committed DDL that outlive the rolled-back isolated
       // transaction; never leave them for the package's other suites.
       await resetPostgresPermissionPolicies(adminDb);
+      // These collection writes commit outside the isolated transaction.
+      // Remove dependent grants first so the shared permission catalog stays clean.
+      await adminDb.query(
+        'DELETE FROM role_permissions WHERE permission_id = $1',
+        [readPermissionId],
+      );
+      await adminDb.query('DELETE FROM permissions WHERE id = $1', [
+        readPermissionId,
+      ]);
     }
     roleName = '';
     clearCache();

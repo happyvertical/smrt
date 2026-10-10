@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/happyvertical/sdk",
+  "revision": "a9009b687ca58a232a7f3c36d0a6329bd7f64dc7",
+  "purpose": "Coordinated integration snapshot; replace overrides with published SDK release before package publication.",
+  "artifacts": [
+    {
+      "file": "happyvertical-auth-0.103.1.tgz",
+      "sha256": "e338cf62c8fef943e22ee58d6aecdc5c3e7612f58728544d41aff15e9756a21e"
+    },
+    {
+      "file": "happyvertical-sql-0.103.1.tgz",
+      "sha256": "021a364e94ec921184fb518ec377589ae033a7cd275c46162214aac2718c9a9c"
+    }
+  ]
+}

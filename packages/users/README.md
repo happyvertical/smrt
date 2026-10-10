@@ -1307,3 +1307,50 @@ against the new constraint. Apply the remaining application schema migrations,
 run `smrt doctor --db` / `db:status --parity`, deploy the new version to every
 writer, then resume traffic. Do not roll back application writers without also
 restoring the pre-upgrade schema/database backup.
+
+## Hosted OAuth authorization
+
+Use `SmrtOAuthAuthorizationStorage` with the SDK authorization server, and
+`SmrtOAuthAuthorizationService` to bind consent to existing browser sessions:
+
+```typescript
+import { createAuthorizationServer } from '@happyvertical/auth/server';
+import {
+  SmrtOAuthAuthorizationService,
+  SmrtOAuthAuthorizationStorage,
+} from '@happyvertical/smrt-users';
+
+const authorization = await SmrtOAuthAuthorizationService.create({
+  db,
+  scopePermissions: { 'catalog:read': ['catalog.read'] },
+});
+const server = createAuthorizationServer({
+  issuer: 'https://app.example/oauth',
+  signingKey,
+  storage: await SmrtOAuthAuthorizationStorage.create({ db }),
+  identity: authorization.identity,
+  scopes: ['catalog:read'],
+  resources: ['https://app.example/mcp'],
+});
+// After explicit same-origin browser consent:
+const parsed = await server.parseAuthorizationRequest(url.searchParams);
+const redirect = await authorization.approve(server, parsed, sessionId);
+// On every bearer request, verify cryptography AND live authorization:
+const payload = await server.verifyAccessToken(token, 'https://app.example/mcp');
+const context = await authorization.validateAccessTokenClaims(payload);
+if (!context) throw new Error('Authorization is no longer active.');
+```
+
+The SvelteKit export `createOAuthHandlers` supplies optional session-aware
+consent and account-grant routes. `listGrants(sessionId)` and
+`revokeGrant(sessionId, grantId)` confine account management to the signed-in
+subject. Migrate the private `users_oauth_*` tables before enabling the issuer.
+See [OAuth authorization](agents/oauth-authorization.md) for lifecycle,
+revocation, permission ceilings and the database test matrix.
+
+For local SQLite processes sharing a file, configure the storage's optional
+`recoverDatabase` factory to recreate an invalidated connection and reapply its
+settings. Instance-only storage fails closed on an invalidated connection; it
+never silently drops PRAGMAs or temporary state. PostgreSQL does not require
+this option. The [transaction notes](agents/oauth-authorization.md#recoverable-local-sqlite-connections)
+show the factory contract.

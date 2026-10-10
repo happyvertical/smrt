@@ -56,6 +56,7 @@ import {
 import { isKnownNativeDuckDbHandle } from './native-duckdb';
 import { getBoxedPrimitiveKind, isRawJSON } from './plain-json';
 import { ObjectRegistry } from './registry';
+import { assertRuntimeTableBindings } from './registry/table-mappings.js';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
 import { isBatchSafeValidator } from './registry/validator';
 import {
@@ -1433,6 +1434,11 @@ export class SmrtObject extends SmrtClass {
    * Gets the database table name for this object
    */
   get tableName() {
+    assertRuntimeTableBindings({
+      qualifiedName: this.getResolvedQualifiedName(),
+      tableName: this._tableName,
+      instance: this,
+    });
     if (!this._tableName) {
       // For STI, use the base class's table name from schema (manifest-derived).
       // R5-canon: use the qualified name as the lookup key so a colliding

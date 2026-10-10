@@ -113,6 +113,12 @@ export {
   UsersLoginAttemptCollection,
   UsersLoginAuditEventCollection,
   UsersMagicLinkTokenCollection,
+  UsersOAuthAccessTokenRevocationCollection,
+  UsersOAuthAuthorizationCodeCollection,
+  UsersOAuthAuthorizationCollection,
+  UsersOAuthClientCollection,
+  UsersOAuthRefreshFamilyCollection,
+  UsersOAuthRefreshGrantCollection,
   UsersPasswordCredentialCollection,
   UsersPinCredentialCollection,
 } from './collections/index.js';
@@ -158,6 +164,7 @@ export {
   MagicLinkToken,
   Membership,
   MembershipOverride,
+  type OAuthTokenClaims,
   Permission,
   ResourceGrant,
   type ResourceGrantEffect,
@@ -180,6 +187,12 @@ export {
   UsersLoginAttempt,
   UsersLoginAuditEvent,
   UsersMagicLinkToken,
+  UsersOAuthAccessTokenRevocation,
+  UsersOAuthAuthorization,
+  UsersOAuthAuthorizationCode,
+  UsersOAuthClient,
+  UsersOAuthRefreshFamily,
+  UsersOAuthRefreshGrant,
   UsersPasswordCredential,
   UsersPinCredential,
 } from './models/index.js';
@@ -198,12 +211,12 @@ export {
   LOGIN_ATTEMPTS_RETENTION_TASK,
   LOGIN_AUDIT_RETENTION_TASK,
   MAGIC_LINK_RETENTION_TASK,
+  OAUTH_CREDENTIALS_RETENTION_TASK,
   registerUserRetentionTasks,
   SESSIONS_RETENTION_TASK,
   USER_RETENTION_TASKS,
   unregisterUserRetentionTasks,
 } from './retention.js';
-
 // Services
 export {
   ACCESS_REQUEST_CAPABILITIES,
@@ -384,6 +397,12 @@ export {
   type SessionServiceOptions,
   type SetPasswordInput,
   type SetPinInput,
+  SMRT_OAUTH_GRANT_CLAIM,
+  SmrtOAuthAuthorizationService,
+  type SmrtOAuthAuthorizationServiceOptions,
+  SmrtOAuthAuthorizationStorage,
+  type SmrtOAuthAuthorizationStorageOptions,
+  type SmrtOAuthGrantSummary,
   type SwitchTenantResult,
   syncPermissionCatalog,
   TERMINAL_APPROVE_LOGIN_KIND,
@@ -400,7 +419,6 @@ export {
   withPrincipalPermissionContext,
   withSessionPermissionContext,
 } from './services/index.js';
-
 // Types
 export {
   AccessRequestStatus,

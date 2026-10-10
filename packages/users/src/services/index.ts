@@ -101,6 +101,16 @@ export {
   validateMobileRedirectUri,
 } from './MobileAuthService.js';
 export {
+  SmrtOAuthAuthorizationService,
+  type SmrtOAuthAuthorizationServiceOptions,
+  type SmrtOAuthGrantSummary,
+} from './OAuthAuthorizationService.js';
+export {
+  SMRT_OAUTH_GRANT_CLAIM,
+  SmrtOAuthAuthorizationStorage,
+  type SmrtOAuthAuthorizationStorageOptions,
+} from './OAuthAuthorizationStorage.js';
+export {
   type CreateAuthorizationUrlOptions,
   decodeOidcTransaction,
   encodeOidcTransaction,

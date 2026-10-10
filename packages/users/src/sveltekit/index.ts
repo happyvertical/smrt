@@ -1427,6 +1427,11 @@ const NO_STORE_HEADERS: Record<string, string> = {
 };
 
 export {
+  createOAuthHandlers,
+  type OAuthHandlerEvent,
+  type OAuthHandlerOptions,
+} from './oauth-handlers.js';
+export {
   TerminalAuthError,
   TerminalAuthRateLimitError,
   TerminalAuthService,

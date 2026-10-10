@@ -143,6 +143,17 @@ See [§11](#11-forbidden-artifacts) for the full list.
   - `@types/node` always `catalog:`
   - `vite`, `vitest`, `typescript` come from root devDependencies — do not redeclare per-package unless overriding
   - Pinning style: prefer caret (`^X.Y.Z`) for third-party deps; exact pins (`X.Y.Z`) only for tools where minor bumps cause breakage (document why)
+- **SDK integration archives**: `scripts/check-sdk-versions.sh` preserves exact
+  catalog/registry override range equality. A coordinated release may temporarily
+  use repository-relative `file:*.tgz` overrides only when the archive's package
+  identity and exact version match the catalog baseline. The gate verifies a
+  sibling `manifest.json` recording the SDK repository, full commit revision and
+  archive SHA256, plus the matching pnpm lock tarball, version and SHA512. Missing,
+  ambiguous or mismatched provenance fails closed; symlinks, absolute/traversing
+  paths and unbounded archive reads are rejected. Source provenance is the
+  reviewed manifest's attestation, not a claim that CI fetched/rebuilt that commit.
+  Registry publication still requires replacing integration archives with
+  published SDK pins. This gate uses Node and `tar`, without installing dependencies.
 - **Coordinated releases**: every publishable `@happyvertical/smrt-*` package
   belongs to the fixed release group in `.changeset/config.json` and carries
   the same version as that group. `scripts/check-standards.mjs` enforces both

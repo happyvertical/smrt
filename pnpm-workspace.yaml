@@ -4,6 +4,7 @@ packages:
   - 'packages/smrt-workbench/host'
 
 overrides:
+  '@happyvertical/auth': file:vendor/sdk/a9009b68/happyvertical-auth-0.103.1.tgz
   '@types/node': 24.13.2
   '@happyvertical/smrt-types': 'workspace:*'
   '@happyvertical/smrt-config': 'workspace:*'
@@ -30,7 +31,7 @@ overrides:
   '@happyvertical/signatures': ^0.103.1
   '@happyvertical/speech': ^0.103.1
   '@happyvertical/spider': ^1.1.13
-  '@happyvertical/sql': ^0.103.1
+  '@happyvertical/sql': file:vendor/sdk/a9009b68/happyvertical-sql-0.103.1.tgz
   '@happyvertical/utils': ^0.103.1
   '@grpc/grpc-js@>=1.14.0 <1.14.5': 1.14.5
   # minimatch 9 is the last consumer of brace-expansion 2.x, which has no
