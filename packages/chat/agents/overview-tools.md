@@ -28,6 +28,13 @@ field vocabulary; there is no query, filter expression, URL or SQL anywhere.
   (`./overview/server`) from the page's `OverviewDefinition`, the
   principal's own stored override, `canCustomize` from the principal's role,
   and `persist`. Never derive any of these from model input except the page id.
+- **Tenant.** Like the runtime-report tools, with tenancy on a run without
+  `run.context.tenantId` is refused (403 `tenant_required`), `host.open` and
+  every surface call (including `persist`) run under the principal's tenant
+  (entered when no tenant context is active), and an ambient tenant that
+  differs from the principal's is refused (`DataSurfaceDeniedError`) unless
+  the caller is in a system-context or super-admin path. The host scopes its
+  reads and writes by `run.context.tenantId`.
 - **Validation is the overview model's.** The surface plans each batch with
   `planOverviewOperations` and checks the result with `checkOverviewOverride`
   (allowed set and `allowedIn`, page-confined `models`, option schemas, span
@@ -37,7 +44,8 @@ field vocabulary; there is no query, filter expression, URL or SQL anywhere.
   `issues`. `runToolLoop` classifies 404/409/422 as `invalid_request` (the model
   sees `publicMessage`, which lists every issue as `#<n> <op>: <message>`, and is
   told to fix and retry) and 403 as `not_permitted`. Codes: `invalid_page`,
-  `invalid_operations` (422), `unknown_page` (404), `not_allowed` (403,
+  `invalid_operations` (422), `unknown_page` (404), `tenant_required` (403),
+  `not_allowed` (403,
   `canCustomize` false, on apply and on undo), `conflict` (409, apply lost a
   race with another save), `nothing_to_undo`, `changed_since`,
   `cannot_restore` (409).

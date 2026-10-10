@@ -6,7 +6,17 @@
  * (smrt-svelte already depends on this package for tests; the reverse edge
  * would be a cycle).
  */
-import type { PrincipalRun, PrincipalTool } from '@happyvertical/smrt-agents';
+import {
+  DataSurfaceDeniedError,
+  type PrincipalRun,
+  type PrincipalTool,
+} from '@happyvertical/smrt-agents';
+import {
+  disableTenancy,
+  enableTenancy,
+  getCurrentTenant,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createMemoryOverviewUndoStore,
@@ -584,6 +594,88 @@ describe('createOverviewTools', () => {
       }),
     );
     expect(error.status).toBe(403);
+  });
+});
+
+describe('tenancy', () => {
+  async function withTenancy<T>(fn: () => Promise<T>): Promise<T> {
+    enableTenancy();
+    try {
+      return await fn();
+    } finally {
+      disableTenancy();
+    }
+  }
+
+  it('refuses a run without a tenant when tenancy is on', async () => {
+    const { host } = makeHost();
+    const open = vi.spyOn(host, 'open');
+    await withTenancy(async () => {
+      for (const slug of ALL) {
+        const error = await rejection(
+          call(tools(host), slug, makeRun('alice', null), {
+            page: 'events.home',
+            operations: [{ op: 'remove', id: 'w1' }],
+            undoToken: 't1',
+          }),
+        );
+        expect(error).toMatchObject({ status: 403, code: 'tenant_required' });
+      }
+    });
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("opens and persists under the principal's tenant", async () => {
+    const { host } = makeHost();
+    const seen: Array<string | undefined> = [];
+    const scoped: OverviewToolsHost = {
+      async open(run, page) {
+        seen.push(getCurrentTenant()?.tenantId);
+        const surface = await host.open(run, page);
+        return surface
+          ? {
+              ...surface,
+              persist: async (override) => {
+                seen.push(getCurrentTenant()?.tenantId);
+                return surface.persist(override);
+              },
+            }
+          : null;
+      },
+    };
+    await withTenancy(() =>
+      call(tools(scoped), OVERVIEW_APPLY_TOOL_SLUG, alice, {
+        page: 'events.home',
+        operations: [{ op: 'remove', id: 'w1' }],
+      }),
+    );
+    expect(seen).toEqual(['tenant-a', 'tenant-a']);
+  });
+
+  it('refuses when the ambient tenant is not the principal tenant', async () => {
+    const { host } = makeHost();
+    const open = vi.spyOn(host, 'open');
+    await withTenancy(async () => {
+      await expect(
+        withTenant({ tenantId: 'tenant-b' }, () =>
+          call(tools(host), OVERVIEW_APPLY_TOOL_SLUG, alice, {
+            page: 'events.home',
+            operations: [{ op: 'remove', id: 'w1' }],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+    });
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('allows a tenantless run when tenancy is off', async () => {
+    const { host } = makeHost();
+    await expect(
+      call(tools(host), OVERVIEW_APPLY_TOOL_SLUG, makeRun('alice', null), {
+        page: 'events.home',
+        operations: [{ op: 'remove', id: 'w1' }],
+      }),
+    ).resolves.toMatchObject({ changed: true });
   });
 });
 

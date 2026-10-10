@@ -30,7 +30,15 @@ import {
   DataSurfaceDeniedError,
   type PrincipalRun,
   type PrincipalTool,
+  type PrincipalToolContext,
 } from '@happyvertical/smrt-agents';
+import {
+  getCurrentTenant,
+  isSuperAdminBypass,
+  isSystemContext,
+  isTenancyEnabled,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 
 /** Tool slug (permission/allow-list name) for describing an overview. */
 export const OVERVIEW_DESCRIBE_TOOL_SLUG = 'overviews.describe';
@@ -110,7 +118,10 @@ export interface OverviewToolsHost {
   /**
    * The page for this principal, or `null` when it is unknown or not offered
    * to them. Build the surface from the principal's own stored override and
-   * role; never from model input other than the page id.
+   * role; never from model input other than the page id. Scope every read
+   * and the surface's `persist` by `run.context.tenantId` (with tenancy on,
+   * the tools call `open` and every surface method inside that tenant's
+   * context and refuse a run without one).
    */
   open(
     run: PrincipalRun,
@@ -255,6 +266,51 @@ function principalFromRun(run: PrincipalRun): {
   const userId = run.context.userId;
   if (!userId) throw new DataSurfaceDeniedError();
   return { userId, tenantId: run.context.tenantId };
+}
+
+/**
+ * Run under the AUTHENTICATED principal's tenant (the runtime-report tools'
+ * guard): with tenancy on, a run without a tenant is refused, the principal's
+ * tenant is entered when no tenant context is active, and an ambient tenant
+ * that disagrees with the principal is refused (unless the caller is
+ * deliberately in a system-context or super-admin path). `host.open` and
+ * every surface call, including `persist`, run inside it.
+ */
+async function withPrincipalTenant<T>(
+  run: PrincipalRun,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (!isTenancyEnabled()) return fn();
+  const tenantId = run.context.tenantId;
+  if (!tenantId) {
+    throw new OverviewToolError(
+      403,
+      'tenant_required',
+      'A tenant is required to use overview tools.',
+    );
+  }
+  const active = getCurrentTenant();
+  if (active === undefined) return withTenant({ tenantId }, fn);
+  if (
+    active.tenantId !== tenantId &&
+    !isSystemContext() &&
+    !isSuperAdminBypass()
+  ) {
+    throw new DataSurfaceDeniedError();
+  }
+  return fn();
+}
+
+/** The allow-list gate, the principal check and the tenant guard, in order. */
+function guarded(
+  slug: string,
+  body: (context: PrincipalToolContext) => Promise<unknown>,
+): PrincipalTool['execute'] {
+  return async (context) => {
+    context.run.assertToolAllowed(slug);
+    principalFromRun(context.run);
+    return withPrincipalTenant(context.run, () => body(context));
+  };
 }
 
 function aiTool(
@@ -454,15 +510,13 @@ export function createOverviewTools(
         page: { type: 'string', description: 'Overview page id.' },
       },
     },
-    async ({ run, args }) => {
-      run.assertToolAllowed(OVERVIEW_DESCRIBE_TOOL_SLUG);
-      principalFromRun(run);
+    guarded(OVERVIEW_DESCRIBE_TOOL_SLUG, async ({ run, args }) => {
       if (args.page === undefined) {
         return { pages: host.pages ? await host.pages(run) : [] };
       }
       const surface = await open(run, pageArg(args.page));
       return { page: surface.pageId, overview: surface.describe() };
-    },
+    }),
   );
 
   const apply = aiTool(
@@ -483,9 +537,7 @@ export function createOverviewTools(
         },
       },
     },
-    async ({ run, args }) => {
-      run.assertToolAllowed(OVERVIEW_APPLY_TOOL_SLUG);
-      principalFromRun(run);
+    guarded(OVERVIEW_APPLY_TOOL_SLUG, async ({ run, args }) => {
       const pageId = pageArg(args.page);
       const operations = args.operations;
       if (
@@ -562,7 +614,7 @@ export function createOverviewTools(
           : {}),
         overview: surface.describe(),
       };
-    },
+    }),
   );
 
   const undo = aiTool(
@@ -578,9 +630,7 @@ export function createOverviewTools(
         undoToken: { type: 'string' },
       },
     },
-    async ({ run, args }) => {
-      run.assertToolAllowed(OVERVIEW_UNDO_TOOL_SLUG);
-      principalFromRun(run);
+    guarded(OVERVIEW_UNDO_TOOL_SLUG, async ({ run, args }) => {
       const pageId = pageArg(args.page);
       // Looked up under the CALLING principal only: another principal's
       // token is simply not found.
@@ -635,7 +685,7 @@ export function createOverviewTools(
       }
       await audit(run, { action: 'undo', pageId });
       return { page: pageId, undone: true, overview: surface.describe() };
-    },
+    }),
   );
 
   return [describe, apply, undo];
