@@ -1,3 +1,5 @@
+import './i18n.js';
+
 /** Browser-facing callbacks supplied by the host application's auth boundary. */
 /**
  * Client-side bridge to authorized server actions. Construct this in the
