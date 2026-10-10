@@ -72,7 +72,7 @@ Every transition returns `{ outcome, request, refusal? }`. `outcome` is
 `transitioned`, `already_applied` (an idempotent `requestKey` replay), or
 `refused` with a typed reason such as `not_pending`, `expired`,
 `self_approval`, `not_human`, `forbidden`, `already_decided`,
-`revision_mismatch`, `already_consumed`, or `not_found`. A refusal writes
+`revision_mismatch`, `already_consumed`, `unbacked_approval`, or `not_found`. A refusal writes
 nothing.
 
 To consume inside your own transaction, so the domain write and the
@@ -96,6 +96,10 @@ consumption after the deadline are refused even before the sweep runs.
   is `not_found`.
 - The generated REST and MCP surface is `list` and `get` only, and there is no
   generated CLI. Events cannot be updated or deleted.
+- Only `ApprovalService` can create requests: a request built directly
+  (`new ApprovalRequest(...)`, `ApprovalRequestCollection.create(...)`) is
+  refused at the model layer. `consume` also refuses an approval its event
+  ledger does not back (`unbacked_approval`).
 
 ## Permissions
 

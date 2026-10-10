@@ -27,7 +27,8 @@ before changing a transition, the guard predicates, or the surface.
   repeats its model's surface exactly; changing one without the other opens
   or closes the model. `surface.test.ts` holds this.
 - Models refuse re-save and delete of requests and events. Never add an
-  update path for events.
+  update path for events. Inserts need the service-only capability in
+  `src/write-capability.ts`; never export it or mint it outside the service.
 - The event FK is physical on PostgreSQL and SQLite only: DuckDB runs an
   indexed-column UPDATE on a referenced row as delete plus insert.
 - No Node built-ins in `src/` (browser gate); use `globalThis.crypto`.

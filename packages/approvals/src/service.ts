@@ -69,6 +69,7 @@ import {
   type ApprovalStatus,
   type ApprovalTransitionResult,
 } from './types.js';
+import { serviceWriteOption } from './write-capability.js';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -223,6 +224,27 @@ function assertPrincipal(principal: ApprovalPrincipal): void {
   }
 }
 
+/**
+ * Distinct actors whose `approved` events count toward quorum: human
+ * principals other than the requester (a forged or legacy event from an
+ * agent, a service, or the requester never counts).
+ */
+function countedApprovers(
+  approvals: readonly ApprovalEvent[],
+  request: ApprovalRequest,
+): Set<string> {
+  return new Set(
+    approvals
+      .filter(
+        (event) =>
+          event.type === 'approved' &&
+          event.actorType === 'human' &&
+          event.actorId !== request.requestedBy,
+      )
+      .map((event) => event.actorId),
+  );
+}
+
 function rowVersion(rows: unknown[] | undefined): number | null {
   const row = rows?.[0] as Record<string, unknown> | undefined;
   if (!row) return null;
@@ -375,7 +397,9 @@ export class ApprovalService {
             requiredPermissions: JSON.stringify(rules.requiredPermissions),
             version: 1,
             expiresAt: new Date(now.getTime() + rules.ttlMs),
-          });
+            // The only place a request insert is authorized.
+            ...serviceWriteOption(),
+          } as Parameters<ApprovalRequestCollection['create']>[0]);
           const id = String(request.id);
           await this.appendEvent(tx, {
             tenantId,
@@ -501,7 +525,7 @@ export class ApprovalService {
             where: { tenantId, requestId: request.id, type: 'approved' },
             limit: 1000,
           });
-          const voters = new Set(approvals.map((event) => event.actorId));
+          const voters = countedApprovers(approvals, request);
           voters.add(principal.id);
           const count = voters.size;
           const reached = count >= Number(request.requiredApprovals);
@@ -788,6 +812,13 @@ export class ApprovalService {
         }
         if (!(request.expiresAtMs() > now.getTime())) {
           return refusal('expired', 'the approval expired', request.id);
+        }
+        if (!(await this.ledgerBacksApproval(tx, request))) {
+          return refusal(
+            'unbacked_approval',
+            'the ledger does not record this approval',
+            request.id,
+          );
         }
         const nowIso = isoNow(now);
         const updated = await tx.query(
@@ -1150,6 +1181,45 @@ export class ApprovalService {
       voteKey: input.voteKey ?? null,
       occurredAt: input.now,
     });
+  }
+
+  /**
+   * Defence in depth for `consume`: the request row says `approved`, so the
+   * ledger must agree. It needs the `created` event at sequence 1, no
+   * terminal event, and approvals from at least `requiredApprovals` distinct
+   * human actors other than the requester. Catches a status written around
+   * the service (raw SQL); model-layer inserts are already capability-gated.
+   */
+  private async ledgerBacksApproval(
+    tx: DatabaseInterface,
+    request: ApprovalRequest,
+  ): Promise<boolean> {
+    const events = await this.txCollection(ApprovalEventCollection, tx);
+    const ledger = await events.list({
+      where: { tenantId: request.tenantId, requestId: request.id },
+      limit: 1000,
+    });
+    const created = ledger.some(
+      (event) => event.type === 'created' && Number(event.sequence) === 1,
+    );
+    const terminal = ledger.some((event) =>
+      [
+        'rejected',
+        'changes_requested',
+        'cancelled',
+        'expired',
+        'consumed',
+      ].includes(event.type),
+    );
+    const approvers = countedApprovers(
+      ledger.filter((event) => event.type === 'approved'),
+      request,
+    );
+    return (
+      created &&
+      !terminal &&
+      approvers.size >= Math.max(1, Number(request.requiredApprovals))
+    );
   }
 
   /**

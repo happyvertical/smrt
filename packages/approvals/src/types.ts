@@ -136,6 +136,8 @@ export type ApprovalRefusalReason =
   | 'already_decided'
   /** `consume` was called with a different subject revision hash. */
   | 'revision_mismatch'
+  /** The request row says approved but its event ledger does not. */
+  | 'unbacked_approval'
   /** The approval was already consumed. */
   | 'already_consumed'
   /** The request is not approved (consume) or not yet expired (expire). */

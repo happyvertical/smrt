@@ -57,6 +57,25 @@ UUIDs or empty strings), validate the request id as a UUID first, and name
 `tenant_id`. Reads and inserts go through collections so tenancy
 interceptors, UUID columns, and the change feed behave as for any model.
 
+## Service-only write capability
+
+Only `ApprovalService` inserts `ApprovalRequest` rows. It passes the
+module-private `SERVICE_WRITE` symbol (`src/write-capability.ts`, not a public
+export) as a constructor option; the model records that instance in a
+`WeakSet` and refuses, in `save()` and `validateBeforeSave()`, any insert
+without it, and any minted insert that does not start pending, undecided,
+and unconsumed. `new ApprovalRequest({ status: 'approved' }).save()` and
+`ApprovalRequestCollection.create(...)` are refused and write nothing. A
+symbol never arrives from JSON, so REST and MCP input cannot carry it (the
+smrt-reports `runtime-report.ts` pattern). It guards the in-process API,
+not raw SQL.
+
+`consume` re-checks the ledger before consuming (defence in depth against a
+status written around the service): the `created` event at sequence 1, no
+terminal event, and `approved` events from at least `requiredApprovals`
+distinct human actors other than the requester; otherwise it refuses
+`unbacked_approval`. Quorum counting in `decide` applies the same filter.
+
 ## Out of scope here (later slices of #3716)
 
 - Slice 2: Svelte inbox, panel, decision bar; `approvals.requests` recipe.

@@ -22,6 +22,7 @@ import {
   type ApprovalPrincipalType,
   type ApprovalStatus,
 } from '../types.js';
+import { adoptServiceWrite, hasServiceWrite } from '../write-capability.js';
 
 /** Constructor options for {@link ApprovalRequest}. */
 export interface ApprovalRequestOptions extends SmrtObjectOptions {
@@ -155,6 +156,7 @@ export class ApprovalRequest extends SmrtObject {
 
   constructor(options: ApprovalRequestOptions = {}) {
     super(options);
+    adoptServiceWrite(this, options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.kind !== undefined) this.kind = options.kind;
     if (options.subjectType !== undefined)
@@ -215,6 +217,42 @@ export class ApprovalRequest extends SmrtObject {
   }
 
   /**
+   * Refuse any insert `ApprovalService` did not mint (see
+   * `write-capability.ts`), and any minted insert that does not start in the
+   * initial state. Runs for ordinary saves and bulk creates alike (core
+   * wraps an error thrown here; `save()` checks first so callers see it).
+   *
+   * @throws {ApprovalError} `APPROVAL_FORBIDDEN`.
+   */
+  protected override async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    this.assertInsertAllowed();
+  }
+
+  private assertInsertAllowed(): void {
+    if (this.isPersisted) return;
+    if (!hasServiceWrite(this)) {
+      throw new ApprovalError(
+        'APPROVAL_FORBIDDEN',
+        'ApprovalRequest rows are created only by ApprovalService.requestApproval().',
+      );
+    }
+    if (
+      this.status !== 'pending' ||
+      Number(this.approvalCount) !== 0 ||
+      Number(this.version) !== 1 ||
+      this.decidedAt ||
+      this.consumedAt ||
+      this.consumedBy
+    ) {
+      throw new ApprovalError(
+        'APPROVAL_FORBIDDEN',
+        'A new ApprovalRequest must start pending, undecided, and unconsumed.',
+      );
+    }
+  }
+
+  /**
    * Insert a new request. A loaded request is never re-saved: every later
    * change is a guarded transition in `ApprovalService`.
    *
@@ -227,6 +265,7 @@ export class ApprovalRequest extends SmrtObject {
         `ApprovalRequest ${this.id} is changed only through ApprovalService transitions.`,
       );
     }
+    this.assertInsertAllowed();
     this.requireInsertOnSave();
     return await super.save();
   }
