@@ -297,6 +297,14 @@ export async function getCollection() {
       }
     });
 
+    it('hosts beside an app whose models are not in the default objectsDir', async () => {
+      writeCookbook();
+      await configure({ objectsDir: 'src/lib/models' });
+      expect(existsSync(join(root, 'src/routes/api/orders/+server.ts'))).toBe(
+        true,
+      );
+    });
+
     it('hosts nothing without a cookbook, and `expose` overrides the cookbook', async () => {
       await configure();
       expect(existsSync(join(root, 'src/routes/api/orders'))).toBe(false);

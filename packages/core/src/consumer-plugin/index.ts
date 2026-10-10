@@ -117,6 +117,7 @@ export interface SmrtConsumerSvelteKitOptions
     Pick<
       SvelteKitOptions,
       | 'routesDir'
+      | 'objectsDir'
       | 'configPath'
       | 'configFileName'
       | 'kebabRoutes'
@@ -624,7 +625,8 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           const routeOptions = {
             enabled: true,
             routesDir,
-            objectsDir: 'src/lib/objects',
+            // Must equal the producer's, or the shared routesDir is refused.
+            objectsDir: consumerSvelteKit.objectsDir ?? 'src/lib/objects',
             configPath: consumerSvelteKit.configPath ?? 'src/lib/server',
             configFileName: consumerSvelteKit.configFileName ?? 'smrt.ts',
             kebabRoutes: effectiveKebabRoutes,

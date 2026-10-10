@@ -188,7 +188,13 @@ export async function smrt(options: SmrtPresetOptions = {}): Promise<Plugin[]> {
         typesDir,
         svelteKit:
           hosted.length > 0
-            ? { objects: hosted, routesDir, configPath, configFileName }
+            ? {
+                objects: hosted,
+                routesDir,
+                objectsDir,
+                configPath,
+                configFileName,
+              }
             : true,
       }),
     );
