@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, userEvent } from '@happyvertical/smrt-vitest/svelte';
 import { describe, expect, it, vi } from 'vitest';
+import { createUsersAuthAdapter } from '../../auth.js';
 import AccountSecurityPanel from '../AccountSecurityPanel.svelte';
 import MagicLinkForm from '../MagicLinkForm.svelte';
 import OidcProviderButtons from '../OidcProviderButtons.svelte';
@@ -80,6 +81,20 @@ describe('authentication components', () => {
     render(PasskeySignInButton, { props: { adapter: { signInWithPasskey } } });
     await userEvent.click(screen.getByRole('button', { name: /passkey/i }));
     expect(signInWithPasskey).toHaveBeenCalledOnce();
+  });
+
+  it('keeps passkeys hidden until the host supplies a WebAuthn ceremony', async () => {
+    render(PasskeySignInButton, {
+      props: { adapter: createUsersAuthAdapter() },
+    });
+    expect(screen.queryByRole('button', { name: /passkey/i })).toBeNull();
+
+    const passkeyCeremony = vi.fn().mockResolvedValue(undefined);
+    render(PasskeySignInButton, {
+      props: { adapter: createUsersAuthAdapter({ passkeyCeremony }) },
+    });
+    await userEvent.click(screen.getByRole('button', { name: /passkey/i }));
+    expect(passkeyCeremony).toHaveBeenCalledOnce();
   });
 
   it('renders session and API-key metadata without secrets and revokes selected rows', async () => {

@@ -46,16 +46,25 @@ export interface AccountApiKey {
 /** Application endpoints whose server actions bind to the supported users services. */
 export interface UsersAuthEndpointOptions {
   fetch?: typeof fetch;
-  endpoints?: Partial<Record<keyof UsersAuthAdapter, string>>;
+  endpoints?: Partial<
+    Record<Exclude<keyof UsersAuthAdapter, 'signInWithPasskey'>, string>
+  >;
+  /**
+   * A host-owned WebAuthn ceremony. Endpoint configuration alone cannot enable
+   * passkeys because it cannot perform the browser ceremony required by #3275.
+   */
+  passkeyCeremony?: NonNullable<UsersAuthAdapter['signInWithPasskey']>;
 }
 
-const DEFAULT_ENDPOINTS: Record<keyof UsersAuthAdapter, string> = {
+const DEFAULT_ENDPOINTS: Record<
+  Exclude<keyof UsersAuthAdapter, 'signInWithPasskey'>,
+  string
+> = {
   signInWithPassword: '/auth/password/sign-in',
   signUp: '/auth/sign-up',
   requestMagicLink: '/auth/magic-link/request',
   confirmMagicLink: '/auth/magic-link/confirm',
   signInWithOidc: '/auth/oidc/sign-in',
-  signInWithPasskey: '/auth/passkey/sign-in',
   revokeSession: '/account/sessions/revoke',
   revokeApiKey: '/account/api-keys/revoke',
 };
@@ -84,7 +93,9 @@ export function createUsersAuthAdapter(
     requestMagicLink: (input) => post(endpoints.requestMagicLink, input),
     confirmMagicLink: (input) => post(endpoints.confirmMagicLink, input),
     signInWithOidc: (input) => post(endpoints.signInWithOidc, input),
-    signInWithPasskey: () => post(endpoints.signInWithPasskey),
+    ...(options.passkeyCeremony
+      ? { signInWithPasskey: options.passkeyCeremony }
+      : {}),
     revokeSession: (sessionId) => post(endpoints.revokeSession, { sessionId }),
     revokeApiKey: (apiKeyId) => post(endpoints.revokeApiKey, { apiKeyId }),
   };

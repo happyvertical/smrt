@@ -20,8 +20,10 @@ secret, or OIDC client secret. On the server, password actions use
 `MagicLinkService`, and OIDC actions use `OidcLoginService`. Session and API
 key revoke actions must verify the current account owns the selected record
 before calling `SessionService.destroySession()` or the profile API-key
-service. Passkey sign-in is deliberately hidden until #3275 supplies
-`signInWithPasskey`.
+service. Passkey sign-in is deliberately hidden unless the host passes a
+`passkeyCeremony` callback to `createUsersAuthAdapter()`. An endpoint alone
+cannot enable it: the callback must perform the #3275 WebAuthn browser ceremony
+and delegate its verified result to an authorized server action.
 
 ```svelte
 <script lang="ts">
