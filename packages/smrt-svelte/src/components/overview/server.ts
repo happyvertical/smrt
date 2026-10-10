@@ -6,6 +6,12 @@
  * a `+page.server.ts` or a save endpoint.
  */
 export {
+  createOverviewAssistantSurface,
+  type OverviewAssistantPersistResult,
+  type OverviewAssistantSurface,
+  type OverviewAssistantSurfaceOptions,
+} from './assistant-surface.js';
+export {
   type LoadOverviewOptions,
   loadOverview,
   type WidgetLoadInput,
@@ -25,6 +31,30 @@ export {
   type SanitizeOptions,
   sanitizeOverview,
 } from './model.js';
+export {
+  allowedWidgetTypes,
+  type DescribeOverviewInput,
+  describeOverview,
+  OVERVIEW_MAX_OPERATIONS,
+  OVERVIEW_OPERATION_KINDS,
+  OVERVIEW_OPERATION_SCHEMA,
+  type OverviewAddOperation,
+  type OverviewConfigureOperation,
+  type OverviewDescription,
+  type OverviewMoveOperation,
+  type OverviewOperation,
+  type OverviewOperationIssue,
+  type OverviewOperationIssueCode,
+  type OverviewOperationKind,
+  type OverviewOperationResult,
+  type OverviewOptionDescription,
+  type OverviewPlan,
+  type OverviewRemoveOperation,
+  type OverviewResizeOperation,
+  type OverviewWidgetTypeDescription,
+  type PlanOverviewOperationsInput,
+  planOverviewOperations,
+} from './operations.js';
 export {
   parseRecipeExportRef,
   type RecipeExportResolver,
