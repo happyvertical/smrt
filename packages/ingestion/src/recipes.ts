@@ -36,7 +36,9 @@ export class IngestionInboxRecipe extends SmrtRecipe {
     description: 'Incoming material and its authenticated review workflow.',
   };
   static models = [IntakeItem, IntakeEvidence];
-  static runtime = 'browser' as const;
+  // The route component renders in a browser, but its authenticated review host
+  // and package dependency closure require a server.
+  static runtime = 'both' as const;
   static surfaces = [
     {
       kind: 'route',
@@ -83,7 +85,9 @@ export class IngestionReviewRecipe extends SmrtRecipe {
     IntakeAction,
     IntakeReviewDecision,
   ];
-  static runtime = 'browser' as const;
+  // The route component renders in a browser, but its authenticated review host
+  // and package dependency closure require a server.
+  static runtime = 'both' as const;
   static surfaces = [
     {
       kind: 'route',

@@ -23,7 +23,7 @@ describe('ingestion recipes', () => {
       icon: 'archive',
       description: 'Incoming material and its authenticated review workflow.',
     });
-    expect(IngestionInboxRecipe.runtime).toBe('browser');
+    expect(IngestionInboxRecipe.runtime).toBe('both');
     expect(IngestionInboxRecipe.surfaces).toEqual([
       {
         kind: 'route',
@@ -58,7 +58,7 @@ describe('ingestion recipes', () => {
     ]);
     expect(IngestionReviewRecipe.group).toEqual(IngestionInboxRecipe.group);
     expect(IngestionReviewRecipe.section).toEqual(IngestionInboxRecipe.section);
-    expect(IngestionReviewRecipe.runtime).toBe('browser');
+    expect(IngestionReviewRecipe.runtime).toBe('both');
     expect(IngestionReviewRecipe.surfaces).toEqual([
       {
         kind: 'route',

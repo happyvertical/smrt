@@ -179,4 +179,6 @@ limits.
 The recipe manifest registers those existing browser components as
 `/ingestion/inbox` and `/ingestion/review` routes for a host to mount. The route
 metadata does not supply a host, source, provider, or demo fixture, and it does
-not change the preview-only status.
+not change the preview-only status. Both recipes declare `both` runtime: their
+components render in a browser, while the authenticated review host and package
+dependency closure require a server.
