@@ -8,6 +8,7 @@
         "@happyvertical/smrt-commerce#build",
         "@happyvertical/smrt-events#build",
         "@happyvertical/smrt-inventory#build",
+        "@happyvertical/smrt-ledgers#build",
         "@happyvertical/smrt-products#build"
       ]
     }
