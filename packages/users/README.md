@@ -27,7 +27,7 @@ and delegate its verified result to an authorized server action.
 
 Auth components display safe, registered `users.auth.*` messages when an
 adapter rejects; callback diagnostics are never rendered. Configure these
-messages through the SMRT UI i18n context. Existing error and success feedback
+messages through the s-m-r-t UI i18n context. Existing error and success feedback
 updates when the locale changes, preserving form drafts without repeating the
 auth action. Default English messages are registered by the auth module.
 
