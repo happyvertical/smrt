@@ -77,8 +77,14 @@ columns are therefore left out of the write:
 - **Where.** Only POSITIVELY native DuckDB (`isPositivelyNativeDuckDb()`: not the
   JSON adapter, which shares the DuckDB client and dialect but persists to
   `<table>.json` only from its own insert/update/upsert/delete, so a raw write
-  would be lost on the next process), and only the three
-  existing-row writers: the embedded revision write in `save()`
+  would be lost on the next process). Identification (`src/native-duckdb.ts`)
+  is deterministic: a root is native by structure (`getTableSchema`, no
+  JSON-only capability, or an explicit `duckdb` hint), and a transaction
+  handle, which carries only the root's `client`, is recognized through the
+  root core noted before binding it (`initialize()`, `withDatabase()`,
+  `withEmbeddedWriteTransaction()`). A transaction handle of a root core never
+  saw stays unidentified and keeps the adapter `upsert`. It applies to the three
+  existing-row writers only: the embedded revision write in `save()`
   (`writeEmbeddedRevisionRow`), a new object's natural-key save that adopts an
   existing row (`writeNaturalKeyUpsert`), and `claimRevision()`, which assigns
   only `updated_at`. SQLite and PostgreSQL keep writing exactly what they

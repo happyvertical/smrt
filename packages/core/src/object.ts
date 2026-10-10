@@ -53,6 +53,7 @@ import {
   GlobalInterceptors,
   resolveGetStringFilter,
 } from './interceptors';
+import { isKnownNativeDuckDbHandle } from './native-duckdb';
 import { getBoxedPrimitiveKind, isRawJSON } from './plain-json';
 import { ObjectRegistry } from './registry';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
@@ -108,11 +109,6 @@ interface AdoptedNaturalKeyRow {
   createdAt?: unknown;
   existing?: Record<string, unknown>;
 }
-
-// A transaction handle may omit adapter capabilities. Remember only a positively
-// identified native DuckDB client; JSON shares its engine but requires export
-// behavior that a raw multi-row statement must never bypass.
-const nativeJunctionClients = new WeakSet<object>();
 
 function isDuckDbHugeInt(value: unknown): boolean {
   return Boolean(
@@ -1398,36 +1394,15 @@ export class SmrtObject extends SmrtClass {
    * write there is visible in-process and lost on the next one. Writers that
    * bypass those methods must therefore gate on this.
    *
-   * Native identification is structural: the native adapter exposes
-   * `getTableSchema` (the JSON adapter does not). A transaction handle may omit
-   * adapter capabilities, so a client once identified by the adapter, or by an
-   * explicit `duckdb` hint, is remembered and recognized through its handles.
+   * Identification is deterministic, see `native-duckdb.ts`: a root handle is
+   * recognized structurally, and a transaction handle through the root core
+   * noted before binding to it (initialize, withDatabase, transactions).
    */
   private isPositivelyNativeDuckDb(): boolean {
-    if (this.getDatabaseEngineHint() === 'json') return false;
-    if (!this.isNativeDuckDb()) return false;
-    const db = this.db as typeof this.db & {
-      getTableSchema?: unknown;
-      client?: object;
-      inferSchemaFromJSON?: unknown;
-      getTableLoadErrors?: unknown;
-    };
-    // JSON-only capabilities: never native, whatever else it shares.
-    if (
-      typeof db.inferSchemaFromJSON === 'function' ||
-      typeof db.getTableLoadErrors === 'function'
-    ) {
-      return false;
-    }
-    const client = db.client;
-    if (!client) return false;
-    if (
-      typeof db.getTableSchema === 'function' ||
-      this.getDatabaseEngineHint() === 'duckdb'
-    ) {
-      nativeJunctionClients.add(client);
-    }
-    return nativeJunctionClients.has(client);
+    return (
+      this.isNativeDuckDb() &&
+      isKnownNativeDuckDbHandle(this.db, this.getDatabaseEngineHint())
+    );
   }
 
   private isNativeDuckDb(): boolean {
