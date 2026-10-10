@@ -108,3 +108,13 @@ import '@happyvertical/smrt-messages/providers/all';     // all of the above
 - **Optional tenancy**: `@TenantScoped({ mode: 'optional' })` on Message, Account, Attachment
 - **Required tenancy**: endpoints and persona routes are always tenant scoped
 - **Secrets are write-only**: never serialize credentials or endpoint.address to an app
+
+## Intake byte snapshots
+
+`EmailAccount.readIntakeMessage(providerLookup, maxBytes, imapIdentity?)` is the authorized host seam for
+opt-in ingestion. It copies full-message attachment bytes from the registered
+email provider and fails when only attachment metadata is available; it never
+reads provider-supplied paths or advances sync checkpoints. Keep this path
+provider-neutral and exclude arbitrary headers/credentials from its snapshot.
+IMAP lookup must include folder/UIDVALIDITY/UID verification; sender Message-ID
+is a lookup hint, never the durable delivery identity.

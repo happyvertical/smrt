@@ -143,10 +143,17 @@ export {
 } from './models/index.js';
 export { assertIntegerMinorUnits } from './money.js';
 export {
+  AgreementsRecipe,
   CustomersRecipe,
+  EstimatesRecipe,
+  FulfillmentRecipe,
+  InvoicingRecipe,
+  LeasesRecipe,
+  LicensesRecipe,
   PurchasesRecipe,
   SalesRecipe,
   VendorsRecipe,
+  WholesaleRecipe,
 } from './recipes.js';
 
 // Types

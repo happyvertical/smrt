@@ -1,5 +1,83 @@
 # @happyvertical/smrt-video
 
+## 0.55.9
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.9
+  - @happyvertical/smrt-assets@0.55.9
+  - @happyvertical/smrt-content@0.55.9
+  - @happyvertical/smrt-profiles@0.55.9
+  - @happyvertical/smrt-tenancy@0.55.9
+  - @happyvertical/smrt-voice@0.55.9
+  - @happyvertical/smrt-config@0.55.9
+
+## 0.55.8
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.8
+  - @happyvertical/smrt-assets@0.55.8
+  - @happyvertical/smrt-content@0.55.8
+  - @happyvertical/smrt-profiles@0.55.8
+  - @happyvertical/smrt-tenancy@0.55.8
+  - @happyvertical/smrt-voice@0.55.8
+  - @happyvertical/smrt-config@0.55.8
+
+## 0.55.7
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.7
+  - @happyvertical/smrt-assets@0.55.7
+  - @happyvertical/smrt-content@0.55.7
+  - @happyvertical/smrt-profiles@0.55.7
+  - @happyvertical/smrt-tenancy@0.55.7
+  - @happyvertical/smrt-voice@0.55.7
+  - @happyvertical/smrt-config@0.55.7
+
+## 0.55.6
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.6
+  - @happyvertical/smrt-assets@0.55.6
+  - @happyvertical/smrt-content@0.55.6
+  - @happyvertical/smrt-profiles@0.55.6
+  - @happyvertical/smrt-tenancy@0.55.6
+  - @happyvertical/smrt-voice@0.55.6
+  - @happyvertical/smrt-config@0.55.6
+
+## 0.55.5
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.5
+  - @happyvertical/smrt-assets@0.55.5
+  - @happyvertical/smrt-content@0.55.5
+  - @happyvertical/smrt-profiles@0.55.5
+  - @happyvertical/smrt-tenancy@0.55.5
+  - @happyvertical/smrt-voice@0.55.5
+  - @happyvertical/smrt-config@0.55.5
+
+## 0.55.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.4
+  - @happyvertical/smrt-assets@0.55.4
+  - @happyvertical/smrt-content@0.55.4
+  - @happyvertical/smrt-profiles@0.55.4
+  - @happyvertical/smrt-tenancy@0.55.4
+  - @happyvertical/smrt-voice@0.55.4
+  - @happyvertical/smrt-config@0.55.4
+
 ## 0.55.3
 
 ### Patch Changes

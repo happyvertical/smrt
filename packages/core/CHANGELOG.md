@@ -1,5 +1,121 @@
 # @happyvertical/smrt-core
 
+## 0.55.9
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - patch train, taxonomy recipe section and pre-commit hook hang (#3743)
+- @happyvertical/smrt-config@0.55.9
+  - @happyvertical/smrt-scanner@0.55.9
+  - @happyvertical/smrt-types@0.55.9
+
+## 0.55.8
+
+### Patch Changes
+
+- ### Features
+  
+  - add routing projections and preserve collection metadata (#3738)
+  - app-wide feature recipes, platform track (epic #3719) (#3731) (recipes)
+  - validate reference workflows and publish measured evaluation (#3720) (ingestion)
+  - CustomerSelect and VendorSelect selectors plus field widget hints (#3633) (commerce)
+  - recipes declare surfaces, providers, runtime and demo seed (#3728) (core)
+  - SmrtRecipe planner fields; move 19 business recipes into their packages (#3724) (recipes)
+  
+  ### Bug Fixes
+  
+  - leave unchanged indexed columns out of DuckDB row writes (#3740) (core)
+  - keep Node-only modules out of the browser entry (#3639) (core)
+  - settle and invalidate canceled browser speech (#3652) (svelte)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.103.1 (#3735) (deps)
+  - chore: sync sdk packages to v0.102.7 (#3729) (deps)
+- @happyvertical/smrt-config@0.55.8
+  - @happyvertical/smrt-scanner@0.55.8
+  - @happyvertical/smrt-types@0.55.8
+
+## 0.55.7
+
+### Patch Changes
+
+- ### Features
+  
+  - planner batch — shell layout editing, section menus, browser speech (#3701)
+  - add scoped correctness feedback and routing suggestions (#3706) (ingestion)
+  - add authenticated inbox and review surfaces (#3703) (ingestion)
+  
+  ### Bug Fixes
+  
+  - use bounded ordinary-role fixture cleanup (#3705) (ingestion)
+- @happyvertical/smrt-config@0.55.7
+  - @happyvertical/smrt-scanner@0.55.7
+  - @happyvertical/smrt-types@0.55.7
+
+## 0.55.6
+
+### Patch Changes
+
+- ### Features
+  
+  - persist safe terminal outcomes (#3700) (jobs)
+  - customize audit history presentation (#3694) (svelte)
+  - generate durable, permission-filtered proposals (#3702) (ingestion)
+- @happyvertical/smrt-config@0.55.6
+  - @happyvertical/smrt-scanner@0.55.6
+  - @happyvertical/smrt-types@0.55.6
+
+## 0.55.5
+
+### Patch Changes
+
+- ### Features
+  
+  - preserve upload, email and watch-folder sources (#3698) (ingestion)
+  - enforce reviewed idempotent execution (#3692) (ingestion)
+  - allow hiding the assistant conversation list (#3691) (chat)
+  - add bounded evidence extraction with live authorization (#3689) (ingestion)
+  - add durable intake and processing foundations (#3687) (ingestion)
+  
+  ### Bug Fixes
+  
+  - extract retained JSON source evidence (#3699) (ingestion)
+  - await lazy WebMCP fixture registration (#3690) (svelte)
+  - enforce hardcoded strings through symlinked paths (#3664) (ci)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.102.4 (#3695) (deps)
+  - docs: define intake and execution contracts (#3678) (ingestion)
+- @happyvertical/smrt-config@0.55.5
+  - @happyvertical/smrt-scanner@0.55.5
+  - @happyvertical/smrt-types@0.55.5
+
+## 0.55.4
+
+### Patch Changes
+
+- ### Features
+  
+  - support sidebar account footers (#3647) (smrt-svelte)
+  
+  ### Bug Fixes
+  
+  - browser-safe config entry; model roots stop importing the sql root (#3636) (config)
+  - export decorators and runtime helpers from the browser entry (#3632) (core)
+  
+  ### Other Changes
+  
+  - refactor: move RelationInput to smrt-ui/forms, re-export from smrt-svelte (#3638) (smrt-ui)
+  - ci: retry bounded apt provisioning and skip ONNX deps without installs (#3655)
+  - chore: sync sdk packages to v0.102.3 (#3606) (deps)
+- @happyvertical/smrt-config@0.55.4
+  - @happyvertical/smrt-scanner@0.55.4
+  - @happyvertical/smrt-types@0.55.4
+
 ## 0.55.3
 
 ### Patch Changes

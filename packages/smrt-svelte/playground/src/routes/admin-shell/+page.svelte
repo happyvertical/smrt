@@ -158,6 +158,7 @@ function completeLatest() {
 </script>
 
 <AdminShell
+  edgeToggles
   title="SMRT AdminShell"
   subtitle="Playground"
   state={shell}

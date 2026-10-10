@@ -163,6 +163,8 @@ interface SmartObjectDefinition {
   className: string;
   qualifiedName?: QualifiedClassName; // NEW: @package/name:ClassName for namespace isolation (Issue #713)
   collection: string;
+  /** User-facing model description (explicit option, else class JSDoc summary). */
+  description?: string;
   filePath: string;
   packageName?: string;
   packageVersion?: string;
@@ -512,7 +514,7 @@ export class ManifestAdapter {
       ...recipe,
       models: recipe.models.map(qualify),
       nav: recipe.nav.map((entry) => ({
-        label: entry.label,
+        ...entry,
         model: qualify(entry.model),
       })),
       ...(recipe.options
@@ -622,8 +624,11 @@ export class ManifestAdapter {
       }
     }
 
-    // Generate collection name (pluralize)
-    const collection = this.pluralize(classDef.className);
+    // The declared route/permission namespace is independent of the table name.
+    const collection =
+      typeof classDef.decoratorConfig?.collection === 'string'
+        ? classDef.decoratorConfig.collection
+        : this.pluralize(classDef.className);
 
     // Determine package name (prefer option, then classDef value)
     const packageName = options.packageName || classDef.packageName;
@@ -639,6 +644,7 @@ export class ManifestAdapter {
       className: classDef.className,
       qualifiedName,
       collection,
+      ...(classDef.description ? { description: classDef.description } : {}),
       filePath: classDef.filePath,
       packageName: packageName || undefined,
       fields,
@@ -1009,6 +1015,7 @@ export class ManifestAdapter {
         // for a conflictColumns member) and the DDL disagrees with the
         // runtime decorator.
         'onDelete',
+        'onUpdate',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {
@@ -1086,6 +1093,7 @@ export class ManifestAdapter {
         // #3023: keep the declared app-side delete policy for manifest-only
         // consumers, matching the runtime decorator.
         'onDelete',
+        'onUpdate',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {

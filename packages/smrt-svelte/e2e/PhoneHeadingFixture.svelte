@@ -22,7 +22,7 @@ const model = phoneTopBarFor({
 </script>
 
 <div data-theme="smrt" data-color-scheme={scheme}>
-  <AdminShell title="Workspace" config={{ right: false, bottom: false }}>
+  <AdminShell edgeToggles title="Workspace" config={{ right: false, bottom: false }}>
     {#snippet tenantFooter()}
       <WorkspaceAccountMenu
         userName="Dana"

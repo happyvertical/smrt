@@ -1,0 +1,220 @@
+# #3676 feedback test design
+
+High risk: confidential example disclosure and learned authority expansion. Existing
+ledger only; schema migration N/A unless an explicit implementation need is found.
+No paid providers. The table defines required coverage. Checkpoint execution is
+recorded below; final documented PostgreSQL validation passes with the tracked
+fixture cleanup repair #3704. Independent review and required PR gates remain.
+
+| Behavior/invariant | Reachable trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level/command |
+|---|---|---|---|---|---|---|---|---|
+| Explicit correctness | Revision-bound feedback callback | Exact current review records judgment | Forged reviewer/revision/hash, absent reviewer grant, invalid/oversize data | Authenticated human/current tenant+confidential scope | Scoped locked ingestion transaction | Node SQLite/PostgreSQL | Public service/UI callback | service `pnpm test`, `pnpm test:postgres`; components/e2e |
+| Distinct signals | Authoritative decision/execution record consumption | Idempotent event identity and server provenance | Approval/run success is never correctness; outcome_unknown stays unknown | Current authorized owner | Existing immutable source record + feedback insert in one transaction | SQLite/PostgreSQL | Review/outcome owner records | service U/P |
+| Supersession/replay | Repeated request or correction | Append and compare expected predecessor | Payload mismatch, double successor, stale source, rollback | Same scoped reviewer | Item lock and unique request ledger | SQLite/PostgreSQL | No private memory APIs | service U/P |
+| Bounded retrieval | Later generation | Compatible positive/negative examples, deterministic ranking | Unrelated, revoked/deleted/expired/superseded, tenant or confidential denial | Receiving actor and each example's live owner | Bounded candidate query; current owner checks before disclosure | SQLite/PostgreSQL | Generator and decision input | service U/P + actual input assertions |
+| Provider race/budget | Generation/probe/decision/publication/read | Examples fit fresh minimum policy/full serialized payload | Revocation, policy shrink or supersession during async boundary denies onward I/O/read | Worker live scope | Existing generation fences + feedback revalidation | Node U/P | Deterministic provider callbacks only | provider/service lanes |
+| Rule suggestion/adoption | Repeated explicit judgments + human promotion | Bounded evidence/preview; authorized expected policy version | Suggestion cannot execute or alter permission/automation; stale version/denied grant fails | Separately authorized policy owner | Host same-executor versioned adoption + ingestion audit transaction | SQLite/PostgreSQL | Narrow routing-only host callback | U/P + browser |
+| Retention | Delete/expire/revoke and delayed work | Ledger redaction, idempotent derived cleanup | No stale writer/cache resurrection; pending cleanup fails closed | Current item/privacy owner | Existing deletion/purgeDerived protocol | SQLite/PostgreSQL | Host-owned derived stores | U/P |
+| UI | Explicit judgment, context change | Exact displayed binding; separate controls | Missing callback/denial clears content; approval/apply never labels | Browser authenticated host | Server authority, no client permission inference | Chromium/mobile | Maintained reference host | components, typecheck, test:e2e |
+| Held-out influence | Frozen paired protocol | Comparable unseen case improves with authorized training correction | Duplicate/ID/answer leakage, unrelated or inaccessible influence; negative/abstention controls | Fixed fixture scopes | Actual retrieval+proposal service | SQLite/PostgreSQL deterministic | No real-model quality claim | evaluation fixture/report |
+
+## Protocol frozen before matcher/fixture implementation
+
+Freeze three disjoint originating template families in training and four different
+families in held-out; never put near-duplicate text/identifiers/targets across the
+partitions. Declare a lexical token-overlap relevance matcher (lowercase Unicode
+words, set Jaccard similarity, minimum 0.2; no item IDs/fixture labels). Rank by
+similarity then immutable feedback ID; explicit corrections supersede earlier
+judgments. Model fixture may use only supplied examples plus current offered
+candidates and observed query words. It may not look up expected answers.
+
+Training includes an explicitly corrected destination and explicit negative route.
+Held-out comparable cases use different wording/document IDs; unrelated cases,
+revoked/cross-scope controls and ambiguous no-match cases must not gain a route.
+Evaluate paired baseline/no-examples versus treatment/training-only examples with
+identical inputs/permissions. Report target/action accuracy, abstention, unchanged
+controls, denominators, exact duplicates separately, uncertainty and permission/
+automation snapshots. Freeze fixture/matcher code, declared expected labels and corpus hashes before
+executing the paired experiment; do not tune against its results. These are authored
+contract fixtures, not a blinded provider-quality experiment. No automatic outcomes exist in v1; report that unavailable stratum
+rather than invent samples. Real-provider quality and threshold evidence belongs
+#3677, not this deterministic contract experiment.
+
+## Review-pending implementation checkpoint
+
+The 21 feedback cases ran on both real SQLite and non-superuser PostgreSQL.
+SQLite initially passed 20 with one exact-byte fixture failure: changing the
+feedback budget legitimately invalidated inherited selection compatibility. The
+fixture now uses an authorized source generated before feedback opt-in; the
+exact UTF-8 boundary and pre-provider refusal pass without weakening the guard.
+PostgreSQL initially passed 20 with one expired tombstone failure: querying an
+undefined action ID aborted the transaction before eligibility could fail closed.
+The owner now rejects redacted/malformed identity before querying UUID columns;
+the focused current-generation-after-purge regression passes. These focused
+results do not constitute a fresh complete suite pass.
+
+Additional focused SQLite checks pass for independent-source rule support and
+retention (2 cases). Previous failed logs are retained externally. Initial
+retention nested-transaction failures and unknown-outcome replay failures were
+repaired at their owning boundaries with unchanged timeout settings. Final full
+SQLite/PostgreSQL, browser, packed-consumer and root gates remain required.
+
+Checkpoint owning build/browser-boundary packaging, TypeScript/test TypeScript,
+Svelte diagnostics and all 26 component tests pass. The independent-source rule
+case also passes on PostgreSQL. The first Chromium run failed all five scenarios
+at the unchanged initial upload visibility wait: traces show pending upload I/O
+and a busy inbox, without a server error. Concurrent filesystem-bound UI database
+validation was active. This is preserved diagnostic evidence, not a browser pass;
+the identical browser command was subsequently rerun. The first run log remains;
+its original traces were overwritten by the next Playwright output cleanup. Later
+failed runs have archived traces, and the current browser run passes all five cases.
+
+## SDK transport correction and browser synchronization
+
+The first integration checkpoint exposed an SDK adapter omission: injected
+generators received authorized examples, while the SDK serializer dropped them.
+The local HTTP provider regression reproduces the omission before the conditional
+serialization fix. Existing full `GenerativeProposalInput` byte-limit checks
+include examples immediately before provider I/O; this does not claim a separate
+HTTP envelope byte limit. Evaluation #3677 owns its additional paid-wire bound.
+
+The browser upload timing diagnostic completed real PDF uploads successfully in
+6,053 ms and 5,649 ms, beyond the fixture's initial five-second visibility wait.
+The adjacent test-only synchronization now awaits the intended POST upload
+response and verifies success before the unchanged visibility assertion. The
+overall 60-second test budget is unchanged. This is a separately committed
+drive-by fixture repair, not a relaxed product/runtime deadline.
+
+The SDK correction passes the complete local provider lane (22 tests), including
+exact example serialization and unchanged absent-feedback requests. A new
+SQLite/PostgreSQL case measures the complete generator input: the configured
+ceiling admits the same request without examples and refuses the request with
+examples before any generator call. Both focused runs pass; other cases remain
+carried until the final complete runs. Owning TS/test-TS/Svelte checks pass.
+
+The split fixture has the same asynchronous boundary: a diagnostic returns 200
+with a new completed, reviewable attempt, while the prior browser trace still
+had the split request pending at its display assertion. The canonical UI parent
+owns a second adjacent response wait; neither correction changes runtime limits
+or browser timeout settings.
+
+## Integrated 0.55.6 checkpoint (review pending)
+
+The UI dependency merged as `38fba41` (tree-equivalent to checkpoint `678310a2`), including
+current-target reload, pagination reauthorization and jobs terminal-outcome
+compatibility. Feedback rebased without a runtime edit: the exact inherited delta
+matches the parent, with only a canonical type-export ordering correction added.
+The frozen feedback corpus and all feedback-only source files remain unchanged.
+
+| Gate | Executed result | Scope and limit |
+|---|---|---|
+| Complete SQLite ingestion + components | 268 + 28 passed on `636289a` | Carried complete run; subsequent inherited UI/jobs interactions have owning evidence and fresh affected coverage |
+| Integrated affected SQLite | 25 passed, 83 filtered | All 22 feedback cases plus current-target recovery and completed-sibling visibility; filtered cases are not new passes |
+| Integrated components | 32 passed | Includes feedback binding and pagination reauthorization/context fencing |
+| Integrated local providers | 22 passed | Actual SDK HTTP example serialization; no live provider-quality claim |
+| Integrated Chromium | 5 passed | Real upload, feedback/stale binding, correction/apply, scope denial, originals and split re-extraction; original timeouts |
+| Root build / typecheck | 73 / 143 tasks passed | Fresh aligned 0.55.6 tree |
+| Root lint, format, audit policy, AGENTS chain | Passed | Export-order correction is mechanical and preserves the server surface |
+| Complete integrated PostgreSQL | 236 passed | Fresh complete documented run on cleanup checkpoint `688e76b5`, using the unchanged ordinary role and timeouts |
+
+An earlier complete PostgreSQL command recorded 226 passes and one foundation
+fixture teardown failure with the same SQLSTATE. Its unchanged targeted diagnostic
+passed, but the final complete run reproduced the cleanup defect in a different
+fixture. Both failures and backend-role observations are preserved. The dedicated
+runtime role remains non-superuser with no RLS bypass; no signal privilege or
+application timeout was changed. Supporting #3704 owns reuse of the existing
+bounded normal-DROP cleanup helper. The first supporting checkpoint also needed
+the existing empty-schema test database convention for its maintenance-database
+connection; that integration run stopped normally before completion and is not a
+pass. After the owning correction, all five cleanup tests passed with the same
+ordinary role, followed by the complete clean PostgreSQL run above. Read-only
+backend monitoring and all prior failed/interrupted logs remain in the evidence.
+No production feedback code changed for either fixture repair.
+
+Broader root runtime results are carried only for unchanged dependency behavior,
+not reported as fresh tests. The jobs base change is explicitly excluded from
+byte-equivalence claims and has its own current runner/event and PostgreSQL
+proof. Packed-consumer/freshness checks and normal checkpoint hooks are recorded
+in the external evidence manifest; final dependency reconciliation remains required.
+
+## Round 1 accepted-blocker correction
+
+Two independent reviews found missing downstream lineage enforcement and missing
+source-side provider-policy enforcement. Baseline shared regressions failed on
+both SQLite and PostgreSQL: revoked/deleted/superseded learned actions still
+allowed all four saved read/review/apply operations, terminal proposal display
+remained visible, and source-only provider revocation still returned an example.
+The baseline failures are retained separately from corrected results.
+
+| Affected contract | Positive / negative coverage | Boundary and runtime |
+|---|---|---|
+| Saved learned actions | Current selection permits existing behavior; revoke/delete/supersede blocks `getAction`, `listReviews`, `submitDecision` and `applyAction` before effects; plan steps also deny and `applyPlan` reports failure without effects | Existing same-executor owner bridge, SQLite and PostgreSQL |
+| Durable completed outcomes | Current-authorized succeeded result/replay survives source-example revocation, while copied proposal display/args/plan payload disappears; current owner denial still rejects results | Public action/page/result methods, both databases |
+| Source provider eligibility | Source-only generating-provider denial excludes selection and invalidates prior reads; revocation during generation/probe/decision blocks subsequent I/O/publication, including a distinct configured decision recipient | Initial and final live source contexts; actual generator/decision callbacks, both databases |
+| Empty selection | Optional capture denial and small memory budgets do not change ordinary action authority when no learned source was selected | Existing capture/atomicity regression cases, both databases |
+
+Corrected affected feedback suites pass 34 cases per database (86 unrelated
+filtered cases are not new passes). A final pre-send callback regression also
+reproduced one forbidden submit on both databases, then passed with zero submits
+after the same-executor check immediately before dispatch. The final affected
+selection runs seven saved-lineage/no-send cases and seven ordinary execution
+cases per database; the unchanged cases from the 34-case run carry with exact
+hunk proof (35 distinct feedback cases across these runs). The existing public
+create/list/preview regression additionally caught an unprepared-action page
+regression on both databases; state-only entries without a saved proposal remain
+reloadable, while saved proposals still pass the lineage gate. The final recovery
+selection passes eight cases per database, including this regression and the
+seven lineage boundaries. Fresh owning
+types/Svelte and provider/browser/build/package/static checks are captured in
+the round-2 evidence. Complete pre-review SQLite/PostgreSQL results carry only
+for unchanged behavior outside these affected paths; they are not claimed as
+fresh complete suites. No public DTO, schema, dependency, grant or timeout changed.
+
+## Round 2 saved-preview replay correction
+
+The affected reviewer found that direct `previewProposal` replay still returned
+saved display after a selected example was revoked, deleted or superseded.
+The same direct plan replay path also required the gate. Four baseline cases per
+database reproduced disclosure while the other saved readers already denied.
+The positive half repeats the identical public request while its source is valid.
+
+Publication and replay now bind the feedback check to the exact returned proposal
+ID and analysis attempt under the owning executor. New publication and final
+sealed plan steps are checked too; the internal loader does not recurse through
+public readers. Existing unprepared state-only pages and non-learned proposals
+retain their behavior; durable terminal result reads are unchanged.
+
+Fresh affected SQLite/PostgreSQL selections cover eight cases each, including
+all four replay negatives, source policy, terminal-result redaction, final external
+pre-send denial and unprepared create/list/preview. Four ordinary execution cases
+per database cover no-feedback replay, correction, dependent plans and automatic
+authorization. Owning types/build, local provider transport and maintained browser
+checks, static gates, normal hooks and packed consumers are recorded in the
+round-3 evidence. Earlier full feedback/source-policy and broad suites carry only
+where the exact unchanged source/hunk proof applies; they are not fresh passes.
+No public contract, schema, dependency, timeout or grant changed.
+
+## Post-publication receiving authority and optional projection correction
+
+Accepted PR feedback exposed two boundaries. Retrieval/reference revalidation
+used only the first receiving handler's context after asynchronous source checks;
+a later handler could lose its grant, provider permission or byte budget while
+examples were still returned. Automatic decision/outcome projection also treated
+its optional memory byte cap as an authoritative-action failure.
+
+| Boundary | Regression and expected behavior |
+|---|---|
+| Every receiving handler | Two-handler fixtures keep the first authorized and revoke the second during source checks. Public retrieval and owning reference revalidation deny grant/provider/budget changes; the full examples, not only saved references, fit the minimum live receiving ceiling. |
+| Final receiving policy | Post-callback contexts retain current provider and byte checks, not only generic handler permission. |
+| Optional event capture | A one-byte cap skips automatic projection while approval, successful domain work, failed work, unknown outcome and not-applied reconciliation remain durable. No memory row or correctness label is invented. |
+| Explicit writes and storage errors | Explicit record/observe still reject invalid or oversized requests. A real database INSERT failure propagates and rolls back the authoritative decision and projection. |
+
+Baseline failures and corrected commands/counts are recorded separately in the
+round-4 hashed evidence. The first duplicate-wrapper implementation passed 45
+SQLite cases but timed out the PostgreSQL held-out cohort at its unchanged
+30-second limit; the isolated cohort reproduced that regression. Nested receiving
+contexts retain every initial/final check without redundant wrappers. The final
+46-case feedback lanes supersede those diagnostic runs. Both actual SQLite and ordinary-role PostgreSQL exercise
+the affected boundaries. Unchanged broader runtime gates carry with exact source
+and delta proof; no fresh full-monorepo result is claimed. No schema, dependency,
+public callback, timeout, privilege or paid-provider change is included.

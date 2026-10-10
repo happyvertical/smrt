@@ -273,6 +273,25 @@ describe('ManifestAdapter conversion', () => {
   });
 
   describe('@foreignKey decorator physical constraints', () => {
+    it.each([
+      'foreignKey',
+      'crossPackageRef',
+    ])('preserves %s onUpdate policy', (name) => {
+      const result = adapter.convertField(
+        field({
+          name: 'subscriptionId',
+          typeAnnotation: 'string',
+          decorators: [
+            {
+              name,
+              arguments: ["'WebhookSubscription'", "{ onUpdate: 'RESTRICT' }"],
+            },
+          ],
+        }),
+      );
+      expect(result?._meta?.onUpdate).toBe('RESTRICT');
+    });
+
     it('preserves the explicit engine allowlist in field metadata (#2504)', () => {
       const result = adapter.convertField(
         field({

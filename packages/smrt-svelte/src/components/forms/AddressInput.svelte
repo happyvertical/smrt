@@ -1,4 +1,5 @@
 <script lang="ts">
+import { FieldLabel } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { untrack } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
@@ -396,10 +397,7 @@ function handleCountryChange(e: Event) {
 
   <div class="smrt-address" data-smrt-field-owner={fieldOwnerToken}>
   {#if label}
-    <label class="smrt-label" for={primaryFieldId}>
-      {label}
-      {#if required}<span class="required">*</span>{/if}
-    </label>
+    <FieldLabel for={primaryFieldId} {label} {required} />
   {/if}
 
   <div class="address-fields" class:smrt-mode={isSmrt}>
@@ -523,17 +521,6 @@ function handleCountryChange(e: Event) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 8px);
-  }
-
-  .smrt-label {
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-body-medium-weight, 500);
-    color: var(--smrt-color-on-surface, #374151);
-  }
-
-  .smrt-label .required {
-    color: var(--smrt-color-error, #ba1a1a);
-    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .address-fields {

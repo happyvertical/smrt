@@ -257,8 +257,11 @@ controller keeps a supervised `run` (goal, current step, `running | paused |
 waiting | done | failed | cancelled`), with `pauseRun` / `continueRun`,
 `holdForUser` for choices the person makes, a `clientToolFilter`, and a
 `settle` hook so the step after a navigation sees the new page's tools.
-`matchesToolAllowList` is exported browser-safe. Full guide:
+`threadList={false}` omits the Conversations list for a single-conversation dock
+(the host then opens a thread via `oncontroller`). `matchesToolAllowList` is exported browser-safe. Full guide:
 [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
+
+Pass `conversations="single"` to `AssistantDock` for an app where people should not see separate conversations: it reuses the newest thread (or creates one), opens the focused composer, and offers an icon-only clear action.
 
 The server side mounts in one route file. The principal comes from
 `event.locals` (`@happyvertical/smrt-users/sveltekit`); threads are scoped to
@@ -283,6 +286,14 @@ export const { GET, POST } = mountAssistantRoutes({
 In the page, `createAssistantHttpTransport({ endpoint: '/api/assistant' })`
 is the dock's `transport`, and `createAssistantHttpActionClient` its
 `actionClient` when the route is given `actions: { adapter }`.
+
+### Recipes
+
+`AssistantRecipe` (`chat.assistant`) declares the assistant dock for app and
+agent catalogs: a shell widget in `header.end` that mounts `AssistantDock`
+from `@happyvertical/smrt-chat/svelte`, an `llm` provider (hosted keys
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`, or a browser model
+with no key), and user-facing help. See `agents/recipes.md`.
 
 ## API
 

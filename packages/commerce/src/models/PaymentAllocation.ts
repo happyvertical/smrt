@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { assertIntegerMinorUnits } from '../money.js';
 import type { PaymentAllocationOptions } from '../types/index.js';
@@ -90,12 +90,14 @@ export class PaymentAllocation extends SmrtObject {
   /**
    * Payment being allocated
    */
+  @field({ description: 'The payment being applied.' })
   @foreignKey('Payment')
   paymentId: string = '';
 
   /**
    * Invoice receiving the allocation
    */
+  @field({ description: 'The invoice it settles.' })
   @foreignKey('Invoice')
   invoiceId: string = '';
 
@@ -109,11 +111,13 @@ export class PaymentAllocation extends SmrtObject {
    * dollars-vs-cents split there would reject every allocation as
    * over-applying.
    */
+  @field({ description: 'How much of the payment goes to this invoice.' })
   amount: number = 0;
 
   /**
    * When the allocation was made
    */
+  @field({ description: 'When it was applied.' })
   allocatedAt: Date = new Date();
 
   /**
@@ -124,6 +128,7 @@ export class PaymentAllocation extends SmrtObject {
   /**
    * Notes about the allocation
    */
+  @field({ description: 'Anything worth remembering about this allocation.' })
   notes: string = '';
 
   constructor(options: PaymentAllocationOptions = {}) {

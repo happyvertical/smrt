@@ -51,8 +51,9 @@ stable family row before reading token state; locking the token being replaced
 alone would allow a concurrent revocation to miss an inserted descendant.
 Managed operations lock the consent row first, then the family. Replacement
 insertion, old-token consume and replay revocation share one database executor.
-A failed insert rolls back consume. Scope narrowing is persisted before the SDK
-exposes the replacement and cannot expand, revive or modify a consumed token.
+A failed insert rolls back consume. Revalidated scopes and claims are persisted
+atomically before the SDK exposes the replacement. Undefined claims clear prior
+claims. Narrowing cannot expand scopes, revive or modify a consumed token.
 
 Retry only transaction failures classified as SQLite contention or PostgreSQL
 serialization/deadlock, after adapter rollback, at most six retries. Never retry
@@ -76,7 +77,7 @@ pnpm --filter @happyvertical/smrt-users typecheck
 | Register and consume code | Metadata survives new adapter; one concurrent winner | Wrong client, redirect, resource; expiry and replay | Registered client / subject | Independent DB connections; SDK code contract | Integration |
 | Rotate / replay refresh | One replacement | Reuse revokes every descendant | Same family across replicas | Stable family lock, same transaction | Integration |
 | Rotation rollback / revoke race | Retry after insertion failure works | Duplicate replacement aborts consume; revoke cannot miss descendant | Same family, simultaneous operations | Real rollback and independent executors | Integration |
-| Narrow replacement | Subset persists through subsequent rotation | Expansion, hash mismatch, consumed/revoked token | Authenticated client / original family | SDK optional narrowing contract, atomic locked update | Integration |
+| Narrow replacement | Subset and replacement claims persist through subsequent rotation; undefined claims clear old claims | Expansion, hash mismatch, consumed/revoked token | Authenticated client / original family | SDK fail-closed narrowing contract, atomic locked update | Integration |
 | Explicit recovery factory | Recreates configured connection after invalidation | Instance-only fails closed; ordinary storage failure propagates | Storage owner / configured database | Injected failure boundary plus real independent-connection races | Unit + integration |
 | Access revocation | Another adapter sees it; repeats safe | Expired revocation no longer effective | Possessor of verified access token | Unique insert with conflict handling | Integration |
 | Consent/grant ownership | Own grant can list/revoke | Other subject, tenant, scope deny; no session bearer in projection | Owner A/B × grant A/B | Live session + consent reads; atomic cascade | Integration |

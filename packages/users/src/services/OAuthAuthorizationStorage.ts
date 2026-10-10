@@ -376,6 +376,7 @@ export class SmrtOAuthAuthorizationStorage
     id: string;
     tokenHash: string;
     scopes: readonly string[];
+    claims: OAuthRefreshGrant['claims'];
   }): Promise<void> {
     return this.execute(async () => {
       const initial = await (
@@ -405,8 +406,9 @@ export class SmrtOAuthAuthorizationStorage
         )
           throw new Error('Invalid refresh scope narrowing.');
         await db.query(
-          'UPDATE users_oauth_refresh_grants SET scopes = ?, updated_at = ? WHERE id = ?',
+          'UPDATE users_oauth_refresh_grants SET scopes = ?, claims = ?, updated_at = ? WHERE id = ?',
           JSON.stringify(input.scopes),
+          JSON.stringify(input.claims ?? {}),
           now.toISOString(),
           input.id,
         );

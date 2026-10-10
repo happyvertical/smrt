@@ -62,7 +62,13 @@ jobs:
               - 'packages/smrt-app-mcp/**'
               - 'packages/smrt-dev-mcp/**'
               - 'scripts/check-knowledge.ts'
+            # Core and config own the browser entry evaluated in this lane (#2838).
             workbench:
+              - 'packages/core/**'
+              - 'packages/config/**'
+              - 'packages/ingestion/**'
+              - 'packages/smrt-ui/**'
+              - '.github/workflows/test-suite.yml'
               - 'packages/smrt-svelte/**'
               - 'packages/smrt-workbench/**'
               - 'packages/smrt-playground/**'
@@ -442,6 +448,7 @@ jobs:
           --filter='@happyvertical/smrt-content...'
           --filter='@happyvertical/smrt-workbench...'
           --filter='@happyvertical/smrt-svelte...'
+          --filter='@happyvertical/smrt-ingestion...'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -456,6 +463,23 @@ jobs:
 
       - name: Run workbench browser test
         run: pnpm --dir packages/smrt-workbench/host test:e2e
+
+      # Loads core's built browser entry in Chromium, so a Node-only module
+      # reached from it (pg, Buffer, node: built-ins) fails here, not in a
+      # downstream page (#2838).
+      - name: Run core browser entry evaluation
+        run: pnpm --filter @happyvertical/smrt-core test:browser
+      - name: Run authenticated ingestion review browser tests
+        run: pnpm --filter @happyvertical/smrt-ingestion test:e2e
+
+      - name: Upload ingestion review failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ingestion-review-browser-evidence
+          path: packages/ingestion/test-results/review
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload mobile shell failure evidence
         if: failure()

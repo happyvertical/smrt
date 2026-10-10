@@ -234,6 +234,7 @@ export function buildDomainKnowledgeManifest(
     ...(options.manifest.recipes && options.manifest.recipes.length > 0
       ? { recipes: options.manifest.recipes }
       : {}),
+    ...(options.manifest.browser ? { browser: options.manifest.browser } : {}),
   };
 }
 
@@ -331,6 +332,9 @@ function buildKnowledgeObject(
       ? { displayLabelField: object.displayLabelField }
       : {}),
     collection: object.collection,
+    ...(typeof object.description === 'string' && object.description !== ''
+      ? { description: object.description }
+      : {}),
     tableName: object.schema?.tableName,
     packageName: object.packageName,
     extends: object.extends,

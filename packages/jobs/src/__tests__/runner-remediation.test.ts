@@ -22,12 +22,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { backgroundEligible } from '../background-policy.js';
 import { createTaskRunner } from '../runner.js';
 import { type SmrtJob, SmrtJobCollection } from '../smrt-job.js';
+import { SmrtJobEventCollection } from '../smrt-job-event.js';
 
 /**
  * A handler we can release on demand, so a "hangs past its timeout" test does
  * not leave a forever-pending promise keeping the worker (and the test) alive.
  */
 let releaseHang: (() => void) | null = null;
+let retryCalls = 0;
 
 @smrt()
 class RemediationProbe extends SmrtObject {
@@ -54,6 +56,13 @@ class RemediationProbe extends SmrtObject {
   async alwaysThrows(): Promise<never> {
     throw new Error('boom');
   }
+
+  @backgroundEligible()
+  async failsOnce(): Promise<string> {
+    retryCalls += 1;
+    if (retryCalls === 1) throw new Error('retry once');
+    return 'retried';
+  }
 }
 
 function canonicalProbeType(): string {
@@ -68,6 +77,7 @@ afterEach(() => {
   // into the next test.
   releaseHang?.();
   releaseHang = null;
+  retryCalls = 0;
   ObjectRegistry.configureCollectionCache(100);
 });
 
@@ -84,31 +94,14 @@ describe('TaskRunner remediation (#1401)', () => {
     });
     await job.save();
 
-    // Make the failure-path persistence write reject — the exact scenario in
-    // the finding: handleJobError's `db.query` rejecting while writing the
-    // terminal 'failed' state (a failure mode correlated with whatever is
-    // already failing the job). Without the guards, this rejection escapes the
-    // fire-and-forget processJob() caller as a process-level unhandled
-    // rejection and crashes the worker.
-    //
-    // writeOwnedJob binds the status as a parameter (`SET status = ?`), so the
-    // terminal-failed write is identified by the ownership-guarded UPDATE shape
-    // plus a `'failed'` first parameter — not by a literal in the SQL text.
-    const originalQuery = db.query.bind(db);
-    (db as unknown as { query: typeof db.query }).query = ((
-      sql: string,
-      ...params: unknown[]
-    ) => {
-      if (
-        typeof sql === 'string' &&
-        sql.includes('UPDATE _smrt_jobs') &&
-        sql.includes("AND status = 'running'") &&
-        params[0] === 'failed'
-      ) {
-        return Promise.reject(new Error('failure-write exploded'));
-      }
-      return originalQuery(sql, ...params);
-    }) as typeof db.query;
+    // Reject the event half of the atomic terminal transaction. The runner
+    // must surface the persistence error without leaking an unhandled promise.
+    await db.query(`CREATE TRIGGER fail_terminal_event
+      BEFORE INSERT ON _smrt_job_events
+      WHEN NEW.stage = 'failed'
+      BEGIN
+        SELECT RAISE(FAIL, 'failure-write exploded');
+      END`);
 
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown) => unhandled.push(reason);
@@ -133,7 +126,51 @@ describe('TaskRunner remediation (#1401)', () => {
       expect(unhandled).toHaveLength(0);
     } finally {
       process.off('unhandledRejection', onUnhandled);
-      (db as unknown as { query: typeof db.query }).query = originalQuery;
+      await runner.stop();
+    }
+  });
+
+  it('does not relabel or retry a successful handler when completion persistence fails', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const collection = await SmrtJobCollection.create({ db });
+    const job = await collection.create({
+      objectType: canonicalProbeType(),
+      method: 'slowButFinite',
+      args: {},
+      maxAttempts: 3,
+      timeout: 1_000,
+    });
+    await job.save();
+    await db.query(`CREATE TRIGGER fail_completion_event
+      BEFORE INSERT ON _smrt_job_events
+      WHEN NEW.stage = 'completed'
+      BEGIN
+        SELECT RAISE(FAIL, 'completion event rejected');
+      END`);
+
+    const runner = createTaskRunner({ concurrency: 1, pollInterval: 10 });
+    await runner.initialize(db);
+    let completed = 0;
+    let retried = 0;
+    runner.on('job:completed', () => {
+      completed += 1;
+    });
+    runner.on('job:retrying', () => {
+      retried += 1;
+    });
+    const runnerError = new Promise<Error>((resolve) => {
+      runner.once('runner:error', resolve);
+    });
+
+    await runner.start();
+    try {
+      expect((await runnerError).message).toMatch(/completion event rejected/);
+      const persisted = await collection.get({ id: job.id ?? '' });
+      expect(persisted?.status).toBe('running');
+      expect(persisted?.attempts).toBe(1);
+      expect(completed).toBe(0);
+      expect(retried).toBe(0);
+    } finally {
       await runner.stop();
     }
   });
@@ -141,6 +178,7 @@ describe('TaskRunner remediation (#1401)', () => {
   it('fails a timed-out job WITHOUT auto-retrying it (#2/#3 fail)', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const collection = await SmrtJobCollection.create({ db });
+    const eventCollection = await SmrtJobEventCollection.create({ db });
 
     // maxAttempts=3 would normally retry an ordinary failure; a timeout must
     // NOT be retried (the original handler is still running).
@@ -181,8 +219,51 @@ describe('TaskRunner remediation (#1401)', () => {
       // Claimed exactly once (attempts incremented on claim), never re-queued.
       expect(persisted?.attempts).toBe(1);
       expect(retried).toHaveLength(0);
+      expect(
+        (await eventCollection.listTerminalOutcomes({ tenantId: null }))
+          .outcomes,
+      ).toMatchObject([
+        { jobId: job.id, status: 'failed', failureKind: 'timeout' },
+      ]);
     } finally {
       releaseHang?.();
+      await runner.stop();
+    }
+  });
+
+  it('does not project a retry as a terminal outcome', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const collection = await SmrtJobCollection.create({ db });
+    const events = await SmrtJobEventCollection.create({ db });
+    const job = await collection.create({
+      objectType: canonicalProbeType(),
+      method: 'failsOnce',
+      args: {},
+      maxAttempts: 2,
+    });
+    await job.save();
+
+    const runner = createTaskRunner({ concurrency: 1, pollInterval: 10 });
+    await runner.initialize(db);
+    const retried = new Promise<void>((resolve) => {
+      runner.once('job:retrying', () => resolve());
+    });
+    const completed = new Promise<void>((resolve, reject) => {
+      runner.once('job:completed', () => resolve());
+      runner.once('job:failed', (_job, error) => reject(error));
+    });
+
+    await runner.start();
+    try {
+      await retried;
+      expect(
+        (await events.listTerminalOutcomes({ tenantId: null })).outcomes,
+      ).toEqual([]);
+      await completed;
+      expect(
+        (await events.listTerminalOutcomes({ tenantId: null })).outcomes,
+      ).toMatchObject([{ jobId: job.id, status: 'completed', attempts: 2 }]);
+    } finally {
       await runner.stop();
     }
   });

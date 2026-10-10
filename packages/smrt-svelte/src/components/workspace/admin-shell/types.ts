@@ -1,5 +1,6 @@
 import type { Component, Snippet } from 'svelte';
 import type { ShellLayout } from './layout.js';
+import type { ShellRegion, ShellSlot } from './slots.js';
 
 export type PanelEdge = 'top' | 'left' | 'right' | 'bottom';
 export type ShellScope = 'app' | 'tenant' | 'focus' | 'system';
@@ -80,6 +81,13 @@ export interface ShellPanelConfig {
    * as usual. A hidden edge unmounts everything.
    */
   keepMounted?: boolean;
+  /**
+   * `false`: a side edge has no rail: no focus-tool buttons or edge toggle,
+   * open or closed, and no space while closed (nothing to tab to). A host
+   * opens and closes it from elsewhere, e.g. a dock toggle in the header.
+   * Edit mode still shows its region controls. Default `true`.
+   */
+  rail?: boolean;
 }
 
 /** Limits for a resizable side edge, in CSS pixels. */
@@ -142,6 +150,23 @@ export interface ShellNavGroup {
    */
   id?: string;
   heading: string;
+  /**
+   * `false` renders the items flat, without a visible heading; the group keeps
+   * an accessible name. Hosts suggest it; a user's layout can override it.
+   */
+  showTitle?: boolean;
+  /**
+   * The section's icon: a shell icon name (`SHELL_SECTION_ICONS`) or a name
+   * the host's `iconComponent` renders. Shown by `navMode: 'sections'`; the
+   * user can override it in the layout (`sections[id].icon`).
+   */
+  icon?: string;
+  /**
+   * Where the section's own page (overview) lives. `navMode: 'sections'`
+   * links the section here and treats it as current on this page; without it
+   * the first visible item's href is used.
+   */
+  href?: string;
   items: ShellNavItem[];
 }
 
@@ -172,6 +197,11 @@ export interface ShellNavItem {
   id?: string;
   href: string;
   label: string;
+  /**
+   * Set by `applyShellLayout` on an item the user renamed: the host's original
+   * label (`label` then holds the user's). Hosts do not set it.
+   */
+  defaultLabel?: string;
   icon?: string;
   description?: string;
   badge?: number | string | null;
@@ -310,11 +340,71 @@ export interface AdminShellPhoneOptions {
   hideOnScroll?: boolean;
 }
 
+/**
+ * The in-place layout editing surface `AppShell` hands to `AdminShell`. While
+ * `active`, every slot of a visible region renders as a labelled drop zone
+ * (`zone` draws its content) and each region in `hiddenRegions` renders as a
+ * thin strip (`strip`).
+ */
+export interface ShellLayoutEditSurface {
+  active: boolean;
+  /** The slot highlighted as the current drop target, if any. */
+  highlight?: ShellSlot | null;
+  /** Content of one slot's drop zone. */
+  zone: Snippet<[ShellSlot]>;
+  /** Regions the user hid, drawn as strips so they can be shown again. */
+  hiddenRegions?: readonly ShellRegion[];
+  /** Content of one hidden region's strip. */
+  strip?: Snippet<[ShellRegion]>;
+  /** Edit controls on a visible region (e.g. a hide button). */
+  regionControl?: Snippet<[ShellRegion]>;
+}
+
+/**
+ * What a host's `sectionActions` snippet receives for each navigation section
+ * while the layout is being edited: render icon buttons (e.g. an Options gear
+ * or Help) and they join the section's overlay icons and floating toolbar.
+ */
+export interface ShellSectionActionsContext {
+  /** The section id (`ShellNavGroup.id ?? heading`, or `custom:...`). */
+  sectionId: string;
+  /** The section's current (possibly renamed) label. */
+  label: string;
+  /** A user-created section. */
+  custom: boolean;
+  /** Always `true` today; actions render only while the layout is edited. */
+  editing: boolean;
+}
+
 export interface AdminShellProps {
   title?: string;
   /** Optional destination for the default brand and compact rail mark. */
   homeHref?: string;
-  /** Show the built-in tenant edge collapse/expand control. */
+  /**
+   * Show the edge toggle buttons (and their hotkey hints) that open and close
+   * the drop-down edge panels: `true` for all four edges, or a per-edge map.
+   * Default `false`: no toggles, no hotkeys, and each region is laid out
+   * inline (its slots and content visible) instead of a collapsed bar that
+   * expands as a drop-down. Visibility then comes from the layout
+   * (`ShellLayout.panels`). Existing apps keep the old behaviour with `true`.
+   * A phone still gets the Menu opener and drawer for the left sidebar.
+   */
+  edgeToggles?: boolean | Partial<Record<PanelEdge, boolean>>;
+  /**
+   * Keyboard shortcuts (WASD, `?`). Default: active only for edges that have
+   * toggles. `true` enables them for every edge (the panels then behave as
+   * drop-downs without a button); `false` disables them.
+   */
+  hotkeys?: boolean;
+  /**
+   * The brand is rendered by the host as a slot item (`AppShell` supplies
+   * `item:brand` in `header.start`), so the top band does not draw its own.
+   */
+  brandInSlot?: boolean;
+  /**
+   * @deprecated Alias for `edgeToggles.left`: `true` shows the left edge's
+   * toggle, `false` hides it even when `edgeToggles` is on.
+   */
   showTenantToggle?: boolean;
   /** Optional brand logo URL. */
   logoSrc?: string;
@@ -358,3 +448,16 @@ export const ADMIN_SHELL_REGION_IDS = {
   bottom: 'smrt-admin-shell-bottom-panel',
   main: 'smrt-admin-shell-main',
 } as const;
+
+/** One row of the menu, as passed to the `meta` and `actions` snippets. */
+export interface ShellSectionMenuEntry {
+  id: string;
+  href: string;
+  /** The displayed label (the user's rename, else the host's). */
+  label: string;
+  /** The host's label. */
+  defaultLabel: string;
+  icon?: string;
+  hidden: boolean;
+  item: ShellNavItem;
+}

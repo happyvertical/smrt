@@ -283,9 +283,17 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
   });
 
   it('persists refresh scope narrowing and refuses expansion, reuse and revoked replacements', async () => {
-    const grant = { ...refresh(), scopes: ['read', 'write'] };
+    const grant = {
+      ...refresh(),
+      scopes: ['read', 'write'],
+      claims: { permission: 'write', obsolete: true },
+    };
     await storage.createRefreshGrant(grant);
-    await storage.narrowRefreshGrant({ ...grant, scopes: ['read'] });
+    await storage.narrowRefreshGrant({
+      ...grant,
+      scopes: ['read'],
+      claims: { permission: 'read' },
+    });
     await expect(
       replica.narrowRefreshGrant({ ...grant, scopes: ['read', 'write'] }),
     ).rejects.toThrow();
@@ -299,13 +307,26 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
         replacement: next,
         now: new Date(),
       }),
-    ).toMatchObject({ status: 'rotated', grant: { scopes: ['read'] } });
+    ).toMatchObject({
+      status: 'rotated',
+      grant: { scopes: ['read'], claims: { permission: 'read' } },
+    });
     await expect(
       storage.narrowRefreshGrant({ ...grant, scopes: [] }),
     ).rejects.toThrow();
+    await storage.narrowRefreshGrant({
+      ...next,
+      scopes: ['read'],
+      claims: undefined,
+    });
+    const cleared = await isolated.baseDb.query(
+      'SELECT claims FROM users_oauth_refresh_grants WHERE id = ?',
+      next.id,
+    );
+    expect(JSON.parse(String(cleared.rows[0]?.claims))).toEqual({});
     await storage.revokeRefreshGrant({ ...next, now: new Date() });
     await expect(
-      replica.narrowRefreshGrant({ ...next, scopes: [] }),
+      replica.narrowRefreshGrant({ ...next, scopes: [], claims: undefined }),
     ).rejects.toThrow();
   });
 

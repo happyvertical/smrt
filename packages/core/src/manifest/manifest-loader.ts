@@ -21,9 +21,6 @@
  * paths or load JavaScript manifest modules.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
 import { createLogger } from '@happyvertical/logger';
 import { bumpRegistryGeneration } from '../registry/generation.js';
 import type { SmrtObjectConstructor } from '../registry/types.js';
@@ -47,7 +44,16 @@ import {
   isModuleRunnerFramePath,
   isSmrtCoreFramePath,
 } from '../utils/stack-frames.js';
-import { ManifestManager } from './manager.js';
+import { LocalManifestReader } from './local-manifest-reader.js';
+import {
+  dirname,
+  existsSync,
+  join,
+  readdirSync,
+  readFileSync,
+  require,
+  statSync,
+} from './node-host.js';
 import { getDefaultCompositeSource } from './sources/composite.js';
 import {
   getLocalTestManifestCache as getLocalTestManifestCacheFromStore,
@@ -176,9 +182,6 @@ function getSTISiblingCache(): Map<
   }
   return globalThis.__smrtSTISiblingCache;
 }
-
-// Create require function once for reuse
-const require = createRequire(import.meta.url);
 
 /**
  * Cached debug flag evaluated once at module load time.
@@ -380,9 +383,9 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
     return cached;
   }
 
-  // Use ManifestManager for unified local loading
+  // Use LocalManifestReader for unified local loading
   // This checks: .smrt/manifest.json -> dist/manifest.json
-  const manager = new ManifestManager(process.cwd());
+  const manager = new LocalManifestReader(process.cwd());
   const manifest = manager.loadLocal();
 
   // Fallback location: src/manifest/test-manifest.json
@@ -392,7 +395,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
     'src/manifest/test-manifest.json',
   );
 
-  // If ManifestManager found a manifest, check if it has objects
+  // If LocalManifestReader found a manifest, check if it has objects
   // If it has 0 objects but the fallback exists with objects, use the fallback instead
   // This handles the case where dist/manifest.json is the static-manifest.json (0 objects)
   // but src/manifest/test-manifest.json has the real test classes
@@ -403,7 +406,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
     if (objectCount > 0) {
       setLocalTestManifestCache(manifest);
       debugLog(
-        `[manifest-loader] ✅ Loaded local manifest via ManifestManager (${objectCount} objects)`,
+        `[manifest-loader] ✅ Loaded local manifest via LocalManifestReader (${objectCount} objects)`,
       );
       return manifest;
     }
@@ -419,7 +422,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
         if (testObjectCount > 0) {
           setLocalTestManifestCache(testManifest);
           debugLog(
-            `[manifest-loader] ✅ Loaded test manifest from ${testManifestPath} (${testObjectCount} objects) - preferred over empty ManifestManager result`,
+            `[manifest-loader] ✅ Loaded test manifest from ${testManifestPath} (${testObjectCount} objects) - preferred over empty LocalManifestReader result`,
           );
           return testManifest;
         }
@@ -431,12 +434,12 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
     // No better option, cache and use the empty manifest
     setLocalTestManifestCache(manifest);
     debugLog(
-      `[manifest-loader] ✅ Loaded local manifest via ManifestManager (${objectCount} objects)`,
+      `[manifest-loader] ✅ Loaded local manifest via LocalManifestReader (${objectCount} objects)`,
     );
     return manifest;
   }
 
-  // ManifestManager returned null - check fallback
+  // LocalManifestReader returned null - check fallback
   if (existsSync(testManifestPath)) {
     try {
       const testManifest: Manifest = parse(
@@ -470,7 +473,7 @@ let projectManifestRead:
 /**
  * The manifest of the project the process runs in (the first of
  * `<cwd>/.smrt/manifest.json`, `<cwd>/dist/manifest.json`,
- * `<cwd>/src/manifest/manifest.json`, as `ManifestManager.loadLocal()` reads
+ * `<cwd>/src/manifest/manifest.json`, as `LocalManifestReader.loadLocal()` reads
  * them), never seeded into the lookup caches. Only consulted to attribute a
  * decorated class whose declaring file that manifest describes, when no loaded
  * manifest does: a plain Node/tsx script importing an app's workspace-package
@@ -482,7 +485,7 @@ export function readProjectManifestSync(): SmartObjectManifest | null {
   if (typeof process === 'undefined' || typeof process.cwd !== 'function') {
     return null;
   }
-  const manager = new ManifestManager(process.cwd());
+  const manager = new LocalManifestReader(process.cwd());
   const path = [
     manager.getOutputPath('dev'),
     manager.getOutputPath('build'),

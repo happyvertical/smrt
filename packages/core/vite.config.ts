@@ -55,6 +55,10 @@ export function getCoreEntries() {
 
   // Also add browser entry point
   entries['browser'] = resolve(__dirname, 'src/browser.ts');
+  // Browser variants selected through `package.json#browser`; nothing imports
+  // them, so the module graph alone would not emit them.
+  entries['host.browser'] = resolve(__dirname, 'src/host.browser.ts');
+  entries['utils/json.browser'] = resolve(__dirname, 'src/utils/json.browser.ts');
   // The runtime static manifest is required by manifest-loader but is not a
   // public package export, so include it explicitly in the build graph.
   entries['manifest/static-manifest'] = resolve(

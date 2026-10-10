@@ -51,6 +51,7 @@ import {
   DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
   getEffectiveLeaseTtlMs,
 } from './stale-recovery.js';
+import { terminalSnapshot, transitionTerminalJob } from './terminal-outcome.js';
 import {
   createWorkerKey,
   isWorkerAlive,
@@ -647,28 +648,35 @@ export class TaskRunner extends EventEmitter {
       // recovered/reclaimed row (worker died, recovery ran, the work finished
       // anyway) is never stomped back to 'completed'.
       const completedAt = new Date();
-      const applied = await this.writeOwnedJob(jobId, {
-        status: 'completed',
-        completed_at: completedAt.toISOString(),
-        result_pointer: result?.resultPointer ?? null,
-        task_result: result?.taskResult
-          ? JSON.stringify(result.taskResult)
-          : null,
-        updated_at: completedAt.toISOString(),
-      });
+      const snapshot = terminalSnapshot(job);
+      let event: SmrtJobEvent | null = null;
+      try {
+        event = snapshot
+          ? await transitionTerminalJob(this.db as DatabaseInterface, {
+              job: snapshot,
+              status: 'completed',
+              completedAt,
+              expectedStatuses: ['running'],
+              expectedWorkerId: this.workerKey,
+              resultPointer: result?.resultPointer ?? null,
+              taskResult: result?.taskResult ?? null,
+            })
+          : null;
+      } catch (persistenceError) {
+        // The handler already returned successfully. A terminal persistence
+        // failure is an operator fault, not a business execution failure: the
+        // transaction left the owned row running and must not relabel it or
+        // schedule a retry through handleJobError().
+        this.emit('runner:error', persistenceError as Error);
+        return;
+      }
 
-      if (applied) {
+      if (event) {
         job.status = 'completed';
         job.completedAt = completedAt;
         job.resultPointer = result?.resultPointer ?? null;
         job.taskResult = result?.taskResult ?? null;
-        await this.appendJobEvent(job, {
-          type: 'progress',
-          level: 'info',
-          stage: 'completed',
-          progress: 100,
-          message: `Completed job: ${job.getDescription()}`,
-        });
+        this.emitPersistedJobEvent(job, event);
         this.emit('job:completed', job, result);
       }
     } catch (error) {
@@ -1001,25 +1009,25 @@ export class TaskRunner extends EventEmitter {
     } else {
       // Job failed permanently
       const completedAt = new Date();
-      const applied = await this.writeOwnedJob(jobId, {
-        status: 'failed',
-        completed_at: completedAt.toISOString(),
-        last_error: safeMessage,
-        updated_at: completedAt.toISOString(),
-      });
-      if (!applied) return;
+      const snapshot = terminalSnapshot(job);
+      const event = snapshot
+        ? await transitionTerminalJob(this.db as DatabaseInterface, {
+            job: snapshot,
+            status: 'failed',
+            completedAt,
+            expectedStatuses: ['running'],
+            expectedWorkerId: this.workerKey,
+            lastError: safeMessage,
+            failureKind: isTimeout ? 'timeout' : 'execution',
+          })
+        : null;
+      if (!event) return;
 
       job.status = 'failed';
       job.completedAt = completedAt;
       job.lastError = safeMessage;
 
-      await this.appendJobEvent(job, {
-        type: 'error',
-        level: 'error',
-        stage: 'failed',
-        message: safeMessage,
-        data: { attempts: job.attempts },
-      });
+      this.emitPersistedJobEvent(job, event);
       this.emit('job:failed', job, error);
     }
   }
@@ -1158,10 +1166,7 @@ export class TaskRunner extends EventEmitter {
         data: input.data ?? {},
       });
 
-      this.emit('job:event', job, event);
-      if (event.type === 'progress') {
-        this.emit('job:progress', job, event);
-      }
+      this.emitPersistedJobEvent(job, event);
 
       return event;
     } catch (error) {
@@ -1177,6 +1182,33 @@ export class TaskRunner extends EventEmitter {
       }
 
       return null;
+    }
+  }
+
+  private emitPersistedJobEvent(job: SmrtJob, event: SmrtJobEvent): void {
+    try {
+      this.emit('job:event', job, event);
+    } catch (error) {
+      this.emitTelemetryError(error);
+    }
+    if (event.type === 'progress') {
+      try {
+        this.emit('job:progress', job, event);
+      } catch (error) {
+        this.emitTelemetryError(error);
+      }
+    }
+  }
+
+  private emitTelemetryError(error: unknown): void {
+    const telemetryError =
+      error instanceof Error
+        ? error
+        : new Error(`Job telemetry listener failed: ${String(error)}`);
+    try {
+      this.emit('runner:error', telemetryError);
+    } catch {
+      // Telemetry is best-effort and must not change job outcomes.
     }
   }
 
@@ -1249,55 +1281,32 @@ export class TaskRunner extends EventEmitter {
     });
     if (orphans.length === 0) return;
 
-    const orphanIds = orphans
-      .map((job) => job.id)
-      .filter((jobId): jobId is string => typeof jobId === 'string');
-    if (orphanIds.length === 0) return;
-
-    const placeholders = orphanIds.map(() => '?').join(', ');
     const recoveredAt = new Date();
     const errorMessage =
       'Recovered orphaned running job: its owning worker is no longer alive ' +
       '(no fresh liveness lease in _smrt_workers and not running in this process).';
 
-    // RETURNING id so we only emit failures for jobs this pass actually
-    // transitioned — a concurrent recoverer or a late completion may have
-    // already moved some of the candidates out of 'running'.
-    const updated = await this.db.query(
-      `UPDATE _smrt_jobs
-          SET status = 'failed',
-              completed_at = ?,
-              last_error = ?,
-              worker_id = NULL,
-              worker_heartbeat = NULL
-        WHERE status = 'running'
-          AND id IN (${placeholders})
-        RETURNING CAST(id AS VARCHAR) AS id`,
-      recoveredAt.toISOString(),
-      errorMessage,
-      ...orphanIds,
-    );
-    const recoveredIds = new Set(
-      (updated.rows as Array<{ id?: unknown }>)
-        .map((row) => row.id)
-        .filter((id): id is string => typeof id === 'string'),
-    );
-    if (recoveredIds.size === 0) return;
-
     for (const job of orphans) {
-      if (!job.id || !recoveredIds.has(job.id)) continue;
+      const snapshot = terminalSnapshot(job);
+      if (!snapshot) continue;
+      const event = await transitionTerminalJob(this.db, {
+        job: snapshot,
+        status: 'failed',
+        completedAt: recoveredAt,
+        expectedStatuses: ['running'],
+        expectedWorkerId: job.workerId ?? null,
+        clearWorker: true,
+        lastError: errorMessage,
+        failureKind: 'stale-recovery',
+      });
+      if (!event) continue;
       job.status = 'failed';
       job.completedAt = recoveredAt;
       job.lastError = errorMessage;
       job.workerId = null;
       job.workerHeartbeat = null;
       const error = new Error(errorMessage);
-      await this.appendJobEvent(job, {
-        type: 'error',
-        level: 'error',
-        stage: 'stale-recovery',
-        message: errorMessage,
-      });
+      this.emitPersistedJobEvent(job, event);
       this.emit('job:failed', job, error);
     }
   }

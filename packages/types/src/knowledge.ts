@@ -1,5 +1,5 @@
 import type { CapabilityClassification } from './capability.js';
-import type { RecipeDefinition } from './recipe.js';
+import type { PackageBrowserCapability, RecipeDefinition } from './recipe.js';
 
 /** Kind of generated surface a knowledge entry describes (REST/CLI/MCP/AI). */
 export type DomainKnowledgeSurfaceKind = 'api' | 'cli' | 'mcp' | 'ai';
@@ -111,6 +111,11 @@ export interface DomainKnowledgeTenant {
 export interface DomainKnowledgeObject {
   name: string;
   qualifiedName?: string;
+  /**
+   * User-facing model description: `@smrt({ description })`, else the class
+   * JSDoc summary (<= 200 chars). Omitted when the model has neither.
+   */
+  description?: string;
   /**
    * Deprecated qualified names this object still resolves from, declared via
    * `@smrt({ previousQualifiedNames })` after a package move or rename
@@ -293,6 +298,12 @@ export interface DomainKnowledgeManifest {
    * the package declares none, so the field is additive to schema version 1.
    */
   recipes?: RecipeDefinition[];
+  /**
+   * Whether the package's root entry builds for a browser (#3709), derived
+   * from the bundle-gate ratchet. Omitted for packages the gate does not
+   * measure, so the field is additive to schema version 1.
+   */
+  browser?: PackageBrowserCapability;
 }
 
 /** Result of a domain-knowledge freshness check (stale references, error/warning counts). */

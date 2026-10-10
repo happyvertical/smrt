@@ -402,6 +402,19 @@ export {
   type SmrtRecipeNavEntry,
 } from './recipe';
 export {
+  deriveRecipeDemo,
+  effectiveRecipeDemo,
+  hasBrowserOption,
+  isMockableProvider,
+  isServerProvider,
+  MOCK_PROVIDER_OPTION,
+  type PackageBrowserCapability,
+  RECIPE_DEMO_MODES,
+  type RecipeDemo,
+  type RecipeDemoDerivation,
+  type RecipeDemoMode,
+} from './recipe-demo';
+export {
   buildConnectSection,
   buildGlossary,
   type ConnectSection,
@@ -472,7 +485,7 @@ export * from './signals/index';
 // REST generator and the generated SvelteKit sync route
 export * from './sync/apply';
 // System tables and types (note-taking, migrations, registry, signals)
-export * from './system/index';
+export * from './system/browser';
 export type {
   DiscoveryStrategy,
   ForgetOptions,

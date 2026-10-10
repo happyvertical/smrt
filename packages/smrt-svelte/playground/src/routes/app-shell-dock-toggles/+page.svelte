@@ -5,7 +5,7 @@ import DockButtons from './DockButtons.svelte';
 </script>
 
 <!--
-  The header's assistant icon slides the dock in and out. Focus moves into
+  The assistant icon at the bottom of the menu panel slides the dock in and out. Focus moves into
   the dock when it opens and back to the icon on Escape. The buttons in the
   page body drive the same dock from code with useShellDock().
 -->
@@ -13,7 +13,7 @@ import DockButtons from './DockButtons.svelte';
   title="Dock toggles"
   subtitle="AppShell playground"
   dockToggles={[
-    { tool: 'assistant', label: 'Assistant' },
+    { tool: 'assistant', label: 'Assistant', slot: 'leftSidebar.footer' },
     { tool: 'notes', label: 'Notes', icon: 'N' },
   ]}
 >

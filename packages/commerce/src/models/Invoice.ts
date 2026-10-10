@@ -5,6 +5,7 @@
 
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -191,12 +192,16 @@ export class Invoice extends SmrtObject {
   /**
    * Customer this invoice is for
    */
+  @field({ description: 'The customer being billed.' })
   @foreignKey('Customer')
   customerId: string = '';
 
   /**
    * Optional link to Contract (cross-package reference)
    */
+  @field({
+    description: 'The order or agreement this invoice bills for, if any.',
+  })
   @foreignKey('Contract')
   contractId: string = '';
 
@@ -208,6 +213,7 @@ export class Invoice extends SmrtObject {
    * Invoice number (e.g., INV-2025-0001)
    * Generated via InvoiceCollection.generateInvoiceNumber()
    */
+  @field({ description: 'The number printed on the invoice.' })
   invoiceNumber: string = '';
 
   /**
@@ -222,16 +228,19 @@ export class Invoice extends SmrtObject {
   /**
    * Date invoice was issued
    */
+  @field({ description: 'The date the invoice was issued.' })
   issueDate: Date = new Date();
 
   /**
    * Payment due date
    */
+  @field({ description: 'The date payment is expected.' })
   dueDate: Date = new Date();
 
   /**
    * Date invoice was fully paid
    */
+  @field({ description: 'The date it was paid in full.' })
   paidDate: Date | null = null;
 
   // ============================================================================
@@ -247,12 +256,14 @@ export class Invoice extends SmrtObject {
    * Writing a fractional major-unit value here is the bug; PostgreSQL rejects
    * it with `22P02` while SQLite's affinity silently stores it (#2361).
    */
+  @field({ description: 'The amount before tax.' })
   subtotal: number = 0;
 
   /**
    * Tax amount, in integer minor units (#2361). With line items this is the
    * sum of their rate-based tax plus {@link providerTaxAmount}.
    */
+  @field({ description: 'The tax charged.' })
   taxAmount: number = 0;
 
   /**
@@ -267,16 +278,22 @@ export class Invoice extends SmrtObject {
   /**
    * Total amount due (subtotal + tax), in integer minor units (#2361).
    */
+  @field({ description: 'What the customer owes in all, tax included.' })
   totalAmount: number = 0;
 
   /**
    * Amount paid (sum of PaymentAllocations), in integer minor units (#2361).
    */
+  @field({ description: 'How much of the total has been paid so far.' })
   amountPaid: number = 0;
 
   /**
    * Currency code (ISO 4217)
    */
+  @field({
+    description: 'The currency of the invoice.',
+    ui: { widget: 'currency' },
+  })
   currency: string = 'CAD';
 
   // ============================================================================
@@ -286,6 +303,10 @@ export class Invoice extends SmrtObject {
   /**
    * Current invoice status
    */
+  @field({
+    description:
+      'Where the invoice stands: draft, sent, viewed, paid, overdue or cancelled.',
+  })
   status: InvoiceStatus = InvoiceStatus.DRAFT;
 
   // ============================================================================
@@ -369,16 +390,28 @@ export class Invoice extends SmrtObject {
   /**
    * Internal notes (not shown to customer)
    */
+  @field({
+    description: 'Private notes, not shown to the customer.',
+    ui: { widget: 'textarea' },
+  })
   notes: string = '';
 
   /**
    * Notes shown to customer on invoice
    */
+  @field({
+    description: 'A message shown to the customer on the invoice.',
+    ui: { widget: 'textarea' },
+  })
   customerNotes: string = '';
 
   /**
    * Payment terms text
    */
+  @field({
+    description: 'The payment conditions, such as Net 30.',
+    ui: { widget: 'textarea' },
+  })
   terms: string = '';
 
   constructor(options: InvoiceOptions = {}) {

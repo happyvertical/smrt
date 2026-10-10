@@ -15,6 +15,8 @@ import {
   type DictationSourceProvider,
   DictationStatus,
   type DictationTranscribe,
+  type HandsFreeCaptureFactory,
+  type HandsFreeVadOptions,
   insertTextAtCursor,
   longPress,
   primeReadyBeep,
@@ -22,7 +24,7 @@ import {
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { onDestroy } from 'svelte';
+import { onDestroy, untrack } from 'svelte';
 import { M } from '../../i18n.js';
 import type { AssistantAttachmentRef } from './assistant-transport.js';
 
@@ -66,6 +68,43 @@ export interface Props {
    * own, without `dictation`.
    */
   transcribe?: DictationTranscribe | null;
+  /**
+   * `'hands-free'`: the microphone stays on and each sentence is written
+   * down when the speaker pauses, with no tap per phrase; tapping the
+   * microphone (or sending, or Escape) ends it. Needs `handsFreeCapture` and
+   * an on-device speech source (smrt-svelte's `whisper-local` / `moonshine`);
+   * otherwise it is ordinary press-to-talk. Default `'push'`.
+   */
+  dictationMode?: 'push' | 'hands-free';
+  /**
+   * The hands-free microphone, `createHandsFreeCapture` from
+   * `@happyvertical/smrt-ui/forms/hands-free`.
+   */
+  handsFreeCapture?: HandsFreeCaptureFactory | null;
+  /** Pause length and sensitivity for hands-free (see `HandsFreeVadOptions`). */
+  handsFreeVad?: HandsFreeVadOptions;
+  /**
+   * Hands-free only: send the message once the speaker has been quiet for
+   * `sendOnPauseMs` after the last sentence was written down (the same path
+   * as pressing Send). A new sentence, a key press, Escape or the microphone
+   * button cancels the pending send. Never sends an empty message. While a
+   * send is in flight, or the composer is disabled, the send waits and the
+   * text stays in the box until the composer can accept it again. Default
+   * `false`.
+   */
+  sendOnPause?: boolean;
+  /** Quiet time before `sendOnPause` sends, in ms. Default 1200. */
+  sendOnPauseMs?: number;
+  /**
+   * The assistant's reply is being played aloud (text to speech). While
+   * `true`, hands-free listening is suspended (half-duplex: the microphone
+   * stays open but nothing is heard, so the assistant is not transcribed into
+   * the box) and resumes after a short guard when it turns `false`. The
+   * microphone shows "Paused while the assistant speaks". A pending send on
+   * pause is unaffected; tapping the microphone still ends hands-free.
+   * Default `false`.
+   */
+  speaking?: boolean;
 }
 
 let {
@@ -76,6 +115,12 @@ let {
   value: content = $bindable(''),
   dictation: dictationSource = null,
   transcribe = null,
+  dictationMode = 'push',
+  handsFreeCapture = null,
+  handsFreeVad,
+  sendOnPause = false,
+  sendOnPauseMs = 1200,
+  speaking = false,
 }: Props = $props();
 const canDictate = $derived(Boolean(dictationSource || transcribe));
 let stagedAttachments = $state<AssistantAttachmentRef[]>([]);
@@ -105,6 +150,26 @@ function messageField(): HTMLTextAreaElement | null {
   return textareaEl ?? null;
 }
 
+/** Moves focus to the message field (a host that opens the composer
+ * directly, e.g. AssistantDock `conversations="single"`). A no-op while the
+ * composer is disabled. */
+export function focus(): void {
+  messageField()?.focus();
+}
+
+// Send on pause: true once a hands-free sentence has been written into the
+// box and not yet sent, `autoSendCountdown` while the grace period runs, and
+// `autoSendWaiting` when the grace period is over but a send is in flight.
+let sendDictated = $state(false);
+let autoSendCountdown = $state(false);
+let autoSendWaiting = $state(false);
+
+function cancelAutoSend() {
+  sendDictated = false;
+  autoSendCountdown = false;
+  autoSendWaiting = false;
+}
+
 // One dictation per composer; the source is read when listening starts.
 const dictation = new Dictation({
   source: () => {
@@ -112,6 +177,8 @@ const dictation = new Dictation({
     return dictationSource();
   },
   onText: (text) => {
+    // A new sentence (re)arms the send-on-pause countdown.
+    sendDictated = true;
     const field = messageField();
     if (field) insertTextAtCursor(field, text);
     else content = content ? `${content} ${text}` : text;
@@ -119,10 +186,73 @@ const dictation = new Dictation({
 });
 // The recording fallback follows the prop (a host may set it later).
 $effect.pre(() => {
-  dictation.setOptions({ transcribe });
+  dictation.setOptions({
+    transcribe,
+    mode: dictationMode,
+    handsFreeCapture,
+    vad: handsFreeVad,
+  });
 });
 
 onDestroy(() => dictation.dispose());
+
+// Half-duplex: do not listen while the assistant's reply is played aloud.
+$effect(() => {
+  const on = speaking;
+  untrack(() => (on ? dictation.suspend() : dictation.resume()));
+});
+
+// The grace period: quiet, nothing being written down, something to send.
+// Speech starting (or a sentence still queued) clears it; the next written
+// sentence starts it again.
+$effect(() => {
+  const armed =
+    sendOnPause &&
+    sendDictated &&
+    dictation.handsFree &&
+    dictation.state === 'listening' &&
+    !dictation.speaking &&
+    dictation.queued === 0 &&
+    content.trim().length > 0;
+  if (!armed) {
+    autoSendCountdown = false;
+    return;
+  }
+  autoSendCountdown = true;
+  const timer = setTimeout(
+    () => {
+      autoSendCountdown = false;
+      sendDictated = false;
+      autoSendWaiting = true;
+    },
+    Math.max(0, sendOnPauseMs),
+  );
+  return () => clearTimeout(timer);
+});
+
+// Ends of the wait: send as soon as the composer can take input, but only
+// while still hands-free (stopping the microphone cancels a pending send).
+$effect(() => {
+  if (!autoSendWaiting) return;
+  if (!sendOnPause || !dictation.handsFree || !content.trim()) {
+    autoSendWaiting = false;
+    return;
+  }
+  if (dictation.speaking || dictation.queued > 0) {
+    // More was said while waiting: back to the grace period.
+    autoSendWaiting = false;
+    sendDictated = true;
+    return;
+  }
+  if (sending || disabled || uploading) return;
+  autoSendWaiting = false;
+  void handleSend(true);
+});
+
+// Hands-free ended (microphone tapped, Escape, an error): nothing is sent.
+$effect(() => {
+  if (!dictation.handsFree) cancelAutoSend();
+});
 
 function startDictationFromHold() {
   if (disabled || uploading || dictation.active) return;
@@ -192,25 +322,34 @@ async function handleDrop(event: DragEvent) {
   }
 }
 
-async function handleSend() {
+/** `keepListening`: a hands-free send on pause keeps the microphone on so the
+ * conversation can go on; pressing Send or Enter ends dictation. */
+async function handleSend(keepListening = false) {
+  if (disabled || sending) return;
+  cancelAutoSend();
+  // End dictation and wait for its last words before the draft is read.
+  if (dictation.active && !keepListening) {
+    await dictation.stop();
+    await dictation.whenSettled();
+  }
   const trimmed = content.trim();
   if (!trimmed || disabled || sending) return;
-  if (dictation.active) void dictation.stop();
   sendError = null;
   sending = true;
-  // #2904 review finding 4: keep the draft text/attachments until onsend
-  // settles — clearing them synchronously (the previous behavior) lost the
-  // user's message forever on a transport failure, with no visible error.
+  // The sent text leaves the box as soon as the send starts, so a manual or
+  // automatic send never leaves it sitting there for the whole reply, and
+  // anything said or typed meanwhile lands in a fresh box. A failed send puts
+  // it back (#2904 review finding 4: never lose the message on failure).
+  const sentAttachments = stagedAttachments;
+  content = '';
+  stagedAttachments = [];
+  if (textareaEl) textareaEl.style.height = 'auto';
   try {
-    await onsend(trimmed, stagedAttachments);
-    // #2991: text typed while the send was in flight is newer than what was
-    // sent; keep it.
-    if (content.trim() === trimmed) content = '';
-    stagedAttachments = [];
-    if (textareaEl) {
-      textareaEl.style.height = 'auto';
-    }
+    await onsend(trimmed, sentAttachments);
   } catch (error) {
+    const newer = content.trim();
+    content = newer ? `${trimmed}\n${newer}` : trimmed;
+    stagedAttachments = [...sentAttachments, ...stagedAttachments];
     sendError =
       error instanceof Error
         ? error.message
@@ -221,17 +360,20 @@ async function handleSend() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && dictation.active) {
+  if (event.key === 'Escape' && (dictation.active || sendDictated)) {
     event.preventDefault();
-    void dictation.stop();
+    cancelAutoSend();
+    if (dictation.active) void dictation.stop();
     return;
   }
+  // Typing means the person has taken over: no automatic send.
+  if (event.key.length === 1 || event.key === 'Backspace') cancelAutoSend();
   // Matches ../messages/MessageInput.svelte's handleKeydown convention:
   // plain Enter sends, Shift+Enter inserts a newline. `isComposing` guards
   // against an IME's confirmation Enter being treated as a send.
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
-    handleSend();
+    void handleSend();
   }
 }
 
@@ -284,7 +426,7 @@ function removeAttachment(id: string) {
     </ul>
   {/if}
   {#if canDictate}
-    <DictationStatus {dictation} />
+    <DictationStatus {dictation} sending={autoSendCountdown || autoSendWaiting} />
   {/if}
   <div class="assistant-composer-row">
     {#if onupload}
@@ -349,7 +491,7 @@ function removeAttachment(id: string) {
     <Button
       type="button"
       class="assistant-composer-send"
-      onclick={handleSend}
+      onclick={() => handleSend()}
       disabled={disabled || uploading || sending || !content.trim()}
     >
       {t(M['chat.assistant_composer.send'])}
@@ -363,7 +505,9 @@ function removeAttachment(id: string) {
     background: var(--smrt-color-surface, #ffffff);
     padding: var(--smrt-spacing-2, 8px);
     flex-shrink: 0;
+    container-type: inline-size;
   }
+
 
   .assistant-composer-row {
     display: flex;
@@ -419,13 +563,7 @@ function removeAttachment(id: string) {
   /* Phones: 16px text so iOS Safari doesn't zoom the page when the
      message field gets focus. */
   @media (max-width: 48rem) {
-    .assistant-composer-field {
-    flex: 1;
-    display: flex;
-    min-inline-size: 0;
-  }
-
-  :global(.assistant-composer-textarea) {
+    :global(.assistant-composer-textarea) {
       font-size: max(1rem, 16px);
     }
   }
@@ -490,5 +628,23 @@ function removeAttachment(id: string) {
     background: var(--smrt-color-error-container, #ffdad6);
     color: var(--smrt-color-on-error-container, #410002);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+  }
+
+  /* A narrow dock (a sidebar a couple of hundred pixels wide): the message
+     field takes the whole row and the attach, dictate and send controls sit
+     under it, so the placeholder never wraps a syllable per line. */
+  @container (max-width: 22rem) {
+    .assistant-composer-row {
+      flex-wrap: wrap;
+    }
+
+    .assistant-composer-field {
+      flex: 1 1 100%;
+      order: -1;
+    }
+
+    :global(.assistant-composer-send) {
+      margin-inline-start: auto;
+    }
   }
 </style>

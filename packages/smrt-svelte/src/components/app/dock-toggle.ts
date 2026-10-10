@@ -1,4 +1,6 @@
-/** A header button that toggles one dock tool. */
+import type { ShellSlot } from '../workspace/admin-shell/slots.js';
+
+/** A button that toggles one dock tool. */
 export interface DockToggle {
   /** Id of the `ShellDockTool` to toggle. */
   tool: string;
@@ -10,4 +12,9 @@ export interface DockToggle {
    * label's first letter stands in.
    */
   icon?: string;
+  /**
+   * Shell slot the button renders in. Default `header.end`. If that slot's
+   * region is hidden the shell moves it along the slot fallback chain.
+   */
+  slot?: ShellSlot;
 }

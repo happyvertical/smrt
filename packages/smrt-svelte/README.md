@@ -32,6 +32,50 @@ pipeline (`opportunity.stage`) without importing `@happyvertical/smrt-projects`.
 
 Svelte 5 component library for the s-m-r-t framework. Provides UI components, browser AI integration (STT/TTS/LLM with warm cache), a theme system, permission-aware rendering, and module UI registry for agent admin panels.
 
+## Import and export
+
+`@happyvertical/smrt-svelte/import-export` provides `ImportExport`, a CSV and
+TSV import/export panel for any collection. Spreadsheet users save as CSV;
+there is no `.xlsx` reader. Import is a guided flow: pick a file, map each
+column to a field (auto-detected from the field name, label, or alias),
+check a validation preview, then import. The preview is the dry run and writes
+nothing. Rows that fail validation are listed by file line with the offending
+value, and are downloadable as a CSV error report. Valid rows are created one
+request each, so a server rejection fails only that row. Export lets the user
+choose columns, delimiter, and header style; the default `name` headers
+re-import cleanly.
+
+The columns come from the same sources as the generated forms:
+`fieldsFromCollectionDefinition(definition, { policy })` reads the collection
+definition (the manifest) and a resolved field policy. A policy-`hidden` field
+is neither imported nor exported, a `locked` field is never overwritten, and a
+resolved default fills an empty or unmapped cell. `createCollectionImportExport`
+binds the panel to the generated CRUD fetchers, so import and export go through
+the same authorized REST routes as every other client.
+
+```svelte
+<script lang="ts">
+  import {
+    ImportExport,
+    createCollectionImportExport,
+  } from '@happyvertical/smrt-svelte/import-export';
+
+  const io = createCollectionImportExport({ definition, fetchers, fieldOptions: { policy } });
+</script>
+
+<ImportExport
+  fields={io.fields}
+  createRecord={io.createRecord}
+  loadRows={io.loadRows}
+  filename="products"
+/>
+```
+
+The CSV layer (`parseTable`, `validateRows`, `buildExportFile`, `runImport`)
+is pure and runs in Node. Exports neutralize spreadsheet formulas in text
+cells. See [agents/import-export.md](./agents/import-export.md) for the
+contract.
+
 ## Sortable and shell layout
 
 `@happyvertical/smrt-svelte/sortable` provides `Sortable`, an accessible
@@ -40,7 +84,7 @@ items that share Board's drag engine. `AppShell` lets users customize their
 shell: pass `layout` and `onlayoutchange` to own persistence (for example in an
 exported app blueprint), or neither to store it in the user's settings. Mount
 `ShellLayoutEditor` (from `/app` or `/workspace`) on a settings page, and call
-`useShellLayout()` to make the same changes from code or an assistant. See
+`useShellLayout()` to make the same changes from code or an assistant. Users can rename sections and individual navigation entries (`items`, `renameItem`), hide section titles, and create or delete their own sections. See
 `agents/workspace.md`; the pure `ShellLayout` model is published without Svelte
 as `@happyvertical/smrt-svelte/workspace/layout`.
 
@@ -49,6 +93,16 @@ as `@happyvertical/smrt-svelte/workspace/layout`.
   <ShellLayoutEditor />
 </AppShell>
 ```
+
+Opt in to editing the real shell in place with `layoutEditing` on `AppShell`: a
+pencil toggle ("Edit layout", highlighted while editing; press again or Escape to exit) joins the header (as does the app title, a movable
+`item:brand` in `header.start`), and while on, every slot is a
+labelled drop zone, shell items and navigation get grips (drag, or Space and
+arrow keys), section headings get icon overlays and a floating toolbar, and
+hidden regions show as strips. Apps add per-section icon buttons (an Options
+gear, Help) with `sectionActions`; pass `layoutEditing={{ floating: true }}` to pin the
+toggle in the top-right corner instead of the header; `useShellLayout()` exposes `editing` and
+`setEditing`. See `agents/workspace.md`.
 
 ## Installation
 
@@ -288,6 +342,60 @@ bind legacy name-based cleanup to registrations made by that caller, so
 overlapping same-name fields can unmount in either order without retaining a
 detached control.
 
+### Voice typing where the browser cannot (on-device Whisper and Moonshine)
+
+Browsers differ on speech recognition: Chrome and Safari have it, Firefox does
+not, and Brave has the API without a speech service behind it. `probeBrowserSpeech()`
+says which you have (`'works' | 'missing' | 'unreliable'`) without a network
+call or a microphone prompt. For the last two, offer a one-time model download
+and dictate with a speech model running in the browser (WebGPU where available,
+single-thread WASM otherwise; no cross-origin isolation needed). The engine is
+`@happyvertical/speech/local` (an optional peer, `>=0.102.5`, as is
+`@huggingface/transformers`).
+
+| `model` | Size | Notes |
+| --- | --- | --- |
+| `moonshine-tiny` (`onnx-community/moonshine-tiny-ONNX`) | ~32 MB | English, fastest: best for live dictation |
+| `moonshine-base` (`onnx-community/moonshine-base-ONNX`) | ~67 MB | English, more accurate |
+| `whisper-tiny.en` (default) | ~45 MB | English |
+| `whisper-base.en` / `whisper-small.en` | ~85 / ~260 MB | English |
+| any Hugging Face id, e.g. `onnx-community/whisper-base` | varies | multilingual Whisper |
+
+```ts
+import {
+  createLocalSpeechModel,
+  createSttDictationSource,
+  probeBrowserSpeech,
+} from '@happyvertical/smrt-svelte/browser-ai';
+// The worker is the one module that imports the optional peers statically,
+// so only apps that build it bundle them.
+import SpeechWorker from '@happyvertical/smrt-svelte/browser-ai/whisper-worker?worker';
+
+if ((await probeBrowserSpeech()) !== 'works') {
+  const model = createLocalSpeechModel({
+    model: 'moonshine-tiny',
+    createWorker: () => new SpeechWorker(),
+    loadSpeech: () => import('@happyvertical/speech/local'),
+  });
+  model.estimateSize();            // ~32 MB, for the consent text
+  await model.isCached();          // already downloaded on this device?
+  await model.load({ onProgress, signal }); // downloading -> extracting ("Getting ready") -> complete; abort() cancels
+  const dictation = createSttDictationSource({ type: 'moonshine', modelHandle: model });
+}
+```
+
+`createWhisperLocalModel`, `{ type: 'whisper-local' }` and the `whisper-wasm`
+alias keep working. Without `createWorker` the model runs on the page's thread
+and `loadModule: () => import('@huggingface/transformers')` supplies the
+runtime. With a worker, `device` and `dtype` are the worker entry's (`auto`
+and `q8`).
+
+Push-to-talk: the microphone records until stopped, then one final result is
+emitted. For hands-free dictation (each sentence written down when the speaker
+pauses) give smrt-ui's `Dictation` `mode: 'hands-free'` and
+`createHandsFreeCapture`; these adapters' `transcribePcm()` writes down each
+utterance. English-only models (`*.en`, Moonshine) ignore a requested language.
+
 ### Form Components
 
 ```svelte
@@ -496,6 +604,12 @@ keys the shell renders exactly as before.
   focus (unless something inside already has it) and returns it on close;
   Escape or a scrim click closes it, sliding it back out as the scrim fades
   (no motion under `prefers-reduced-motion`). Resizing applies only while docked.
+- **Railless edges**: `rail: false` gives a side edge no rail (no tool buttons, open or closed); closed, it takes
+  no space and renders nothing to see or tab to, and opens from elsewhere (a
+  header dock toggle, `useShellDock()`). Pair it with `presentation: 'overlay'`
+  for a chat that slides over the page. Layout edit mode leaves a railless edge
+  as it is (closed stays closed) and, while editing, shows a small "Open
+  <tool>" tab on the shell's right edge when it has content.
 - **Kept panels**: `keepMounted: true` keeps a collapsed edge's panel content
   (`appPanel`, `tenantPanel`, the focus panel, `systemPanel`) mounted with the
   `hidden` attribute instead of unmounting it, so component state (a chat
@@ -520,9 +634,66 @@ keys the shell renders exactly as before.
 - **Migration guide** (first-generation `WorkspaceShell`/`RoleShell` →
   `AdminShell`; adoption is additive and non-breaking):
   [`src/components/workspace/MIGRATION.md`](./src/components/workspace/MIGRATION.md)
-- **Playground demos**: `playground/src/routes/admin-shell` exercises all four
+- **Playground demos**: `playground/src/routes/command-palette` shows the palette in the header slot;
+  `playground/src/routes/admin-shell` exercises all four
   scopes, focus tools, and activities; `admin-shell-activity-feed` and
   `admin-shell-system-feed` show live feeds.
+
+### Command palette and global search
+
+`@happyvertical/smrt-svelte/command-palette` is a keyboard-first "find anything"
+dialog (Ctrl/Cmd+K) with a provider contract. Anything can register rows: the
+shell navigation, "New invoice" commands and cross-model record search derived
+from the manifest, or your own commands.
+
+```ts
+import {
+  CommandPalette,
+  createCommandPalette,
+  createModelProviders,
+  createNavigationProvider,
+} from '@happyvertical/smrt-svelte/command-palette';
+
+const palette = createCommandPalette({
+  navigate: goto,
+  providers: [
+    createNavigationProvider({ nav, groups }),
+    ...createModelProviders({ manifest, pagesBasePath: '/app' }),
+  ],
+});
+```
+
+Render `<CommandPalette {palette} />` as an `AppShell` `slotItems` entry
+(usually `header.center`). See
+[`agents/command-palette.md`](./agents/command-palette.md) for the provider
+contract, accessibility behavior, and the record-search limits.
+
+### Customizable overviews
+
+`@happyvertical/smrt-svelte/overview` turns an overview page into a grid of
+registered widgets (metric, chart, record list, shortcuts, note) that admins
+reorder, resize, configure, add and remove in the shell's layout edit mode,
+inside an allowed set the page declares. A saved overview is declarative data:
+widget options are validated against versioned schemas on save and on load, and
+widget data comes from a server `load(options, ctx)` that runs inside the page's
+load with the user's permissions, so the page renders fully on the server.
+Persistence is host-owned (the same pattern as the shell layout).
+
+```ts
+import {
+  createOverview,
+  OverviewGrid,
+  registerCoreWidgets,
+} from '@happyvertical/smrt-svelte/overview';
+import {
+  defineOverview,
+  loadOverview,
+  resolveOverview,
+} from '@happyvertical/smrt-svelte/overview/server';
+```
+
+See [`agents/overview-surfaces.md`](./agents/overview-surfaces.md) for the data
+model, the validation rules, the server load contract and the extension points.
 
 ## Exports
 
@@ -535,10 +706,15 @@ importable, even if it appears in `dist/`.
 |-------------|----------|
 | `@happyvertical/smrt-svelte` | `Provider`, hooks (`useAppState`, `useAuth`, `useLLM`, `useSocket`, `useSTT`, `useTheme`, `useTTS`), app state/context, `ModulePanel`, and the form components below |
 | `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, DateTimeInput, Toggle, etc.) |
+| `@happyvertical/smrt-svelte/import-export` | `ImportExport` (CSV/TSV import with column mapping, validation preview and error report; export with column selection), `createCollectionImportExport`, `fieldsFromCollectionDefinition`, and the pure CSV layer |
 | `@happyvertical/smrt-svelte/settings` | Server-paged settings search, selection, and list/detail layout (`SettingsCatalog`, `paginateSettingsCatalog`) |
+| `@happyvertical/smrt-svelte/screens` | List, view, create and edit screens derived from a generated web definition and resolved field policy (`RecipeScreens`, `ListScreen`, `DetailScreen`, `EditForm`) |
 | `@happyvertical/smrt-svelte/workspace` | AdminShell, ShellState, tenant nav, focus tools, settings, activities, and system/app panels |
-| `@happyvertical/smrt-svelte/app` | `AppShell` (Provider + themes + AdminShell + nav/dock slots, `dockToggles` header buttons), `OwnerSetupForm` (first-run owner setup), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp` |
+| `@happyvertical/smrt-svelte/app` | `AppShell` (Provider + themes + AdminShell + nav/dock slots, `dockToggles` buttons and host `slots` for the header/footer/sidebar regions), `OwnerSetupForm` (first-run owner setup), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp` |
 | `@happyvertical/smrt-svelte/app/runtime-diagnostics` | Svelte-free diagnostics WebMCP registration and its tool name/endpoint constants, importable from server routes |
+| `@happyvertical/smrt-svelte/command-palette` | Global search and command palette: `CommandPalette` (shell-slot trigger plus dialog), `createCommandPalette`, the provider contract, and the navigation and manifest-driven model providers |
+| `@happyvertical/smrt-svelte/overview` | Customizable overview surfaces: `OverviewGrid` (flow grid with keyboard reorder and resize), `createOverview` (host-owned controller), the widget registry (`registerWidget`), `registerCoreWidgets` (metric, chart, record list, shortcuts, note) and `shortcutsFromNav` |
+| `@happyvertical/smrt-svelte/overview/server` | Svelte-free half of the overview surface: the data model (`resolveOverview`, `checkOverviewOverride`), option-schema validation, `WidgetRegistry`, and `loadOverview` for a page's server load |
 | `@happyvertical/smrt-svelte/workspace/legacy` | Opt-in ToolsDock compatibility surface for applications migrating to AdminShell |
 | `@happyvertical/smrt-svelte/workspace/server` | Server-side workspace helpers (Node only) |
 | `@happyvertical/smrt-svelte/workspace/live` | `systemFeed` — the AdminShell system scope (jobs/schedules/dispatch) polled from an app status endpoint; deliberately carries no `smrt-web` dependency |
@@ -634,6 +810,11 @@ all other currencies render their ISO code for deterministic SSR hydration.
 
 `getCachedSTT`, `getCachedTTS`, `getCachedLLM`, `getCacheStats`, `clearAllCaches`
 
+Browser speech synthesis honors `stop()`, replacement `speak()` calls, and
+`dispose()` while voices are loading. Canceled `speak()` promises resolve even
+when the browser emits no completion event; `onEnd` is reserved for natural
+completion. Events from canceled utterances are ignored.
+
 ## Dependencies
 
 - `@happyvertical/smrt-types` -- shared type definitions
@@ -671,8 +852,10 @@ updates retain their existing behavior.
 
 Use `shell.setPanelState(edge, 'hidden' | 'collapsed' | 'expanded')` to persist
 runtime panel preferences; app-configured hidden edges remain unavailable.
-AdminShell keeps a discoverable tenant collapse control with supplied navigation
-(`showTenantToggle={false}` opts out), a Menu opener in narrow layouts, and the
+AdminShell's edge toggle buttons and WASD hotkeys are opt-in via `edgeToggles`
+(default `false`: regions lay out inline; pass `true`, or a per-edge map, to
+keep the drop-down behaviour; `showTenantToggle` is a deprecated alias for
+`edgeToggles.left`), a Menu opener in narrow layouts, and the
 system toggle alongside a custom `systemBar` that has a `systemPanel` to open
 (a `systemBar` with no `systemPanel` owns the bottom band and draws no toggle). Closed narrow drawers are inert;
 opening focuses the first control, and closing or Escape restores the opener.
@@ -687,6 +870,13 @@ an account permanently in the app bar (including with a custom `appBar`).
 canonical 48px target; omit density to inherit the theme, or choose
 `"comfortable"`. Account menus in the shell app bar open below the bar so the
 existing footer's default placement stays reachable on narrow screens.
+
+Sections-only navigation: pass `navMode="sections"` to `AppShell` and give
+each `ShellNavGroup` an `icon` and `href`; the sidebar then lists only the
+sections, and the section's page renders its entries with `ShellSectionMenu`
+(`meta`/`actions` snippets for counts and "New ..." links). In layout edit mode
+the menu rows get grip, rename and hide controls, and the sidebar's section
+toolbar gets an icon picker (`useShellLayout().setSectionIcon`).
 
 `TenantNav` accepts optional `groups: ShellNavGroup[]` (`{ heading, items }`)
 next to its existing flat `items`. Each group has a labelled `role="group"` and

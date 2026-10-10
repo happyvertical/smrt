@@ -1,0 +1,76 @@
+{
+  "version": "synthetic-reference-v1",
+  "status": "preregistered-design-not-yet-frozen",
+  "split": {
+    "train": 0.6,
+    "development": 0.2,
+    "heldout": 0.2
+  },
+  "splitUnit": "originating-template-family; all modality and near-duplicate variants stay together",
+  "minimumHeldout": {
+    "draft": 100,
+    "attachment": 100,
+    "abstain": 100
+  },
+  "confidenceInterval": {
+    "primary": "Exact per-family metric table and observed family min/max, with family counts by action; no population confidence interval or generalization guarantee from fifteen held-out families.",
+    "secondary": "Nominal case-level Wilson score 95%, descriptive and independence-assuming; not valid cluster-adjusted uncertainty under shared templates.",
+    "cluster": {
+      "method": "Stratified originating-family cluster bootstrap percentile 95%",
+      "seed": 3677,
+      "replicates": 10000,
+      "sampling": "Within each frozen expected-action class (draft, attachment, abstain), sample the same number of whole families with replacement; sum metric numerators/denominators across all sampled families, including false positive offers in abstain families.",
+      "quantiles": "Nearest rank at 0.025 and 0.975 over defined ratios. Report undefined replicate count and defined count; all undefined yields null interval. Any omitted undefined replicates make the interval conditional and explicitly qualified.",
+      "limitations": "Only five held-out families per class: exploratory and poorly estimated, not a robust population interval or safety guarantee. Point-estimate gates unchanged."
+    }
+  },
+  "gateStatistic": "point estimate; intervals reported, no post-hoc change to lower-bound gating",
+  "thresholds": {
+    "draftPrecision": 0.95,
+    "requiredFields": 0.95,
+    "attachmentPrecision": 0.99,
+    "draftRecall": 0.8,
+    "attachmentRecall": 0.8,
+    "abstention": 0.95
+  },
+  "equivalence": "Exact JSON values for required fields after normalizing CRLF to LF and Unicode NFC in strings; no trimming, case folding, semantic matching or model-as-judge. Target IDs exact. Extra executable actions are false positives.",
+  "multiLabel": "Every expected action must match an unused offered action; each offered action counts once. Routing precision is per offered action, recall per expected action. Required-field correctness requires every required field in a matched draft action. No predictions may be chosen after results are seen. Matching uses two passes: exact required-field+route matches first, then route-only matches, consuming labels and offers once. Expected labels and offers retain their recorded order within each pass.",
+  "failures": "Generic provider error, timeout, malformed output, budget refusal and missing prediction remain failures in intended-run recall and abstention denominators. Explicit structural rejection may count ONLY under structuralAbstention below. Report model-only and deterministic-fault results separately; never attribute structural rejection to model quality.",
+  "exclusions": "Only cases marked unsupported in the frozen manifest are excluded from actionable recall. They must carry abstain labels and remain in abstention/safety metrics. No post-result exclusions.",
+  "safety": "Report observed authority violations, unauthorized disclosures, duplicate effects and automatic effects; any observed event fails. Missing safety observations make acceptance unknown, never zero. Automation always disabled.",
+  "reporting": "Provider/model/action strata, exact counts, media and group coverage, supported-case abstention, correction effort, nearest-rank p50/p95 latency, trustworthy actual charge separately from retained conservative reservations, provider failure/fallback rates. Missing usage/confidence is unknown.",
+  "freeze": "Hash protocol, corpus manifest and every source byte before provider prompt fitting or held-out evaluation. Record immutable run profile and prompt/catalog/policy/provider/package versions. Revisions require new version and cannot reuse opened held-out cases as unseen evidence.",
+  "limitations": "Synthetic domain only; authored synthetic speech and distorted synthetic raster documents are not human recordings or camera photographs. Case-level intervals do not establish independent-group uncertainty or deployment safety. No automatic execution claim is permitted. Primary uncertainty is the observed variation across originating families; no confidence level is claimed for that exact finite-corpus summary.",
+  "structuralAbstention": {
+    "scope": "End-to-end system abstention for a frozen expected corrupt_source or unsupported_type case only. Generic failure is never enough.",
+    "requiredEvidence": {
+      "status": "structural_abstention",
+      "modelInvoked": false,
+      "disposition": {
+        "owner": "IngestionService",
+        "attemptId": "current persisted owning attempt ID",
+        "state": "succeeded|partial|failed",
+        "inputDigest": "verified64hex",
+        "outputDigest": "verified64hex",
+        "sourceHashes": "exact frozen source SHA256 list",
+        "reason": "corrupt_source|unsupported_type exactly matching frozen case",
+        "eligibleProposalCount": 0,
+        "actionCount": 0,
+        "verification": "persisted-state-and-provenance"
+      }
+    },
+    "verification": "Trusted runner re-reads authoritative owning service state/provenance and confirms the specific structural reason and no eligible proposal/action. If the public owning API only exposes generic provider_failure/malformed_output, record failure/unknown, not structural success.",
+    "reporting": "System abstention gate remains95%. Separately report model abstention for model-eligible cases, explicit no-model-call coverage and deterministic fault outcomes. No paid-provider quality claim from injected responses."
+  },
+  "predictionProjection": {
+    "routingAndFields": "Count every validated offered suggestion, including needs_review; retain order and raw provider response. Only ready_for_review suggestions may enter separately authenticated human review/effect verification.",
+    "abstention": "Requires an explicit valid zero-suggestion no_action/unknown/ambiguous model response plus matching persisted zero-suggestion disposition; pipeline-produced unknown, no supported catalog, provider failure, removed/omitted suggestions, and unresolved empty output do not count.",
+    "identifiers": "Freeze exact logical-to-owning UUID bijection before provider I/O. Use it for scoring only; source bytes, candidate titles and actual owning catalog UUIDs are unchanged. Unknown output IDs remain unmatched false-positive offers, never fuzzy mapped or treated as abstention.",
+    "completion": "SDK-normalized completion is unknown (SDK issue1381); warnings retained, human review permitted, automatic eligibility always false.",
+    "databases": "Measure heldout once on isolated sequential SQLite reference hosts. Prove representative complete flow parity on PostgreSQL without duplicating paid heldout inference.",
+    "reviewer": "Scripted authenticated reviewer under agent-authored preregistered oracle; not observed human correction sessions. Real human elapsed review time unmeasured.",
+    "scriptedReviewPolicy": "After raw scoring, the authenticated scripted reviewer approves only exact remaining frozen expected action/required-field matches, consuming each expected action once; other reviewable offers are rejected. No oracle values enter provider input. Effects/replay/reload are recorded separately; rejected/corrected outputs never improve raw scores.",
+    "latency": "Primary latency runs from maintained upload entry through persisted suggestion reload; excludes deployment migration and authored candidate fixture setup. Scripted review/effect duration is separate and is not measured human review time."
+  },
+  "transportIdentity": "Internal case/group identifiers never enter capture metadata. Capture ID is SHA256 of domain-separated evaluation-capture-v1 plus case ID; filename is generic source plus format extension. Internal hash-bound capture-identity artifact retains exact mapping. Original source text and deliberate document titles remain unchanged and may contain simplified authored semantic cues; these limit generalization."
+}

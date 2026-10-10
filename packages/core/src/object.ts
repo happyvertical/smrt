@@ -1,6 +1,5 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
-import { buildWhere } from '@happyvertical/sql';
 import {
   buildCascadePlan,
   cascadeReferencesTo,
@@ -47,12 +46,14 @@ import {
   TenantIsolationError,
   ValidationError,
 } from './errors';
+import { buildWhere } from './host.js';
 import {
   type BulkMutationEntry,
   createInterceptorContext,
   GlobalInterceptors,
   resolveGetStringFilter,
 } from './interceptors';
+import { isKnownNativeDuckDbHandle } from './native-duckdb';
 import { getBoxedPrimitiveKind, isRawJSON } from './plain-json';
 import { ObjectRegistry } from './registry';
 import { assertRuntimeTableBindings } from './registry/table-mappings.js';
@@ -70,6 +71,12 @@ import {
   type ToolCall,
   type ToolCallResult,
 } from './tools/tool-executor';
+import {
+  buildDuckDbIdUpdate,
+  collectIndexedColumns,
+  timestampColumnsToProve,
+  unchangedIndexedColumns,
+} from './unchanged-indexed';
 import { fieldsFromClass, tableNameFromClass, toSnakeCase } from './utils';
 
 /**
@@ -93,10 +100,16 @@ const logger = createLogger({
   level: process.env.DEBUG_STI ? 'debug' : 'info',
 });
 
-// A transaction handle may omit adapter capabilities. Remember only a positively
-// identified native DuckDB client; JSON shares its engine but requires export
-// behavior that a raw multi-row statement must never bypass.
-const nativeJunctionClients = new WeakSet<object>();
+/**
+ * What a NEW object's natural-key save learned about the row it adopts: its
+ * identity (applied to the instance only after the write succeeds) and the
+ * stored row itself, read under the embedded write queue.
+ */
+interface AdoptedNaturalKeyRow {
+  id?: string;
+  createdAt?: unknown;
+  existing?: Record<string, unknown>;
+}
 
 function isDuckDbHugeInt(value: unknown): boolean {
   return Boolean(
@@ -1371,6 +1384,28 @@ export class SmrtObject extends SmrtClass {
     return rows[0] ?? null;
   }
 
+  /**
+   * Whether this database is POSITIVELY the native DuckDB adapter, never the
+   * JSON adapter that shares its client class.
+   *
+   * {@link isNativeDuckDb} answers "DuckDB dialect": the JSON adapter wraps the
+   * same `DuckDBConnection`, and even a `json` type hint maps to `duckdb`. The
+   * JSON adapter only persists a table to its `<table>.json` file from its own
+   * `insert`/`update`/`upsert`/`delete`; a raw `query()` never does, so a raw
+   * write there is visible in-process and lost on the next one. Writers that
+   * bypass those methods must therefore gate on this.
+   *
+   * Identification is deterministic, see `native-duckdb.ts`: a root handle is
+   * recognized structurally, and a transaction handle through the root core
+   * noted before binding to it (initialize, withDatabase, transactions).
+   */
+  private isPositivelyNativeDuckDb(): boolean {
+    return (
+      this.isNativeDuckDb() &&
+      isKnownNativeDuckDbHandle(this.db, this.getDatabaseEngineHint())
+    );
+  }
+
   private isNativeDuckDb(): boolean {
     const db = this.db as typeof this.db & {
       config?: { type?: string; url?: string };
@@ -2345,22 +2380,9 @@ export class SmrtObject extends SmrtClass {
       removed.some((item) => !item.id)
     )
       return false;
-    const dbCapabilities = first.db as typeof first.db & {
-      getTableSchema?: unknown;
-      client?: object;
-    };
     if (first.getDatabaseEngineHint() === 'json') return false;
     const duck = first.isNativeDuckDb();
-    if (duck) {
-      const client = dbCapabilities.client;
-      if (!client) return false;
-      if (
-        typeof dbCapabilities.getTableSchema === 'function' ||
-        first.getDatabaseEngineHint() === 'duckdb'
-      )
-        nativeJunctionClients.add(client);
-      if (!nativeJunctionClients.has(client)) return false;
-    }
+    if (duck && !first.isPositivelyNativeDuckDb()) return false;
     const engine = isPostgresDatabase(first.db)
       ? 'postgres'
       : duck
@@ -2975,7 +2997,7 @@ export class SmrtObject extends SmrtClass {
       // A same-owner row this save adopts. Applied to the instance only after
       // the write succeeds, so a failed save never leaves it holding another
       // row's id (a cleanup delete() would remove that row).
-      const adopted: { id?: string; createdAt?: unknown } = {};
+      const adopted: AdoptedNaturalKeyRow = {};
       await withEmbeddedWriteQueue(
         this.db,
         serializeEmbeddedWrite,
@@ -3003,23 +3025,25 @@ export class SmrtObject extends SmrtClass {
                   // deployments, and DuckDB cannot type a TIMESTAMP predicate in
                   // this generic UPDATE API. Compare then upsert while holding
                   // the shared per-database embedded-write queue instead.
+                  let current: Record<string, unknown> | null = null;
                   if (useEmbeddedRevisionFallback) {
-                    const current = await this.db.get(this.tableName, {
-                      id: data.id,
-                    });
+                    // Canonical read: native DuckDB UUIDs come back as text,
+                    // so the unchanged-column proof below can compare them.
+                    current = this.isPositivelyNativeDuckDb()
+                      ? await this.getCanonicalPersistedRow({ id: data.id })
+                      : ((await this.db.get(this.tableName, {
+                          id: data.id,
+                        })) as Record<string, unknown> | null);
                     if (
                       !current ||
-                      !this.revisionsEqual(
-                        (current as Record<string, unknown>).updated_at,
-                        revisionGuard,
-                      )
+                      !this.revisionsEqual(current.updated_at, revisionGuard)
                     ) {
                       revisionMatched = false;
                       return;
                     }
                   }
                   const updateResult = useEmbeddedRevisionFallback
-                    ? await this.db.upsert(this.tableName, ['id'], data)
+                    ? await this.writeEmbeddedRevisionRow(data, current)
                     : await this.db.update(
                         this.tableName,
                         {
@@ -3050,14 +3074,16 @@ export class SmrtObject extends SmrtClass {
                   // A derived slug moved to a free one inserts the same way.
                   await this.db.insert(this.tableName, data);
                 } else {
-                  await this.db.upsert(
-                    this.tableName,
+                  const naturalKeyConflictColumns =
                     ObjectRegistry.getConflictPredicate(
                       this.getResolvedQualifiedName(),
                     )
                       ? ['id']
-                      : upsertConflictColumns,
+                      : upsertConflictColumns;
+                  await this.writeNaturalKeyUpsert(
                     data,
+                    naturalKeyConflictColumns,
+                    adopted.existing ?? null,
                   );
                 }
               } catch (error) {
@@ -3185,19 +3211,28 @@ export class SmrtObject extends SmrtClass {
             return;
           }
         }
-        result = useEmbeddedRevisionFallback
-          ? await this.db.upsert(this.tableName, ['id'], {
-              ...current,
-              updated_at: updatedAt.toISOString(),
-            })
-          : await this.db.update(
-              this.tableName,
-              {
-                id: this.id,
-                ...this.revisionPredicate(expectedUpdatedAt),
-              },
-              { updated_at: updatedAt.toISOString() },
-            );
+        if (!useEmbeddedRevisionFallback) {
+          result = await this.db.update(
+            this.tableName,
+            {
+              id: this.id,
+              ...this.revisionPredicate(expectedUpdatedAt),
+            },
+            { updated_at: updatedAt.toISOString() },
+          );
+        } else if (this.isPositivelyNativeDuckDb()) {
+          // Native DuckDB rewrites a row whose indexed column is assigned, even
+          // unchanged, and a referenced parent then refuses it (#3737). The
+          // claim changes only the revision, so it assigns only the revision.
+          result = await this.updateDuckDbRowById(this.id, {
+            updated_at: updatedAt.toISOString(),
+          });
+        } else {
+          result = await this.db.upsert(this.tableName, ['id'], {
+            ...current,
+            updated_at: updatedAt.toISOString(),
+          });
+        }
       },
     );
     if (!revisionMatched || result?.affected !== 1) {
@@ -3237,6 +3272,169 @@ export class SmrtObject extends SmrtClass {
       [CHANGE_FEED_WAS_PERSISTED_KEY]: true,
     };
     await GlobalInterceptors.executeAfterSave(this, context);
+  }
+
+  /**
+   * Indexed columns of `data` that provably keep the stored row's value, so the
+   * write can leave them out (#3737). Native DuckDB only: it rewrites a row
+   * when an indexed column is assigned, even to its existing value, which a
+   * foreign key still referencing the row then rejects. Other engines assign
+   * unchanged columns harmlessly and keep writing exactly what they did.
+   *
+   * `stored` is the row just read under the embedded write queue, after its
+   * revision matched the loaded one, so it is the state this save was loaded
+   * from. Anything not provably equal stays assigned.
+   */
+  private async unchangedIndexedColumnsOf(
+    data: Record<string, unknown>,
+    stored: Record<string, unknown> | null,
+  ): Promise<Set<string>> {
+    if (!stored || !this.isPositivelyNativeDuckDb()) return new Set();
+    const qualifiedName = this.getResolvedQualifiedName();
+    const stiBase = ObjectRegistry.getSTIBase(qualifiedName);
+    const schemas = [
+      ObjectRegistry.getSchema(qualifiedName),
+      ObjectRegistry.getSchema(this.getResolvedClassName()),
+      stiBase ? ObjectRegistry.getSchema(stiBase) : undefined,
+    ];
+    const indexed = collectIndexedColumns(schemas, [
+      'slug',
+      'context',
+      'tenant_id',
+      ...ObjectRegistry.getConflictColumns(qualifiedName),
+      ...SmrtObject.ownershipColumnsFor(qualifiedName),
+    ]);
+    const columnTypes: Record<string, { type?: string }> = {};
+    for (const schema of schemas) {
+      for (const [name, column] of Object.entries(schema?.columns ?? {})) {
+        columnTypes[name] ??= column;
+      }
+    }
+    // A hydrated Date keeps only milliseconds while the column holds
+    // microseconds, so an indexed timestamp is proven against the stored
+    // text, read in this same queue slot.
+    const exactTimestamps: Record<string, string> = {};
+    const timestamps = timestampColumnsToProve(
+      data,
+      stored,
+      indexed,
+      columnTypes,
+    );
+    if (timestamps.length > 0 && stored.id != null) {
+      const quote = (identifier: string) =>
+        `"${identifier.replaceAll('"', '""')}"`;
+      const { rows } = await this.db.query(
+        `SELECT ${timestamps
+          .map(
+            (column) => `CAST(${quote(column)} AS VARCHAR) AS ${quote(column)}`,
+          )
+          .join(', ')} FROM ${quote(this.tableName)} WHERE ${quote('id')} = ?`,
+        stored.id,
+      );
+      for (const column of timestamps) {
+        const text = rows[0]?.[column];
+        if (typeof text === 'string') exactTimestamps[column] = text;
+      }
+    }
+    return unchangedIndexedColumns(
+      data,
+      stored,
+      indexed,
+      columnTypes,
+      exactTimestamps,
+    );
+  }
+
+  /**
+   * Write an existing row on an embedded engine, after the caller verified its
+   * revision under the write queue.
+   *
+   * Ordinarily one `upsert` by primary key that assigns every column. When
+   * {@link unchangedIndexedColumnsOf} proves indexed columns unchanged, those
+   * are left out of an id-targeted `UPDATE` instead (the adapter's `upsert`
+   * cannot restrict its `DO UPDATE SET`), so a referenced DuckDB parent is not
+   * rewritten. Every changed column, including a changed indexed one that
+   * DuckDB may still rightly refuse, is assigned as before.
+   */
+  private async writeEmbeddedRevisionRow(
+    data: Record<string, unknown>,
+    stored: Record<string, unknown> | null,
+  ) {
+    const unchanged = await this.unchangedIndexedColumnsOf(data, stored);
+    if (unchanged.size === 0) {
+      return this.db.upsert(this.tableName, ['id'], data);
+    }
+    const assignments: Record<string, unknown> = {};
+    for (const [column, value] of Object.entries(data)) {
+      if (column === 'id' || unchanged.has(column)) continue;
+      assignments[column] = value;
+    }
+    return this.updateDuckDbRowById(data.id, assignments);
+  }
+
+  /**
+   * The natural-key upsert of a new object. When it adopts an existing row on
+   * native DuckDB, the columns the row already holds (its key, ownership and
+   * creation time among them) are left out of an id-targeted `UPDATE` rather
+   * than reassigned by `DO UPDATE SET`, for the reason given at
+   * {@link unchangedIndexedColumnsOf} (#3737). The adopted row was read, and
+   * its owner checked, under the same embedded write queue; the conflict
+   * columns it matched are never assigned, exactly as in the upsert.
+   */
+  private async writeNaturalKeyUpsert(
+    data: Record<string, unknown>,
+    conflictColumns: string[],
+    existing: Record<string, unknown> | null,
+  ) {
+    const unchanged = await this.unchangedIndexedColumnsOf(data, existing);
+    if (!existing || unchanged.size === 0 || existing.id == null) {
+      return this.db.upsert(this.tableName, conflictColumns, data);
+    }
+    const assignments: Record<string, unknown> = {};
+    for (const [column, value] of Object.entries(data)) {
+      if (
+        column === 'id' ||
+        unchanged.has(column) ||
+        conflictColumns.includes(column)
+      ) {
+        continue;
+      }
+      assignments[column] = value;
+    }
+    return Object.keys(assignments).length === 0
+      ? { operation: 'upsert', affected: 1 }
+      : this.updateDuckDbRowById(existing.id, assignments);
+  }
+
+  /**
+   * One id-targeted `UPDATE` on native DuckDB (see {@link buildDuckDbIdUpdate}
+   * for the quoting and binding). The caller holds the embedded write queue
+   * and has already matched the row; `affected` is the driver's own count.
+   */
+  private async updateDuckDbRowById(
+    id: unknown,
+    assignments: Record<string, unknown>,
+  ): Promise<{ operation: string; affected: number }> {
+    const { sql, values } = buildDuckDbIdUpdate(
+      this.tableName,
+      id,
+      assignments,
+    );
+    const result = await this.db.query(sql, ...values);
+    // Fail closed: an absent or non-numeric count must never read as a
+    // success, or a zero-row UPDATE would report a write that did not happen.
+    const reported = result?.rows?.[0]?.Count;
+    const count =
+      typeof reported === 'number' || typeof reported === 'bigint'
+        ? Number(reported)
+        : Number.NaN;
+    if (!Number.isInteger(count) || count < 0) {
+      throw RuntimeError.invalidState(
+        'The DuckDB UPDATE did not report an affected-row count',
+        { className: this.getResolvedClassName(), tableName: this.tableName },
+      );
+    }
+    return { operation: 'update', affected: count };
   }
 
   /**
@@ -3366,6 +3564,9 @@ export class SmrtObject extends SmrtClass {
    */
   private toTypedWriteError(error: unknown, operation: string): unknown {
     if (!(error instanceof Error)) return error;
+    // The writer's own invalid-state refusal is not a database failure.
+    if (error instanceof RuntimeError && error.code === 'RUNTIME_INVALID_STATE')
+      return error;
     const classification = classifyDatabaseError(error);
     if (classification.kind === 'unique_violation') {
       const field = this.extractConstraintFieldFromChain(error, classification);
@@ -3427,7 +3628,7 @@ export class SmrtObject extends SmrtClass {
   private async writeNaturalKeyRow(
     data: Record<string, unknown>,
     conflictColumns: string[],
-    adopted: { id?: string; createdAt?: unknown },
+    adopted: AdoptedNaturalKeyRow,
   ): Promise<'done' | 'insert' | 'upsert'> {
     if (
       conflictColumns.length === 0 ||
@@ -3500,6 +3701,7 @@ export class SmrtObject extends SmrtClass {
           adopted.createdAt = existing.created_at;
         }
       }
+      adopted.existing = existing;
       return 'upsert';
     }
     throw DatabaseError.queryFailed(

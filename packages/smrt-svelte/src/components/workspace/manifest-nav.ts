@@ -317,16 +317,24 @@ function entryIndexByClassName(
  *   - `{ exclude: [...] }` → all except listed routes
  */
 function hasListRoute(entry: SmrtManifestEntryLike): boolean {
+  return hasApiRoute(entry, 'list');
+}
+
+/**
+ * Whether an entry exposes the named REST route (`list`, `create`, ...), per
+ * the same `@smrt({ api })` shapes {@link hasListRoute} documents.
+ */
+function hasApiRoute(entry: SmrtManifestEntryLike, route: string): boolean {
   const api = entry.decoratorConfig?.api;
   if (api === undefined || api === true) return true;
   if (api === false) return false;
   if (typeof api !== 'object' || api === null) return true;
   const obj = api as { include?: unknown; exclude?: unknown };
   if (Array.isArray(obj.include)) {
-    return obj.include.includes('list');
+    return obj.include.includes(route);
   }
   if (Array.isArray(obj.exclude)) {
-    return !obj.exclude.includes('list');
+    return !obj.exclude.includes(route);
   }
   return true;
 }
@@ -417,6 +425,57 @@ function expandPermittedThroughStiParents(
   return expanded;
 }
 
+/** A manifest entry that passed the navigation filters, with what it exposes. */
+export interface NavigableManifestEntry<
+  E extends SmrtManifestEntryLike = SmrtManifestEntryLike,
+> {
+  entry: E;
+  /** Qualified name, or the synthesised `package:Class`. */
+  qualifier: string;
+  /** Whether the REST `create` route is generated. */
+  creatable: boolean;
+}
+
+function* listNavigableManifestEntries(
+  manifest: SmrtManifestLike,
+  permitted: ReadonlySet<string> | undefined,
+): Generator<SmrtManifestEntryLike> {
+  for (const entry of Object.values(manifest.objects)) {
+    if (looksLikeCollectionClass(entry)) continue;
+    if (!isPublicEntry(entry)) continue;
+    if (!hasListRoute(entry)) continue;
+    if (looksLikeStiSubtypeOfParentRoute(entry, manifest)) continue;
+    if (permitted && !permitted.has(entryQualifier(entry))) continue;
+    yield entry;
+  }
+}
+
+/**
+ * The manifest entries admin navigation would list (the same filters as
+ * {@link navTreeFromManifest}: no collection classes, internal/test visibility,
+ * routeless `api`, or STI subtypes of a shared route), so other manifest-driven
+ * surfaces such as the command palette agree with the nav on what exists.
+ * Order is manifest order; sort for display.
+ */
+export function navigableManifestEntries<E extends SmrtManifestEntryLike>(
+  manifest: { objects: Record<string, E> },
+  options: { permittedResources?: readonly string[] } = {},
+): NavigableManifestEntry<E>[] {
+  const permitted = options.permittedResources
+    ? expandPermittedThroughStiParents(
+        new Set(options.permittedResources),
+        manifest,
+      )
+    : undefined;
+  return [...listNavigableManifestEntries(manifest, permitted)].map(
+    (entry) => ({
+      entry: entry as E,
+      qualifier: entryQualifier(entry),
+      creatable: hasApiRoute(entry, 'create'),
+    }),
+  );
+}
+
 /**
  * Walk a SMRT manifest and emit the `NavSection[]` shape that
  * `<NavTree items={...}>` and `RoleConfig.sections` consume.
@@ -500,14 +559,8 @@ export function navTreeFromManifest(
   // care about it.
   const sectionMap = new Map<string, NavItem[]>();
 
-  for (const entry of Object.values(manifest.objects)) {
-    if (looksLikeCollectionClass(entry)) continue;
-    if (!isPublicEntry(entry)) continue;
-    if (!hasListRoute(entry)) continue;
-    if (looksLikeStiSubtypeOfParentRoute(entry, manifest)) continue;
-
+  for (const entry of listNavigableManifestEntries(manifest, permitted)) {
     const qualifier = entryQualifier(entry);
-    if (permitted && !permitted.has(qualifier)) continue;
 
     const ui = entry.decoratorConfig?.ui;
     const label = ui?.label ?? pluralizeClassName(entry.className);

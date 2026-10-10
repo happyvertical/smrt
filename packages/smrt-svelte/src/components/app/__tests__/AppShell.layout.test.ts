@@ -128,7 +128,7 @@ describe('AppShell layout', () => {
     const user = userEvent.setup();
     const { changes } = mountShell();
     await user.click(
-      screen.getByRole('switch', { name: 'Show Pages in navigation' }),
+      screen.getByRole('button', { name: 'Show Pages in navigation' }),
     );
     expect(changes.at(-1)).toEqual({ version: 1, hidden: ['/pages'] });
     await vi.waitFor(() =>
@@ -141,11 +141,11 @@ describe('AppShell layout', () => {
     const user = userEvent.setup();
     mountShell();
     await user.click(
-      screen.getByRole('switch', { name: 'Show People in navigation' }),
+      screen.getByRole('button', { name: 'Show People in navigation' }),
     );
     await vi.waitFor(() => expect(shellHeadings()).toEqual(['Content']));
     await user.click(
-      screen.getByRole('switch', { name: 'Show People in navigation' }),
+      screen.getByRole('button', { name: 'Show People in navigation' }),
     );
     await vi.waitFor(() =>
       expect(shellHeadings()).toEqual(['Content', 'People']),
@@ -231,13 +231,15 @@ describe('AppShell layout', () => {
       ).not.toBeNull(),
     );
     await user.click(
-      screen.getByRole('switch', { name: 'Start Tenant panel expanded' }),
+      screen.getByRole('switch', { name: 'Start Left sidebar panel expanded' }),
     );
     expect(changes.at(-1)).toEqual({
       version: 1,
       panels: { left: { initial: 'collapsed' } },
     });
-    await user.click(screen.getByRole('switch', { name: 'Show Tenant panel' }));
+    await user.click(
+      screen.getByRole('switch', { name: 'Show Left sidebar panel' }),
+    );
     expect(changes.at(-1)).toEqual({
       version: 1,
       panels: { left: { initial: 'collapsed', visible: false } },
@@ -245,7 +247,7 @@ describe('AppShell layout', () => {
     await vi.waitFor(() => expect(shellLinks()).toEqual([]));
     expect(
       screen
-        .getByRole('switch', { name: 'Start Tenant panel expanded' })
+        .getByRole('switch', { name: 'Start Left sidebar panel expanded' })
         .hasAttribute('disabled'),
     ).toBe(true);
   });
@@ -257,10 +259,10 @@ describe('AppShell layout', () => {
 
   it('applies an edited starting state to the live panel', async () => {
     const user = userEvent.setup();
-    mountShell();
+    mountShell({ edgeToggles: true });
     await vi.waitFor(() => expect(leftState()).toBe('expanded'));
     await user.click(
-      screen.getByRole('switch', { name: 'Start Tenant panel expanded' }),
+      screen.getByRole('switch', { name: 'Start Left sidebar panel expanded' }),
     );
     await vi.waitFor(() => expect(leftState()).toBe('collapsed'));
   });
@@ -270,7 +272,7 @@ describe('AppShell layout', () => {
     const { changes } = mountShell({ mode: 'frozen' });
     await vi.waitFor(() => expect(leftState()).toBe('expanded'));
     await user.click(
-      screen.getByRole('switch', { name: 'Start Tenant panel expanded' }),
+      screen.getByRole('switch', { name: 'Start Left sidebar panel expanded' }),
     );
     expect(changes).toHaveLength(1);
     expect(leftState()).toBe('expanded');
@@ -284,7 +286,7 @@ describe('AppShell layout', () => {
         layout: { version: 1, panels: { left: { initial: 'expanded' } } },
       }),
     );
-    mountShell({ mode: 'default', editor: false });
+    mountShell({ mode: 'default', editor: false, edgeToggles: true });
     await vi.waitFor(() => expect(leftState()).toBe('collapsed'));
   });
 
@@ -322,7 +324,7 @@ describe('AppShell layout', () => {
     const user = userEvent.setup();
     const { changes } = mountShell({ mode: 'callback' });
     await user.click(
-      screen.getByRole('switch', { name: 'Show Pages in navigation' }),
+      screen.getByRole('button', { name: 'Show Pages in navigation' }),
     );
     expect(changes).toHaveLength(1);
     await vi.waitFor(() =>
@@ -334,7 +336,7 @@ describe('AppShell layout', () => {
     const user = userEvent.setup();
     const first = mountShell({ mode: 'default' });
     await user.click(
-      screen.getByRole('switch', { name: 'Show Pages in navigation' }),
+      screen.getByRole('button', { name: 'Show Pages in navigation' }),
     );
     await vi.waitFor(() =>
       expect(shellLinks()).toEqual(['/', '/posts', '/users', '/roles']),
@@ -360,7 +362,7 @@ describe('AppShell layout', () => {
     const user = userEvent.setup();
     mountShell();
     await user.click(
-      screen.getByRole('switch', { name: 'Show Pages in navigation' }),
+      screen.getByRole('button', { name: 'Show Pages in navigation' }),
     );
     await vi.waitFor(() => expect(shellLinks()).not.toContain('/pages'));
     expect(
@@ -395,6 +397,169 @@ describe('AppShell layout', () => {
     const editor = document.querySelector('.smrt-shell-layout-editor');
     expect(editor).not.toBeNull();
     await expectNoA11yViolations(editor as HTMLElement);
+  });
+});
+
+describe('app-owned sections', () => {
+  const nameInput = (label: string) =>
+    screen.getByRole('textbox', { name: `Name of section ${label}` });
+
+  it('renames a section inline and updates the nav', async () => {
+    const user = userEvent.setup();
+    const { changes } = mountShell();
+    const input = nameInput('Content');
+    await user.clear(input);
+    await user.type(input, 'Stuff');
+    await user.tab();
+    expect(changes.at(-1)).toEqual({
+      version: 1,
+      sections: { Content: { label: 'Stuff' } },
+    });
+    await vi.waitFor(() =>
+      expect(shellHeadings()).toEqual(['Stuff', 'People']),
+    );
+  });
+
+  it('snaps a blanked name back to the suggested heading', async () => {
+    const user = userEvent.setup();
+    mountShell({
+      initial: { version: 1, sections: { Content: { label: 'Stuff' } } },
+    });
+    const input = nameInput('Stuff');
+    await user.clear(input);
+    await user.tab();
+    await vi.waitFor(() =>
+      expect(shellHeadings()).toEqual(['Content', 'People']),
+    );
+    expect((nameInput('Content') as HTMLInputElement).value).toBe('Content');
+  });
+
+  it('hides a title and keeps an accessible group name', async () => {
+    const user = userEvent.setup();
+    mountShell();
+    await user.click(
+      screen.getByRole('button', { name: 'Show title of People' }),
+    );
+    await vi.waitFor(() => expect(shellHeadings()).toEqual(['Content']));
+    const navElement = document.querySelector(
+      'nav[aria-label="Application navigation"]',
+    );
+    const flat = navElement?.querySelector(
+      '[role="group"][aria-label="People"]',
+    );
+    expect(flat?.querySelectorAll('a')).toHaveLength(2);
+    expect(shellLinks()).toContain('/users');
+  });
+
+  it('creates a section, moves an item in, and deletes it with confirmation', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirm);
+    const { changes } = mountShell();
+    await user.click(screen.getByRole('button', { name: 'New section' }));
+    const created = changes.at(-1)?.customSections?.[0];
+    expect(created).toEqual({ id: 'custom:new-section', label: 'New section' });
+    // Empty custom sections are editable but not in the nav.
+    expect(shellHeadings()).toEqual(['Content', 'People']);
+
+    screen.getByRole('button', { name: 'Move Roles' }).focus();
+    await user.keyboard(' {ArrowDown}{Enter}');
+    expect(changes.at(-1)?.moved).toEqual({ '/roles': 'custom:new-section' });
+    await vi.waitFor(() =>
+      expect(shellHeadings()).toEqual(['Content', 'People', 'New section']),
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Delete section New section' }),
+    );
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(changes.at(-1)).toEqual({ version: 1 });
+    await vi.waitFor(() =>
+      expect(shellHeadings()).toEqual(['Content', 'People']),
+    );
+    expect(shellLinks()).toContain('/roles');
+  });
+
+  it('keeps a non-empty section when the confirmation is declined', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('confirm', () => false);
+    const { changes } = mountShell({
+      initial: {
+        version: 1,
+        customSections: [{ id: 'custom:a', label: 'A' }],
+        moved: { '/posts': 'custom:a' },
+      },
+    });
+    await user.click(screen.getByRole('button', { name: 'Delete section A' }));
+    expect(changes).toHaveLength(0);
+  });
+
+  it('deletes an empty section without asking', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal('confirm', confirm);
+    const { changes } = mountShell({
+      initial: { version: 1, customSections: [{ id: 'custom:a', label: 'A' }] },
+    });
+    await user.click(screen.getByRole('button', { name: 'Delete section A' }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(changes.at(-1)).toEqual({ version: 1 });
+  });
+
+  it('exposes the same changes through the layout API', async () => {
+    const { api } = mountShell({ editor: false });
+    await vi.waitFor(() => expect(shellLinks().length).toBeGreaterThan(0));
+    expect(api().createSection('  ')).toBeNull();
+    expect(api().createSection('Pinned')).toBe('custom:pinned');
+    await vi.waitFor(() =>
+      expect(api().sections.map((section) => section.id)).toContain(
+        'custom:pinned',
+      ),
+    );
+    expect(api().renameSection('Content', 'Stuff')).toBe(true);
+    await vi.waitFor(() =>
+      expect(shellHeadings()).toEqual(['Stuff', 'People']),
+    );
+    expect(api().renameSection('Content', 'Stuff')).toBe(false);
+    expect(api().renameItem('/users', 'Members')).toBe(true);
+    await vi.waitFor(() =>
+      expect(
+        [
+          ...document.querySelectorAll(
+            'nav[aria-label="Application navigation"] a',
+          ),
+        ].map((link) => link.textContent?.trim()),
+      ).toContain('Members'),
+    );
+    expect(api().renameItem('/users', 'Members')).toBe(false);
+    expect(api().renameItem('/nope', 'X')).toBe(false);
+    expect(api().renameItem('/users', null)).toBe(true);
+    expect(api().setSectionTitleVisible('custom:pinned', false)).toBe(true);
+    await vi.waitFor(() =>
+      expect(api().sections.at(-1)?.titleVisible).toBe(false),
+    );
+    expect(api().moveItem('/posts', 'custom:pinned')).toBe(true);
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('nav [role="group"][aria-label="Pinned"]'),
+      ).not.toBeNull(),
+    );
+    expect(api().deleteSection('People')).toBe(false);
+    expect(api().deleteSection('custom:pinned')).toBe(true);
+    await vi.waitFor(() => expect(shellLinks()).toContain('/posts'));
+  });
+
+  it('renders an axe-clean editor with custom sections', async () => {
+    mountShell({
+      initial: {
+        version: 1,
+        customSections: [{ id: 'custom:a', label: 'A' }],
+        moved: { '/posts': 'custom:a' },
+      },
+    });
+    await expectNoA11yViolations(
+      document.querySelector('.smrt-shell-layout-editor') as HTMLElement,
+    );
   });
 });
 

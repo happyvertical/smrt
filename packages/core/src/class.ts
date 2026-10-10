@@ -22,7 +22,7 @@ import type {
   SmrtAiUsageEvent,
   SmrtAiUsageRecord,
 } from '@happyvertical/smrt-types';
-import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   AiUsageCollector,
   AiUsagePersistenceHandler,
@@ -51,6 +51,8 @@ import {
   executeDecision,
 } from './decisions.js';
 import { createFilesystemAdapter } from './filesystem-loader.js';
+import { getDatabase, importAI } from './host.js';
+import { noteNativeDuckDbHandle } from './native-duckdb.js';
 import { applyPostgresRuntimeTimeouts } from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
@@ -586,6 +588,7 @@ export class SmrtClass {
       ) {
         this._db = this.options.db as DatabaseInterface;
         this.options.db = this._db;
+        noteNativeDuckDbHandle(this._db, this._dbEngineHint);
       } else {
         // Handle four db config formats (in implementation order):
         // 1. String URL: 'products.db' (shortcut)
@@ -658,6 +661,9 @@ export class SmrtClass {
          * See issue #567 for context on why this pattern is necessary.
          */
         this.options.db = this._db;
+        // Identify a native DuckDB root now, so transaction handles later
+        // bound to this object resolve to the same engine (#3737).
+        noteNativeDuckDbHandle(this._db, this._dbEngineHint);
 
         await this.ensureSystemTables();
       }
@@ -813,7 +819,7 @@ export class SmrtClass {
               // compatibility. The index-signature `AIConfig` is routed
               // through getAI's own parameter type rather than the closed
               // union.
-              const { getAI } = await import('@happyvertical/ai');
+              const { getAI } = await importAI();
               this._ai = (await getAI(
                 aiConfig as unknown as Parameters<typeof getAI>[0],
               )) as unknown as AIClient;
@@ -900,7 +906,7 @@ export class SmrtClass {
       // `getAI()` is deliberately dynamically imported, matching the existing
       // generation setup. The #1284 SDK adds `decide` as an optional interface
       // capability, so third-party/older clients remain source-compatible.
-      const { getAI } = await import('@happyvertical/ai');
+      const { getAI } = await importAI();
       this._decisionClient = (await getAI(
         configuredDecision as Parameters<typeof getAI>[0],
       )) as unknown as DecisionClient;
@@ -1343,6 +1349,9 @@ export class SmrtClass {
     // the normal, actionable SmrtClass error before any state is mutated.
     const previousDb = this.db;
     const previousOptionDb = this.options.db;
+    // `db` is usually a transaction handle of `previousDb`, which carries no
+    // adapter markers; identify the root before swapping it out (#3737).
+    noteNativeDuckDbHandle(previousDb, this._dbEngineHint);
     this._db = db;
     this.options.db = db;
     try {

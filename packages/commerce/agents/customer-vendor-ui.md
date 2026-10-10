@@ -91,3 +91,34 @@ hidden/visible duplicate name from changing native form serialization.
 The registry keys are `customer-directory`, `customer-detail`, `customer-form`, `vendor-directory`, `vendor-detail`, `vendor-form`, and `party-contact-fields`. Interactive examples are published by `@happyvertical/smrt-commerce/playground` and ship in the next generated Commerce package release. DomaCraft can replace its local routes incrementally by adapting its existing server DTOs and payload names; no identity or database migration is required.
 
 The form playground previews handle save, add-contact, and remove-contact intents in memory. They deliberately return a simulated validation error on save so retained values and retry behavior can be inspected without a backend.
+
+## Selectors (#3602)
+
+`CustomerSelect` and `VendorSelect` are field-sized pickers built on the shared
+smrt-ui `RelationInput` (`@happyvertical/smrt-ui/forms`, ARIA 1.2 combobox),
+through one internal `PartySelect` adapter that maps party DTOs to relation
+options and localizes the field's text. Search, resolve, debounce, stale-result
+and create handling live in `RelationInput`, not here.
+
+| Prop | Meaning |
+| --- | --- |
+| `name`, `value` (bindable), `label`, `required`, `disabled`, `error`, `placeholder`, `description` | Field basics. `label` defaults to the localized "Customer"/"Vendor"; `error` renders a linked `role="alert"`. |
+| `search(query)` | Caller-owned lookup returning party DTOs; called with `''` when the list opens and, debounced (`debounceMs`, default 250), as the person types. |
+| `resolve(id)` | Caller-owned lookup of the current value's DTO when it has not been listed; without it a value stays blank until searched. |
+| `onCreate(query)` | Optional. Renders "+ New customer/vendor" (`createLabel` overrides); a returned DTO is selected. |
+| `onchange(id)`, `interaction` | Change callback (`''` when cleared) and agent-interaction options. |
+
+Rows show `profile.name` with localized status and, for customers, type
+(`Active · Wholesale`). Data never enters the component: no stores, no fetches,
+no tenant logic. A failed `search` shows an inline status, not an exception;
+a failed `onCreate` leaves the field as it was. Text comes from the
+`commerce.select.*` messages. The selectors are registered as the
+`customer-select` and `vendor-select` slots, whose `selects` qualified names
+are emitted into the manifest's `uiSelectors`; keep `selects` a string literal
+so the scanner can read it.
+
+Widget hints (`@field({ ui: { widget } })`, #3599) are presentation-only and
+the build rejects them on non-text fields; `currency` is a currency-code
+picker for ISO 4217 strings and is never applied to minor-unit amounts.
+Behaviour tests run under jsdom: `pnpm exec vitest run --config
+vitest.selects.config.ts` (also part of `pnpm test:ui`).

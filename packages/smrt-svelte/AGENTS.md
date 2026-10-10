@@ -13,11 +13,15 @@ subpath you are editing. This file keeps what holds in every module.
 | `src/i18n/` (`./i18n` + `./i18n/server`) | `defineMessages` / `useI18n` / `<Trans>` / `buildI18nSnapshot`, the template-vs-render split, and hardcoded-string enforcement | [agents/i18n.md](agents/i18n.md) |
 | `src/themes/` + `src/theme/` | which theme system is canonical and the full `--smrt-*` design-token vocabulary with its alias rules | [agents/themes.md](agents/themes.md) |
 | `src/test-support/` + `__tests__/` | the golden-test harness and pattern for Svelte component tests | [agents/testing.md](agents/testing.md) |
+| `src/components/import-export/` (`./import-export`) | `ImportExport` CSV/TSV import (column mapping, validation preview, error report) and export (column selection) driven by collection definitions + resolved field policy, over a pure Node-tested CSV layer (#3715) | [agents/import-export.md](agents/import-export.md) |
 | `src/components/settings/` (`./settings`) | `SettingsCatalog`, `paginateSettingsCatalog`, and the summary-vs-detail scalability contract | [agents/settings.md](agents/settings.md) |
+| `src/components/screens/` (`./screens`) | `RecipeScreens` / `ListScreen` / `DetailScreen` / `EditForm`: list, view, create and edit derived from a generated web definition plus resolved field policy; pure `deriveScreenFields` selection, minor-unit money handling, transport-neutral source (#3718) | [agents/screens.md](agents/screens.md) |
 | `src/components/app/` (`./app`) | `AppShell` (Provider + ThemeProvider + theme CSS + AdminShell + nav/dock slots), `OwnerSetupForm` (props-driven first-run owner form), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp`. Browser-only; no `$app/*` or server imports | [agents/workspace.md](agents/workspace.md#app-shell-and-owner-setup-app) |
 | `src/components/workspace/` (`./workspace` + `./web`) | the AdminShell family and its principles, the legacy ToolsDock surface, the `./web` activity-feed and `updateAvailable` adapters, and server-side dock gates | [agents/workspace.md](agents/workspace.md) |
+| `src/components/command-palette/` (`./command-palette`) | `CommandPalette` trigger + dialog, `PaletteProvider` contract, nav and manifest providers (#3713) | [agents/command-palette.md](agents/command-palette.md) |
+| `src/components/overview/` (`./overview` + `./overview/server`) | customizable overview surfaces: `OverviewGrid` flow grid (span 1-4, keyboard reorder/resize) joined to the shell's layout edit mode, host-owned `createOverview` controller, widget registry with versioned option schemas validated on save and load, the server `load(options, ctx)` contract (`loadOverview`), the metric/chart/records/shortcuts/note core widgets, and `registerRecipeWidgets` (recipe `widget` surfaces to registry registrations, injected module resolver) (#3727) | [agents/overview-surfaces.md](agents/overview-surfaces.md) |
 | `src/web/remote-query.svelte.ts` | Svelte 5 binding for query-shaped remote pages: rows, page, totals, loading/refreshing/stale/error, retry, last-updated, and query-scoped live subscriptions (#2445) | — |
-| `src/web/list-data-surface.svelte.ts` (`mountListDataSurface`) | One-call registration of an existing, non-`DataTable` list (already mirroring a headless `DataTableController`) as a mounted `DataSurfaceDescriptor` — a same-behavior port of `registerContentListDataSurface`'s registration/translation logic (`@happyvertical/smrt-content/svelte`), generalized off ContentList's view-mode concept, so any custom list markup can adopt it directly instead of hand-mirroring the registry contract. Not yet unified behind a shared `@happyvertical/smrt-ui/data` implementation (#2917) — this copy is currently ahead; see its own module doc comment for the current, authoritative list of divergences #2917 must adopt rather than assume parity (#2906) | — |
+| `src/web/list-data-surface.svelte.ts` (`mountListDataSurface`) | Registers an existing non-`DataTable` list (mirroring a `DataTableController`) as a mounted `DataSurfaceDescriptor`; a same-behavior port of `registerContentListDataSurface`, not yet unified behind smrt-ui (#2917). The module doc comment is the authoritative list of divergences (#2906) | — |
 | `src/web/webmcp-provider.ts` | Provider config for generated data/model WebMCP tools: definitions, effect policy, namespace, budget, legacy/canonical filters, and fetcher seams (#2520) | — |
 | `src/web/webmcp-ui.ts` | Fixed, low-cardinality WebMCP adapter over the Provider's mounted form-control and data-surface registries (#2521) | — |
 | `src/web/webmcp.svelte.ts` (`useWebMcpTool`) | Component-owned bespoke WebMCP tool. Routes through `@happyvertical/smrt-web`'s `registerWebMcpBespokeTool`, so it shares the fail-closed effect classification and `effects` exposure policy of generated tools — undeclared `annotations` classify destructive and are excluded by default. `namespace` and `maxTools` never apply to a bespoke tool (#2586) | — |
@@ -205,35 +209,9 @@ for a data-surface one — for exactly the component's lifetime.
 
 - **Preload strategies**: `none`, `eager`, `idle` (recommended), `on-visible`
 - **Warm client cache**: module-level Map survives navigation/remounts -- avoids re-downloading WASM/models
-- **Adapters**: STT (browser-speech, whisper-cpp, whisper-wasm), TTS (browser-synthesis), LLM (webllm, transformers-llm)
+- **Adapters**: STT (browser-speech, whisper-cpp, whisper-local = alias whisper-wasm), TTS (browser-synthesis), LLM (webllm, transformers-llm)
 - Cache API: `getCachedSTT()`, `getCachedTTS()`, `getCachedLLM()`, `getCacheStats()`, `clearAllCaches()`
-- **Inference backends (browser-ai)**: two `@happyvertical/smrt-web/ai` `InferenceBackend`s, both
-  `kind: 'local'`, both refusing `tool`/`function` messages, non-string content, `tool_calls` and
-  `options.tools` with `InferencePathError` (`unsupported_message`) through the SHARED
-  `assertTextOnlyTurn`, so a per-call switch between backends never changes what a turn means.
-  - `createWebLlmInferenceBackend()` wraps an `LLMAdapter` — `status` derives from the adapter's
-  `initState` (plus an explicit in-flight flag, because the adapter only flips to `initializing`
-  after its own awaits), `progress` mirrors `DownloadProgressInfo`, and `load()`/`unload()` drive
-  `ensureInitialized`/`unloadModel`. It reports `unavailable` without WebGPU so an `auto` path skips
-  it. Pass `adapter` to share the app-state-managed warm-cached adapter; construct once, so two
-  callers cannot each start an unshared adapter and a second download.
-  Its `loadModule` option matters: the default `importOptional()` resolves a VARIABLE specifier,
-  which a browser cannot resolve (`TypeError: Failed to resolve module specifier`) — a host that has
-  `@mlc-ai/web-llm` must pass `() => import('@mlc-ai/web-llm')` so the bundler rewrites a static one.
-  It does NOT forward `signal` (the adapter has no cancellation seam).
-  - `createBitGpuInferenceBackend()` wraps `bitgpu` (MIT, optional peer), the engine behind the
-    Bonsai WebGPU demo PrismML's own docs list as their in-browser option. `loadBitGpu`/`loadChat`
-    are REQUIRED loaders (`() => import('bitgpu')`, `() => import('bitgpu/chat')`) — a static import
-    here would fail the build for every consumer without the optional peer, and a bare specifier is
-    not resolvable by a browser either. `bitgpu`'s `LoadProgress.phase` maps to `InferenceProgress`
-    (`manifest`/`weights` → `downloading`, `pipelines` → `extracting`). Unlike the WebLLM backend it
-    **forwards `signal`** — bitgpu aborts a live generation — and it does NOT lazily load: weights
-    run to GBs, so a turn before `load()` fails with a named reason. `model` in the per-call options
-    is ignored (one engine binds one model), and bitgpu's tools/JSON-schema/think support is
-    deliberately left unexposed for now so the text-only invariant holds across backends.
-- **`ModelStatusControl.svelte`**: the user-facing model lifecycle surface (state, Load/Unload,
-  download progress) driven entirely by a backend's own `status`/`progress`/`subscribe`, so it works
-  without a `<Provider>` ancestor. `unavailable` is a first-class state that offers NO load action.
+- **On-device speech and inference backends** (`whisper-local`/`moonshine` adapters, `createWebLlmInferenceBackend`, `createBitGpuInferenceBackend`, `ModelStatusControl`): see [agents/browser-ai.md](agents/browser-ai.md).
 
 ## Permission Action
 
@@ -257,5 +235,5 @@ for a data-surface one — for exactly the component's lifetime.
 - `@happyvertical/smrt-types` (shared types) — includes the identity data contracts (`User`, `Role`, `Membership`, `Tenant`) the role/membership components type against, so no dependency on `smrt-users` / `smrt-profiles` is needed
 - `@happyvertical/smrt-ui` (UI runtime: primitives, theme system, i18n client, module registry) is a hard `dependency`. The agent-admin shells that used to type against `@happyvertical/smrt-agents/ui` moved to `@happyvertical/smrt-agents/svelte` (#1589), so `smrt-agents` is no longer a dependency here — this drops smrt-svelte below smrt-agents in the package DAG.
 - `@happyvertical/smrt-languages` is a hard `dependency` (not an optional peer): the Node-only `/i18n/server` subpath imports its resolver. The browser bundle still excludes it — the client `/i18n` layer never imports the languages root, so it tree-shakes out.
-- `@happyvertical/logger` (SDK) is a `dependency` — the console logger used for voice/AI error reporting in the form components. Consume it **only** through `src/internal/logger.ts`, never `createLogger()` at module scope: `createLogger()` reads `HAVE_LOGGER_LEVEL` from `process.env`, so a top-level call throws `ReferenceError: process is not defined` in the browser and kills client-side hydration under `vite dev` (prod builds tree-shake/define it away, so this only bites in dev). The `internal/logger` wrapper constructs the logger lazily and falls back to a bare `ConsoleLogger` when `process.env` is absent, keeping this browser-reachable module (imported by `Provider` + the form primitives) safe.
-- Peer (all optional): `svelte` >=5.18.2, plus the browser-AI engines (`@huggingface/transformers`, `@mlc-ai/web-llm`, `@remotion/whisper-web`, `@xenova/transformers`) and `chrono-node`.
+- `@happyvertical/logger` (SDK) is a `dependency` for voice/AI error reporting in the form components. Consume it **only** through `src/internal/logger.ts`, never `createLogger()` at module scope: it reads `process.env`, which throws `ReferenceError` in the browser under `vite dev` and kills hydration. The wrapper builds the logger lazily and falls back to a bare `ConsoleLogger`.
+- Peer (all optional): `svelte` >=5.18.2, plus the browser-AI engines (`@happyvertical/speech`, `@huggingface/transformers`, `@mlc-ai/web-llm`, `@remotion/whisper-web`) and `chrono-node`.

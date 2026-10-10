@@ -9,7 +9,7 @@ and repository rules.
 | Source | Scope | Module doc |
 |---|---|---|
 | `src/object.ts`, `src/collection.ts`, `src/child-accessors.ts` | Lifecycle, hydration, operators, STI, child accessors, dispatch | [agents/object-runtime.md](agents/object-runtime.md) |
-| `src/revision-guard.ts` | Guarded writes and PostgreSQL revision precision | [agents/revision-guard.md](agents/revision-guard.md) |
+| `src/revision-guard.ts`, `src/unchanged-indexed.ts`, `src/native-duckdb.ts` | Guarded writes, PostgreSQL revision precision, unchanged indexed columns on referenced DuckDB rows (#3737) | [agents/revision-guard.md](agents/revision-guard.md) |
 | `src/collection.ts` | Projections, latest-related, facets, counts, read plans | [agents/collection-reads.md](agents/collection-reads.md) |
 | `src/collection.ts` | Limits, sort whitelist, generated list order | [agents/query-bounds.md](agents/query-bounds.md) |
 | `src/data-query.ts` | Transport-neutral bounded query normalization | [agents/data-query.md](agents/data-query.md) |
@@ -27,6 +27,7 @@ and repository rules.
 | `src/registry/qualified-name-aliases.ts`, `src/migrations/qualified-name-aliases.ts` | Model moves: `previousQualifiedNames` aliases, deprecation, doctor counts, opt-in backfill (#3338) | [agents/model-moves.md](agents/model-moves.md) |
 | `src/run-once.ts` | Shared idempotency seam: insert-only claim + caller work in one transaction, replay on retry, typed in-flight/unknown-outcome answers (#3080) | [agents/run-once.md](agents/run-once.md) |
 | `src/recipe.ts`, `../scanner/src/recipes.ts` | `SmrtRecipe`: declared user-facing units (models, nav, `requires`, curation `options`) collected into manifest and knowledge `recipes` (#3590) | [agents/recipes.md](agents/recipes.md) |
+| `src/browser.ts`, `src/host.ts`, `src/host.browser.ts` | Browser entry that builds and evaluates without Node-only modules: host seam, `package.json#browser` swaps, `pnpm test:browser` (#2838) | [agents/browser-entry.md](agents/browser-entry.md) |
 
 ## Cross-module invariants
 

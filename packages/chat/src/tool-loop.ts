@@ -62,6 +62,7 @@ import {
   PermissionCatalogService,
   type PermissionDefinition,
 } from '@happyvertical/smrt-users';
+import { isRuntimeReportWriteOperation } from './runtime-report-tools.js';
 import { matchesToolAllowList } from './tool-allow-list.js';
 
 /** Default ceiling on tool-executing rounds before the loop force-terminates. */
@@ -434,6 +435,17 @@ export function buildManifestToolCatalog(
     if (!action) {
       continue;
     }
+    // Stored runtime reports are written only through the confirmed
+    // `reports.runtime.define` path, never as a generic manifest write.
+    if (
+      isRuntimeReportWriteOperation({
+        className: def.className,
+        qualifiedName: def.qualifiedName,
+        action,
+      })
+    ) {
+      continue;
+    }
     tools.push({
       slug: def.slug,
       collection: def.collection,
@@ -570,6 +582,12 @@ export async function invokeManifestTool(
 ): Promise<unknown> {
   // Gate 1: fail-closed allow-list (defense-in-depth behind the offer gate).
   run.assertToolAllowed(tool.slug);
+  // Reserved: a stored runtime report is never written through the generic
+  // manifest dispatcher, whatever the allow-list says (the catalog filter above
+  // is the offer half; the model layer is the final refusal).
+  if (isRuntimeReportWriteOperation(tool)) {
+    throw new PrincipalToolNotAllowedError(tool.slug);
+  }
   // Gate 2: door-agnostic catalog authority (the RLS-off teeth; redundant under RLS).
   await run.assertOperation(tool.collection, tool.action);
 

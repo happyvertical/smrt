@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { FulfillmentLineItemOptions } from '../types/index.js';
 
@@ -46,18 +46,21 @@ export class FulfillmentLineItem extends SmrtObject {
   /**
    * Parent fulfillment
    */
+  @field({ description: 'The shipment this line belongs to.' })
   @foreignKey('Fulfillment')
   fulfillmentId: string = '';
 
   /**
    * Contract line item being fulfilled
    */
+  @field({ description: 'The order line being sent.' })
   @foreignKey('ContractLineItem')
   contractLineItemId: string = '';
 
   /**
    * Quantity fulfilled in this fulfillment
    */
+  @field({ description: 'How many of that line are in this shipment.' })
   quantityFulfilled: number = 1.0;
 
   /**

@@ -6,11 +6,11 @@ import { McpTaskStore } from '../mcp-task.js';
 import { SmrtJobCollection } from '../smrt-job.js';
 
 it('production ready index excludes suspended backlog and follows wake/cancel/claim', async () => {
-  const { baseDb: db, cleanup } = await createIsolatedTestDbFromManifest({
+  const { db, cleanup } = await createIsolatedTestDbFromManifest({
     manifestPath: fileURLToPath(
       new URL('../../dist/manifest.json', import.meta.url),
     ),
-    includeObjects: ['SmrtJob'],
+    includeObjects: ['SmrtJob', 'SmrtJobEvent'],
   });
   const postgres = Boolean(process.env.SMRT_TEST_POSTGRES_URL);
   const ownerId = randomUUID();

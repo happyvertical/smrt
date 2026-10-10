@@ -67,6 +67,24 @@ describe('ManifestGenerator.assertRecipeOptions', () => {
     ).toThrow(/Page declares no field "invented"/);
   });
 
+  it('checks that a nav filter names a declared field', () => {
+    const manifest = manifestWith(undefined);
+    const [recipe] = manifest.recipes as RecipeDefinition[];
+    recipe.nav = [
+      {
+        label: 'Open',
+        model: '@shop/pkg:Page',
+        key: 'open',
+        filter: { field: 'title', value: 'x' },
+      },
+    ];
+    expect(() => generator.assertRecipeOptions(manifest)).not.toThrow();
+    recipe.nav[0].filter = { field: 'nope', value: 'x' };
+    expect(() => generator.assertRecipeOptions(manifest)).toThrow(
+      /filters on "nope"/,
+    );
+  });
+
   it('is a no-op without recipes', () => {
     expect(() =>
       generator.assertRecipeOptions({

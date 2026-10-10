@@ -250,6 +250,26 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   seam. It never imports `smrt-svelte` or `smrt-web`; the host supplies the
   returned entry and must enforce its real route permission server-side.
 
+## Recipe: `fields.form-customization` (#3719)
+
+`src/recipes.ts` declares `FormCustomizationRecipe`
+(help: `src/form-customization.recipe.md`), emitted in `manifest.json` and
+`smrt-knowledge.json` `recipes`. Contract: [core recipes](../core/agents/recipes.md).
+
+- Models: the four policy/learning tables. No `nav`, deliberately: the tables
+  have no generated read surface, so the one management UI is the declared
+  `settings-panel` surface `@happyvertical/smrt-fields/svelte#FieldPolicyControlPanel`.
+  That component is not zero-prop: the host still injects `SettingsCatalog`,
+  the adapter, and loads `buildFieldPolicySettingsCatalog()` data server-side.
+- `runtime = 'server'` is the truthful value while #3618 is open: the root
+  entry (resolver, `usage-schedules`) statically imports core's node-only
+  `import-workspace-module`. The `/svelte` components are browser-safe because
+  they render an already-resolved policy. Flip to `'both'` only when #3618 lands
+  and a browser build of the root entry is proven.
+- No `demoSeed` (no fixture exists) and no `playground` surface: the playground
+  export is a registry object, not a component. Help field references must
+  point at `FieldPolicy` fields that carry `@field({ description })`.
+
 ## Related
 
 - `@happyvertical/smrt-prompts` / `smrt-languages` / `smrt-features` — the

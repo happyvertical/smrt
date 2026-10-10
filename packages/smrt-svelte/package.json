@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-svelte",
-  "version": "0.55.3",
+  "version": "0.55.9",
   "smrtJsdoc": "strict",
   "description": "Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups",
   "type": "module",
@@ -27,11 +27,40 @@
       "import": "./dist/components/settings/index.js",
       "default": "./dist/components/settings/index.js"
     },
+    "./screens": {
+      "types": "./dist/components/screens/index.d.ts",
+      "svelte": "./dist/components/screens/index.js",
+      "import": "./dist/components/screens/index.js",
+      "default": "./dist/components/screens/index.js"
+    },
     "./board": {
       "types": "./dist/components/board/index.d.ts",
       "svelte": "./dist/components/board/index.js",
       "import": "./dist/components/board/index.js",
       "default": "./dist/components/board/index.js"
+    },
+    "./import-export": {
+      "types": "./dist/components/import-export/index.d.ts",
+      "svelte": "./dist/components/import-export/index.js",
+      "import": "./dist/components/import-export/index.js",
+      "default": "./dist/components/import-export/index.js"
+    },
+    "./command-palette": {
+      "types": "./dist/components/command-palette/index.d.ts",
+      "svelte": "./dist/components/command-palette/index.js",
+      "import": "./dist/components/command-palette/index.js",
+      "default": "./dist/components/command-palette/index.js"
+    },
+    "./overview": {
+      "types": "./dist/components/overview/index.d.ts",
+      "svelte": "./dist/components/overview/index.js",
+      "import": "./dist/components/overview/index.js",
+      "default": "./dist/components/overview/index.js"
+    },
+    "./overview/server": {
+      "types": "./dist/components/overview/server.d.ts",
+      "import": "./dist/components/overview/server.js",
+      "default": "./dist/components/overview/server.js"
     },
     "./sortable": {
       "types": "./dist/components/sortable/index.d.ts",
@@ -87,6 +116,16 @@
       "types": "./dist/browser-ai/index.d.ts",
       "import": "./dist/browser-ai/index.js",
       "default": "./dist/browser-ai/index.js"
+    },
+    "./browser-ai/whisper-worker": {
+      "types": "./dist/browser-ai/adapters/stt/local-speech.worker.d.ts",
+      "import": "./dist/browser-ai/adapters/stt/local-speech.worker.js",
+      "default": "./dist/browser-ai/adapters/stt/local-speech.worker.js"
+    },
+    "./browser-ai/speech-worker": {
+      "types": "./dist/browser-ai/adapters/stt/local-speech.worker.d.ts",
+      "import": "./dist/browser-ai/adapters/stt/local-speech.worker.js",
+      "default": "./dist/browser-ai/adapters/stt/local-speech.worker.js"
     },
     "./browser-ai/svelte": {
       "types": "./dist/browser-ai/svelte/index.d.ts",
@@ -172,15 +211,18 @@
     "esm-env": "^1.2.2"
   },
   "peerDependencies": {
+    "@happyvertical/speech": ">=0.102.5",
     "@huggingface/transformers": ">=4.3.0",
     "@mlc-ai/web-llm": ">=0.2.85",
     "@remotion/whisper-web": ">=4.0.526",
-    "@xenova/transformers": "^2.17.2",
     "bitgpu": "^0.19.1",
     "chrono-node": "^2.10.1",
     "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
+    "@happyvertical/speech": {
+      "optional": true
+    },
     "@huggingface/transformers": {
       "optional": true
     },
@@ -188,9 +230,6 @@
       "optional": true
     },
     "@remotion/whisper-web": {
-      "optional": true
-    },
-    "@xenova/transformers": {
       "optional": true
     },
     "bitgpu": {
@@ -209,6 +248,7 @@
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
+    "@happyvertical/speech": "catalog:",
     "@sveltejs/package": "^2.5.8",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@testing-library/jest-dom": "^7.0.1",

@@ -68,6 +68,14 @@ for a browser target and fails when Node-only modules are reachable.
   tracking issue before it may be added.
 - Unit tests for detection, chains, discovery, attribution, and the ratchet are
   in `browser-boundary-logic.spec.ts`.
+- **Capability table (#3709):** the ratchet is also the source of each
+  package's browser capability, which the manifest build emits so a catalog can
+  label features Live, Mock, Sample or Server. `src/browser-gate/capability.ts`
+  derives it (a package is `server-only` when it, or a workspace package it
+  depends on, is listed) and generates it into smrt-core;
+  `browser-capability.spec.ts` fails when the generated table is stale. Fix PRs
+  that delete an expected-failures entry regenerate it with
+  `UPDATE_BROWSER_CAPABILITY=1 pnpm --filter @happyvertical/smrt-bundle-gate test`.
 
 ## Run the gate
 

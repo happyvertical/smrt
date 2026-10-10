@@ -49,6 +49,7 @@ import {
   isQualifiedNameAliasFormat,
   readPreviousQualifiedNames,
 } from '../utils/qualified-names.js';
+import { applyRecipeDemo } from './recipe-demo-pass.js';
 import { isTestFile } from './test-file-patterns.js';
 import type {
   AgentAdminRouteManifest,
@@ -437,6 +438,8 @@ export class ManifestGenerator {
     // Recipe options may only name fields the merged model declares (#3590).
     this.assertRecipeOptions(manifest);
     this.assertRecipeHelp(manifest);
+    // Browser capability of the package and the demo mode of its recipes (#3709).
+    applyRecipeDemo(manifest, options?.packageName);
 
     // Presentation metadata (#3599): widget hints, display label, selector
     // bindings. After inheritance so a label may name an inherited STI column.
@@ -586,6 +589,22 @@ export class ManifestGenerator {
   assertRecipeOptions(manifest: SmartObjectManifest): void {
     const problems: string[] = [];
     for (const recipe of manifest.recipes ?? []) {
+      for (const entry of recipe.nav) {
+        if (!entry.filter) continue;
+        const object = Object.values(manifest.objects).find(
+          (candidate) =>
+            (candidate.qualifiedName ?? candidate.className) === entry.model,
+        );
+        if (
+          object &&
+          !Object.keys(object.fields).includes(entry.filter.field) &&
+          !UNIVERSAL_OBJECT_FIELDS.includes(entry.filter.field as never)
+        ) {
+          problems.push(
+            `recipe ${recipe.id}: nav "${entry.label}" filters on "${entry.filter.field}", which ${object.className} does not declare`,
+          );
+        }
+      }
       for (const [model, options] of Object.entries(recipe.options ?? {})) {
         const object = Object.values(manifest.objects).find(
           (candidate) =>

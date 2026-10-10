@@ -1,9 +1,16 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ManifestAdapter } from '../manifest-adapter.js';
 import { parseSource } from '../oxc-parser.js';
+import { RECIPE_SHELL_SLOTS } from '../recipes.js';
 import { OxcScanner } from '../scanner.js';
 
 const CORE = '@happyvertical/smrt-core';
@@ -562,6 +569,100 @@ export class A extends SmrtRecipe {
       expect(results.recipes[0].requires).toEqual(['elsewhere.customers']);
     });
 
+    it('reads group, section, requiresAny and the richer nav entries', async () => {
+      write(
+        'src/recipes.ts',
+        `${header}
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order, Customer];
+  static group = { id: 'billing', label: 'Billing', summary: 'Bill people.' };
+  static section = { id: 'sales', label: 'Sales', icon: 'shoppingBag', description: 'Everything you sell.' };
+  static requiresAny = [['shop.x', 'shop.y']];
+  static nav = [
+    { label: 'Orders', model: Order, icon: 'receipt', description: 'What was ordered.', noun: 'order' },
+    { label: 'Open orders', model: Order, key: 'open', filter: { field: 'status', value: 'open' } },
+  ];
+}`,
+      );
+      const { results } = await scan();
+      expect(results.errors).toEqual([]);
+      const recipe = results.recipes[0];
+      expect(recipe.group).toEqual({
+        id: 'billing',
+        label: 'Billing',
+        summary: 'Bill people.',
+      });
+      expect(recipe.section?.icon).toBe('shoppingBag');
+      expect(recipe.requiresAny).toEqual([['shop.x', 'shop.y']]);
+      expect(recipe.nav[0]).toEqual({
+        label: 'Orders',
+        model: 'Order',
+        icon: 'receipt',
+        description: 'What was ordered.',
+        noun: 'order',
+      });
+      expect(recipe.nav[1]).toEqual({
+        label: 'Open orders',
+        model: 'Order',
+        key: 'open',
+        filter: { field: 'status', value: 'open' },
+      });
+    });
+
+    it('omits group, section and requiresAny when not declared', async () => {
+      const text = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+}`);
+      expect(text).toBe('');
+    });
+
+    it('rejects bad group, section and requiresAny shapes', async () => {
+      const text = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+  static group = { id: 'Bad Id', label: 'X' };
+  static section = { id: 'sales', label: 'S', colour: 'red' };
+  static requiresAny = [[], ['Nope']];
+}`);
+      expect(text).toMatch(/group\.id `Bad Id`/);
+      expect(text).toMatch(/section accepts only .* not `colour`/);
+      expect(text).toMatch(/requiresAny must be a non-empty list/);
+    });
+
+    it('rejects a filter without a key, a repeated view, and unknown nav keys', async () => {
+      const text = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+  static nav = [
+    { label: 'One', model: Order },
+    { label: 'Two', model: Order, filter: { field: 'status', value: 'x' } },
+  ];
+}`);
+      expect(text).toMatch(/a filter needs a key/);
+      const unknown = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+  static nav = [{ label: 'Three', model: Order, colour: 'red' }];
+}`);
+      expect(unknown).toMatch(/accept only .*not `colour`/);
+      const dup = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+  static nav = [
+    { label: 'One', model: Order },
+    { label: 'Two', model: Order },
+  ];
+}`);
+      expect(dup).toMatch(/repeats the view of Order/);
+    });
+
     it('accepts options that refine declared fields', async () => {
       write(
         'src/recipes.ts',
@@ -685,7 +786,7 @@ export class A extends SmrtRecipe {
     Order: {
       type: 'x',
       fields: {
-        status: { visibility: 'secret', locked: 'yes', order: 'first', colour: 'red', label: 3 },
+        status: { visibility: 'secret', locked: 'yes', required: 1, order: 'first', colour: 'red', label: 3 },
       },
     },
   };
@@ -693,6 +794,7 @@ export class A extends SmrtRecipe {
       expect(text).toMatch(/options.Order.type is not a model option/);
       expect(text).toMatch(/visibility must be one of basic, advanced, hidden/);
       expect(text).toMatch(/locked must be a boolean/);
+      expect(text).toMatch(/required must be a boolean/);
       expect(text).toMatch(/order must be a finite number/);
       expect(text).toMatch(/colour is not a field option/);
       expect(text).toMatch(/label must be a string/);
@@ -894,5 +996,332 @@ export class SalesRecipe extends SmrtRecipe {
         fieldRefs: ['status'],
       });
     });
+  });
+
+  describe('surfaces, providers, runtime, demoSeed (#3708)', () => {
+    const RECIPE = (statics: string) => `
+import { SmrtRecipe } from '${CORE}';
+import { Order } from './models/Order.js';
+export class SalesRecipe extends SmrtRecipe {
+  static id = 'shop.sales';
+  static label = 'Sales';
+  static summary = 'Take customer orders.';
+  static models = [Order];
+${statics}
+}
+`;
+
+    async function errorsFor(statics: string) {
+      write('src/recipes.ts', RECIPE(statics));
+      const { results } = await scan();
+      return messages(results);
+    }
+
+    it("emits a provider's browserOptions (#3709)", async () => {
+      write(
+        'src/recipes.ts',
+        RECIPE(`
+  static providers = [
+    { id: 'llm', kind: 'llm', options: ['openai', 'webllm'], required: true, secrets: ['OPENAI_API_KEY'], browserOptions: ['webllm'] },
+  ];
+`),
+      );
+      const { results } = await scan();
+      expect(results.errors).toEqual([]);
+      expect(results.recipes[0].providers).toEqual([
+        {
+          id: 'llm',
+          kind: 'llm',
+          options: ['openai', 'webllm'],
+          required: true,
+          secrets: ['OPENAI_API_KEY'],
+          browserOptions: ['webllm'],
+        },
+      ]);
+    });
+
+    it('emits every declaration and nothing when none is declared', async () => {
+      write(
+        'src/recipes.ts',
+        RECIPE(`
+  static runtime = 'both';
+  static surfaces = [
+    { kind: 'shell-widget', slot: 'header.end', export: '@acme/chat/svelte#DockToggle', label: 'Assistant', icon: 'sparkles' },
+    { kind: 'route', path: '/orders/board', export: '@acme/shop/svelte#Board', label: 'Board' },
+    { kind: 'settings-panel', export: '@acme/shop/svelte#Settings', label: 'Shop settings' },
+    { kind: 'playground', export: '@acme/shop/svelte#Play' },
+  ];
+  static providers = [
+    { id: 'mail', kind: 'email', options: ['imap', 'smtp'], required: false, secrets: ['SMTP_PASSWORD'] },
+  ];
+  static demoSeed = { export: '@acme/shop/fixtures#demoOrders' };
+`),
+      );
+      const { results } = await scan();
+      expect(results.errors).toEqual([]);
+      const recipe = results.recipes[0];
+      expect(recipe.runtime).toBe('both');
+      expect(recipe.surfaces).toEqual([
+        {
+          kind: 'shell-widget',
+          slot: 'header.end',
+          export: '@acme/chat/svelte#DockToggle',
+          label: 'Assistant',
+          icon: 'sparkles',
+        },
+        {
+          kind: 'route',
+          path: '/orders/board',
+          export: '@acme/shop/svelte#Board',
+          label: 'Board',
+        },
+        {
+          kind: 'settings-panel',
+          export: '@acme/shop/svelte#Settings',
+          label: 'Shop settings',
+        },
+        { kind: 'playground', export: '@acme/shop/svelte#Play' },
+      ]);
+      expect(recipe.providers).toEqual([
+        {
+          id: 'mail',
+          kind: 'email',
+          options: ['imap', 'smtp'],
+          required: false,
+          secrets: ['SMTP_PASSWORD'],
+        },
+      ]);
+      expect(recipe.demoSeed).toEqual({
+        export: '@acme/shop/fixtures#demoOrders',
+      });
+
+      write('src/recipes.ts', RECIPE(''));
+      const bare = (await scan()).results.recipes[0];
+      for (const key of ['surfaces', 'providers', 'runtime', 'demoSeed']) {
+        expect(key in bare).toBe(false);
+      }
+    });
+
+    it('emits them into manifest.json', async () => {
+      write(
+        'src/recipes.ts',
+        RECIPE(`
+  static runtime = 'browser';
+  static demoSeed = { data: { orders: [{ status: 'draft' }] } };
+`),
+      );
+      const { results, resolved } = await scan();
+      expect(results.errors).toEqual([]);
+      const manifest = new ManifestAdapter().toManifest(resolved, {
+        packageName: '@shop/pkg',
+        recipes: results.recipes,
+      });
+      const recipe = manifest.recipes?.[0];
+      expect(recipe?.runtime).toBe('browser');
+      expect(recipe?.demoSeed).toEqual({
+        data: { orders: [{ status: 'draft' }] },
+      });
+    });
+
+    it.each([
+      [
+        'unknown slot',
+        `static surfaces = [{ kind: 'shell-widget', slot: 'header.nowhere', export: 'a/b#C', label: 'X' }];`,
+        'is not a shell slot',
+      ],
+      [
+        'unknown kind',
+        `static surfaces = [{ kind: 'modal', export: 'a/b#C', label: 'X' }];`,
+        'kind must be one of',
+      ],
+      [
+        'relative export',
+        `static surfaces = [{ kind: 'settings-panel', export: './X.svelte#C', label: 'X' }];`,
+        'not a relative path',
+      ],
+      [
+        'export without name',
+        `static surfaces = [{ kind: 'settings-panel', export: '@a/b/svelte', label: 'X' }];`,
+        'must be `<package specifier>#<ExportName>`',
+      ],
+      [
+        'extra key',
+        `static surfaces = [{ kind: 'route', path: '/x', export: 'a/b#C', label: 'X', slot: 'header.end' }];`,
+        'does not accept `slot`',
+      ],
+      [
+        'bad route path',
+        `static surfaces = [{ kind: 'route', path: 'x?y', export: 'a/b#C', label: 'X' }];`,
+        'path must start with `/`',
+      ],
+      [
+        'protocol-relative route',
+        `static surfaces = [{ kind: 'route', path: '//evil.example', export: 'a/b#C', label: 'X' }];`,
+        'path must start with `/`',
+      ],
+      [
+        'encoded traversal route',
+        `static surfaces = [{ kind: 'route', path: '/%2e%2e/admin', export: 'a/b#C', label: 'X' }];`,
+        'encoded separators',
+      ],
+      [
+        'dot segment export',
+        `static surfaces = [{ kind: 'settings-panel', export: 'a/./b#C', label: 'X' }];`,
+        'not a relative path',
+      ],
+      [
+        'duplicate route path',
+        `static surfaces = [{ kind: 'route', path: '/x', export: 'a/b#C', label: 'X' }, { kind: 'route', path: '/x', export: 'a/b#D', label: 'Y' }];`,
+        'repeats an earlier surface',
+      ],
+      [
+        'missing label',
+        `static surfaces = [{ kind: 'route', path: '/x', export: 'a/b#C' }];`,
+        'label must be a non-empty string',
+      ],
+      ['empty surfaces', `static surfaces = [];`, 'non-empty array'],
+      [
+        'provider without required',
+        `static providers = [{ id: 'm', kind: 'email', options: ['smtp'] }];`,
+        'required must be written',
+      ],
+      [
+        'provider empty options',
+        `static providers = [{ id: 'm', kind: 'email', options: [], required: true }];`,
+        'options must be a non-empty list',
+      ],
+      [
+        'provider lowercase secret',
+        `static providers = [{ id: 'm', kind: 'email', options: ['smtp'], required: true, secrets: ['smtp_password'] }];`,
+        'UPPER_SNAKE',
+      ],
+      [
+        'duplicate provider id',
+        `static providers = [{ id: 'm', kind: 'email', options: ['smtp'], required: true }, { id: 'm', kind: 'oauth', options: ['github'], required: false }];`,
+        'declared more than once',
+      ],
+      [
+        'browserOptions outside options',
+        `static providers = [{ id: 'm', kind: 'llm', options: ['openai'], required: true, browserOptions: ['webllm'] }];`,
+        'browserOptions must be a non-empty list',
+      ],
+      [
+        'empty browserOptions',
+        `static providers = [{ id: 'm', kind: 'llm', options: ['openai'], required: true, browserOptions: [] }];`,
+        'browserOptions must be a non-empty list',
+      ],
+      [
+        'duplicate browserOptions',
+        `static providers = [{ id: 'm', kind: 'llm', options: ['webllm'], required: true, browserOptions: ['webllm', 'webllm'] }];`,
+        'browserOptions must be a non-empty list',
+      ],
+      ['bad runtime', `static runtime = 'edge';`, 'runtime must be one of'],
+      [
+        'demoSeed with both keys',
+        `static demoSeed = { export: 'a/b#c', data: {} };`,
+        'exactly one of',
+      ],
+      [
+        'non-finite demoSeed number',
+        `static demoSeed = { data: { n: 1e999 } };`,
+        'non-finite numbers',
+      ],
+      [
+        'oversized inline demoSeed',
+        `static demoSeed = { data: { text: '${'x'.repeat(9000)}' } };`,
+        'inline seeds are limited',
+      ],
+    ])('rejects %s', async (_name, statics, expected) => {
+      const errors = await errorsFor(statics);
+      expect(errors.join('\n')).toContain(expected);
+    });
+
+    it('rejects a computed (non-literal) declaration instead of dropping it', async () => {
+      const errors = await errorsFor(
+        `static surfaces = [{ kind: 'route', path: PATH, export: 'a/b#C', label: 'X' }];`,
+      );
+      expect(errors.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('cross-recipe consistency', () => {
+    const TWO = (a: string, b: string) => `
+import { SmrtRecipe } from '${CORE}';
+import { Order } from './models/Order.js';
+export class A extends SmrtRecipe {
+  static id = 'shop.a';
+  static label = 'A';
+  static summary = 'A.';
+  static models = [Order];
+${a}
+}
+export class B extends SmrtRecipe {
+  static id = 'shop.b';
+  static label = 'B';
+  static summary = 'B.';
+  static models = [Order];
+${b}
+}
+`;
+
+    it('rejects the same nav key over one model in two recipes', async () => {
+      const nav = `static nav = [{ label: 'Open', model: Order, key: 'open', filter: { field: 'status', value: 'open' } }];`;
+      write('src/recipes.ts', TWO(nav, nav));
+      const { results } = await scan();
+      expect(messages(results).join('\n')).toContain(
+        'nav key `open` over Order is already used by recipe shop.a',
+      );
+    });
+
+    it('rejects one group id with two labels', async () => {
+      write(
+        'src/recipes.ts',
+        TWO(
+          `static group = { id: 'billing', label: 'Billing' };`,
+          `static group = { id: 'billing', label: 'Invoices' };`,
+        ),
+      );
+      const { results } = await scan();
+      expect(messages(results).join('\n')).toContain(
+        'group `billing` is labelled "Invoices" here but "Billing"',
+      );
+    });
+
+    it('rejects one section id with two labels but accepts matching ones', async () => {
+      write(
+        'src/recipes.ts',
+        TWO(
+          `static section = { id: 'sales', label: 'Sales' };`,
+          `static section = { id: 'sales', label: 'Selling' };`,
+        ),
+      );
+      expect(messages((await scan()).results).join('\n')).toContain(
+        'section `sales` is labelled',
+      );
+      write(
+        'src/recipes.ts',
+        TWO(
+          `static section = { id: 'sales', label: 'Sales' };`,
+          `static section = { id: 'sales', label: 'Sales' };`,
+        ),
+      );
+      expect((await scan()).results.errors).toEqual([]);
+    });
+  });
+
+  it('RECIPE_SHELL_SLOTS matches smrt-svelte SHELL_SLOTS (#3708)', () => {
+    const source = readFileSync(
+      join(
+        __dirname,
+        '../../../smrt-svelte/src/components/workspace/admin-shell/slots.ts',
+      ),
+      'utf8',
+    );
+    const body = /SHELL_SLOTS: readonly ShellSlot\[\] = \[([^\]]*)\]/.exec(
+      source,
+    )?.[1];
+    const slots = [...(body ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    expect(slots.length).toBeGreaterThan(0);
+    expect([...RECIPE_SHELL_SLOTS]).toEqual(slots);
   });
 });

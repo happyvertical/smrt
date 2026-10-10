@@ -19,9 +19,13 @@ export class EventType extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'What this kind of event is called, for example workshop.',
+  })
   name: string = '';
 
+  @field({ description: 'What this kind of event is for.' })
   description: string = ''; // Optional description
   schema: string = ''; // JSON schema for event metadata (stored as text)
   participantSchema: string = ''; // JSON schema for participant metadata (stored as text)

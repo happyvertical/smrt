@@ -81,16 +81,33 @@ export class SmrtReportRun extends SmrtObject {
   @field({ type: 'text', required: true })
   trigger: ReportRefreshTrigger = 'manual';
 
-  @field({ type: 'text', required: true })
+  @field({
+    type: 'text',
+    required: true,
+    description:
+      'Whether the refresh is running, finished, failed or was skipped.',
+  })
   status: ReportRunStatus = 'running';
 
-  @field({ type: 'datetime', required: true })
+  @field({
+    type: 'datetime',
+    required: true,
+    description: 'When the refresh began.',
+  })
   startedAt: Date = new Date();
 
-  @field({ type: 'datetime', nullable: true })
+  @field({
+    type: 'datetime',
+    nullable: true,
+    description: 'When the refresh finished. Empty while it is still running.',
+  })
   completedAt: Date | null = null;
 
-  @field({ type: 'integer', required: true })
+  @field({
+    type: 'integer',
+    required: true,
+    description: 'How many rows the report held after the refresh.',
+  })
   rowCount: number = 0;
 
   @field({ type: 'integer', required: true })
@@ -102,7 +119,11 @@ export class SmrtReportRun extends SmrtObject {
   @field({ type: 'text', nullable: true })
   watermarkAfter: string | null = null;
 
-  @field({ type: 'text', nullable: true })
+  @field({
+    type: 'text',
+    nullable: true,
+    description: 'Why the refresh failed. Empty when it worked.',
+  })
   error: string | null = null;
 
   @field({ type: 'json' })
@@ -200,31 +221,66 @@ export class SmrtReportSchedule extends SmrtObject {
   @field({ type: 'text', required: true })
   reportClass: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({
+    type: 'text',
+    required: true,
+    description:
+      'When the report refreshes, as a cron schedule such as 0 6 * * * for 6 am daily.',
+  })
   cron: string = '';
 
   @field({ type: 'text', required: true })
   trigger: ReportRefreshTrigger = 'schedule';
 
-  @field({ type: 'text', required: true })
+  @field({
+    type: 'text',
+    required: true,
+    description:
+      'Rebuild recomputes the whole report. Incremental updates only what changed.',
+  })
   mode: ReportRefreshMode = 'incremental';
 
-  @field({ type: 'boolean', required: true })
+  @field({
+    type: 'boolean',
+    required: true,
+    description: 'Turn off to stop refreshing without deleting the schedule.',
+  })
   enabled: boolean = true;
 
-  @field({ type: 'text', required: true })
+  @field({
+    type: 'text',
+    required: true,
+    description:
+      'Whether the schedule is active, paused, disabled or in error.',
+  })
   status: ReportScheduleStatus = 'active';
 
-  @field({ type: 'datetime', nullable: true })
+  @field({
+    type: 'datetime',
+    nullable: true,
+    description: 'When the report is next due to refresh.',
+  })
   nextRun: Date | null = null;
 
-  @field({ type: 'datetime', nullable: true })
+  @field({
+    type: 'datetime',
+    nullable: true,
+    description: 'When the report last started a scheduled refresh.',
+  })
   lastRun: Date | null = null;
 
-  @field({ type: 'text', nullable: true })
+  @field({
+    type: 'text',
+    nullable: true,
+    description: 'Whether the last scheduled refresh worked or failed.',
+  })
   lastStatus: 'success' | 'failed' | null = null;
 
-  @field({ type: 'text', nullable: true })
+  @field({
+    type: 'text',
+    nullable: true,
+    description: 'Why the last scheduled refresh failed. Empty when it worked.',
+  })
   lastError: string | null = null;
 
   @field({ type: 'integer', required: true })

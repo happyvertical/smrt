@@ -4,7 +4,6 @@
  * Extracted from registry.ts as part of issue #1006.
  */
 
-import { createHash } from 'node:crypto';
 import { ObjectRegistry } from '../registry';
 import type { FieldDefinition } from '../scanner/types.js';
 import { normalizeBackfill } from '../schema/backfill.js';
@@ -34,6 +33,7 @@ import type {
   SQLDataType,
 } from '../schema/types.js';
 import { classnameToTablename, toSnakeCase } from '../utils';
+import { sha256Hex } from '../utils/sha256.js';
 import {
   type CollectionRegistrationLookup,
   isCollectionRegistration,
@@ -798,10 +798,7 @@ function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
           primaryKeys.every((name) => conflictColumns.includes(name))
         )
           continue;
-        const digest = createHash('sha256')
-          .update(className)
-          .digest('hex')
-          .slice(0, 8);
+        const digest = sha256Hex(className).slice(0, 8);
         const name = shortenIdentifier(`${tableName}_${digest}_conflict_idx`);
         const childIndex: IndexDefinition = {
           name,
