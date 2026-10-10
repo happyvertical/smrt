@@ -45,7 +45,7 @@ one tier; the dimension table states what each tier must satisfy.
 | **T3 Light domain** | Real but thin domain/tooling packages. Full bar minus the coverage stretch. | 50% |
 | **T4 Stub / scaffold** | Intentionally incomplete or generative. Must be honest about it. | none |
 
-### Tier assignments (all 52 packages)
+### Tier assignments (all 55 packages)
 
 - **T1 (7):** `cli` · `config` · `core` · `scanner` · `tenancy` · `types`† · `vitest`
 - **T2 (14):** `agents` · `approvals` · `assets` · `chat` · `commerce` · `content` · `expenses` · `jobs` · `ledgers`‡ · `messages` · `profiles` · `secrets`‡ · `smrt-svelte` · `users`
