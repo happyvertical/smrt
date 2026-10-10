@@ -29,6 +29,7 @@ import {
   OverviewToolError,
   type OverviewToolSurface,
   type OverviewToolsHost,
+  type OverviewUndoStore,
 } from './overview-tools.js';
 import { classifyToolError } from './tool-loop.js';
 
@@ -676,6 +677,73 @@ describe('tenancy', () => {
         operations: [{ op: 'remove', id: 'w1' }],
       }),
     ).resolves.toMatchObject({ changed: true });
+  });
+});
+
+describe('undo entry removal', () => {
+  it("never removes a newer batch's entry when an undo finishes late", async () => {
+    const { host } = makeHost();
+    const inner = createMemoryOverviewUndoStore();
+    let reached!: () => void;
+    let release!: () => void;
+    const atDelete = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let paused = false;
+    const undoStore: OverviewUndoStore = {
+      get: (key) => inner.get(key),
+      set: (key, entry) => inner.set(key, entry),
+      async delete(key, token) {
+        if (!paused) {
+          paused = true;
+          reached();
+          await gate;
+        }
+        return inner.delete(key, token);
+      },
+    };
+    const map = tools(host, { undoStore });
+    const a = (await call(map, OVERVIEW_APPLY_TOOL_SLUG, alice, {
+      page: 'events.home',
+      operations: [{ op: 'remove', id: 'w1' }],
+    })) as { undoToken: string };
+    // Undo A restores, then pauses before removing A's entry.
+    const undoA = call(map, OVERVIEW_UNDO_TOOL_SLUG, alice, {
+      page: 'events.home',
+      undoToken: a.undoToken,
+    });
+    await atDelete;
+    // Batch B lands meanwhile and stores its own entry under the same key.
+    const b = (await call(map, OVERVIEW_APPLY_TOOL_SLUG, alice, {
+      page: 'events.home',
+      operations: [{ op: 'remove', id: 'w3' }],
+    })) as { undoToken: string };
+    release();
+    await expect(undoA).resolves.toMatchObject({ undone: true });
+    await expect(
+      call(map, OVERVIEW_UNDO_TOOL_SLUG, alice, {
+        page: 'events.home',
+        undoToken: b.undoToken,
+      }),
+    ).resolves.toMatchObject({ undone: true });
+  });
+
+  it('the memory store deletes only the entry with the given token', () => {
+    const store = createMemoryOverviewUndoStore();
+    const entry = {
+      token: 'b',
+      before: null,
+      after: null,
+      createdAt: Date.now(),
+    };
+    store.set('k', entry);
+    store.delete('k', 'a');
+    expect(store.get('k')).toEqual(entry);
+    store.delete('k', 'b');
+    expect(store.get('k')).toBeUndefined();
   });
 });
 

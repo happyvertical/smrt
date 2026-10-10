@@ -65,12 +65,16 @@ field vocabulary; there is no query, filter expression, URL or SQL anywhere.
   found. It refuses when the stored override is no longer `after` (someone
   changed the page since), re-checks `before` with `check`, persists it
   conditionally, and deletes the entry only after that write succeeded.
+  Removal is compare-and-delete: `OverviewUndoStore.delete(key, token)` is a
+  no-op unless the stored entry still carries that token, so an undo that
+  finishes after a newer batch stored its entry never removes that entry.
 - **The undo store must outlive a request and a turn.** Without `undoStore`
   the tools use `defaultOverviewUndoStore()`, one in-memory store per process
   (30-minute TTL, 1000 keys), so tools built per turn
   (`extraTools: (context) => createOverviewTools(...)`) still undo an earlier
   turn's batch. Never pass a store created inside the per-turn factory. A
-  multi-replica host passes one shared `OverviewUndoStore`, created once.
+  multi-replica host passes one shared `OverviewUndoStore`, created once,
+  whose `delete(key, token)` is an atomic conditional delete.
 - **After a successful write the call never fails.** The undo entry is written
   after the write; if the store throws, apply still answers `changed: true`
   with `undoToken: null` and a `note` not to apply the batch again (a lost entry

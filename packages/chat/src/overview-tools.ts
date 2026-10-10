@@ -154,7 +154,14 @@ export interface OverviewUndoStore {
     key: string,
   ): OverviewUndoEntry | undefined | Promise<OverviewUndoEntry | undefined>;
   set(key: string, entry: OverviewUndoEntry): void | Promise<void>;
-  delete(key: string): void | Promise<void>;
+  /**
+   * Compare-and-delete: remove the entry under `key` ONLY if its `token` is
+   * `token`; a no-op otherwise. An undo that finishes after a newer batch
+   * stored its own entry under the same key must not remove that entry. A
+   * shared store implements this atomically (for example a conditional
+   * delete on the token).
+   */
+  delete(key: string, token: string): void | Promise<void>;
 }
 
 /** Agent-level audit record of an overview change. */
@@ -240,8 +247,8 @@ export function createMemoryOverviewUndoStore(
         entries.delete(oldest);
       }
     },
-    delete(key) {
-      entries.delete(key);
+    delete(key, token) {
+      if (entries.get(key)?.token === token) entries.delete(key);
     },
   };
 }
@@ -651,7 +658,7 @@ export function createOverviewTools(
       const surface = await open(run, pageId);
       requireCustomize(surface);
       if (!sameJson(surface.current(), entry.after)) {
-        await undoStore.delete(key);
+        await undoStore.delete(key, entry.token);
         throw new OverviewToolError(
           409,
           'changed_since',
@@ -660,7 +667,7 @@ export function createOverviewTools(
       }
       const checked = surface.check(entry.before);
       if (!checked.ok) {
-        await undoStore.delete(key);
+        await undoStore.delete(key, entry.token);
         throw new OverviewToolError(
           409,
           'cannot_restore',
@@ -678,7 +685,7 @@ export function createOverviewTools(
         });
       }
       try {
-        await undoStore.delete(key);
+        await undoStore.delete(key, entry.token);
       } catch (error) {
         // A leftover entry no longer matches the stored value, so a second
         // undo answers changed_since; the restore itself succeeded.
