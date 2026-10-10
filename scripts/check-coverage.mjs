@@ -47,6 +47,7 @@ const TIERS = {
   vitest: 'T1',
   // T2 Mature domain (70%)
   agents: 'T2',
+  approvals: 'T2',
   assets: 'T2',
   chat: 'T2',
   commerce: 'T2',

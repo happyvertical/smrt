@@ -24,6 +24,7 @@
     "@happyvertical/smrt-ads": "workspace:*",
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-analytics": "workspace:*",
+    "@happyvertical/smrt-approvals": "workspace:*",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-chat": "workspace:*",
     "@happyvertical/smrt-commerce": "workspace:*",
