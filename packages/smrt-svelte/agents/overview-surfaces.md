@@ -11,15 +11,15 @@ its default arrangement; admins (or users, per role) add, reorder, resize,
 configure and remove widgets inside that confined set, and reset returns to the
 default. Phase 1 (this module) is the surface, the registry, the data model, the
 server load contract and five core widgets; phase 2 adds package widgets from
-recipes ("Recipe widgets"). Persistence and assistant operations are later
-phases (see "Extension points").
+recipes ("Recipe widgets"); phase 4 adds assistant operations with Undo
+("Assistant operations"). Persistence is phase 3 (see "Extension points").
 
 ## Two entries
 
 | Entry | Contents |
 |---|---|
-| `./overview/server` (`server.ts`) | Svelte-free: types, `validateWidgetOptions`, the model (`resolveOverview`, `checkOverviewOverride`, `applyOverviewOverride`, `diffOverview`, `sanitizeOverview`, ...), `WidgetRegistry` / `registerWidget`, `loadOverview`. Safe in a `+page.server.ts` or a save endpoint. |
-| `./overview` (`index.ts`) | Everything above plus `OverviewGrid`, `createOverview` (controller), `WidgetOptionsForm`, the core widgets and `registerCoreWidgets`, `shortcutsFromNav`, `formatWidgetValue`, `parseMarkdown` / `safeHref`. |
+| `./overview/server` (`server.ts`) | Svelte-free: types, `validateWidgetOptions`, the model (`resolveOverview`, `checkOverviewOverride`, `applyOverviewOverride`, `diffOverview`, `sanitizeOverview`, ...), `WidgetRegistry` / `registerWidget`, `loadOverview`, the operations (`planOverviewOperations`, `describeOverview`) and `createOverviewAssistantSurface`. Safe in a `+page.server.ts` or a save endpoint. |
+| `./overview` (`index.ts`) | Everything above plus `OverviewGrid`, `createOverview` (controller), `WidgetOptionsForm`, the core widgets and `registerCoreWidgets`, `shortcutsFromNav`, `formatWidgetValue`, `parseMarkdown` / `safeHref`, `createOverviewAssistant` / `useOverviewAssistantTools` / `OverviewAssistantUndo`. |
 
 ## Data model (`types.ts`, `model.ts`)
 
@@ -239,6 +239,61 @@ turns the manifest's widget surfaces into `registry.register(...)` calls:
   and a type-level assertion here keeps `RecipeWidgetOptionType` equal to
   `WidgetOptionType`.
 
+## Assistant operations (`operations.ts`, `assistant-surface.ts`, `assistant.svelte.ts`)
+
+Phase 4: the assistant adds and configures widgets with structured operations,
+and the person can undo the change.
+
+- **Operations** are data: `add { type, span?, options?, index? }`,
+  `configure { id, options }` (merged onto the current options; `null` clears a
+  key to its default), `move { id, index }`, `resize { id, span }`,
+  `remove { id }`. `OVERVIEW_OPERATION_SCHEMA` is their JSON schema.
+- **`planOverviewOperations({ definition, registry, override, operations })`**
+  plans a batch (at most 20) against the current override. Strict: unknown ops
+  or fields, unregistered or disallowed types (`allowed`, `allowedIn`), invalid
+  options (including a `model` outside `definition.models`), spans outside the
+  type's range, unknown widget ids and the cap are `OverviewOperationIssue`s
+  (`index`, `op`, `widgetId`, `code`, `message`, `options`). The result is then
+  run through `checkOverviewOverride`, so it is always an override a save
+  accepts. **Atomic**: any issue rejects the batch and returns nothing to
+  apply. Later operations see earlier ones; an `add` takes the next free id
+  (`nextWidgetId`, never a removed default's). Total, never throws.
+- **`describeOverview(...)`** is what a model reads first: allowed types with
+  option fields (type, required, default, range, `choices`, the page
+  `models`), span ranges, the current widgets with their index and title.
+  `translate` resolves i18n-key titles and labels.
+- **Server: `createOverviewAssistantSurface({ definition, registry, override,
+  canCustomize, persist })`** is one page for one principal: `describe`,
+  `current`, `plan`, `check` and `persist`. It is the adapter
+  `@happyvertical/smrt-chat`'s `createOverviewTools()` drives (typed
+  structurally there; see
+  [chat overview-tools.md](../../chat/agents/overview-tools.md) for the tool
+  contract, error codes and principal/page-scoped Undo). Phase 3 supplies the
+  stored override, the role and `persist`.
+- **Browser: `createOverviewAssistant(controller, { toolPrefix?, toaster?,
+  translate? })`** applies a batch through `controller.restore(plan.override)`,
+  so the grid updates live and the host's `onchange` persists it like any edit.
+  It refuses with `not_allowed` when `canCustomize` is false. `lastBatch`
+  (reactive) keeps `{ id, results, counts, before, after }`; `undo(id?)`
+  restores `before` exactly, once, and refuses with `changed_since` when the
+  override is no longer `after` (the person edited since).
+  `useOverviewAssistantTools(assistant)` registers `<prefix>_describe` (read),
+  `<prefix>_apply` and `<prefix>_undo` (write) through `useWebMcpTool`, so the
+  AssistantDock offers them as page tools: the Provider's `webmcp.effects` must
+  allow `write`, the server's `clientToolAllowList` must list `overview_*`, and
+  the dock asks the person to Allow each write unless the host policy says
+  otherwise. Results are JSON strings (`{ ok: false, error, issues }` on a
+  rejected batch).
+- **Undo affordance.** `OverviewAssistantUndo` (`assistant`, optional
+  `message`) shows the last batch with Undo and Dismiss buttons and announces
+  the outcome in its own polite live region; or pass a smrt-ui `toaster` and
+  each batch shows as a toast with an Undo action (the host mounts
+  `ToastViewport`). Strings are `ui.overview.assistant_*`.
+- Tests: `__tests__/operations.test.ts`, `__tests__/assistant.test.ts` (live
+  grid update, Undo, the component with axe) and
+  `__tests__/assistant-tools.integration.test.ts` (chat's tools over this
+  model).
+
 ## Extension points left for later phases
 
 - **Phase 2, package widgets (#3727, done).** See "Recipe widgets" below.
@@ -249,7 +304,6 @@ turns the manifest's widget surfaces into `registry.register(...)` calls:
   `loadOverview` in the page load, and supply `loadWidget` as a remote function
   that calls the same `load`. Role gating = `canCustomize` plus the same check in
   the save endpoint. No migration or table lives in this package.
-- **Phase 4, assistant.** The controller methods are the structured operations;
-  `restore(override)` plus the `override` getter give Undo (snapshot before,
-  restore after). `OverviewOpResult.issues` is the validation feedback to return.
+- **Phase 4, assistant (#3727, done).** See "Assistant operations" above. Phase
+  3 wires `createOverviewAssistantSurface` to the stored user tier.
 - **Not built:** the activity widget (Track B, #3710) and agenda.
