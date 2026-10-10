@@ -35,7 +35,7 @@ plugins/smrt-kitchen/
 | `get_plan` | Compact snapshot: revision, recipes, settings, theme, menu | read-only |
 | `validate_plan` | Document checks plus every recipe, object and field against the package manifests | read-only |
 | `export_plan` | The plan as cookbook v1 JSON | read-only |
-| `apply_plan` | Create or update the project in an absolute directory (template copy, missing packages into `package.json`, `smrt.cookbook.json`). **Writes only with `confirm: true`**; without it, or with `dryRun`, it returns a preview. Does not install packages unless `install: true` | destructive, idempotent, open-world |
+| `apply_plan` | Create or update the project in an absolute directory (template copy, missing packages into `package.json`, `smrt.cookbook.json`). **Writes only with `confirm: true` plus the `confirmCode` its preview returned for that plan and folder**; without them, or with `dryRun`, it returns a preview (which still fetches the server's template). The template is the server's `--template`, never a per-call argument. Does not install packages unless `install: true` | destructive, idempotent, open-world |
 
 Every tool returns compact text for the model and structured output that
 matches its published output schema. Plans live in the server process (20 kept);

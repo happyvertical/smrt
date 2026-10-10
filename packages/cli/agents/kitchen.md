@@ -95,7 +95,7 @@ client), `__tests__/kitchen-plugin.test.ts` (plugin files against the Agent Plug
 | `start_plan` | not read-only, not destructive | empty, or from a library cookbook; returns `planId` |
 | `run_commands` | idempotent | one atomic `engine.batch` (`id`, `expectedRevision` pass through); a lone `undo` runs as a command |
 | `get_plan`, `validate_plan`, `export_plan` | read-only | `validate_plan` = engine `validate` + `validateCookbookText` against the catalog's manifests |
-| `apply_plan` | destructive, idempotent, open-world | `createCookbookApplier` (= `cookbook apply`); absolute `dir`; **writes only with `confirm: true`**, otherwise (or with `dryRun`) a preview + `confirmation_required`; `install` defaults to false |
+| `apply_plan` | destructive, idempotent, open-world | `createCookbookApplier` (= `cookbook apply`); absolute `dir`; **writes only with `confirm: true` + the preview's `confirmCode`** (sha256 of dir, server template and exported plan, so a changed plan or dir needs a new preview), otherwise (or with `dryRun`) a preview + `confirmation_required`; template is the server's `--template` only; `install` defaults to false and its output goes to stderr; templates containing symlinks are refused |
 
 - **Plans** live in the server process, keyed by `plan-<8 hex>` (20 kept, oldest dropped); a restart
   forgets them. `smrt.cookbook.json` in the project (written by apply) is the durable copy.

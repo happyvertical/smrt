@@ -96,9 +96,25 @@ const err = (
   extra: Pick<CommandError, 'path' | 'details'> = {},
 ): CommandError => ({ code, message, ...extra });
 
+/** Key order never changes a payload's identity: `{a, b}` and `{b, a}` match. */
+const canonical = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [
+          key,
+          canonical((value as Record<string, unknown>)[key]),
+        ]),
+    );
+  }
+  return value;
+};
+
 const fingerprint = (value: unknown): string => {
   try {
-    return JSON.stringify(value) ?? 'undefined';
+    return JSON.stringify(canonical(value)) ?? 'undefined';
   } catch {
     return 'unserializable';
   }

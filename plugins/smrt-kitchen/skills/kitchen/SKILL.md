@@ -50,7 +50,9 @@ and the menu. A **plan** is a cookbook you are editing; its id comes from
    path (new or empty folder, or an existing project that already has
    `smrt.cookbook.json`). Call `apply_plan` **without** `confirm` first and
    show the user the preview (directory, packages that will be added). Only
-   after they say yes, call it again with `confirm: true`. Never choose the
+   after they say yes, call it again with `confirm: true` and the
+   `confirmCode` from that preview (the server refuses a token for another
+   folder or an edited plan). Never choose the
    directory yourself, and never reuse an earlier confirmation for a
    different folder or a changed plan.
 8. **Hand over.** Report the directory and the `nextSteps` the tool returned

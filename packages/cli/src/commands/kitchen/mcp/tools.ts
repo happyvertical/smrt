@@ -9,7 +9,7 @@
  * remotely; `apply_plan` writes `smrt.cookbook.json` into the project.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import {
   buildBatchTool,
@@ -313,7 +313,7 @@ export const KITCHEN_TOOLS: readonly KitchenToolDefinition[] = [
     name: 'apply_plan',
     title: 'Create the project',
     description:
-      'Create the project from the plan in an absolute directory: copy the template, add the packages the recipes need to package.json, and write smrt.cookbook.json. Writes files, so ask the user to confirm the directory first; without confirm: true nothing is written and the plan is previewed. Re-applying to a project that already has smrt.cookbook.json updates it. Does not install packages unless install is true.',
+      'Create the project from the plan in an absolute directory: copy the template, add the packages the recipes need to package.json, and write smrt.cookbook.json. Writes files, so ask the user to confirm the directory first; without confirm: true and the confirmCode from the preview nothing is written and the plan is previewed. The template is set by the server (--template), not chosen per call. Re-applying to a project that already has smrt.cookbook.json updates it. Does not install packages unless install is true.',
     inputSchema: input(
       {
         planId,
@@ -324,16 +324,16 @@ export const KITCHEN_TOOLS: readonly KitchenToolDefinition[] = [
           minLength: 1,
           maxLength: 1000,
         },
-        template: {
-          type: 'string',
-          description:
-            'Project template: a local path, github:owner/repo[#ref] or a git URL (default github:happyvertical/smrt-start).',
-          maxLength: 1000,
-        },
         confirm: {
           type: 'boolean',
           description:
-            'true once the user agreed to write into dir. Otherwise only a preview is returned.',
+            'true once the user agreed to write into dir. Needs confirmCode from the preview of this same plan and dir; otherwise only a preview is returned.',
+        },
+        confirmCode: {
+          type: 'string',
+          description:
+            'The confirmCode the preview returned for this exact plan state and dir. A code from another dir or an edited plan is refused.',
+          maxLength: 200,
         },
         dryRun: {
           type: 'boolean',
@@ -350,6 +350,7 @@ export const KITCHEN_TOOLS: readonly KitchenToolDefinition[] = [
     outputSchema: output({
       planId: { type: 'string' },
       applied: { type: 'boolean' },
+      confirmCode: { type: 'string' },
       dir: { type: 'string' },
       mode: { type: 'string', enum: ['new', 'update'] },
       installed: { type: 'boolean' },
@@ -736,17 +737,33 @@ export class KitchenSession {
         path: 'dir',
       });
     }
-    const confirmed = args.confirm === true && args.dryRun !== true;
     const exported = plan.engine.run({ name: 'export_cookbook' });
     if (!exported.ok) return failFrom(exported.error);
+    // The token binds a confirmation to the previewed directory, template
+    // and plan state: a model cannot pre-confirm, and an edited plan or a
+    // different directory needs a fresh preview.
+    const confirmCode = createHash('sha256')
+      .update(
+        [
+          dir,
+          this.options.template ?? '',
+          (exported.data as ExportData).text,
+        ].join('\0'),
+      )
+      .digest('hex')
+      .slice(0, 32);
+    const confirmed =
+      args.confirm === true &&
+      args.dryRun !== true &&
+      args.confirmCode === confirmCode;
     const { index } = await this.catalog();
     const applier = createCookbookApplier({
       dir,
       index,
-      template:
-        (typeof args.template === 'string' ? args.template : undefined) ??
-        this.options.template,
+      template: this.options.template,
       install: confirmed && args.install === true,
+      // stdout carries the protocol; the install must never write to it.
+      installOutput: 'stderr',
       dryRun: !confirmed,
       manifests: this.options.manifests,
       registry: this.options.registry !== false,
@@ -784,14 +801,15 @@ export class KitchenSession {
           error: {
             code: 'confirmation_required',
             message:
-              'Nothing was written. Show the user this preview and the directory, then call apply_plan again with confirm: true once they agree.',
+              'Nothing was written. Show the user this preview and the directory, then call apply_plan again with confirm: true and this confirmCode once they agree.',
             details: { preview: summary },
           },
+          confirmCode,
           applied: false,
           installed: false,
           ...common,
         },
-        text: `Preview only (nothing written): ${summary}\nAsk the user to confirm, then call apply_plan with confirm: true.`,
+        text: `Preview only (nothing written): ${summary}\nAsk the user to confirm, then call apply_plan with confirm: true and confirmCode: ${confirmCode}.`,
       };
     }
     return {

@@ -20,6 +20,8 @@ export interface ApplierOptions {
   template?: string;
   /** Run the package manager's install after writing. */
   install: boolean;
+  /** Where the install's output goes (`stderr` keeps stdout for a protocol). */
+  installOutput?: 'inherit' | 'stderr';
   /** Plan only: write nothing (a remote template is still fetched to a temp dir). */
   dryRun?: boolean;
   manifests?: string[];
@@ -87,6 +89,7 @@ export function createCookbookApplier(
         dir: options.dir,
         template: options.template,
         install: options.install,
+        installOutput: options.installOutput,
         dryRun: options.dryRun,
         cliVersion: cliVersion(),
       });

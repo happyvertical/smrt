@@ -1,11 +1,13 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,7 +16,11 @@ import { fileURLToPath } from 'node:url';
 import type { Cookbook } from '@happyvertical/smrt-types';
 import { create } from 'tar';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyCookbook, nextSteps } from '../cookbook/apply.js';
+import {
+  acquireTemplate,
+  applyCookbook,
+  nextSteps,
+} from '../cookbook/apply.js';
 import {
   createRecipeIndex,
   loadManifestPath,
@@ -718,4 +724,64 @@ describe('drive-by fixes found while building smrt kitchen (#3750)', () => {
       join(pkg, 'dist', 'manifest.json'),
     );
   });
+});
+
+describe('apply hardening (review of #3765)', () => {
+  const minimal = async () => {
+    const report = await validate(doc({ recipes: ['commerce.customers'] }));
+    return report;
+  };
+
+  it('refuses a template that carries a symbolic link, writing nothing outside the project', async () => {
+    const outside = join(work, 'outside.txt');
+    writeFileSync(outside, 'keep me');
+    symlinkSync(outside, join(template, 'smrt.cookbook.json'));
+    const report = await minimal();
+    const dir = join(work, 'linked');
+    expect(() =>
+      applyCookbook({
+        cookbook: report.cookbook as Cookbook,
+        packages: report.packages,
+        dir,
+        template,
+        install: false,
+        cliVersion: '9.9.9',
+        cwd: work,
+      }),
+    ).toThrow(/symbolic link/);
+    expect(readFileSync(outside, 'utf-8')).toBe('keep me');
+  });
+
+  it('refuses a template ref or url that git would read as an option', () => {
+    expect(() => acquireTemplate('github:a/b#--upload-pack=x')).toThrow(
+      /Invalid template source/,
+    );
+  });
+
+  it('keeps the install off this process stdout and stdin when asked', async () => {
+    const bin = join(work, 'bin');
+    mkdirSync(bin);
+    // Whichever package manager the project picks must be the fake one.
+    for (const manager of ['npm', 'pnpm', 'yarn', 'bun']) {
+      const fake = join(bin, manager);
+      writeFileSync(fake, '#!/bin/sh\necho STDOUT-LEAK\necho to-stderr >&2\n');
+      chmodSync(fake, 0o755);
+    }
+    const script = join(work, 'run-install.mts');
+    const here = dirname(fileURLToPath(import.meta.url));
+    writeFileSync(
+      script,
+      `import { applyCookbook } from ${JSON.stringify(join(here, '../cookbook/apply.ts'))};
+applyCookbook({ cookbook: { version: 1, recipes: [], features: [], policies: [] } as never, packages: [], dir: ${JSON.stringify(join(work, 'installed'))}, template: ${JSON.stringify(template)}, install: true, installOutput: 'stderr', cliVersion: '9.9.9', cwd: ${JSON.stringify(work)} });
+`,
+    );
+    const tsx = join(here, '../../../../../node_modules/.bin/tsx');
+    const run = spawnSync(tsx, [script], {
+      env: { PATH: `${bin}:${process.env.PATH}`, HOME: work },
+      encoding: 'utf-8',
+    });
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.stdout).not.toContain('STDOUT-LEAK');
+    expect(run.stderr).toContain('STDOUT-LEAK');
+  }, 60_000);
 });

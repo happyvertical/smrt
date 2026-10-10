@@ -712,6 +712,15 @@ describe('atomic batches', () => {
     const second = e.batch(batch);
     expect(second).toEqual({ ...first, replayed: true });
     expect(e.snapshot().revision).toBe(revision);
+    // Key order does not make a retry a different payload.
+    const reordered = e.batch({
+      commands: [
+        { input: sales.input, name: sales.name },
+        { input: { currency: 'CAD' }, name: 'set_settings' },
+      ],
+      id: 'b',
+    });
+    expect(reordered).toEqual({ ...first, replayed: true });
     const clash = e.batch({ id: 'b', commands: [sales] });
     expect(!clash.ok && clash.error.code).toBe('id_reuse');
     const bad = {

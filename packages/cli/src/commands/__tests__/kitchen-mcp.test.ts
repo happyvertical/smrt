@@ -421,17 +421,44 @@ describe('smrt kitchen mcp over stdio', () => {
     expect(preview.isError).toBe(true);
     expect(preview.data.error.code).toBe('confirmation_required');
     expect(existsSync(dir)).toBe(false);
+    expect(typeof preview.data.confirmCode).toBe('string');
+    const token = preview.data.confirmCode as string;
+    // confirm alone (no token, or a token for another dir) writes nothing.
+    const bare = await call('apply_plan', { planId, dir, confirm: true });
+    expect(bare.data.error.code).toBe('confirmation_required');
+    const otherDir = await call('apply_plan', {
+      planId,
+      dir: join(work, 'elsewhere'),
+      confirm: true,
+      confirmCode: token,
+    });
+    expect(otherDir.data.error.code).toBe('confirmation_required');
+    expect(existsSync(dir)).toBe(false);
+    expect(existsSync(join(work, 'elsewhere'))).toBe(false);
+    // A template is the server's choice, never the model's.
+    const withTemplate = await call('apply_plan', {
+      planId,
+      dir,
+      template: 'https://127.0.0.1:1/x.git',
+    });
+    expect(withTemplate.data.error.code).toBe('invalid_input');
     // dryRun wins over confirm.
     const dry = await call('apply_plan', {
       planId,
       dir,
       confirm: true,
+      confirmCode: token,
       dryRun: true,
     });
     expect(dry.data.error.code).toBe('confirmation_required');
     expect(existsSync(dir)).toBe(false);
 
-    const applied = await call('apply_plan', { planId, dir, confirm: true });
+    const applied = await call('apply_plan', {
+      planId,
+      dir,
+      confirm: true,
+      confirmCode: token,
+    });
     expect(applied.data).toMatchObject({
       ok: true,
       applied: true,
@@ -451,7 +478,21 @@ describe('smrt kitchen mcp over stdio', () => {
     expect(existsSync(join(dir, 'node_modules'))).toBe(false);
 
     // Re-applying the same plan changes nothing.
-    const again = await call('apply_plan', { planId, dir, confirm: true });
+    // An edited plan needs a fresh preview: the old token no longer fits.
+    const again0 = await call('apply_plan', {
+      planId,
+      dir,
+      confirm: true,
+      confirmCode: token,
+    });
+    expect(again0.data.ok).toBe(true);
+    const preview2 = await call('apply_plan', { planId, dir });
+    const again = await call('apply_plan', {
+      planId,
+      dir,
+      confirm: true,
+      confirmCode: preview2.data.confirmCode,
+    });
     expect(again.data).toMatchObject({
       ok: true,
       mode: 'update',

@@ -9,6 +9,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -48,6 +49,12 @@ export interface ApplyOptions {
   template?: string;
   dryRun?: boolean;
   install?: boolean;
+  /**
+   * Where the package manager's output goes. `inherit` (default) uses this
+   * process's stdout; `stderr` keeps stdout free for a protocol (the MCP
+   * stdio server). Stdin is never shared with the install in `stderr` mode.
+   */
+  installOutput?: 'inherit' | 'stderr';
   /** Version of the CLI, the last-resort dependency range. */
   cliVersion: string;
   cwd?: string;
@@ -163,6 +170,9 @@ function git(args: string[], cwd: string): string {
     cwd,
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'pipe'],
+    // Never prompt for credentials or hang on a slow remote.
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'false' },
+    timeout: 120_000,
   }).trim();
 }
 
@@ -212,8 +222,12 @@ export function acquireTemplate(spec: string): AcquiredTemplate {
   const cleanup = () => rmSync(root, { recursive: true, force: true });
   try {
     git(['init', '-q'], root);
+    // A ref that starts with `-` would be read by git as an option.
+    if (parsed.ref?.startsWith('-') || parsed.url.startsWith('-')) {
+      throw new ApplyError(`Invalid template source ${spec}`);
+    }
     git(
-      ['fetch', '-q', '--depth', '1', parsed.url, parsed.ref ?? 'HEAD'],
+      ['fetch', '-q', '--depth', '1', '--', parsed.url, parsed.ref ?? 'HEAD'],
       root,
     );
     git(['checkout', '-q', 'FETCH_HEAD'], root);
@@ -269,18 +283,33 @@ export function nextSteps(
 
 function copyTemplate(template: AcquiredTemplate, targetDir: string): void {
   const skip = (name: string) => name === '.git' || name === 'node_modules';
+  // A symlink copied into the project would let a later write (package.json,
+  // smrt.cookbook.json) land on whatever it points at, outside the project.
+  const refuseLink = (src: string): boolean => {
+    if (lstatSync(src).isSymbolicLink()) {
+      throw new ApplyError(
+        `Template entry ${relative(template.root, src)} is a symbolic link; templates must not contain links`,
+      );
+    }
+    return true;
+  };
   if (!template.files) {
     cpSync(template.root, targetDir, {
       recursive: true,
-      filter: (src) => !skip(basename(src)),
+      filter: (src) => !skip(basename(src)) && refuseLink(src),
     });
     return;
   }
   for (const file of template.files) {
     if (file.split('/').some(skip)) continue;
+    const from = join(template.root, file);
+    refuseLink(from);
     const to = join(targetDir, file);
     mkdirSync(dirname(to), { recursive: true });
-    cpSync(join(template.root, file), to, { recursive: true });
+    cpSync(from, to, {
+      recursive: true,
+      filter: (src) => refuseLink(src),
+    });
   }
 }
 
@@ -424,7 +453,8 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
       const pm = packageManager(targetDir);
       const result = spawnSync(pm, ['install'], {
         cwd: targetDir,
-        stdio: 'inherit',
+        stdio:
+          options.installOutput === 'stderr' ? ['ignore', 2, 2] : 'inherit',
       });
       if (result.status !== 0) {
         throw new ApplyError(
