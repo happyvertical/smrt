@@ -149,6 +149,42 @@ export function preferenceKindsSuite(
       });
     });
 
+    it('treats an explicit null reset revision as "I loaded no row"', async () => {
+      await as(all, async () => {
+        // A client loads while no row exists (revision null)...
+        const before = await store.load(NOTE_KIND, 'admin');
+        expect(before.user?.revision).toBeNull();
+        // ...someone else saves in the meantime...
+        const saved = await store.save(NOTE_KIND, 'admin', {
+          scope: 'user',
+          payload: { text: 'newer' },
+          revision: null,
+        });
+        expect(saved.ok).toBe(true);
+        // ...so the stale client's guarded reset must not delete it.
+        expect(
+          await store.reset(NOTE_KIND, 'admin', {
+            scope: 'user',
+            revision: before.user?.revision ?? null,
+          }),
+        ).toEqual({ ok: false, reason: 'conflict' });
+        expect((await store.load(NOTE_KIND, 'admin')).user?.payload).toEqual({
+          text: 'newer',
+        });
+        // Omitting the revision is the explicit unguarded reset.
+        expect(
+          await store.reset(NOTE_KIND, 'admin', { scope: 'user' }),
+        ).toEqual({ ok: true });
+        // With no row, a null-revision reset has nothing to conflict with.
+        expect(
+          await store.reset(NOTE_KIND, 'admin', {
+            scope: 'user',
+            revision: null,
+          }),
+        ).toEqual({ ok: true });
+      });
+    });
+
     it('round-trips the shell layout and validates it both ways', async () => {
       const shell = createShellSettingsPreferences(store);
       const delta = {

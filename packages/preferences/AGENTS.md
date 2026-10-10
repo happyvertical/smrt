@@ -79,8 +79,9 @@ DuckDB cannot create.
   `updated_at`) it loaded, `null` meaning "no row". Updates use core's
   revision CAS (`save({ expectedUpdatedAt })`), a first write is a strict
   insert (`_insertOnly`) so a racing first write hits the unique index, and
-  a delete is guarded the same way. Mismatch: `{ ok: false, reason:
-  'conflict' }`. Exception, documented: `createShellSettingsPreferences().write`
+  a delete is guarded the same way. `reset` treats `revision: null` like
+  save does (a row that exists now conflicts); only an omitted revision
+  resets unguarded. Mismatch: `{ ok: false, reason: 'conflict' }`. Exception, documented: `createShellSettingsPreferences().write`
   without a revision reads the current one first, i.e. last-writer-wins,
   because the shell's `ShellSettingsAdapter.write(delta)` carries none.
 - **Overview `loadWidget`** lets a principal without either customize

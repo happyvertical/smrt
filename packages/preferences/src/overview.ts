@@ -88,7 +88,10 @@ export interface OverviewSaveInput {
 
 export interface OverviewResetInput {
   scope: PreferenceScope;
-  /** Guard the delete with the loaded revision; omit to reset regardless. */
+  /**
+   * The revision the client loaded: a string guards the delete, `null`
+   * conflicts when a row exists, and omitting it resets regardless.
+   */
   revision?: string | null;
 }
 

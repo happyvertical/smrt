@@ -60,7 +60,7 @@ detail? }`), and `ok`: false whenever anything was removed or refused.
 `createPreferenceStore({ db })` returns `load(kind, surfaceId, { options })`
 (both tiers, `canCustomize` from the kind's pair), `save(kind, surfaceId, {
 scope, payload, revision, options })` and `reset(kind, surfaceId, { scope,
-revision? })`. Failures are `{ ok: false, reason: 'not_allowed' | 'conflict'
+revision? })` (`null` conflicts when a row exists; omitted is unguarded). Failures are `{ ok: false, reason: 'not_allowed' | 'conflict'
 | 'invalid' }`; an unregistered kind throws `UnknownPreferenceKindError`.
 
 Kind-shaped layers sit on top: `createOverviewStore` (the overview page API)

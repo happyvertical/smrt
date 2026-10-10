@@ -80,7 +80,11 @@ export interface PreferenceSaveInput extends PreferenceLoadInput {
 
 export interface PreferenceResetInput {
   scope: PreferenceScope;
-  /** Guard the delete with the loaded revision; omit to reset regardless. */
+  /**
+   * The revision the client loaded: a string guards the delete, `null`
+   * ("I loaded no row") conflicts when a row exists, and omitting it resets
+   * regardless.
+   */
   revision?: string | null;
 }
 
@@ -400,6 +404,10 @@ export function createPreferenceStore(
           input.scope === 'user' ? principal.userId : undefined,
         );
         if (!existing) return { ok: true };
+        // `null` means "I loaded no row", exactly as on save: a row that
+        // exists now was written after that load, so deleting it would lose
+        // a newer change. Only an omitted revision resets unguarded.
+        if (input.revision === null) return { ok: false, reason: 'conflict' };
         try {
           await existing.delete(
             typeof input.revision === 'string'
