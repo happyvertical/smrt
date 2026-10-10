@@ -134,4 +134,9 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
     issue: '#3627',
     reason: 'documents/spider SDK graph; CJS parse error',
   },
+  '@happyvertical/smrt-webhooks': {
+    issue: '#3717',
+    reason:
+      'Intentionally server-only outbound delivery: node:crypto HMAC and node:https/dns/net pinned transport enforce signing and SSRF protection. Browser hosts use the separate /svelte admin export with authenticated server callbacks.',
+  },
 };

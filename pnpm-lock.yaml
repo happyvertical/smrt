@@ -568,6 +568,9 @@ importers:
       '@happyvertical/smrt-chat':
         specifier: workspace:*
         version: link:../chat
+      '@happyvertical/smrt-comments':
+        specifier: workspace:*
+        version: link:../comments
       '@happyvertical/smrt-commerce':
         specifier: workspace:*
         version: link:../commerce
@@ -685,6 +688,9 @@ importers:
       '@happyvertical/smrt-voice':
         specifier: workspace:*
         version: link:../voice
+      '@happyvertical/smrt-webhooks':
+        specifier: workspace:*
+        version: link:../webhooks
       '@libsql/client':
         specifier: 0.18.0
         version: 0.18.0

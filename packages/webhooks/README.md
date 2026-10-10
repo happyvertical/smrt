@@ -129,7 +129,9 @@ callbacks and safe read models described above. It intentionally declares no
 model navigation: generated CRUD is disabled for these sensitive internal
 models. It declares no provider or demo seed because transport configuration and
 signing secrets belong to the server; selecting the recipe does not configure a
-worker or authorize a browser to dispatch webhooks.
+worker or authorize a browser to dispatch webhooks. The browser capability gate
+records this intentional server-only root against #3717; the separate `/svelte`
+export contains the administration component, not the delivery transport.
 
 ## Validation
 
