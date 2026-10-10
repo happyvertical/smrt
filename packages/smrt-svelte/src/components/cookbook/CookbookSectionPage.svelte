@@ -7,6 +7,8 @@
  *
  * Render it from one route (`s/[slug]/+page.svelte`), inside `CookbookApp`.
  */
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { M } from '../../i18n/strings.overview.js';
 import type { OverviewOverride } from '../overview/types.js';
 import { useShellLayout } from '../workspace/admin-shell/layout-context.js';
 import ShellSectionIcon from '../workspace/admin-shell/ShellSectionIcon.svelte';
@@ -18,6 +20,7 @@ import type { CookbookSectionPageProps } from './types.js';
 
 let { sectionId, slug, children }: CookbookSectionPageProps = $props();
 
+const { t } = useI18n();
 const cookbook = getCookbookContext();
 const layout = useShellLayout();
 
@@ -64,7 +67,7 @@ const store = {
       {/key}
       {#if layout.editing}
         <section class="entries" aria-labelledby="cookbook-section-entries">
-          <h2 id="cookbook-section-entries">Menu entries</h2>
+          <h2 id="cookbook-section-entries">{t(M['ui.cookbook.menu_entries'])}</h2>
           <ShellSectionMenu sectionId={id} />
         </section>
       {/if}
@@ -73,8 +76,8 @@ const store = {
     {/if}
     {@render children?.()}
   {:else}
-    <h1>Section not found</h1>
-    <p>This section is not in your app.</p>
+    <h1>{t(M['ui.cookbook.section_not_found'])}</h1>
+    <p>{t(M['ui.cookbook.section_not_found_hint'])}</p>
   {/if}
 </main>
 
