@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-approvals",
-  "version": "0.55.7",
+  "version": "0.55.8",
   "description": "Approval decision gate for the SMRT framework: revision-bound, single-use approvals with quorum, expiry, and an append-only event ledger",
   "type": "module",
   "main": "./dist/index.js",
