@@ -358,3 +358,14 @@ and the person can undo the change.
   `createOverviewAssistantSurface` is wired to the stored user tier through
   `createOverviewStore(...).save` as shown there.
 - **Not built:** the activity widget (Track B, #3710) and agenda.
+
+## Host section presentation
+
+`OverviewGrid` defaults to framed cards. Pass `presentation="plain"` for
+unframed page sections; editing restores the visible tile frame and controls.
+The optional `heading(widget, title)` snippet supplies heading content, such as
+an application-owned link. The grid still renders its `headingLevel` element
+and generated id used by the article's accessible name; the snippet must not
+supply another heading. Use trusted application routes for links. Widget bodies
+should omit duplicate section headings. Default titles remain unchanged when
+no snippet is supplied.

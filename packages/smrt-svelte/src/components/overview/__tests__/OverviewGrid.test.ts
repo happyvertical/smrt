@@ -1,6 +1,7 @@
 import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
+import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OverviewController } from '../controller.svelte.js';
 import type { OverviewOverride } from '../types.js';
@@ -64,6 +65,47 @@ const titles = () =>
   );
 
 describe('OverviewGrid (view)', () => {
+  it('renders host links inside accessible headings without replacing edit controls', async () => {
+    const registry = coreRegistry();
+    const loaded = await loadedFor(registry);
+    const heading = createRawSnippet(() => ({
+      render: () => '<a href="/records">Open section</a>',
+    }));
+    const { container, rerender } = render(Harness, {
+      options: { definition, registry, loaded },
+      gridProps: { heading, headingLevel: 3, presentation: 'plain' },
+    });
+    expect(
+      screen.getAllByRole('heading', { level: 3, name: 'Open section' }),
+    ).toHaveLength(4);
+    expect(
+      screen.getAllByRole('article', { name: 'Open section' }),
+    ).toHaveLength(4);
+    expect(
+      screen.getAllByRole('link', { name: 'Open section' })[0],
+    ).toHaveAttribute('href', '/records');
+    expect(container.querySelector('.smrt-overview')).toHaveAttribute(
+      'data-presentation',
+      'plain',
+    );
+    expect(screen.queryByRole('toolbar')).toBeNull();
+    await expectNoA11yViolations(container);
+    await rerender({
+      options: { definition, registry, loaded },
+      gridProps: { heading, presentation: 'plain', editing: true },
+    });
+    expect(screen.getByRole('toolbar')).toBeInTheDocument();
+    expect(container.querySelector('.smrt-overview')).toHaveAttribute(
+      'data-editing',
+    );
+    expect(container.querySelector('.smrt-overview__inert')).toHaveAttribute(
+      'inert',
+    );
+    expect(
+      screen.getByRole('button', { name: 'Remove Metric' }),
+    ).toBeInTheDocument();
+  });
+
   it('renders every widget from the loaded data, in order, with no edit chrome', async () => {
     await mount();
     expect(titles()).toEqual(['Metric', 'Chart', 'Welcome', 'Record list']);

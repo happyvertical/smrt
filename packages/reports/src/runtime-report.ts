@@ -287,6 +287,10 @@ export async function listRuntimeReports(
     limit?: number;
     /** Explicit owner tenant; filters in addition to the ambient context. */
     tenantId?: string;
+    /** Exact author filter, applied before the result limit; never grants authority. */
+    createdByUserId?: string;
+    /** Exact normalized spec hash from the public runtime report compiler. */
+    specHash?: string;
   },
 ): Promise<RuntimeReport[]> {
   const collection = await collectionFor(options.db);
@@ -294,6 +298,10 @@ export async function listRuntimeReports(
     where: {
       status: options.status ?? 'active',
       ...(options.tenantId ? { tenantId: options.tenantId } : {}),
+      ...(options.createdByUserId !== undefined
+        ? { createdByUserId: options.createdByUserId }
+        : {}),
+      ...(options.specHash !== undefined ? { specHash: options.specHash } : {}),
     },
     orderBy: 'created_at DESC',
     limit: Math.min(Math.max(options.limit ?? 50, 1), 200),
