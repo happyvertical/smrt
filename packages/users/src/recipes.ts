@@ -16,7 +16,7 @@ export class UsersSignInRecipe extends SmrtRecipe {
   static section = {
     id: 'account-security',
     label: 'Account security',
-    icon: 'shield-check',
+    icon: 'settings',
     description: 'Review account access and active sessions.',
   };
   static id = 'users.sign-in';
@@ -44,7 +44,7 @@ export class UsersSignInRecipe extends SmrtRecipe {
     {
       label: 'Security sessions',
       model: Session,
-      icon: 'monitor-smartphone',
+      icon: 'settings',
       description: 'Review active sessions and sign out unrecognized devices.',
       noun: 'security session',
     },
@@ -65,7 +65,7 @@ export class UsersRolesAndPermissionsRecipe extends SmrtRecipe {
   static section = {
     id: 'access-control',
     label: 'Access control',
-    icon: 'shield-keyhole',
+    icon: 'users',
     description: 'Manage tenant roles, permissions, and reviewed sharing.',
   };
   static id = 'users.roles-and-permissions';
@@ -78,14 +78,14 @@ export class UsersRolesAndPermissionsRecipe extends SmrtRecipe {
     {
       label: 'Roles',
       model: Role,
-      icon: 'badge-check',
+      icon: 'users',
       description: 'Define tenant permission bundles.',
       noun: 'role',
     },
     {
       label: 'Permissions',
       model: Permission,
-      icon: 'key-round',
+      icon: 'settings',
       description: 'Review operations available to roles.',
       noun: 'permission',
     },
