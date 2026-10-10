@@ -5,7 +5,9 @@ Chat rooms, threads, and agent sessions with app-controlled tool whitelisting.
 ## Dev Server
 
 `pnpm --dir packages/chat dev` runs a package-local SvelteKit workbench. The root
-route is an interactive chat surface with a dev-only `/api/dev-chat` endpoint:
+route separates **Character setup** and **Chat dev** into tabs; switching tabs
+retains the current character rig and chat state. The chat tab is an interactive
+surface with a dev-only `/api/dev-chat` endpoint:
 it uses `@happyvertical/ai` when local provider credentials are present and
 falls back to a deterministic local assistant otherwise. `/api/dev-chat-stream`
 is its SSE companion (#1936) — the same provider/local-fallback resolution wired
@@ -21,12 +23,10 @@ over `src/routes/chat-dev.intents.ts`, #2588). Their dev-config dependencies
 stylesheet import) and the stage→apply tool-call gotchas are in
 [agents/dev-workbench.md](agents/dev-workbench.md).
 
-The root workbench also has a dev-only voice conversation mode. It reads voice
-gateway connection details through `/api/dev-voice/config`, streams browser mic
-audio to `WS /ws/voice` as PCM16 mono, appends gateway transcripts/responses to
-the chat, and plays returned TTS audio. Exposing
-`SMRT_CHAT_DEV_VOICE_GATEWAY_TOKEN` to the browser requires
-`SMRT_CHAT_DEV_VOICE_GATEWAY_EXPOSE_TOKEN=true`; keep that local-only.
+Dev-only voice and opt-in local character persistence are documented in
+[agents/dev-workbench.md](agents/dev-workbench.md#voice-and-local-character-persistence).
+These endpoints are loopback-only demos; production hosts supply authenticated
+principals, tenancy, and authorization to the owning services.
 
 ## Models
 
@@ -138,14 +138,15 @@ Voice is an input mode for the existing persona chat harness, not a separate cha
 
 The gateway bearer token proves only "this request came from the gateway"; it never authorizes the end user. The short-lived `VoiceSession` binding is the user/session proof, and untrusted gateway metadata must be validated against that binding before any chat write or tool loop. Tool execution remains fail-closed through the persona allow-list mirrored onto `AgentSession` by `bindPersonaToSession()`.
 
-## Token Streaming (SSE, #1936)
+## Token streaming
 
-`chat-stream.ts` is the SSE seam for embeddable conversational UIs:
-`runChatConversationStream()` (engine), `createChatStreamHandler({ authorize })`
-(Fetch handler; `authorize` is the sole trust boundary), and the browser-safe
-`SmrtChatBackend` (`./client`). Persona-bound streams reuse the harness gates
-unchanged, and `binding.extraTools` is resolved server-side. Full contract:
-[agents/token-streaming.md](agents/token-streaming.md).
+`chat-stream.ts` serves browser-safe SSE through `./client`. The host's
+`authorize(request, body)` is the sole trust boundary: resolve identity, tenant,
+capabilities, and generation limits server-side; never authorize from request
+session metadata. Persona turns reuse the principal and fail-closed tool gates.
+The engine and browser-safe `SmrtChatBackend` keep custom-tool resolution
+server-side. See [agents/token-streaming.md](agents/token-streaming.md) for the
+event contract, CORS policy, and streaming behavior.
 
 ## Streamed assistant turns with browser tools (#2908)
 

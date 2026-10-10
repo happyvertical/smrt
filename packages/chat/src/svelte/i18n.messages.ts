@@ -8,6 +8,44 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  // Helper control panel (#3679)
+  'chat.helper.title': 'Helper settings',
+  'chat.helper.loading': 'Loading helper settings…',
+  'chat.helper.unavailable':
+    'Helper settings are unavailable for this application.',
+  'chat.helper.gallery': 'Helper gallery',
+  'chat.helper.add_style': 'Add {style}',
+  'chat.helper.name': 'Display name',
+  'chat.helper.voice': 'Voice',
+  'chat.helper.placement': 'Placement',
+  'chat.helper.bottom_left': 'Bottom left',
+  'chat.helper.bottom_right': 'Bottom right',
+  'chat.helper.heard_subtitles': 'Show heard subtitles',
+  'chat.helper.spoken_subtitles': 'Show spoken subtitles',
+  'chat.helper.save': 'Save settings',
+  'chat.helper.save_changes': 'Save changes',
+  'chat.helper.saving': 'Saving…',
+  'chat.helper.unsaved_changes': 'You have unsaved changes.',
+  'chat.helper.photo_saved_apply': 'Photo saved. Save settings to use it.',
+  'chat.helper.custom_setup': 'Create a photographic helper',
+  'chat.helper.back_to_settings': 'Back to helper settings',
+  'chat.helper.reset_button': 'Reset to application defaults',
+  'chat.helper.saved': 'Helper settings saved.',
+  'chat.helper.reset': 'Helper settings reset.',
+  'chat.helper.load_failed': 'Could not load helper settings.',
+  'chat.helper.save_failed': 'Could not save helper settings.',
+  'chat.helper.reset_failed': 'Could not reset helper settings.',
+  'chat.helper.open_settings_to_choose':
+    'Open Helper settings to choose a saved helper.',
+  'chat.helper.selected_style_unavailable':
+    'The selected helper style is unavailable.',
+  'chat.helper.load_renderer_failed': 'Could not load the selected helper.',
+  'chat.helper.preview': 'Selected helper preview',
+  'chat.helper.preview_failed': 'Could not preview the selected helper.',
+  'chat.helper.opening_assistant':
+    'Opening the assistant. Start listening when it is ready.',
+  'chat.helper.conversation_unavailable':
+    'The assistant could not be opened. Try again before starting listening mode.',
   // ChatLayout
   'chat.chat_layout.rooms_label': 'Chat rooms',
   'chat.chat_layout.resize_sidebar': 'Resize sidebar',

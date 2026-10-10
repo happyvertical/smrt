@@ -1,6 +1,28 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  // PhotoCutoutSetup
+  'images.photo_cutout_setup.title': 'Photographic character setup',
+  'images.photo_cutout_setup.choose_photo': 'Choose character photo',
+  'images.photo_cutout_setup.photo_formats': 'PNG, JPEG, or WebP below 8 MB',
+  'images.photo_cutout_setup.preview_speech': 'Preview speech',
+  'images.photo_cutout_setup.stop_speech': 'Stop speech',
+  'images.photo_cutout_setup.transparent_head': 'Step 1: transparent head',
+  'images.photo_cutout_setup.isolated_head_alt':
+    'Isolated head on transparent background',
+  'images.photo_cutout_setup.source_alt': 'Selected character source',
+  'images.photo_cutout_setup.preview_label': 'Animated character preview',
+  'images.photo_cutout_setup.steps_label': 'Character setup steps',
+  'images.photo_cutout_setup.options_label': 'Character setup options',
+  'images.photo_cutout_setup.redo_head': 'Redo head isolation',
+  'images.photo_cutout_setup.redo_mouth': 'Redo mouth segmentation',
+  'images.photo_cutout_setup.step_choose': 'Choose photo',
+  'images.photo_cutout_setup.step_isolate': 'Isolate head',
+  'images.photo_cutout_setup.step_mouth': 'Set mouth',
+  'images.photo_cutout_setup.step_save': 'Save to gallery',
+  'images.photo_cutout_setup.save_hint':
+    'Saving adds this character to your gallery. It does not change your active helper.',
+
   // AssetsGallery
   'images.assets_gallery.title': 'Pictures',
   'images.assets_gallery.search_placeholder': 'Search pictures',

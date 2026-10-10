@@ -16,7 +16,6 @@ import './__smrt-register__.js';
 // overrides resolve correctly via @happyvertical/smrt-prompts.
 import './prompts.js';
 
-// Operations
 export {
   type AppliedImageAdjustments,
   applyImageAdjustments,
@@ -61,6 +60,31 @@ export {
   type SmrtImageMediaBundlePersistenceAdapter,
 } from './media-bundle-persistence';
 export { ImageMetadataExtractor } from './metadata';
+// Operations
+export { createPhotoCutoutCoordinateGuide } from './photo-cutout-coordinate-guide.js';
+export {
+  type LoadPhotoCutoutProfileSetupInput,
+  type PersistedPhotoCutoutSetup,
+  PHOTO_CUTOUT_PERSISTED_ASSET_REF,
+  type PhotoCutoutProfileOwner,
+  PhotoCutoutProfileStore,
+  type PhotoCutoutProfileStoreAuthorization,
+  type PhotoCutoutProfileStoreOptions,
+  type SavedPhotoCutoutProfileSetup,
+  type SavePhotoCutoutProfileSetupInput,
+} from './photo-cutout-profile-store.js';
+export {
+  assembleCanadianSplitRig,
+  type FaceOutline,
+  faceOutlinePrompt,
+  type MouthLandmarks,
+  mouthLandmarksPrompt,
+  type PhotoCutoutSetupInput,
+  parseFaceOutline,
+  parseMouthLandmarks,
+  parsePhotoCutoutSetup,
+  photoCutoutSetupPrompt,
+} from './photo-cutout-setup';
 export { smrtImagesGenerateAltTextPrompt } from './prompts';
 export { ImageSearch } from './search';
 // Types

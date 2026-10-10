@@ -48,7 +48,7 @@ one tier; the dimension table states what each tier must satisfy.
 ### Tier assignments (all 52 packages)
 
 - **T1 (7):** `cli` · `config` · `core` · `scanner` · `tenancy` · `types`† · `vitest`
-- **T2 (13):** `agents` · `assets` · `chat` · `commerce` · `content` · `expenses` · `jobs` · `ledgers`‡ · `messages` · `profiles` · `secrets`‡ · `smrt-svelte` · `users`
+- **T2 (14):** `agents` · `approvals` · `assets` · `chat` · `commerce` · `content` · `expenses` · `jobs` · `ledgers`‡ · `messages` · `profiles` · `secrets`‡ · `smrt-svelte` · `users`
 - **T3 (28):** `ads` · `affiliates` · `analytics` · `app-cli` · `assets-ergot` · `assets-local` · `events` · `facts` · `features` · `human-resources` · `images` · `inventory` · `languages` · `manufacturing` · `places` · `preferences` · `products` · `projects` · `prompts` · `properties` · `sites` · `smrt-dev-mcp` · `smrt-mobile-contract` · `social` · `tags` · `timesheets` · `video` · `voice`
 - **T4 (5):** `gnode` · `smrt-app-mcp` · `smrt-playground` · `template-site-static-json` · `template-sveltekit`
 - **Non-vitest (1):** `smrt-mobile`§

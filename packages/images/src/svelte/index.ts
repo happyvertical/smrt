@@ -14,6 +14,7 @@ import { IMAGES_MODULE_META } from '../ui.js';
 import AssetsGallery from './components/AssetsGallery.svelte';
 import ImageEditor from './components/ImageEditor.svelte';
 import ImageUploader from './components/ImageUploader.svelte';
+import PhotoCutoutSetup from './components/PhotoCutoutSetup.svelte';
 
 export type {
   ImageConvertRequest,
@@ -28,7 +29,7 @@ export type {
   ImagesGalleryResult,
 } from './image-clients';
 // Export components
-export { AssetsGallery, ImageEditor, ImageUploader };
+export { AssetsGallery, ImageEditor, ImageUploader, PhotoCutoutSetup };
 
 // Auto-register with ModuleUIRegistry
 ModuleUIRegistry.registerModule(IMAGES_MODULE_META);

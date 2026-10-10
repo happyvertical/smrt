@@ -57,6 +57,12 @@ export interface StoreOptions {
   /** Asset status slug */
   statusSlug?: string;
 
+  /** Tenant scope applied before the Asset record is persisted. */
+  tenantId?: string | null;
+
+  /** Profile that owns the Asset from its initial persisted record. */
+  ownerProfileId?: string | null;
+
   /** Description */
   description?: string;
 
@@ -433,6 +439,8 @@ export class AssetStore {
       mimeType: opts.mimeType,
       typeSlug,
       statusSlug: opts.statusSlug ?? 'active',
+      tenantId: opts.tenantId ?? null,
+      ownerProfileId: opts.ownerProfileId ?? null,
       sourceAssetId: opts.sourceAssetId ?? null,
       description: opts.description ?? '',
       sourceType: opts.sourceType ?? '',

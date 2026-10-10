@@ -12,6 +12,24 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  // Character conversation workbench
+  'chat.character_conversation.saved_conversation':
+    'Saved character conversation',
+  'chat.character_conversation.saved_character': 'Saved photographic character',
+  'chat.character_conversation.listening_notice':
+    'Listening mode keeps the conversation and confirmations active while hiding message history.',
+  'chat.character_conversation.voice_input': 'Voice input',
+  'chat.character_conversation.speak': 'Speak to your assistant',
+  'chat.character_conversation.unavailable':
+    'Speech input is unavailable. Type your message below.',
+  'chat.character_conversation.message': 'Type your message',
+  'chat.character_conversation.send': 'Send message',
+  'chat.character_conversation.assistant_reply': 'Assistant reply',
+  'chat.character_conversation.speech_failed':
+    'Could not play the spoken reply. The reply is shown below.',
+  // CaptionOverlay
+  'chat.caption_overlay.scroll_up': 'Scroll captions up',
+  'chat.caption_overlay.scroll_down': 'Scroll captions down',
   // AgentChat
   'chat.agent_chat.conversation': 'Agent conversation',
   'chat.agent_chat.inactive_notice': 'Session {status}. Cannot send messages.',
@@ -59,6 +77,10 @@ export const M = defineMessages({
   'chat.assistant_thread_list.conversations_label': 'Assistant conversations',
   'chat.assistant_thread_list.new_conversation': '+ New conversation',
   'chat.assistant_thread_list.untitled': 'Untitled',
+
+  // FloatingAssistant (#3642)
+  'chat.floating_assistant.collapse': 'Collapse assistant',
+  'chat.floating_assistant.close': 'Close',
 
   // AssistantDock (#2904)
   'chat.assistant_dock.no_surfaces':

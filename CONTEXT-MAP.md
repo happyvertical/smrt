@@ -5,7 +5,7 @@ SMRT is a multi-context monorepo. Use this map to find the package-level contrac
 | Context | Packages | Domain sources |
 | --- | --- | --- |
 | Framework foundations | `core`, `config`, `cli`, `types`, `scanner`, `tenancy`, `vitest` | Package `AGENTS.md` files, [`docs/adr/0003-smrt-add-declarative-package-install.md`](docs/adr/0003-smrt-add-declarative-package-install.md) |
-| Agent runtime, identity, and communications | `agents`, `jobs`, `users`, `profiles`, `personas`, `messages`, `chat`, `secrets` | [`packages/messages/CONTEXT.md`](packages/messages/CONTEXT.md), package `AGENTS.md` files, [`docs/adr/0001-persona-scoped-messaging.md`](docs/adr/0001-persona-scoped-messaging.md) |
+| Agent runtime, identity, and communications | `agents`, `approvals`, `jobs`, `users`, `profiles`, `personas`, `messages`, `chat`, `secrets` | [`packages/messages/CONTEXT.md`](packages/messages/CONTEXT.md), package `AGENTS.md` files, [`docs/adr/0001-persona-scoped-messaging.md`](docs/adr/0001-persona-scoped-messaging.md) |
 | Content and media | `content`, `assets`, `images`, `video`, `voice`, `social` | Package `AGENTS.md` files |
 | Business capabilities | `commerce`, `expenses`, `timesheets`, `human-resources`, `products`, `ads`, `affiliates`, `ledgers`, `analytics`, `reports`, `subscriptions` | Package `AGENTS.md` files |
 | Domain capabilities | `events`, `places`, `facts`, `sites`, `properties`, `tags` | Package `AGENTS.md` files |

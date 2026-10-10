@@ -101,12 +101,21 @@ describe('AssetRuntime', () => {
   describe('storeSourceAsset', () => {
     it('creates a persisted asset with bytes on disk', async () => {
       const runtime = await createAssetRuntime({ db, storage: storageDir });
+      const create = vi.spyOn(runtime.collection, 'create');
       const bytes = Buffer.from('hello world');
 
       const asset = await runtime.storeSourceAsset('notes.txt', bytes, {
         mimeType: 'text/plain',
         typeSlug: 'document',
+        tenantId: 'tenant-a',
+        ownerProfileId: 'profile-owner',
       });
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: 'tenant-a',
+          ownerProfileId: 'profile-owner',
+        }),
+      );
 
       expect(asset.id).toBeTruthy();
       expect(asset.sourceUri).toMatch(/^file:\/\//);
