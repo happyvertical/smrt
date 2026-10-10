@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-human-resources",
-  "version": "0.55.7",
+  "version": "0.55.9",
   "smrtJsdoc": "strict",
   "description": "HR records for the SMRT framework: who works for an organization, as what, and with what standing \u2014 employment with dated terms, and qualifications with expiry",
   "type": "module",

@@ -52,6 +52,7 @@ import {
 } from './decisions.js';
 import { createFilesystemAdapter } from './filesystem-loader.js';
 import { getDatabase, importAI } from './host.js';
+import { noteNativeDuckDbHandle } from './native-duckdb.js';
 import { applyPostgresRuntimeTimeouts } from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
@@ -587,6 +588,7 @@ export class SmrtClass {
       ) {
         this._db = this.options.db as DatabaseInterface;
         this.options.db = this._db;
+        noteNativeDuckDbHandle(this._db, this._dbEngineHint);
       } else {
         // Handle four db config formats (in implementation order):
         // 1. String URL: 'products.db' (shortcut)
@@ -659,6 +661,9 @@ export class SmrtClass {
          * See issue #567 for context on why this pattern is necessary.
          */
         this.options.db = this._db;
+        // Identify a native DuckDB root now, so transaction handles later
+        // bound to this object resolve to the same engine (#3737).
+        noteNativeDuckDbHandle(this._db, this._dbEngineHint);
 
         await this.ensureSystemTables();
       }
@@ -1344,6 +1349,9 @@ export class SmrtClass {
     // the normal, actionable SmrtClass error before any state is mutated.
     const previousDb = this.db;
     const previousOptionDb = this.options.db;
+    // `db` is usually a transaction handle of `previousDb`, which carries no
+    // adapter markers; identify the root before swapping it out (#3737).
+    noteNativeDuckDbHandle(previousDb, this._dbEngineHint);
     this._db = db;
     this.options.db = db;
     try {

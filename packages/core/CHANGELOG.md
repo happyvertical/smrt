@@ -1,5 +1,43 @@
 # @happyvertical/smrt-core
 
+## 0.55.9
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - patch train, taxonomy recipe section and pre-commit hook hang (#3743)
+- @happyvertical/smrt-config@0.55.9
+  - @happyvertical/smrt-scanner@0.55.9
+  - @happyvertical/smrt-types@0.55.9
+
+## 0.55.8
+
+### Patch Changes
+
+- ### Features
+  
+  - add routing projections and preserve collection metadata (#3738)
+  - app-wide feature recipes, platform track (epic #3719) (#3731) (recipes)
+  - validate reference workflows and publish measured evaluation (#3720) (ingestion)
+  - CustomerSelect and VendorSelect selectors plus field widget hints (#3633) (commerce)
+  - recipes declare surfaces, providers, runtime and demo seed (#3728) (core)
+  - SmrtRecipe planner fields; move 19 business recipes into their packages (#3724) (recipes)
+  
+  ### Bug Fixes
+  
+  - leave unchanged indexed columns out of DuckDB row writes (#3740) (core)
+  - keep Node-only modules out of the browser entry (#3639) (core)
+  - settle and invalidate canceled browser speech (#3652) (svelte)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.103.1 (#3735) (deps)
+  - chore: sync sdk packages to v0.102.7 (#3729) (deps)
+- @happyvertical/smrt-config@0.55.8
+  - @happyvertical/smrt-scanner@0.55.8
+  - @happyvertical/smrt-types@0.55.8
+
 ## 0.55.7
 
 ### Patch Changes

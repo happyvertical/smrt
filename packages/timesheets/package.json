@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-timesheets",
-  "version": "0.55.7",
+  "version": "0.55.9",
   "smrtJsdoc": "strict",
   "description": "Shared time entries for the SMRT framework: who worked how long on what, approval and correction, with immutable charge and compensation snapshots",
   "type": "module",

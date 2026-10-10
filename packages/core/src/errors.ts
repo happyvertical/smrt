@@ -936,6 +936,15 @@ export class ErrorUtils {
           throw error;
         }
 
+        // An invalid-state error names a condition re-running cannot change
+        // (and a write that already ran must not run again, #3737).
+        if (
+          error instanceof RuntimeError &&
+          error.code === 'RUNTIME_INVALID_STATE'
+        ) {
+          throw error;
+        }
+
         // A deterministic database failure cannot be retried into success, and
         // retrying it inside a transaction actively destroys evidence: every
         // later attempt runs on the aborted client and reports `25P02` instead
