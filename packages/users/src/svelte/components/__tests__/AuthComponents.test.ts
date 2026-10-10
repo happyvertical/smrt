@@ -8,8 +8,22 @@ import OidcProviderButtons from '../OidcProviderButtons.svelte';
 import PasskeySignInButton from '../PasskeySignInButton.svelte';
 import SignInForm from '../SignInForm.svelte';
 import SignUpForm from '../SignUpForm.svelte';
+import AuthI18nHarness from './AuthI18nHarness.svelte';
 
 describe('authentication components', () => {
+  it('uses English defaults without a provider and configured locale messages with one', () => {
+    render(SignInForm, {
+      props: { adapter: { signInWithPassword: async () => {} } },
+    });
+    expect(
+      screen.getByRole('heading', { name: 'Sign in' }),
+    ).toBeInTheDocument();
+    render(AuthI18nHarness);
+    expect(screen.getByLabelText('Adresse e-mail')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Utiliser une clé d’accès' }),
+    ).toBeInTheDocument();
+  });
   it('submits password credentials through the host boundary', async () => {
     const signInWithPassword = vi.fn().mockResolvedValue(undefined);
     render(SignInForm, { props: { adapter: { signInWithPassword } } });
