@@ -1,5 +1,6 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { NestedTransactionError } from './host.js';
+import { noteNativeDuckDbHandle } from './native-duckdb.js';
 import { createAsyncContext } from './utils/async-context.js';
 
 /**
@@ -166,6 +167,8 @@ export async function withEmbeddedWriteTransaction<T>(
   if (!transaction) {
     throw new Error('Database transaction support is required');
   }
+  // The transaction handle carries no adapter markers: identify the root.
+  noteNativeDuckDbHandle(db);
   return withEmbeddedWriteQueue(db, serialize, async () => {
     let entered = false;
     try {

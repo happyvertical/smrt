@@ -9,7 +9,7 @@ and repository rules.
 | Source | Scope | Module doc |
 |---|---|---|
 | `src/object.ts`, `src/collection.ts`, `src/child-accessors.ts` | Lifecycle, hydration, operators, STI, child accessors, dispatch | [agents/object-runtime.md](agents/object-runtime.md) |
-| `src/revision-guard.ts` | Guarded writes and PostgreSQL revision precision | [agents/revision-guard.md](agents/revision-guard.md) |
+| `src/revision-guard.ts`, `src/unchanged-indexed.ts`, `src/native-duckdb.ts` | Guarded writes, PostgreSQL revision precision, unchanged indexed columns on referenced DuckDB rows (#3737) | [agents/revision-guard.md](agents/revision-guard.md) |
 | `src/collection.ts` | Projections, latest-related, facets, counts, read plans | [agents/collection-reads.md](agents/collection-reads.md) |
 | `src/collection.ts` | Limits, sort whitelist, generated list order | [agents/query-bounds.md](agents/query-bounds.md) |
 | `src/data-query.ts` | Transport-neutral bounded query normalization | [agents/data-query.md](agents/data-query.md) |
