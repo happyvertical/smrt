@@ -17,6 +17,10 @@ An app can register more kinds. Every kind checks its own data when it is
 saved (anything invalid is refused) and again when it is loaded (anything
 that no longer fits is dropped and reported, the rest still applies).
 
+Use the stores below; the table's model is not an application API (it
+refuses writes that do not come from the store and never returns another
+person's preferences).
+
 See [AGENTS.md](./AGENTS.md) for the storage rules and
 [agents/preference-kinds.md](./agents/preference-kinds.md) for the kind
 contract.

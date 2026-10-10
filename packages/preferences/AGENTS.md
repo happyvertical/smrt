@@ -23,7 +23,9 @@ Svelte-free entries (`./overview/server`, `./workspace/server`).
 | File | Contents |
 | --- | --- |
 | `src/models/UiPreferenceRecord.ts` | The row; owns identity, scope shape and authorization; refuses unregistered kinds |
-| `src/collections/UiPreferenceRecordCollection.ts` | Undecorated reads (`findTier`); no generated surface |
+| `src/collections/UiPreferenceRecordCollection.ts` | Undecorated reads (`findTier`); internal, not exported; no generated surface |
+| `src/write-capability.ts` | The store-only write capability (internal) |
+| `src/read-guard.ts` | The owner-read interceptor (internal) |
 | `src/kinds.ts` | `registerPreferenceKind`, `requirePreferenceKind`, `UnknownPreferenceKindError`, the validation contract |
 | `src/store.ts` | `createPreferenceStore({ db })`: generic `load` / `save` / `reset(kind, surfaceId, ...)` |
 | `src/kinds/overview.ts`, `src/overview.ts` | The `overview` kind and `createOverviewStore` (`load`, `save`, `reset`, `loadPage`, `loadWidget`, `withTenantDefaults`) |
@@ -63,6 +65,19 @@ DuckDB cannot create.
   a collection `create()` or `row.setPayload(); row.save()` never store an
   unvalidated payload. Tests seed corrupt storage with raw SQL
   (`src/__tests__/raw-rows.ts`). This guards in-process callers, not raw SQL.
+- **Owner-safe reads.** A principal never reads another user's row. An
+  interceptor (`src/read-guard.ts`, registered when the model loads and
+  again before every store read) drops other users' user-scope rows from
+  every collection `list` / `get` / `query`, after tenancy has confined the
+  read to the tenant; tenant rows stay visible to the whole tenant, and a
+  row whose scope it cannot tell (a narrow `select`) is dropped. Single-row
+  hydration (`new UiPreferenceRecord({ id }).initialize()`) is checked in the
+  model (`loadFromId` / `loadFromSlug`). A principal without a user id sees
+  no user rows.
+- **Not an app API.** `UiPreferenceRecord` stays a root export only because
+  generated consumer registration imports every public manifest object from
+  the root; the collection is not exported. Apps use `createPreferenceStore`,
+  `createOverviewStore` and `createShellSettingsPreferences`.
 - **Tiers.** The tenant row is the default; the user row applies on top, and
   `validate` for the user tier receives the tenant tier's canonical payload
   (`ctx.tenant`). User rows are per tenant: preferences name tenant data.

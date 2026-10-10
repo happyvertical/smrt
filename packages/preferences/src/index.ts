@@ -13,7 +13,6 @@
 import './__smrt-register__.js';
 import './kinds/builtin.js';
 
-export { UiPreferenceRecordCollection } from './collections/UiPreferenceRecordCollection.js';
 export {
   getPreferencePrincipal,
   PreferenceAccessError,
@@ -49,6 +48,11 @@ export {
   requirePreferenceKind,
   UnknownPreferenceKindError,
 } from './kinds.js';
+// The model stays a root export only because generated consumer
+// registration imports every public manifest object from the root. It is not
+// an app API: rows are written only by the store (write capability) and
+// reads drop other users' rows. Apps use createPreferenceStore and the kind
+// layers; the collection is deliberately not exported.
 export {
   TENANT_SCOPE_KEY,
   UiPreferenceRecord,

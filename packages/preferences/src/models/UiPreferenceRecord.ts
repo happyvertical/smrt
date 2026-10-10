@@ -22,6 +22,10 @@ import {
   splitPermissionSlug,
 } from '../permissions.js';
 import {
+  ensurePreferenceReadGuard,
+  isPreferenceRowVisible,
+} from '../read-guard.js';
+import {
   adoptStoreWrite,
   hasStoreWrite,
   spendStoreWrite,
@@ -31,6 +35,8 @@ import {
 // Direct model imports (tests, server integrations) must still find the
 // built-in slugs in the shared users catalog before any guard asks for them.
 ensurePreferencePermissionsRegistered();
+// Collection, query and get reads drop other users' rows (see read-guard.ts).
+ensurePreferenceReadGuard();
 
 type ConstructorOptions = ConstructorParameters<typeof SmrtObject>[0];
 type SaveOptions = NonNullable<Parameters<SmrtObject['save']>[0]>;
@@ -118,6 +124,29 @@ export class UiPreferenceRecord extends SmrtObject {
   constructor(options: ConstructorOptions = {}) {
     super(options);
     adoptStoreWrite(this, options);
+  }
+
+  /**
+   * Single-row hydration (`new UiPreferenceRecord({ id }).initialize()`)
+   * reads the table directly, outside the collection interceptors, so the
+   * owner check runs here: another user's row is wiped and refused.
+   */
+  override async loadFromId(): Promise<void> {
+    await super.loadFromId();
+    this.assertReadable();
+  }
+
+  override async loadFromSlug(): Promise<void> {
+    await super.loadFromSlug();
+    this.assertReadable();
+  }
+
+  private assertReadable(): void {
+    if (!this.kind || isPreferenceRowVisible(this)) return;
+    this.payloadJson = '';
+    throw new PreferenceAccessError(
+      'A personal preference can only be read by its owner',
+    );
   }
 
   /** The stored payload, parsed. `undefined` when the text is not JSON. */

@@ -27,6 +27,7 @@ import {
 } from './kinds.js';
 import type { UiPreferenceRecord } from './models/UiPreferenceRecord.js';
 import { splitPermissionSlug } from './permissions.js';
+import { ensurePreferenceReadGuard } from './read-guard.js';
 import {
   grantStoreDelete,
   grantStoreWrite,
@@ -239,8 +240,10 @@ export function createPreferenceStore(
   options: PreferenceStoreOptions,
 ): PreferenceStore {
   const { db } = options;
-  const collection = (): Promise<UiPreferenceRecordCollection> =>
-    UiPreferenceRecordCollection.create({ db });
+  const collection = (): Promise<UiPreferenceRecordCollection> => {
+    ensurePreferenceReadGuard();
+    return UiPreferenceRecordCollection.create({ db });
+  };
 
   async function tenantTier(
     records: UiPreferenceRecordCollection,

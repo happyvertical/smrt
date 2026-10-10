@@ -12,13 +12,14 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { UiPreferenceRecordCollection } from '../collections/UiPreferenceRecordCollection.js';
 import {
   CUSTOMIZE_OVERVIEW_PERMISSION,
   createOverviewStore,
   type OverviewStore,
   PERSONALIZE_OVERVIEW_PERMISSION,
   PreferenceAccessError,
-  UiPreferenceRecordCollection,
+  UiPreferenceRecord,
 } from '../index.js';
 import { insertRawPreference } from './raw-rows.js';
 
@@ -215,7 +216,7 @@ export function overviewStoreSuite(
         ok: true,
         override: { version: 1, changed: { w1: { span: 3 } } },
       });
-      const rows = await as({ tenantId: tenantA }, async () =>
+      const rows = await as({ tenantId: tenantA, userId: alice }, async () =>
         (await UiPreferenceRecordCollection.create({ db })).list({}),
       );
       expect(rows).toHaveLength(1);
@@ -233,7 +234,7 @@ export function overviewStoreSuite(
         }),
       );
       expect(noop).toEqual({ ok: true, override: null, revision: null });
-      const left = await as({ tenantId: tenantA }, async () =>
+      const left = await as({ tenantId: tenantA, userId: alice }, async () =>
         (await UiPreferenceRecordCollection.create({ db })).list({}),
       );
       expect(left).toHaveLength(0);
@@ -266,7 +267,7 @@ export function overviewStoreSuite(
         expect(result.ok).toBe(false);
         expect(result).toMatchObject({ reason: 'invalid' });
       }
-      const rows = await as({ tenantId: tenantA }, async () =>
+      const rows = await as({ tenantId: tenantA, userId: alice }, async () =>
         (await UiPreferenceRecordCollection.create({ db })).list({}),
       );
       expect(rows).toHaveLength(0);
@@ -391,44 +392,56 @@ export function overviewStoreSuite(
       );
       expect(alices.document.widgets.map((w) => w.id)).toEqual(['w1']);
 
-      // Holding Alice's row (same tenant) does not let Bob change or delete it.
-      const aliceRowId = await as({ tenantId: tenantA }, async () => {
+      // Alice sees her own row through the model; Bob, in the same tenant,
+      // cannot read it by any in-process path, even with its id.
+      const aliceRowId = await as(
+        { tenantId: tenantA, userId: alice },
+        async () => {
+          const rows = await (
+            await UiPreferenceRecordCollection.create({ db })
+          ).list({});
+          expect(rows).toHaveLength(1);
+          return rows[0]?.id as string;
+        },
+      );
+      await as({ tenantId: tenantA, userId: bob }, async () => {
+        const records = await UiPreferenceRecordCollection.create({ db });
+        expect(await records.get(aliceRowId)).toBeNull();
+        expect(await records.list({})).toEqual([]);
+        expect(await records.list({ where: { scopeType: 'user' } })).toEqual(
+          [],
+        );
+        await expect(
+          new UiPreferenceRecord({
+            db,
+            id: aliceRowId,
+          } as ConstructorParameters<
+            typeof UiPreferenceRecord
+          >[0]).initialize(),
+        ).rejects.toBeInstanceOf(PreferenceAccessError);
+      });
+      // A principal without a user id sees no user rows at all, while the
+      // tenant default stays visible to everyone in the tenant.
+      await as({ tenantId: tenantA, userId: alice }, () =>
+        store.save(definition, registry, {
+          scope: 'tenant',
+          override: tenantOverride,
+          revision: null,
+        }),
+      );
+      await as({ tenantId: tenantA }, async () => {
         const rows = await (
           await UiPreferenceRecordCollection.create({ db })
         ).list({});
-        return rows[0]?.id as string;
+        expect(rows.map((row) => row.scopeType)).toEqual(['tenant']);
       });
-      await expect(
-        as({ tenantId: tenantA, userId: bob }, async () => {
-          const records = await UiPreferenceRecordCollection.create({ db });
-          const row = await records.get(aliceRowId);
-          if (!row) throw new Error('expected the same-tenant row');
-          row.setPayload({ version: 1 });
-          await row.save();
-        }),
-      ).rejects.toBeInstanceOf(PreferenceAccessError);
-      await expect(
-        as({ tenantId: tenantA, userId: bob }, async () => {
-          const records = await UiPreferenceRecordCollection.create({ db });
-          const row = await records.get(aliceRowId);
-          await row?.delete();
-        }),
-      ).rejects.toBeInstanceOf(PreferenceAccessError);
-      // Rewriting the owner in memory does not make the row Bob's.
-      for (const write of ['save', 'delete'] as const) {
-        await expect(
-          as({ tenantId: tenantA, userId: bob }, async () => {
-            const records = await UiPreferenceRecordCollection.create({
-              db,
-            });
-            const row = await records.get(aliceRowId);
-            if (!row) throw new Error('expected the same-tenant row');
-            row.userId = bob;
-            await (write === 'save' ? row.save() : row.delete());
-          }),
-        ).rejects.toBeInstanceOf(PreferenceAccessError);
-      }
-      // Nor can Bob re-scope a row of his own onto Alice.
+      await as({ tenantId: tenantA, userId: bob }, async () => {
+        const rows = await (
+          await UiPreferenceRecordCollection.create({ db })
+        ).list({});
+        expect(rows.map((row) => row.scopeType)).toEqual(['tenant']);
+      });
+      // Nor can Bob write a row onto Alice around the store.
       await expect(
         as({ tenantId: tenantA, userId: bob }, async () => {
           const records = await UiPreferenceRecordCollection.create({ db });
