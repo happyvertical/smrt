@@ -72,6 +72,11 @@ pre-commit:
       # generic .DS_Store catch-all (currently handled passively via .gitignore).
       # Expand the case list below as new patterns appear.
       run: |
+        # The staged list is read from a file, not a here-document: sh
+        # writes a here-document to a pipe, which deadlocks once a long
+        # staged list (a package rename) exceeds the pipe buffer.
+        staged=$(mktemp)
+        git diff --cached --name-only --diff-filter=ACMRT > "$staged"
         violations=""
         while IFS= read -r f; do
           [ -n "$f" ] || continue
@@ -92,9 +97,8 @@ pre-commit:
               violations="$violations\n  $f (changesets must live at repo root only)"
               ;;
           esac
-        done <<EOF
-        $(git diff --cached --name-only --diff-filter=ACMRT)
-        EOF
+        done < "$staged"
+        rm -f "$staged"
         if [ -n "$violations" ]; then
           printf "❌ Staged files violate docs/standards.md §11:%b\n" "$violations"
           exit 1
