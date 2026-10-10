@@ -11,8 +11,9 @@ its default arrangement; admins (or users, per role) add, reorder, resize,
 configure and remove widgets inside that confined set, and reset returns to the
 default. Phase 1 (this module) is the surface, the registry, the data model, the
 server load contract and five core widgets; phase 2 adds package widgets from
-recipes ("Recipe widgets"). Persistence and assistant operations are later
-phases (see "Extension points").
+recipes ("Recipe widgets"); phase 3 is production persistence in
+`@happyvertical/smrt-overviews` ("Production persistence"). Assistant
+operations are phase 4 (see "Extension points").
 
 ## Two entries
 
@@ -50,7 +51,8 @@ against (absent means 1).
   (they would stop incrementing), and an exhausted high end restarts at `w1`.
 - **Tiers.** `resolveOverview` merges one override. A host with tenant defaults
   and user overrides merges the tenant tier into the definition's `defaults`
-  first (phase 3); the user override then applies to that.
+  first; the user override then applies to that (smrt-overviews'
+  `withTenantDefaults`).
 - **Reset** is `controller.reset()` (store `null`) or `resetWidget(id)`.
 
 ## Validation: what keeps a stored overview from running anything
@@ -239,16 +241,41 @@ turns the manifest's widget surfaces into `registry.register(...)` calls:
   and a type-level assertion here keeps `RecipeWidgetOptionType` equal to
   `WidgetOptionType`.
 
+## Production persistence (phase 3, `@happyvertical/smrt-overviews`)
+
+The table, permissions and server API live in
+[smrt-overviews](../../overviews/AGENTS.md); this package stays free of
+database code (its overview entries import nothing from core, tenancy or
+users). `createOverviewStore({ db })` acts as the ambient principal:
+
+| Call | Does |
+| --- | --- |
+| `load(definition, registry)` | Reads the tenant row and the principal's user row from `_smrt_overview_overrides`, resolves page defaults < tenant < user leniently, and returns each tier's `override`, `revision`, `issues`, the merged `document` and `canCustomize: { tenant, user }` |
+| `save(definition, registry, { scope, override, revision })` | `checkOverviewOverride` against the tier's definition (user: tenant-merged); stores only the canonical override, deletes the row when it is `null`; `invalid` / `conflict` / `not_allowed` otherwise |
+| `reset(definition, { scope, revision? })` | Deletes that tier's row |
+| `loadPage(definition, registry, ctx, { scope? })` | `load` plus `loadOverview` of the tier's document, for `+page.server.ts` |
+| `loadWidget(definition, registry, widget, ctx)` | One widget's data for the controller's `loadWidget` remote function (throw on `ok: false`) |
+
+Host wiring for the personal layer: `createOverview({ definition:
+withTenantDefaults(definition, data.overview.tenant.document), override: () =>
+data.overview.user?.override ?? null, onchange: (next) => save({ scope:
+'user', override: next, revision }), canCustomize: () =>
+data.overview.canCustomize.user, loaded: data.overview.loaded, loadWidget })`;
+the organization layer uses the page definition, `tenant.override` and
+`canCustomize.tenant`. Keep the returned `revision` for the next save; on
+`conflict` reload the page data. Permissions are `overviews.customize` (tenant
+default) and `overviews.personalize` (own layout).
+
+Known model limit: a tenant default that later adds a widget whose id equals
+an id a user override already added hides the user's widget (an added widget
+colliding with a base id is skipped). `nextWidgetId` avoids it within one tier
+only.
+
 ## Extension points left for later phases
 
-- **Phase 2, package widgets (#3727, done).** See "Recipe widgets" below.
-- **Phase 3, production persistence.** Implement the `override` getter /
-  `onchange` pair against the `_smrt_` table (tenant tier merged into
-  `definition.defaults`, user tier as the override), validate saves with
-  `checkOverviewOverride` and persist its canonical `override`, run
-  `loadOverview` in the page load, and supply `loadWidget` as a remote function
-  that calls the same `load`. Role gating = `canCustomize` plus the same check in
-  the save endpoint. No migration or table lives in this package.
+- **Phase 2, package widgets (#3727, done).** See "Recipe widgets" above.
+- **Phase 3, production persistence (#3727, done).** See "Production
+  persistence" above.
 - **Phase 4, assistant.** The controller methods are the structured operations;
   `restore(override)` plus the `override` getter give Undo (snapshot before,
   restore after). `OverviewOpResult.issues` is the validation feedback to return.
