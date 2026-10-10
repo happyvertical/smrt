@@ -692,11 +692,13 @@ export class CLIGenerator {
     const registerPath = path.join(process.cwd(), '.smrt', 'register.js');
 
     if (!fs.existsSync(registerPath)) {
-      // Always show this warning (not just verbose) since it affects custom commands
-      console.log(
+      // Always show this warning (not just verbose) since it affects custom
+      // commands. It goes to stderr: stdout is command output (`--json`) and,
+      // for `smrt kitchen mcp`, the protocol stream.
+      console.warn(
         '[CLI] No .smrt/register.js found - custom commands may not work',
       );
-      console.log('      Run "npm run build" to generate class registrations');
+      console.warn('      Run "npm run build" to generate class registrations');
       return;
     }
 

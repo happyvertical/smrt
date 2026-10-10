@@ -56,3 +56,8 @@ STI table (the bakery's `Order`, `WholesaleOrder`, `PurchaseOrder` and
 `ProductionOrder`; `Product` and `Material`) each get their own route and
 definition, at `/<class collection>` (`/orders`, `/productionorders`), listing
 only their own rows; the build-knowledge section explains why.
+
+## Editing a cookbook
+
+The command engine (`@happyvertical/smrt-core/cookbook/engine`) is the one place
+that changes a cookbook: see [cookbook-engine.md](cookbook-engine.md).

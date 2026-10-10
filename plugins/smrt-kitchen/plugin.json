@@ -1,0 +1,35 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "smrt-kitchen",
+  "version": "0.1.0",
+  "description": "Plan a business app with SMRT recipes in conversation, check it, and create the project on your machine. Runs locally; no separate model, API key or hosted service.",
+  "author": {
+    "name": "HappyVertical",
+    "url": "https://s-m-r-t.dev"
+  },
+  "homepage": "https://s-m-r-t.dev",
+  "repository": "https://github.com/happyvertical/smrt",
+  "license": "MIT",
+  "keywords": ["smrt", "cookbook", "planner", "app-builder", "mcp"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "SMRT Kitchen",
+        "shortDescription": "Plan a SMRT app in chat, then create the project locally",
+        "longDescription": "Describe the business you run and SMRT Kitchen helps you pick a starting cookbook, switch recipes on and off, set currency, tax and theme, check the plan, and create the project in a folder you confirm. Your own ChatGPT or Codex does the reasoning; the plugin runs a local tool server and needs no extra model, API key or hosted service.",
+        "developerName": "HappyVertical",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://s-m-r-t.dev",
+        "defaultPrompt": [
+          "Use SMRT Kitchen to plan an app for my bakery.",
+          "Use SMRT Kitchen to start from a ready-made cookbook and tweak it.",
+          "Use SMRT Kitchen to create my planned app in a new folder."
+        ],
+        "brandColor": "#0F766E",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "smrt",
+  "description": "SMRT plugins for agent hosts that read the Agent Plugins layout.",
+  "owner": {
+    "name": "HappyVertical",
+    "url": "https://s-m-r-t.dev"
+  },
+  "plugins": [
+    {
+      "name": "smrt-kitchen",
+      "source": "./plugins/smrt-kitchen",
+      "description": "Plan a business app with SMRT recipes in conversation, check it, and create the project on your machine.",
+      "category": "productivity"
+    }
+  ]
+}

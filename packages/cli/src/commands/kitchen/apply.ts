@@ -9,7 +9,9 @@ import {
   type ApplyResult,
   applyCookbook,
 } from '../cookbook/apply.js';
+import type { RecipeIndex } from '../cookbook/recipe-index.js';
 import { cliVersion, validateCookbookSource } from '../cookbook/shared.js';
+import { validateCookbookText } from '../cookbook/validate.js';
 
 export interface ApplierOptions {
   /** The project directory (`smrt kitchen [dir]`). */
@@ -18,7 +20,17 @@ export interface ApplierOptions {
   template?: string;
   /** Run the package manager's install after writing. */
   install: boolean;
+  /** Where the install's output goes (`stderr` keeps stdout for a protocol). */
+  installOutput?: 'inherit' | 'stderr';
+  /** Plan only: write nothing (a remote template is still fetched to a temp dir). */
+  dryRun?: boolean;
   manifests?: string[];
+  /**
+   * Validate against this already-resolved index instead of looking manifests
+   * up again from `dir` (a new project has none there). `manifests` and
+   * `registry` are then unused.
+   */
+  index?: RecipeIndex;
   /** Allow fetching manifests of uninstalled packages from the registry. */
   registry: boolean;
   /** Where progress goes (the terminal). */
@@ -59,11 +71,13 @@ export function createCookbookApplier(
     }
     try {
       log('Checking the cookbook against the recipe manifests…');
-      const report = await validateCookbookSource(cookbookText, {
-        dir: options.dir,
-        manifests: options.manifests,
-        registry: options.registry,
-      });
+      const report = options.index
+        ? validateCookbookText(cookbookText, options.index)
+        : await validateCookbookSource(cookbookText, {
+            dir: options.dir,
+            manifests: options.manifests,
+            registry: options.registry,
+          });
       for (const warning of report.warnings) log(`warning: ${warning}`);
       if (!report.ok || !report.cookbook) {
         return { ok: false, status: 422, errors: report.errors };
@@ -75,6 +89,8 @@ export function createCookbookApplier(
         dir: options.dir,
         template: options.template,
         install: options.install,
+        installOutput: options.installOutput,
+        dryRun: options.dryRun,
         cliVersion: cliVersion(),
       });
       return {

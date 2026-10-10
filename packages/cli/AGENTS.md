@@ -43,6 +43,7 @@ smrt init                    # Init new project
 smrt cookbook validate|apply # Cookbook check / project create: agents/cookbook-apply.md
 smrt kitchen [dir]           # Planner on localhost -> cookbook -> apply: agents/kitchen.md
 smrt kitchen apply <url|file> [dir] # cookbook apply, plan URLs too
+smrt kitchen mcp             # stdio MCP server for the local Kitchen plugin: agents/kitchen.md
 smrt gnode                   # Scaffold gnode site
 smrt dispatch:*              # Dispatch management (list/process/retry/cleanup)
 smrt app <op>                # App install/setup/start/migrate/worker…: agents/app-commands.md
