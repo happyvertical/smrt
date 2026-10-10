@@ -136,7 +136,9 @@ return { overview };   // LoadedOverview: JSON, serializable
 loaded?, loadWidget? })`, the `ShellLayout` pattern: **persistence is host-owned**.
 With an `override` getter the host is the source of truth and feeds each edit back
 (`onchange(override | null)`); without it the value is kept in memory. Reactive
-reads: `document`, `base`, `override`, `issues`, `customized`, `canCustomize`,
+reads: `document`, `base`, `override`, `committedOverride` (the value last
+handed to `onchange` while a host-owned getter has not fed it back yet, else
+`override`), `issues`, `customized`, `canCustomize`,
 `addable`, `full`, `entry(widget)`. Operations, each returning
 `{ ok: true, id } | { ok: false, reason, issues? }` and refused with
 `not_allowed` when `canCustomize()` is false (the role gate; the server must check
@@ -281,7 +283,9 @@ and the person can undo the change.
   It refuses with `not_allowed` when `canCustomize` is false. `lastBatch`
   (reactive) keeps `{ id, results, counts, before, after }`; `undo(id?)`
   restores `before` exactly, once, and refuses with `changed_since` when the
-  override is no longer `after` (the person edited since).
+  override is no longer `after` (the person edited since). Both read
+  `controller.committedOverride`, so in host-owned mode a batch whose save the
+  host has not fed back yet is not mistaken for a change made elsewhere.
   `useOverviewAssistantTools(assistant)` registers `<prefix>_describe` (read),
   `<prefix>_apply` and `<prefix>_undo` (write) through `useWebMcpTool`, so the
   AssistantDock offers them as page tools: the Provider's `webmcp.effects` must
