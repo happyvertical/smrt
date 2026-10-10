@@ -11,8 +11,9 @@ its default arrangement; admins (or users, per role) add, reorder, resize,
 configure and remove widgets inside that confined set, and reset returns to the
 default. Phase 1 (this module) is the surface, the registry, the data model, the
 server load contract and five core widgets; phase 2 adds package widgets from
-recipes ("Recipe widgets"); phase 4 adds assistant operations with Undo
-("Assistant operations"). Persistence is phase 3 (see "Extension points").
+recipes ("Recipe widgets"); phase 3 is production persistence in
+`@happyvertical/smrt-preferences` ("Production persistence"); phase 4 adds
+assistant operations with Undo ("Assistant operations").
 
 ## Two entries
 
@@ -50,7 +51,8 @@ against (absent means 1).
   (they would stop incrementing), and an exhausted high end restarts at `w1`.
 - **Tiers.** `resolveOverview` merges one override. A host with tenant defaults
   and user overrides merges the tenant tier into the definition's `defaults`
-  first (phase 3); the user override then applies to that.
+  first; the user override then applies to that (smrt-preferences'
+  `withTenantDefaults`).
 - **Reset** is `controller.reset()` (store `null`) or `resetWidget(id)`.
 
 ## Validation: what keeps a stored overview from running anything
@@ -243,6 +245,43 @@ turns the manifest's widget surfaces into `registry.register(...)` calls:
   and a type-level assertion here keeps `RecipeWidgetOptionType` equal to
   `WidgetOptionType`.
 
+## Production persistence (phase 3, `@happyvertical/smrt-preferences`)
+
+Overrides are stored as the `overview` kind of the generic user-interface
+preference table `_smrt_ui_preferences` in
+[smrt-preferences](../../preferences/AGENTS.md) (one row per tenant, kind,
+surface id = `OverviewDefinition.id`, and tier; the kind contract is in its
+[preference-kinds.md](../../preferences/agents/preference-kinds.md)). This
+package stays free of database code: its overview entries import nothing from
+core, tenancy or users. The `overview` kind validates with this package's
+`checkOverviewOverride` on save (only the canonical override is stored) and
+`resolveOverview` on load (bad entries dropped and reported per tier).
+`createOverviewStore({ db })` is the overview-shaped layer over the generic
+store and acts as the ambient principal:
+
+| Call | Does |
+| --- | --- |
+| `load(definition, registry)` | Both tiers resolved page defaults < tenant < user; each tier's `override`, `revision`, `issues`, the merged `document` and `canCustomize: { tenant, user }` |
+| `save(definition, registry, { scope, override, revision })` | Strict validation against the tier's definition (user: tenant-merged); `invalid` / `conflict` / `not_allowed` otherwise |
+| `reset(definition, { scope, revision? })` | Deletes that tier's row |
+| `loadPage(definition, registry, ctx, { scope? })` | `load` plus `loadOverview` of the tier's document, for `+page.server.ts` |
+| `loadWidget(definition, registry, widget, ctx)` | One widget's data for the controller's `loadWidget` remote function (throw on `ok: false`) |
+
+Host wiring for the personal layer: `createOverview({ definition:
+withTenantDefaults(definition, data.overview.tenant.document), override: () =>
+data.overview.user?.override ?? null, onchange: (next) => save({ scope:
+'user', override: next, revision }), canCustomize: () =>
+data.overview.canCustomize.user, loaded: data.overview.loaded, loadWidget })`;
+the organization layer uses the page definition, `tenant.override` and
+`canCustomize.tenant`. Keep the returned `revision` for the next save; on
+`conflict` reload the page data. Permissions are `overviews.customize` (tenant
+default) and `overviews.personalize` (own layout).
+
+Known model limit: a tenant default that later adds a widget whose id equals
+an id a user override already added hides the user's widget (an added widget
+colliding with a base id is skipped). `nextWidgetId` avoids it within one tier
+only.
+
 ## Assistant operations (`operations.ts`, `assistant-surface.ts`, `assistant.svelte.ts`)
 
 Phase 4: the assistant adds and configures widgets with structured operations,
@@ -312,15 +351,10 @@ and the person can undo the change.
 
 ## Extension points left for later phases
 
-- **Phase 2, package widgets (#3727, done).** See "Recipe widgets" below.
-- **Phase 3, production persistence.** Implement the `override` getter /
-  `onchange` pair against `@happyvertical/smrt-preferences` (`createOverviewStore`,
-  table `_smrt_ui_preferences`, kind `overview`) (tenant tier merged into
-  `definition.defaults`, user tier as the override), validate saves with
-  `checkOverviewOverride` and persist its canonical `override`, run
-  `loadOverview` in the page load, and supply `loadWidget` as a remote function
-  that calls the same `load`. Role gating = `canCustomize` plus the same check in
-  the save endpoint. No migration or table lives in this package.
-- **Phase 4, assistant (#3727, done).** See "Assistant operations" above. Phase
-  3 wires `createOverviewAssistantSurface` to the stored user tier.
+- **Phase 2, package widgets (#3727, done).** See "Recipe widgets" above.
+- **Phase 3, production persistence (#3727, done).** See "Production
+  persistence" above.
+- **Phase 4, assistant (#3727, done).** See "Assistant operations" above;
+  `createOverviewAssistantSurface` is wired to the stored user tier through
+  `createOverviewStore(...).save` as shown there.
 - **Not built:** the activity widget (Track B, #3710) and agenda.

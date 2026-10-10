@@ -32,6 +32,12 @@ them from the published artifact versus exporting them is tracked in #2286.
 - App-owned configuration for hidden edges, push/overlay presentation, and
   exclusivity groups
 - User-owned preferences persist as sparse `ShellSettingsDelta` values
+  through a `ShellSettingsAdapter` (`LocalStorageShellSettingsAdapter` by
+  default). Server-side, per tenant and user, they can persist as the
+  `shell-layout` kind of `@happyvertical/smrt-preferences`
+  (`createShellSettingsPreferences`, the server half of an adapter); it
+  validates with `sanitizeShellSettingsDelta`, the untrusted-input reader on
+  the Node-safe `./workspace/server` entry (with `mergeShellSettingsDelta`)
 - Focus tools may register imperatively through `ShellState` or declaratively
   through Svelte helpers
 - Shell activities are client-side records; server jobs, polling, WebSockets,

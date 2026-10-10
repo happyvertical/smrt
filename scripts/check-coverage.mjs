@@ -76,6 +76,7 @@ const TIERS = {
   languages: 'T3',
   manufacturing: 'T3',
   places: 'T3',
+  preferences: 'T3',
   products: 'T3',
   projects: 'T3',
   prompts: 'T3',

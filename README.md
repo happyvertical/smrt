@@ -248,6 +248,7 @@ Status legend:
 | [`smrt-features`](./packages/features/README.md) | Preview | Code-first feature flags and tenant overrides. |
 | [`smrt-languages`](./packages/languages/README.md) | Preview | Language strings, overrides, and translation jobs. |
 | [`smrt-fields`](./packages/fields/README.md) | Preview | Layered field policy store, resolution engine, and form surfaces. |
+| [`smrt-preferences`](./packages/preferences/README.md) | Preview | Organization defaults and personal user-interface preferences: overview layouts and the shell layout. |
 
 ### Web, mobile, and templates
 
