@@ -710,8 +710,9 @@ export class ApprovalService {
   }
 
   /**
-   * Expire every due request in the principal's tenant (oldest expiry
-   * first, at most `limit`). Returns the ids this call expired.
+   * Expire every due request in the principal's tenant: pending requests
+   * and unconsumed approvals past their deadline, oldest expiry first, at
+   * most `limit`. Returns the ids this call expired.
    */
   async expireDue(
     principal: ApprovalPrincipal,
@@ -726,6 +727,10 @@ export class ApprovalService {
         where: {
           tenantId: principal.tenantId,
           status: ['pending', 'approved'],
+          // Exclude consumed approvals in the query, before the limit: they
+          // never expire, so filtering them afterwards let a batch of them
+          // starve every later due request.
+          consumedAt: null,
           'expiresAt <=': now,
         },
         orderBy: 'expires_at ASC',
@@ -734,7 +739,6 @@ export class ApprovalService {
     });
     const expired: string[] = [];
     for (const candidate of candidates) {
-      if (candidate.isConsumed()) continue;
       const result = await this.expire(principal, String(candidate.id));
       if (result.outcome === 'transitioned') expired.push(String(candidate.id));
     }

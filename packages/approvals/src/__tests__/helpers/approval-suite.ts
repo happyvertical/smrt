@@ -491,6 +491,26 @@ export function defineApprovalSuite(getDb: () => DatabaseInterface): void {
       expect(expired.sort()).toEqual([a, b].sort());
       expect((await w.service.getRequest(job, late))?.status).toBe('pending');
     });
+    it('is not starved by a full batch of consumed past-deadline approvals', async () => {
+      const w = world();
+      const job = w.principal('service', []);
+      for (const hash of ['c-1', 'c-2', 'c-3']) {
+        const id = await approved(w, hash);
+        expect((await w.service.consume(job, id, hash)).outcome).toBe(
+          'transitioned',
+        );
+      }
+      w.clock.advance(HOUR);
+      const pending = await open(w);
+      w.clock.advance(24 * HOUR);
+
+      // The consumed approvals expire first and fill a limit-3 batch unless
+      // the query itself excludes them.
+      expect(await w.service.expireDue(job, { limit: 3 })).toEqual([pending]);
+      expect((await w.service.getRequest(job, pending))?.status).toBe(
+        'expired',
+      );
+    });
   });
 
   describe('consume', () => {
