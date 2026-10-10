@@ -68,13 +68,24 @@ field vocabulary; there is no query, filter expression, URL or SQL anywhere.
   Removal is compare-and-delete: `OverviewUndoStore.delete(key, token)` is a
   no-op unless the stored entry still carries that token, so an undo that
   finishes after a newer batch stored its entry never removes that entry.
+  Storing is a conditional set: an entry's `createdAt` is stamped right after
+  its batch's conditional write succeeded (strictly increasing per process),
+  and `set` is a no-op when the stored entry is newer, so an older apply whose
+  entry write lands late never replaces a newer batch's entry. Ordering by
+  write-success time rather than serializing per key works across replicas
+  sharing one store (a lock would only cover one process), and the revision
+  guard already serializes the writes themselves; revisions are opaque here,
+  so they cannot order entries. Across replicas the stamps rely on clocks
+  agreeing to within the time between two applies by the same person on the
+  same page.
 - **The undo store must outlive a request and a turn.** Without `undoStore`
   the tools use `defaultOverviewUndoStore()`, one in-memory store per process
   (30-minute TTL, 1000 keys), so tools built per turn
   (`extraTools: (context) => createOverviewTools(...)`) still undo an earlier
   turn's batch. Never pass a store created inside the per-turn factory. A
   multi-replica host passes one shared `OverviewUndoStore`, created once,
-  whose `delete(key, token)` is an atomic conditional delete.
+  whose `set` (newer `createdAt` wins) and `delete(key, token)` are atomic
+  conditional operations.
 - **After a successful write the call never fails.** The undo entry is written
   after the write; if the store throws, apply still answers `changed: true`
   with `undoToken: null` and a `note` not to apply the batch again (a lost entry

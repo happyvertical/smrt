@@ -747,6 +747,69 @@ describe('undo entry removal', () => {
   });
 });
 
+describe('undo entry ordering', () => {
+  it("never lets an older apply's late undo entry replace a newer one", async () => {
+    const { host } = makeHost();
+    const inner = createMemoryOverviewUndoStore();
+    let reached!: () => void;
+    let release!: () => void;
+    const atSet = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let stalled = false;
+    const undoStore: OverviewUndoStore = {
+      get: (key) => inner.get(key),
+      async set(key, entry) {
+        if (!stalled) {
+          stalled = true;
+          reached();
+          await gate;
+        }
+        return inner.set(key, entry);
+      },
+      delete: (key, token) => inner.delete(key, token),
+    };
+    const map = tools(host, { undoStore });
+    // A persists, then stalls before storing its undo entry.
+    const applyA = call(map, OVERVIEW_APPLY_TOOL_SLUG, alice, {
+      page: 'events.home',
+      operations: [{ op: 'remove', id: 'w1' }],
+    });
+    await atSet;
+    // B opens on A's result, persists and stores its entry first.
+    const b = (await call(map, OVERVIEW_APPLY_TOOL_SLUG, alice, {
+      page: 'events.home',
+      operations: [{ op: 'remove', id: 'w3' }],
+    })) as { undoToken: string };
+    release();
+    await applyA;
+    await expect(
+      call(map, OVERVIEW_UNDO_TOOL_SLUG, alice, {
+        page: 'events.home',
+        undoToken: b.undoToken,
+      }),
+    ).resolves.toMatchObject({ undone: true });
+  });
+
+  it('the memory store keeps the newer entry', () => {
+    const store = createMemoryOverviewUndoStore();
+    const entry = (token: string, createdAt: number) => ({
+      token,
+      before: null,
+      after: null,
+      createdAt,
+    });
+    store.set('k', entry('new', Date.now()));
+    store.set('k', entry('old', Date.now() - 1000));
+    expect(store.get('k')?.token).toBe('new');
+    store.set('k', entry('newer', Date.now() + 1));
+    expect(store.get('k')?.token).toBe('newer');
+  });
+});
+
 describe('the default undo store', () => {
   it('is one process-wide store', () => {
     expect(defaultOverviewUndoStore()).toBe(defaultOverviewUndoStore());

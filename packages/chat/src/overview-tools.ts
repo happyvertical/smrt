@@ -141,6 +141,11 @@ export interface OverviewUndoEntry {
   token: string;
   before: unknown;
   after: unknown;
+  /**
+   * When the batch's conditional write succeeded (epoch ms, strictly
+   * increasing within a process). Orders entries for
+   * {@link OverviewUndoStore.set} and drives expiry.
+   */
   createdAt: number;
 }
 
@@ -153,6 +158,14 @@ export interface OverviewUndoStore {
   get(
     key: string,
   ): OverviewUndoEntry | undefined | Promise<OverviewUndoEntry | undefined>;
+  /**
+   * Conditional set: store `entry` under `key` unless the stored entry is
+   * NEWER (a larger `createdAt`); then it is a no-op. Overlapping applies for
+   * one principal and page can finish their entry writes out of order, and an
+   * older apply's late write must not replace the newer batch's entry. A
+   * shared store implements this atomically (for example a conditional
+   * upsert on `createdAt`).
+   */
   set(key: string, entry: OverviewUndoEntry): void | Promise<void>;
   /**
    * Compare-and-delete: remove the entry under `key` ONLY if its `token` is
@@ -239,6 +252,10 @@ export function createMemoryOverviewUndoStore(
       return entry;
     },
     set(key, entry) {
+      const existing = entries.get(key);
+      // Conditional: an older apply that stores its entry late never replaces
+      // a newer one.
+      if (existing && existing.createdAt > entry.createdAt) return;
       entries.delete(key);
       entries.set(key, entry);
       while (entries.size > max) {
@@ -254,6 +271,20 @@ export function createMemoryOverviewUndoStore(
 }
 
 let processUndoStore: OverviewUndoStore | undefined;
+let lastUndoStamp = 0;
+
+/**
+ * The ordering stamp of an undo entry, taken right after the batch's
+ * conditional write succeeded: epoch ms, strictly increasing within a
+ * process. The revision guard serializes writes to one stored row, so the
+ * order the writes succeeded in is the order of the batches; revisions are
+ * opaque to this package (only compared for equality), so they cannot order
+ * entries themselves.
+ */
+function nextUndoStamp(): number {
+  lastUndoStamp = Math.max(Date.now(), lastUndoStamp + 1);
+  return lastUndoStamp;
+}
 
 /**
  * The process-wide in-memory undo store `createOverviewTools` uses when no
@@ -599,7 +630,7 @@ export function createOverviewTools(
           token,
           before,
           after: plan.override,
-          createdAt: Date.now(),
+          createdAt: nextUndoStamp(),
         });
       } catch (error) {
         onError(error, 'overview undo entry was not stored');
