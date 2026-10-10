@@ -122,6 +122,16 @@ reads/saves run under the principal's tenant (`withPrincipalTenant`), refuse a
 mismatching ambient tenant, and filter by the principal tenant explicitly. Contract and authority model:
 [`packages/reports/agents/runtime-reports.md`](../reports/agents/runtime-reports.md).
 
+## Overview tools (#3727)
+
+`createOverviewTools({ host })` (`overview-tools.ts`) returns
+`overviews.describe`, `overviews.apply` (an atomic batch of structured widget
+operations) and `overviews.undo` (single step, keyed by tenant, user and page).
+The host opens a page per `PrincipalRun` (smrt-svelte's
+`createOverviewAssistantSurface`, typed structurally here); validation and
+`canCustomize` are the surface's. Contract:
+[agents/overview-tools.md](agents/overview-tools.md).
+
 ## Conversational Harness (L3, #1891)
 
 The `AgentSession` runtime depends on personas, agents, and users. Keep those
