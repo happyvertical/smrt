@@ -511,7 +511,7 @@ export function resolveCollectionItemObject(
  * True when some ancestor model maps to the SAME REST collection (a shared STI
  * table). The STI base model owns the shared table's single definition.
  */
-function isStiChildModel(
+export function isStiChildModel(
   manifest: SmartObjectManifest,
   obj: SmartObjectDefinition,
 ): boolean {

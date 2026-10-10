@@ -69,7 +69,9 @@ It is the ground-up alternative to `smrt-saas-starter`.
 - `vite.config.ts` is `[sveltekit(), smrt()]`. The preset consumes exactly the
   packages in `smrt.config.ts` `consumer.packages` (profiles, tenancy, users),
   scans `src/lib/objects`, and generates Vite virtual definitions, SvelteKit
-  routes, runtime registration, and knowledge artifacts.
+  routes, runtime registration, and knowledge artifacts. With a
+  `smrt.cookbook.json` it also hosts the cookbook's package models over REST
+  (core `build-knowledge.md`, "Package models over REST", #3749).
 - `pnpm db:migrate` builds first to refresh generated artifacts, then the
   migration wrapper holds the shared operation/writer exclusion for the full
   manifest-driven migration command. Do not restore deprecated `smrt db:setup`

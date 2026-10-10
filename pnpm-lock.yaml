@@ -1275,6 +1275,9 @@ importers:
       '@xenova/transformers':
         specifier: ^2.17.2
         version: 2.17.2(@types/node@24.13.2)
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
       svelte:
         specifier: ^5.57.1
         version: 5.57.1

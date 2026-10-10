@@ -55,3 +55,8 @@ stays below the domain layer, and the app passes both in as props.
   default and does not replace it. Not wired into recipe surfaces yet (#3708).
 - Component props live in `types.ts`, not in the `.svelte` files, so the barrel
   never re-exports types from a component.
+- **Where a package model's definition and data come from (#3749).** A cookbook
+  app's `smrt()` preset hosts the cookbook's package models; the definition is
+  `collectionDefinitions[<collection>]` from `@smrt/web` and the source is the
+  model's `/api/<collection>` route (see [cookbook-shell.md](cookbook-shell.md)).
+  A model the API does not expose has neither, so the entry page shows its notice.
