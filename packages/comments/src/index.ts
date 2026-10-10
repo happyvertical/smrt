@@ -14,4 +14,5 @@ export type {
   CommentMentionNotificationAdapter,
   CommentOptions,
   CommentRecordAccess,
+  CreateCommentInput,
 } from './types.js';

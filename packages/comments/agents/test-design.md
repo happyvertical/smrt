@@ -41,3 +41,14 @@ provide the parent record authorization context.
   checking the discussion before reposting. Baseline produced “Try again”.
 - Commands: full comments `test`, `test:postgres`, `typecheck`, `check`, `build`,
   and Biome; evidence under `/private/tmp/smrt-track-b-evidence/3714-r1-*`.
+
+## Accepted review6084422109 round 6 persistence-key injection
+
+Actor may comment on record A only; another author owns a comment on record B
+in the same tenant. Injecting B's slug/context, with and without its primary id,
+must create a separate A row and preserve B's identity, author and body. Injected
+database and constructor options must not reach persistence or alter defaults.
+Real SQLite/DuckDB/PostgreSQL baselines fail these assertions; the service now
+allowlists CreateCommentInput and generates identity with insert-only persistence.
+Hydration options remain available only on the trusted model path. Full package,
+three-dialect, type/Svelte, build and Biome evidence: `3714-round6-*` logs.

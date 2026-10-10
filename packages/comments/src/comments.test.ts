@@ -7,6 +7,7 @@ import { Comment } from './models/Comment.js';
 import { RecordCommentsRecipe } from './recipes.js';
 import { CommentService } from './services/CommentService.js';
 import { createCommentMentionNotifications } from './services/mentionNotifications.js';
+import type { CommentRecordAccess } from './types.js';
 
 describe.each([
   'sqlite',
@@ -23,6 +24,119 @@ describe.each([
   const dbs: Array<{ close?: () => Promise<void> }> = [];
   afterEach(async () => {
     await Promise.all(dbs.splice(0).map((db) => db.close?.()));
+  });
+  it.each([
+    'natural-key',
+    'primary-key',
+  ])('ignores injected %s identity instead of replacing an unauthorized record comment', async (attack) => {
+    const db = await getTestDatabase({
+      classes: ['Comment'],
+      type: dialect as 'sqlite' | 'duckdb' | 'postgres',
+      url:
+        dialect === 'postgres'
+          ? process.env.SMRT_TEST_POSTGRES_URL
+          : ':memory:',
+    });
+    dbs.push(db);
+    const recordA = crypto.randomUUID();
+    const recordB = crypto.randomUUID();
+    const owner = new CommentService({
+      db,
+      actor: { tenantId, userId: mentionedUserId },
+      authorizeRecord: async () => true,
+    });
+    const existing = await owner.create({
+      tenantId,
+      authorUserId: mentionedUserId,
+      metaType: 'Record',
+      metaId: recordB,
+      body: 'Private record B discussion',
+    });
+    const authorizeRecord = vi.fn(
+      async (access: CommentRecordAccess) => access.recordId === recordA,
+    );
+    const service = new CommentService({ db, ...access, authorizeRecord });
+    const request = {
+      tenantId,
+      authorUserId,
+      metaType: 'Record',
+      metaId: recordA,
+      body: 'New record A discussion',
+      slug: existing.slug,
+      context: existing.context,
+      ...(attack === 'primary-key' ? { id: existing.id } : {}),
+      _adoptNaturalKey: true,
+      _insertOnly: false,
+    };
+    const created = await service.create(request);
+    const originalRows = await owner.listForRecord('Record', recordB);
+    expect(
+      originalRows.map((row) => ({
+        id: row.id,
+        author: row.authorUserId,
+        body: row.body,
+      })),
+    ).toEqual([
+      {
+        id: existing.id,
+        author: mentionedUserId,
+        body: 'Private record B discussion',
+      },
+    ]);
+    expect(created.id).not.toBe(existing.id);
+    expect(created.slug).not.toBe(existing.slug);
+    expect(
+      (await service.listForRecord('Record', recordA)).map((row) => row.id),
+    ).toEqual([created.id]);
+    expect(
+      authorizeRecord.mock.calls.every(
+        ([request]) => request.recordId === recordA,
+      ),
+    ).toBe(true);
+  });
+  it('ignores forged database and constructor options at the service boundary', async () => {
+    const db = await getTestDatabase({
+      classes: ['Comment'],
+      type: dialect as 'sqlite' | 'duckdb' | 'postgres',
+      url:
+        dialect === 'postgres'
+          ? process.env.SMRT_TEST_POSTGRES_URL
+          : ':memory:',
+    });
+    dbs.push(db);
+    const injectedQuery = vi.fn(async () => {
+      throw new Error('Untrusted executor reached');
+    });
+    const injectedDb = new Proxy(db, {
+      get(target, key) {
+        return key === 'query'
+          ? injectedQuery
+          : Reflect.get(target, key, target);
+      },
+    });
+    const recordId = crypto.randomUUID();
+    const request = {
+      tenantId,
+      authorUserId,
+      metaType: 'Record',
+      metaId: recordId,
+      body: 'Trusted executor',
+      db: injectedDb,
+      role: 'injected',
+      sortOrder: 900,
+      context: 'injected',
+      _skipLoad: false,
+      _insertOnly: false,
+    };
+    const service = new CommentService({ ...access, db });
+    const comment = await service.create(request);
+    expect(injectedQuery).not.toHaveBeenCalled();
+    expect(comment.context).toBe('');
+    expect(comment.role).toBe('default');
+    expect(comment.sortOrder).toBe(0);
+    expect(
+      (await service.listForRecord('Record', recordId)).map((row) => row.id),
+    ).toEqual([comment.id]);
   });
   it('persists a record comment and notifies each distinct non-author mention', async () => {
     const db = await getTestDatabase({

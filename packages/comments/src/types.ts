@@ -7,6 +7,16 @@ export interface CommentOptions extends SmrtPolymorphicAssociationOptions {
   mentions?: readonly string[];
 }
 
+/** Public service input; persistence identity and executor are server-owned. */
+export interface CreateCommentInput {
+  tenantId: string;
+  authorUserId: string;
+  metaType: string;
+  metaId: string;
+  body: string;
+  mentions?: readonly string[];
+}
+
 export interface CommentMention {
   commentId: string;
   tenantId: string;
