@@ -713,15 +713,27 @@ importers:
       '@happyvertical/ai':
         specifier: ^0.103.1
         version: 0.103.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/animation':
+        specifier: 0.5.0
+        version: 0.5.0(gsap@3.15.0)
+      '@happyvertical/images':
+        specifier: ^0.103.1
+        version: 0.103.1(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
+      '@happyvertical/smrt-assets':
+        specifier: workspace:*
+        version: link:../assets
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-images':
+        specifier: workspace:*
+        version: link:../images
       '@happyvertical/smrt-personas':
         specifier: workspace:*
         version: link:../personas
@@ -743,9 +755,15 @@ importers:
       '@happyvertical/smrt-users':
         specifier: workspace:*
         version: link:../users
+      '@happyvertical/speech':
+        specifier: ^0.103.1
+        version: 0.103.1(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@happyvertical/sql':
         specifier: file:../../vendor/sdk/a9009b68/happyvertical-sql-0.103.1.tgz
         version: file:vendor/sdk/a9009b68/happyvertical-sql-0.103.1.tgz(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      gsap:
+        specifier: ^3.13.0
+        version: 3.15.0
     devDependencies:
       '@happyvertical/smrt-playground':
         specifier: workspace:*
@@ -1542,6 +1560,9 @@ importers:
       '@happyvertical/ai':
         specifier: ^0.103.1
         version: 0.103.1(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.31.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.3.6))(supports-color@10.2.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/animation':
+        specifier: 0.5.0
+        version: 0.5.0(gsap@3.15.0)
       '@happyvertical/images':
         specifier: ^0.103.1
         version: 0.103.1(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.5(@types/node@24.13.2))
@@ -1576,6 +1597,9 @@ importers:
       '@happyvertical/smrt-playground':
         specifier: workspace:*
         version: link:../smrt-playground
+      '@happyvertical/smrt-profiles':
+        specifier: workspace:*
+        version: link:../profiles
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -5039,6 +5063,11 @@ packages:
     peerDependenciesMeta:
       '@mlc-ai/web-llm':
         optional: true
+
+  '@happyvertical/animation@0.5.0':
+    resolution: {integrity: sha512-GyLXc7t3GClDTGSjiujQ9bBb0XNpmsYHCyq7ViXN/LR4ENSCivlu19Y6FgPPdAAaX0thUBbKsvyLo4OKMnqnxA==}
+    peerDependencies:
+      gsap: '>=3.13.0'
 
   '@happyvertical/auth@file:vendor/sdk/a9009b68/happyvertical-auth-0.103.1.tgz':
     resolution: {integrity: sha512-KbiWRFNAeHTo7o6X+L+xpPe+jnDVR6j25qLb6cH1qvNpsedOtNs1ks8qFEn/P6UtqzgDN6wRDOgeH7ByPgIIQg==, tarball: file:vendor/sdk/a9009b68/happyvertical-auth-0.103.1.tgz}
@@ -8746,6 +8775,9 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  gsap@3.15.0:
+    resolution: {integrity: sha512-dMW4CWBTUK1AEEDeZc1g4xpPGIrSf9fJF960qbTZmN/QwZIWY5wgliS6JWl9/25fpTGJrMRtSjGtOmPnfjZB+A==}
 
   gtoken@7.1.0:
     resolution: {integrity: sha512-pCcEwRi+TKpMlxAQObHDQ56KawURgyAf6jtIY046fJ5tIv3zDe/LEIubckAO8fj6JnAxLdmWkUfNyulQ2iKdEw==}
@@ -12839,6 +12871,10 @@ snapshots:
       - ws
       - zod
 
+  '@happyvertical/animation@0.5.0(gsap@3.15.0)':
+    dependencies:
+      gsap: 3.15.0
+
   '@happyvertical/auth@file:vendor/sdk/a9009b68/happyvertical-auth-0.103.1.tgz(typescript@6.0.3)':
     dependencies:
       '@happyvertical/utils': 0.103.1
@@ -16631,6 +16667,8 @@ snapshots:
       type-fest: 4.41.0
 
   graceful-fs@4.2.11: {}
+
+  gsap@3.15.0: {}
 
   gtoken@7.1.0(supports-color@10.2.2):
     dependencies:

@@ -26,13 +26,13 @@ import AgentChat from './components/agent/AgentChat.svelte';
 import AgentSelector from './components/agent/AgentSelector.svelte';
 import AgentSessionPanel from './components/agent/AgentSessionPanel.svelte';
 import ToolCallDisplay from './components/agent/ToolCallDisplay.svelte';
-// Assistant dock components (#2904)
-import AssistantComposer from './components/assistant/AssistantComposer.svelte';
-import AssistantDock from './components/assistant/AssistantDock.svelte';
-import AssistantThreadList from './components/assistant/AssistantThreadList.svelte';
+import CaptionOverlay from './components/assistant/captions/CaptionOverlay.svelte';
+import HeardCaptions from './components/assistant/captions/HeardCaptions.svelte';
+import SpokenCaptions from './components/assistant/captions/SpokenCaptions.svelte';
 // Dialog components
 import RoomCreateDialog from './components/dialogs/RoomCreateDialog.svelte';
 import SearchMessages from './components/dialogs/SearchMessages.svelte';
+import HelperControlPanel from './components/helper/HelperControlPanel.svelte';
 // Layout components
 import ChatLayout from './components/layout/ChatLayout.svelte';
 import MemberList from './components/layout/MemberList.svelte';
@@ -49,7 +49,6 @@ import FileUpload from './components/shared/FileUpload.svelte';
 import LinkPreview from './components/shared/LinkPreview.svelte';
 import MentionAutocomplete from './components/shared/MentionAutocomplete.svelte';
 // Shared model picker
-import ModelPicker from './components/shared/ModelPicker.svelte';
 import ReactionPicker from './components/shared/ReactionPicker.svelte';
 import ReadReceipts from './components/shared/ReadReceipts.svelte';
 import UserPresence from './components/shared/UserPresence.svelte';
@@ -129,6 +128,21 @@ export {
   readAssistantTurnResult,
   type SmrtAssistantTransportOptions,
 } from './components/assistant/assistant-transport.js';
+export { default as CaptionOverlay } from './components/assistant/captions/CaptionOverlay.svelte';
+export {
+  type CaptionChannel,
+  type CaptionChannelOptions,
+  type CaptionLine,
+  type CaptionTTSAdapter,
+  createCaptionChannel,
+  createHeardCaptionCallbacks,
+  createSpokenCaptionCallbacks,
+  createSpokenCaptionSession,
+  type SpokenCaptionCallbacks,
+  type SpokenCaptionSession,
+} from './components/assistant/captions/caption-state.svelte.js';
+export { default as HeardCaptions } from './components/assistant/captions/HeardCaptions.svelte';
+export { default as SpokenCaptions } from './components/assistant/captions/SpokenCaptions.svelte';
 export {
   ASSISTANT_PROPOSE_ACTION_TOOL,
   type AssistantClientTool,
@@ -155,8 +169,27 @@ export {
   type AssistantUserHold,
   createAssistantDockController,
 } from './components/assistant/create-assistant-dock-controller.svelte.js';
+export {
+  default as FloatingAssistant,
+  type FloatingAssistantPresentationState,
+} from './components/assistant/FloatingAssistant.svelte';
 export { default as RoomCreateDialog } from './components/dialogs/RoomCreateDialog.svelte';
 export { default as SearchMessages } from './components/dialogs/SearchMessages.svelte';
+export { default as HelperControlPanel } from './components/helper/HelperControlPanel.svelte';
+export {
+  createHappyHelperStyle,
+  createHelperStyleRegistry,
+  createPhotoCutoutHelperStyle,
+  HAPPY_HELPER_OFFERING,
+  type HappyHelperStyleOptions,
+  type HappyRuntime,
+  type HelperRendererHandle,
+  type HelperStyleDefinition,
+  type HelperStyleMountInput,
+  type HelperStyleRegistry,
+  type HelperStyleSetupProps,
+  type PhotoCutoutPayload,
+} from './components/helper/registry.js';
 // Export components
 export { default as ChatLayout } from './components/layout/ChatLayout.svelte';
 export { default as MemberList } from './components/layout/MemberList.svelte';
@@ -264,6 +297,16 @@ ModuleUIRegistry.register(
   'tool-call-display',
   ToolCallDisplay,
 );
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-chat',
+  'heard-captions',
+  HeardCaptions,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-chat',
+  'spoken-captions',
+  SpokenCaptions,
+);
 
 // Shared
 ModuleUIRegistry.register('@happyvertical/smrt-chat', 'avatar', Avatar);
@@ -318,4 +361,15 @@ ModuleUIRegistry.register(
   '@happyvertical/smrt-chat',
   'search-messages',
   SearchMessages,
+);
+
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-chat',
+  'caption-overlay',
+  CaptionOverlay,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-chat',
+  'helper-control-panel',
+  HelperControlPanel,
 );

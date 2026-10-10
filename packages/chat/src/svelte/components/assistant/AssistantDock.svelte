@@ -105,6 +105,11 @@ export interface Props {
   surfaces?: DataSurfaceIdentity[];
   /** Whether the dock is currently visible; polling pauses while false. */
   visible?: boolean;
+  /**
+   * `controls` keeps live status and required decisions while omitting the
+   * transcript, thread list and composer for a host-owned conversation view.
+   */
+  presentation?: 'full' | 'controls';
   /** How the dock presents conversations. `multiple` (default) shows the
    * conversation list and lets the person start new ones. `single` is for
    * hosts where the person never needs to know about separate conversations:
@@ -160,6 +165,8 @@ export interface Props {
   /** Placeholder for the composer's empty textarea (#2991). Defaults to the
    * composer's own placeholder. */
   composerPlaceholder?: string;
+  /** Disables text submission while a host-owned input has a pending turn. */
+  composerDisabled?: boolean;
   /** The page's browser tools (#2908) — typically
    * `installWebMcpPageToolRegistry()` from
    * `@happyvertical/smrt-web/webmcp-page-tools`. Offered to the model each
@@ -182,6 +189,8 @@ export interface Props {
   /** Called whenever the supervised run changes (#assistant-watch). Also
    * readable as `controller.run`. */
   onrun?: (run: AssistantRun | null) => void;
+  /** Reports whether a person must make an explicit decision. */
+  onattentionchange?: (required: boolean) => void;
   /** Page features that can offer a few options for the person to pick
    * (see `./assistant-choices.svelte.ts`). The options show as cards here;
    * the person's click applies one. */
@@ -217,6 +226,7 @@ const {
   actionClient,
   surfaces,
   visible = true,
+  presentation = 'full',
   conversations = 'multiple',
   threadList = true,
   toolCall,
@@ -225,6 +235,7 @@ const {
   onactionsettled,
   initialDraft,
   composerPlaceholder,
+  composerDisabled = false,
   pageTools,
   clientToolPolicy,
   onstatus,
@@ -232,6 +243,7 @@ const {
   clientToolFilter,
   maxPauseMs,
   onrun,
+  onattentionchange,
   choiceSources,
   dictation,
   transcribe,
@@ -317,6 +329,18 @@ $effect(() => {
     oncontroller?.(controller);
   });
   return () => controller.dispose();
+});
+
+const attentionRequired = $derived(
+  controller.run?.waitingFor?.kind === 'choice' ||
+    controller.toolRequests.some((request) => request.status === 'waiting') ||
+    [...controller.actions.values()].some(
+      (action) => action.status === 'previewed' || action.outcomeUnknown,
+    ),
+);
+
+$effect(() => {
+  onattentionchange?.(attentionRequired);
 });
 
 // Finding B (#2904 review, third final pass): a SEPARATE effect, scoped to
@@ -585,7 +609,7 @@ async function handleConfirmAction(requestId: string) {
     class="assistant-dock-layout"
     data-threads-open={threadsOpen || undefined}
   >
-    {#if conversations !== 'single' && threadList}
+    {#if presentation === 'full' && conversations !== 'single' && threadList}
       <Button
         type="button"
         variant="ghost"
@@ -629,6 +653,23 @@ async function handleConfirmAction(requestId: string) {
         </p>
       {/if}
 
+      {#if controller.run && (presentation === 'controls' || controller.run.state === 'paused')}
+        <div class="assistant-dock-run" role="status" aria-live="polite">
+          <span>{controller.run.goal}</span>
+          {#if controller.run.state === 'running'}
+            <Button type="button" size="sm" variant="ghost" onclick={() => controller.pauseRun()}>
+              Pause
+            </Button>
+          {:else if controller.run.state === 'paused'}
+            <Button type="button" size="sm" onclick={() => controller.continueRun()}>
+              Continue
+            </Button>
+          {:else if controller.run.state === 'waiting' && controller.run.waitingFor}
+            <span>{controller.run.waitingFor.label ?? `Waiting for ${controller.run.waitingFor.kind}`}</span>
+          {/if}
+        </div>
+      {/if}
+
       {#if conversations === 'single' && controller.activeThreadId && transport.createThread && controller.messages.length > 0}
         <div class="assistant-dock-single-actions">
           <Button
@@ -661,6 +702,7 @@ async function handleConfirmAction(requestId: string) {
       {/if}
 
       <div class="assistant-dock-scroll">
+        {#if presentation === 'full'}
         {#if conversations === 'single'}
           {#if !controller.activeThreadId && !controller.error}
             <div
@@ -782,6 +824,8 @@ async function handleConfirmAction(requestId: string) {
               {/snippet}
             </MessageBubble>
           </div>
+        {/if}
+
         {/if}
 
         {#each controller.toolRequests.filter((r) => r.status === 'waiting') as request (request.id)}
@@ -913,6 +957,7 @@ async function handleConfirmAction(requestId: string) {
         </div>
       {/if}
 
+      {#if presentation === 'full'}
       <div class="assistant-dock-composer">
         {#if controller.models.length > 0}
           <div class="assistant-dock-composer-header">
@@ -931,7 +976,7 @@ async function handleConfirmAction(requestId: string) {
             }
             onsend={handleSend}
             onupload={transport.uploadAttachment ? handleUpload : undefined}
-            disabled={!controller.activeThreadId}
+            disabled={!controller.activeThreadId || composerDisabled}
             placeholder={composerPlaceholder}
             {dictation}
             {transcribe}
@@ -944,6 +989,7 @@ async function handleConfirmAction(requestId: string) {
           />
         {/key}
       </div>
+      {/if}
     </div>
   </div>
 </div>
@@ -976,6 +1022,16 @@ async function handleConfirmAction(requestId: string) {
     border-top: 1px solid var(--smrt-color-outline-variant, #c4c7c5);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
     color: var(--smrt-color-on-surface-variant, #44474e);
+  }
+
+  .assistant-dock-run {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c7c5);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .assistant-dock-tool-request {
