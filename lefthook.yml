@@ -71,24 +71,36 @@ pre-commit:
       # written into per-package .claude/ dirs, large binary blobs in package src/,
       # generic .DS_Store catch-all (currently handled passively via .gitignore).
       # Expand the case list below as new patterns appear.
+      # Piped, not a here-document: bash 5.3 on macOS hangs on a here-doc
+      # larger than about 512 bytes (a few dozen staged paths).
       run: |
-        git diff --cached --name-only --diff-filter=ACMRT | (
-          violations=""
-          while IFS= read -r f; do
-            [ -n "$f" ] || continue
-            case "$f" in
-              *vite.config.ts.timestamp-*.mjs|*vite.config.*.timestamp-*.mjs|*.timestamp-*.mjs) violations="$violations\n  $f (vite write-cache leftover)" ;;
-              *.bak) violations="$violations\n  $f (manual backup; remove or move outside repo)" ;;
-              */temp-test-manifest-gen-*.ts) violations="$violations\n  $f (manifest-builder driver script; should be gitignored)" ;;
-              packages/*/woohoo.txt|packages/*/test-direct-imports.js) violations="$violations\n  $f (stray dev artifact; remove)" ;;
-              packages/*/.changeset/*) violations="$violations\n  $f (changesets must live at repo root only)" ;;
-            esac
-          done
-          if [ -n "$violations" ]; then
-            printf "❌ Staged files violate docs/standards.md §11:%b\n" "$violations"
-            exit 1
-          fi
-        )
+        git diff --cached --name-only --diff-filter=ACMRT | {
+        violations=""
+        while IFS= read -r f; do
+          [ -n "$f" ] || continue
+          case "$f" in
+            *vite.config.ts.timestamp-*.mjs|*vite.config.*.timestamp-*.mjs|*.timestamp-*.mjs)
+              violations="$violations\n  $f (vite write-cache leftover)"
+              ;;
+            *.bak)
+              violations="$violations\n  $f (manual backup; remove or move outside repo)"
+              ;;
+            */temp-test-manifest-gen-*.ts)
+              violations="$violations\n  $f (manifest-builder driver script; should be gitignored)"
+              ;;
+            packages/*/woohoo.txt|packages/*/test-direct-imports.js)
+              violations="$violations\n  $f (stray dev artifact; remove)"
+              ;;
+            packages/*/.changeset/*)
+              violations="$violations\n  $f (changesets must live at repo root only)"
+              ;;
+          esac
+        done
+        if [ -n "$violations" ]; then
+          printf "❌ Staged files violate docs/standards.md §11:%b\n" "$violations"
+          exit 1
+        fi
+        }
       fail_text: |
         ❌ Forbidden artifacts in staged files!
 

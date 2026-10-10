@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.55.9
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - patch train, taxonomy recipe section and pre-commit hook hang (#3743)
+- @happyvertical/smrt-config@0.55.9
+  - @happyvertical/smrt-scanner@0.55.9
+  - @happyvertical/smrt-types@0.55.9
+
 ## 0.55.8
 
 ### Patch Changes
