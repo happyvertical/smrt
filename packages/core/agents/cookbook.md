@@ -51,4 +51,8 @@ An app that applies a cookbook lists the recipes' packages in `consumer.packages
 and nothing else: the `smrt()` Vite preset derives the REST allowlist from the
 cookbook, so the Orders of a `commerce.sales` recipe get `/api/orders` routes and
 an `@smrt/web` definition (see [build-knowledge.md](build-knowledge.md), "Package
-models over REST"). `exposure` listing `api` for a model withdraws its route.
+models over REST"). `exposure` listing `api` for a model withdraws its route. Models that share an
+STI table (the bakery's `Order`, `WholesaleOrder`, `PurchaseOrder` and
+`ProductionOrder`; `Product` and `Material`) each get their own route and
+definition, at `/<class collection>` (`/orders`, `/productionorders`), listing
+only their own rows; the build-knowledge section explains why.

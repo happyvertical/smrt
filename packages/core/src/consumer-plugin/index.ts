@@ -45,6 +45,7 @@ import {
   resolveCollectionItemObject,
 } from '../vite-plugin/web-collections.js';
 import { publishArtifactFiles } from './artifact-publication.js';
+import { separateHostedStiCollections } from './hosted-sti-collections.js';
 
 export {
   loadVerifiedSmrtGenerationSnapshot,
@@ -464,6 +465,10 @@ function selectConsumerRouteManifest(
   }
 
   const sourceManifest = manifest as unknown as SmartObjectManifest;
+  const collectionBySlot = new Map<
+    string,
+    { ref: string; className: string }
+  >();
   // Use the generator's canonical ancestry resolver so a collection subclass
   // inherits the selected item's identity through any number of ancestors.
   for (const [manifestKey, objectDef] of Object.entries(manifest.objects)) {
@@ -480,9 +485,29 @@ function selectConsumerRouteManifest(
       : undefined;
     if (!itemRef || !selected.has(itemRef)) continue;
     const collectionRef = consumerObjectRef(manifestKey, objectDef);
-    if (collectionRef) {
-      objects[collectionRef] = { ...objectDef, qualifiedName: collectionRef };
+    if (!collectionRef) continue;
+    // A collection class that inherits another's item type (`MaterialCollection
+    // extends ProductCollection`, whose `SmrtCollection<Product>` generic is
+    // authoritative) resolves to the SAME item and collection, so hosting both
+    // would write the same custom-action routes twice (#3749). The class named
+    // for the item stands for it, else the first in qualified order.
+    const slot = `${itemRef}\0${candidate.collection}`;
+    const rival = collectionBySlot.get(slot);
+    if (rival) {
+      const conventional = `${item?.className}Collection`;
+      if (
+        candidate.className !== conventional ||
+        rival.className === conventional
+      ) {
+        continue;
+      }
+      delete objects[rival.ref];
     }
+    collectionBySlot.set(slot, {
+      ref: collectionRef,
+      className: candidate.className,
+    });
+    objects[collectionRef] = { ...objectDef, qualifiedName: collectionRef };
   }
 
   return {
@@ -537,11 +562,35 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     if (!generationSnapshot) {
       throw new Error('[smrt:consumer] Generation snapshot is not configured');
     }
-    return loadVerifiedSmrtGenerationSnapshot<ConsumerManifest>(
-      generationSnapshot,
-      projectRoot,
-      'dependencies',
+    return withHostedStiCollections(
+      loadVerifiedSmrtGenerationSnapshot<ConsumerManifest>(
+        generationSnapshot,
+        projectRoot,
+        'dependencies',
+      ),
     );
+  }
+
+  /**
+   * Hosted STI subclasses get their own route collection (#3749), in every
+   * manifest view the plugin derives, so routes, the generated client, the
+   * `@smrt/web` definitions and the registration agree on the endpoint.
+   */
+  function withHostedStiCollections(manifest: ConsumerManifest) {
+    return consumerSvelteKit
+      ? separateHostedStiCollections(
+          manifest,
+          consumerSvelteKit.objects,
+          (key, def) =>
+            consumerObjectRef(key, def as unknown as ConsumerObjectDefinition),
+        )
+      : manifest;
+  }
+
+  async function aggregateHosted(
+    ...args: Parameters<typeof aggregateTypeManifests>
+  ): Promise<ConsumerManifest> {
+    return withHostedStiCollections(await aggregateTypeManifests(...args));
   }
 
   /**
@@ -573,7 +622,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       typeManifest = loadGenerationSnapshot();
     } else {
       const resolved = await resolveConsumerPackages();
-      typeManifest = await aggregateTypeManifests(resolved.names, projectRoot, {
+      typeManifest = await aggregateHosted(resolved.names, projectRoot, {
         explicit: resolved.explicit,
       });
     }
@@ -606,7 +655,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           const routePackages = await resolveConsumerPackages();
           const routeManifest = generationSnapshot
             ? loadGenerationSnapshot()
-            : await aggregateTypeManifests(routePackages.names, projectRoot, {
+            : await aggregateHosted(routePackages.names, projectRoot, {
                 explicit: routePackages.explicit,
               });
           const hostedManifest = selectConsumerRouteManifest(
@@ -761,7 +810,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
         );
 
         // Aggregate type manifests from discovered packages
-        typeManifest = await aggregateTypeManifests(smrtPackages, projectRoot, {
+        typeManifest = await aggregateHosted(smrtPackages, projectRoot, {
           explicit: resolvedPackages.explicit,
         });
         // Wait before reading .smrt/manifest.json: a producer's parallel
