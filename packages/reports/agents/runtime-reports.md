@@ -83,6 +83,13 @@ inputs the caller cannot supply through the spec:
   tenant as an explicit owner filter (`getRuntimeReport`/`listRuntimeReports`
   accept `tenantId`) that still holds under a system context.
 
+`listRuntimeReports` also accepts exact `createdByUserId` and `specHash`
+predicates. They are ANDed with status and explicit/ambient tenant filters before
+limiting results, so hosts can list a principal's saved reports or find a previous
+save of the compiled normalized spec without retrieving other authors' reports.
+These filters never replace authorization. See the
+[list-filter contract and test matrix](runtime-report-list-filters.md).
+
 ## Storage and surface
 
 `RuntimeReport` is `@TenantScoped({ mode: 'required' })` with `spec` (normalized
