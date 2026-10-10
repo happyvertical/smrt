@@ -9,6 +9,7 @@
 import type { Plugin, UserConfig } from 'vite';
 import { smrtConsumer } from '../consumer-plugin/index.js';
 import { type SmrtPluginOptions, smrtPlugin } from '../vite-plugin/index.js';
+import { resolveCookbookHostedObjects } from './cookbook-exposure.js';
 
 export interface SmrtPresetOptions {
   /**
@@ -17,6 +18,15 @@ export interface SmrtPresetOptions {
    * the app consumes none. Tooling/UI packages must not be listed.
    */
   packages?: readonly string[];
+  /**
+   * Consumed package models to host over generated REST routes, as
+   * provider-qualified refs (`@scope/pkg:Model`). This is an HTTP exposure
+   * boundary: each model's own `api` config still applies, so an `api: false`
+   * model stays closed. Omit to derive it from `smrt.cookbook.json` (the models
+   * of its recipes and `features`, minus those its `exposure` turns off for
+   * `api`); without a cookbook nothing is hosted. `[]` hosts nothing.
+   */
+  expose?: readonly string[];
   /**
    * Project root. Omit to follow the root Vite/SvelteKit resolve (the launch
    * cwd); `smrt.config.ts` is searched from this value or `process.cwd()`.
@@ -164,13 +174,22 @@ export async function smrt(options: SmrtPresetOptions = {}): Promise<Plugin[]> {
   // With no declared packages there is nothing to consume, and an empty list
   // would otherwise trigger dependency discovery.
   if (packages.length > 0) {
+    const hosted = options.expose
+      ? validatePackages(options.expose, 'smrt({ expose })')
+      : resolveCookbookHostedObjects(
+          options.projectRoot ?? process.cwd(),
+          packages,
+        );
     plugins.push(
       smrtConsumer({
         ...rootOption,
         packages,
         generateTypes: true,
         typesDir,
-        svelteKit: true,
+        svelteKit:
+          hosted.length > 0
+            ? { objects: hosted, routesDir, configPath, configFileName }
+            : true,
       }),
     );
   }

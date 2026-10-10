@@ -142,7 +142,20 @@ listing every problem, including a recipe no installed package declares.
   applied; applying them to the runtime is `smrt cookbook apply` and the
   runtime's job. The shell does not render a settings page; pass `settingsHref`.
 - **Entry pages** (`/m/<package>/<Model>/`) are the app's routes; `./screens`
-  (`RecipeScreens`) is the default content for them.
+  (`RecipeScreens`) is the default content for them. Their data comes from the
+  package model's generated REST route and its `@smrt/web` definition (#3749).
+  The app does nothing beyond listing the package in `smrt.config.ts`
+  `consumer.packages`: the `smrt()` Vite preset hosts the models of the
+  cookbook's recipes and `features` (core
+  [build-knowledge.md](../../core/agents/build-knowledge.md), "Package models
+  over REST"), skipping `api: false` models and any the cookbook's `exposure`
+  turns off for `api`. In the entry route, take
+  `collectionDefinitions[<collection>]` from `@smrt/web` (not
+  `@happyvertical/smrt-virt-web`, which holds only the app's own models) as the
+  `definition`, and build the `RecipeScreensSource` over
+  `GET /api/<collection>` and `/api/<collection>/<id>` (offer writes only when
+  the definition's `actions` include them). A model with no definition is not
+  exposed over the API; show the notice.
 - **Options/Help gear** on a recipe's first entry (the planner's `action`) is
   planner-only and not emitted.
 - **Legacy id migrations** (`migrateLegacySections`/`NavItemIds`) stay in the

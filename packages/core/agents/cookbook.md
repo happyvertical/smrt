@@ -44,3 +44,11 @@ features and policies need, into `package.json`. The file is the cookbook
 verbatim (legacy `$schema` rewritten); apps read it, apply does not interpret it.
 `policies` is required by the validator (use `[]`). The cookbook carries no package
 versions, so apply uses the project's smrt line.
+
+## Hosting package models
+
+An app that applies a cookbook lists the recipes' packages in `consumer.packages`
+and nothing else: the `smrt()` Vite preset derives the REST allowlist from the
+cookbook, so the Orders of a `commerce.sales` recipe get `/api/orders` routes and
+an `@smrt/web` definition (see [build-knowledge.md](build-knowledge.md), "Package
+models over REST"). `exposure` listing `api` for a model withdraws its route.
