@@ -59,13 +59,15 @@ interceptors, UUID columns, and the change feed behave as for any model.
 
 ## Service-only write capability
 
-Only `ApprovalService` inserts `ApprovalRequest` rows. It passes the
+Only `ApprovalService` inserts `ApprovalRequest` and `ApprovalEvent` rows
+(events only in the same transaction as the guarded UPDATE they record). It passes the
 module-private `SERVICE_WRITE` symbol (`src/write-capability.ts`, not a public
 export) as a constructor option; the model records that instance in a
 `WeakSet` and refuses, in `save()` and `validateBeforeSave()`, any insert
 without it, and any minted insert that does not start pending, undecided,
-and unconsumed. `new ApprovalRequest({ status: 'approved' }).save()` and
-`ApprovalRequestCollection.create(...)` are refused and write nothing. A
+and unconsumed. `new ApprovalRequest({ status: 'approved' }).save()`,
+`ApprovalRequestCollection.create(...)`, and a forged `approved` event
+(which would otherwise count toward quorum) are refused and write nothing. A
 symbol never arrives from JSON, so REST and MCP input cannot carry it (the
 smrt-reports `runtime-report.ts` pattern). It guards the in-process API,
 not raw SQL.

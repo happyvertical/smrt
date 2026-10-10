@@ -23,6 +23,7 @@ import {
   type ApprovalEventType,
   type ApprovalPrincipalType,
 } from '../types.js';
+import { adoptServiceWrite, hasServiceWrite } from '../write-capability.js';
 import { ApprovalRequest } from './ApprovalRequest.js';
 
 /** Constructor options for {@link ApprovalEvent}. */
@@ -121,6 +122,7 @@ export class ApprovalEvent extends SmrtObject {
 
   constructor(options: ApprovalEventOptions = {}) {
     super(options);
+    adoptServiceWrite(this, options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.requestId !== undefined) this.requestId = options.requestId;
     if (options.type !== undefined) this.type = options.type;
@@ -146,9 +148,31 @@ export class ApprovalEvent extends SmrtObject {
         `ApprovalEvent ${this.id} is append-only and cannot be updated.`,
       );
     }
+    this.assertInsertAllowed();
     if (!this.occurredAt) this.occurredAt = new Date();
     this.requireInsertOnSave();
     return await super.save();
+  }
+
+  /**
+   * Refuse any insert `ApprovalService` did not mint in the same transaction
+   * as its guarded UPDATE (see `write-capability.ts`): a forged `approved`
+   * event would otherwise count toward quorum. Runs for ordinary saves and
+   * bulk creates alike.
+   *
+   * @throws {ApprovalError} `APPROVAL_FORBIDDEN`.
+   */
+  protected override async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    this.assertInsertAllowed();
+  }
+
+  private assertInsertAllowed(): void {
+    if (this.isPersisted || hasServiceWrite(this)) return;
+    throw new ApprovalError(
+      'APPROVAL_FORBIDDEN',
+      'ApprovalEvent rows are appended only by ApprovalService transitions.',
+    );
   }
 
   /**

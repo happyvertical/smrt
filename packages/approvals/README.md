@@ -96,9 +96,9 @@ consumption after the deadline are refused even before the sweep runs.
   is `not_found`.
 - The generated REST and MCP surface is `list` and `get` only, and there is no
   generated CLI. Events cannot be updated or deleted.
-- Only `ApprovalService` can create requests: a request built directly
-  (`new ApprovalRequest(...)`, `ApprovalRequestCollection.create(...)`) is
-  refused at the model layer. `consume` also refuses an approval its event
+- Only `ApprovalService` can create requests and events: a row built
+  directly (`new ApprovalRequest(...)`, `ApprovalRequestCollection.create(...)`,
+  a hand-written `ApprovalEvent`) is refused at the model layer. `consume` also refuses an approval its event
   ledger does not back (`unbacked_approval`).
 
 ## Permissions

@@ -1180,7 +1180,9 @@ export class ApprovalService {
       sequence: input.sequence,
       voteKey: input.voteKey ?? null,
       occurredAt: input.now,
-    });
+      // The only place an event insert is authorized.
+      ...serviceWriteOption(),
+    } as Parameters<ApprovalEventCollection['create']>[0]);
   }
 
   /**

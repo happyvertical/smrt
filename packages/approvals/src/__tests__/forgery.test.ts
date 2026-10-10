@@ -122,6 +122,53 @@ describe('approval write capability', () => {
     expect(await count('approval_requests', tenantId)).toBe(1);
   });
 
+  function forgedEvent(tenantId: string, requestId: string) {
+    return {
+      tenantId,
+      requestId,
+      type: 'approved' as const,
+      actorId: randomUUID(),
+      actorType: 'human' as const,
+      subjectRevisionHash: 'rev-1',
+      sequence: 99,
+      voteKey: randomUUID(),
+    };
+  }
+
+  it('refuses a forged ledger event, directly or through the collection', async () => {
+    const { tenantId, service, requester } = actors();
+    const opened = await service.requestApproval(requester, {
+      kind: quorumKind,
+      subjectId: 'post-1',
+      subjectRevisionHash: 'rev-1',
+    });
+    const id = String(opened.request?.id);
+    await expect(
+      new ApprovalEvent({ db, ...forgedEvent(tenantId, id) }).save(),
+    ).rejects.toMatchObject({ code: 'APPROVAL_FORBIDDEN' });
+    const events = await ApprovalEventCollection.create({ db });
+    await expect(
+      events.create(forgedEvent(tenantId, id)),
+    ).rejects.toMatchObject({ code: 'APPROVAL_FORBIDDEN' });
+    expect(await count('approval_events', tenantId)).toBe(1);
+  });
+
+  it('cannot reach quorum 2 with one human vote plus a forged event', async () => {
+    const { tenantId, service, requester, approverA } = actors();
+    const opened = await service.requestApproval(requester, {
+      kind: quorumKind,
+      subjectId: 'post-1',
+      subjectRevisionHash: 'rev-1',
+    });
+    const id = String(opened.request?.id);
+    const events = await ApprovalEventCollection.create({ db });
+    await events.create(forgedEvent(tenantId, id)).catch(() => undefined);
+
+    const vote = await service.decide(approverA, id, { decision: 'approve' });
+    expect(vote.outcome).toBe('transitioned');
+    expect(vote.request).toMatchObject({ status: 'pending', approvalCount: 1 });
+  });
+
   it('still lets the service open, decide, and consume', async () => {
     const { service, requester, approverA, executor } = actors();
     const opened = await service.requestApproval(requester, {
