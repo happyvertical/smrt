@@ -29,27 +29,40 @@ vi.mock('@happyvertical/sql', () => ({
 // fields, so getCommonFields / queryWithProjection have something to project.
 vi.mock('@happyvertical/smrt-core', () => ({
   ObjectRegistry: {
-    getTableStrategy: vi.fn(() => 'sti'),
+    getTableStrategy: vi.fn((t: string) => (t === 'Flat' ? 'cti' : 'sti')),
     getSTIBase: vi.fn((t: string) => t),
     getTableName: vi.fn((t: string) =>
-      t === 'Article' || t === 'Content' ? 'contents' : null,
+      t === 'Article' || t === 'Mirror' || t === 'Content' || t === 'Flat'
+        ? 'contents'
+        : null,
     ),
-    getAllFields: vi.fn(
-      () =>
-        new Map<string, any>([
-          ['id', { type: 'text', _meta: { __smrtSystemField: true } }],
-          ['slug', { type: 'text', _meta: { __smrtSystemField: true } }],
-          ['title', { type: 'string' }],
-          ['body', { type: 'string' }],
-          ['status', { type: 'string' }],
-        ]),
-    ),
-    getSchema: vi.fn(() => ({
+    getAllFields: vi.fn((t: string) => {
+      if (t === 'Unregistered') return new Map<string, any>();
+      const fields = new Map<string, any>([
+        ['id', { type: 'text', _meta: { __smrtSystemField: true } }],
+        ['slug', { type: 'text', _meta: { __smrtSystemField: true } }],
+        ['title', { type: 'string' }],
+        ['body', { type: 'string' }],
+        ['status', { type: 'string' }],
+      ]);
+      if (t === 'Mirror') fields.set('externalUrl', { type: 'string' });
+      // `internalNotes` is exportable on Article but `exported: false` on
+      // Mirror and Flat: the per-type exclusion a union must not leak.
+      fields.set(
+        'internalNotes',
+        t === 'Mirror' || t === 'Flat'
+          ? { type: 'string', exported: false }
+          : { type: 'string' },
+      );
+      return fields;
+    }),
+    getSchema: vi.fn((t: string) => ({
       tableName: 'contents',
       columns: {
         id: { type: 'TEXT' },
         slug: { type: 'TEXT' },
-        _meta_type: { type: 'TEXT' },
+        // A table-per-class type has no STI discriminator column.
+        ...(t === 'Flat' ? {} : { _meta_type: { type: 'TEXT' } }),
         _meta_data: { type: 'JSON' },
         title: { type: 'TEXT' },
         body: { type: 'TEXT' },
@@ -320,6 +333,218 @@ describe('export command handler', () => {
 
     const written = await readFile(join(dir, 'contents.csv'), 'utf-8');
     expect(written).toBe('');
+  });
+
+  it('fails with a non-zero exit naming an unregistered type (#3682)', async () => {
+    const dir = await tmp('.tmp-export-unregistered-');
+    getConfig.mockReturnValue({
+      export: { contents: { types: ['Article', 'Unregistered'] } },
+    });
+
+    await requireCommandHandler(exportCommand)([], { output: dir });
+
+    expect(errored()).toContain('Export failed');
+    expect(errored()).toContain('"Unregistered"');
+    expect(process.exitCode).toBe(1);
+    expect(dbQuery).not.toHaveBeenCalled();
+    await expect(
+      readFile(join(dir, 'contents.json'), 'utf-8'),
+    ).rejects.toThrow();
+  });
+
+  it('names the unregistered type in the JSON error', async () => {
+    const dir = await tmp('.tmp-export-unregistered-json-');
+    getConfig.mockReturnValue({
+      export: { contents: { types: ['Unregistered'] } },
+    });
+
+    await requireCommandHandler(exportCommand)([], { output: dir, json: true });
+
+    expect(logged()).toContain('Unregistered');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('exports the union of columns for same-table STI types (#3682)', async () => {
+    const dir = await tmp('.tmp-export-union-');
+    getConfig.mockReturnValue({
+      export: { contents: { types: ['Article', 'Mirror'] } },
+    });
+    dbQuery.mockResolvedValue({
+      rows: [
+        { id: '1', _meta_type: 'a:Article', title: 'A', external_url: null },
+        {
+          id: '2',
+          _meta_type: 'a:Mirror',
+          title: 'M',
+          external_url: 'https://example.test/m',
+        },
+      ],
+    });
+
+    await requireCommandHandler(exportCommand)([], { output: dir });
+
+    expect(dbQuery).toHaveBeenCalledWith(
+      expect.stringContaining('external_url'),
+      '%:Article',
+      '%:Mirror',
+      'published',
+    );
+    const parsed = JSON.parse(
+      await readFile(join(dir, 'contents.json'), 'utf-8'),
+    );
+    expect(parsed[1].externalUrl).toBe('https://example.test/m');
+    expect(parsed[0].externalUrl).toBeNull();
+  });
+
+  describe('per-type exclusions inside a union (#3682)', () => {
+    const SENTINEL = 'SENTINEL-INTERNAL-NOTE';
+    const unionRows = [
+      {
+        id: '1',
+        _meta_type: '@scope/pkg:Article',
+        title: 'A',
+        internal_notes: 'article-visible-note',
+        external_url: null,
+      },
+      {
+        id: '2',
+        _meta_type: '@scope/pkg:Mirror',
+        title: 'M',
+        internal_notes: SENTINEL,
+        external_url: 'https://example.test/m',
+      },
+    ];
+
+    it('blanks a field excluded for one type while the other type still exports it', async () => {
+      const dir = await tmp('.tmp-export-union-excl-');
+      getConfig.mockReturnValue({
+        export: { contents: { types: ['Article', 'Mirror'] } },
+      });
+      dbQuery.mockResolvedValue({ rows: unionRows });
+
+      await requireCommandHandler(exportCommand)([], { output: dir });
+
+      expect(dbQuery).toHaveBeenCalledWith(
+        expect.stringContaining('internal_notes'),
+        '%:Article',
+        '%:Mirror',
+        'published',
+      );
+      const written = await readFile(join(dir, 'contents.json'), 'utf-8');
+      expect(written).not.toContain(SENTINEL);
+      const parsed = JSON.parse(written);
+      expect(parsed[0].internalNotes).toBe('article-visible-note');
+      expect(parsed[1].internalNotes).toBeNull();
+      expect(parsed[1].externalUrl).toBe('https://example.test/m');
+      // Output shape is identical across rows.
+      expect(Object.keys(parsed[1])).toEqual(Object.keys(parsed[0]));
+    });
+
+    it('keeps the sentinel out of ndjson and csv output too', async () => {
+      for (const format of ['ndjson', 'csv']) {
+        const dir = await tmp(`.tmp-export-union-excl-${format}-`);
+        getConfig.mockReturnValue({
+          export: { contents: { types: ['Article', 'Mirror'], format } },
+        });
+        dbQuery.mockResolvedValue({ rows: unionRows });
+
+        await requireCommandHandler(exportCommand)([], { output: dir });
+
+        const written = await readFile(
+          join(dir, `contents.${format}`),
+          'utf-8',
+        );
+        expect(written).not.toContain(SENTINEL);
+        expect(written).toContain('article-visible-note');
+      }
+    });
+
+    it('enforces exclusions when the discriminator is not an output field', async () => {
+      const dir = await tmp('.tmp-export-union-excl-include-');
+      getConfig.mockReturnValue({
+        export: {
+          contents: {
+            types: ['Article', 'Mirror'],
+            include: ['title', 'internalNotes'],
+          },
+        },
+      });
+      dbQuery.mockResolvedValue({ rows: unionRows });
+
+      await requireCommandHandler(exportCommand)([], { output: dir });
+
+      // The query selects the discriminator even though it is not exported.
+      expect(String(dbQuery.mock.calls[0][0])).toContain('_meta_type');
+      const written = await readFile(join(dir, 'contents.json'), 'utf-8');
+      expect(written).not.toContain(SENTINEL);
+      const parsed = JSON.parse(written);
+      expect(parsed[0]).toEqual({
+        title: 'A',
+        internalNotes: 'article-visible-note',
+      });
+      expect(parsed[1]).toEqual({ title: 'M', internalNotes: null });
+    });
+
+    it('fails closed, naming field and types, when a row type cannot be determined', async () => {
+      const dir = await tmp('.tmp-export-union-excl-nodisc-');
+      getConfig.mockReturnValue({
+        export: { contents: { types: ['Article', 'Mirror'] } },
+      });
+      dbQuery.mockResolvedValue({
+        rows: [{ id: '2', title: 'M', internal_notes: SENTINEL }],
+      });
+
+      await requireCommandHandler(exportCommand)([], { output: dir });
+
+      expect(process.exitCode).toBe(1);
+      expect(errored()).toContain('"internalNotes"');
+      expect(errored()).toContain('Mirror');
+      expect(errored()).not.toContain(SENTINEL);
+      await expect(
+        readFile(join(dir, 'contents.json'), 'utf-8'),
+      ).rejects.toThrow();
+    });
+
+    it('fails closed when an excluding type has no discriminator column', async () => {
+      const dir = await tmp('.tmp-export-union-excl-flat-');
+      getConfig.mockReturnValue({
+        export: { contents: { types: ['Article', 'Flat'] } },
+      });
+
+      await requireCommandHandler(exportCommand)([], { output: dir });
+
+      expect(process.exitCode).toBe(1);
+      expect(errored()).toContain('"Flat"');
+      expect(errored()).toContain('"internalNotes"');
+      expect(dbQuery).not.toHaveBeenCalled();
+    });
+
+    it("never exports the excluded field with fields: 'common'", async () => {
+      const dir = await tmp('.tmp-export-common-excl-');
+      getConfig.mockReturnValue({
+        export: {
+          contents: { types: ['Article', 'Mirror'], fields: 'common' },
+        },
+      });
+
+      await requireCommandHandler(exportCommand)([], { output: dir });
+
+      expect(String(dbQuery.mock.calls[0][0])).not.toContain('internal_notes');
+    });
+  });
+
+  it("keeps only shared columns with fields: 'common'", async () => {
+    const dir = await tmp('.tmp-export-common-');
+    getConfig.mockReturnValue({
+      export: {
+        contents: { types: ['Article', 'Mirror'], fields: 'common' },
+      },
+    });
+
+    await requireCommandHandler(exportCommand)([], { output: dir });
+
+    const sql = String(dbQuery.mock.calls[0][0]);
+    expect(sql).not.toContain('external_url');
   });
 
   it('falls back to the events table for unknown event-like types', async () => {

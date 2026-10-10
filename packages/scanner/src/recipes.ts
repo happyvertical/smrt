@@ -44,6 +44,7 @@ import type {
   RecipeShellSlot,
   RecipeSurface,
 } from '@happyvertical/smrt-types';
+import { RECIPE_WIDGET_KEYS, readWidgetSurface } from './recipe-widgets.js';
 import { getLineColumn } from './source-location.js';
 import type { ResolvedClassDefinition, ScanError } from './types.js';
 
@@ -73,6 +74,7 @@ const RECIPE_SURFACE_KINDS = [
   'route',
   'settings-panel',
   'playground',
+  'widget',
 ] as const satisfies readonly RecipeSurface['kind'][];
 const RECIPE_RUNTIMES = [
   'browser',
@@ -1135,9 +1137,13 @@ function readExportRef(
   at: string,
   report: Report,
   line?: number,
+  field = 'export',
 ): string | undefined {
   if (typeof value !== 'string') {
-    report(`${at}.export must be a string like \`pkg/svelte#Component\``, line);
+    report(
+      `${at}.${field} must be a string like \`pkg/svelte#Component\``,
+      line,
+    );
     return undefined;
   }
   const match = EXPORT_REF_PATTERN.exec(value);
@@ -1148,7 +1154,7 @@ function readExportRef(
       .some((part) => part === '.' || part === '..' || part.endsWith('.'))
   ) {
     report(
-      `${at}.export \`${value}\` must be \`<package specifier>#<ExportName>\` (a package specifier, not a relative path)`,
+      `${at}.${field} \`${value}\` must be \`<package specifier>#<ExportName>\` (a package specifier, not a relative path)`,
       line,
     );
     return undefined;
@@ -1207,6 +1213,7 @@ function readSurfaces(
       route: ['kind', 'path', 'export', 'label'],
       'settings-panel': ['kind', 'export', 'label'],
       playground: ['kind', 'export', 'label'],
+      widget: [...RECIPE_WIDGET_KEYS],
     };
     for (const key of Object.keys(entry)) {
       if (!allowed[kind].includes(key)) {
@@ -1280,6 +1287,23 @@ function readSurfaces(
         surface.path = path;
         identity = `route-path:${path}`;
       }
+    } else if (kind === 'widget') {
+      // Widget-specific fields live in recipe-widgets.ts (#3727).
+      const extras = readWidgetSurface(entry, at, fail, (value, where, field) =>
+        readExportRef(
+          value,
+          where,
+          (m, l) => {
+            report(m, l);
+            ok = false;
+          },
+          line,
+          field,
+        ),
+      );
+      if (extras) Object.assign(surface, extras);
+      if (typeof entry.type === 'string')
+        identity = `widget-type:${entry.type}`;
     }
     if (ref !== undefined) {
       if (seen.has(identity)) fail(`${at} repeats an earlier surface`);
@@ -1290,7 +1314,11 @@ function readSurfaces(
       if (label !== undefined) surface.label = label;
       // Stable key order for deterministic artifacts.
       const ordered: Record<string, unknown> = { kind };
-      for (const key of ['slot', 'path', 'export', 'label', 'icon']) {
+      const keyOrder: readonly string[] =
+        kind === 'widget'
+          ? RECIPE_WIDGET_KEYS
+          : ['slot', 'path', 'export', 'label', 'icon'];
+      for (const key of keyOrder) {
         if (surface[key] !== undefined) ordered[key] = surface[key];
       }
       out.push(ordered as unknown as RecipeSurface);
@@ -1324,11 +1352,20 @@ function readProviders(
       return;
     }
     for (const key of Object.keys(entry)) {
-      if (!['id', 'kind', 'options', 'required', 'secrets'].includes(key)) {
+      if (
+        ![
+          'id',
+          'kind',
+          'options',
+          'required',
+          'secrets',
+          'browserOptions',
+        ].includes(key)
+      ) {
         fail(`${at} does not accept \`${key}\``);
       }
     }
-    const { id, kind, options, required, secrets } = entry;
+    const { id, kind, options, required, secrets, browserOptions } = entry;
     if (typeof id !== 'string' || !PROVIDER_SLUG_PATTERN.test(id)) {
       fail(`${at}.id must be a lowercase slug`);
     } else if (ids.has(id)) {
@@ -1366,6 +1403,22 @@ function readProviders(
         `${at}.secrets must be distinct UPPER_SNAKE names (names, not values)`,
       );
     }
+    if (
+      browserOptions !== undefined &&
+      (!Array.isArray(browserOptions) ||
+        browserOptions.length === 0 ||
+        new Set(browserOptions).size !== browserOptions.length ||
+        !browserOptions.every(
+          (o) =>
+            typeof o === 'string' &&
+            Array.isArray(options) &&
+            options.includes(o),
+        ))
+    ) {
+      fail(
+        `${at}.browserOptions must be a non-empty list of distinct entries of options`,
+      );
+    }
     if (ok) {
       out.push({
         id: id as string,
@@ -1373,6 +1426,9 @@ function readProviders(
         options: options as string[],
         required: required as boolean,
         ...(secrets ? { secrets: secrets as string[] } : {}),
+        ...(browserOptions
+          ? { browserOptions: browserOptions as string[] }
+          : {}),
       });
     }
   });
@@ -1664,6 +1720,7 @@ export function resolveRecipes(
   // (`item:<pkg>:<Model>:<key>`), and a shared group or section id means one
   // card or section, so its labels must agree.
   const navKeys = new Map<string, string>();
+  const widgetTypes = new Map<string, string>();
   const labelled = new Map<string, { label: string; recipe: string }>();
   for (const recipe of recipes) {
     const raw = ids.get(recipe.id);
@@ -1684,6 +1741,17 @@ export function resolveRecipes(
         );
       }
       navKeys.set(slot, owner ?? recipe.id);
+    }
+    // A widget type is one registry key, so two recipes cannot share it (#3727).
+    for (const surface of recipe.surfaces ?? []) {
+      if (surface.kind !== 'widget') continue;
+      const owner = widgetTypes.get(surface.type);
+      if (owner && owner !== recipe.id) {
+        note(
+          `widget type \`${surface.type}\` is already used by recipe ${owner}; widget types must be unique`,
+        );
+      }
+      widgetTypes.set(surface.type, owner ?? recipe.id);
     }
     for (const [kind, value] of [
       ['group', recipe.group],

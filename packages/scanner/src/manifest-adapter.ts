@@ -1012,6 +1012,7 @@ export class ManifestAdapter {
         // for a conflictColumns member) and the DDL disagrees with the
         // runtime decorator.
         'onDelete',
+        'onUpdate',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {
@@ -1089,6 +1090,7 @@ export class ManifestAdapter {
         // #3023: keep the declared app-side delete policy for manifest-only
         // consumers, matching the runtime decorator.
         'onDelete',
+        'onUpdate',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {

@@ -27,11 +27,40 @@
       "import": "./dist/components/settings/index.js",
       "default": "./dist/components/settings/index.js"
     },
+    "./screens": {
+      "types": "./dist/components/screens/index.d.ts",
+      "svelte": "./dist/components/screens/index.js",
+      "import": "./dist/components/screens/index.js",
+      "default": "./dist/components/screens/index.js"
+    },
     "./board": {
       "types": "./dist/components/board/index.d.ts",
       "svelte": "./dist/components/board/index.js",
       "import": "./dist/components/board/index.js",
       "default": "./dist/components/board/index.js"
+    },
+    "./import-export": {
+      "types": "./dist/components/import-export/index.d.ts",
+      "svelte": "./dist/components/import-export/index.js",
+      "import": "./dist/components/import-export/index.js",
+      "default": "./dist/components/import-export/index.js"
+    },
+    "./command-palette": {
+      "types": "./dist/components/command-palette/index.d.ts",
+      "svelte": "./dist/components/command-palette/index.js",
+      "import": "./dist/components/command-palette/index.js",
+      "default": "./dist/components/command-palette/index.js"
+    },
+    "./overview": {
+      "types": "./dist/components/overview/index.d.ts",
+      "svelte": "./dist/components/overview/index.js",
+      "import": "./dist/components/overview/index.js",
+      "default": "./dist/components/overview/index.js"
+    },
+    "./overview/server": {
+      "types": "./dist/components/overview/server.d.ts",
+      "import": "./dist/components/overview/server.js",
+      "default": "./dist/components/overview/server.js"
     },
     "./sortable": {
       "types": "./dist/components/sortable/index.d.ts",

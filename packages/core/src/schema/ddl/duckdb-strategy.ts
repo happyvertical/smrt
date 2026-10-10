@@ -45,14 +45,16 @@ export class DuckDBStrategy extends BaseDDLStrategy {
             `[DDL:duckdb] Foreign key ${schema.tableName}.${foreignKey.column} uses ON DELETE ${foreignKey.onDelete}, which DuckDB does not support. Use PostgreSQL/SQLite or keep this relationship app-side only with @crossPackageRef.`,
           );
         }
-        if (foreignKey.onUpdate !== undefined) {
+        if (
+          foreignKey.onUpdate === 'CASCADE' ||
+          foreignKey.onUpdate === 'SET NULL'
+        ) {
           throw new Error(
             `[DDL:duckdb] Foreign key ${schema.tableName}.${foreignKey.column} uses ON UPDATE ${foreignKey.onUpdate}, which DuckDB does not support. DuckDB cannot preserve SMRT's ON UPDATE CASCADE contract; use PostgreSQL/SQLite or keep this relationship app-side only with @crossPackageRef.`,
           );
         }
-        // DuckDB supports the immediate restrictive behavior but rejects the
-        // SQL action clause. Omitting it is SQL's default NO ACTION; RESTRICT is
-        // equivalent because DuckDB has no deferred constraints.
+        // Preserve restrictive UPDATE actions. DELETE defaults to the same
+        // immediate NO ACTION behavior because DuckDB has no deferred constraints.
         return { ...foreignKey, onDelete: undefined };
       },
     );

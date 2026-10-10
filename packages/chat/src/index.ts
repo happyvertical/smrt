@@ -200,6 +200,25 @@ export {
   resolveConversationInstructions,
   runPersonaConversationTurn,
 } from './persona-conversation.js';
+// Declared recipes (#3719)
+export { AssistantRecipe } from './recipes.js';
+// Assistant tools for reports defined at runtime from a user request (#3711).
+export {
+  createRuntimeReportTools,
+  RUNTIME_REPORT_DEFINE_FUNCTION_NAME,
+  RUNTIME_REPORT_DEFINE_TOOL_SLUG,
+  RUNTIME_REPORT_LIST_FUNCTION_NAME,
+  RUNTIME_REPORT_LIST_TOOL_SLUG,
+  RUNTIME_REPORT_RUN_FUNCTION_NAME,
+  RUNTIME_REPORT_RUN_TOOL_SLUG,
+  RUNTIME_REPORT_SOURCES_FUNCTION_NAME,
+  RUNTIME_REPORT_SOURCES_TOOL_SLUG,
+  type RuntimeReportAuditEntry,
+  type RuntimeReportConfirmationHost,
+  type RuntimeReportSaveRequest,
+  type RuntimeReportToolSource,
+  type RuntimeReportToolsOptions,
+} from './runtime-report-tools.js';
 // Services
 export {
   ChatClientRequestConflictError,
