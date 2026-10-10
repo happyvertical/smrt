@@ -116,6 +116,62 @@ export class IntakeFeedbackService {
       minimumSimilarity,
     });
   }
+  private routing(
+    ctx: FeedbackActionContext,
+  ): Pick<RoutingRule, 'args' | 'projection'> {
+    // Read live trusted configuration again at publication/replay boundaries.
+    const declarations = this.options.feedback?.routing;
+    if (declarations === undefined) return { args: ctx.args };
+    if (!Array.isArray(declarations))
+      throw new Error('Invalid routing projection');
+    const seen = new Set<string>();
+    for (const declaration of declarations) {
+      const entry = object(declaration);
+      text(entry.handlerId);
+      text(entry.handlerVersion);
+      text(entry.version);
+      const key = digest([entry.handlerId, entry.handlerVersion]);
+      const handler = this.options.execution!.handlers.find(
+        (handler) =>
+          handler.id === entry.handlerId &&
+          handler.version === entry.handlerVersion,
+      );
+      if (!handler || seen.has(key))
+        throw new Error('Invalid routing projection');
+      seen.add(key);
+      const properties = object(handler.argsSchema.properties);
+      if (
+        !Array.isArray(entry.fields) ||
+        !entry.fields.length ||
+        entry.fields.length > 64 ||
+        new Set(entry.fields).size !== entry.fields.length
+      )
+        throw new Error('Invalid routing projection');
+      for (const field of entry.fields) {
+        text(field);
+        if (
+          ['__proto__', 'prototype', 'constructor'].includes(field) ||
+          !Object.hasOwn(properties, field)
+        )
+          throw new Error('Invalid routing projection');
+      }
+    }
+    const selected = declarations.find(
+      (entry) =>
+        entry.handlerId === ctx.handlerId &&
+        entry.handlerVersion === ctx.handlerVersion,
+    );
+    if (!selected) return { args: ctx.args };
+    const fields = [...selected.fields].sort();
+    const args = Object.fromEntries(
+      fields
+        .filter((field) => Object.hasOwn(ctx.args, field))
+        .map((field) => [field, structuredClone(ctx.args[field])]),
+    );
+    if (!Object.keys(args).length)
+      throw new Error('Routing values unavailable');
+    return { args, projection: { version: selected.version, fields } };
+  }
   private scope() {
     return this.options.scope;
   }
@@ -346,7 +402,8 @@ export class IntakeFeedbackService {
           )
             throw new Error('Feedback supersession conflict');
         }
-        const provenance = await this.provenance(ctx);
+        const provenance = await this.provenance(ctx),
+          routing = this.routing(ctx);
         const body = {
           version: 1,
           requestHash,
@@ -358,6 +415,7 @@ export class IntakeFeedbackService {
           handlerId: ctx.handlerId,
           handlerVersion: ctx.handlerVersion,
           args: ctx.args,
+          ...(routing.projection ? { routing } : {}),
           judgment: frozen.judgment,
           comment: frozen.comment ?? '',
           ...provenance,
@@ -370,6 +428,8 @@ export class IntakeFeedbackService {
           frozen.supersedesId ?? null,
         );
         await this.authorize(ctx, 'capture');
+        if (digest(routing) !== digest(this.routing(ctx)))
+          throw new Error('Routing projection changed');
         return this.receipt(row);
       },
     );
@@ -734,9 +794,15 @@ export class IntakeFeedbackService {
             data.judgment !== 'correct' ||
             data.revision !== source.review.revision ||
             data.bindingHash !== source.review.bindingHash ||
+            data.attemptId !== source.attemptId ||
+            data.handlerId !== source.handlerId ||
+            data.handlerVersion !== source.handlerVersion ||
             data.handlerId !== ctx.handlerId ||
             data.handlerVersion !== ctx.handlerVersion ||
-            digest(data.args) !== digest(ctx.args) ||
+            digest(data.args) !== digest(source.args) ||
+            digest(data.routing ?? { args: data.args }) !==
+              digest(this.routing(source)) ||
+            digest(this.routing(source)) !== digest(this.routing(ctx)) ||
             data.promptVersion !== provenance.promptVersion ||
             data.configurationVersion !== provenance.configurationVersion ||
             digest(data.model) !== digest(provenance.model) ||
@@ -775,7 +841,7 @@ export class IntakeFeedbackService {
           handlerId: ctx.handlerId,
           handlerVersion: ctx.handlerVersion,
           matchTerms: terms,
-          args: ctx.args,
+          ...this.routing(ctx),
         };
         const preview = await this.config.policy!.preview({
           db: ctx.db,
@@ -810,6 +876,7 @@ export class IntakeFeedbackService {
             digest: digest(body),
           });
         await this.authorize(ctx, 'suggest');
+        await this.rule(ctx, String(row.id));
         return this.ruleDTO(row);
       },
     );
@@ -844,6 +911,16 @@ export class IntakeFeedbackService {
       data.bindingHash !== ctx.review.bindingHash
     )
       throw new Error('Stale rule');
+    const rule = object(data.rule);
+    if (
+      rule.handlerId !== ctx.handlerId ||
+      rule.handlerVersion !== ctx.handlerVersion ||
+      digest({
+        args: rule.args,
+        ...(rule.projection ? { projection: rule.projection } : {}),
+      }) !== digest(this.routing(ctx))
+    )
+      throw new Error('Rule routing projection changed');
     const support = data.supportingFeedback as Array<{
       id: string;
       digest: string;
@@ -882,6 +959,7 @@ export class IntakeFeedbackService {
         )
           throw new Error('Rule policy changed');
         await this.authorize(ctx, 'suggest');
+        await this.rule(ctx, input.suggestionId);
         return suggestion;
       },
     );
@@ -965,6 +1043,7 @@ export class IntakeFeedbackService {
           digest: digest(body),
         });
         await this.authorize(ctx, 'adopt');
+        await this.rule(ctx, input.suggestionId);
         return {
           id: String(saved.id),
           policyVersion: applied.version,

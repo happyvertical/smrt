@@ -1,12 +1,23 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { RoutingRule } from './feedback-dto.js';
 import type { IngestionScope } from './server.js';
+/** Trusted server configuration, never a selector supplied by a feedback caller. */
+export interface RoutingProjection {
+  handlerId: string;
+  handlerVersion: string;
+  /** Advance when the meaning of these routing preferences changes. */
+  version: string;
+  /** Nonempty allowlist of top-level handler argsSchema properties. */
+  fields: readonly string[];
+}
 export interface FeedbackConfiguration {
   version: string;
   maxExamples: number;
   maxScan: number;
   maxBytes: number;
   minimumSimilarity: number;
+  /** Opt-in routing-only subsets. Omission retains exact full-argument matching. */
+  routing?: readonly RoutingProjection[];
   /** Live permission, same executor; host serializes grant changes at this boundary. */
   authorize(input: {
     db: DatabaseInterface;
