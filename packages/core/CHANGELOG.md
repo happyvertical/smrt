@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.55.11
+
+### Patch Changes
+
+- ### Features
+  
+  - headless cookbook engine and local Kitchen plugin (#3753, #3752) (#3765)
+  - cookbook contract, apply, kitchen and cookbook app shell (epic #3747) (#3764)
+  - release phase 2 report and overview extensions (#3763)
+- @happyvertical/smrt-config@0.55.11
+  - @happyvertical/smrt-scanner@0.55.11
+  - @happyvertical/smrt-types@0.55.11
+
 ## 0.55.10
 
 ### Patch Changes
