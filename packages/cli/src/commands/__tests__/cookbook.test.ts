@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -353,6 +354,43 @@ describe('cookbook apply', () => {
       expect(name).toBe(expected);
       expect(name).toMatch(/^[a-z0-9][a-z0-9-]*$/);
     }
+  });
+
+  it('copies only tracked and unignored files from a local git template', async () => {
+    const repo = join(work, 'git-template');
+    writeTemplate(repo);
+    rmSync(join(repo, '.git'), { recursive: true, force: true });
+    mkdirSync(join(repo, 'src', 'routes', 'api', 'notes'), { recursive: true });
+    writeFileSync(join(repo, 'src', 'routes', 'api', 'notes', 'stale.ts'), 'x');
+    writeFileSync(join(repo, '.gitignore'), 'src/routes/api/notes\nbuild\n');
+    const sh = (...args: string[]) =>
+      execFileSync('git', args, { cwd: repo, stdio: 'ignore' });
+    sh('init', '-q');
+    sh('add', '.');
+    sh(
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@example.test',
+      'commit',
+      '-q',
+      '-m',
+      'init',
+    );
+    // An uncommitted edit and an unignored new file ship; an ignored file does not.
+    writeFileSync(join(repo, 'src', 'app.ts'), '// edited\n');
+    writeFileSync(join(repo, 'src', 'new.ts'), '// new\n');
+    mkdirSync(join(repo, 'build'));
+    writeFileSync(join(repo, 'build', 'out.js'), 'x');
+    const dir = join(work, 'from-git');
+    await apply('yoga-studio', dir, { template: repo });
+    expect(readFileSync(join(dir, 'src', 'app.ts'), 'utf-8')).toBe(
+      '// edited\n',
+    );
+    expect(existsSync(join(dir, 'src', 'new.ts'))).toBe(true);
+    expect(existsSync(join(dir, 'src', 'routes', 'api', 'notes'))).toBe(false);
+    expect(existsSync(join(dir, 'build'))).toBe(false);
+    expect(existsSync(join(dir, '.git'))).toBe(false);
   });
 
   it('is idempotent and preserves user edits when re-applying an edited cookbook', async () => {

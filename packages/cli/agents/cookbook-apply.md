@@ -31,7 +31,13 @@ object that is not in its package's manifest, or a policy field the object lacks
 - **New project** (default): `[dir]` (or the slug of `cookbook.name`) must be absent or empty. The template is
   copied (`--template <path|github:owner/repo[#ref]|git URL>`, default
   `github:happyvertical/smrt-start`, unpinned; a remote template is shallow-fetched, `.git` dropped,
-  and its commit printed). `package.json` `name` becomes the slug of `cookbook.name` when set.
+  and its commit printed). A local template that is a git checkout contributes only tracked plus
+  untracked-but-unignored files (`git ls-files -co --exclude-standard`), so git-ignored generated output
+  (e.g. a stale `src/routes/api/notes`) never reaches the project; uncommitted edits still apply, which
+  `git archive HEAD` would drop. A non-git directory is copied whole minus `.git`/`node_modules`.
+  `package.json` `name` becomes the slug of `cookbook.name` when set, else of the target directory's
+  basename (never the template's name: the runtime derives the app identity, hence the OS data
+  directory, from it).
 - **Existing project**: `--into [dir]`, or re-running on a directory that already holds `smrt.cookbook.json`.
 - **Writes**: missing packages (from the recipes, features and policies) into `dependencies`,
   sorted; `smrt.cookbook.json` (the validated, normalized cookbook). Nothing else. No sample data.

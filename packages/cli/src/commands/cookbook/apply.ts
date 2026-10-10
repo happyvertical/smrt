@@ -17,7 +17,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import type { Cookbook } from '@happyvertical/smrt-types';
 
 export const COOKBOOK_CONFIG_FILE = 'smrt.cookbook.json';
@@ -149,6 +149,12 @@ export function parseTemplateSpec(
 interface AcquiredTemplate {
   root: string;
   revision?: string;
+  /**
+   * Paths (relative to `root`) to copy, when the template is a local git
+   * checkout: tracked plus untracked-but-not-ignored files. Undefined means
+   * copy everything except `.git` and `node_modules`.
+   */
+  files?: string[];
   cleanup(): void;
 }
 
@@ -160,6 +166,33 @@ function git(args: string[], cwd: string): string {
   }).trim();
 }
 
+/**
+ * Files a local git checkout contributes to a new project: everything tracked
+ * plus untracked files that are not git-ignored (`git ls-files -co
+ * --exclude-standard`). A working checkout carries git-ignored generated
+ * output (build products, a stale `src/routes/api/notes`) that must not leak
+ * into a new project, while uncommitted edits to the template still apply, so
+ * `git archive HEAD` (which would drop them) is not used. Returns undefined
+ * when `dir` is not inside a git work tree or git is unavailable.
+ */
+export function listLocalTemplateFiles(dir: string): string[] | undefined {
+  try {
+    if (git(['rev-parse', '--is-inside-work-tree'], dir) !== 'true') {
+      return undefined;
+    }
+    const out = execFileSync(
+      'git',
+      ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+      { cwd: dir, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    return [...new Set(out.split('\0').filter(Boolean))].filter((file) =>
+      existsSync(join(dir, file)),
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 /** Resolve a template to a directory: a local path as-is, a git source shallow-fetched. */
 export function acquireTemplate(spec: string): AcquiredTemplate {
   const parsed = parseTemplateSpec(spec);
@@ -169,7 +202,11 @@ export function acquireTemplate(spec: string): AcquiredTemplate {
         `Template ${parsed.path} has no package.json (pass --template <path|github:owner/repo#ref>)`,
       );
     }
-    return { root: parsed.path, cleanup() {} };
+    return {
+      root: parsed.path,
+      files: listLocalTemplateFiles(parsed.path),
+      cleanup() {},
+    };
   }
   const root = mkdtempSync(join(tmpdir(), 'smrt-template-'));
   const cleanup = () => rmSync(root, { recursive: true, force: true });
@@ -228,6 +265,23 @@ export function nextSteps(
     scripts['app:doctor'] ? `${run} app:doctor` : 'npx smrt doctor',
   );
   return steps;
+}
+
+function copyTemplate(template: AcquiredTemplate, targetDir: string): void {
+  const skip = (name: string) => name === '.git' || name === 'node_modules';
+  if (!template.files) {
+    cpSync(template.root, targetDir, {
+      recursive: true,
+      filter: (src) => !skip(basename(src)),
+    });
+    return;
+  }
+  for (const file of template.files) {
+    if (file.split('/').some(skip)) continue;
+    const to = join(targetDir, file);
+    mkdirSync(dirname(to), { recursive: true });
+    cpSync(join(template.root, file), to, { recursive: true });
+  }
 }
 
 /** Plan and (unless dry-run) perform the apply. */
@@ -345,13 +399,7 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
     const written: string[] = [];
     if (mode === 'new') {
       mkdirSync(targetDir, { recursive: true });
-      cpSync(template?.root as string, targetDir, {
-        recursive: true,
-        filter: (src) => {
-          const name = basename(src);
-          return name !== '.git' && name !== 'node_modules';
-        },
-      });
+      copyTemplate(template as AcquiredTemplate, targetDir);
       written.push(`${targetDir} (from template)`);
     }
     const packageJsonChanged =
