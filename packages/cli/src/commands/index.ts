@@ -22,6 +22,7 @@ export { generateCommands } from './generate.js';
 export { gitCommands } from './git.js';
 export { gnodeCommands } from './gnode.js';
 export { initCommands } from './init.js';
+export { kitchenCommands } from './kitchen.js';
 export { mcpAppsCommands } from './mcp-apps-packaging.js';
 export { playgroundCommands } from './playground.js';
 export { utilityCommands } from './utilities.js';
