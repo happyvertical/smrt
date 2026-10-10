@@ -133,6 +133,49 @@ describe('storedValueEquals (#3737)', () => {
     expect(equal(new Date(Number.NaN), '2026-01-02 03:04:05.678')).toBe(false);
   });
 
+  it('keeps the literal year for years 0000-0099', () => {
+    const at1999 = new Date('1999-01-02T03:04:05Z');
+    // A stored year 99 is not 1999.
+    expect(
+      storedValueEquals(
+        'TIMESTAMP',
+        at1999,
+        new Date(0),
+        '0099-01-02 03:04:05',
+      ),
+    ).toBe(false);
+    expect(
+      storedValueEquals(
+        'TIMESTAMP',
+        '0099-01-02T03:04:05Z',
+        new Date(0),
+        '1999-01-02 03:04:05',
+      ),
+    ).toBe(false);
+    // The same early instant on both sides is still provable.
+    const year99 = new Date(Date.UTC(2000, 0, 2, 3, 4, 5));
+    year99.setUTCFullYear(99);
+    expect(timestampMicros('0099-01-02 03:04:05', true)).toBe(
+      BigInt(year99.getTime()) * 1000n,
+    );
+    expect(
+      storedValueEquals(
+        'TIMESTAMP',
+        year99,
+        new Date(0),
+        '0099-01-02 03:04:05',
+      ),
+    ).toBe(true);
+    const year0 = new Date(Date.UTC(2000, 0, 1));
+    year0.setUTCFullYear(0);
+    expect(timestampMicros('0000-01-01T00:00:00Z')).toBe(
+      BigInt(year0.getTime()) * 1000n,
+    );
+    // Negative years and DuckDB's BC rendering are unprovable.
+    expect(timestampMicros('-0001-01-02 03:04:05', true)).toBeUndefined();
+    expect(timestampMicros('0001-01-02 03:04:05 (BC)', true)).toBeUndefined();
+  });
+
   it('reads timestamp text exactly', () => {
     expect(timestampMicros('2026-01-02 03:04:05.5', true)).toBe(
       BigInt(Date.UTC(2026, 0, 2, 3, 4, 5)) * 1000n + 500000n,

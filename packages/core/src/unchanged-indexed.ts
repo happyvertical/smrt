@@ -91,14 +91,11 @@ export function timestampMicros(
   const [, year, month, day, hour, minute, second, fraction = '', zone] = match;
   if (fraction.length > 6 && /[1-9]/u.test(fraction.slice(6))) return undefined;
   if (zone === undefined && !naiveIsUtc) return undefined;
-  const wall = Date.UTC(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    Number(second),
-  );
+  // `Date.UTC` maps years 0-99 onto 1900-1999; set the literal year instead.
+  const date = new Date(0);
+  date.setUTCFullYear(Number(year), Number(month) - 1, Number(day));
+  date.setUTCHours(Number(hour), Number(minute), Number(second), 0);
+  const wall = date.getTime();
   if (Number.isNaN(wall)) return undefined;
   let offsetMinutes = 0;
   if (zone && zone.toUpperCase() !== 'Z') {
