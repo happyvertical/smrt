@@ -87,6 +87,13 @@ class Issue3737Circle extends Issue3737Shape {
   radius = 1;
 }
 
+/** An indexed JSON column, provisioned by hand in the DuckDB lane. */
+@smrt({ tableName: 'issue3737_json_keyed' })
+class Issue3737JsonKeyed extends SmrtObject {
+  @field({ type: 'json', indexed: true })
+  payload: unknown = {};
+}
+
 /** Columns named after SQL reserved words. */
 @smrt({ tableName: 'issue3737_reserved' })
 class Issue3737Reserved extends SmrtObject {
@@ -637,6 +644,29 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         // created_at is indexed and referenced: assigning it would be refused.
         await loaded.save();
         expect((await load(created.id as string)).enabled).toBe(false);
+      });
+
+      it('writes an indexed JSON value whose numbers differ beyond double precision', async () => {
+        await db.query('DROP TABLE IF EXISTS issue3737_json_keyed');
+        await db.query(
+          `CREATE TABLE issue3737_json_keyed (id UUID PRIMARY KEY, slug TEXT NOT NULL, context TEXT NOT NULL DEFAULT '', created_at TIMESTAMP NOT NULL DEFAULT current_timestamp, updated_at TIMESTAMP NOT NULL DEFAULT current_timestamp, payload JSON, UNIQUE (slug, context))`,
+        );
+        const row = new Issue3737JsonKeyed({ db, slug: 'json-1' });
+        await row.initialize();
+        row.payload = '{"n":9007199254740992}';
+        await row.save();
+
+        const loaded = new Issue3737JsonKeyed({ db, id: row.id as string });
+        await loaded.initialize();
+        // Same double, different number: an explicit change.
+        loaded.payload = '{"n":9007199254740993}';
+        await loaded.save();
+
+        const stored = await db.query(
+          'SELECT CAST(payload AS VARCHAR) AS payload FROM issue3737_json_keyed WHERE id = ?',
+          row.id,
+        );
+        expect(String(stored.rows[0].payload)).toContain('9007199254740993');
       });
 
       it('fails closed when the driver reports no affected-row count', async () => {

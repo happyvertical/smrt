@@ -3,6 +3,7 @@ import type { SchemaDefinition } from '../schema/types';
 import {
   buildDuckDbIdUpdate,
   collectIndexedColumns,
+  jsonNumbersRoundTrip,
   storedValueEquals,
   timestampColumnsToProve,
   timestampMicros,
@@ -220,6 +221,52 @@ describe('storedValueEquals (#3737)', () => {
     expect(storedValueEquals('JSON', ['x'], '["x"]')).toBe(true);
     expect(storedValueEquals('JSON', ['x'], '["y"]')).toBe(false);
     expect(storedValueEquals('JSON', 'not json', 'not json')).toBe(false);
+  });
+
+  it('never proves JSON equal through numbers a double cannot hold', () => {
+    const big = '{"n":9007199254740992}';
+    const bigger = '{"n":9007199254740993}';
+    // Requested side and stored side.
+    expect(storedValueEquals('JSON', bigger, big)).toBe(false);
+    expect(storedValueEquals('JSON', big, bigger)).toBe(false);
+    expect(storedValueEquals('JSON', { n: 9007199254740992 }, bigger)).toBe(
+      false,
+    );
+    // Nested objects and arrays.
+    expect(
+      storedValueEquals(
+        'JSON',
+        '{"a":{"b":[1,{"c":9007199254740993}]}}',
+        '{"a":{"b":[1,{"c":9007199254740992}]}}',
+      ),
+    ).toBe(false);
+    expect(
+      storedValueEquals('JSON', '[0.1000000000000000000001]', '[0.1]'),
+    ).toBe(false);
+    // Digits inside strings are text, not numbers.
+    expect(
+      storedValueEquals(
+        'JSON',
+        '{"id":"9007199254740993"}',
+        '{"id":"9007199254740993"}',
+      ),
+    ).toBe(true);
+    expect(jsonNumbersRoundTrip('{"s":"x\\"9007199254740993"}')).toBe(true);
+    // Ordinary numbers are still provable.
+    expect(
+      storedValueEquals('JSON', { a: 1, b: [2.5, -3] }, '{"b":[2.5,-3],"a":1}'),
+    ).toBe(true);
+    expect(jsonNumbersRoundTrip('{"n":9007199254740991}')).toBe(true);
+    expect(jsonNumbersRoundTrip('[1e2]')).toBe(false);
+  });
+
+  it('compares bigint and number exactly', () => {
+    expect(
+      storedValueEquals('INTEGER', 9007199254740992, 9007199254740993n),
+    ).toBe(false);
+    expect(
+      storedValueEquals('INTEGER', 9007199254740992, 9007199254740992n),
+    ).toBe(true);
   });
 
   it('compares booleans and numbers, across bigint and number', () => {

@@ -107,8 +107,13 @@ columns are therefore left out of the write:
   indexed timestamp is proven against the stored value read as text
   (`CAST(col AS VARCHAR)`), at microsecond precision: a hydrated `Date` has
   already lost sub-millisecond digits, so `.678901` stored versus `.678`
-  requested is a change and is written. Any
-  doubt means "assign it as before". `id` and `updated_at` are always written.
+  requested is a change and is written. JSON text is only proven when every
+  number literal outside its strings round-trips through a double exactly
+  (`jsonNumbersRoundTrip()`): `9007199254740993` and `9007199254740992` parse
+  to the same double, so text holding an unsafe integer, more digits than a
+  double holds, or a non-canonical form such as `1.0`/`1e2` is unprovable and
+  assigned. A `bigint` and a `number` compare exactly (`==`), never through a
+  double. Any doubt means "assign it as before". `id` and `updated_at` are always written.
 - **How.** The adapter's `upsert` cannot restrict its `DO UPDATE SET`, and its
   generic `update()` neither quotes column names (a column named `order` is a
   syntax error) nor binds dates and structures. So the remaining columns go
