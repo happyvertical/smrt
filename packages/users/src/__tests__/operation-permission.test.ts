@@ -990,6 +990,28 @@ describe('operation permission guards', () => {
     }
   });
 
+  it('default-grants the overview personalization slug once it is registered (#3727)', async () => {
+    const unregister = registerPermissionDefinitions([
+      {
+        category: 'overviews',
+        name: 'Personalize Overviews',
+        slug: 'overviews.personalize',
+      },
+    ]);
+    cleanupFns.push(unregister);
+
+    await roles.seedSystemRoles();
+    const seeded = await rolePermissions.seedRolePermissions();
+
+    for (const role of ['owner', 'admin', 'member', 'viewer']) {
+      expect(seeded.added[role]).toContain('overviews.personalize');
+    }
+    // An unregistered self-personalization slug is never reported unmatched.
+    expect(seeded.unmatchedPatterns.viewer ?? []).not.toContain(
+      'fields.policy.personalize',
+    );
+  });
+
   it('never injects the built-in self-personalization grant into a custom role matrix', async () => {
     const unregister = registerPermissionDefinitions([
       {
