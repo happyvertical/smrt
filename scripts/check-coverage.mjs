@@ -74,6 +74,7 @@ const TIERS = {
   inventory: 'T3',
   languages: 'T3',
   manufacturing: 'T3',
+  overviews: 'T3',
   places: 'T3',
   products: 'T3',
   projects: 'T3',

@@ -36,6 +36,7 @@ export const PACKAGE_BROWSER_CAPABILITY: Readonly<Record<string, PackageBrowserC
   "@happyvertical/smrt-manufacturing": {"status":"server-only","issues":["#3616","#3624","#3626"],"via":["@happyvertical/smrt-products","@happyvertical/smrt-tenancy"]},
   "@happyvertical/smrt-marketing": {"status":"server-only","issues":["#3624"],"via":["@happyvertical/smrt-tenancy"]},
   "@happyvertical/smrt-messages": {"status":"server-only","issues":["#3617","#3624","#3626","#3627"],"via":["@happyvertical/smrt-profiles","@happyvertical/smrt-secrets","@happyvertical/smrt-tenancy","@happyvertical/smrt-users"]},
+  "@happyvertical/smrt-overviews": {"status":"server-only","issues":["#3617","#3624","#3626"],"via":["@happyvertical/smrt-profiles","@happyvertical/smrt-tenancy","@happyvertical/smrt-users"]},
   "@happyvertical/smrt-personas": {"status":"server-only","issues":["#3615","#3617","#3624","#3625","#3626","#3627"],"via":["@happyvertical/smrt-agents","@happyvertical/smrt-jobs","@happyvertical/smrt-profiles","@happyvertical/smrt-reports","@happyvertical/smrt-secrets","@happyvertical/smrt-tenancy","@happyvertical/smrt-users"]},
   "@happyvertical/smrt-places": {"status":"server-only","issues":["#3624","#3627"],"reason":"geo -> cache -> redis, node:zlib; url-signature node:crypto","via":["@happyvertical/smrt-tenancy"]},
   "@happyvertical/smrt-playbooks": {"status":"server-only","issues":["#3624"],"via":["@happyvertical/smrt-tenancy"]},
