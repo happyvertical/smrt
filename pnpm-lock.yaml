@@ -593,6 +593,9 @@ importers:
       '@happyvertical/smrt-analytics':
         specifier: workspace:*
         version: link:../analytics
+      '@happyvertical/smrt-approvals':
+        specifier: workspace:*
+        version: link:../approvals
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
