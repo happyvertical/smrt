@@ -18,6 +18,7 @@ interface Props {
   assistant: OverviewAssistant;
   /** Message for a batch (default: a generic "updated" line). */
   message?: (batch: OverviewAssistantBatch) => string;
+  /** Extra class names for the affordance's row, for host placement. */
   class?: string;
 }
 
