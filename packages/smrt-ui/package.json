@@ -104,6 +104,11 @@
       "import": "./dist/themes/index.js",
       "default": "./dist/themes/index.js"
     },
+    "./themes/presets": {
+      "types": "./dist/themes/presets.d.ts",
+      "import": "./dist/themes/presets.js",
+      "default": "./dist/themes/presets.js"
+    },
     "./themes/styles/*": {
       "default": "./dist/themes/styles/*"
     },

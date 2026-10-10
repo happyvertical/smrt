@@ -376,6 +376,33 @@ function createQualifiedName(
 }
 
 /**
+ * The default REST collection name of a class: its lowercased, pluralized
+ * name. A declared `@smrt({ collection })` replaces it.
+ *
+ * This produces the manifest's `collection` label only; the authoritative DDL
+ * table name is derived independently by core (`classnameToTablename` →
+ * the `pluralize` library), so this needs to stay self-consistent rather than
+ * cover every irregular plural. Note the `y → ies` rule fires only after a
+ * consonant, so vowel+y words pluralise correctly (`Day` → `days`, not
+ * `daies`).
+ */
+export function defaultCollectionName(className: string): string {
+  // Lowercase the name first for consistent collection/table names
+  const lower = className.toLowerCase();
+  // Consonant + y → ies (City → cities); vowel + y → +s (Day → days).
+  if (/[^aeiou]y$/.test(lower)) {
+    return `${lower.slice(0, -1)}ies`;
+  }
+  if (lower.endsWith('s') || lower.endsWith('x') || lower.endsWith('z')) {
+    return `${lower}es`;
+  }
+  if (lower.endsWith('ch') || lower.endsWith('sh')) {
+    return `${lower}es`;
+  }
+  return `${lower}s`;
+}
+
+/**
  * Converts OXC scanner output into the smrt-core `SmartObjectManifest` format
  * consumed by code generators, the Vitest plugin, and the SMRT CLI.
  *
@@ -628,7 +655,7 @@ export class ManifestAdapter {
     const collection =
       typeof classDef.decoratorConfig?.collection === 'string'
         ? classDef.decoratorConfig.collection
-        : this.pluralize(classDef.className);
+        : defaultCollectionName(classDef.className);
 
     // Determine package name (prefer option, then classDef value)
     const packageName = options.packageName || classDef.packageName;
@@ -1600,31 +1627,5 @@ export class ManifestAdapter {
         ? { decoratorConfig: method.decoratorConfig }
         : {}),
     };
-  }
-
-  /**
-   * Simple pluralization for collection names.
-   *
-   * This produces the manifest's `collection` label only; the authoritative DDL
-   * table name is derived independently by core (`classnameToTablename` →
-   * the `pluralize` library), so this needs to stay self-consistent rather than
-   * cover every irregular plural. Note the `y → ies` rule fires only after a
-   * consonant, so vowel+y words pluralise correctly (`Day` → `days`, not
-   * `daies`).
-   */
-  private pluralize(name: string): string {
-    // Lowercase the name first for consistent collection/table names
-    const lower = name.toLowerCase();
-    // Consonant + y → ies (City → cities); vowel + y → +s (Day → days).
-    if (/[^aeiou]y$/.test(lower)) {
-      return `${lower.slice(0, -1)}ies`;
-    }
-    if (lower.endsWith('s') || lower.endsWith('x') || lower.endsWith('z')) {
-      return `${lower}es`;
-    }
-    if (lower.endsWith('ch') || lower.endsWith('sh')) {
-      return `${lower}es`;
-    }
-    return `${lower}s`;
   }
 }

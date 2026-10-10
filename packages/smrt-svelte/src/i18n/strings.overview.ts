@@ -126,4 +126,9 @@ export const M = defineMessages({
   'ui.overview.records.view_all': 'View all',
   'ui.overview.records.total': '{count} in total',
   'ui.overview.shortcuts.empty': 'No pages to show.',
+
+  // Cookbook section page
+  'ui.cookbook.menu_entries': 'Menu entries',
+  'ui.cookbook.section_not_found': 'Section not found',
+  'ui.cookbook.section_not_found_hint': 'This section is not in your app.',
 });

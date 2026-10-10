@@ -61,6 +61,8 @@ let _dispatchCommands: Record<string, Command> | null = null;
 let _docsCommands: Record<string, Command> | null = null;
 let _playgroundCommands: Record<string, Command> | null = null;
 let _workbenchCommands: Record<string, Command> | null = null;
+let _cookbookCommands: Record<string, Command> | null = null;
+let _kitchenCommands: Record<string, Command> | null = null;
 
 async function getGnodeCommands(): Promise<Record<string, Command>> {
   if (!_gnodeCommands) {
@@ -124,6 +126,22 @@ async function getPlaygroundCommands(): Promise<Record<string, Command>> {
     _playgroundCommands = playgroundCommands;
   }
   return _playgroundCommands;
+}
+
+async function getCookbookCommands(): Promise<Record<string, Command>> {
+  if (!_cookbookCommands) {
+    const { cookbookCommands } = await import('./commands/index.js');
+    _cookbookCommands = cookbookCommands;
+  }
+  return _cookbookCommands;
+}
+
+async function getKitchenCommands(): Promise<Record<string, Command>> {
+  if (!_kitchenCommands) {
+    const { kitchenCommands } = await import('./commands/index.js');
+    _kitchenCommands = kitchenCommands;
+  }
+  return _kitchenCommands;
 }
 
 async function getWorkbenchCommands(): Promise<Record<string, Command>> {
@@ -1449,6 +1467,8 @@ export class CLIGenerator {
       docsCommands,
       playgroundCommands,
       workbenchCommands,
+      cookbookCommands,
+      kitchenCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1459,6 +1479,8 @@ export class CLIGenerator {
       getDocsCommands(),
       getPlaygroundCommands(),
       getWorkbenchCommands(),
+      getCookbookCommands(),
+      getKitchenCommands(),
     ]);
     const builtInCommands = {
       ...gnodeCommands,
@@ -1470,6 +1492,8 @@ export class CLIGenerator {
       ...docsCommands,
       ...playgroundCommands,
       ...workbenchCommands,
+      ...cookbookCommands,
+      ...kitchenCommands,
     };
 
     const builtInMatch = matchLeadingCommand(
@@ -1838,6 +1862,8 @@ export class CLIGenerator {
       docsCommands,
       playgroundCommands,
       workbenchCommands,
+      cookbookCommands,
+      kitchenCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1848,6 +1874,8 @@ export class CLIGenerator {
       getDocsCommands(),
       getPlaygroundCommands(),
       getWorkbenchCommands(),
+      getCookbookCommands(),
+      getKitchenCommands(),
     ]);
 
     console.log('Project Setup:');
@@ -1858,6 +1886,18 @@ export class CLIGenerator {
 
     console.log('Playground:');
     for (const command of Object.values(playgroundCommands)) {
+      this.showCommandHelp(command);
+    }
+    console.log();
+
+    console.log('Cookbook:');
+    for (const command of Object.values(cookbookCommands)) {
+      this.showCommandHelp(command);
+    }
+    console.log();
+
+    console.log('Kitchen:');
+    for (const command of Object.values(kitchenCommands)) {
       this.showCommandHelp(command);
     }
     console.log();

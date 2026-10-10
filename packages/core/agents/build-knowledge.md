@@ -183,6 +183,46 @@ also dedupes `@sveltejs/kit` (`smrt:shared-runtime`): SvelteKit matches
 `redirect()`/`fail()` by class, and a linked/workspace SMRT SvelteKit entry
 would otherwise import its own copy and turn redirects into 500s.
 
+**Package models over REST (#3749).** `consumer.packages` registers a package's
+models and gives `@smrt/web` (the consumer's `collectionDefinitions`, one per
+list-capable model, endpoint `/<collection>`) their definitions, but a package
+model gets generated REST routes only when it is on the consumer's hosting
+allowlist (`smrtConsumer({ svelteKit: { objects } })`, #2850: an HTTP exposure
+boundary, each model's own `api` config still applies, so `api: false` and
+empty-include models stay closed, tenancy comes with the generated route). The
+preset fills that allowlist: with `smrt.cookbook.json` present it is the models
+of the cookbook's recipes plus `features`, minus models the cookbook `exposure`
+turns off for `api` or a recipe's `options[model].exposure.api === false`
+(`vite-preset/cookbook-exposure.ts`; recipe `{ exclude }` narrowing is not
+applied by the build yet). `smrt({ expose })` replaces the derived list. No
+cookbook and no `expose` keeps `svelteKit: true` (nothing hosted). The producer's
+`@happyvertical/smrt-virt-web` still covers only the app's own models; read
+package models from `@smrt/web`. `smrt({ objectsDir })` is passed to the hosting
+contribution too: the producer and consumer share one `routesDir`, and the
+generator refuses it when their settings differ.
+
+**STI siblings (#3749).** Package STI subclasses share their base's table, and
+the manifest gives them the base's `collection` unless they declare one
+(`consumer-plugin/hosted-sti-collections.ts`). Two hosted siblings would both
+claim `/<base collection>`, so each hosted subclass that inherits its
+collection gets its class-derived one (`Order` -> `orders`,
+`defaultCollectionName` in the scanner), in every manifest view the consumer
+derives: routes, `@smrt/web`, the generated client and registration. This is the
+convention the framework already has for an independent route collection
+(`@smrt({ collection })`), applied by default for hosted subclasses; an explicit
+collection wins. The route therefore reads through the subclass's own
+collection (rows scoped to its `_meta_type`) and the definition for that model
+advertises that route (`objectRef` = the model, `endpoint` = `/orders`). A hosted
+base keeps the shared name and the base-collection semantics (every row of the
+table, any subtype). A subclass left off the allowlist keeps the shared
+collection and folds into the base's definition, as before. A collection class
+that inherits another's item type (`MaterialCollection extends
+ProductCollection`) resolves to the same item and collection, so only one of
+them is hosted (the class named for the item, else the first). Subclasses that
+declare no `api` config get the omitted-config default (full CRUD), not the
+base's `include`; narrow them on the subclass if the base is meant to restrict
+them.
+
 ```typescript
 // vite.config.ts — required for @smrt() decorators (Vite 8+, oxc transform)
 export default defineConfig({
