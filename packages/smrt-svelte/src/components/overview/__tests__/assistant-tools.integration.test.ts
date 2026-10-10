@@ -45,11 +45,23 @@ function makeRun(userId: string, tenantId = 'tenant-a'): PrincipalRun {
   } as PrincipalRun;
 }
 
-/** Stands in for the phase-3 table: one user-tier row per tenant/user/page. */
+/**
+ * Stands in for the phase-3 table: one user-tier row per tenant/user/page,
+ * written only when the caller's revision is still the stored one (the core
+ * revision guard the phase-3 store uses).
+ */
 function makeHost(admins: readonly string[] = ['alice', 'bob']) {
   const rows = new Map<string, OverviewOverride | null>();
+  const revisions = new Map<string, string>();
+  let seq = 0;
   const keyOf = (run: PrincipalRun) =>
     `${run.context.tenantId}|${run.context.userId}|${definition.id}`;
+  /** A save from elsewhere (another tab, the grid): bumps the revision. */
+  const saveElsewhere = (key: string, override: OverviewOverride | null) => {
+    rows.set(key, override);
+    revisions.set(key, `r${++seq}`);
+  };
+  const hooks: { beforePersist?: (key: string) => void } = {};
   const host: OverviewToolsHost = {
     open(run, pageId) {
       if (pageId !== definition.id) return null;
@@ -58,17 +70,25 @@ function makeHost(admins: readonly string[] = ['alice', 'bob']) {
         definition,
         registry,
         override: rows.get(key) ?? null,
+        revision: revisions.get(key) ?? null,
         canCustomize: admins.includes(String(run.context.userId)),
-        persist: (override) => {
+        persist: (override, expected) => {
+          hooks.beforePersist?.(key);
+          if ((revisions.get(key) ?? null) !== expected.revision) {
+            return { ok: false, reason: 'conflict' };
+          }
           // What a save endpoint does: validate, store the canonical value.
           const checked = checkOverviewOverride(definition, override, registry);
-          if (!checked.ok) throw new Error('save endpoint rejected it');
-          rows.set(key, checked.override);
+          if (!checked.ok) {
+            return { ok: false, reason: 'invalid', issues: checked.issues };
+          }
+          saveElsewhere(key, checked.override);
+          return { ok: true, revision: revisions.get(key) ?? null };
         },
       });
     },
   };
-  return { host, rows, keyOf };
+  return { host, rows, keyOf, saveElsewhere, hooks };
 }
 
 function tools(host: OverviewToolsHost) {
@@ -256,5 +276,55 @@ describe('overview assistant tools over the real model', () => {
       undoToken: applied.undoToken,
     });
     expect(rows.get(keyOf(alice))).toEqual(before);
+  });
+
+  it('refuses to apply over a save that landed after the page was opened', async () => {
+    const { host, rows, keyOf, saveElsewhere, hooks } = makeHost();
+    const elsewhere: OverviewOverride = { version: 1, removed: ['w4'] };
+    hooks.beforePersist = (key) => {
+      hooks.beforePersist = undefined;
+      saveElsewhere(key, elsewhere);
+    };
+    const error = await rejection(
+      call(tools(host), OVERVIEW_APPLY_TOOL_SLUG, alice, {
+        page: 'events.home',
+        operations: [{ op: 'remove', id: 'w1' }],
+      }),
+    );
+    expect(error).toMatchObject({ status: 409, code: 'conflict' });
+    expect(classifyToolError(error)).toBe('invalid_request');
+    expect(rows.get(keyOf(alice))).toEqual(elsewhere);
+  });
+
+  it('refuses to undo over a save that landed after the page was opened, and keeps the undo', async () => {
+    const { host, rows, keyOf, saveElsewhere, hooks } = makeHost();
+    const map = tools(host);
+    const applied = (await call(map, OVERVIEW_APPLY_TOOL_SLUG, alice, {
+      page: 'events.home',
+      operations: [{ op: 'remove', id: 'w1' }],
+    })) as { undoToken: string };
+    const after = rows.get(keyOf(alice)) ?? null;
+    // The save lands between undo's open (which still sees `after`) and its
+    // write: the snapshot check passes, the conditional write must not.
+    hooks.beforePersist = (key) => {
+      hooks.beforePersist = undefined;
+      saveElsewhere(key, after);
+    };
+    const error = await rejection(
+      call(map, OVERVIEW_UNDO_TOOL_SLUG, alice, {
+        page: 'events.home',
+        undoToken: applied.undoToken,
+      }),
+    );
+    expect(error).toMatchObject({ status: 409, code: 'changed_since' });
+    expect(rows.get(keyOf(alice))).toEqual(after);
+    // The entry was not consumed: a retry against the fresh revision undoes.
+    await expect(
+      call(map, OVERVIEW_UNDO_TOOL_SLUG, alice, {
+        page: 'events.home',
+        undoToken: applied.undoToken,
+      }),
+    ).resolves.toMatchObject({ undone: true });
+    expect(rows.get(keyOf(alice))).toBeNull();
   });
 });

@@ -83,9 +83,27 @@ export interface OverviewToolSurface {
   plan(operations: unknown): OverviewToolPlan;
   /** Validate an override the way a save is validated. */
   check(override: unknown): OverviewToolCheck;
-  /** Persist a canonical override in the principal's tier. */
-  persist(override: unknown): Promise<void>;
+  /**
+   * Persist a canonical override in the principal's tier, CONDITIONALLY: only
+   * if the stored value is still the one this surface loaded (its revision).
+   * A save that landed since the surface was opened must answer
+   * `{ ok: false, reason: 'conflict' }`, never be overwritten. On success the
+   * surface's `current()` and revision follow the written value.
+   */
+  persist(override: unknown): Promise<OverviewToolPersistResult>;
 }
+
+/**
+ * Outcome of {@link OverviewToolSurface.persist}. Structurally the phase-3
+ * store's save result (`@happyvertical/smrt-overviews` `OverviewSaveResult`).
+ */
+export type OverviewToolPersistResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: 'conflict' | 'not_allowed' | 'invalid';
+      issues?: readonly unknown[];
+    };
 
 /** The application side: which overviews a principal may reach. */
 export interface OverviewToolsHost {
@@ -231,6 +249,30 @@ function aiTool(
     } satisfies AITool,
     execute,
   };
+}
+
+/** A refused conditional write, as a tool error. */
+function persistFailure(
+  result: Exclude<OverviewToolPersistResult, { ok: true }>,
+  conflict: { code: string; message: string },
+): OverviewToolError {
+  if (result.reason === 'conflict') {
+    return new OverviewToolError(409, conflict.code, conflict.message);
+  }
+  if (result.reason === 'not_allowed') {
+    return new OverviewToolError(
+      403,
+      'not_allowed',
+      'You may not change this overview.',
+    );
+  }
+  const issues = result.issues ?? [];
+  return new OverviewToolError(
+    422,
+    'invalid_operations',
+    `The overview rejected the change and nothing changed. ${formatOverviewIssues(issues)}`,
+    issues,
+  );
 }
 
 function sameJson(a: unknown, b: unknown): boolean {
@@ -441,7 +483,14 @@ export function createOverviewTools(
           undoToken: null,
         };
       }
-      await surface.persist(plan.override);
+      const written = await surface.persist(plan.override);
+      if (!written.ok) {
+        throw persistFailure(written, {
+          code: 'conflict',
+          message:
+            'The overview changed while the batch was being applied, so nothing changed. Call overviews-describe again and rebuild the batch.',
+        });
+      }
       const token = createToken();
       await undoStore.set(undoKey(run, pageId), {
         token,
@@ -516,7 +565,15 @@ export function createOverviewTools(
           checked.issues,
         );
       }
-      await surface.persist(checked.override);
+      const written = await surface.persist(checked.override);
+      if (!written.ok) {
+        // Keep the entry: only a successful conditional restore consumes it.
+        throw persistFailure(written, {
+          code: 'changed_since',
+          message:
+            'The overview changed after that batch, so it was not undone.',
+        });
+      }
       await undoStore.delete(key);
       await audit(run, { action: 'undo', pageId });
       return { page: pageId, undone: true, overview: surface.describe() };

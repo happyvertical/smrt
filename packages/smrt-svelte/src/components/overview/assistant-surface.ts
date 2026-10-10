@@ -40,18 +40,44 @@ export interface OverviewAssistantSurfaceOptions {
    * for none), as the host loaded it for this request.
    */
   override: unknown;
+  /**
+   * The concurrency token of the stored row the host loaded `override` from
+   * (`null` when it loaded no row), echoed back to `persist`. With the
+   * phase-3 store this is the tier's `revision`.
+   */
+  revision: string | null;
   /** Whether this principal may customize this page (the role gate). */
   canCustomize: boolean;
   /**
    * Store the canonical override (`null` = back to the defaults) in the
-   * principal's tier. Throw to fail the operation.
+   * principal's tier, CONDITIONALLY on `expected.revision` still being the
+   * stored one: a save that landed since must answer
+   * `{ ok: false, reason: 'conflict' }`, never be overwritten. The phase-3
+   * store plugs in directly:
+   * `(override, { revision }) => store.save(definition, registry, { scope: 'user', override, revision })`.
    */
-  persist: (override: OverviewOverride | null) => void | Promise<void>;
+  persist: (
+    override: OverviewOverride | null,
+    expected: { revision: string | null },
+  ) => OverviewAssistantPersistResult | Promise<OverviewAssistantPersistResult>;
   /** Turns titles and labels that are i18n keys into text. */
   translate?: DescribeOverviewInput['translate'];
   /** Batch cap (default 20). */
   maxOperations?: number;
 }
+
+/**
+ * A conditional write's outcome. `revision` is the stored row's new token
+ * (`null` when the write removed the row); omitted, the surface keeps the
+ * token it had. Structurally the phase-3 store's `OverviewSaveResult`.
+ */
+export type OverviewAssistantPersistResult =
+  | { ok: true; revision?: string | null }
+  | {
+      ok: false;
+      reason: 'conflict' | 'not_allowed' | 'invalid';
+      issues?: readonly unknown[];
+    };
 
 /** One overview for one principal; what `createOverviewTools()` drives. */
 export interface OverviewAssistantSurface {
@@ -65,8 +91,13 @@ export interface OverviewAssistantSurface {
   plan(operations: unknown): OverviewPlan;
   /** Validate an override (the Undo value) the way a save is validated. */
   check(override: unknown): OverviewOverrideCheck;
-  /** Persist a canonical override; {@link current} follows it. */
-  persist(override: OverviewOverride | null): Promise<void>;
+  /**
+   * Persist a canonical override if the stored row is still the loaded
+   * revision; on success {@link current} and the revision follow it.
+   */
+  persist(
+    override: OverviewOverride | null,
+  ): Promise<OverviewAssistantPersistResult>;
 }
 
 /** Build the assistant adapter for one overview and one principal. */
@@ -81,6 +112,7 @@ export function createOverviewAssistantSurface(
   let current: OverviewOverride | null = initial.ok
     ? initial.override
     : sanitizedCurrent(definition, registry, options.override);
+  let revision = options.revision;
   return {
     pageId: definition.id,
     canCustomize: options.canCustomize,
@@ -104,8 +136,14 @@ export function createOverviewAssistantSurface(
       }),
     check: (override) => checkOverviewOverride(definition, override, registry),
     async persist(override) {
-      await options.persist(override);
-      current = override;
+      const result = await options.persist(override, { revision });
+      if (result.ok) {
+        current = override;
+        if ('revision' in result && result.revision !== undefined) {
+          revision = result.revision;
+        }
+      }
+      return result;
     },
   };
 }

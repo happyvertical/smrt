@@ -263,8 +263,13 @@ and the person can undo the change.
   `models`), span ranges, the current widgets with their index and title.
   `translate` resolves i18n-key titles and labels.
 - **Server: `createOverviewAssistantSurface({ definition, registry, override,
-  canCustomize, persist })`** is one page for one principal: `describe`,
-  `current`, `plan`, `check` and `persist`. It is the adapter
+  revision, canCustomize, persist })`** is one page for one principal:
+  `describe`, `current`, `plan`, `check` and `persist`. Writes are
+  conditional: `persist(override, { revision })` must write only if the
+  stored row is still the loaded `revision` and answer
+  `{ ok: false, reason: 'conflict' }` otherwise
+  (`OverviewAssistantPersistResult`, structurally the phase-3 store's save
+  result); on success the surface follows the returned `revision`. It is the adapter
   `@happyvertical/smrt-chat`'s `createOverviewTools()` drives (typed
   structurally there; see
   [chat overview-tools.md](../../chat/agents/overview-tools.md) for the tool

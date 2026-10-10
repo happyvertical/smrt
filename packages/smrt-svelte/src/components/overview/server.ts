@@ -7,6 +7,7 @@
  */
 export {
   createOverviewAssistantSurface,
+  type OverviewAssistantPersistResult,
   type OverviewAssistantSurface,
   type OverviewAssistantSurfaceOptions,
 } from './assistant-surface.js';

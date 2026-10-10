@@ -163,6 +163,7 @@ export {
   type OverviewToolAuditEntry,
   type OverviewToolCheck,
   OverviewToolError,
+  type OverviewToolPersistResult,
   type OverviewToolPlan,
   type OverviewToolSurface,
   type OverviewToolsHost,

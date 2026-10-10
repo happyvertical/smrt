@@ -56,6 +56,14 @@ function makeHost(
   options: { canCustomize?: (userId: string) => boolean } = {},
 ) {
   const store = new Map<string, Stored | null>();
+  /** Revision guard: a write must name the revision its surface loaded. */
+  const revisions = new Map<string, number>();
+  const hooks: { beforePersist?: (key: string) => void } = {};
+  /** A save from elsewhere (the grid, another tab). */
+  const saveElsewhere = (key: string, value: Stored | null) => {
+    store.set(key, value);
+    revisions.set(key, (revisions.get(key) ?? 0) + 1);
+  };
   const persisted: Array<{ key: string; value: unknown }> = [];
   const keyOf = (run: PrincipalRun, page: string) =>
     `${run.context.tenantId}|${run.context.userId}|${page}`;
@@ -65,6 +73,7 @@ function makeHost(
       if (page !== 'events.home') return null;
       const key = keyOf(run, page);
       const read = (): Stored | null => store.get(key) ?? null;
+      let loaded = revisions.get(key) ?? 0;
       const surface: OverviewToolSurface = {
         pageId: page,
         canCustomize: options.canCustomize
@@ -113,15 +122,21 @@ function makeHost(
             ? { ok: true, override }
             : { ok: false, issues: [{ message: 'bad' }] },
         async persist(override) {
+          hooks.beforePersist?.(key);
+          if ((revisions.get(key) ?? 0) !== loaded) {
+            return { ok: false, reason: 'conflict' };
+          }
           persisted.push({ key, value: override });
-          store.set(key, override as Stored | null);
+          saveElsewhere(key, override as Stored | null);
+          loaded = revisions.get(key) ?? 0;
+          return { ok: true };
         },
       };
       return surface;
     },
     pages: () => [{ id: 'events.home', title: 'Events' }],
   };
-  return { host, store, persisted, keyOf };
+  return { host, store, persisted, keyOf, hooks, saveElsewhere };
 }
 
 function tools(
@@ -432,6 +447,74 @@ describe('createOverviewTools', () => {
     );
     expect(error).toMatchObject({ status: 409, code: 'changed_since' });
     expect(store.get(key)).toEqual({ widgets: ['w3'] });
+  });
+
+  it('returns a repairable conflict when a save lands before the write', async () => {
+    const { host, store, keyOf, hooks, saveElsewhere, persisted } = makeHost();
+    hooks.beforePersist = (key) => {
+      hooks.beforePersist = undefined;
+      saveElsewhere(key, { widgets: ['w9'] });
+    };
+    const error = await rejection(
+      call(tools(host), OVERVIEW_APPLY_TOOL_SLUG, alice, {
+        page: 'events.home',
+        operations: [{ op: 'remove', id: 'w1' }],
+      }),
+    );
+    expect(error).toMatchObject({ status: 409, code: 'conflict' });
+    expect(classifyToolError(error)).toBe('invalid_request');
+    expect(persisted).toEqual([]);
+    expect(store.get(keyOf(alice, 'events.home'))).toEqual({ widgets: ['w9'] });
+  });
+
+  it('undo answers changed_since when a save lands between open and write, and keeps the entry', async () => {
+    const { host, store, keyOf, hooks, saveElsewhere } = makeHost();
+    const map = tools(host);
+    const applied = (await call(map, OVERVIEW_APPLY_TOOL_SLUG, alice, {
+      page: 'events.home',
+      operations: [{ op: 'remove', id: 'w1' }],
+    })) as { undoToken: string };
+    const key = keyOf(alice, 'events.home');
+    const after = structuredClone(store.get(key));
+    // Same value, new revision: the snapshot check passes, the write must not.
+    hooks.beforePersist = (k) => {
+      hooks.beforePersist = undefined;
+      saveElsewhere(k, structuredClone(after) ?? null);
+    };
+    const error = await rejection(
+      call(map, OVERVIEW_UNDO_TOOL_SLUG, alice, {
+        page: 'events.home',
+        undoToken: applied.undoToken,
+      }),
+    );
+    expect(error).toMatchObject({ status: 409, code: 'changed_since' });
+    expect(store.get(key)).toEqual(after);
+    await expect(
+      call(map, OVERVIEW_UNDO_TOOL_SLUG, alice, {
+        page: 'events.home',
+        undoToken: applied.undoToken,
+      }),
+    ).resolves.toMatchObject({ undone: true });
+  });
+
+  it.each([
+    [{ ok: false, reason: 'not_allowed' }, 403],
+    [{ ok: false, reason: 'invalid', issues: [{ message: 'nope' }] }, 422],
+  ] as const)('maps a refused write %# to a tool error', async (result, status) => {
+    const { host } = makeHost();
+    const refusing: OverviewToolsHost = {
+      async open(run, page) {
+        const surface = await host.open(run, page);
+        return surface ? { ...surface, persist: async () => result } : null;
+      },
+    };
+    const error = await rejection(
+      call(tools(refusing), OVERVIEW_APPLY_TOOL_SLUG, alice, {
+        page: 'events.home',
+        operations: [{ op: 'remove', id: 'w1' }],
+      }),
+    );
+    expect(error.status).toBe(status);
   });
 
   it('refuses undo once the principal may no longer customize', async () => {

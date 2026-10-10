@@ -38,14 +38,24 @@ field vocabulary; there is no query, filter expression, URL or SQL anywhere.
   sees `publicMessage`, which lists every issue as `#<n> <op>: <message>`, and is
   told to fix and retry) and 403 as `not_permitted`. Codes: `invalid_page`,
   `invalid_operations` (422), `unknown_page` (404), `not_allowed` (403,
-  `canCustomize` false, on apply and on undo), `nothing_to_undo`,
-  `changed_since`, `cannot_restore` (409).
+  `canCustomize` false, on apply and on undo), `conflict` (409, apply lost a
+  race with another save), `nothing_to_undo`, `changed_since`,
+  `cannot_restore` (409).
+- **Writes are conditional.** `surface.persist(override)` answers
+  `OverviewToolPersistResult` (`{ ok: true }` or `{ ok: false, reason:
+  'conflict' | 'not_allowed' | 'invalid', issues? }`) and must write only if
+  the stored row is still the revision the surface was opened on. A save that
+  lands between `host.open` and the write is a `conflict`: apply answers 409
+  `conflict` (describe again, rebuild the batch), undo answers 409
+  `changed_since` and keeps its entry. smrt-svelte's surface takes the loaded
+  `revision` and passes `{ revision }` to its `persist` option, so the phase-3
+  store's revision-guarded `save` plugs in directly.
 - **Undo** is single-step. Apply stores `{ token, before, after }` under
   `[tenantId, userId, pageId]` of the calling run; undo looks it up under the
   calling run only, so another principal's (or tenant's) token is simply not
   found. It refuses when the stored override is no longer `after` (someone
-  changed the page since), re-checks `before` with `check`, persists it, and
-  deletes the entry. The default `createMemoryOverviewUndoStore` is in-process
+  changed the page since), re-checks `before` with `check`, persists it
+  conditionally, and deletes the entry only after that write succeeded. The default `createMemoryOverviewUndoStore` is in-process
   (30-minute TTL, 1000 keys); a multi-replica host passes a shared
   `OverviewUndoStore`.
 
@@ -61,21 +71,25 @@ createOverviewTools({
     async open(run, pageId) {
       const definition = overviewDefinitions.get(pageId);
       if (!definition) return null;
-      const { tenantId, userId } = run.context;
+      const state = await store.load(definition, registry);
+      if (!state.user) return null;
       return createOverviewAssistantSurface({
-        definition: await withTenantDefaults(definition, tenantId),
+        definition: withTenantDefaults(definition, state.tenant.document),
         registry,
-        override: await overviewStore.getUserOverride(tenantId, userId, pageId),
-        canCustomize: mayCustomize(run, definition),
-        persist: (override) =>
-          overviewStore.saveUserOverride(tenantId, userId, pageId, override),
+        override: state.user.override,
+        revision: state.user.revision,
+        canCustomize: state.canCustomize.user,
+        persist: (override, { revision }) =>
+          store.save(definition, registry, { scope: 'user', override, revision }),
       });
     },
   },
 });
 ```
 
-`persist` runs the same check as the save endpoint. Add the three slugs to the
+`store` is phase 3's `createOverviewStore` (`@happyvertical/smrt-overviews`):
+its `save` validates like the save endpoint and refuses a stale revision with
+`conflict`. Add the three slugs to the
 persona's / route's `allowedTools`.
 
 ## In the browser

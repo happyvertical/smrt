@@ -251,11 +251,12 @@ describe('describeOverview', () => {
 
 describe('createOverviewAssistantSurface', () => {
   it('plans against the current override and follows what it persists', async () => {
-    const persist = vi.fn();
+    const persist = vi.fn(() => ({ ok: true as const, revision: 'r2' }));
     const surface = createOverviewAssistantSurface({
       definition,
       registry,
       override: { version: 1, removed: ['w3'] },
+      revision: 'r1',
       canCustomize: true,
       persist,
     });
@@ -263,10 +264,16 @@ describe('createOverviewAssistantSurface', () => {
     expect(surface.current()).toEqual({ version: 1, removed: ['w3'] });
     const result = surface.plan([{ op: 'remove', id: 'w2' }]);
     if (!result.ok) throw new Error('expected ok');
-    await surface.persist(result.override);
-    expect(persist).toHaveBeenCalledWith(result.override);
+    await expect(surface.persist(result.override)).resolves.toEqual({
+      ok: true,
+      revision: 'r2',
+    });
+    expect(persist).toHaveBeenCalledWith(result.override, { revision: 'r1' });
     expect(surface.current()).toEqual(result.override);
     expect(surface.describe().widgets.map((w) => w.id)).toEqual(['w1', 'w4']);
+    // The next write is conditional on the revision just written.
+    await surface.persist(null);
+    expect(persist).toHaveBeenLastCalledWith(null, { revision: 'r2' });
   });
 
   it('canonicalizes a stored override that no longer validates', () => {
@@ -278,8 +285,9 @@ describe('createOverviewAssistantSurface', () => {
         added: [{ id: 'w9', type: 'shortcuts', span: 1, options: {} }],
         removed: ['w1'],
       },
+      revision: null,
       canCustomize: true,
-      persist: () => {},
+      persist: () => ({ ok: true }),
     });
     const resolved = resolveOverview(definition, surface.current(), registry);
     expect(resolved.overrideIssues).toEqual([]);
@@ -291,8 +299,9 @@ describe('createOverviewAssistantSurface', () => {
       definition,
       registry,
       override: null,
+      revision: null,
       canCustomize: true,
-      persist: () => {},
+      persist: () => ({ ok: true }),
     });
     expect(
       surface.check({
@@ -300,5 +309,31 @@ describe('createOverviewAssistantSurface', () => {
         added: [{ id: 'w9', type: 'shortcuts', span: 1, options: {} }],
       }).ok,
     ).toBe(false);
+  });
+
+  it('keeps current and the revision when a conditional write conflicts', async () => {
+    const persist = vi.fn(() => ({
+      ok: false as const,
+      reason: 'conflict' as const,
+    }));
+    const surface = createOverviewAssistantSurface({
+      definition,
+      registry,
+      override: null,
+      revision: 'r1',
+      canCustomize: true,
+      persist,
+    });
+    const result = surface.plan([{ op: 'remove', id: 'w2' }]);
+    if (!result.ok) throw new Error('expected ok');
+    await expect(surface.persist(result.override)).resolves.toEqual({
+      ok: false,
+      reason: 'conflict',
+    });
+    expect(surface.current()).toBeNull();
+    await surface.persist(result.override);
+    expect(persist).toHaveBeenLastCalledWith(result.override, {
+      revision: 'r1',
+    });
   });
 });
