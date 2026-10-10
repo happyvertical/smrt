@@ -22,10 +22,44 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types.js';
 import {
+  findManifestObjectByName,
   isCollectionManifestClass,
   isStiChildModel,
   resolveCollectionItemObject,
 } from '../vite-plugin/web-collections.js';
+
+/**
+ * The `api` config of the nearest STI ancestor that declares one. An omitted
+ * `api` means full CRUD, so a hosted subclass that says nothing would expose
+ * `DELETE /orders/:id` even though its base (`Contract`) allows only
+ * list/get/create/update. Hosting fails closed: the subclass inherits the base's
+ * exposure unless it declares its own (hosting path only; the framework-wide
+ * default is unchanged).
+ */
+function inheritedApi(
+  manifest: SmartObjectManifest,
+  obj: SmartObjectDefinition,
+): unknown {
+  const seen = new Set<string>();
+  let child = obj;
+  let parentName = child.extendsQualified || child.extends;
+  while (parentName && !seen.has(parentName)) {
+    seen.add(parentName);
+    const parent = findManifestObjectByName(manifest, parentName, child);
+    if (!parent) return undefined;
+    // Only an STI relative lends its exposure: it shares the table (and so the
+    // inherited collection) or is the declared STI base.
+    const sti =
+      parent.collection === obj.collection ||
+      parent.decoratorConfig?.tableStrategy === 'sti';
+    if (!sti) return undefined;
+    const api = parent.decoratorConfig?.api;
+    if (api !== undefined) return api;
+    child = parent;
+    parentName = parent.extendsQualified || parent.extends;
+  }
+  return undefined;
+}
 
 /**
  * @param manifest - The aggregated manifest of every consumed package.
@@ -48,13 +82,25 @@ export function separateHostedStiCollections<M extends object>(
     if (!ref || !wanted.has(ref)) continue;
     // An explicit `collection` is already independent; only an inherited one
     // collides.
-    if (def.decoratorConfig?.collection) continue;
-    if (!isStiChildModel(source, def)) continue;
-    const collection = defaultCollectionName(def.className);
-    if (collection === def.collection) continue;
-    moved.set(def, collection);
+    const separable =
+      !def.decoratorConfig?.collection && isStiChildModel(source, def);
+    const collection = separable
+      ? defaultCollectionName(def.className)
+      : def.collection;
+    const api =
+      def.decoratorConfig?.api === undefined
+        ? inheritedApi(source, def)
+        : undefined;
+    if (collection === def.collection && api === undefined) continue;
+    if (collection !== def.collection) moved.set(def, collection);
     objects ??= { ...source.objects };
-    objects[key] = { ...def, collection } as SmartObjectDefinition;
+    objects[key] = {
+      ...def,
+      collection,
+      ...(api === undefined
+        ? {}
+        : { decoratorConfig: { ...def.decoratorConfig, api } }),
+    } as SmartObjectDefinition;
   }
   if (!objects) return manifest;
 

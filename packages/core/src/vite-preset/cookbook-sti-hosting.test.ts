@@ -93,10 +93,17 @@ const manifestObjects = () => ({
     collection: 'docs',
     fields: { title: { type: 'text' } },
     methods: {},
-    decoratorConfig: { tableStrategy: 'sti' },
+    // Like `Contract`: no delete.
+    decoratorConfig: {
+      tableStrategy: 'sti',
+      api: { include: ['list', 'get', 'create', 'update'] },
+    },
   },
   [ref('Invoice')]: stiChild('Invoice'),
-  [ref('Receipt')]: stiChild('Receipt'),
+  // Declares its own api, which wins over the base's.
+  [ref('Receipt')]: stiChild('Receipt', {
+    api: { include: ['list', 'get', 'delete'] },
+  }),
   // Declares an independent route collection of its own.
   [ref('Memo')]: stiChild('Memo', { collection: 'memos' }),
   [ref('Note')]: {
@@ -140,6 +147,31 @@ describe('separateHostedStiCollections', () => {
     expect((next.objects as any)[ref('Doc')].collection).toBe('docs');
     expect((next.objects as any)[ref('Receipt')].collection).toBe('docs');
     expect((next.objects as any)[ref('Invoice')].collection).toBe('invoices');
+  });
+
+  it('lends a subclass that declares no api its STI base api', () => {
+    const next = separateHostedStiCollections(
+      manifest,
+      [ref('Invoice'), ref('Receipt'), ref('Memo')],
+      refOf,
+    ) as typeof manifest;
+    const api = (name: string) =>
+      (next.objects as any)[ref(name)].decoratorConfig.api;
+    expect(api('Invoice')).toEqual({
+      include: ['list', 'get', 'create', 'update'],
+    });
+    // Explicit config wins, including on a subclass with its own collection.
+    expect(api('Receipt')).toEqual({ include: ['list', 'get', 'delete'] });
+    expect(api('Memo')).toEqual({
+      include: ['list', 'get', 'create', 'update'],
+    });
+    // The input is not mutated and a plain model is untouched.
+    expect(
+      (manifest.objects as any)[ref('Invoice')].decoratorConfig.api,
+    ).toBeUndefined();
+    expect((next.objects as any)[ref('Note')]).toBe(
+      (manifest.objects as any)[ref('Note')],
+    );
   });
 
   it('returns the manifest itself when nothing needs separating', () => {
@@ -282,6 +314,25 @@ describe('cookbook hosting of STI siblings (#3749)', () => {
       endpoint: '/receipts',
     });
     expect(defs.notes).toMatchObject({ endpoint: '/notes' });
+  });
+
+  it('fails closed: a subclass inherits its base api, an explicit one wins', async () => {
+    writeCookbook();
+    await configure();
+    const api = join(root, 'src/routes/api');
+    const detail = (dir: string) =>
+      readFileSync(join(api, dir, '[id]/+server.ts'), 'utf8');
+    // Doc allows no delete, so the Invoice route accepts no DELETE.
+    expect(detail('invoices')).not.toMatch(
+      /export (const|async function) DELETE/,
+    );
+    expect(detail('invoices')).toMatch(
+      /export (const|async function) PUT|PATCH/,
+    );
+    // Receipt declares delete itself.
+    expect(detail('receipts')).toMatch(/export (const|async function) DELETE/);
+    // A plain model keeps the framework default (full CRUD).
+    expect(detail('notes')).toMatch(/export (const|async function) DELETE/);
   });
 
   it('keeps a hosted base on the shared collection beside its subclasses', async () => {

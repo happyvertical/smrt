@@ -12,6 +12,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -178,6 +179,17 @@ describe('the bakery cookbook over the real workspace manifests (#3749)', () => 
     }
     // The shared table's collection is the base's, and the base is not hosted.
     expect(existsSync(join(root, 'src/routes/api/contracts'))).toBe(false);
+    // Contract allows no delete; its hosted subclasses inherit that, so the
+    // route accepts no DELETE (fail closed, not the omitted-config full CRUD).
+    for (const model of sti) {
+      const def = definitions.find((d) => d.objectRef === model);
+      const detail = readFileSync(
+        join(root, 'src/routes/api', def?.endpoint ?? '', '[id]/+server.ts'),
+        'utf8',
+      );
+      expect(detail, model).not.toMatch(/export (const|async function) DELETE/);
+      expect(def?.actions, model).not.toContain('delete');
+    }
     // Product and Material no longer collide either.
     const endpoints = definitions.map((d) => d.endpoint);
     expect(new Set(endpoints).size).toBe(endpoints.length);
