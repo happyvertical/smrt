@@ -31,7 +31,11 @@ describe('every recipe', () => {
     for (const qualified of recipe.models) {
       const found = getModelByQualifiedName(qualified);
       expect(found, qualified).toBeDefined();
-      expect(found?.model.exposed, qualified).toBe(true);
+      // A model with a screen of its own is exposed; feature recipes may also
+      // list internal models (sessions, policy rows) that have none.
+      if (recipe.nav.some((entry) => entry.model === qualified)) {
+        expect(found?.model.exposed, qualified).toBe(true);
+      }
     }
     expect(recipeModels(recipe)).toHaveLength(recipe.models.length);
     for (const entry of recipe.nav) {

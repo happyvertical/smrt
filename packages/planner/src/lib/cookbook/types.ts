@@ -1,3 +1,4 @@
+import type { OverviewOverride } from '@happyvertical/smrt-svelte/overview/server';
 import type { ShellLayout } from '@happyvertical/smrt-svelte/workspace/layout';
 import type { FieldPolicyRow } from '../recipes/policy.ts';
 import type { ExposureSurface } from '../recipes/types.ts';
@@ -50,8 +51,26 @@ export interface Cookbook {
    * Absent in older files, read as the default theme.
    */
   theme?: ThemeSetting;
+  /**
+   * Customised overview pages (smrt#3727), keyed by overview id: a section
+   * page's id is its layout id (`section:sales`, `custom:shop-2`). Each value
+   * is smrt-svelte's sparse `OverviewOverride` exactly, stored canonical (as
+   * `checkOverviewOverride` returns it) and validated against the page's
+   * definition on every load and import. Omitted when no page is customised;
+   * a page on its defaults has no key. Additive in version 1: older readers
+   * ignore unknown keys.
+   */
+  overviews?: Record<string, OverviewOverride>;
 }
 
 export type CookbookResult =
-  | { ok: true; cookbook: Cookbook }
+  | {
+      ok: true;
+      cookbook: Cookbook;
+      /**
+       * What was dropped while reading (an invalid or unknown overview
+       * widget), one sentence each. Absent when nothing was.
+       */
+      dropped?: string[];
+    }
   | { ok: false; error: string };

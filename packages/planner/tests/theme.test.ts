@@ -300,7 +300,8 @@ describe('assistant theme', () => {
     expect(on).toContain('"theme"');
     expect(on).toContain('"make it warmer" -> ');
     expect(on).toContain('Theme: glass.');
-    expect(on.length).toBeLessThan(4600);
+    // Same allowance as the cookbook prompt test: a fixed part plus a line each.
+    expect(on.length).toBeLessThan(515 + 215 * recipes.length);
     const off = buildSystemPrompt(
       recipes,
       [],

@@ -40,10 +40,16 @@ export interface RecipeModelHints {
 
 export interface RecipeNavEntry {
   label: string;
-  /** LOCAL. A shell icon name (`users`, `calendar`...) drawn on the entry's row. */
-  icon: string;
-  /** LOCAL. One friendly line for a business owner, shown on the section card. */
-  description: string;
+  /**
+   * A shell icon name (`users`, `calendar`...) drawn on the entry's row.
+   * Optional in smrt; the planner draws a generic record icon without one.
+   */
+  icon?: string;
+  /**
+   * One friendly line for a business owner, shown on the section card.
+   * Optional in smrt; the planner falls back to the model's description.
+   */
+  description?: string;
   /** Qualified model name, `@scope/pkg:Class`. */
   model: string;
   /**
@@ -200,6 +206,101 @@ export interface RecipeFormExtension {
   fields?: RecipeFormField[];
 }
 
+/**
+ * Shell slots a `shell-widget` surface may name (smrt-svelte's `ShellSlot`;
+ * kept open here so a slot a newer smrt adds still renders).
+ */
+export type RecipeShellSlot =
+  | 'header.start'
+  | 'header.center'
+  | 'header.end'
+  | 'footer.start'
+  | 'footer.center'
+  | 'footer.end'
+  | 'leftSidebar.header'
+  | 'leftSidebar.footer'
+  | 'rightSidebar.header'
+  | 'rightSidebar.footer'
+  | (string & {});
+
+/** `'<module specifier>#<ExportName>'`; the planner never imports it. */
+export type RecipeExportRef = `${string}#${string}`;
+
+/**
+ * A widget a recipe contributes to customizable overviews (smrt#3727). The
+ * planner reads only these keys; the rest of the declaration is carried
+ * as authored for the host that registers it.
+ */
+export interface RecipeWidgetSurface {
+  kind: 'widget';
+  type: string;
+  export: RecipeExportRef;
+  label: string;
+  description?: string;
+  icon?: string;
+  [key: string]: unknown;
+}
+
+/** A non-model piece of UI a recipe adds (smrt#3708). */
+export type RecipeSurface =
+  | {
+      kind: 'shell-widget';
+      slot: RecipeShellSlot;
+      export: RecipeExportRef;
+      label: string;
+      icon?: string;
+    }
+  | { kind: 'route'; path: string; export: RecipeExportRef; label: string }
+  | { kind: 'settings-panel'; export: RecipeExportRef; label: string }
+  | { kind: 'playground'; export: RecipeExportRef; label?: string }
+  | RecipeWidgetSurface;
+
+/** A provider a recipe needs or can use (email, oauth, storage, llm...). */
+export interface RecipeProvider {
+  id: string;
+  /** Open slug: `email`, `oauth`, `storage`, `llm`... */
+  kind: string;
+  /** Supported implementations (`imap`, `smtp`; `openai`, `webllm`). */
+  options: string[];
+  required: boolean;
+  /** Names (never values) of the secrets the provider needs. */
+  secrets?: string[];
+  /** The `options` that run in a browser with none of the `secrets`. */
+  browserOptions?: string[];
+}
+
+/** Where a recipe's runtime pieces can run. Absent means `both`. */
+export type RecipeRuntime = 'browser' | 'server' | 'both';
+
+/** A demo fixture: an export reference, or small inline JSON. */
+export type RecipeDemoSeed = { export: RecipeExportRef } | { data: unknown };
+
+/**
+ * How far a feature runs in a browser-only demo (smrt#3709), derived at smrt
+ * build time and never authored: `live` (real browser data layer), `mock` (a
+ * provider is faked), `sample` (fixtures only), `server` (needs a server).
+ */
+export type RecipeDemoMode = 'live' | 'mock' | 'sample' | 'server';
+
+export interface RecipeDemo {
+  mode: RecipeDemoMode;
+  /** Plain sentences saying why, in the order the rules fired. */
+  reasons: string[];
+  /** Ids of the providers a demo fakes. */
+  mocked?: string[];
+}
+
+/** Whether a package's root entry builds for a browser (smrt#3709). */
+export interface PackageBrowserCapability {
+  status: 'browser-safe' | 'server-only';
+  /** Tracking issues (`#3624`); absent when browser-safe. */
+  issues?: string[];
+  /** What blocks the package itself; absent when only inherited. */
+  reason?: string;
+  /** Packages it inherits `server-only` from. */
+  via?: string[];
+}
+
 export interface Recipe {
   /** Unique, e.g. `commerce.sales`. */
   id: string;
@@ -228,4 +329,18 @@ export interface Recipe {
   options?: Record<string, RecipeModelHints>;
   /** User-facing help (happyvertical/smrt#3591); see `help.ts`. */
   help?: RecipeHelp;
+  /** Non-model surfaces the recipe adds: a shell widget, a route, a panel. */
+  surfaces?: RecipeSurface[];
+  /** Providers (and secret NAMES) the recipe needs or can use. */
+  providers?: RecipeProvider[];
+  runtime?: RecipeRuntime;
+  demoSeed?: RecipeDemoSeed;
+  /** Browser-demo classification of this recipe on its own (smrt#3709). */
+  demo?: RecipeDemo;
+  /**
+   * LOCAL, written by the catalog generator: `demo` once what the recipe
+   * requires is counted (smrt-core's `effectiveRecipeDemo`). Present only when
+   * it differs from `demo`; read both through `features/demo.ts`.
+   */
+  effectiveDemo?: RecipeDemo;
 }

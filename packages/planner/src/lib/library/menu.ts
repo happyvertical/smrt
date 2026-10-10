@@ -18,25 +18,29 @@ export function cookbookNavGroups(
     const recipe = recipesById.get(id);
     return recipe ? [recipe] : [];
   });
-  const groups: ShellNavGroup[] = buildNavSections(added).map((section) => {
-    const seen = new Set<string>();
-    const items: ShellNavGroup['items'] = [];
-    for (const recipe of section.recipes) {
-      for (const entry of recipeNav(recipe)) {
-        const id = navItemId(entry.packageId, entry.model.name, entry.key);
-        if (seen.has(id)) continue;
-        seen.add(id);
-        items.push({
-          id,
-          href: '#',
-          label: entry.label,
-          icon: entry.icon,
-          description: entry.description,
-        });
+  // A section none of whose recipes has a menu entry (an assistant, a settings
+  // panel) is left out rather than shown empty.
+  const groups: ShellNavGroup[] = buildNavSections(added)
+    .map((section) => {
+      const seen = new Set<string>();
+      const items: ShellNavGroup['items'] = [];
+      for (const recipe of section.recipes) {
+        for (const entry of recipeNav(recipe)) {
+          const id = navItemId(entry.packageId, entry.model.name, entry.key);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          items.push({
+            id,
+            href: '#',
+            label: entry.label,
+            icon: entry.icon,
+            description: entry.description,
+          });
+        }
       }
-    }
-    return { id: `section:${section.id}`, heading: section.label, items };
-  });
+      return { id: `section:${section.id}`, heading: section.label, items };
+    })
+    .filter((group) => group.items.length > 0);
   const features = featureNavItems(cookbook.features).map((item) => ({
     id: item.id,
     href: '#',

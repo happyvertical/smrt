@@ -71,7 +71,8 @@ describe('Planner card locks', () => {
 
 describe('recipe sections', () => {
   it('group recipes under one section, keyed by group id or recipe id', () => {
-    expect(sections.map((s) => s.id)).toEqual([
+    // Feature recipes the overlay does not pin follow these.
+    const pinned = [
       'commerce.customers',
       'commerce.purchases',
       'commerce.sales',
@@ -86,7 +87,8 @@ describe('recipe sections', () => {
       'projects.tracker',
       'events.calendar',
       'sales.pipeline',
-    ]);
+    ];
+    expect(sections.map((s) => s.id).slice(0, pinned.length)).toEqual(pinned);
     expect(getSection('products')?.recipes.map((r) => r.id)).toEqual([
       'products.simple',
       'products.clothing',

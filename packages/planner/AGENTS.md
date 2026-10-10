@@ -19,12 +19,29 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   `index.ts` the lookup and search helpers.
 - `src/lib/catalog/generate/`: the generator (`registry.ts` discovery and
   tarball reads, `extract.ts` manifest -> catalog, `exclusions.ts` the
-  documented infrastructure exclusion list). `scripts/generate-catalog.ts` is
+  documented infrastructure exclusion list; `recipe-metadata.ts` validates the
+  recipes' surfaces, providers, runtime, demo seed and `demo` and the package's
+  `browser`, carried as authored). `scripts/generate-catalog.ts` is
   the entry point; Node runs the TypeScript directly.
   `CATALOG_SOURCE=<path to a built smrt checkout> pnpm catalog:generate` reads
   `packages/*/dist/manifest.json` (+ `smrt-knowledge.json`) from that checkout
   instead of the registry, to preview unreleased manifests (e.g. model
   `description`s); unset, the registry is used. Commit only registry output.
+- `src/lib/features/`: the Features tab's catalogue of every recipe as a feature. `catalogue.ts` is
+  pure: `buildFeatureCards` (one card per recipe, in a browse group = its `group`, else its
+  package), what a feature gets (menu entries then `surfaces`), providers with secret NAMES only,
+  `filterFeatureCards`, `alsoAdds` (what switching it on pulls in via `requires`). `demo.ts` is the
+  Live / Mock / Sample / Server label: it shows the manifest's `demo` (smrt#3709) as emitted, never
+  derives one; what a feature requires is already folded in by the catalog generator
+  (`generate/recipe-demo.ts` runs smrt-core's `effectiveRecipeDemo` and writes `effectiveDemo`).
+  Never import smrt-core into app code (it is not browser-safe). Data-driven: a recipe a smrt
+  release adds appears with no change here. Switching on is `recipeState.add`, as on the Recipes
+  tab. `FeaturesPanel` / `FeatureCard` render it; `RecordFeatures` is the older "Single records"
+  list below it (models no recipe covers, `recipes/features.ts`).
+  `palette.ts` + `components/PlannerPalette.svelte`: the command palette
+  (`@happyvertical/smrt-svelte/command-palette`, Mod+K) the layout mounts in `header.center`: the
+  menu as laid out (`useShellLayout().applied`), the Planner tabs, and "Add <feature>" for each
+  recipe not on, labelled with its demo mode.
 - `src/lib/recipes/plumbing.ts`: the feature-vs-plumbing rules the Features tab
   uses to hide link tables, child records and tiny lookups by default.
 - `src/lib/recipes/`: recipes are the unit people add. `types.ts` is the
@@ -38,7 +55,7 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   `@happyvertical/smrt-fields` until the live-objects work (#4).
 - `src/lib/cookbook/`: the app document, a **cookbook** (smrt#3604's format, first instance; it
   was called a blueprint): one `Cookbook`
-  (`{ $schema, version: 1, recipes, features, policies, exposure?, layout?, theme? }`, schema
+  (`{ $schema, version: 1, recipes, features, policies, exposure?, layout?, theme?, overviews? }`, schema
   `https://s-m-r-t.dev/schemas/cookbook/v1.json`; import also accepts the old `.../blueprint/v1.json`)
   holding recipes, options, layout and theme. `store.svelte.ts` is the single
   source of truth (hydrate, debounced save, import/reset), `storage.ts` the
@@ -99,12 +116,27 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   static fallback serves the rest, e.g. visitor-made ones). `components/SectionPage.svelte` shows the
   icon, title (the layout's rename wins), description (`info.ts`: recipe `section.icon/description`,
   `FEATURE_SECTION`, cookbook `sectionDescriptions`), Help/Options icons (`entries.ts` `optionGroups`),
-  and smrt-svelte's `ShellSectionMenu` with "N records" (`entryIndex` + the entry's own scope) and
-  "New <noun>". New asks the entry page to open its create form through `planner/create.ts` (a
+  and the section's editable overview (`SectionOverview.svelte`, see `src/lib/overviews/`; its
+  `shortcuts` widget replaces the menu cards); in edit mode the entries follow as smrt-svelte's
+  `ShellSectionMenu` list. A section id outside the overview id pattern keeps the `ShellSectionMenu`
+  cards with "N records" (`entryIndex` + the entry's own scope) and "New <noun>". New asks the entry page to open its create form through `planner/create.ts` (a
   one-shot, page-named, expiring request; the URL carries only the shareable state). In edit mode the
   rows get the grip/rename/hide chrome, so `PlannerEditBridge` does not leave a section page. Every
   recipe `section` and every cookbook custom section (`layout.sections[id].icon`) must have an icon from
   smrt-svelte's shell icon set (tests/section-pages.test.ts); visitor sections get `folder`.
+- `src/lib/overviews/`: section pages as customisable overviews (smrt-svelte `./overview`, smrt#3727).
+  `definitions.ts`: one `defineOverview` per section, id = the section's layout id, static (never
+  depends on which recipes are on): `shortcuts` (the section's entries with record counts) then the
+  section's lead model as a `metric` count and a `records` list; `allowed` = the core types the planner
+  loads plus recipe `widget` surfaces, `models` = the catalog. `isOverviewId` is what a cookbook may
+  key: recipe sections, More, and the document's own `layout.customSections`. `registry.ts`: the one
+  registry, core widgets with loaders over the in-browser `DataSource` (capabilities in the load
+  context, never in options; a named `filter` is an error tile, the sample data has none) and
+  `registerRecipeWidgets` with a static, currently empty, module map. `validate.ts`: the cookbook's
+  `overviews` field; every override goes through `checkOverviewOverride` on load and import, bad
+  widgets and unknown ids are dropped and reported (`CookbookResult.dropped`), only canonical
+  non-empty overrides are kept. `page.ts`: the controller wiring (`override` reads
+  `cookbookStore.overview(id)`, `onchange` writes `setOverview`), shared by the page and the tests.
 - `src/lib/planner/`: the package selection (`?p=a,b`, the only URL state;
   `app.svelte.ts` `appHref` carries it; `selection.svelte.ts`
   is the one store the control panel, navigation and a future chat assistant
@@ -151,7 +183,7 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   `data/labels.ts` (with `data/display.ts`) labels related records (Customer/Vendor via their Profile).
 - `src/lib/components/`: generated list/form (`ModelWorkspace`), the collapsed "Connect other tools"
   list (`ConnectTools`), the Help view (`HelpView`), `BrowserAssistant` (the dock slot: consent, progress, then smrt-chat's `AssistantDock`).
-- `src/routes/`: `/` Planner with `?tab=cookbooks|recipes|features|layout|export` tabs (`planner/tab.svelte.ts`; a visitor with nothing built lands on Cookbooks; smrt-ui `Tabs`: Cookbooks cards + preview, Recipes cards with switches only, Layout `ShellLayoutEditor`, Export / Import / Reset in `ExportPanel`), `/ai/` the AI models page (Set up your assistant), `/cookbook/` a client-side redirect to `/?tab=export`, `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),
+- `src/routes/`: `/` Planner with `?tab=cookbooks|recipes|features|layout|export` tabs (`planner/tab.svelte.ts`; a visitor with nothing built lands on Cookbooks; smrt-ui `Tabs`: Cookbooks cards + preview, Recipes cards with switches only, Features the browsable catalogue of every recipe with its demo label, providers and what it adds, Layout `ShellLayoutEditor`, Export / Import / Reset in `ExportPanel`), `/ai/` the AI models page (Set up your assistant), `/cookbook/` a client-side redirect to `/?tab=export`, `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),
   `/packages/` and `/packages/[id]/` the package browser, `/m/[package]/[model]/`.
   All prerendered; `entries()` come from the catalog.
 
@@ -164,7 +196,8 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   they are formatted as currency only for display.
 - Fakes are deterministic: seeded, fixed clock, no `Math.random()`/`Date.now()`.
 - The catalog generator is deterministic: sorted output, no timestamps. Packages
-  are excluded only through `exclusions.ts`.
+  are excluded only through `exclusions.ts`, and a listed package that declares
+  recipes stays in the catalog.
 - Depend on published `@happyvertical/smrt-*` packages, never workspace links.
 
 ## Validation

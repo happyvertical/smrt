@@ -1,8 +1,11 @@
 <script lang="ts">
 // A navigation section's own page. The sidebar lists only sections, so this is
-// where a section's entries are: a menu of rows (icon, name, record count, New)
-// that follows the shell layout (renamed, reordered, hidden). In the shell's
-// layout edit mode the same rows get grips, rename and hide controls.
+// where a section's entries are. The page is an editable overview (smrt#3727):
+// by default the entries as shortcut cards (with record counts), then the
+// section's lead model as a count and its latest records. In the shell's
+// layout edit mode the widgets get the overview chrome (add, move, resize,
+// configure, remove, reset) and the entries are listed below with grips,
+// rename and hide controls. A section id no overview can have shows the menu.
 import {
   ShellSectionIcon,
   ShellSectionMenu,
@@ -12,12 +15,14 @@ import {
 import { page } from '$app/state';
 import SectionActions from '$lib/components/SectionActions.svelte';
 import SectionIcons from '$lib/components/SectionIcons.svelte';
+import SectionOverview from '$lib/components/SectionOverview.svelte';
 import { cookbookStore } from '$lib/cookbook/store.svelte.ts';
 import { useDataSource } from '$lib/data/context.ts';
-import { navNoun, recordCount } from '$lib/data/format.ts';
+import { humanize, navNoun, pluralize, recordCount } from '$lib/data/format.ts';
+import { sectionOverview } from '$lib/overviews/definitions.ts';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import { requestCreate } from '$lib/planner/create.ts';
-import { recipesById } from '$lib/recipes/index.ts';
+import { recipeModels, recipesById } from '$lib/recipes/index.ts';
 import { inScope } from '$lib/recipes/scope.ts';
 import { recipeState } from '$lib/recipes/state.svelte.ts';
 import { entryIndex, optionGroups } from '$lib/sections/entries.ts';
@@ -51,6 +56,22 @@ const added = $derived(
 );
 const index = $derived(entryIndex(added, recipeState.features));
 const groups = $derived(optionGroups(itemIds, added));
+const overview = $derived(sectionOverview(sectionId));
+// The option editor offers the app's models: the added recipes' and features'.
+const models = $derived.by(() => {
+  const ids = new Set<string>();
+  const choices: { value: string; label: string }[] = [];
+  const offer = (id: string, name: string) => {
+    if (ids.has(id)) return;
+    ids.add(id);
+    choices.push({ value: id, label: pluralize(humanize(name)) });
+  };
+  for (const recipe of added) {
+    for (const { model } of recipeModels(recipe)) offer(model.id, model.name);
+  }
+  for (const entry of index.values()) offer(entry.model.id, entry.model.name);
+  return choices;
+});
 
 let counts = $state(new Map<string, number>());
 let generation = 0;
@@ -118,7 +139,24 @@ function startNew(entry: ShellSectionMenuEntry) {
           <SectionActions label={title} {groups} />
         {/if}
       </header>
-      <ShellSectionMenu {sectionId} layout="cards" {meta} {actions} />
+      {#if overview}
+        {#key sectionId}
+          <SectionOverview
+            definition={overview}
+            entries={index}
+            {models}
+            label={`${title} overview`}
+          />
+        {/key}
+        {#if shell.editing}
+          <section class="entries" aria-labelledby="section-entries">
+            <h2 id="section-entries">Menu entries</h2>
+            <ShellSectionMenu {sectionId} {meta} />
+          </section>
+        {/if}
+      {:else}
+        <ShellSectionMenu {sectionId} layout="cards" {meta} {actions} />
+      {/if}
     {:else}
       <h1>Section not found</h1>
       <p>This section is not in your app. <a href={appHref('/')}>Back to the Planner</a></p>
@@ -130,7 +168,7 @@ function startNew(entry: ShellSectionMenuEntry) {
   main {
     display: grid;
     gap: var(--smrt-spacing-6);
-    width: min(100%, 48rem);
+    width: min(100%, 64rem);
     margin-inline: auto;
     padding: var(--smrt-spacing-6);
   }
@@ -164,6 +202,16 @@ function startNew(entry: ShellSectionMenuEntry) {
   .heading p {
     margin: var(--smrt-spacing-1) 0 0;
     color: var(--smrt-color-on-surface-variant);
+  }
+
+  .entries {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+  }
+
+  .entries h2 {
+    margin: 0;
+    font-size: 1rem;
   }
 
   .new {

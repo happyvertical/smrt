@@ -13,8 +13,10 @@ describe('committed catalog', () => {
     const ids = catalog.packages.map((p) => p.id);
     expect(ids).toEqual([...ids].sort());
     expect(new Set(ids).size).toBe(ids.length);
+    // An excluded package stays only when it declares recipes.
     for (const excluded of Object.keys(EXCLUDED_PACKAGES)) {
-      expect(ids).not.toContain(excluded);
+      const pkg = getPackage(excluded);
+      if (pkg) expect(pkg.recipes?.length, excluded).toBeGreaterThan(0);
     }
   });
 

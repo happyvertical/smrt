@@ -1,4 +1,5 @@
 import type { ShellLayout } from '@happyvertical/smrt-svelte/workspace/layout';
+import { parseOverviews } from '../overviews/validate.ts';
 import { recipesById } from '../recipes/index.ts';
 import type { FieldPolicyRow } from '../recipes/policy.ts';
 import { withRequirements } from '../recipes/resolve.ts';
@@ -223,6 +224,19 @@ export function parseCookbook(
     else if (!options.dropUnknownRecipes) return fail(parsed.error);
   }
 
+  // Untrusted: every override is checked against its page's definition; bad
+  // widgets and unknown pages are dropped and reported, never rendered.
+  let overviews: Cookbook['overviews'];
+  let dropped: string[] = [];
+  if (input.overviews !== undefined) {
+    const parsed = parseOverviews(input.overviews, layout);
+    if (!parsed) {
+      return fail('The cookbook "overviews" must be an object.');
+    }
+    overviews = parsed.overviews;
+    dropped = parsed.dropped;
+  }
+
   const cookbook: Cookbook = {
     $schema: COOKBOOK_SCHEMA,
     version: COOKBOOK_VERSION,
@@ -233,7 +247,12 @@ export function parseCookbook(
   if (exposure && Object.keys(exposure).length) cookbook.exposure = exposure;
   if (layout) cookbook.layout = layout;
   if (theme) cookbook.theme = theme;
-  return { ok: true, cookbook };
+  if (overviews && Object.keys(overviews).length) {
+    cookbook.overviews = overviews;
+  }
+  return dropped.length
+    ? { ok: true, cookbook, dropped }
+    : { ok: true, cookbook };
 }
 
 /** Parse JSON text, then `parseCookbook` it. */

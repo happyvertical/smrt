@@ -9,9 +9,13 @@ import { createMemoryDataSource } from '../src/lib/data/source.ts';
 import { libraryCookbooks } from '../src/lib/library/index.ts';
 import { cookbookNavGroups } from '../src/lib/library/menu.ts';
 import { requestCreate, takeCreate } from '../src/lib/planner/create.ts';
-import { FEATURE_SECTION } from '../src/lib/recipes/features.ts';
+import {
+  FEATURE_ENTRY_ICON,
+  FEATURE_SECTION,
+} from '../src/lib/recipes/features.ts';
 import {
   buildNavSections,
+  recipeNav,
   recipes,
   recipesById,
 } from '../src/lib/recipes/index.ts';
@@ -35,7 +39,11 @@ const isIcon = (name: string | undefined) =>
 
 describe('section icons and descriptions', () => {
   it('every suggested recipe section has a known icon and a description', () => {
-    const navSections = buildNavSections(recipes);
+    // A section none of whose recipes has a menu entry is not in the sidebar
+    // (the assistant, form customization), so it needs neither.
+    const navSections = buildNavSections(recipes).filter((section) =>
+      section.recipes.some((recipe) => recipe.nav.length > 0),
+    );
     expect(navSections.length).toBeGreaterThan(5);
     for (const section of navSections) {
       expect(isIcon(section.icon), `${section.id} icon`).toBe(true);
@@ -206,6 +214,27 @@ describe('entry icons', () => {
     }
   });
 
+  it('draws the generic icon and the model description for an entry without them', () => {
+    const [model] = recipes[0].models;
+    const [entry] = recipeNav({
+      ...recipes[0],
+      nav: [{ label: 'Plain', model }],
+    });
+    expect(entry.icon).toBe(FEATURE_ENTRY_ICON);
+    expect(isIcon(entry.icon)).toBe(true);
+    expect(entry.description.length).toBeGreaterThan(0);
+  });
+
+  it('leaves out a section whose recipes have no menu entry', () => {
+    const noNav = recipes.filter((r) => r.nav.length === 0);
+    const groups = cookbookNavGroups({
+      recipes: [...noNav.map((r) => r.id), recipes[0].id],
+      features: [],
+    });
+    expect(groups.every((g) => g.items.length > 0)).toBe(true);
+    expect(groups.length).toBeGreaterThan(0);
+  });
+
   it('the nav groups carry each entry icon', () => {
     const groups = cookbookNavGroups({
       recipes: recipes.map((r) => r.id),
@@ -222,9 +251,10 @@ describe('entry icons are in the picker set; descriptions are friendly', () => {
   it('every entry and section icon is in SHELL_SECTION_ICONS', () => {
     for (const recipe of recipes) {
       for (const entry of recipe.nav) {
-        expect(picker.has(entry.icon), `${recipe.id} ${entry.label}`).toBe(
-          true,
-        );
+        expect(
+          picker.has(entry.icon ?? ''),
+          `${recipe.id} ${entry.label}`,
+        ).toBe(true);
       }
       if (recipe.section?.icon) {
         expect(picker.has(recipe.section.icon), recipe.id).toBe(true);

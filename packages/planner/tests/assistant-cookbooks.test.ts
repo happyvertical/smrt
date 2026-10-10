@@ -27,8 +27,10 @@ beforeEach(() => recipeState.clear());
 
 // Before cookbooks the same prompt (all recipes, one on) was 3077 characters;
 // cookbooks + settings took it to ~3550, and five worked examples (which help
-// a 1-2B model more than extra rules) add ~600.
-const PROMPT_BUDGET = 4300;
+// a 1-2B model more than extra rules) add ~600. Every recipe adds its own line
+// (about 200 characters), so the budget is a fixed part (215) plus 215 each:
+// the same 4300 for the 19 business recipes, growing with the catalogue.
+const PROMPT_BUDGET = 215 + 215 * recipes.length;
 
 describe('prompt', () => {
   it('lists cookbooks and current settings and stays small', () => {

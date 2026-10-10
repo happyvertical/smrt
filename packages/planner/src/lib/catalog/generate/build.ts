@@ -7,6 +7,7 @@ import {
   resolveDependencies,
 } from './extract.ts';
 import { readLocalPackages } from './local.ts';
+import { withEffectiveDemo } from './recipe-demo.ts';
 import { discoverPackageNames, fetchPackage } from './registry.ts';
 
 export interface BuildOptions {
@@ -21,9 +22,11 @@ export interface BuildOptions {
 
 /**
  * Turn raw packages into the catalog: drop the documented exclusions and
- * packages with no models, extract the rest, and sort. Output order is sorted,
- * with no timestamps, so a run against the same inputs is byte-identical.
- * Pure: no network or disk access.
+ * packages with no models, extract the rest, and sort. A package on the
+ * exclusion list that declares recipes stays: a recipe is a feature a visitor
+ * can pick (the assistant is `smrt-chat`'s), whatever else the package is.
+ * Output order is sorted, with no timestamps, so a run against the same inputs
+ * is byte-identical. Pure: no network or disk access.
  */
 export function assembleCatalog(
   raws: readonly RawPackage[],
@@ -33,20 +36,26 @@ export function assembleCatalog(
   const extracted = [];
   for (const raw of raws) {
     const excluded = EXCLUDED_PACKAGES[packageId(raw.packageName)];
-    if (excluded) {
+    const pkg = extractPackage(raw);
+    if (excluded && !pkg.recipes) {
       log(`exclude ${raw.packageName}: ${excluded}`);
       continue;
     }
-    const pkg = extractPackage(raw);
     if (pkg.models.length === 0) {
       log(`skip ${pkg.packageName}: no models`);
       continue;
     }
-    log(`include ${pkg.packageName}@${pkg.version}`);
+    log(
+      `include ${pkg.packageName}@${pkg.version}${excluded ? ' (declares recipes)' : ''}`,
+    );
     extracted.push(pkg);
   }
   extracted.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return { schema: 1, registry, packages: resolveDependencies(extracted) };
+  return {
+    schema: 1,
+    registry,
+    packages: withEffectiveDemo(resolveDependencies(extracted)),
+  };
 }
 
 /**
@@ -60,20 +69,12 @@ export async function buildCatalog(options: BuildOptions): Promise<Catalog> {
     return assembleCatalog(raws, `file://${options.source}`, log);
   }
   const names = await discoverPackageNames(options.registry);
-  const candidates = names.filter(
-    (name) => !EXCLUDED_PACKAGES[packageId(name)],
-  );
-  for (const name of names) {
-    const excluded = EXCLUDED_PACKAGES[packageId(name)];
-    if (excluded) log(`exclude ${name}: ${excluded}`);
-  }
-
+  // Excluded packages are fetched too: one that declares recipes stays, and
+  // only its manifest says (see `assembleCatalog`).
   const raws: RawPackage[] = [];
-  for (let i = 0; i < candidates.length; i += 6) {
+  for (let i = 0; i < names.length; i += 6) {
     const batch = await Promise.all(
-      candidates
-        .slice(i, i + 6)
-        .map((name) => fetchPackage(options.registry, name)),
+      names.slice(i, i + 6).map((name) => fetchPackage(options.registry, name)),
     );
     for (const raw of batch) if (raw) raws.push(raw);
   }

@@ -198,6 +198,30 @@ describe('generator passthrough', () => {
     const core = { ...raw(), packageName: '@happyvertical/smrt-core' };
     expect(assembleCatalog([core], 'r').packages).toEqual([]);
   });
+
+  it('keeps an excluded package that declares recipes', () => {
+    const chat = {
+      ...raw(),
+      packageName: '@happyvertical/smrt-chat',
+      manifest: {
+        ...raw().manifest,
+        recipes: [
+          {
+            id: 'chat.assistant',
+            label: 'Assistant',
+            summary: 'Ask an assistant.',
+            synonyms: [],
+            models: [],
+            nav: [],
+            requires: [],
+          },
+        ],
+      },
+    };
+    const kept = assembleCatalog([chat], 'r').packages;
+    expect(kept.map((p) => p.id)).toEqual(['chat']);
+    expect(kept[0].recipes?.[0].id).toBe('chat.assistant');
+  });
 });
 
 describe('childModels', () => {

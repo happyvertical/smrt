@@ -80,7 +80,9 @@ const widget: CatalogModel = {
 
 describe('recipes.json', () => {
   it('has the recipes in declaration order, each resolving to catalog models', () => {
-    expect(recipes.map((r) => r.id)).toEqual([
+    // The overlay pins these first; recipes it does not list (feature recipes
+    // such as tags.taxonomy) follow in catalog order.
+    const pinned = [
       'commerce.customers',
       'commerce.purchases',
       'commerce.sales',
@@ -100,7 +102,9 @@ describe('recipes.json', () => {
       'projects.tracker',
       'events.calendar',
       'sales.pipeline',
-    ]);
+    ];
+    expect(recipes.map((r) => r.id).slice(0, pinned.length)).toEqual(pinned);
+    expect(new Set(recipes.map((r) => r.id)).size).toBe(recipes.length);
     for (const recipe of recipes) {
       expect(recipeModels(recipe)).toHaveLength(recipe.models.length);
       expect(recipePackage(recipe)?.id).toBe(recipe.id.split('.')[0]);

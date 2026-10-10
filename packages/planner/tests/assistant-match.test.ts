@@ -125,6 +125,17 @@ describe('coverage', () => {
     expect(ids('my car', 'cookbook')).toContain('mechanic');
   });
 
+  it('ranks an exact label above another recipe whose id ends in the same word', () => {
+    const two = buildMatchIndex([
+      { id: 'analytics.reports', label: 'Analytics', synonyms: ['traffic'] },
+      { id: 'reports.materialized', label: 'Reports', synonyms: ['totals'] },
+    ]);
+    expect(matchText(two, 'Reports').map((m) => m.id)).toEqual([
+      'reports.materialized',
+      'analytics.reports',
+    ]);
+  });
+
   it('a new recipe or cookbook without terms fails the coverage check', () => {
     const bare = buildMatchIndex(
       [{ id: 'x.thing', label: 'Thing', synonyms: [] }],

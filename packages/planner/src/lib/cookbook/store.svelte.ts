@@ -1,3 +1,4 @@
+import type { OverviewOverride } from '@happyvertical/smrt-svelte/overview/server';
 import {
   isShellLayoutEmpty,
   type ShellLayout,
@@ -48,6 +49,11 @@ export class CookbookStore {
   layout = $state<ShellLayout | undefined>();
   /** The app's theme; undefined is the default. The shell applies it live. */
   theme = $state<ThemeSetting | undefined>();
+  /**
+   * Customised overview pages by overview id, canonical overrides only. Each
+   * page's `createOverview` reads its entry and writes edits back here.
+   */
+  overviews = $state.raw<Record<string, OverviewOverride>>({});
   persist = $state<PersistState>('unknown');
   /** False until the saved cookbook has been read; nothing saves before. */
   loaded = $state(false);
@@ -84,7 +90,30 @@ export class CookbookStore {
       $state.snapshot(this.theme) as ThemeSetting | undefined,
     );
     if (theme) cookbook.theme = theme;
+    const ids = Object.keys(this.overviews).sort();
+    if (ids.length) {
+      cookbook.overviews = Object.fromEntries(
+        ids.map((id) => [id, this.overviews[id]]),
+      );
+    }
     return cookbook;
+  }
+
+  /** A page's stored override, or `null` when it is on its defaults. */
+  overview(id: string): OverviewOverride | null {
+    return Object.hasOwn(this.overviews, id) ? this.overviews[id] : null;
+  }
+
+  /**
+   * An edit from an overview page: the controller's canonical override, or
+   * `null` (back to the defaults), which removes the page's key.
+   */
+  setOverview(id: string, override: OverviewOverride | null): void {
+    const next = Object.fromEntries(
+      Object.entries(this.overviews).filter(([key]) => key !== id),
+    );
+    if (override) next[id] = override;
+    this.overviews = next;
   }
 
   /** An edit from the shell or its layout editor; an empty one clears it. */
@@ -97,6 +126,7 @@ export class CookbookStore {
     recipeState.load(cookbook);
     this.layout = cookbook.layout;
     this.theme = cookbook.theme;
+    this.overviews = { ...(cookbook.overviews ?? {}) };
     setSampleTaxRate(
       hasTaxRateRow(cookbook) ? readSettings(cookbook).taxRate : undefined,
     );
@@ -154,6 +184,7 @@ export class CookbookStore {
     recipeState.clear();
     this.layout = undefined;
     this.theme = undefined;
+    this.overviews = {};
     try {
       globalThis.localStorage?.removeItem(SHELL_STORAGE_KEY);
     } catch {
@@ -183,6 +214,9 @@ export class CookbookStore {
     // wins over what was saved; the next save keeps it.
     if (outcome.status === 'loaded' && !this.replacedBeforeLoad) {
       this.apply(outcome.cookbook);
+      if (outcome.dropped?.length) {
+        this.loadNotice = `Some saved page customisations could not be used and were removed: ${outcome.dropped.join(' ')}`;
+      }
     } else if (outcome.status === 'unreadable') {
       this.saveBlocked = !outcome.keptAside;
       this.loadNotice = outcome.keptAside

@@ -208,6 +208,11 @@ export interface HelpModel {
   fields: readonly HelpField[];
   /** Field descriptions (`@field({ description })`), keyed by field name. */
   descriptions?: Readonly<Record<string, string>>;
+  /**
+   * `false` when no list or form shows the model (a recipe with no menu
+   * entry): its fields still resolve in the prose, but get no glossary entry.
+   */
+  glossary?: boolean;
 }
 
 export interface GlossaryEntry {
@@ -346,7 +351,7 @@ export function resolveHelp(
 export function buildGlossary(models: readonly HelpModel[]): GlossaryEntry[] {
   return models.flatMap((model) =>
     model.fields.flatMap((field) => {
-      if (field.visibility !== 'basic') return [];
+      if (model.glossary === false || field.visibility !== 'basic') return [];
       const text = field.help?.trim() || model.descriptions?.[field.name] || '';
       return text
         ? [{ model: model.name, name: field.name, label: field.label, text }]

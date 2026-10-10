@@ -170,6 +170,32 @@ describe('extractPackage field hints', () => {
     expect(pkg.models[0].display).toEqual({ label: 'name' });
   });
 
+  it('reads field descriptions from the field or its _meta, trimmed', () => {
+    const item = raw.manifest.objects['@happyvertical/smrt-shop:Item'];
+    const pkg = extractPackage({
+      ...raw,
+      manifest: {
+        ...raw.manifest,
+        objects: {
+          '@happyvertical/smrt-shop:Item': {
+            ...item,
+            fields: {
+              a: { type: 'text', description: ' The name. ' },
+              b: { type: 'text', _meta: { description: 'The price.' } },
+              c: { type: 'text', description: '   ' },
+            },
+          },
+        },
+      },
+    });
+    const fields = Object.fromEntries(
+      pkg.models[0].fields.map((f) => [f.name, f]),
+    );
+    expect(fields.a.description).toBe('The name.');
+    expect(fields.b.description).toBe('The price.');
+    expect('description' in fields.c).toBe(false);
+  });
+
   it('drops a display label field the model does not have', () => {
     const item = raw.manifest.objects['@happyvertical/smrt-shop:Item'];
     const pkg = extractPackage({

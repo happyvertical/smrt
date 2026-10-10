@@ -12,7 +12,14 @@ import { PRODUCT } from '$lib/forms/stock.ts';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
 import { FEATURE_SECTION } from '$lib/recipes/features.ts';
-import { navPath, recipeNav, recipes, sectionId } from '$lib/recipes/index.ts';
+import { renderHelp } from '$lib/recipes/help.ts';
+import {
+  helpModels,
+  navPath,
+  recipeNav,
+  recipes,
+  sectionId,
+} from '$lib/recipes/index.ts';
 import {
   childLinks,
   childTitle,
@@ -150,7 +157,8 @@ const noun = $derived(
   navCrumb ? navNoun(navCrumb.label, declaredNoun) : undefined,
 );
 
-// Anchored to this model's fields in the recipe whose Help covers it.
+// Anchored to this model's fields in the recipe whose Help covers it, when
+// that Help lists them (a recipe with no menu entry shows no fields).
 const helpAnchor = $derived.by(() => {
   const covering =
     recipesWithModel.find(
@@ -162,7 +170,14 @@ const helpAnchor = $derived.by(() => {
     recipesWithModel.find(
       (recipe) => recipe.help && sectionId(recipe) === iconSection,
     );
-  return covering ? `${covering.id}-fields-${modelName}` : undefined;
+  if (!covering?.help) return undefined;
+  const { glossary } = renderHelp(
+    covering.help,
+    helpModels(covering, recipeState.rows),
+  );
+  return glossary.some((entry) => entry.model === modelName)
+    ? `${covering.id}-fields-${modelName}`
+    : undefined;
 });
 // Line items and other dependent records live inside their parent's record
 // view, filtered to it; they have no list page of their own.

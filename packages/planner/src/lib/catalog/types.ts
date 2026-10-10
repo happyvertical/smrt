@@ -6,7 +6,7 @@
  * Everything the browser needs is here, so the app never loads a package.
  */
 
-import type { Recipe } from '../recipes/types.ts';
+import type { PackageBrowserCapability, Recipe } from '../recipes/types.ts';
 
 /** Field types as the s-m-r-t manifest names them. */
 export type CatalogFieldType =
@@ -58,6 +58,11 @@ export interface CatalogField {
   enum?: string[];
   /** `@field({ ui })` hints: `basic`, `group`, `order`, `locked`. */
   ui?: CatalogFieldUI;
+  /**
+   * The user-facing description from `@field({ description })`, when the
+   * package declares one. It feeds the help glossary.
+   */
+  description?: string;
   /**
    * Framework-managed (tenant id, timestamps): shown in the catalog but never
    * in generated forms.
@@ -135,6 +140,12 @@ export interface CatalogPackage {
   dependencies: string[];
   /** Where the surfaces came from: the knowledge artifact or the manifest. */
   surfaceSource: 'knowledge' | 'manifest';
+  /**
+   * Whether the package builds for a browser, as the manifest states it
+   * (smrt#3709). Absent for packages smrt does not measure and for manifests
+   * that predate it.
+   */
+  browser?: PackageBrowserCapability;
   /**
    * Recipes the package declares (smrt#3604), in declaration order. Absent
    * when it declares none. The planner overlays its local-only parts

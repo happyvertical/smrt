@@ -28,6 +28,8 @@ export type LoadOutcome =
        * backup and removed by the first successful save of the new key.
        */
       previousKept: boolean;
+      /** Overview customisations dropped as invalid, one sentence each. */
+      dropped?: string[];
     }
   | {
       status: 'unreadable';
@@ -79,6 +81,7 @@ export function loadCookbook(storage: Storage | null): LoadOutcome {
       status: 'loaded',
       cookbook: parsed.cookbook,
       previousKept: previous !== null,
+      ...(parsed.dropped ? { dropped: parsed.dropped } : {}),
     };
   }
   raw = source;

@@ -34,6 +34,12 @@ interface Entry {
   kind: MatchKind;
   id: string;
   terms: Term[];
+  /**
+   * The normalised label or name. A message that is exactly this ranks the
+   * entry first, ahead of another whose id merely ends in the same word
+   * (`Reports` is `reports.materialized`, not `analytics.reports`).
+   */
+  exact?: string;
 }
 
 export interface MatchIndex {
@@ -240,7 +246,12 @@ export function buildMatchIndex(
 ): MatchIndex {
   const entries: Entry[] = [];
   for (const recipe of recipes) {
-    const entry: Entry = { kind: 'recipe', id: recipe.id, terms: [] };
+    const entry: Entry = {
+      kind: 'recipe',
+      id: recipe.id,
+      terms: [],
+      exact: normalize(recipe.label),
+    };
     collect(entry, recipe.label, 'name');
     // The last id segment (`pipeline` of `sales.pipeline`), not the package.
     const last = recipe.id.split('.').pop() ?? '';
@@ -253,7 +264,12 @@ export function buildMatchIndex(
     entries.push(entry);
   }
   for (const cookbook of cookbooks) {
-    const entry: Entry = { kind: 'cookbook', id: cookbook.id, terms: [] };
+    const entry: Entry = {
+      kind: 'cookbook',
+      id: cookbook.id,
+      terms: [],
+      exact: normalize(cookbook.name),
+    };
     collect(entry, cookbook.name, 'name');
     collect(entry, cookbook.id.replace(/[-_]/g, ' '), 'name');
     for (const keyword of cookbook.keywords ?? []) {
@@ -278,7 +294,8 @@ export function termsOf(index: MatchIndex, kind: MatchKind, id: string) {
 
 /** Ranked matches for a message, best first. Empty when nothing matches. */
 export function matchText(index: MatchIndex, text: string): Match[] {
-  const haystack = ` ${normalize(text)} `;
+  const normalized = normalize(text);
+  const haystack = ` ${normalized} `;
   const out: Match[] = [];
   for (const entry of index.entries) {
     let score = 0;
@@ -294,6 +311,7 @@ export function matchText(index: MatchIndex, text: string): Match[] {
       if (!term.weak) strong ||= true;
     }
     if (!found.length) continue;
+    if (entry.exact && entry.exact === normalized) score += 1;
     out.push({
       kind: entry.kind,
       id: entry.id,

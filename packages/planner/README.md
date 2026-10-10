@@ -83,11 +83,16 @@ The script (`scripts/generate-catalog.ts`):
 3. Drops the infrastructure packages in
    `src/lib/catalog/generate/exclusions.ts` (core, tenancy, jobs, prompts,
    ...); that list is the only hand-maintained part, and each entry says why.
+   A listed package that declares recipes stays (`smrt-chat` brings the
+   assistant, `smrt-fields` form customization): a recipe is a feature.
 4. Writes, per package: description, models, each model's fields and types, the
    generated REST routes, MCP tools and CLI commands (from the knowledge
    artifact's `surfaces`), public methods and which are AI-callable (have an MCP
-   tool), and dependencies (the manifest's `smrtDependencies` plus models'
-   foreign keys and cross-package references, limited to catalog packages).
+   tool), the recipes it declares with their surfaces, providers (secret
+   names only), runtime, demo seed and browser-demo mode (`demo`, plus the
+   package's `browser` capability; smrt#3708/#3709), and dependencies (the
+   manifest's `smrtDependencies` plus models' foreign keys and cross-package
+   references, limited to catalog packages).
 
 Output is sorted and has no timestamps, so a run against the same published
 versions is byte-identical. It tracks each package's `latest` dist-tag, so

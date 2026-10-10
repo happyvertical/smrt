@@ -4,6 +4,11 @@
  * worth mocking up. Everything else that exports `./manifest.json` and declares
  * at least one model is a catalog package, discovered from the registry.
  *
+ * A listed package that declares recipes is NOT excluded: its recipes are
+ * features a visitor can pick (`chat.assistant`, `fields.form-customization`),
+ * so `assembleCatalog` keeps it and the exclusion applies only to a package
+ * with none.
+ *
  * Packages without a `./manifest.json` export (cli, app-runtime, svelte, ui,
  * vitest, ...) never need listing; they are skipped by discovery itself.
  * Short names, without the `smrt-` prefix.

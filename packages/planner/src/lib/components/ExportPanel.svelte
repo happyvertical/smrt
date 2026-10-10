@@ -14,6 +14,8 @@ import { recipesById } from '$lib/recipes/index.ts';
 let fileInput: HTMLInputElement | undefined = $state();
 /** A validated import waiting for the visitor's confirmation. */
 let pending = $state<Cookbook | null>(null);
+/** What reading the pending import dropped (invalid page customisations). */
+let pendingDropped = $state<string[]>([]);
 let error = $state('');
 let notice = $state('');
 let confirmingReset = $state(false);
@@ -23,8 +25,10 @@ const exportName = () => getLibraryCookbook(libraryState.active ?? '')?.name;
 
 const current = $derived(cookbookStore.snapshot());
 
+const pages = (b: Cookbook) => Object.keys(b.overviews ?? {}).length;
+
 const describe = (b: Cookbook) =>
-  `${b.recipes.length} ${b.recipes.length === 1 ? 'recipe' : 'recipes'}, ${b.features.length} ${b.features.length === 1 ? 'feature' : 'features'}, ${b.policies.length} saved ${b.policies.length === 1 ? 'option' : 'options'}`;
+  `${b.recipes.length} ${b.recipes.length === 1 ? 'recipe' : 'recipes'}, ${b.features.length} ${b.features.length === 1 ? 'feature' : 'features'}, ${b.policies.length} saved ${b.policies.length === 1 ? 'option' : 'options'}${pages(b) ? `, ${pages(b)} customised ${pages(b) === 1 ? 'page' : 'pages'}` : ''}`;
 
 async function choose(event: Event & { currentTarget: HTMLInputElement }) {
   const input = event.currentTarget;
@@ -34,8 +38,10 @@ async function choose(event: Event & { currentTarget: HTMLInputElement }) {
   if (!file) return;
   try {
     const result = parseCookbookText(await file.text());
-    if (result.ok) pending = result.cookbook;
-    else error = result.error;
+    if (result.ok) {
+      pending = result.cookbook;
+      pendingDropped = result.dropped ?? [];
+    } else error = result.error;
   } catch {
     error = 'The file could not be read.';
   }
@@ -46,9 +52,10 @@ async function choose(event: Event & { currentTarget: HTMLInputElement }) {
 function confirmImport() {
   if (pending) {
     cookbookStore.replace(pending);
-    notice = `Imported ${describe(pending)}.`;
+    notice = `Imported ${describe(pending)}.${pendingDropped.length ? ` Not imported: ${pendingDropped.join(' ')}` : ''}`;
   }
   pending = null;
+  pendingDropped = [];
 }
 
 const dataSource = useDataSource();
@@ -67,7 +74,7 @@ function confirmReset() {
 
 <div class="export">
   <p class="meta">
-    Your recipes, their options and the layout, kept together in this browser.
+    Your recipes, their options, the layout and customised pages, kept together in this browser.
     Export them as a file, or import one to replace what is here. Sample
     records are not part of it.
   </p>

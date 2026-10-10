@@ -10,6 +10,7 @@ import type {
   CatalogRoute,
 } from '../types.ts';
 import { PACKAGE_PREFIX } from './exclusions.ts';
+import { extractBrowser, extractRecipeMetadata } from './recipe-metadata.ts';
 
 /** The subset of a s-m-r-t `manifest.json` the catalog reads. */
 export interface RawManifest {
@@ -18,6 +19,8 @@ export interface RawManifest {
   objects: Record<string, RawObject>;
   /** Recipes the package declares (`SmrtRecipe`, smrt#3590/#3604). */
   recipes?: unknown;
+  /** Whether the package builds for a browser (smrt#3709). */
+  browser?: unknown;
 }
 
 interface RawParameter {
@@ -38,10 +41,11 @@ interface RawMethod {
 interface RawField {
   type: string;
   required?: boolean;
+  description?: string;
   default?: unknown;
   related?: string;
   enum?: unknown;
-  _meta?: { ui?: unknown; [key: string]: unknown };
+  _meta?: { ui?: unknown; description?: unknown; [key: string]: unknown };
 }
 
 interface RawObject {
@@ -64,6 +68,8 @@ export interface RawKnowledge {
   surfaces?: RawSurface[];
   /** Recipes the package declares; also in the manifest. */
   recipes?: unknown;
+  /** Browser capability; also in the manifest. */
+  browser?: unknown;
 }
 
 interface RawSurface {
@@ -169,6 +175,10 @@ function extractFields(raw: RawObject): CatalogField[] {
     if (values) entry.enum = values;
     const ui = extractUi(field._meta?.ui);
     if (ui) entry.ui = ui;
+    const described = field.description ?? field._meta?.description;
+    if (typeof described === 'string' && described.trim()) {
+      entry.description = described.trim();
+    }
     if (SYSTEM_FIELDS.has(name)) entry.system = true;
     fields.push(entry);
   }
@@ -244,10 +254,20 @@ function qualify(
   return models.has(local) ? local : related;
 }
 
+const RECIPE_METADATA_KEYS = [
+  'surfaces',
+  'providers',
+  'runtime',
+  'demoSeed',
+  'demo',
+] as const;
+
 /**
  * The recipes a package declares, in declaration order, from its knowledge
  * artifact (else its manifest). Dropped when they are not an array of
  * objects with a string `id`. `className` is a source detail, not catalog data.
+ * The non-model parts (surfaces, providers, runtime, demo seed, demo) are
+ * validated by `recipe-metadata.ts` and carried as authored.
  */
 function extractRecipes(raw: RawPackage): Recipe[] {
   const found = raw.knowledge?.recipes ?? raw.manifest.recipes;
@@ -259,13 +279,21 @@ function extractRecipes(raw: RawPackage): Recipe[] {
         typeof r === 'object' &&
         typeof (r as { id?: unknown }).id === 'string',
     )
-    .map(({ className: _className, ...recipe }) => recipe as unknown as Recipe);
+    .map((entry) => {
+      const { className: _className, ...recipe } = entry;
+      for (const key of RECIPE_METADATA_KEYS) delete recipe[key];
+      return {
+        ...recipe,
+        ...extractRecipeMetadata(entry),
+      } as unknown as Recipe;
+    });
 }
 
 /** Turn one package's raw manifest and knowledge into a catalog entry. */
 export function extractPackage(raw: RawPackage): CatalogPackage {
   const { manifest, knowledge, packageName } = raw;
   const recipes = extractRecipes(raw);
+  const browser = extractBrowser(knowledge?.browser ?? manifest.browser);
   const objects = Object.values(manifest.objects);
   const rawModels = objects.filter(isModel);
   const modelMap = new Map(rawModels.map((m) => [m.qualifiedName, m]));
@@ -366,6 +394,7 @@ export function extractPackage(raw: RawPackage): CatalogPackage {
     models,
     dependencies: (manifest.smrtDependencies ?? []).map(packageId).sort(),
     surfaceSource: knowledgeSurfaces ? 'knowledge' : 'manifest',
+    ...(browser ? { browser } : {}),
     ...(recipes.length > 0 ? { recipes } : {}),
   };
 }

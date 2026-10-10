@@ -13,6 +13,7 @@ import { catalog, exposedModels, getPackage } from '$lib/catalog/index.ts';
 import AiStatusIcons from '$lib/components/AiStatusIcons.svelte';
 import BrowserAssistant from '$lib/components/BrowserAssistant.svelte';
 import PlannerEditBridge from '$lib/components/PlannerEditBridge.svelte';
+import PlannerPalette from '$lib/components/PlannerPalette.svelte';
 import SectionActions from '$lib/components/SectionActions.svelte';
 import ThemeBridge from '$lib/components/ThemeBridge.svelte';
 import { browserStorage } from '$lib/cookbook/storage.ts';
@@ -86,7 +87,9 @@ const recipeGroups: ShellNavGroup[] = $derived.by(() => {
     const recipe = recipes.find((r) => r.id === id);
     return recipe ? [recipe] : [];
   });
-  return buildNavSections(added).map((section) => {
+  // A section none of whose recipes has a menu entry (an assistant, a settings
+  // panel) is left out rather than shown empty.
+  return buildNavSections(added).flatMap((section) => {
     const seen = new Set<string>();
     const items: ShellNavItem[] = [];
     for (const recipe of section.recipes) {
@@ -118,14 +121,17 @@ const recipeGroups: ShellNavGroup[] = $derived.by(() => {
         main = false;
       }
     }
+    if (items.length === 0) return [];
     const id = `section:${section.id}`;
-    return {
-      id,
-      heading: section.label,
-      icon: section.icon,
-      href: appHref(sectionPath(id)),
-      items,
-    };
+    return [
+      {
+        id,
+        heading: section.label,
+        icon: section.icon,
+        href: appHref(sectionPath(id)),
+        items,
+      },
+    ];
   });
 });
 
@@ -286,6 +292,10 @@ function flushOnHide() {
   <AiStatusIcons />
 {/snippet}
 
+{#snippet palette()}
+  <PlannerPalette />
+{/snippet}
+
 <AppShell
   storageKey={SHELL_STORAGE_KEY}
   title="Planner"
@@ -303,6 +313,12 @@ function flushOnHide() {
       label: 'AI status',
       slot: 'leftSidebar.footer',
       render: aiStatus,
+    },
+    {
+      id: 'palette',
+      label: 'Search',
+      slot: 'header.center',
+      render: palette,
     },
   ]}
   dockToggles={[{ tool: 'assistant', label: 'Assistant', slot: 'header.end' }]}
