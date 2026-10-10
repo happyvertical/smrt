@@ -99,6 +99,11 @@ DuckDB cannot create.
   a principal with no user id even with the slug in its set. The built-in
   `personalize` slugs are in users' self-personalization list (seeded for
   owner/admin/member/viewer once registered).
+- **Permission source.** The principal's permission set is authoritative,
+  including an explicit empty set: a tenancy adapter without
+  `resolvePermissions` refuses everyone (fails closed). Hosts must configure
+  it, or enter identity through users' `enterTenantContext`; never widen it
+  here.
 - **Concurrency.** Optimistic: a save passes the `revision` (ISO
   `updated_at`) it loaded, `null` meaning "no row". Updates use core's
   revision CAS (`save({ expectedUpdatedAt })`), a first write is a strict

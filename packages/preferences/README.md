@@ -44,6 +44,13 @@ runtime. `smrt db:status --parity` reports it like any other table.
 | `shell.customize` | Change or reset the organization's default app frame |
 | `shell.personalize` | Keep and reset their own app frame settings |
 
+The store reads these from the signed-in person's permission set in the
+request context. If your app enters the tenant context through the tenancy
+SvelteKit or Express adapter, configure its `resolvePermissions` (or let
+`createSessionHandler()` from `@happyvertical/smrt-users` enter the context
+with `enterTenantContext`); without it the adapter supplies an empty
+permission set, and everyone, owners included, is refused.
+
 Owners and admins receive all four when role permissions are seeded. Members
 and viewers receive the two `personalize` permissions; for roles created
 before this package was installed, run

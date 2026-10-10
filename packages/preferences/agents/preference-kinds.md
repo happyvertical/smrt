@@ -23,6 +23,13 @@ slugs must be `collection.action` and registered in the users catalog
 slug to users' built-in self-personalization list only when every built-in
 role should hold it.
 
+The store authorizes against the principal's permission set from the
+ambient context and never widens it. A tenancy adapter (SvelteKit, Express)
+without `resolvePermissions` supplies an explicit empty set, which the store
+treats as authoritative: every write is `not_allowed` and `canCustomize` is
+false for everyone, owners included. Configure `resolvePermissions`, or let
+users' `createSessionHandler({ enterTenantContext: true })` enter the context.
+
 ## `validate(payload, ctx)`
 
 | `ctx` field | Meaning |
