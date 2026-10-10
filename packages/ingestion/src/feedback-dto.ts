@@ -52,6 +52,9 @@ export interface RoutingRule {
   handlerVersion: string;
   /** Routing only; never grants, executable instructions or automation settings. */
   matchTerms: string[];
+  /** Present only for a trusted versioned subset; bound to captured evidence. */
+  projection?: { version: string; fields: string[] };
+  /** Full arguments by default; only allowlisted preferences with projection. */
   args: IntakeValues;
 }
 export interface RuleSuggestion {

@@ -4,6 +4,13 @@ Key options: `tableName`, `tableStrategy` ('cti'|'sti'), `conflictColumns`, `ind
 
 Registration sets `SMRT_TABLE_NAME` static property (survives minification).
 
+An explicit `@smrt({ collection: 'domain.records' })` names the route/permission
+namespace independently of `tableName`, including standalone non-STI models.
+Scanner output preserves it in both `collection` and `decoratorConfig.collection`.
+Generated registration reads the merged declaration, so older manifests with a
+derived top-level collection still agree with native decorators. Explicit runtime
+registration options win; absent declarations retain manifest/STI/default naming.
+
 ## @field() UI hints (#2046)
 
 `@field({ ui: { basic, group, order, locked } })` — a static, presentation-only

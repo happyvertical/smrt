@@ -1967,7 +1967,7 @@ function registerUntracked(
     // no manifest entry. (smrt#1311.) An STI subtype with no manifest entry
     // takes its registered STI base's, as the manifest would (#3125).
     collection:
-      config.collection ??
+      mergedConfig.collection ??
       manifestEntry?.collection ??
       inheritedStiCollection(ctor) ??
       pluralizeCollection(name),
