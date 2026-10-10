@@ -97,12 +97,26 @@ export function timestampMicros(
   date.setUTCHours(Number(hour), Number(minute), Number(second), 0);
   const wall = date.getTime();
   if (Number.isNaN(wall)) return undefined;
+  // Date rolls impossible fields over (month 13, minute 60, Feb 30); a field
+  // that does not survive the round trip makes the text unprovable.
+  if (
+    date.getUTCFullYear() !== Number(year) ||
+    date.getUTCMonth() !== Number(month) - 1 ||
+    date.getUTCDate() !== Number(day) ||
+    date.getUTCHours() !== Number(hour) ||
+    date.getUTCMinutes() !== Number(minute) ||
+    date.getUTCSeconds() !== Number(second)
+  ) {
+    return undefined;
+  }
   let offsetMinutes = 0;
   if (zone && zone.toUpperCase() !== 'Z') {
     const digits = zone.slice(1).replace(':', '');
+    const offsetHours = Number(digits.slice(0, 2));
+    const offsetRest = Number(digits.slice(2) || '0');
+    if (offsetHours > 23 || offsetRest > 59) return undefined;
     offsetMinutes =
-      (zone.startsWith('-') ? -1 : 1) *
-      (Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2) || '0'));
+      (zone.startsWith('-') ? -1 : 1) * (offsetHours * 60 + offsetRest);
   }
   const micros = BigInt(fraction.slice(0, 6).padEnd(6, '0'));
   return (BigInt(wall) - BigInt(offsetMinutes) * 60000n) * 1000n + micros;

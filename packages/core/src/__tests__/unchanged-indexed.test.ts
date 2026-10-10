@@ -176,6 +176,32 @@ describe('storedValueEquals (#3737)', () => {
     expect(timestampMicros('0001-01-02 03:04:05 (BC)', true)).toBeUndefined();
   });
 
+  it('refuses impossible timestamp fields instead of rolling them over', () => {
+    // Month 13 would roll to 2027-01; it must not prove equal to that.
+    expect(
+      storedValueEquals(
+        'TIMESTAMP',
+        '2026-13-02T03:04:05.678Z',
+        new Date(0),
+        '2027-01-02 03:04:05.678',
+      ),
+    ).toBe(false);
+    // Minute 60 would roll to the next hour.
+    expect(
+      storedValueEquals(
+        'TIMESTAMP',
+        '2026-01-02T03:60:05Z',
+        new Date(0),
+        '2026-01-02 04:00:05',
+      ),
+    ).toBe(false);
+    expect(timestampMicros('2026-02-30T00:00:00Z')).toBeUndefined();
+    expect(timestampMicros('2026-01-02T24:00:00Z')).toBeUndefined();
+    expect(timestampMicros('2026-01-02T03:04:60Z')).toBeUndefined();
+    expect(timestampMicros('2026-01-02T03:04:05+25:00')).toBeUndefined();
+    expect(timestampMicros('2026-01-02 03:04:05', true)).toBeDefined();
+  });
+
   it('reads timestamp text exactly', () => {
     expect(timestampMicros('2026-01-02 03:04:05.5', true)).toBe(
       BigInt(Date.UTC(2026, 0, 2, 3, 4, 5)) * 1000n + 500000n,
