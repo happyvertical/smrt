@@ -204,9 +204,11 @@ export async function startKitchenServer(
     }
     if (applying)
       throw new HttpError(409, 'A cookbook is already being applied.');
-    const text = await readBody(req, COOKBOOK_LIMIT);
+    // Claim the slot before the first await: two POSTs must not both pass the
+    // check while their bodies are still being read.
     applying = true;
     try {
+      const text = await readBody(req, COOKBOOK_LIMIT);
       log('Received a cookbook from the planner.');
       const outcome = await options.apply(text);
       if (!outcome.ok) {

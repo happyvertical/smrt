@@ -23,6 +23,7 @@ import {
   extractTarball,
   fetchPackageTarball,
   type RegistryOptions,
+  SMRT_PACKAGE_NAME,
 } from './registry.js';
 
 // Re-exported: these lived here before `smrt kitchen` shared them.
@@ -296,6 +297,10 @@ export async function loadRegistryManifest(
   packageName: string,
   options: RegistryOptions = {},
 ): Promise<boolean> {
+  // A cookbook names its packages, so it must not choose what is fetched: only
+  // the framework's own packages come from a registry; anything else must
+  // already be installed (a local manifest).
+  if (!SMRT_PACKAGE_NAME.test(packageName)) return false;
   const tarball = await fetchPackageTarball(packageName, options);
   if (!tarball) return false;
   const work = mkdtempSync(join(tmpdir(), 'smrt-cookbook-'));
@@ -308,9 +313,14 @@ export async function loadRegistryManifest(
     );
     const file = manifestPathForPackageDir(join(work, 'package'));
     if (!file) return false;
+    const manifest = JSON.parse(readFileSync(file, 'utf-8')) as {
+      packageName?: string;
+    };
+    // The manifest speaks for the package that was asked for, not another.
+    if (manifest.packageName !== packageName) return false;
     return addManifest(
       index,
-      JSON.parse(readFileSync(file, 'utf-8')),
+      manifest,
       `${tarball.registry}/${packageName.replace('/', '%2F')}@${tarball.version ?? 'latest'}`,
     );
   } finally {

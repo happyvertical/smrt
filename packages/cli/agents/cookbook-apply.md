@@ -20,6 +20,13 @@ products), falling back to `dist/manifest.json`, `dist/lib/manifest.json`, `mani
    packages still unresolved: `@happyvertical/smrt-<recipe-id prefix>` and the
    packages named by `features`/`policies`. The tarball is fetched and only
    the manifest is extracted; nothing is installed. `--no-registry` skips it.
+   A cookbook cannot choose what is fetched: only names matching
+   `@happyvertical/smrt-<name>` are looked up (a package of another scope must
+   already be installed locally), the fetched manifest must name the package that
+   was asked for, the registry version must be a plain semver, the token is sent
+   only to the registry's own origin (a foreign tarball host gets none; foreign
+   plain-http is refused), `dist.integrity` is verified when given, and a tarball
+   is capped at 300 MB (a cookbook URL at 2 MB).
 
 `validate` fails (exit 1, `--json` for machines) on: structural errors (core's
 `validateCookbook`), unknown recipe ids, a `requires` id missing from the

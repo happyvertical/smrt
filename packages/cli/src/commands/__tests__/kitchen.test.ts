@@ -481,6 +481,44 @@ describe('/api/kitchen/cookbook', () => {
   });
 });
 
+describe('concurrent cookbook posts', () => {
+  it('lets only one of two simultaneous posts apply', async () => {
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const core = await loadPlannerCore(install);
+    const server = await startKitchenServer({
+      planner: install,
+      core,
+      ai: null,
+      apply: async () => {
+        calls += 1;
+        await gate;
+        return { ok: true, body: { ok: true } } as never;
+      },
+      token: 'test-token',
+    });
+    servers.push(server);
+    const origin = `http://127.0.0.1:${server.port}`;
+    const post = () =>
+      fetch(
+        `${origin}/api/kitchen/cookbook`,
+        json(COOKBOOK, { origin, [TOKEN_HEADER]: 'test-token' }),
+      );
+    const first = post();
+    const second = post();
+    // The loser answers while the winner is still applying.
+    const loser = await Promise.race([first, second]);
+    expect(loser.status).toBe(409);
+    release();
+    const statuses = [(await first).status, (await second).status].sort();
+    expect(statuses).toEqual([200, 409]);
+    expect(calls).toBe(1);
+  });
+});
+
 describe('runKitchen', () => {
   it('serves, waits for the cookbook from the page, applies it and returns', async () => {
     const project = join(work, 'run-project');
@@ -690,6 +728,65 @@ describe('finding the planner', () => {
         registry: { registryUrl: 'https://registry.example', fetchImpl },
       });
       expect(offline).toMatchObject({ version: '2.4.0', source: 'cache' });
+    });
+
+    it('refuses a registry version that is not a plain version', async () => {
+      const evil = async (url: string) => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          version: '../../../../..',
+          dist: { tarball: 'https://registry.example/planner.tgz' },
+        }),
+        arrayBuffer: async () => new ArrayBuffer(0),
+      });
+      const cacheDir = join(work, 'evil-cache');
+      mkdirSync(cacheDir);
+      await expect(
+        resolvePlanner({
+          cacheDir,
+          dir: work,
+          registry: {
+            registryUrl: 'https://registry.example',
+            fetchImpl: evil,
+          },
+        }),
+      ).rejects.toBeInstanceOf(PlannerError);
+      expect(existsSync(cacheDir)).toBe(true);
+    });
+
+    it('refuses a tarball that does not match the registry integrity', async () => {
+      const tampered = async (url: string) => {
+        const meta = url.endsWith('/latest');
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            version: '2.4.0',
+            dist: {
+              tarball: 'https://registry.example/planner.tgz',
+              integrity: `sha512-${Buffer.alloc(64).toString('base64')}`,
+            },
+          }),
+          arrayBuffer: async () =>
+            meta
+              ? new ArrayBuffer(0)
+              : (tarball.buffer.slice(
+                  tarball.byteOffset,
+                  tarball.byteOffset + tarball.byteLength,
+                ) as ArrayBuffer),
+        };
+      };
+      await expect(
+        resolvePlanner({
+          cacheDir: join(work, 'tampered-cache'),
+          dir: work,
+          registry: {
+            registryUrl: 'https://registry.example',
+            fetchImpl: tampered,
+          },
+        }),
+      ).rejects.toBeInstanceOf(PlannerError);
     });
 
     it('fails with a clear message when there is no planner anywhere', async () => {

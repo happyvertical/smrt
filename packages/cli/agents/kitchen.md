@@ -38,7 +38,12 @@ Checked before anything starts.
 Guards: every request's `Host` must be this server (DNS rebinding); the cookbook POST needs a
 matching `Origin` header (chat: matching if present), `content-type: application/json`, a
 timing-safe token match, and is refused after a success. Bodies are capped (chat 256 KB,
-cookbook 2 MB). No CORS headers are sent.
+cookbook 2 MB). No CORS headers are sent. Only one cookbook POST applies at a time
+(the slot is claimed before the body is read). The token is served from
+`/planner.config.json`, which any local process that sends this server's `Host` can read:
+the kitchen defends against browsers, not against other users on the same machine, so run
+it on a machine you trust. Keeping the token out of that endpoint needs a planner contract
+change (token in the opened URL's fragment).
 
 ## Model
 

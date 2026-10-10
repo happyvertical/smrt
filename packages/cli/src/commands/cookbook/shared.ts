@@ -35,6 +35,9 @@ export function cliVersion(): string {
   }
 }
 
+/** A cookbook is a small JSON file; the kitchen accepts at most 2 MB too. */
+const MAX_COOKBOOK_CHARS = 2 * 1024 * 1024;
+
 /** Cookbook text from a file path or an http(s) URL. */
 export async function readCookbookSource(source: string): Promise<string> {
   if (/^https?:\/\//.test(source)) {
@@ -44,7 +47,11 @@ export async function readCookbookSource(source: string): Promise<string> {
         `Could not fetch ${source}: HTTP ${response.status}`,
       );
     }
-    return response.text();
+    const text = await response.text();
+    if (text.length > MAX_COOKBOOK_CHARS) {
+      throw new ApplyError(`${source} is larger than a cookbook can be.`);
+    }
+    return text;
   }
   try {
     return readFileSync(resolve(source), 'utf-8');

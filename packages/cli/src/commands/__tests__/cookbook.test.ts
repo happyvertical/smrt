@@ -23,6 +23,7 @@ import {
   registryForPackage,
   resolveRecipeIndex,
 } from '../cookbook/recipe-index.js';
+import { downloadPackage, lookupPackage } from '../cookbook/registry.js';
 import {
   parseForResolution,
   validateCookbookText,
@@ -529,6 +530,126 @@ describe('registry fallback', () => {
     expect(urls[0]).toBe(
       'https://registry.example/@happyvertical%2Fsmrt-widgets/0.5.0',
     );
+  });
+});
+
+describe('registry fetch hardening', () => {
+  const meta = (tarball: string, extra: object = {}) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: '1.0.0', dist: { tarball, ...extra } }),
+    arrayBuffer: async () => new ArrayBuffer(8),
+  });
+
+  it('fetches nothing outside the framework packages a cookbook names', async () => {
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      return meta('https://registry.example/x.tgz');
+    };
+    for (const name of [
+      '@evil/pkg',
+      '@happyvertical/other',
+      '@happyvertical/smrt-%2e%2e',
+      'smrt-core',
+    ]) {
+      expect(
+        await loadRegistryManifest(createRecipeIndex(), name, {
+          registryUrl: 'https://registry.example',
+          fetchImpl,
+        }),
+      ).toBe(false);
+    }
+    expect(urls).toEqual([]);
+    const index = await resolveRecipeIndex(
+      { features: ['@evil/x:Foo'], recipes: [] },
+      {
+        dir: work,
+        registryOptions: { registryUrl: 'https://registry.example', fetchImpl },
+      },
+    );
+    expect(urls).toEqual([]);
+    expect(index.missing.has('@evil/x')).toBe(true);
+  });
+
+  it('ignores a registry manifest that names a different package', async () => {
+    const pkg = join(work, 'imposter', 'package', 'dist');
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(
+      join(work, 'imposter', 'package', 'package.json'),
+      JSON.stringify({ exports: { './manifest': './dist/manifest.json' } }),
+    );
+    writeFileSync(
+      join(pkg, 'manifest.json'),
+      JSON.stringify({
+        packageName: '@happyvertical/smrt-products',
+        recipes: [{ id: 'products.simple' }],
+      }),
+    );
+    const tgz = join(work, 'imposter.tgz');
+    await create({ gzip: true, file: tgz, cwd: join(work, 'imposter') }, [
+      'package',
+    ]);
+    const bytes = readFileSync(tgz);
+    const fetchImpl = async (url: string) => ({
+      ...meta('https://registry.example/x.tgz'),
+      arrayBuffer: async () =>
+        bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length),
+    });
+    const index = createRecipeIndex();
+    expect(
+      await loadRegistryManifest(index, '@happyvertical/smrt-widgets', {
+        registryUrl: 'https://registry.example',
+        fetchImpl,
+      }),
+    ).toBe(false);
+    expect(index.recipes.size).toBe(0);
+  });
+
+  it('sends the registry token only to the registry origin', async () => {
+    const seen: Array<{ url: string; auth?: string }> = [];
+    const fetchImpl = (tarball: string) => async (url: string, init?: any) => {
+      seen.push({ url, auth: init?.headers?.authorization });
+      return meta(tarball);
+    };
+    writeFileSync(
+      join(work, '.npmrc'),
+      '@happyvertical:registry=https://npm.example.test/\n//npm.example.test/:_authToken=sekret\n',
+    );
+    const run = async (tarball: string) => {
+      seen.length = 0;
+      const found = await lookupPackage('@happyvertical/smrt-widgets', {
+        dir: work,
+        fetchImpl: fetchImpl(tarball),
+      });
+      if (found) await downloadPackage(found, fetchImpl(tarball));
+      return found;
+    };
+    // Same origin: the token goes along.
+    expect(await run('https://npm.example.test/w.tgz')).not.toBeNull();
+    expect(seen.map((s) => s.auth)).toEqual(['Bearer sekret', 'Bearer sekret']);
+    // A foreign https host gets the tarball request without the token.
+    expect(await run('https://cdn.elsewhere.test/w.tgz')).not.toBeNull();
+    expect(seen[1]).toEqual({
+      url: 'https://cdn.elsewhere.test/w.tgz',
+      auth: undefined,
+    });
+    // A foreign plain-http tarball is refused outright.
+    expect(await run('http://cdn.elsewhere.test/w.tgz')).toBeNull();
+  });
+
+  it('refuses a version that is not a plain version', async () => {
+    const found = await lookupPackage('@happyvertical/smrt-widgets', {
+      registryUrl: 'https://registry.example',
+      fetchImpl: async () => ({
+        ...meta('https://registry.example/w.tgz'),
+        json: async () => ({
+          version: '../../x',
+          dist: { tarball: 'https://registry.example/w.tgz' },
+        }),
+      }),
+    });
+    expect(found).toBeNull();
   });
 });
 
