@@ -301,6 +301,8 @@ describe('cookbook apply', () => {
     expect(Object.keys(pkg.dependencies)).toEqual(
       [...Object.keys(pkg.dependencies)].sort((a, b) => a.localeCompare(b)),
     );
+    // Named from the directory, never the template's shared identity.
+    expect(pkg.name).toBe(`out-${name}`);
     expect(readJson(join(dir, 'smrt.cookbook.json'))).toEqual(report.cookbook);
     // Template files copied, .git left behind.
     expect(existsSync(join(dir, 'src', 'app.ts'))).toBe(true);
@@ -330,6 +332,29 @@ describe('cookbook apply', () => {
     expect(readJson(join(dir, 'package.json')).name).toBe('sourdough-co');
   });
 
+  it('names the project from the target directory when the cookbook has no name', async () => {
+    const cases: Array<[string, string]> = [
+      ['My Cool_App!', 'my-cool-app'],
+      ['___', 'smrt-app'],
+    ];
+    for (const [dirName, expected] of cases) {
+      const dir = join(work, dirName);
+      const report = await validate(doc({ recipes: ['commerce.customers'] }));
+      applyCookbook({
+        cookbook: report.cookbook as Cookbook,
+        packages: report.packages,
+        dir,
+        template,
+        install: false,
+        cliVersion: '9.9.9',
+        cwd: work,
+      });
+      const name = readJson(join(dir, 'package.json')).name;
+      expect(name).toBe(expected);
+      expect(name).toMatch(/^[a-z0-9][a-z0-9-]*$/);
+    }
+  });
+
   it('is idempotent and preserves user edits when re-applying an edited cookbook', async () => {
     const dir = join(work, 'idem');
     await apply('yoga-studio', dir);
@@ -356,7 +381,7 @@ describe('cookbook apply', () => {
     const after = readJson(pkgPath);
     expect(after.scripts.custom).toBe('echo hi');
     expect(after.dependencies['@happyvertical/smrt-commerce']).toBe('~0.55.9');
-    expect(after.name).toBe('@smrt-app/start');
+    expect(after.name).toBe('idem');
     expect(readFileSync(join(dir, 'src', 'app.ts'), 'utf-8')).toBe('// mine\n');
     expect(readJson(join(dir, 'smrt.cookbook.json')).recipes).toContain(
       'commerce.wholesale',

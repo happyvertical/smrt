@@ -118,6 +118,12 @@ const slug = (value: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
+/** A valid unscoped npm package name from free text, or undefined when nothing usable remains. */
+export function npmNameFromText(value: string): string | undefined {
+  const name = slug(value).slice(0, 214).replace(/-+$/, '');
+  return name || undefined;
+}
+
 /** Parse `github:owner/repo#ref`, a git URL, or a local path. */
 export function parseTemplateSpec(
   spec: string,
@@ -289,9 +295,15 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
           : 'update'
         : 'create';
 
+    // A new project never keeps the template's package name: the runtime
+    // derives the application identity (and so the OS data directory) from
+    // it, so two projects from one template would share a database. Name it
+    // from the cookbook, else from the target directory.
     const projectName =
-      mode === 'new' && options.cookbook.name
-        ? slug(options.cookbook.name) || undefined
+      mode === 'new'
+        ? (npmNameFromText(options.cookbook.name ?? '') ??
+          npmNameFromText(basename(targetDir)) ??
+          'smrt-app')
         : undefined;
 
     const plan: ApplyPlan = {
