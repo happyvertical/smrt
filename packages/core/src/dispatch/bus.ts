@@ -761,7 +761,11 @@ export class DispatchBus {
    * tenant or widen visibility to all tenants. Scoping rules:
    *
    * - tenancy off → no tenant filter (pre-tenancy behavior).
-   * - active tenant T → that tenant's dispatches plus global (NULL) dispatches.
+   * - active tenant T → that tenant's dispatches only. Global (NULL-tenant)
+   *   dispatches are system-only on reads (#3301): a global row's payload (for
+   *   example a delivery emitted outside tenant context) may carry another
+   *   tenant's recipients/subjects. Processing (`process`) still lets a tenant
+   *   worker claim global work.
    * - tenancy on but no active tenant → global (NULL) dispatches only
    *   (fail-closed; never all tenants).
    *
@@ -782,9 +786,10 @@ export class DispatchBus {
    * Gets a dispatch by ID, enforcing the active tenant scope (S5 #1398).
    *
    * Applies the same server-derived tenant predicate as {@link list}: a
-   * subscriber in tenant A cannot fetch tenant B's dispatch by id, and when
-   * tenancy is on with no active tenant only global (NULL) dispatches are
-   * returned. Returns `null` when the dispatch exists but is out of scope.
+   * subscriber in tenant A cannot fetch tenant B's dispatch, or a global
+   * (NULL-tenant) dispatch, by id (#3301), and when tenancy is on with no
+   * active tenant only global (NULL) dispatches are returned. Returns `null`
+   * when the dispatch exists but is out of scope.
    */
   async get(id: string): Promise<Dispatch | null> {
     await this.initialize();

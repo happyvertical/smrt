@@ -166,6 +166,12 @@ instances and never use this path to overwrite a loaded revision.
 - Wildcards: `campaign.*` matches `campaign.completed` (single segment only)
 - Tables: `_smrt_dispatch`, `_smrt_dispatch_subscriptions`
 - Status: `pending → processing → completed` (or `failed`)
+- Tenancy (`dispatch/tenant-resolver.ts`): `emit` stamps the server-derived
+  tenant; no context stores `tenant_id` NULL (global). Under an active tenant,
+  processing (`process`/`retry`/`cleanup`) matches that tenant plus global rows,
+  but inspection reads (`list`/`get`) match that tenant only — global rows are
+  system-only because their payload may belong to another tenant (#3301). Emit
+  tenant-owned deliveries inside the tenant context so the owner can see them.
 
 ## Single Table Inheritance (STI)
 
