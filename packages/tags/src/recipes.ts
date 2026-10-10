@@ -22,6 +22,12 @@ export class TaxonomyRecipe extends SmrtRecipe {
   static summary =
     'Organise anything with a shared set of nested tags and alternative names.';
   static synonyms = ['tags', 'tagging', 'categories', 'labels', 'topics'];
+  static section = {
+    id: 'taxonomy',
+    label: 'Taxonomy',
+    icon: 'tag',
+    description: 'The tags people use to sort and find things.',
+  };
   static models = [Tag, TagAlias];
   static nav = [
     {
