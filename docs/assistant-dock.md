@@ -15,6 +15,10 @@ No new `./assistant` subpath was needed — `./svelte` carries it cleanly.
 
 - `AssistantDock.svelte` — the composed surface (thread list, messages, action
   panel, composer).
+- `FloatingAssistant.svelte` — a launcher and responsive floating panel around
+  one permanently mounted dock. It is presentation only: a collapse never
+  recreates the controller, so drafts, threads, streaming turns and pending
+  confirmation identity remain intact.
 - `createAssistantDockController` (`create-assistant-dock-controller.svelte.ts`)
   — headless runes state: threads, active thread, messages, pending sends,
   discovered surfaces, action lifecycle.
@@ -43,6 +47,53 @@ owns the canonical `DataSurfaceRegistry`/`DataSurfaceDescriptor` contracts
 (re-exported from `@happyvertical/smrt-types`,
 `packages/smrt-ui/src/components/data/data-surface.ts:11-76`). `AssistantDock`
 does not import `smrt-svelte`.
+
+## Floating presentation
+
+Use `FloatingAssistant` when a host needs a compact launcher. It forwards the
+entire `AssistantDock` public contract, including its transport, registry,
+action client, browser tools and confirmation callbacks. Its `expanded` prop
+is bindable; Escape collapses an expanded panel and returns focus to the
+launcher. The collapsed panel remains mounted and inert.
+
+```svelte
+<script lang="ts">
+  import {
+    FloatingAssistant,
+    createAssistantHttpTransport,
+  } from '@happyvertical/smrt-chat/svelte';
+
+  const transport = createAssistantHttpTransport({ endpoint: '/api/assistant' });
+</script>
+
+<FloatingAssistant {transport} {registry} contextMode="server" />
+```
+
+An optional `character` snippet receives `{ expanded, status, run }` through
+the exported `FloatingAssistantPresentationState`. It has no animation, image,
+audio, microphone or provider dependency. A host owns any character renderer
+and maps these existing assistant events to its visual states.
+
+For listening or subtitle-first pages, set `presentation="controls"`. The
+dock omits its thread list, transcript and composer but keeps the supervised
+run status, pending browser-tool confirmations, choice cards, data-action
+review controls and retry controls. `onattentionchange` reports when a pending
+tool or previewed action needs the person; `FloatingAssistant` automatically
+reveals the same dock controls without making a decision itself. While a tool
+request, previewed action, or unresolved action outcome requires attention,
+Escape, the collapse button, and a host writing `expanded=false` cannot hide
+those controls. The character snippet and launcher report the effective visible
+state. After the decision, the host's requested collapsed state can take effect.
+
+Host `visible=false` is separate from collapse: it hides the whole wrapper,
+including the launcher, and pauses the dock's polling without unmounting its
+controller or deciding pending actions. Setting `visible=true` restores it;
+any pending attention still overrides `expanded=false` while the host is visible.
+
+The `/previews/floating-assistant` workbench uses in-memory transport, tool,
+choice, and action adapters. Its controls exercise Allow/Don't allow,
+Confirm/Reject, choices, Stop, and failures against the dock's own controller;
+no provider or microphone is contacted.
 
 ## Shell mounting recipe
 

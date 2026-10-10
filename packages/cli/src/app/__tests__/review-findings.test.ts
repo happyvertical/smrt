@@ -122,7 +122,8 @@ describe('R4: a failed start never orphans a live writer', () => {
       dependencies: {
         resolveRuntime: async () =>
           resolveApplicationRuntime({ profile: 'local' }) as never,
-        sleep: () => new Promise((resolve) => setTimeout(resolve, 20)),
+        sleep: (ms) =>
+          new Promise((resolve) => setTimeout(resolve, ms === 250 ? 20 : ms)),
       },
     });
     expect(code).toBe(1);

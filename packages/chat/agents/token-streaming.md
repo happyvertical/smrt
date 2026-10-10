@@ -1,7 +1,8 @@
 # Token Streaming (SSE, #1936)
 
-Moved verbatim from `packages/chat/AGENTS.md` to keep the instruction chain under
-the 32 KB cap (`pnpm check:agents-chain`). The summary stays in AGENTS.md.
+Reference linked from [../AGENTS.md](../AGENTS.md). This contract was moved from
+`packages/chat/AGENTS.md` to keep the instruction chain under the 32 KB cap
+(`pnpm check:agents-chain`); AGENTS.md retains the cap-oriented summary.
 
 `chat-stream.ts` is the SSE seam for embeddable conversational UIs (first consumer: the Happy chat widget, `animation#5`): a client POSTs the conversation so far and receives a `text/event-stream` of `data: <json>` frames — `token` deltas as the model generates, then a final `done` frame with the message. The wire `ChatStreamEvent` union also declares `emotion` and `control` (#1921 host-page control commands) lanes for forward compatibility; the v1 engine emits `token`/`done`/`error`.
 
