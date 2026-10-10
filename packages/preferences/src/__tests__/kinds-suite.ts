@@ -7,6 +7,7 @@ import {
 import { registerPermissionDefinitions } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { UiPreferenceRecordCollection } from '../collections/UiPreferenceRecordCollection.js';
 import {
   CUSTOMIZE_SHELL_PERMISSION,
   createOverviewStore,
@@ -15,13 +16,15 @@ import {
   listPreferenceKinds,
   PERSONALIZE_OVERVIEW_PERMISSION,
   PERSONALIZE_SHELL_PERMISSION,
+  PreferenceAccessError,
   type PreferenceStore,
   registerPreferenceKind,
   SHELL_LAYOUT_PREFERENCE_KIND,
-  UiPreferenceRecordCollection,
+  UiPreferenceRecord,
   UnknownPreferenceKindError,
 } from '../index.js';
 import { buildDefinition, buildRegistry } from './overview-suite.js';
+import { insertRawPreference } from './raw-rows.js';
 
 const NOTE_KIND = 'test-note';
 const NOTE_TENANT = 'testnotes.customize';
@@ -133,7 +136,8 @@ export function preferenceKindsSuite(
         await expect(
           store.reset('nope', 'admin', { scope: 'user' }),
         ).rejects.toBeInstanceOf(UnknownPreferenceKindError);
-        // The model refuses it too, so no path writes an unvalidatable row.
+        // The model refuses it too (no store grant), so no path writes an
+        // unvalidatable row.
         const records = await UiPreferenceRecordCollection.create({ db });
         await expect(
           records.create({
@@ -144,7 +148,7 @@ export function preferenceKindsSuite(
             userId: alice,
             payloadJson: '{}',
           }),
-        ).rejects.toBeInstanceOf(UnknownPreferenceKindError);
+        ).rejects.toBeInstanceOf(PreferenceAccessError);
         expect(await records.list({})).toEqual([]);
       });
     });
@@ -238,6 +242,61 @@ export function preferenceKindsSuite(
       }
     });
 
+    it('refuses model writes that bypass the store and its validator', async () => {
+      const invalid = JSON.stringify({ panels: { left: 'open' } });
+      await as(all, async () => {
+        const records = await UiPreferenceRecordCollection.create({ db });
+        await expect(
+          records.create({
+            tenantId,
+            kind: SHELL_LAYOUT_PREFERENCE_KIND,
+            surfaceId: 'admin',
+            scopeType: 'user',
+            userId: alice,
+            payloadJson: invalid,
+          }),
+        ).rejects.toBeInstanceOf(PreferenceAccessError);
+        const direct = new UiPreferenceRecord({
+          db,
+          tenantId,
+          kind: SHELL_LAYOUT_PREFERENCE_KIND,
+          surfaceId: 'admin',
+          scopeType: 'user',
+          userId: alice,
+          payloadJson: invalid,
+        } as ConstructorParameters<typeof UiPreferenceRecord>[0]);
+        await expect(direct.save()).rejects.toBeInstanceOf(
+          PreferenceAccessError,
+        );
+        const empty = await store.load(SHELL_LAYOUT_PREFERENCE_KIND, 'admin');
+        expect(empty.user?.revision).toBeNull();
+
+        // A row the store wrote cannot be rewritten or deleted around it.
+        const saved = await store.save(SHELL_LAYOUT_PREFERENCE_KIND, 'admin', {
+          scope: 'user',
+          payload: { hotkeysEnabled: false },
+          revision: null,
+        });
+        expect(saved.ok).toBe(true);
+        const row = await records.findTier(
+          tenantId,
+          SHELL_LAYOUT_PREFERENCE_KIND,
+          'admin',
+          'user',
+          alice,
+        );
+        if (!row) throw new Error('expected the stored row');
+        row.payloadJson = invalid;
+        await expect(row.save()).rejects.toBeInstanceOf(PreferenceAccessError);
+        await expect(row.delete()).rejects.toBeInstanceOf(
+          PreferenceAccessError,
+        );
+        const after = await store.load(SHELL_LAYOUT_PREFERENCE_KIND, 'admin');
+        expect(after.user?.payload).toEqual({ hotkeysEnabled: false });
+        expect(after.user?.revision).toBe(saved.ok ? saved.revision : null);
+      });
+    });
+
     it('round-trips the shell layout and validates it both ways', async () => {
       const shell = createShellSettingsPreferences(store);
       const delta = {
@@ -286,18 +345,20 @@ export function preferenceKindsSuite(
         );
         expect((await shell.read('admin')).user).toEqual(delta);
 
-        // Invalid when stored: dropped and reported on load, row untouched.
-        const records = await UiPreferenceRecordCollection.create({ db });
-        const row = await records.findTier(
+        // Invalid when stored (seeded with raw SQL, as corrupt or outdated
+        // storage arrives): dropped and reported on load, row untouched.
+        expect(await shell.reset('admin')).toEqual({ ok: true });
+        await insertRawPreference(db, {
           tenantId,
-          SHELL_LAYOUT_PREFERENCE_KIND,
-          'admin',
-          'user',
-          alice,
-        );
-        if (!row) throw new Error('expected the user row');
-        row.setPayload({ panels: { left: 'sideways' }, sizes: { left: 280 } });
-        await row.save();
+          kind: SHELL_LAYOUT_PREFERENCE_KIND,
+          surfaceId: 'admin',
+          scopeType: 'user',
+          userId: alice,
+          payloadJson: JSON.stringify({
+            panels: { left: 'sideways' },
+            sizes: { left: 280 },
+          }),
+        });
         const degraded = await store.load(
           SHELL_LAYOUT_PREFERENCE_KIND,
           'admin',

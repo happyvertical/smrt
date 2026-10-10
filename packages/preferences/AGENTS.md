@@ -54,6 +54,15 @@ DuckDB cannot create.
   store only `canonical`, `null` deletes the row) and leniently on load (use
   `canonical`, report `issues`, never rewrite the row). A row written at a
   newer `format_version` than the kind's is dropped and reported.
+- **Store-only writes.** Only the store writes rows: it passes a
+  module-private symbol capability (`src/write-capability.ts`, not exported;
+  the smrt-approvals pattern) bound to the exact `payloadJson` the kind
+  validated, single-use, and grants each delete the same way. The model
+  refuses any insert, update (also in `validateBeforeSave`, so bulk creates
+  are covered) or delete without it, so `new UiPreferenceRecord(...).save()`,
+  a collection `create()` or `row.setPayload(); row.save()` never store an
+  unvalidated payload. Tests seed corrupt storage with raw SQL
+  (`src/__tests__/raw-rows.ts`). This guards in-process callers, not raw SQL.
 - **Tiers.** The tenant row is the default; the user row applies on top, and
   `validate` for the user tier receives the tenant tier's canonical payload
   (`ctx.tenant`). User rows are per tenant: preferences name tenant data.

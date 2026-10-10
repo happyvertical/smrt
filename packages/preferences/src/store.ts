@@ -27,6 +27,11 @@ import {
 } from './kinds.js';
 import type { UiPreferenceRecord } from './models/UiPreferenceRecord.js';
 import { splitPermissionSlug } from './permissions.js';
+import {
+  grantStoreDelete,
+  grantStoreWrite,
+  storeWriteOption,
+} from './write-capability.js';
 
 /** One stored tier, validated for use. */
 export interface PreferenceTier {
@@ -353,6 +358,7 @@ export function createPreferenceStore(
           }
           if (revision === null) return { ok: false, reason: 'conflict' };
           try {
+            grantStoreDelete(existing);
             await existing.delete({ expectedUpdatedAt: revision });
           } catch (error) {
             if (isRevisionConflict(error)) {
@@ -366,6 +372,7 @@ export function createPreferenceStore(
           if (revision === null) return { ok: false, reason: 'conflict' };
           existing.setPayload(canonical);
           existing.formatVersion = kind.formatVersion;
+          grantStoreWrite(existing);
           try {
             await existing.save({ expectedUpdatedAt: revision });
           } catch (error) {
@@ -387,7 +394,8 @@ export function createPreferenceStore(
             payloadJson: JSON.stringify(canonical),
             formatVersion: kind.formatVersion,
             _insertOnly: true,
-          });
+            ...storeWriteOption(),
+          } as Parameters<UiPreferenceRecordCollection['create']>[0]);
           return { ok: true, payload: canonical, revision: created.revision };
         } catch (error) {
           // A concurrent first write took the natural key: the strict insert
@@ -427,6 +435,7 @@ export function createPreferenceStore(
         // a newer change. Only an omitted revision resets unguarded.
         if (input.revision === null) return { ok: false, reason: 'conflict' };
         try {
+          grantStoreDelete(existing);
           await existing.delete(
             typeof input.revision === 'string'
               ? { expectedUpdatedAt: input.revision }

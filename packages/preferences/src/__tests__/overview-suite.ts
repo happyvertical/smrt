@@ -20,6 +20,7 @@ import {
   PreferenceAccessError,
   UiPreferenceRecordCollection,
 } from '../index.js';
+import { insertRawPreference } from './raw-rows.js';
 
 const BOTH = [CUSTOMIZE_OVERVIEW_PERMISSION, PERSONALIZE_OVERVIEW_PERMISSION];
 
@@ -272,25 +273,22 @@ export function overviewStoreSuite(
     });
 
     it('drops and reports stored entries that no longer validate on load', async () => {
-      await as({ tenantId: tenantA, userId: alice }, async () => {
-        const records = await UiPreferenceRecordCollection.create({ db });
-        // A row written before the widget type was removed or its schema
-        // changed: the model only checks the envelope, the store validates.
-        await records.create({
-          tenantId: tenantA,
-          kind: 'overview',
-          surfaceId: definition.id,
-          scopeType: 'user',
-          userId: alice,
-          payloadJson: JSON.stringify({
-            version: 1,
-            added: [
-              { id: 'w5', type: 'retired', span: 1, options: {} },
-              { id: 'w6', type: 'note', span: 1, options: { title: 'Kept' } },
-            ],
-            changed: { w2: { options: { model: 'NotAllowed' } } },
-          }),
-        });
+      // A row written before the widget type was removed or its schema
+      // changed, seeded with raw SQL: the model only accepts store writes.
+      await insertRawPreference(db, {
+        tenantId: tenantA,
+        kind: 'overview',
+        surfaceId: definition.id,
+        scopeType: 'user',
+        userId: alice,
+        payloadJson: JSON.stringify({
+          version: 1,
+          added: [
+            { id: 'w5', type: 'retired', span: 1, options: {} },
+            { id: 'w6', type: 'note', span: 1, options: { title: 'Kept' } },
+          ],
+          changed: { w2: { options: { model: 'NotAllowed' } } },
+        }),
       });
       const state = await as({ tenantId: tenantA, userId: alice }, () =>
         store.load(definition, registry),

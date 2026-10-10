@@ -21,11 +21,18 @@ import {
   ensurePreferencePermissionsRegistered,
   splitPermissionSlug,
 } from '../permissions.js';
+import {
+  adoptStoreWrite,
+  hasStoreWrite,
+  spendStoreWrite,
+  takeStoreDelete,
+} from '../write-capability.js';
 
 // Direct model imports (tests, server integrations) must still find the
 // built-in slugs in the shared users catalog before any guard asks for them.
 ensurePreferencePermissionsRegistered();
 
+type ConstructorOptions = ConstructorParameters<typeof SmrtObject>[0];
 type SaveOptions = NonNullable<Parameters<SmrtObject['save']>[0]>;
 type DeleteOptions = NonNullable<Parameters<SmrtObject['delete']>[0]>;
 
@@ -108,6 +115,11 @@ export class UiPreferenceRecord extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-users:User', { nullable: true })
   updatedBy: string | null = null;
 
+  constructor(options: ConstructorOptions = {}) {
+    super(options);
+    adoptStoreWrite(this, options);
+  }
+
   /** The stored payload, parsed. `undefined` when the text is not JSON. */
   getPayload(): unknown {
     try {
@@ -135,19 +147,50 @@ export class UiPreferenceRecord extends SmrtObject {
     if (!this.tenantId) this.tenantId = principal.tenantId;
     this.syncScopeKey();
     await this.assertPersistedIdentityUnchanged();
+    this.assertStoreWrite();
     this.validateShape();
     await this.authorize();
     this.updatedBy = principal.userId ?? null;
-    return super.save(options);
+    try {
+      return await super.save(options);
+    } finally {
+      spendStoreWrite(this);
+    }
+  }
+
+  /**
+   * Runs for ordinary saves and bulk creates alike, so a collection-level
+   * bulk insert is refused too (`save()` checks first so callers see it).
+   */
+  protected override async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    this.assertStoreWrite();
   }
 
   override async delete(options: DeleteOptions = {}): Promise<void> {
+    if (!takeStoreDelete(this)) {
+      throw new PreferenceAccessError(
+        'Preferences are reset only through the preference store',
+      );
+    }
     // Recomputed from the in-memory owner, so a row whose userId was edited
     // before delete() no longer matches its stored identity and is refused.
     this.syncScopeKey();
     await this.assertPersistedIdentityUnchanged();
     await this.authorize();
     return super.delete(options);
+  }
+
+  /**
+   * Only the store, after the kind's validator accepted exactly this
+   * payload, may write a row (see `write-capability.ts`).
+   */
+  private assertStoreWrite(): void {
+    if (!hasStoreWrite(this, this.payloadJson)) {
+      throw new PreferenceAccessError(
+        'Preferences are written only through the preference store, which validates them',
+      );
+    }
   }
 
   private syncScopeKey(): void {
