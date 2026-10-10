@@ -163,6 +163,11 @@ export interface OverviewToolsOptions {
   maxOperations?: number;
   /** Token source (tests). Defaults to `crypto.randomUUID`. */
   createToken?: () => string;
+  /**
+   * Receives best-effort failures after a change was stored (undo entry,
+   * audit). Defaults to `console.warn`; route it to the host's logger.
+   */
+  onError?: (error: unknown, context: string) => void;
 }
 
 /**
@@ -356,6 +361,12 @@ export function createOverviewTools(
   const undoStore = options.undoStore ?? createMemoryOverviewUndoStore();
   const maxOperations = options.maxOperations ?? OVERVIEW_TOOL_MAX_OPERATIONS;
   const createToken = options.createToken ?? (() => crypto.randomUUID());
+  const onError =
+    options.onError ??
+    ((error: unknown, context: string) => {
+      // biome-ignore lint/suspicious/noConsole: server-side default; hosts pass `onError` to route it to their logger
+      console.warn(`[smrt-chat] ${context}`, error);
+    });
 
   const undoKey = (run: PrincipalRun, pageId: string): string => {
     const { userId, tenantId } = principalFromRun(run);
@@ -399,11 +410,19 @@ export function createOverviewTools(
     }
   };
 
+  /**
+   * Best effort: by the time it runs the change is stored, and reporting the
+   * tool as failed would make the model retry an applied batch.
+   */
   const audit = async (
     run: PrincipalRun,
     entry: Omit<OverviewToolAuditEntry, 'userId' | 'tenantId'>,
   ): Promise<void> => {
-    await options.audit?.({ ...entry, ...principalFromRun(run) });
+    try {
+      await options.audit?.({ ...entry, ...principalFromRun(run) });
+    } catch (error) {
+      onError(error, `overview tool audit failed (${entry.action})`);
+    }
   };
 
   const describe = aiTool(
@@ -491,13 +510,23 @@ export function createOverviewTools(
             'The overview changed while the batch was being applied, so nothing changed. Call overviews-describe again and rebuild the batch.',
         });
       }
-      const token = createToken();
-      await undoStore.set(undoKey(run, pageId), {
-        token,
-        before,
-        after: plan.override,
-        createdAt: Date.now(),
-      });
+      // The batch is stored. From here nothing may report the call as failed:
+      // the model would retry it and duplicate the change. The undo entry is
+      // written after the write (not before it and deleted on failure) because
+      // a lost entry only costs the Undo, while an entry for a write that did
+      // not happen could later "undo" someone else's value.
+      let token: string | null = createToken();
+      try {
+        await undoStore.set(undoKey(run, pageId), {
+          token,
+          before,
+          after: plan.override,
+          createdAt: Date.now(),
+        });
+      } catch (error) {
+        onError(error, 'overview undo entry was not stored');
+        token = null;
+      }
       await audit(run, {
         action: 'apply',
         pageId,
@@ -508,6 +537,11 @@ export function createOverviewTools(
         changed: true,
         applied: plan.results,
         undoToken: token,
+        ...(token === null
+          ? {
+              note: 'The change was applied but cannot be undone with overviews-undo. Do not apply it again.',
+            }
+          : {}),
         overview: surface.describe(),
       };
     },
@@ -574,7 +608,13 @@ export function createOverviewTools(
             'The overview changed after that batch, so it was not undone.',
         });
       }
-      await undoStore.delete(key);
+      try {
+        await undoStore.delete(key);
+      } catch (error) {
+        // A leftover entry no longer matches the stored value, so a second
+        // undo answers changed_since; the restore itself succeeded.
+        onError(error, 'overview undo entry was not removed');
+      }
       await audit(run, { action: 'undo', pageId });
       return { page: pageId, undone: true, overview: surface.describe() };
     },

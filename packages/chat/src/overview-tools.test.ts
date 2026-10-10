@@ -517,6 +517,54 @@ describe('createOverviewTools', () => {
     expect(error.status).toBe(status);
   });
 
+  it('reports an applied batch as applied when the undo entry cannot be stored', async () => {
+    const { host, persisted } = makeHost();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await call(
+      tools(host, {
+        undoStore: {
+          get: () => undefined,
+          set: () => Promise.reject(new Error('store down')),
+          delete: () => undefined,
+        },
+        audit: () => {
+          throw new Error('audit down');
+        },
+      }),
+      OVERVIEW_APPLY_TOOL_SLUG,
+      alice,
+      {
+        page: 'events.home',
+        operations: [{ op: 'add', type: 'note' }],
+      },
+    );
+    expect(result).toMatchObject({ changed: true, undoToken: null });
+    expect((result as { note?: string }).note).toMatch(/cannot be undone/);
+    expect(persisted).toHaveLength(1);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('keeps the undo token when only the audit sink fails', async () => {
+    const { host } = makeHost();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const map = tools(host, {
+      audit: () => Promise.reject(new Error('audit down')),
+    });
+    const applied = (await call(map, OVERVIEW_APPLY_TOOL_SLUG, alice, {
+      page: 'events.home',
+      operations: [{ op: 'remove', id: 'w1' }],
+    })) as { undoToken: string };
+    expect(applied.undoToken).toBe('t1');
+    await expect(
+      call(map, OVERVIEW_UNDO_TOOL_SLUG, alice, {
+        page: 'events.home',
+        undoToken: applied.undoToken,
+      }),
+    ).resolves.toMatchObject({ undone: true });
+    warn.mockRestore();
+  });
+
   it('refuses undo once the principal may no longer customize', async () => {
     let allowed = true;
     const { host } = makeHost({ canCustomize: () => allowed });

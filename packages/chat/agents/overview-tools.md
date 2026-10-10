@@ -55,7 +55,13 @@ field vocabulary; there is no query, filter expression, URL or SQL anywhere.
   calling run only, so another principal's (or tenant's) token is simply not
   found. It refuses when the stored override is no longer `after` (someone
   changed the page since), re-checks `before` with `check`, persists it
-  conditionally, and deletes the entry only after that write succeeded. The default `createMemoryOverviewUndoStore` is in-process
+  conditionally, and deletes the entry only after that write succeeded.
+- **After a successful write the call never fails.** The undo entry is written
+  after the write; if the store throws, apply still answers `changed: true`
+  with `undoToken: null` and a `note` not to apply the batch again (a lost entry
+  only costs the Undo, while an entry written first could later restore over a
+  value the batch never wrote). Audit is best effort; failures go to
+  `onError` (default `console.warn`). The default `createMemoryOverviewUndoStore` is in-process
   (30-minute TTL, 1000 keys); a multi-replica host passes a shared
   `OverviewUndoStore`.
 
