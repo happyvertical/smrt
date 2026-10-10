@@ -1,7 +1,7 @@
 <script lang="ts">import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { UsersAuthAdapter } from '../auth.js';
-import { messageFrom } from '../auth.js';
+import '../auth.js';
 export interface Props {
   /** Authorized browser-to-server authentication callbacks. */
   adapter: UsersAuthAdapter;
@@ -18,11 +18,11 @@ async function signIn() {
   pending = true;
   try {
     await adapter.signInWithPasskey();
-  } catch (cause) {
-    error = messageFrom(cause, t('users.auth.passkey_not_completed'));
+  } catch {
+    error = 'users.auth.passkey_not_completed';
   } finally {
     pending = false;
   }
 }
 </script>
-{#if adapter.signInWithPasskey}<div class="passkey"><Button variant="secondary" fullWidth onclick={signIn} loading={pending}>{label ?? t('users.auth.passkey_sign_in')}</Button>{#if error}<p role="alert">{error}</p>{/if}</div>{/if}<style>.passkey{display:grid;gap:var(--smrt-spacing-sm,.5rem)}p{margin:0;color:var(--smrt-color-error)}</style>
+{#if adapter.signInWithPasskey}<div class="passkey"><Button variant="secondary" fullWidth onclick={signIn} loading={pending}>{label ?? t('users.auth.passkey_sign_in')}</Button>{#if error}<p role="alert">{t(error)}</p>{/if}</div>{/if}<style>.passkey{display:grid;gap:var(--smrt-spacing-sm,.5rem)}p{margin:0;color:var(--smrt-color-error)}</style>

@@ -25,6 +25,12 @@ service. Passkey sign-in is deliberately hidden unless the host passes a
 cannot enable it: the callback must perform the #3275 WebAuthn browser ceremony
 and delegate its verified result to an authorized server action.
 
+Auth components display safe, registered `users.auth.*` messages when an
+adapter rejects; callback diagnostics are never rendered. Configure these
+messages through the SMRT UI i18n context. Existing error and success feedback
+updates when the locale changes, preserving form drafts without repeating the
+auth action. Default English messages are registered by the auth module.
+
 ```svelte
 <script lang="ts">
   import { SignInForm, type UsersAuthAdapter } from '@happyvertical/smrt-users/svelte';

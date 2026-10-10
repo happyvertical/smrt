@@ -3,7 +3,7 @@ import { Form, Input } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { UsersAuthAdapter } from '../auth.js';
-import { messageFrom } from '../auth.js';
+import '../auth.js';
 
 export interface Props {
   /** Authorized browser-to-server authentication callbacks. */
@@ -25,8 +25,8 @@ async function submit() {
   pending = true;
   try {
     await adapter.signInWithPassword({ email, password });
-  } catch (cause) {
-    error = messageFrom(cause, t('users.auth.unable_to_sign_in'));
+  } catch {
+    error = 'users.auth.unable_to_sign_in';
   } finally {
     pending = false;
   }
@@ -34,7 +34,7 @@ async function submit() {
 </script>
 <Form class="auth-form" onsubmit={submit} aria-busy={loading || pending}>
   <h2>{t('users.auth.sign_in')}</h2>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   <label for="sign-in-email">{t('users.auth.email_address')}</label><Input id="sign-in-email" type="email" bind:value={email} autocomplete="email" required disabled={loading || pending} />
   <label for="sign-in-password">{t('users.auth.password')}</label><Input id="sign-in-password" type="password" bind:value={password} autocomplete="current-password" required disabled={loading || pending} />
   {#if forgotPasswordHref}<Button href={forgotPasswordHref} variant="ghost">{t('users.auth.forgot_password')}</Button>{/if}

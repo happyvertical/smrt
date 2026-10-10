@@ -11,6 +11,8 @@ export const M = defineMessages({
   'users.auth.last_used': 'Last used {value}',
   'users.auth.no_api_keys': 'No API keys.',
   'users.auth.revoke': 'Revoke',
+  'users.auth.unable_to_revoke_session': 'Unable to revoke session.',
+  'users.auth.unable_to_revoke_api_key': 'Unable to revoke API key.',
   'users.auth.email_address': 'Email address',
   'users.auth.confirm_sign_in_link': 'Confirm sign-in link',
   'users.auth.email_sign_in_link': 'Email me a sign-in link',
