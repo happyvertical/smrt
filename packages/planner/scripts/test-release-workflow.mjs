@@ -40,7 +40,9 @@ for (const text of forbidden) {
 }
 
 if (pkg.private === true) throw new Error('package remains private');
-if (pkg.version !== '0.0.1') throw new Error('initial version must remain 0.0.1');
+if (!/^0\.\d+\.\d+$/.test(pkg.version)) {
+  throw new Error('only 0.x releases are automated');
+}
 for (const name of [
   '@happyvertical/smrt-chat',
   '@happyvertical/smrt-core',
