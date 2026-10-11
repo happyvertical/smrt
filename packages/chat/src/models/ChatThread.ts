@@ -22,22 +22,31 @@ export class ChatThread extends SmrtObject {
   tenantId: string = '';
 
   @foreignKey('ChatRoom', { required: true })
+  @field({ description: 'The room containing this discussion thread.' })
   roomId: string = '';
   // Nullable FK (S5 #1392): a thread can be opened WITHOUT a root message (e.g.
   // a content/agent-editor thread). The previous `= ''` default wrote an empty
   // string into this FK column, which breaks native-`uuid` DBs (Postgres/DuckDB
   // reject `''` as a uuid). `null` is the correct "no root" value.
   @foreignKey('ChatMessage', { nullable: true })
+  @field({
+    description:
+      'The message that started this thread, when it began as a reply.',
+  })
   rootMessageId: string | null = null;
-  @field()
+  @field({
+    description: 'A short title describing the subject of this thread.',
+  })
   title: string = '';
-  @field()
+  @field({ description: 'Whether the discussion has reached a resolution.' })
   isResolved: boolean = false;
-  @field()
+  @field({ description: 'The number of messages in this thread.' })
   messageCount: number = 0;
-  @field()
+  @field({
+    description: 'When the most recent message was sent in this thread.',
+  })
   lastMessageAt: Date | null = null;
-  @field()
+  @field({ description: 'The number of people participating in this thread.' })
   participantCount: number = 0;
 
   constructor(options: ChatThreadOptions = {}) {

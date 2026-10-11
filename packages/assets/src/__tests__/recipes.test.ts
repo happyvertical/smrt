@@ -53,6 +53,7 @@ describe('assets feature recipes (#3725)', () => {
     expect(AssetAttachmentsRecipe.nav).toEqual([
       {
         label: 'Attachments',
+        key: 'attachments',
         model: Asset,
         icon: 'fileText',
         description:

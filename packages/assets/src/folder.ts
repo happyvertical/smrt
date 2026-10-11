@@ -25,6 +25,7 @@
 
 import {
   crossPackageRef,
+  field,
   SmrtHierarchical,
   smrt,
 } from '@happyvertical/smrt-core';
@@ -44,10 +45,18 @@ export class Folder extends SmrtHierarchical {
   tenantId: string | null = null;
 
   // Core fields. `parentId` is inherited from SmrtHierarchical.
+  @field({ description: 'A recognizable name for this group of files.' })
   name = '';
   // `slug` is inherited as an accessor from SmrtObject.
+  @field({
+    description:
+      'Explain the purpose of this folder and which files belong here.',
+  })
   description = '';
   @crossPackageRef('@happyvertical/smrt-profiles:Profile')
+  @field({
+    description: 'The person or organization responsible for this folder.',
+  })
   ownerProfileId: string | null = null;
 
   // Timestamps

@@ -4,8 +4,8 @@
  *
  * `tags.taxonomy` is the first app-wide feature recipe. It is browser-safe
  * and has no prerequisites, so it doubles as the pipeline proof for the
- * feature catalogue. Surfaces, providers, and demo data are added once
- * recipes can declare non-model surfaces (#3708).
+ * feature catalogue. It describes model-backed taxonomy without a standalone
+ * surface, provider, or demo seed.
  *
  * @packageDocumentation
  */

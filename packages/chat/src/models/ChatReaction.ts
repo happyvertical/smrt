@@ -29,10 +29,15 @@ export class ChatReaction extends SmrtObject {
   tenantId: string = '';
 
   @foreignKey('ChatMessage', { required: true })
+  @field({ description: 'The message to which this reaction was added.' })
   messageId: string = '';
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
+  @field({ description: 'The person who added this reaction.' })
   profileId: string = '';
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The symbol chosen to express a response to the message.',
+  })
   emoji: string = '';
 
   constructor(options: ChatReactionOptions = {}) {

@@ -27,8 +27,18 @@ export class Account extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({
+    description: 'The display name for this connected messaging account.',
+  })
   name = '';
+  @field({
+    description: 'The service that connects this account to your application.',
+  })
   providerType = '';
+  @field({
+    description:
+      'The kind of messaging this account supports, such as email or chat.',
+  })
   channelType = '';
   // credentialSecretId stores the Secret's NAME (keyed by name + tenant
   // context in smrt-secrets), NOT its primary-key id — see setCredentials()/
@@ -36,7 +46,9 @@ export class Account extends SmrtObject {
   // So it is deliberately NOT a @crossPackageRef id FK.
   @field({ sensitive: true, readonly: true })
   credentialSecretId: string | null = null;
+  @field({ description: 'Whether this account is enabled for messaging.' })
   isActive = true;
+  @field({ description: 'When this account last checked for new messages.' })
   lastSyncAt: Date | null = null;
   // JSON. Sensitive (#1540): may hold a plaintext credential fallback, so it is
   // excluded from generated API/MCP responses and rejected as a `where` filter
@@ -44,10 +56,16 @@ export class Account extends SmrtObject {
   @field({ sensitive: true, readonly: true })
   settings = ''; // JSON
   /** Non-secret provider configuration such as a Zulip site URL. */
+  @field({
+    description:
+      'The public connection settings for this account; credentials are stored separately.',
+  })
   configuration = '{}';
 
   // Timestamps
+  @field({ description: 'When this account was added.' })
   createdAt = new Date();
+  @field({ description: 'When this account was last changed.' })
   updatedAt = new Date();
 
   constructor(options: AccountOptions = {}) {

@@ -4,7 +4,7 @@
  * Lookup table for asset status classification (e.g., 'draft', 'published', 'archived')
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { AssetStatusOptions } from './types';
 
 @smrt({
@@ -15,7 +15,14 @@ import type { AssetStatusOptions } from './types';
 })
 export class AssetStatus extends SmrtObject {
   // slug is inherited as an accessor from SmrtObject
+  @field({
+    description:
+      'The name of this lifecycle stage, such as Draft or Published.',
+  })
   name = ''; // Display name (e.g., 'Draft', 'Published')
+  @field({
+    description: 'Explain when an asset should use this lifecycle stage.',
+  })
   description = ''; // Optional description
 
   constructor(options: AssetStatusOptions = {}) {

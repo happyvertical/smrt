@@ -1,6 +1,6 @@
 ## Overview
 
-Use your organization’s approved sign-in method. Sessions are managed on the server and are never shared through API or MCP tools.
+Use your organization’s approved sign-in method. Review your signed-in devices on your account security page.
 
 ## Tasks
 

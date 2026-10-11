@@ -32,35 +32,62 @@ export class ChatMessage extends SmrtObject {
   tenantId: string = '';
 
   @foreignKey('ChatRoom', { required: true })
+  @field({ description: 'The room in which this message was sent.' })
   roomId: string = '';
   @foreignKey('ChatThread')
+  @field({
+    description:
+      'The discussion thread containing this message, when there is one.',
+  })
   threadId: string | null = null;
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
+  @field({ description: 'The person or assistant who sent this message.' })
   senderProfileId: string = '';
   @foreignKey('AgentSession')
+  @field({
+    description:
+      'The assistant conversation associated with this message, when applicable.',
+  })
   agentSessionId: string | null = null;
 
-  @field()
+  @field({
+    description: 'The text of the message shared with the conversation.',
+  })
   content: string = '';
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'The kind of message, such as text, a file, or an activity notice.',
+  })
   messageType: ChatMessageType = 'text';
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'Whether this message comes from a person, an assistant, or an automated action.',
+  })
   role: ChatMessageRole = 'user';
 
-  @field()
+  @field({ description: 'Whether the message has changed since it was sent.' })
   isEdited: boolean = false;
-  @field()
+  @field({ description: 'When the message was most recently edited.' })
   editedAt: Date | null = null;
-  @field()
+  @field({
+    description: 'Whether this message has been removed from the conversation.',
+  })
   isDeleted: boolean = false;
   @foreignKey('ChatMessage')
+  @field({ description: 'The earlier message this reply responds to.' })
   replyToMessageId: string | null = null;
 
-  @field()
+  @field({
+    description: 'Additional message details maintained by the application.',
+  })
   metadata: string = '{}';
-  @field()
+  @field({
+    description: 'Details of an automated action associated with this message.',
+  })
   toolCallData: string | null = null;
-  @field()
+  @field({ description: 'Files shared alongside the text of this message.' })
   attachments: string = '[]';
 
   constructor(options: ChatMessageOptions = {}) {
