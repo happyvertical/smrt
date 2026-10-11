@@ -60,10 +60,17 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 function usableEndpoint(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   const text = value.trim();
-  if (text.startsWith('/') && !text.startsWith('//')) return true;
   try {
-    const url = new URL(text);
-    return url.protocol === 'http:' || url.protocol === 'https:';
+    const relative = text.startsWith('/') && !text.startsWith('//');
+    const url = new URL(text, relative ? 'https://planner.invalid' : undefined);
+    if (!relative && url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return false;
+    }
+    if (url.username || url.password) return false;
+    if (url.hash) return false;
+    return ![...url.searchParams.keys()].some((name) =>
+      /^(?:api[-_]?key|key|token|authorization|secret|password)$/i.test(name),
+    );
   } catch {
     return false;
   }

@@ -13,6 +13,7 @@ import {
   type ConfigResult,
   DEFAULT_INFERENCE,
   type InferenceConfig,
+  type InferenceMode,
 } from '../inference/config.ts';
 import { createHostChat } from '../inference/host.ts';
 import { createSliceController } from '../planner/commands/index.ts';
@@ -114,7 +115,9 @@ export class AiState {
   speaking = $state(false);
   /** Where the model runs, from `planner.config.json` or the `inference` prop. */
   inference = $state<InferenceConfig>(DEFAULT_INFERENCE);
-  /** Set when the config was unusable and `browser` is used instead. */
+  /** Modes this policy exposes. Manual is always available for a multi-mode policy. */
+  availableModes = $state<InferenceMode[]>(['browser']);
+  /** Set when the config was unusable and inference fails closed to manual. */
   notice = $state('');
   /** The visitor's own endpoint (byo mode only). */
   byo = $state<ByoModel | null>(null);
@@ -174,38 +177,63 @@ export class AiState {
   /**
    * Apply the inference config. `host` is ready at once (nothing to download);
    * `byo` is ready once the visitor has connected an endpoint on the AI page;
-   * `browser` is today's WebLLM. An unusable config arrives as `browser` with
-   * a `notice`.
+   * `browser` is today's WebLLM. An unusable config arrives as `manual` with a
+   * `notice`.
    */
   configure(result: ConfigResult): void {
     const { config, notice } = result;
     this.pendingConfig = false;
     this.inference = config;
     this.notice = notice ?? '';
-    this.session.setMode(config.mode);
-    this.byo = null;
-    if (config.mode === 'host' && config.host) {
+    const configured = [config.mode, ...(config.alternatives ?? [])];
+    this.availableModes = [
+      ...configured,
+      ...(config.alternatives?.length && !configured.includes('manual')
+        ? (['manual'] as const)
+        : []),
+    ];
+    this.byo = configured.includes('byo')
+      ? new ByoModel({
+          storage: this.options.storage,
+          credentialPersistence: config.credentialPersistence,
+          presets: config.byo?.presets,
+          fetch: this.options.fetch,
+          onChange: () => this.syncByo(),
+        })
+      : null;
+    this.applyMode(config.mode);
+    if (this.hydrated) this.decideFirstRun();
+  }
+
+  /** Change providers only after a visitor selects one from the configured policy. */
+  selectInference(mode: InferenceMode): void {
+    if (!this.availableModes.includes(mode) || mode === this.inference.mode) {
+      return;
+    }
+    this.inference = { ...this.inference, mode };
+    this.notice = '';
+    this.applyMode(mode);
+  }
+
+  private applyMode(mode: InferenceMode): void {
+    this.session.setMode(mode);
+    if (mode === 'host' && this.inference.host) {
       const { controller, store, settings, theme } = this.options.session;
       const plan =
         controller ?? createSliceController({ store, settings, theme });
       this.session.useRemote(
         createHostChat({
-          endpoint: config.host.endpoint,
+          endpoint: this.inference.host.endpoint,
           snapshot: () => plan.snapshot(),
           fetch: this.options.fetch,
         }),
         'Server',
       );
-    } else if (config.mode === 'byo') {
-      this.byo = new ByoModel({
-        storage: this.options.storage,
-        presets: config.byo?.presets,
-        fetch: this.options.fetch,
-        onChange: () => this.syncByo(),
-      });
+    } else if (mode === 'byo') {
       this.syncByo();
+    } else if (mode === 'manual') {
+      this.session.useRemote(null, '');
     }
-    if (this.hydrated) this.decideFirstRun();
   }
 
   private syncByo(): void {
@@ -218,6 +246,7 @@ export class AiState {
     // A host's server needs nothing set up, so the form has nothing to ask for.
     this.firstRun =
       this.inference.mode !== 'host' &&
+      this.inference.mode !== 'manual' &&
       needsFirstRunSetup({
         thinkDownloaded:
           this.session.prefs.consented.length > 0 ||
@@ -255,6 +284,9 @@ export class AiState {
 
   /** One sentence on where what the visitor types goes, for the AI page. */
   get privacyNote(): string {
+    if (this.inference.mode === 'manual') {
+      return 'Inference is off. Planning, validation and export still work without a model.';
+    }
     if (this.inference.mode === 'host') {
       return "Your messages and a short summary of your plan go to this site's server. Voice typing and reading aloud stay on this device.";
     }

@@ -40,6 +40,13 @@ export function normalizeBaseUrl(value: string): string | null {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
     // Credentials in a URL would travel in the clear as part of it.
     if (url.username || url.password) return null;
+    for (const name of url.searchParams.keys()) {
+      if (
+        /^(?:api[-_]?key|key|token|authorization|secret|password)$/i.test(name)
+      ) {
+        return null;
+      }
+    }
     return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
   } catch {
     return null;

@@ -33,13 +33,15 @@ const voice = $derived(aiState.voice);
 const model = $derived(getModel(session.prefs.modelId));
 const dataSource = useDataSource();
 const thinkName = $derived(
-  session.mode === 'browser'
-    ? model
-      ? shortLabel(model)
-      : ''
-    : session.mode === 'host'
-      ? 'Server'
-      : session.remoteLabel,
+  session.mode === 'manual'
+    ? 'Off'
+    : session.mode === 'browser'
+      ? model
+        ? shortLabel(model)
+        : ''
+      : session.mode === 'host'
+        ? 'Server'
+        : session.remoteLabel,
 );
 
 // Applying a cookbook runs the Cookbooks tab's path, with the cookbook's own
@@ -192,7 +194,9 @@ $effect(() => {
       <h2>Assistant</h2>
       <p>
         Describe your business and an assistant adds the matching recipes.
-        {aiState.inference.mode === 'browser'
+        {aiState.inference.mode === 'manual'
+          ? 'Inference is off. The Planner page still works without a model.'
+          : aiState.inference.mode === 'browser'
           ? 'It runs on your own device, so nothing you type leaves this page.'
           : aiState.privacyNote}
       </p>

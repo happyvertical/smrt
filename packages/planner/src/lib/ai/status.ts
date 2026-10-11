@@ -63,6 +63,14 @@ export function deriveCapabilities(
 
 function thinkSummary(t: CapabilityInput['think']): CapabilitySummary {
   const base = { id: 'think', name: 'Think' } as const;
+  if (t.mode === 'manual') {
+    return {
+      ...base,
+      state: 'off',
+      label: 'Think: inference off',
+      where: 'Off',
+    };
+  }
   if (t.mode === 'host') {
     return {
       ...base,

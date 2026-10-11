@@ -1,5 +1,5 @@
 import type { ChatModel } from '../assistant/transport.ts';
-import type { ByoPresetDefinition } from './config.ts';
+import type { ByoPresetDefinition, CredentialPersistence } from './config.ts';
 import {
   type ConnectionResult,
   createOpenAIChat,
@@ -38,6 +38,7 @@ export function loadByoPrefs(storage: Storage | null): ByoPrefs {
     if (!isObject(value)) return prefs;
     if (typeof value.preset === 'string') prefs.preset = value.preset;
     prefs.active = value.active === true;
+    let sanitized = false;
     if (isObject(value.entries)) {
       for (const [id, entry] of Object.entries(value.entries)) {
         if (
@@ -45,9 +46,15 @@ export function loadByoPrefs(storage: Storage | null): ByoPrefs {
           typeof entry.baseUrl === 'string' &&
           typeof entry.model === 'string'
         ) {
-          prefs.entries[id] = { baseUrl: entry.baseUrl, model: entry.model };
+          const baseUrl = normalizeBaseUrl(entry.baseUrl) ?? '';
+          sanitized ||= baseUrl !== entry.baseUrl;
+          prefs.entries[id] = { baseUrl, model: entry.model };
         }
       }
+    }
+    if (sanitized) {
+      prefs.active = false;
+      storage?.setItem(BYO_PREFS_KEY, JSON.stringify(prefs));
     }
   } catch {
     // Unreadable or unavailable: start empty.
@@ -91,6 +98,8 @@ export type ByoTestStatus = 'idle' | 'testing' | 'ok' | 'failed';
 
 export interface ByoOptions {
   storage: Storage | null;
+  /** Credentials default to local storage for compatibility; hosted apps use memory. */
+  credentialPersistence?: CredentialPersistence;
   /** The config's `byo.presets`; default all built-ins. */
   presets?: readonly (string | ByoPresetDefinition)[];
   fetch?: typeof fetch;
@@ -101,8 +110,9 @@ export interface ByoOptions {
 /**
  * The visitor's own OpenAI-compatible endpoint: the preset they picked, its
  * address, model and key, a connection test, and whether the assistant uses
- * it. The key lives only in this browser's localStorage and is only ever sent
- * as the Authorization header to the chosen address.
+ * it. The key lives in the configured credential store (tab memory for hosted
+ * policies, localStorage for the compatible standalone default) and is only
+ * ever sent as the Authorization header to the chosen address.
  */
 export class ByoModel {
   readonly presets: ByoPresetDefinition[];
@@ -114,12 +124,24 @@ export class ByoModel {
   testMessage = $state('');
 
   private readonly options: ByoOptions;
+  private readonly credentialStorage: Storage | null;
 
   constructor(options: ByoOptions) {
     this.options = options;
+    this.credentialStorage =
+      options.credentialPersistence === 'memory' ? null : options.storage;
+    if (options.credentialPersistence === 'memory') {
+      // A hosted memory-only policy also removes a key an older local policy
+      // may have left on this origin. Endpoint/model preferences stay put.
+      try {
+        options.storage?.removeItem(BYO_KEYS_KEY);
+      } catch {
+        // Storage can be unavailable; memory-only behavior still holds.
+      }
+    }
     this.presets = resolvePresets(options.presets);
     const prefs = loadByoPrefs(options.storage);
-    this.keys = loadByoKeys(options.storage);
+    this.keys = loadByoKeys(this.credentialStorage);
     this.entries = prefs.entries;
     this.presetId = this.presets.some((p) => p.id === prefs.preset)
       ? prefs.preset
@@ -284,13 +306,22 @@ export class ByoModel {
 
   private save(): void {
     try {
+      const entries = Object.fromEntries(
+        Object.entries(this.entries).map(([id, entry]) => [
+          id,
+          {
+            baseUrl: normalizeBaseUrl(entry.baseUrl) ?? '',
+            model: entry.model,
+          },
+        ]),
+      );
       const prefs: ByoPrefs = {
         preset: this.presetId,
         active: this.active,
-        entries: { ...this.entries },
+        entries,
       };
       this.options.storage?.setItem(BYO_PREFS_KEY, JSON.stringify(prefs));
-      this.options.storage?.setItem(BYO_KEYS_KEY, JSON.stringify(this.keys));
+      this.credentialStorage?.setItem(BYO_KEYS_KEY, JSON.stringify(this.keys));
     } catch {
       // Not saved; the choice still holds for this visit.
     }
@@ -306,6 +337,7 @@ export function savedByoChat(
   storage: Storage | null,
   presets?: readonly (string | ByoPresetDefinition)[],
   fetcher?: typeof fetch,
+  credentialPersistence: CredentialPersistence = 'local',
 ): ChatModel | null {
   const prefs = loadByoPrefs(storage);
   if (!prefs.active) return null;
@@ -313,7 +345,9 @@ export function savedByoChat(
   const entry = prefs.entries[prefs.preset];
   const baseUrl = normalizeBaseUrl(entry?.baseUrl ?? preset?.baseUrl ?? '');
   const model = (entry?.model ?? preset?.model ?? '').trim();
-  const saved = loadByoKeys(storage)[prefs.preset];
+  const saved = loadByoKeys(
+    credentialPersistence === 'memory' ? null : storage,
+  )[prefs.preset];
   const key =
     saved && saved.origin === originOf(baseUrl ?? '') ? saved.key : '';
   if (!preset || !baseUrl || !model) return null;

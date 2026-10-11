@@ -42,6 +42,12 @@ const byo = $derived(aiState.byo);
 const thinkWhere = $derived(
   summaries.find((s) => s.id === 'think')?.where ?? '',
 );
+const modeLabel = {
+  manual: 'Manual planning',
+  byo: 'Your model',
+  browser: 'In-browser model (WebLLM)',
+  host: "This site's server",
+} as const;
 
 const model = $derived(getModel(session.prefs.modelId));
 // A roomy graphics card can run the smarter model; it is only suggested, the
@@ -84,7 +90,28 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
           </p>
         </div>
       </header>
-      {#if mode === 'host'}
+      {#if aiState.availableModes.length > 1}
+        <label>
+          Assistant mode
+          <Select
+            value={mode}
+            onchange={(event) =>
+              aiState.selectInference(event.currentTarget.value as keyof typeof modeLabel)}
+          >
+            {#each aiState.availableModes as option (option)}
+              <option value={option}>{modeLabel[option]}</option>
+            {/each}
+          </Select>
+        </label>
+        <p class="meta">Changing modes happens only when you choose it here.</p>
+      {/if}
+      {#if mode === 'manual'}
+        <p class="status">Inference off</p>
+        <p class="meta">
+          Build, edit, validate and export your cookbook without a model. No
+          provider is contacted and no browser model is downloaded.
+        </p>
+      {:else if mode === 'host'}
         <p class="status">Server</p>
         <p class="meta">
           This site's server answers the assistant. What you type, and a short
@@ -146,7 +173,9 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
             </p>
           {/if}
           <p class="meta">
-            Stored only in this browser, and sent only to {byo.baseUrl || 'the address above'} (https, or this computer).
+            {aiState.inference.credentialPersistence === 'memory'
+              ? 'Kept only in this tab until reload'
+              : 'Stored only in this browser'}, and sent only to {byo.baseUrl || 'the address above'} (https, or this computer).
             <button class="link" type="button" onclick={() => byo.forgetKey()}>
               Forget the key
             </button>

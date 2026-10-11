@@ -107,7 +107,9 @@ export class AssistantSession {
           ? 'Connect your model on the AI page first, then I can help. The cards on the Planner page work without one.'
           : this.mode === 'host'
             ? 'The assistant is not available right now. The cards on the Planner page work without it.'
-            : 'Download a model first, then I can help. The cards on the Planner page work without one.',
+            : this.mode === 'manual'
+              ? 'Inference is off. The cards on the Planner page work without it.'
+              : 'Download a model first, then I can help. The cards on the Planner page work without one.',
       onReply: (text) => options.onReply?.(text),
     });
   }
@@ -117,12 +119,14 @@ export class AssistantSession {
    * download; the chat is set with `useRemote`.
    */
   setMode(mode: InferenceMode): void {
+    if (mode !== this.mode) this.unload();
     this.mode = mode;
     if (mode !== 'browser') {
-      this.unload();
       this.status = 'idle';
     } else if (!(this.options.webgpu ?? isWebGPUAvailable)()) {
       this.status = 'unsupported';
+    } else {
+      this.status = 'idle';
     }
   }
 

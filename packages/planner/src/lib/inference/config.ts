@@ -10,9 +10,13 @@ import { type KitchenEndpoint, parseKitchenConfig } from '../kitchen/client.ts';
  * - `byo`: the visitor's own OpenAI-compatible endpoint (Ollama, OpenRouter,
  *   OpenAI, custom), configured on the AI page.
  */
-export type InferenceMode = 'browser' | 'host' | 'byo';
+export type InferenceMode = 'manual' | 'browser' | 'host' | 'byo';
+
+/** Where BYO provider credentials may live. Preferences are always separate. */
+export type CredentialPersistence = 'local' | 'memory';
 
 export const INFERENCE_MODES: readonly InferenceMode[] = [
+  'manual',
   'browser',
   'host',
   'byo',
@@ -36,6 +40,10 @@ export interface ByoPresetDefinition {
 
 export interface InferenceConfig {
   mode: InferenceMode;
+  /** Other modes the visitor may deliberately select, in display order. */
+  alternatives?: InferenceMode[];
+  /** Defaults to `local` for compatibility. Hosted apps should use `memory`. */
+  credentialPersistence?: CredentialPersistence;
   host?: { endpoint: string };
   byo?: {
     /**
@@ -48,6 +56,7 @@ export interface InferenceConfig {
 }
 
 export const DEFAULT_INFERENCE: InferenceConfig = { mode: 'browser' };
+export const MANUAL_INFERENCE: InferenceConfig = { mode: 'manual' };
 
 /** The file name, served at `${base}/planner.config.json`. */
 export const CONFIG_FILE = 'planner.config.json';
@@ -56,7 +65,7 @@ export interface ConfigResult {
   config: InferenceConfig;
   /** The `kitchen` block (`smrt kitchen`), when the file has a usable one. */
   kitchen?: KitchenEndpoint;
-  /** Shown to the visitor when the config was unusable and `browser` is used instead. */
+  /** Shown when a present config was unusable and inference was disabled. */
   notice?: string;
 }
 
@@ -68,10 +77,22 @@ export function isUsableEndpoint(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   const text = value.trim();
   if (!text) return false;
-  if (text.startsWith('/') && !text.startsWith('//')) return true;
   try {
-    const url = new URL(text);
-    return url.protocol === 'http:' || url.protocol === 'https:';
+    const relative = text.startsWith('/') && !text.startsWith('//');
+    const url = new URL(text, relative ? 'https://planner.invalid' : undefined);
+    if (!relative && url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return false;
+    }
+    if (url.username || url.password) return false;
+    if (url.hash) return false;
+    for (const name of url.searchParams.keys()) {
+      if (
+        /^(?:api[-_]?key|key|token|authorization|secret|password)$/i.test(name)
+      ) {
+        return false;
+      }
+    }
+    return true;
   } catch {
     return false;
   }
@@ -98,14 +119,53 @@ function parsePresetDefinition(value: unknown): ByoPresetDefinition | null {
 }
 
 const fallback = (why: string): ConfigResult => ({
-  config: DEFAULT_INFERENCE,
-  notice: `The assistant settings could not be used (${why}), so it runs in your browser instead.`,
+  config: MANUAL_INFERENCE,
+  notice: `The assistant settings could not be used (${why}), so inference is off. The planner still works manually.`,
 });
 
+function parseAlternatives(
+  value: unknown,
+  initial: InferenceMode,
+): InferenceMode[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const modes: InferenceMode[] = [];
+  for (const entry of value) {
+    if (
+      typeof entry !== 'string' ||
+      !INFERENCE_MODES.includes(entry as InferenceMode) ||
+      entry === initial ||
+      modes.includes(entry as InferenceMode)
+    ) {
+      return null;
+    }
+    modes.push(entry as InferenceMode);
+  }
+  return modes;
+}
+
+function parseByo(value: unknown): InferenceConfig['byo'] | null {
+  if (value === undefined) return {};
+  if (!isObject(value)) return null;
+  if (value.presets === undefined) return {};
+  if (!Array.isArray(value.presets) || value.presets.length === 0) return null;
+  const presets: (string | ByoPresetDefinition)[] = [];
+  for (const entry of value.presets) {
+    if (typeof entry === 'string' && entry.trim()) {
+      presets.push(entry.trim());
+      continue;
+    }
+    const definition = parsePresetDefinition(entry);
+    if (!definition) return null;
+    presets.push(definition);
+  }
+  return { presets };
+}
+
 /**
- * Validate a parsed config. Anything wrong (unknown mode, `host` without a
- * usable endpoint, a malformed preset list) falls back to `browser` with a
- * notice, never to a half-working mode.
+ * Validate a parsed config. A missing config keeps the standalone browser
+ * default. A present but invalid config fails closed to manual planning with a
+ * visible notice; it never selects a provider or downloads a model.
  */
 export function validateInferenceConfig(value: unknown): ConfigResult {
   if (!isObject(value)) return fallback('not an object');
@@ -113,39 +173,51 @@ export function validateInferenceConfig(value: unknown): ConfigResult {
   if (inference === undefined) return { config: DEFAULT_INFERENCE };
   if (!isObject(inference)) return fallback('"inference" is not an object');
   const mode = inference.mode;
-  if (mode === undefined || mode === 'browser') {
-    return { config: DEFAULT_INFERENCE };
+  if (mode === undefined) return { config: DEFAULT_INFERENCE };
+  if (!INFERENCE_MODES.includes(mode as InferenceMode)) {
+    return fallback(`unknown mode "${String(mode)}"`);
   }
-  if (mode === 'host') {
-    const host = inference.host;
-    if (!isObject(host) || !isUsableEndpoint(host.endpoint)) {
+  const selected = mode as InferenceMode;
+  const alternatives = parseAlternatives(inference.alternatives, selected);
+  if (!alternatives) {
+    return fallback(
+      'alternatives must be unique supported modes other than mode',
+    );
+  }
+  const credentialPersistence = inference.credentialPersistence;
+  if (
+    credentialPersistence !== undefined &&
+    credentialPersistence !== 'local' &&
+    credentialPersistence !== 'memory'
+  ) {
+    return fallback('credentialPersistence must be "local" or "memory"');
+  }
+  const modes = [selected, ...alternatives];
+  let host: InferenceConfig['host'];
+  if (modes.includes('host')) {
+    const configuredHost = inference.host;
+    if (
+      !isObject(configuredHost) ||
+      !isUsableEndpoint(configuredHost.endpoint)
+    ) {
       return fallback('host mode needs host.endpoint, an http(s) URL or path');
     }
-    return {
-      config: { mode: 'host', host: { endpoint: host.endpoint.trim() } },
-    };
+    host = { endpoint: configuredHost.endpoint.trim() };
   }
-  if (mode === 'byo') {
-    const byo = inference.byo;
-    if (byo === undefined) return { config: { mode: 'byo' } };
-    if (!isObject(byo)) return fallback('"byo" is not an object');
-    if (byo.presets === undefined) return { config: { mode: 'byo', byo: {} } };
-    if (!Array.isArray(byo.presets) || byo.presets.length === 0) {
-      return fallback('byo.presets must be a non-empty list');
-    }
-    const presets: (string | ByoPresetDefinition)[] = [];
-    for (const entry of byo.presets) {
-      if (typeof entry === 'string' && entry.trim()) {
-        presets.push(entry.trim());
-        continue;
-      }
-      const definition = parsePresetDefinition(entry);
-      if (!definition) return fallback('a byo preset is malformed');
-      presets.push(definition);
-    }
-    return { config: { mode: 'byo', byo: { presets } } };
+  let byo: InferenceConfig['byo'];
+  if (modes.includes('byo')) {
+    byo = parseByo(inference.byo) ?? undefined;
+    if (!byo) return fallback('byo.presets must be a non-empty valid list');
   }
-  return fallback(`unknown mode "${String(mode)}"`);
+  return {
+    config: {
+      mode: selected,
+      ...(alternatives.length ? { alternatives } : {}),
+      ...(credentialPersistence ? { credentialPersistence } : {}),
+      ...(host ? { host } : {}),
+      ...(byo ? { byo } : {}),
+    },
+  };
 }
 
 /** Parse the file's text. */
