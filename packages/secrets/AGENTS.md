@@ -66,8 +66,9 @@ inline comment pointing back to this section.
   tenant audit queries should be wrapped in `withSuperAdminBypass()` from
   `@happyvertical/smrt-tenancy` at the call site; the bypass applies only to
   classes declaring `allowSuperAdminBypass: true` (smrt#2973), which this
-  model does not, so it stays tenant-filtered under bypass until a compliance
-  consumer opts it in deliberately — there are no such cross-
+  model does not, so it stays tenant-filtered under bypass; cross-tenant
+  compliance reads use `withSystemContext()` (the collection helpers' `null`
+  tenant) unless the model is deliberately opted in — there are no such cross-
   tenant call sites in this package today, but consumers building compliance
   tooling should adopt that pattern explicitly rather than relying on
   decorator-implicit filtering. Its `secretId` relationship is also deliberately

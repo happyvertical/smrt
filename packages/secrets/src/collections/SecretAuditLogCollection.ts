@@ -19,7 +19,9 @@ export interface ListAuditLogsOptions {
    * (e.g. SecretService.getAuditLogs) must always set this — audit rows
    * reference secret names and must not leak across tenants (issue #1501).
    * Omit only for cross-tenant compliance tooling running under
-   * withSuperAdminBypass().
+   * withSystemContext(); withSuperAdminBypass() does not lift tenant
+   * filtering here because SecretAuditLog does not declare
+   * allowSuperAdminBypass (smrt#2973).
    */
   tenantId?: string;
   /** Filter by secret name */
@@ -95,7 +97,8 @@ export class SecretAuditLogCollection extends SmrtCollection<SecretAuditLog> {
    *
    * @param tenantId - Scope to this tenant's audit trail, or `null` for a
    *   cross-tenant compliance query (which must run under
-   *   `withSuperAdminBypass()` from `@happyvertical/smrt-tenancy`). Audit rows
+   *   `withSystemContext()` from `@happyvertical/smrt-tenancy`; super-admin
+   *   bypass does not apply to this model, smrt#2973). Audit rows
    *   reference secret names and must not leak across tenants (#1503).
    */
   async getSecretHistory(
@@ -114,7 +117,8 @@ export class SecretAuditLogCollection extends SmrtCollection<SecretAuditLog> {
    * Get audit logs for a specific user.
    *
    * @param tenantId - Scope to this tenant's audit trail, or `null` for a
-   *   cross-tenant compliance query under `withSuperAdminBypass()` (#1503).
+   *   cross-tenant compliance query under `withSystemContext()`
+   *   (#1503; super-admin bypass does not apply, smrt#2973).
    */
   async getUserActivity(
     tenantId: string | null,
@@ -128,7 +132,8 @@ export class SecretAuditLogCollection extends SmrtCollection<SecretAuditLog> {
    * Get recent failures.
    *
    * @param tenantId - Scope to this tenant's audit trail, or `null` for a
-   *   cross-tenant compliance query under `withSuperAdminBypass()` (#1503).
+   *   cross-tenant compliance query under `withSystemContext()`
+   *   (#1503; super-admin bypass does not apply, smrt#2973).
    */
   async getRecentFailures(
     tenantId: string | null,
@@ -145,7 +150,8 @@ export class SecretAuditLogCollection extends SmrtCollection<SecretAuditLog> {
    * Get recent denied access attempts.
    *
    * @param tenantId - Scope to this tenant's audit trail, or `null` for a
-   *   cross-tenant compliance query under `withSuperAdminBypass()` (#1503).
+   *   cross-tenant compliance query under `withSystemContext()`
+   *   (#1503; super-admin bypass does not apply, smrt#2973).
    */
   async getRecentDenials(
     tenantId: string | null,
@@ -162,7 +168,8 @@ export class SecretAuditLogCollection extends SmrtCollection<SecretAuditLog> {
    * Count operations by action type.
    *
    * @param tenantId - Scope to this tenant's audit trail, or `null` for a
-   *   cross-tenant compliance count under `withSuperAdminBypass()` (#1503).
+   *   cross-tenant compliance count under `withSystemContext()`
+   *   (#1503; super-admin bypass does not apply, smrt#2973).
    */
   async countByAction(
     tenantId: string | null,
@@ -196,7 +203,8 @@ export class SecretAuditLogCollection extends SmrtCollection<SecretAuditLog> {
    * Count operations by result.
    *
    * @param tenantId - Scope to this tenant's audit trail, or `null` for a
-   *   cross-tenant compliance count under `withSuperAdminBypass()` (#1503).
+   *   cross-tenant compliance count under `withSystemContext()`
+   *   (#1503; super-admin bypass does not apply, smrt#2973).
    */
   async countByResult(
     tenantId: string | null,
