@@ -54,7 +54,7 @@ Keys have the form `<qualifiedClassName>#<localId>`. The example's key is
 `constructors`, and `pruneStale` options; a filtered sync never prunes sibling
 class definitions. An unfiltered sync uses all registered classes and prunes
 stale definitions in touched packages by default. `syncManifest()` separately
-accepts a SMRT `SmartObjectManifest` containing class decorator metadata.
+accepts a s-m-r-t `SmartObjectManifest` containing class decorator metadata.
 
 ## Resolution
 
