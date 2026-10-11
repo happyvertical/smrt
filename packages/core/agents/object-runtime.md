@@ -172,6 +172,10 @@ instances and never use this path to overwrite a loaded revision.
 - Base: `@smrt({ tableStrategy: 'sti' })` — children inherit, share one table
 - Discriminator: `_meta_type` column with qualified names (`@happyvertical/smrt-content:Article`)
 - Child fields: `@meta()` decorator → stored in `_meta_data` JSONB (not as columns)
+- Columns win over `_meta_data` (#3238): `formatDataJs` never lets a meta key
+  shadow a column the row carries, except a field the class declares
+  `@meta()` (a same-named column then belongs to an STI sibling). `id`, tenant-ownership and `_`-prefixed
+  keys (`isReservedMetaDataKey`) are dropped from the blob on hydration and save.
 - Polymorphic queries: collection loads `_meta_type`, creates correct subclass dynamically
 - Validation: fail-fast on save if `_meta_type` missing or mismatched
 
