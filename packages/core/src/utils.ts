@@ -331,6 +331,37 @@ export function isReservedMetaDataKey(
 }
 
 /**
+ * Returns the STI `_meta_data` value with every reserved key
+ * (`isReservedMetaDataKey`) removed, in the representation it arrived in: an
+ * object stays an object, a JSON string is re-serialized (#3238). A value with
+ * no reserved key, or one that is not a JSON object, is returned unchanged.
+ *
+ * @param metaData - `_meta_data` as stored (JSON text) or already parsed
+ * @param fields - Optional field definitions (see `isReservedMetaDataKey`)
+ */
+export function sanitizeMetaData(
+  metaData: unknown,
+  fields?: Record<string, unknown>,
+): unknown {
+  let parsed: unknown = metaData;
+  if (typeof metaData === 'string') {
+    try {
+      parsed = JSON.parse(metaData);
+    } catch {
+      return metaData;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return metaData;
+  }
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  const kept = entries.filter(([key]) => !isReservedMetaDataKey(key, fields));
+  if (kept.length === entries.length) return metaData;
+  const sanitized = Object.fromEntries(kept);
+  return typeof metaData === 'string' ? JSON.stringify(sanitized) : sanitized;
+}
+
+/**
  * Formats data for JavaScript by converting date strings to Date objects
  * and snake_case column names to camelCase properties
  *
@@ -383,7 +414,12 @@ export function formatDataJs<
     // columns win (#3238): a `_meta_data` key never shadows a column the row
     // carries, so `{ tenantId: <other tenant> }` in the meta blob cannot
     // replace the row's real `tenant_id` (or `id`, `_meta_type`, ...).
-    mergedData = { ...data };
+    // The retained blob is sanitized too, so code reading `_meta_data` off
+    // the hydrated row never sees a forged `id` / tenant / `_meta_*` key.
+    mergedData = {
+      ...data,
+      _meta_data: sanitizeMetaData(data._meta_data, fields),
+    };
     const columnKeys = new Set(
       Object.keys(data).map((key) =>
         key.startsWith('_') ? key : toCamelCase(key),

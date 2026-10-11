@@ -175,7 +175,8 @@ instances and never use this path to overwrite a loaded revision.
 - Columns win over `_meta_data` (#3238): `formatDataJs` never lets a meta key
   shadow a column the row carries, except a field the class declares
   `@meta()` (a same-named column then belongs to an STI sibling). `id`, tenant-ownership and `_`-prefixed
-  keys (`isReservedMetaDataKey`) are dropped from the blob on hydration and save.
+  keys (`isReservedMetaDataKey`, inherited tenant fields included) are dropped
+  from the blob on hydration and save, object or JSON text (`sanitizeMetaData`).
 - Polymorphic queries: collection loads `_meta_type`, creates correct subclass dynamically
 - Validation: fail-fast on save if `_meta_type` missing or mismatched
 

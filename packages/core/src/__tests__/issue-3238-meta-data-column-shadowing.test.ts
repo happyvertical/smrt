@@ -7,14 +7,28 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { SmrtCollection } from '../collection';
 import { field, meta } from '../decorators';
 import { SmrtObject } from '../object';
-import { smrt } from '../registry';
+import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
-import { formatDataJs, isReservedMetaDataKey } from '../utils';
+import {
+  formatDataJs,
+  isReservedMetaDataKey,
+  sanitizeMetaData,
+} from '../utils';
 
-// Extra keys a `transformJSON()` override pushes into `_meta_data`.
+// Extra keys a `transformJSON()` override pushes into `_meta_data`, and
+// whether it returns the blob as JSON text instead of an object.
 let smuggle: Record<string, unknown> | undefined;
+let stringifyMeta = false;
+
+function smuggleInto(data: Record<string, unknown>): Record<string, unknown> {
+  const metaData = data._meta_data as Record<string, unknown> | undefined;
+  if (metaData && smuggle) Object.assign(metaData, smuggle);
+  if (metaData && stringifyMeta) data._meta_data = JSON.stringify(metaData);
+  return data;
+}
 
 @smrt({ tableStrategy: 'sti', tableName: 'issue_3238_assets' })
 class Issue3238Asset extends SmrtObject {
@@ -36,11 +50,7 @@ class Issue3238Image extends Issue3238Asset {
   protected override transformJSON(
     data: Record<string, unknown>,
   ): Record<string, unknown> {
-    const metaData = data._meta_data as Record<string, unknown> | undefined;
-    if (metaData && smuggle) {
-      Object.assign(metaData, smuggle);
-    }
-    return data;
+    return smuggleInto(data);
   }
 }
 
@@ -50,6 +60,33 @@ class Issue3238Image extends Issue3238Asset {
 class Issue3238Video extends Issue3238Asset {
   @meta()
   caption: string = '';
+}
+
+// A second family whose PARENT declares a custom tenant field (`orgId`,
+// marked below exactly as `@tenantId()` from smrt-tenancy does).
+@smrt({ tableStrategy: 'sti', tableName: 'issue_3238_docs' })
+class Issue3238Doc extends SmrtObject {
+  @field()
+  orgId: string = '';
+
+  @field()
+  title: string = '';
+}
+
+@smrt()
+class Issue3238Memo extends Issue3238Doc {
+  @meta()
+  body: string = '';
+
+  protected override transformJSON(
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return smuggleInto(data);
+  }
+}
+
+class Issue3238Memos extends SmrtCollection<Issue3238Memo> {
+  static readonly _itemClass = Issue3238Memo;
 }
 
 const tableName = 'issue_3238_assets';
@@ -123,6 +160,23 @@ describe('Issue #3238: formatDataJs keeps declared columns over _meta_data', () 
     expect(reserved.tenantId).toBe(OWNER);
   });
 
+  it('sanitizes the retained _meta_data blob in its own representation', () => {
+    const forged = { width: 1, tenantId: FOREIGN, id: 'x', _meta_type: 'F' };
+    const fromText = formatDataJs<Row>({
+      id: 'r',
+      _meta_data: JSON.stringify(forged),
+    });
+    expect(JSON.parse(fromText._meta_data as string)).toEqual({ width: 1 });
+
+    const fromObject = formatDataJs<Row>({ id: 'r', _meta_data: forged });
+    expect(fromObject._meta_data).toEqual({ width: 1 });
+    expect(forged.tenantId).toBe(FOREIGN); // caller's object untouched
+
+    const clean = JSON.stringify({ width: 1 });
+    expect(sanitizeMetaData(clean)).toBe(clean);
+    expect(sanitizeMetaData('not json')).toBe('not json');
+  });
+
   it('reserves tenancy-marked fields under their own names', () => {
     const fields = {
       orgId: { type: 'text', __tenancy: { isTenantIdField: true } },
@@ -142,10 +196,22 @@ describe('Issue #3238: STI save and load round-trip', () => {
   let db: DatabaseInterface;
 
   beforeEach(async () => {
+    const orgField = ObjectRegistry.getFields('Issue3238Doc').get('orgId');
+    if (!orgField) throw new Error('Issue3238Doc.orgId is not registered');
+    orgField._meta = {
+      ...(orgField._meta ?? {}),
+      __tenancy: { isTenantIdField: true, mode: 'optional' },
+    };
     db = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
-      classes: ['Issue3238Asset', 'Issue3238Image', 'Issue3238Video'],
+      classes: [
+        'Issue3238Asset',
+        'Issue3238Image',
+        'Issue3238Video',
+        'Issue3238Doc',
+        'Issue3238Memo',
+      ],
     });
   });
 
@@ -153,9 +219,12 @@ describe('Issue #3238: STI save and load round-trip', () => {
     await db.close?.();
   });
 
-  async function readMeta(id: string): Promise<Record<string, unknown>> {
+  async function readMeta(
+    id: string,
+    table = tableName,
+  ): Promise<Record<string, unknown>> {
     const result = await db.query(
-      `SELECT _meta_data FROM ${tableName} WHERE id = ?`,
+      `SELECT _meta_data FROM ${table} WHERE id = ?`,
       [id],
     );
     const rows = (Array.isArray(result) ? result : result.rows) as Record<
@@ -188,6 +257,72 @@ describe('Issue #3238: STI save and load round-trip', () => {
 
     const stored = await readMeta(image.id as string);
     expect(stored).toEqual({ width: 640 });
+  });
+
+  it('strips reserved keys when transformJSON returns _meta_data as JSON text', async () => {
+    const image = new Issue3238Image({
+      db,
+      tenantId: OWNER,
+      title: 'Logo',
+      width: 640,
+    });
+    await image.initialize();
+    smuggle = { tenantId: FOREIGN, id: 'forged', _meta_type: 'Forged' };
+    stringifyMeta = true;
+    try {
+      await image.save();
+    } finally {
+      smuggle = undefined;
+      stringifyMeta = false;
+    }
+
+    expect(await readMeta(image.id as string)).toEqual({ width: 640 });
+  });
+
+  it('reserves a custom tenant field inherited from the STI parent', async () => {
+    const memo = new Issue3238Memo({
+      db,
+      orgId: OWNER,
+      title: 'Memo',
+      body: 'hello',
+    });
+    await memo.initialize();
+    smuggle = { orgId: FOREIGN, org_id: FOREIGN };
+    try {
+      await memo.save();
+    } finally {
+      smuggle = undefined;
+    }
+    expect(await readMeta(memo.id as string, 'issue_3238_docs')).toEqual({
+      body: 'hello',
+    });
+
+    // Collection hydration resolves the concrete class's fields; a row that
+    // omits the real column must still not take the tenant from meta.
+    const metaType = ObjectRegistry.getClass('Issue3238Memo')?.qualifiedName;
+    expect(metaType).toBeTruthy();
+    const memos = await Issue3238Memos.create({ db });
+    const hydrationFields = await (
+      memos as unknown as {
+        resolveHydrationFields(
+          row: Row,
+          fallback: Row,
+          isSTI: boolean,
+          cache: Map<string, Row>,
+        ): Promise<Record<string, { type?: string }>>;
+      }
+    ).resolveHydrationFields({ _meta_type: metaType }, {}, true, new Map());
+    const projected = formatDataJs<Row>(
+      {
+        id: memo.id,
+        _meta_type: metaType,
+        _meta_data: { body: 'hello', orgId: FOREIGN },
+      },
+      hydrationFields,
+    );
+    expect(hydrationFields.orgId).toBeDefined();
+    expect(projected.orgId).toBeUndefined();
+    expect(projected.body).toBe('hello');
   });
 
   it('hydrates the column tenant even when a raw _meta_data carries another', async () => {
