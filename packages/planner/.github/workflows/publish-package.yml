@@ -131,7 +131,7 @@ jobs:
           set -euo pipefail
           mkdir release-artifact
           pnpm pack --pack-destination release-artifact
-          mapfile -t tarballs < <(find release-artifact -maxdepth 1 -name '*.tgz')
+          mapfile -t tarballs < <(find "$PWD/release-artifact" -maxdepth 1 -name '*.tgz')
           [ "${#tarballs[@]}" -eq 1 ]
           pnpm test:package -- "${tarballs[0]}"
           openssl dgst -sha512 "${tarballs[0]}"
@@ -145,11 +145,38 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  verify-publish-input:
+    name: Verify downloaded publish input
+    needs:
+      - safeguards
+      - build
+    if: inputs.mode == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 26.9.0
+
+      - name: Download verified package artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: smrt-planner-package-${{ needs.safeguards.outputs.version }}
+          path: release-artifact
+
+      - name: Verify npm accepts the downloaded tarball path
+        run: |
+          set -euo pipefail
+          mapfile -t tarballs < <(find "$PWD/release-artifact" -maxdepth 1 -name '*.tgz')
+          [ "${#tarballs[@]}" -eq 1 ]
+          npm publish --dry-run --ignore-scripts "${tarballs[0]}" --access public
+
   publish-primary:
     name: Publish primary registry
     needs:
       - safeguards
-      - build
+      - verify-publish-input
     if: inputs.mode == 'release'
     environment: release
     runs-on: ubuntu-latest
@@ -182,7 +209,7 @@ jobs:
           export NPM_CONFIG_USERCONFIG="$rc"
           npm whoami --registry "$PRIMARY_REGISTRY" \
             --@happyvertical:registry="$PRIMARY_REGISTRY" >/dev/null
-          tarball=$(find release-artifact -maxdepth 1 -name '*.tgz')
+          tarball=$(find "$PWD/release-artifact" -maxdepth 1 -name '*.tgz')
           [ "$(printf '%s\n' "$tarball" | wc -l)" -eq 1 ]
           local_integrity="sha512-$(openssl dgst -sha512 -binary "$tarball" | base64 -w0)"
           args=(--registry "$PRIMARY_REGISTRY" --@happyvertical:registry="$PRIMARY_REGISTRY")
@@ -243,7 +270,7 @@ jobs:
           umask 077
           printf '//registry.npmjs.org/:_authToken=%s\n' "$NPMJS_TOKEN" > "$rc"
           export NPM_CONFIG_USERCONFIG="$rc"
-          tarball=$(find release-artifact -maxdepth 1 -name '*.tgz')
+          tarball=$(find "$PWD/release-artifact" -maxdepth 1 -name '*.tgz')
           [ "$(printf '%s\n' "$tarball" | wc -l)" -eq 1 ]
           local_integrity="sha512-$(openssl dgst -sha512 -binary "$tarball" | base64 -w0)"
           args=(--registry "$NPMJS_REGISTRY" --@happyvertical:registry="$NPMJS_REGISTRY")
@@ -298,7 +325,7 @@ jobs:
           expected=$(npm view "@happyvertical/smrt-planner@$VERSION" dist.integrity "${primary_args[@]}" --prefer-online)
           mkdir release-artifact
           (cd release-artifact && npm pack "@happyvertical/smrt-planner@$VERSION" "${primary_args[@]}" >/dev/null)
-          tarball=$(find release-artifact -maxdepth 1 -name '*.tgz')
+          tarball=$(find "$PWD/release-artifact" -maxdepth 1 -name '*.tgz')
           [ "$(printf '%s\n' "$tarball" | wc -l)" -eq 1 ]
           actual="sha512-$(openssl dgst -sha512 -binary "$tarball" | base64 -w0)"
           [ "$actual" = "$expected" ] || { echo '::error::Downloaded primary tarball failed its integrity check.'; exit 1; }
