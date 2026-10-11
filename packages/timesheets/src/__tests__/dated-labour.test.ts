@@ -43,7 +43,8 @@ describe('DatedLabourCommercialResolver public contract', () => {
     const client = await resolver.priceClient(time);
     const provider = await resolver.compensateProvider(time);
     expect(client.amount).toBe(12351);
-    expect(provider.amount).toBe(7004);
+    expect(provider.amount).toBe(6003);
+    expect(provider.terms.loadedCostMinor).toBe(7004);
     expect(client.terms).toEqual({
       workDate: '2024-02-29',
       effectiveFrom: '2024-01-01',
@@ -95,7 +96,10 @@ describe('DatedLabourCommercialResolver public contract', () => {
     time.durationSeconds = 1;
     expect((await resolver.priceClient(time)).amount).toBe(1);
     time.durationSeconds = 3600;
-    expect((await resolver.compensateProvider(time)).amount).toBe(2);
+    expect((await resolver.compensateProvider(time)).amount).toBe(1);
+    expect(
+      (await resolver.compensateProvider(time)).terms.loadedCostMinor,
+    ).toBe(2);
   });
 
   it('retains compensation for nonbillable work and copies caller input and outputs', async () => {
@@ -108,7 +112,7 @@ describe('DatedLabourCommercialResolver public contract', () => {
     const provider = await resolver.compensateProvider(time);
     (provider.terms.wage as Record<string, unknown>).rateMinor = '1';
     expect((await resolver.priceClient(time)).amount).toBe(0);
-    expect((await resolver.compensateProvider(time)).amount).toBe(7004);
+    expect((await resolver.compensateProvider(time)).amount).toBe(6003);
   });
 
   it('selects adjacent periods at the inclusive start/exclusive end, independent of order', async () => {
@@ -249,6 +253,6 @@ describe('DatedLabourCommercialResolver public contract', () => {
     config.schedule[0].burden.rateMinor = '1';
     expect(() =>
       new DatedLabourCommercialResolver(config).validateEntry(entry('1')),
-    ).toThrow(/Compensation total/);
+    ).toThrow(/Loaded labour cost/);
   });
 });

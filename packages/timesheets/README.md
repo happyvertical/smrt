@@ -373,11 +373,12 @@ unselected periods), missing applicable rates, currency mismatches, unsafe rates
 unsafe totals, ambiguous duration evidence and mismatched tenant/worker identity.
 Adjacent half-open periods are valid. Decimal-hours evidence uses its original
 text (with the same precision and text-length limits as rates); measured seconds use the exact rational `seconds / 3600`. Each of customer,
-wage and burden rounds half up independently to integer minor units; compensation
-is the safe integer sum of rounded wage and burden. For example, `1.0005` hours at
-customer `12345`, wage `6000`, burden `1000` yields charge `12351` and compensation
-`7004` (`6003 + 1001`). Nonbillable time yields zero customer charge and retains
-compensation. Even nonbillable time requires valid customer rate terms.
+wage and burden rounds half up independently to integer minor units. Compensation
+`amount` preserves the public **provider earning** contract: rounded wage only.
+Private `terms.loadedCostMinor` is the safe integer sum of rounded wage and burden.
+For example, `1.0005` hours at customer `12345`, wage `6000`, burden `1000` yields
+charge `12351`, provider earnings `6003`, burden `1001`, and loaded cost `7004`.
+Nonbillable time yields zero customer charge and retains earnings and loaded cost. Even nonbillable time requires valid customer rate terms.
 
 The host must authorize the schedule, worker and tenant and bind the supplied
 work date to its authoritative entry evidence. Base entries have no authoritative
@@ -388,8 +389,11 @@ approval defaults are unchanged. Selection copies and whitelists supplied terms,
 so later caller mutation cannot change an in-flight approval. Client snapshot
 terms contain only the customer rate's ID, version and hourly rate plus work-date,
 period, currency, billability, duration and rounding provenance. Compensation
-terms contain separate wage/burden IDs, versions, hourly rates and rounded amounts;
-never expose those snapshots to client audiences.
+terms contain separate wage/burden IDs, versions, hourly rates and rounded amounts,
+plus `loadedCostMinor`; never expose those snapshots to client audiences. A payable
+reader uses snapshot `amount`. A loaded-margin reader uses charge minus private
+`loadedCostMinor`; charge minus snapshot `amount` remains the existing earnings-only
+margin, not margin after employer burden.
 
 The existing lifecycle makes persisted snapshots immutable and corrections append
 new evidence. Approval remains resumable, not an all-or-nothing transaction. When

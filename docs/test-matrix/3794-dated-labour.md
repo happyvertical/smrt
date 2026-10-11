@@ -46,3 +46,27 @@ No schema/migration, generated transport, or UI contract changed. Financial
 checks use real SQLite/PostgreSQL persistence and the existing resumable approval
 executor; no new transaction or rollback guarantee is introduced. Reconstructed
 approval retries must retain their original authorized host date/rate input.
+
+## Provider-earning semantic correction
+
+The existing public `ServiceCompensationSnapshot.amount` means provider earnings,
+not employer loaded cost. The dated resolver must preserve that meaning.
+
+| Behavior / invariant | Reachable trigger | Positive | Negative / failure | Actor / context | Executor / transaction | Runtime / dialect | Contract edge | Level | Validation |
+|---|---|---|---|---|---|---|---|---|---|
+| Provider amount excludes employer burden | Approve nonbillable labour, then read persisted compensation.amount | Wage 6003; private burden 1001 and loadedCostMinor 7004 | Legacy wage+burden amount must fail the provider read assertion; loaded sum overflow still rejected | Authorized tenant/worker | Existing resumable approval executor | SQLite and PostgreSQL | Provider earning remains payable amount; loaded costing uses private terms | Unit + integration | Full timesheets test / test:postgres |
+
+Correction evidence (same external log directory):
+
+- `earning-regression-base.log`: new persisted-provider-read assertion fails on
+  the prior implementation: expected 6003, received 7004 (one failure/one pass).
+- `earning-test.log`: full timesheets suite passes, 127 passed and 10
+  PostgreSQL-gated skips; includes the now-passing persisted-provider regression.
+- `earning-typecheck.log`: TypeScript/Svelte checks pass, zero errors/warnings.
+- `earning-postgres.log`: all 53 PostgreSQL tests pass, including the persisted
+  provider-amount, private loaded-cost, approval-retry and correction assertions.
+- `earning-build.log`: normal package build passes. Commands ran sequentially.
+
+Original validation above describes the initial implementation; these correction
+logs and results supersede its amount semantics. No schema or existing resolver
+contract changed; provider earnings and employer loaded cost remain distinct.

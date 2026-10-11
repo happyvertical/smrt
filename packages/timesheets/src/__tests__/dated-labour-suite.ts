@@ -97,13 +97,19 @@ export function datedLabourSuite(
           where: { timeEntryId: entry.id },
         });
         expect(charge.amount).toBe(0);
-        expect(paid.amount).toBe(7004);
+        // A downstream payable reader consumes the public amount, not employer burden.
+        expect((await compensation.get(paid.id ?? ''))?.amount).toBe(6003);
+        expect(JSON.parse(paid.rateSnapshot).burden.amount).toBe(1001);
+        expect(JSON.parse(paid.rateSnapshot).loadedCostMinor).toBe(7004);
         expect(charge.currency).toBe('CAD');
         expect(paid.currency).toBe('CAD');
         expect(JSON.parse(charge.rateSnapshot).workDate).toBe('2024-02-29');
         expect(JSON.parse(charge.rateSnapshot).customer.version).toBe('c1');
         expect(JSON.parse(charge.rateSnapshot)).not.toHaveProperty('wage');
         expect(JSON.parse(charge.rateSnapshot)).not.toHaveProperty('burden');
+        expect(JSON.parse(charge.rateSnapshot)).not.toHaveProperty(
+          'loadedCostMinor',
+        );
         expect(JSON.parse(paid.rateSnapshot).wage).toEqual({
           id: 'wage',
           version: 'w2',
@@ -138,8 +144,8 @@ export function datedLabourSuite(
           (
             await compensation.list({ where: { timeEntryId: correction.id } })
           )[0].amount,
-        ).toBe(3500);
-        expect((await compensation.get(paid.id ?? ''))?.amount).toBe(7004);
+        ).toBe(3000);
+        expect((await compensation.get(paid.id ?? ''))?.amount).toBe(6003);
         paid.rateSnapshot = '{}';
         await expect(paid.save()).rejects.toThrow(/immutable/);
         charge.rateSnapshot = '{}';

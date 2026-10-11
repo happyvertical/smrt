@@ -98,7 +98,8 @@ function amount(hours: Rational, hourly: DatedLabourRate): number {
  * Opt-in effective-dated labour calculator behind ServiceCommercialResolver.
  * Copies selected authorized terms at construction. Retain those same terms
  * when reconstructing a resolver for an incomplete approval retry. Wage and
- * burden are rounded separately then summed; neither appears in client terms.
+ * burden are rounded separately. Provider amount is wage only; their sum is
+ * private loadedCostMinor. Neither appears in client terms.
  */
 export class DatedLabourCommercialResolver
   implements ServiceCommercialResolver
@@ -191,7 +192,7 @@ export class DatedLabourCommercialResolver
     const wage = amount(hours, this.selected.wage);
     const burden = amount(hours, this.selected.burden);
     if (BigInt(wage) + BigInt(burden) > MAX)
-      throw new Error('Compensation total exceeds safe integer minor units.');
+      throw new Error('Loaded labour cost exceeds safe integer minor units.');
     const common = {
       workDate: this.input.workDate,
       effectiveFrom: this.selected.effectiveFrom,
@@ -212,11 +213,12 @@ export class DatedLabourCommercialResolver
         terms: { ...common, customer: { ...this.selected.customer } },
       },
       provider: {
-        amount: wage + burden,
+        amount: wage,
         currency: this.input.currency,
         version: 'dated-labour-v1',
         terms: {
           ...common,
+          loadedCostMinor: wage + burden,
           wage: { ...this.selected.wage, amount: wage },
           burden: { ...this.selected.burden, amount: burden },
         },
@@ -234,7 +236,7 @@ export class DatedLabourCommercialResolver
     return this.resolve(entry).client;
   }
 
-  /** Private wage and burden components, independently rounded and preserved. */
+  /** Provider earnings are wages; private terms also retain burden and loaded cost. */
   async compensateProvider(
     entry: ServiceTimeEntry,
   ): Promise<CommercialSnapshot> {
