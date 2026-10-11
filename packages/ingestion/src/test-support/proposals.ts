@@ -654,6 +654,30 @@ export function proposalSuite(
       );
     });
 
+    it('refuses generation when feedback retrieval authority is revoked after selection', async () => {
+      enableFeedback();
+      const training = await feedbackCase();
+      await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'retrieval-revocation-training',
+      });
+      const pending = await generation();
+      let receivingChecks = 0;
+      options.feedback!.authorize = async ({ operation, itemId }) =>
+        operation !== 'retrieve' ||
+        itemId !== pending.itemId ||
+        ++receivingChecks === 1;
+      calls.mockClear();
+      await service.generateProposals(pending.lease);
+      expect(receivingChecks).toBe(2);
+      expect(calls).not.toHaveBeenCalled();
+      expect((await output(pending.lease)).outcome).toBe('provider_error');
+      expect((await service.getItem(pending.itemId)).processingState).toBe(
+        'partial',
+      );
+    });
+
     function enableFeedback() {
       options.feedback = {
         version: 'feedback1',

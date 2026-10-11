@@ -1,4 +1,4 @@
-/** Explicit optional-example denial, distinct from item or execution authorization failure. */
+/** Initial optional-example denial; revocation after selection must remain fatal. */
 export class FeedbackRetrievalDeniedError extends Error {
   constructor() {
     super('Feedback unavailable');
@@ -655,7 +655,7 @@ export class IntakeFeedbackService {
     const work = async (
       context: import('./execution-contracts.js').HandlerContext,
     ) => {
-      const authorize = async () => {
+      const authorize = async (phase: 'initial' | 'final') => {
         if (
           !(await this.config.authorize({
             db: context.db,
@@ -663,10 +663,12 @@ export class IntakeFeedbackService {
             itemId: input.itemId,
             operation: 'retrieve',
           }))
-        )
-          throw new FeedbackRetrievalDeniedError();
+        ) {
+          if (phase === 'initial') throw new FeedbackRetrievalDeniedError();
+          throw new Error('Feedback unavailable');
+        }
       };
-      await authorize();
+      await authorize('initial');
       const scope = this.scope();
       const rows = (
         await context.db.query(
@@ -696,7 +698,7 @@ export class IntakeFeedbackService {
           .slice(0, this.config.maxExamples)
           .map((entry) => entry.example),
       };
-      await authorize();
+      await authorize('final');
       return selection;
     };
     return this.receivingContext(input, executor, work);
