@@ -20,6 +20,20 @@ export function renderForeignKeyConstraint(
   foreignKey: ForeignKeyDefinition,
   constraintName?: string,
 ): string {
+  const name =
+    constraintName ?? foreignKeyConstraintName(tableName, foreignKey);
+  return [
+    `CONSTRAINT ${quoteIdentifier(name)}`,
+    `FOREIGN KEY (${quoteIdentifier(foreignKey.column)})`,
+    renderForeignKeyReference(tableName, foreignKey),
+  ].join(' ');
+}
+
+/** Render the reference clause shared by table and inline column constraints. */
+export function renderForeignKeyReference(
+  tableName: string,
+  foreignKey: ForeignKeyDefinition,
+): string {
   const action = (value: unknown, clause: 'DELETE' | 'UPDATE') => {
     if (value === undefined) return undefined;
     return requireForeignKeyAction(
@@ -29,11 +43,7 @@ export function renderForeignKeyConstraint(
   };
   const onDelete = action(foreignKey.onDelete, 'DELETE');
   const onUpdate = action(foreignKey.onUpdate, 'UPDATE');
-  const name =
-    constraintName ?? foreignKeyConstraintName(tableName, foreignKey);
   const parts = [
-    `CONSTRAINT ${quoteIdentifier(name)}`,
-    `FOREIGN KEY (${quoteIdentifier(foreignKey.column)})`,
     `REFERENCES ${quoteIdentifier(foreignKey.referencesTable)} (${quoteIdentifier(foreignKey.referencesColumn)})`,
   ];
   if (onDelete) parts.push(`ON DELETE ${onDelete}`);
