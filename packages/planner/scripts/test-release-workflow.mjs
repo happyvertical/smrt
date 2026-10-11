@@ -39,6 +39,11 @@ for (const text of forbidden) {
   }
 }
 
+const bestEffortJobs = workflow.match(/continue-on-error: true/g) ?? [];
+if (bestEffortJobs.length !== 1) {
+  throw new Error('only the release-mode npmjs mirror may be best effort');
+}
+
 if (pkg.private === true) throw new Error('package remains private');
 if (!/^0\.\d+\.\d+$/.test(pkg.version)) {
   throw new Error('only 0.x releases are automated');
