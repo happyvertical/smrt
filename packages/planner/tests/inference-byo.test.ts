@@ -119,6 +119,11 @@ describe('OpenAI-compatible client', () => {
     expect(normalizeBaseUrl('ftp://x/v1')).toBeNull();
     expect(normalizeBaseUrl('not a url')).toBeNull();
     expect(normalizeBaseUrl('https://user:pw@x.example/v1')).toBeNull();
+    expect(normalizeBaseUrl('https://x.example/v1?api_key=secret')).toBeNull();
+    expect(normalizeBaseUrl('https://x.example/v1?TOKEN=secret')).toBeNull();
+    expect(normalizeBaseUrl('https://x.example/v1?region=ca#ignored')).toBe(
+      'https://x.example/v1',
+    );
     expect(normalizeBaseUrl('http://localhost:11434/v1/')).toBe(
       'http://localhost:11434/v1',
     );
@@ -254,6 +259,41 @@ describe('ByoModel (the AI page state)', () => {
     expect(reload.model).toBe('private-model');
     expect(reload.key).toBe('');
     expect(reload.active).toBe(false);
+  });
+
+  it('never persists credentials embedded in entered or legacy endpoint URLs', () => {
+    const store = storage();
+    const byo = new ByoModel({
+      storage: store,
+      credentialPersistence: 'memory',
+    });
+    byo.select('custom');
+    byo.setBaseUrl('https://user:password@models.example/v1');
+    expect(store.data.get(BYO_PREFS_KEY)).not.toContain('user');
+    expect(store.data.get(BYO_PREFS_KEY)).not.toContain('password');
+    byo.setBaseUrl('https://models.example/v1?api_key=query-secret');
+    expect(store.data.get(BYO_PREFS_KEY)).not.toContain('query-secret');
+
+    store.data.set(
+      BYO_PREFS_KEY,
+      JSON.stringify({
+        preset: 'custom',
+        active: true,
+        entries: {
+          custom: {
+            baseUrl: 'https://models.example/v1?token=legacy-secret',
+            model: 'private-model',
+          },
+        },
+      }),
+    );
+    const legacy = new ByoModel({
+      storage: store,
+      credentialPersistence: 'memory',
+    });
+    expect(legacy.baseUrl).toBe('');
+    expect(legacy.active).toBe(false);
+    expect(store.data.get(BYO_PREFS_KEY)).not.toContain('legacy-secret');
   });
 
   it('fails the test with a message, not an exception, when incomplete', async () => {

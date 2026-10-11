@@ -61,7 +61,8 @@ const sensitiveName =
 export function normalizeAppBasePath(basePath: string): string {
   if (
     typeof basePath !== 'string' ||
-    !/^\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/.test(basePath)
+    !/^\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/.test(basePath) ||
+    basePath.split('/').some((segment) => segment === '.' || segment === '..')
   ) {
     throw new Error(
       'basePath must start with /, contain URL-safe path segments, and have no trailing slash',

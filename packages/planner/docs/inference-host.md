@@ -371,6 +371,11 @@ materializeApp({
 
   `endpoint` is a path on the page's own origin. Without the file the app runs
   in the compatible single `browser` mode.
+- **App shell.** The packaged root is the complete planner application. It
+  mounts `<Planner layout="shell" persistence="host">` inside its own
+  `AppShell`, so the Layout tab edits the surrounding shell through the live
+  shell context. Those panel and navigation changes persist with, snapshot in,
+  and export as part of the cookbook.
 - The directory is about 70 MB (the on-device model runtime is most of it);
   serve it with compression and long-lived caching for `_app/immutable/`.
 

@@ -34,6 +34,9 @@ describe('hosted app materialization contract', () => {
     '/',
     '/plan?x',
     '/plan//nested',
+    '/plan/.',
+    '/plan/../nested',
+    '/plan/nested/..',
     '/plan/%2e%2e',
   ])('rejects a non-canonical base: %s', (basePath) =>
     expect(() => normalizeAppBasePath(basePath)).toThrow());

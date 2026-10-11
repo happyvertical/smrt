@@ -188,16 +188,43 @@ async function browserContract(site) {
       page.waitForURL((url) => url.pathname === '/plan/'),
       page.getByRole('link', { name: 'Planner' }).first().click(),
     ]);
-    const continueButton = page.getByRole('button', { name: 'Continue' });
-    if (await continueButton.isVisible()) await continueButton.click();
+    const dismissSetup = page.getByRole('button', {
+      name: /I don't need AI/,
+    });
+    if (await dismissSetup.isVisible()) await dismissSetup.click();
+    const leftPanel = page.locator('#smrt-admin-shell-left-panel');
+    if ((await leftPanel.count()) !== 1) {
+      throw new Error('the packaged planner is not inside its AppShell');
+    }
+    await page.getByRole('tab', { name: 'Layout' }).click();
+    const showLeftPanel = page.getByLabel('Show Left sidebar panel');
+    if (!(await showLeftPanel.isChecked())) {
+      throw new Error('the shell layout editor did not read the live AppShell');
+    }
+    await page.getByText('Show Left sidebar panel', { exact: true }).click();
+    if (await showLeftPanel.isChecked()) {
+      throw new Error('the shell layout editor did not accept the panel edit');
+    }
+    await page.waitForFunction(
+      () => document.querySelector('#smrt-admin-shell-left-panel') === null,
+    );
+    await page.waitForTimeout(400);
+    await page.reload({ waitUntil: 'networkidle' });
+    if ((await leftPanel.count()) !== 0) {
+      throw new Error('the planner shell layout edit did not persist on reload');
+    }
     await page.getByRole('tab', { name: 'Export' }).click();
     const downloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Export cookbook' }).click();
     const download = await downloadPromise;
     const downloadPath = await download.path();
     if (!downloadPath) throw new Error('cookbook export had no file');
-    if (readFileSync(downloadPath, 'utf8').includes('browser-secret-value')) {
+    const exported = readFileSync(downloadPath, 'utf8');
+    if (exported.includes('browser-secret-value')) {
       throw new Error('memory-only key leaked into cookbook export');
+    }
+    if (JSON.parse(exported).layout?.panels?.left?.visible !== false) {
+      throw new Error('cookbook export omitted the live shell layout edit');
     }
 
     await page.goto(`${origin}/plan/ai/`, { waitUntil: 'networkidle' });

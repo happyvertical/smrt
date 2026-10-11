@@ -38,6 +38,7 @@ export function loadByoPrefs(storage: Storage | null): ByoPrefs {
     if (!isObject(value)) return prefs;
     if (typeof value.preset === 'string') prefs.preset = value.preset;
     prefs.active = value.active === true;
+    let sanitized = false;
     if (isObject(value.entries)) {
       for (const [id, entry] of Object.entries(value.entries)) {
         if (
@@ -45,9 +46,15 @@ export function loadByoPrefs(storage: Storage | null): ByoPrefs {
           typeof entry.baseUrl === 'string' &&
           typeof entry.model === 'string'
         ) {
-          prefs.entries[id] = { baseUrl: entry.baseUrl, model: entry.model };
+          const baseUrl = normalizeBaseUrl(entry.baseUrl) ?? '';
+          sanitized ||= baseUrl !== entry.baseUrl;
+          prefs.entries[id] = { baseUrl, model: entry.model };
         }
       }
+    }
+    if (sanitized) {
+      prefs.active = false;
+      storage?.setItem(BYO_PREFS_KEY, JSON.stringify(prefs));
     }
   } catch {
     // Unreadable or unavailable: start empty.
@@ -299,10 +306,19 @@ export class ByoModel {
 
   private save(): void {
     try {
+      const entries = Object.fromEntries(
+        Object.entries(this.entries).map(([id, entry]) => [
+          id,
+          {
+            baseUrl: normalizeBaseUrl(entry.baseUrl) ?? '',
+            model: entry.model,
+          },
+        ]),
+      );
       const prefs: ByoPrefs = {
         preset: this.presetId,
         active: this.active,
-        entries: { ...this.entries },
+        entries,
       };
       this.options.storage?.setItem(BYO_PREFS_KEY, JSON.stringify(prefs));
       this.credentialStorage?.setItem(BYO_KEYS_KEY, JSON.stringify(this.keys));
