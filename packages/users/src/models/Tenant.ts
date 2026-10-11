@@ -94,7 +94,8 @@ export { MAX_TENANT_HIERARCHY_DEPTH } from './tenant-hierarchy.js';
   // cascade) goes through TenantService, not auth-only generated CRUD.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: { skipApiCheck: true },
+  // #3742: CLI mirrors the read-only surface; `cli` without `include` is full CRUD.
+  cli: { include: ['list', 'get'] },
 })
 export class Tenant extends SmrtObject implements TenantContract {
   /**

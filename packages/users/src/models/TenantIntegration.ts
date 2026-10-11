@@ -149,7 +149,8 @@ function stringifyCheckSummary(
   conflictColumns: ['tenant_id', 'provider'],
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: { skipApiCheck: true },
+  // #3742: CLI mirrors the read-only surface; `cli` without `include` is full CRUD.
+  cli: { include: ['list', 'get'] },
 })
 export class TenantIntegration extends SmrtObject {
   /**

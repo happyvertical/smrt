@@ -67,7 +67,8 @@ export interface TenantPermissionOverrideOptions extends SmrtObjectOptions {
   // be explicit: an omitted mcp config generates the FULL tool surface.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: { skipApiCheck: true },
+  // #3742: CLI mirrors the read-only surface; `cli` without `include` is full CRUD.
+  cli: { include: ['list', 'get'] },
 })
 export class TenantPermissionOverride extends SmrtObject {
   /**
