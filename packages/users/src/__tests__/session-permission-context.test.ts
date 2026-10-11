@@ -11,9 +11,133 @@ import { getRequestScopedDatabase } from '../services/SessionPermissionContext.j
 import { SessionService } from '../services/SessionService.js';
 import { createSessionHandler } from '../sveltekit/index.js';
 
+function createHandlerEvent() {
+  return {
+    cookies: {
+      delete: vi.fn(),
+      get: vi.fn().mockReturnValue('session-123'),
+      set: vi.fn(),
+    },
+    locals: {} as Record<string, unknown>,
+    request: { headers: new Headers() },
+    url: { pathname: '/dashboard' },
+  };
+}
+
+const handlerSessionContext = {
+  permissions: ['articles.read'],
+  sessionId: 'session-123',
+  tenantId: 'tenant-123',
+  user: {
+    email: 'handler@example.com',
+    id: 'user-123',
+  },
+};
+
+/**
+ * Stub the session service for one isolation mode. `postgresRls` mode needs a
+ * transaction-capable database so the request context opens successfully.
+ */
+function stubSessionService(mode: 'application' | 'postgresRls') {
+  const transaction = {
+    commit: vi.fn().mockResolvedValue(undefined),
+    isActive: vi.fn().mockReturnValue(true),
+    query: vi.fn().mockResolvedValue(undefined),
+    rollback: vi.fn().mockResolvedValue(undefined),
+    url: 'postgres://transaction-db',
+  };
+  const baseDb =
+    mode === 'postgresRls'
+      ? {
+          beginTransaction: vi.fn().mockResolvedValue(transaction),
+          query: vi.fn().mockResolvedValue(undefined),
+          url: 'postgres://base-db',
+        }
+      : { query: vi.fn().mockResolvedValue(undefined), url: 'sqlite://app.db' };
+  const loadSessionContext = vi.fn().mockResolvedValue(handlerSessionContext);
+  vi.spyOn(SessionService, 'create').mockResolvedValue({
+    getDatabase: () => baseDb,
+    loadSessionContext,
+  } as unknown as SessionService);
+  const handler = createSessionHandler(
+    mode === 'postgresRls'
+      ? {
+          db: { type: 'postgres', url: 'postgres://base-db' },
+          postgresRls: true,
+        }
+      : { db: { type: 'sqlite', url: 'app.db' } },
+  );
+  return { handler, loadSessionContext, transaction };
+}
+
 describe('Session Permission Context', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    mockLogger.error.mockReset();
+  });
+
+  // #3377 / #3510: the session handler must only handle its own
+  // initialisation failures. A throw from the downstream chain (another
+  // handle, or SvelteKit's `redirect()`) propagates exactly once and is never
+  // re-run outside the session/tenant context.
+  describe.each([
+    'application',
+    'postgresRls',
+  ] as const)('downstream errors (%s isolation)', (mode) => {
+    it('propagates a downstream error once without re-running resolve', async () => {
+      const { handler, transaction } = stubSessionService(mode);
+      const event = createHandlerEvent();
+      const failure = new Error('downstream failure');
+      const resolve = vi.fn(async () => {
+        throw failure;
+      });
+
+      await expect(handler({ event, resolve })).rejects.toBe(failure);
+
+      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(mockLogger.error).not.toHaveBeenCalled();
+      if (mode === 'postgresRls') {
+        // The request transaction is rolled back, never committed.
+        expect(transaction.rollback).toHaveBeenCalledTimes(1);
+        expect(transaction.commit).not.toHaveBeenCalled();
+      }
+    });
+
+    it('propagates a downstream redirect once with session locals intact', async () => {
+      const { handler } = stubSessionService(mode);
+      const event = createHandlerEvent();
+      // Shape of SvelteKit's `Redirect`, thrown by `redirect(302, '/x')`.
+      const redirect = { status: 302, location: '/x' };
+      let downstreamRuns = 0;
+      const resolve = vi.fn(async () => {
+        downstreamRuns += 1;
+        throw redirect;
+      });
+
+      await expect(handler({ event, resolve })).rejects.toBe(redirect);
+
+      expect(downstreamRuns).toBe(1);
+      expect(event.locals.user).toEqual(handlerSessionContext.user);
+      expect(mockLogger.error).not.toHaveBeenCalled();
+    });
+  });
+
+  it('still resolves once without a session when application-mode session loading fails', async () => {
+    const { handler, loadSessionContext } = stubSessionService('application');
+    loadSessionContext.mockRejectedValue(new Error('session store down'));
+    const event = createHandlerEvent();
+    const resolve = vi.fn(async () => new Response('ok'));
+
+    const response = await handler({ event, resolve });
+
+    expect(response.status).toBe(200);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(event.locals.user).toBeNull();
+    expect(event.locals.tenantId).toBeNull();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Session or request context initialization error',
+      { error: expect.any(Error) },
+    );
   });
 
   it('should populate locals and expose the transaction-scoped database in the handler', async () => {

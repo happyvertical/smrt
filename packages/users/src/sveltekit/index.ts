@@ -360,6 +360,11 @@ export function createSessionHandler(options: SessionHandlerOptions): Handle {
       return resolve(event);
     }
 
+    // Only session/context initialisation failures are handled here (#3377).
+    // Once the downstream chain has started, its errors — including SvelteKit
+    // `redirect()` thrown by a later handle — propagate unchanged, so the
+    // chain runs exactly once and never outside the session/tenant context.
+    let resolveStarted = false;
     try {
       const service = await getSessionService();
       return await withSessionPermissionContext(
@@ -381,10 +386,15 @@ export function createSessionHandler(options: SessionHandlerOptions): Handle {
             event.locals.sessionParent = context.session.parent ?? null;
           }
 
+          resolveStarted = true;
           return resolve(event);
         },
       );
     } catch (error) {
+      if (resolveStarted) {
+        throw error;
+      }
+
       logger.error('Session or request context initialization error', {
         error,
       });
