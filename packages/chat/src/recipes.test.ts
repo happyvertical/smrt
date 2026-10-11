@@ -21,7 +21,7 @@ describe('ChatRoomsRecipe', () => {
     ]);
     expect(ChatRoomsRecipe.nav).toEqual([
       {
-        label: 'Chat Rooms',
+        label: 'Chat rooms',
         model: ChatRoom,
         icon: 'users',
         description: 'Team conversations organized by topic or audience.',
@@ -47,11 +47,6 @@ describe('ChatRoomsRecipe', () => {
         path: '/chat/rooms',
         export: '@happyvertical/smrt-chat/svelte#ChatLayout',
         label: 'Team chat',
-      },
-      {
-        kind: 'playground',
-        export: '@happyvertical/smrt-chat/playground#default',
-        label: 'Static chat fixtures',
       },
     ]);
     expect(ChatRoomsRecipe.demoSeed).toEqual({
