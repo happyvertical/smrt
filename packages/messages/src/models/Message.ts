@@ -9,6 +9,7 @@
 import '../__smrt-register__.js';
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -35,39 +36,77 @@ export class Message extends SmrtObject {
   tenantId: string | null = null;
 
   @foreignKey('Account')
+  @field({
+    description: 'The connected account used to receive or send this message.',
+  })
   accountId = '';
   @crossPackageRef('@happyvertical/smrt-personas:AgentPersona', {
     nullable: true,
   })
+  @field({
+    description:
+      'The assistant identity associated with this message, when one was used.',
+  })
   personaId: string | null = null;
   @foreignKey('MessagingEndpoint')
+  @field({ description: 'The saved destination used to deliver this message.' })
   endpointId: string | null = null;
+  @field({
+    description:
+      'A tracking reference that connects this message to related activity.',
+  })
   correlationId = '';
+  @field({ description: 'The conversation this message belongs to.' })
   threadId = '';
+  @field({ description: 'The subject shown in the message list.' })
   subject = '';
+  @field({ description: 'The message content in plain text.' })
   body = ''; // Normalized plain text
+  @field({ description: 'The address the message was sent from.' })
   fromAddress = '';
+  @field({ description: 'The sender name shown beside their address.' })
   fromName = '';
+  @field({ description: 'The people or addresses receiving this message.' })
   toAddresses = ''; // JSON array of {address, name}
+  @field({ description: 'When the message was sent or received.' })
   date: Date | null = null;
+  @field({ description: 'Whether this message has been marked as read.' })
   isRead = false;
+  @field({ description: 'Whether this message is flagged for follow-up.' })
   isFlagged = false;
+  @field({ description: 'Whether files are attached to this message.' })
   hasAttachments = false;
+  @field({ description: 'The size of the message in bytes.' })
   size = 0;
+  @field({
+    description: 'Additional details supplied by the messaging connection.',
+  })
   metadata = ''; // JSON extension bag
 
   // Send lifecycle fields
+  @field({
+    description:
+      'The latest sending state: draft, sending, sent, or failed. Received mail may also show draft here.',
+  })
   sendStatus: SendStatus = 'draft';
+  @field({ description: 'When the message was successfully sent.' })
   sentAt: Date | null = null;
+  @field({ description: 'The reason the latest send attempt failed.' })
   sendError = '';
+  @field({ description: 'How many times delivery has been retried.' })
   retryCount = 0;
+  @field({ description: 'The maximum number of delivery retries allowed.' })
   maxRetries = 3;
+  @field({ description: 'When this message is scheduled to be sent.' })
   scheduledSendAt: Date | null = null;
   @foreignKey('Message')
+  @field({ description: 'The earlier message this one replies to.' })
   inReplyToMessageId = '';
 
   // Timestamps
+  @field({ description: 'When this message was recorded.' })
   createdAt = new Date();
+  @field({ description: 'When this message was last changed.' })
   updatedAt = new Date();
 
   constructor(options: MessageOptions = {}) {

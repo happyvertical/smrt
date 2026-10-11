@@ -98,6 +98,22 @@ export class MailboxRecipe extends SmrtRecipe {
     },
   ];
   static help = './help/mailbox.md';
+  static options = {
+    Email: {
+      fields: {
+        created_at: { help: 'When this email was first recorded.' },
+        updated_at: { help: 'When this email record was last changed.' },
+      },
+    },
+    EmailAccount: {
+      fields: {
+        created_at: {
+          help: 'When this mailbox connection was first recorded.',
+        },
+        updated_at: { help: 'When this mailbox connection was last changed.' },
+      },
+    },
+  } as const;
 }
 
 /** Recipient-scoped in-app notification bell. */

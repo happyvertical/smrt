@@ -4,6 +4,7 @@
  */
 
 import {
+  field,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
@@ -94,16 +95,23 @@ export class Permission extends SmrtObject {
   /**
    * Display name for the permission
    */
+  @field({
+    description: 'The name of an action people can be allowed to perform.',
+  })
   name: string = '';
 
   /**
    * Description of what this permission allows
    */
+  @field({ description: 'What this permission allows someone to do.' })
   description: string = '';
 
   /**
    * Category for grouping in UI (e.g., 'articles', 'users', 'settings')
    */
+  @field({
+    description: 'The area of the application this permission belongs to.',
+  })
   category: string = '';
 
   constructor(options: PermissionOptions = {}) {
