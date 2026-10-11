@@ -776,10 +776,16 @@ export class DispatchBus {
     await this.initialize();
     // Strip any caller-supplied scope and inject the server-derived one.
     const { tenantScope: _ignoredCallerScope, ...safeOptions } = options;
-    return DispatchCollection.list(this.db, {
-      ...safeOptions,
-      tenantScope: resolveDispatchTenantScope(),
-    });
+    // `includeGlobal: false` — global (NULL-tenant) rows are system-only on
+    // this inspection read (#3301).
+    return DispatchCollection.list(
+      this.db,
+      {
+        ...safeOptions,
+        tenantScope: resolveDispatchTenantScope(),
+      },
+      false,
+    );
   }
 
   /**
@@ -797,6 +803,7 @@ export class DispatchBus {
       this.db,
       id,
       resolveDispatchTenantScope(),
+      false,
     );
   }
 

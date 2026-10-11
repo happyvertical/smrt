@@ -321,6 +321,16 @@ describe('DispatchBus tenant isolation (S5 #1398)', () => {
       });
       expect(await bus.process('worker', async () => {})).toBe(1);
     });
+
+    it('a tenant wildcard processor can still claim global work', async () => {
+      await emitGlobalDelivery();
+      activeTenant = 'tenant-a';
+      await bus.subscribe({
+        signalType: 'communication.*',
+        subscriber: 'wildcard-worker',
+      });
+      expect(await bus.process('wildcard-worker', async () => {})).toBe(1);
+    });
   });
 
   describe('source is untrusted caller metadata', () => {
