@@ -527,7 +527,10 @@ export function diagnose(
       issue.code === 'unknown_overview'
     ) {
       add(
-        issue.severity,
+        issue.code === 'unknown_layout_id' &&
+          !issue.path.startsWith('layout.placements.')
+          ? 'warning'
+          : issue.severity,
         issue.code === 'unknown_theme_preset' ? 'unknown_preset' : issue.code,
         issue.path,
         issue.message,

@@ -355,6 +355,27 @@ describe('commands', () => {
         path: 'recipes[2]',
       }),
     ]);
+    const staleLayout = ok(
+      engine({
+        version: 1,
+        recipes: [],
+        policies: [],
+        layout: { version: 1, hidden: ['item:ghost'] },
+      }).run({ name: 'validate', input: {} }),
+    ).data as {
+      ok: boolean;
+      diagnostics: { code: string; severity: string; path: string }[];
+    };
+    expect(staleLayout).toMatchObject({
+      ok: true,
+      diagnostics: [
+        {
+          code: 'unknown_layout_id',
+          severity: 'warning',
+          path: 'layout.hidden[0]',
+        },
+      ],
+    });
     const bad = diagnose(
       { ...catalog, placementItems: ['dock:assistant'] },
       {
@@ -365,7 +386,10 @@ describe('commands', () => {
         layout: {
           version: 1,
           hidden: ['item:ghost'],
-          placements: { 'dock:assistant': 'header.end' },
+          placements: {
+            'dock:assistant': 'header.end',
+            'host:missing': 'header.start',
+          },
         },
         policies: [
           { objectRef: `${C}Vendor`, fieldName: 'name', scopeType: 'app' },
@@ -376,9 +400,18 @@ describe('commands', () => {
       'missing_requirement',
       'policy_not_covered',
       'unknown_layout_id',
+      'unknown_layout_id',
       'unknown_model',
       'unknown_preset',
     ]);
+    expect(
+      bad.find((diagnostic) => diagnostic.path === 'layout.hidden[0]'),
+    ).toMatchObject({ severity: 'warning', code: 'unknown_layout_id' });
+    expect(
+      bad.find(
+        (diagnostic) => diagnostic.path === 'layout.placements.host:missing',
+      ),
+    ).toMatchObject({ severity: 'error', code: 'unknown_layout_id' });
     expect(diagnose(catalog, { version: 2 } as never)[0]).toMatchObject({
       severity: 'error',
       code: 'invalid_document',
