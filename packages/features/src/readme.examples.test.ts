@@ -31,7 +31,7 @@ describe('README quick start (#3012)', () => {
       const currentTenantId = 'invoice-tenant';
       const sync = new FeatureSyncService(dbOptions);
       const result = await sync.syncDefinitions({
-        classNames: ['@your/app:Invoice'],
+        constructors: [Invoice],
       });
       const resolver = new FeatureResolver(dbOptions, {
         tenantHierarchyLoader: async () => null,

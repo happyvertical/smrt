@@ -34,7 +34,7 @@ import {
 export class Invoice extends SmrtObject {}
 
 const sync = new FeatureSyncService(dbOptions);
-await sync.syncDefinitions({ classNames: ['@your/app:Invoice'] });
+await sync.syncDefinitions({ constructors: [Invoice] });
 
 // This example uses flat tenant resolution.
 const resolver = new FeatureResolver(dbOptions, {
