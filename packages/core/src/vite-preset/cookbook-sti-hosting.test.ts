@@ -174,6 +174,23 @@ describe('separateHostedStiCollections', () => {
     );
   });
 
+  it('keeps the STI base permission namespace on a moved subclass (#3770)', () => {
+    const next = separateHostedStiCollections(
+      manifest,
+      [ref('Invoice'), ref('Receipt'), ref('Memo'), ref('Note')],
+      refOf,
+    ) as typeof manifest;
+    const perm = (name: string) =>
+      (next.objects as any)[ref(name)].permissionCollection;
+    // Moved subclasses authorize against the catalog's slug (`docs.*`).
+    expect(perm('Invoice')).toBe('docs');
+    expect(perm('Receipt')).toBe('docs');
+    // Not moved: unchanged (an explicit collection is its own namespace).
+    expect(perm('Memo')).toBeUndefined();
+    expect(perm('Note')).toBeUndefined();
+    expect(perm('Doc')).toBeUndefined();
+  });
+
   it('returns the manifest itself when nothing needs separating', () => {
     expect(separateHostedStiCollections(manifest, [ref('Doc')], refOf)).toBe(
       manifest,
@@ -417,6 +434,139 @@ describe('cookbook hosting of STI siblings (#3749)', () => {
       expect(await ids('invoices')).toEqual([inv1.id, inv2.id].sort());
       expect(await ids('receipts')).toEqual([rct1.id]);
       expect(await ids('docs')).toEqual([inv1.id, inv2.id, rct1.id].sort());
+    } finally {
+      delete (globalThis as any).__stiHosting;
+      await server.close();
+    }
+  });
+
+  it('authorizes a moved subclass against the base permission slugs (#3770)', async () => {
+    writeCookbook();
+    db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['StiDoc', 'StiInvoice', 'StiReceipt'],
+    });
+    const invoices = await InvoiceCollection.create({ db });
+    const receipts = await ReceiptCollection.create({ db });
+    const docs = await DocCollection.create({ db });
+    const existing = await invoices.create({ title: 'INV-0', total: '1' });
+    const other = await receipts.create({ title: 'RCT-0', method: 'cash' });
+    (globalThis as any).__stiHosting = {
+      Doc: docs,
+      Invoice: invoices,
+      Receipt: receipts,
+    };
+    const runtimeDir = join(root, 'src/server/runtime');
+    mkdirSync(runtimeDir, { recursive: true });
+    writeFileSync(
+      join(runtimeDir, 'registry.ts'),
+      `export async function getCollection(name: string) {
+  return (globalThis as any).__stiHosting[name.split(':').pop()!];
+}
+`,
+    );
+    const plugins = await configure({
+      configPath: 'src/server/runtime',
+      configFileName: 'registry.ts',
+    });
+    const server = await createServer({
+      root,
+      logLevel: 'silent',
+      plugins,
+      appType: 'custom',
+      server: { middlewareMode: true },
+    });
+    const call = async (
+      path: string,
+      method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+      permissions: string[],
+      body?: object,
+      params: Record<string, string> = {},
+    ) => {
+      const mod: any = await server.ssrLoadModule(
+        `/src/routes/api/${path}/+server.ts`,
+      );
+      const url = `http://localhost/api/${path}`;
+      const request = new Request(url, {
+        method,
+        headers: { 'content-type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      try {
+        return await mod[method]({
+          locals: { smrtAuth: true, permissions },
+          url: new URL(url),
+          request,
+          params,
+        });
+      } catch (err) {
+        // SvelteKit `error()` throws an HttpError carrying the status.
+        return { status: (err as { status?: number }).status };
+      }
+    };
+    try {
+      const holder = ['docs.create', 'docs.update'];
+      // The base's grants cover the moved subclass.
+      expect(
+        (await call('invoices', 'POST', holder, { title: 'INV-1', total: '5' }))
+          .status,
+      ).toBeLessThan(300);
+      expect(
+        (
+          await call(
+            'invoices/[id]',
+            'PUT',
+            holder,
+            { total: '9' },
+            { id: String(existing.id) },
+          )
+        ).status,
+      ).toBeLessThan(300);
+      // A subclass-named slug is not what the catalog grants, and a caller
+      // without the base's grants gets 403, as does one with only the other op.
+      for (const permissions of [[], ['invoices.create'], ['docs.update']]) {
+        expect(
+          (await call('invoices', 'POST', permissions, { title: 'x' })).status,
+        ).toBe(403);
+      }
+      expect(
+        (
+          await call(
+            'invoices/[id]',
+            'PUT',
+            ['docs.create'],
+            { total: '9' },
+            { id: String(existing.id) },
+          )
+        ).status,
+      ).toBe(403);
+      // The base grant does not reach a different hosted namespace's rows.
+      expect(
+        (
+          await call(
+            'invoices/[id]',
+            'PUT',
+            holder,
+            { total: '9' },
+            { id: String(other.id) },
+          )
+        ).status,
+      ).toBeGreaterThanOrEqual(400);
+      // Reads need no operation slug; the list stays discriminator-scoped.
+      const list = await call('invoices', 'GET', []);
+      expect(list.status).toBe(200);
+      const rows = await list.json();
+      const listed = (
+        Array.isArray(rows) ? rows : (rows.items ?? rows.data)
+      ).map((row: any) => row.id);
+      expect(listed).toContain(existing.id);
+      expect(listed).not.toContain(other.id);
+      // DELETE stays withdrawn (fails closed).
+      const detail: any = await server.ssrLoadModule(
+        '/src/routes/api/invoices/[id]/+server.ts',
+      );
+      expect(detail.DELETE).toBeUndefined();
     } finally {
       delete (globalThis as any).__stiHosting;
       await server.close();

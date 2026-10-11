@@ -512,6 +512,14 @@ export interface SmartObjectDefinition {
   name: string;
 
   collection: string; // Pluralized name for endpoints
+  /**
+   * The collection segment of this class's operation permission slugs
+   * (`<permissionCollection>.create`), when it differs from `collection`.
+   * Set only by consumer hosting, which moves a hosted STI subclass to its own
+   * route collection while the permission catalog keeps granting the STI
+   * base's slugs (#3770). Absent in scanned manifests.
+   */
+  permissionCollection?: string;
   /** User-facing model description (`@smrt({ description })`, else class JSDoc summary). */
   description?: string;
   filePath: string;

@@ -556,9 +556,12 @@ function collectReadPermissionFields(
 /**
  * The collection segment of generated operation permission slugs. Mirrors the
  * smrt-users `PermissionCatalogService` derivation: an explicit
- * `@smrt({ collection })` wins, then the manifest collection.
+ * `@smrt({ collection })` wins, then the manifest collection. A hosted STI
+ * subclass moved to its own route collection keeps the STI base's slugs through
+ * `permissionCollection` (#3770).
  */
 function resolvePermissionCollection(objectDef: SmartObjectDefinition): string {
+  if (objectDef.permissionCollection) return objectDef.permissionCollection;
   const configured = (
     objectDef.decoratorConfig as { collection?: unknown } | undefined
   )?.collection;

@@ -57,6 +57,17 @@ STI table (the bakery's `Order`, `WholesaleOrder`, `PurchaseOrder` and
 definition, at `/<class collection>` (`/orders`, `/productionorders`), listing
 only their own rows; the build-knowledge section explains why.
 
+Permissions do not follow the route. The permission catalog grants one namespace
+per STI table, the base's (`contracts.create`; there is no `orders.create`), so a
+hosted subclass moved to its own route collection keeps authorizing against the
+base's slugs: the hosting rewrite records the original collection as
+`permissionCollection`, which the generated route guard and `sync/apply` read
+before the (rewritten) route collection. It matches the fail-closed `api`
+inheritance and the CLI/MCP operation guards, which already derive the base's
+slug. No role is widened: a caller needs exactly the grants the base requires.
+Reads need no operation slug. A subclass that declares its own `collection` has
+its own namespace and is untouched.
+
 ## Editing a cookbook
 
 The command engine (`@happyvertical/smrt-core/cookbook/engine`) is the one place

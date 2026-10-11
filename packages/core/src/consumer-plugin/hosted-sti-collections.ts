@@ -11,7 +11,9 @@
  * A hosted subclass that has not declared a collection gets its class-derived
  * one (`orders`), the name it would have had as a plain model. Its generated
  * route then lists and reads through its own collection, which already scopes
- * every read to the subclass `_meta_type`; the base keeps the shared name and
+ * every read to the subclass `_meta_type`; permissions do not move with it (the
+ * catalog grants the STI base's `contracts.*` slugs only, #3770), so the moved
+ * definition records the original collection as `permissionCollection`; the base keeps the shared name and
  * the base-collection semantics (every row of the table). The same rewritten
  * manifest feeds the `@smrt/web` definitions and the generated client, so each
  * hosted class advertises exactly the endpoint its route serves.
@@ -97,6 +99,11 @@ export function separateHostedStiCollections<M extends object>(
     objects[key] = {
       ...def,
       collection,
+      // The catalog keeps granting the STI base's slugs; the route must keep
+      // requiring them (#3770).
+      ...(collection === def.collection
+        ? {}
+        : { permissionCollection: def.collection }),
       ...(api === undefined
         ? {}
         : { decoratorConfig: { ...def.decoratorConfig, api } }),
@@ -112,7 +119,11 @@ export function separateHostedStiCollections<M extends object>(
     const item = resolveCollectionItemObject(source, def);
     const collection = item ? moved.get(item) : undefined;
     if (collection && def.collection !== collection) {
-      objects[key] = { ...def, collection } as SmartObjectDefinition;
+      objects[key] = {
+        ...def,
+        collection,
+        permissionCollection: def.collection,
+      } as SmartObjectDefinition;
     }
   }
   return { ...manifest, objects } as M;
