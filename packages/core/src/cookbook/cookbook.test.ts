@@ -78,6 +78,20 @@ describe('cookbook v1', () => {
           expect.stringContaining('theme.custom.primary'),
         ]),
       );
+      expect(result.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error',
+            code: 'invalid_type',
+            path: 'recipes',
+          }),
+          expect.objectContaining({
+            severity: 'error',
+            code: 'invalid_value',
+            path: 'theme.custom.primary',
+          }),
+        ]),
+      );
     }
   });
 
@@ -95,6 +109,198 @@ describe('cookbook v1', () => {
     const result = validateCookbook(doc, { recipes: ['a'] });
     expect(!result.ok && result.errors).toEqual([
       'recipes: unknown recipe "zzz"',
+    ]);
+    expect(!result.ok && result.diagnostics[0]).toMatchObject({
+      code: 'unknown_recipe',
+      path: 'recipes[1]',
+    });
+  });
+
+  it('checks theme and every layout reference when host catalogs are supplied', () => {
+    const result = validateCookbook(
+      {
+        version: 1,
+        recipes: [],
+        policies: [],
+        theme: { preset: 'neon' },
+        layout: {
+          version: 1,
+          sectionOrder: ['section:known', 'section:ghost'],
+          itemOrder: { 'section:known': ['item:known', 'item:ghost'] },
+          hidden: ['item:ghost'],
+          moved: { 'item:known': 'section:ghost' },
+          sections: { 'section:ghost': { label: 'Ghost' } },
+          items: { 'item:ghost': { label: 'Ghost' } },
+          placements: { 'item:ghost': 'header.end' },
+        },
+      },
+      {
+        themePresets: ['smrt'],
+        layout: {
+          sections: ['section:known'],
+          items: ['item:known'],
+          placementItems: ['item:known'],
+        },
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('fixture must fail');
+    expect(result.diagnostics.map((issue) => issue.code)).toEqual([
+      'unknown_theme_preset',
+      'unknown_layout_id',
+      'unknown_layout_id',
+      'unknown_layout_id',
+      'unknown_layout_id',
+      'unknown_layout_id',
+      'unknown_layout_id',
+      'unknown_layout_id',
+    ]);
+    expect(result.diagnostics.map((issue) => issue.path)).toContain(
+      'layout.moved.item:known',
+    );
+  });
+
+  it('checks placement items against the host catalog and destinations against shell slots', () => {
+    const placementItems = ['dock:assistant', 'slot:header.end', 'host:clock'];
+    const valid = {
+      version: 1,
+      recipes: [],
+      policies: [],
+      layout: {
+        version: 1,
+        placements: {
+          'dock:assistant': 'leftSidebar.footer',
+          'slot:header.end': 'footer.end',
+          'host:clock': 'header.center',
+        },
+      },
+    };
+    expect(validateCookbook(valid, { layout: { placementItems } }).ok).toBe(
+      true,
+    );
+    expect(matches(valid), JSON.stringify(matches.errors)).toBe(true);
+
+    const invalid = {
+      ...valid,
+      layout: {
+        version: 1,
+        placements: {
+          'host:clock': 'nonexistent.slot',
+          'host:missing': 'header.start',
+        },
+      },
+    };
+    const result = validateCookbook(invalid, {
+      layout: { placementItems },
+    });
+    expect(result.ok).toBe(false);
+    expect(matches(invalid)).toBe(false);
+    if (result.ok) throw new Error('fixture must fail');
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'unknown_layout_slot',
+          path: 'layout.placements.host:clock',
+        }),
+        expect.objectContaining({
+          code: 'unknown_layout_id',
+          path: 'layout.placements.host:missing',
+        }),
+      ]),
+    );
+  });
+
+  it('drops and reports invalid overview data and stores host-canonical values', () => {
+    const result = validateCookbook(
+      {
+        version: 1,
+        recipes: [],
+        policies: [],
+        overviews: {
+          'section:known': {
+            version: 1,
+            added: [
+              { id: 'valid', type: 'note', span: 2, options: { body: 'Hi' } },
+              { id: 'bad id', type: 'note', span: 2, options: {} },
+            ],
+            changed: { valid: { span: 3 }, broken: { span: 9 } },
+          },
+          'section:ghost': { version: 1 },
+          'section:malformed': { version: 2 },
+        },
+      },
+      {
+        overviewIds: ['section:known', 'section:malformed'],
+        validateOverview: (id, override) => ({
+          ok: true,
+          override: {
+            ...override,
+            added: override.added?.filter((widget) => widget.type === 'note'),
+          },
+          diagnostics: [
+            {
+              severity: 'warning',
+              code: 'canonicalized_overview',
+              path: `overviews.${id}`,
+              message: 'Overview was checked against its page definition.',
+            },
+          ],
+        }),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('fixture must pass');
+    expect(Object.keys(result.cookbook.overviews ?? {})).toEqual([
+      'section:known',
+    ]);
+    expect(result.cookbook.overviews?.['section:known']?.added).toHaveLength(1);
+    expect(result.cookbook.overviews?.['section:known']?.changed).toEqual({
+      valid: { span: 3 },
+    });
+    expect(result.diagnostics.map((issue) => issue.code)).toEqual([
+      'malformed_overview_widget',
+      'malformed_overview_change',
+      'canonicalized_overview',
+      'unknown_overview',
+      'malformed_overview',
+    ]);
+    expect(result.warnings).toHaveLength(5);
+  });
+
+  it('rejects a malformed top-level overviews value', () => {
+    const result = validateCookbook({
+      version: 1,
+      recipes: [],
+      policies: [],
+      overviews: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('fixture must fail');
+    expect(result.diagnostics).toContainEqual({
+      severity: 'error',
+      code: 'invalid_type',
+      path: 'overviews',
+      message: 'overviews must map overview ids to overrides',
+    });
+  });
+
+  it('checks hidden references against whichever layout catalogs are supplied', () => {
+    const result = validateCookbook(
+      {
+        version: 1,
+        recipes: [],
+        policies: [],
+        layout: { version: 1, hidden: ['missing'] },
+      },
+      { layout: { sections: ['known'] } },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('fixture must fail');
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'unknown_layout_id',
+        path: 'layout.hidden[0]',
+      }),
     ]);
   });
 });

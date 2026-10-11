@@ -68,6 +68,8 @@ export interface EngineCatalog {
   recipes: readonly EngineRecipe[];
   models: readonly EngineModel[];
   cookbooks?: readonly EngineLibraryCookbook[];
+  /** Movable shell item ids resolved by the host (`dock:`, `slot:`, recipe, or host ids). */
+  placementItems?: readonly string[];
   /** Theme preset names; default {@link DEFAULT_THEME_PRESETS}. */
   themePresets?: readonly string[];
   /** ISO 4217 codes; default any three capital letters. */

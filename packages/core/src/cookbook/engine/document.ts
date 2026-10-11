@@ -487,15 +487,56 @@ export function diagnose(
 
   const structural = validateCookbook(input);
   if (!structural.ok) {
-    for (const message of structural.errors) {
-      add('error', 'invalid_document', '', message);
+    for (const issue of structural.diagnostics.filter(
+      (diagnostic) => diagnostic.severity === 'error',
+    )) {
+      add('error', 'invalid_document', issue.path, issue.message);
     }
     return out;
   }
-  for (const message of structural.warnings)
-    add('warning', 'migrated', '', message);
+  for (const issue of structural.diagnostics) {
+    add(
+      issue.severity,
+      issue.code === 'migrated_schema' ? 'migrated' : issue.code,
+      issue.path,
+      issue.message,
+    );
+  }
   const doc = structural.cookbook;
   const byId = recipeMap(catalog);
+
+  const nav = buildNav(catalog, { ...doc, layout: undefined });
+  const checked = validateCookbook(doc, {
+    themePresets: catalog.themePresets ?? DEFAULT_THEME_PRESETS,
+    layout: {
+      sections: nav.map((section) => section.id),
+      items: nav.flatMap((section) => section.items.map((item) => item.id)),
+      ...(catalog.placementItems
+        ? { placementItems: catalog.placementItems }
+        : {}),
+    },
+    overviewIds: [
+      ...nav.map((section) => section.id),
+      ...(doc.layout?.customSections ?? []).map((section) => section.id),
+    ],
+  });
+  for (const issue of checked.diagnostics) {
+    if (
+      issue.code === 'unknown_theme_preset' ||
+      issue.code === 'unknown_layout_id' ||
+      issue.code === 'unknown_overview'
+    ) {
+      add(
+        issue.code === 'unknown_layout_id' &&
+          !issue.path.startsWith('layout.placements.')
+          ? 'warning'
+          : issue.severity,
+        issue.code === 'unknown_theme_preset' ? 'unknown_preset' : issue.code,
+        issue.path,
+        issue.message,
+      );
+    }
+  }
 
   for (const [i, id] of doc.recipes.entries()) {
     if (!byId.has(id))
@@ -571,50 +612,6 @@ export function diagnose(
         `exposure.${ref}`,
         `Unknown model "${ref}".`,
       );
-    }
-  }
-  const presets = catalog.themePresets ?? DEFAULT_THEME_PRESETS;
-  if (doc.theme?.preset && !presets.includes(doc.theme.preset)) {
-    add(
-      'error',
-      'unknown_preset',
-      'theme.preset',
-      `Unknown theme preset "${doc.theme.preset}".`,
-    );
-  }
-  if (doc.layout) {
-    const nav = buildNav(catalog, { ...doc, layout: undefined });
-    const ids = new Set([
-      ...nav.flatMap((s) => [s.id, ...s.items.map((i) => i.id)]),
-      ...(doc.layout.customSections ?? []).map((c) => c.id),
-    ]);
-    const refs: [string, string][] = [
-      ...(doc.layout.hidden ?? []).map((id, i): [string, string] => [
-        `layout.hidden[${i}]`,
-        id,
-      ]),
-      ...Object.keys(doc.layout.sections ?? {}).map((id): [string, string] => [
-        `layout.sections.${id}`,
-        id,
-      ]),
-      ...Object.keys(doc.layout.items ?? {}).map((id): [string, string] => [
-        `layout.items.${id}`,
-        id,
-      ]),
-      ...(doc.layout.sectionOrder ?? []).map((id, i): [string, string] => [
-        `layout.sectionOrder[${i}]`,
-        id,
-      ]),
-    ];
-    for (const [path, id] of refs) {
-      if (!ids.has(id)) {
-        add(
-          'warning',
-          'unknown_layout_id',
-          path,
-          `The menu has no section or entry "${id}".`,
-        );
-      }
     }
   }
   return out;
