@@ -67,6 +67,7 @@ function usableEndpoint(value: unknown): value is string {
       return false;
     }
     if (url.username || url.password) return false;
+    if (url.hash) return false;
     return ![...url.searchParams.keys()].some((name) =>
       /^(?:api[-_]?key|key|token|authorization|secret|password)$/i.test(name),
     );

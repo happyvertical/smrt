@@ -82,7 +82,36 @@ describe('hosted app materialization contract', () => {
     ).toThrow(/inference is off/);
     expect(() =>
       normalizePlannerAppConfig({
+        inference: {
+          mode: 'byo',
+          byo: {
+            presets: [
+              {
+                id: 'unsafe',
+                label: 'Unsafe',
+                baseUrl: 'https://models.example/v1#api_key=must-not-ship',
+              },
+            ],
+          },
+        },
+      }),
+    ).toThrow(/inference is off/);
+    expect(() =>
+      normalizePlannerAppConfig({
+        inference: {
+          mode: 'host',
+          host: { endpoint: '/api/planner/chat#token=must-not-ship' },
+        },
+      }),
+    ).toThrow(/inference is off/);
+    expect(() =>
+      normalizePlannerAppConfig({
         kitchen: { endpoint: '/kitchen?token=must-not-ship' },
+      }),
+    ).toThrow(/kitchen.endpoint/);
+    expect(() =>
+      normalizePlannerAppConfig({
+        kitchen: { endpoint: '/kitchen#token=must-not-ship' },
       }),
     ).toThrow(/kitchen.endpoint/);
   });
