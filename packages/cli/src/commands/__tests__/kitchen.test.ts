@@ -12,8 +12,13 @@ import { join } from 'node:path';
 import { create } from 'tar';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cookbookCommands } from '../cookbook.js';
-import type { KitchenAI } from '../kitchen/ai.js';
-import { resolveKitchenAI } from '../kitchen/ai.js';
+import {
+  type ChatGPTKitchenRuntime,
+  type KitchenAI,
+  KitchenAIError,
+  KitchenInferenceError,
+  resolveKitchenAI,
+} from '../kitchen/ai.js';
 import { createCookbookApplier } from '../kitchen/apply.js';
 import {
   inspectPlanner,
@@ -209,12 +214,12 @@ describe('planner.config.json', () => {
     });
   });
 
-  it('falls back to browser mode, keeping the kitchen, with no model', async () => {
+  it('keeps host mode for manual planning and never advertises a browser model', async () => {
     const { origin, server } = await start({ ai: null });
-    expect(server.mode).toBe('browser');
+    expect(server.mode).toBe('host');
     const body = await (await fetch(`${origin}/planner.config.json`)).json();
     expect(body).toEqual({
-      inference: { mode: 'browser' },
+      inference: { mode: 'host', host: { endpoint: '/api/planner/chat' } },
       kitchen: { endpoint: '/api/kitchen/cookbook' },
     });
     const chat = await fetch(`${origin}/api/planner/chat`, json({}));
@@ -388,6 +393,32 @@ describe('/api/planner/chat', () => {
     );
     expect(response.status).toBe(502);
     expect(JSON.stringify(await readJson(response))).not.toContain('sk-secret');
+  });
+
+  it('returns typed provider failures with safe recovery guidance', async () => {
+    const { origin } = await start({
+      ai: stubAI(
+        new KitchenAIError(
+          'usage_limit',
+          'The selected ChatGPT plan has reached its usage limit.',
+          429,
+          'Check ChatGPT Settings → Usage, wait for capacity, or restart Kitchen and explicitly choose another provider.',
+        ),
+      ).ai,
+    });
+    const response = await fetch(
+      `${origin}/api/planner/chat`,
+      json(body, { origin }),
+    );
+    expect(response.status).toBe(429);
+    expect(await readJson(response)).toEqual({
+      error: {
+        code: 'usage_limit',
+        message: 'The selected ChatGPT plan has reached its usage limit.',
+        recovery:
+          'Check ChatGPT Settings → Usage, wait for capacity, or restart Kitchen and explicitly choose another provider.',
+      },
+    });
   });
 });
 
@@ -588,7 +619,7 @@ describe('runKitchen', () => {
     expect(existsSync(join(project, 'smrt.cookbook.json'))).toBe(true);
   });
 
-  it('says so in the terminal when no model is configured', async () => {
+  it('says so in the terminal when manual planning is selected', async () => {
     const lines: string[] = [];
     await runKitchen({
       dir: join(work, 'p2'),
@@ -610,8 +641,46 @@ describe('runKitchen', () => {
       },
     });
     expect(lines.join('\n')).toMatch(
-      /No AI provider is configured.*in-browser model/,
+      /Manual planning selected.*No model.*browser model download/,
     );
+  });
+
+  it('resolves explicit manual mode before serving the planner', async () => {
+    const lines: string[] = [];
+    await runKitchen({
+      dir: join(work, 'manual'),
+      template,
+      install: false,
+      open: false,
+      registry: false,
+      inference: { mode: 'manual' },
+      interactive: false,
+      log: (line) => lines.push(line),
+      overrides: {
+        planner: install,
+        core: await loadPlannerCore(install),
+        token: 'm',
+        apply: async () => ({
+          ok: true,
+          dir: join(work, 'manual'),
+          mode: 'new',
+          installed: false,
+          added: [],
+          nextSteps: [],
+        }),
+      },
+      onReady: (server) => {
+        expect(server.mode).toBe('host');
+        void fetch(
+          `${server.url}api/kitchen/cookbook`,
+          json(COOKBOOK, {
+            origin: `http://127.0.0.1:${server.port}`,
+            [TOKEN_HEADER]: 'm',
+          }),
+        );
+      },
+    });
+    expect(lines.join('\n')).toContain('Manual planning selected');
   });
 
   it('stops cleanly when told to, closing the server', async () => {
@@ -833,9 +902,31 @@ describe('finding the planner', () => {
   });
 });
 
-describe('the configured model', () => {
-  it('is none without any AI configuration', async () => {
-    expect(await resolveKitchenAI({ dir: work, env: {} })).toBeNull();
+describe('explicit inference setup', () => {
+  it('requires an explicit mode outside an interactive terminal', async () => {
+    const attempt = resolveKitchenAI({ dir: work, env: {} });
+    await expect(attempt).rejects.toMatchObject({
+      code: 'KITCHEN_INFERENCE_REQUIRED',
+    });
+    await expect(attempt).rejects.toBeInstanceOf(KitchenInferenceError);
+  });
+
+  it('uses no model for an explicit manual run', async () => {
+    expect(
+      await resolveKitchenAI({
+        dir: work,
+        env: {},
+        selection: { mode: 'manual' },
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [{ mode: 'manual', model: 'x' }, /cannot be used/],
+    [{ mode: 'configured', account: 'x' }, /only valid.*chatgpt/],
+    [{ mode: 'chatgpt', provider: 'x' }, /only valid.*configured/],
+  ])('rejects options incompatible with the selected mode', async (selection, message) => {
+    await expect(resolveKitchenAI({ selection })).rejects.toThrow(message);
   });
 
   it('builds the provider the environment names and chats through it', async () => {
@@ -847,6 +938,7 @@ describe('the configured model', () => {
         SMRT_AI_API_KEY: 'sk-test',
         SMRT_AI_MODEL: 'gpt-test',
       },
+      selection: { mode: 'configured' },
       createClient: async (clientOptions) => {
         seen.push(clientOptions);
         return {
@@ -865,6 +957,182 @@ describe('the configured model', () => {
     });
     expect(await ai?.chat([{ role: 'user', content: 'hi' }])).toBe('echo:1');
   });
+
+  it('lets explicit configured provider/model values override config inputs', async () => {
+    const seen: unknown[] = [];
+    await resolveKitchenAI({
+      dir: work,
+      env: { SMRT_AI_PROVIDER: 'openai', SMRT_AI_MODEL: 'old' },
+      selection: {
+        mode: 'configured',
+        provider: 'ollama',
+        model: 'llama-local',
+      },
+      createClient: async (options) => {
+        seen.push(options);
+        return {
+          async chat() {
+            return { content: 'ok' };
+          },
+        };
+      },
+    });
+    expect(seen[0]).toMatchObject({
+      provider: 'ollama',
+      defaultModel: 'llama-local',
+    });
+  });
+
+  it('requires an explicit saved ChatGPT account and discovered model noninteractively', async () => {
+    const runtime: ChatGPTKitchenRuntime = {
+      async sessions() {
+        return [{ clientId: 'oaiapp_saved', email: 'a@example.test' }];
+      },
+      async authorize() {
+        throw new Error('must not authorize');
+      },
+      async createClient() {
+        return {
+          async getModels() {
+            return [{ id: 'gpt-test', name: 'Test' }];
+          },
+          async chat() {
+            return { content: 'ok' };
+          },
+        };
+      },
+      mapError() {
+        return undefined;
+      },
+    };
+    await expect(
+      resolveKitchenAI({
+        selection: { mode: 'chatgpt' },
+        createChatGPTRuntime: async () => runtime,
+      }),
+    ).rejects.toMatchObject({ code: 'KITCHEN_CHATGPT_ACCOUNT_REQUIRED' });
+    await expect(
+      resolveKitchenAI({
+        selection: { mode: 'chatgpt', account: 'oaiapp_saved' },
+        createChatGPTRuntime: async () => runtime,
+      }),
+    ).rejects.toMatchObject({ code: 'KITCHEN_CHATGPT_MODEL_REQUIRED' });
+  });
+
+  it('selects a saved ChatGPT account and a model only through explicit prompts', async () => {
+    const selections = ['chatgpt', 'oaiapp_saved', 'gpt-test'];
+    const calls: string[] = [];
+    const runtime: ChatGPTKitchenRuntime = {
+      async sessions() {
+        return [{ clientId: 'oaiapp_saved', email: 'a@example.test' }];
+      },
+      async authorize() {
+        throw new Error('must not authorize');
+      },
+      async createClient(_clientId, model) {
+        if (model) calls.push(model);
+        return {
+          async getModels() {
+            return [{ id: 'gpt-test', name: 'Test' }];
+          },
+          async chat() {
+            return { content: 'answer' };
+          },
+        };
+      },
+      mapError() {
+        return undefined;
+      },
+    };
+    const ai = await resolveKitchenAI({
+      interactive: true,
+      prompt: {
+        async select(_message, choices) {
+          const selected = selections.shift();
+          if (!selected) throw new Error('missing test selection');
+          expect(choices.map((choice) => choice.value)).toContain(selected);
+          return selected;
+        },
+      },
+      createChatGPTRuntime: async () => runtime,
+    });
+    expect(ai?.label).toContain('a@example.test');
+    expect(await ai?.chat([{ role: 'user', content: 'hi' }])).toBe('answer');
+    expect(calls).toEqual(['gpt-test']);
+  });
+
+  it('offers manual planning after explicit ChatGPT consent is declined', async () => {
+    const selections = ['chatgpt', '__add__', 'manual'];
+    const ai = await resolveKitchenAI({
+      interactive: true,
+      prompt: {
+        async select(_message, choices) {
+          const selected = selections.shift();
+          if (!selected) throw new Error('missing test selection');
+          expect(choices.map((choice) => choice.value)).toContain(selected);
+          return selected;
+        },
+      },
+      createChatGPTRuntime: async () => ({
+        async sessions() {
+          return [];
+        },
+        async authorize() {
+          throw new KitchenInferenceError(
+            'KITCHEN_CHATGPT_CONSENT_DECLINED',
+            'ChatGPT authorization was declined.',
+          );
+        },
+        async createClient() {
+          throw new Error('must not create a client');
+        },
+        mapError() {
+          return undefined;
+        },
+      }),
+    });
+    expect(ai).toBeNull();
+    expect(selections).toEqual([]);
+  });
+
+  it('reauthorizes only the saved account explicitly selected in the terminal', async () => {
+    const selections = ['chatgpt', '__reauthorize__:oaiapp_saved', 'gpt-test'];
+    const authorized: Array<string | undefined> = [];
+    await resolveKitchenAI({
+      interactive: true,
+      prompt: {
+        async select(_message, choices) {
+          const selected = selections.shift();
+          if (!selected) throw new Error('missing test selection');
+          expect(choices.map((choice) => choice.value)).toContain(selected);
+          return selected;
+        },
+      },
+      createChatGPTRuntime: async () => ({
+        async sessions() {
+          return [{ clientId: 'oaiapp_saved', email: 'a@example.test' }];
+        },
+        async authorize(clientId) {
+          authorized.push(clientId);
+          return { clientId: 'oaiapp_saved', email: 'a@example.test' };
+        },
+        async createClient() {
+          return {
+            async getModels() {
+              return [{ id: 'gpt-test' }];
+            },
+            async chat() {
+              return { content: 'ok' };
+            },
+          };
+        },
+        mapError() {
+          return undefined;
+        },
+      }),
+    });
+    expect(authorized).toEqual(['oaiapp_saved']);
+  });
 });
 
 describe('smrt kitchen apply', () => {
@@ -881,6 +1149,9 @@ describe('smrt kitchen apply', () => {
       ]),
     );
     expect(kitchenCommands.kitchen.args).toEqual(['dir']);
+    expect(Object.keys(kitchenCommands.kitchen.options ?? {})).toEqual(
+      expect.arrayContaining(['inference', 'provider', 'model', 'account']),
+    );
   });
 });
 

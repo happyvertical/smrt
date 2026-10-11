@@ -17,7 +17,7 @@ import {
 } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
-import type { KitchenAI } from './ai.js';
+import { type KitchenAI, KitchenAIError } from './ai.js';
 import type { AppliedBody, CookbookApplier } from './apply.js';
 import type { PlannerCore, PlannerInstall } from './planner.js';
 
@@ -34,7 +34,7 @@ const COOKBOOK_LIMIT = 2 * 1024 * 1024;
 export interface KitchenServerOptions {
   planner: PlannerInstall;
   core: PlannerCore;
-  /** The configured model; null serves the planner's in-browser model. */
+  /** The selected model; null keeps host mode available for manual planning. */
   ai: KitchenAI | null;
   apply: CookbookApplier;
   /** Fixed port (default: random). */
@@ -55,8 +55,8 @@ export interface KitchenServer {
   openUrl: string;
   port: number;
   token: string;
-  /** `host` when the chat endpoint is served, else `browser`. */
-  mode: 'host' | 'browser';
+  /** Kitchen always uses host mode, including manual planning. */
+  mode: 'host';
   /** Resolves once a cookbook was applied and the answer sent to the page. */
   applied: Promise<AppliedBody>;
   close(): Promise<void>;
@@ -119,7 +119,7 @@ export async function startKitchenServer(
 ): Promise<KitchenServer> {
   const log = options.log ?? (() => {});
   const token = options.token ?? randomBytes(32).toString('base64url');
-  const mode: KitchenServer['mode'] = options.ai ? 'host' : 'browser';
+  const mode: KitchenServer['mode'] = 'host';
   const appRoot = normalize(options.planner.appDir);
   let port = 0;
   let applying = false;
@@ -136,10 +136,7 @@ export async function startKitchenServer(
   ];
 
   const config = () => ({
-    inference:
-      mode === 'host'
-        ? { mode: 'host', host: { endpoint: CHAT_PATH } }
-        : { mode: 'browser' },
+    inference: { mode: 'host', host: { endpoint: CHAT_PATH } },
     kitchen: { endpoint: COOKBOOK_PATH },
   });
 
@@ -192,6 +189,17 @@ export async function startKitchenServer(
         }>),
       ]);
     } catch (error) {
+      if (error instanceof KitchenAIError) {
+        log(`The selected inference provider reported: ${error.code}.`);
+        sendJson(res, error.status, {
+          error: {
+            code: error.code,
+            message: error.message,
+            recovery: error.recovery,
+          },
+        });
+        return;
+      }
       log(
         `The model could not answer: ${error instanceof Error ? error.message : String(error)}`,
       );

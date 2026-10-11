@@ -8,6 +8,7 @@ import type { CLICommand } from '../cli-generator.js';
 import { ApplyError } from './cookbook/apply.js';
 import { asList } from './cookbook/shared.js';
 import { cookbookCommands } from './cookbook.js';
+import { KitchenAIError, KitchenInferenceError } from './kitchen/ai.js';
 import { PlannerError } from './kitchen/planner.js';
 import { runKitchen } from './kitchen/run.js';
 
@@ -19,6 +20,10 @@ interface KitchenCliOptions {
   'no-registry'?: boolean;
   manifests?: string[] | string;
   port?: number | string;
+  inference?: string;
+  provider?: string;
+  model?: string;
+  account?: string;
 }
 
 /** Ctrl-C and SIGTERM stop the kitchen cleanly (the server is closed in `finally`). */
@@ -99,6 +104,26 @@ export const kitchenCommands: Record<string, CLICommand> = {
         type: 'number',
         description: 'Listen on this port (default: a random free port)',
       },
+      inference: {
+        type: 'string',
+        description:
+          'Inference mode: manual, configured (API or local provider), or chatgpt',
+      },
+      provider: {
+        type: 'string',
+        description:
+          'Configured provider override (only with --inference configured)',
+      },
+      model: {
+        type: 'string',
+        description:
+          'Model override for configured inference, or a discovered ChatGPT model ID',
+      },
+      account: {
+        type: 'string',
+        description:
+          'Saved issued ChatGPT account registration ID (only with --inference chatgpt)',
+      },
     },
     handler: async (args: string[], options: KitchenCliOptions) => {
       const dir = resolve(args[0] ?? '.');
@@ -113,6 +138,13 @@ export const kitchenCommands: Record<string, CLICommand> = {
           manifests: asList(options.manifests),
           registry: !options['no-registry'],
           port: options.port === undefined ? undefined : Number(options.port),
+          inference: {
+            mode: options.inference,
+            provider: options.provider,
+            model: options.model,
+            account: options.account,
+          },
+          interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
           stop,
         });
         console.log(
@@ -130,9 +162,29 @@ export const kitchenCommands: Record<string, CLICommand> = {
           process.exitCode = 130;
           return;
         }
-        if (error instanceof PlannerError || error instanceof ApplyError) {
+        if (
+          error instanceof PlannerError ||
+          error instanceof ApplyError ||
+          error instanceof KitchenInferenceError ||
+          error instanceof KitchenAIError
+        ) {
           console.error(error.message);
-          process.exit(1);
+          if (error instanceof KitchenInferenceError) {
+            console.error(`Code: ${error.code}`);
+          }
+          if (error instanceof KitchenAIError) {
+            console.error(error.recovery);
+            console.error(`Code: ${error.code}`);
+          }
+          if (
+            error instanceof KitchenInferenceError &&
+            error.code === 'KITCHEN_INFERENCE_CANCELLED'
+          ) {
+            process.exitCode = 130;
+            return;
+          }
+          process.exitCode = 1;
+          return;
         }
         throw error;
       } finally {

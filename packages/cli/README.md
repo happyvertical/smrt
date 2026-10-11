@@ -200,7 +200,7 @@ knowledge index; documentation snapshots use lightweight package discovery.
 | `smrt init` | Initialize s-m-r-t in an existing SvelteKit project |
 | `smrt cookbook validate <file\|url>` | Check a cookbook against cookbook/v1 and the recipe manifests |
 | `smrt cookbook apply <file\|url> [dir]` | Create a project from a cookbook and the smrt-start template (`--into`, `--template`, `--dry-run`, `--no-install`) |
-| `smrt kitchen [dir]` | Serve the planner on localhost, chat to a cookbook, **Send to kitchen** applies it into `dir` (`--planner`, `--template`, `--no-open`, `--no-install`) |
+| `smrt kitchen [dir]` | Serve the planner on localhost, explicitly choose manual / configured API-or-local / **Continue with ChatGPT** inference, then **Send to kitchen** applies the cookbook into `dir` (`--inference`, `--provider`, `--model`, `--account`, `--planner`, `--template`, `--no-open`, `--no-install`) |
 | `smrt kitchen apply <url\|file> [dir]` | `cookbook apply` that also takes a plan URL |
 
 `smrt export` reads the `export` section of `smrt.config.js`. A listed type that

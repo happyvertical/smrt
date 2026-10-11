@@ -7,7 +7,12 @@ import { execFile } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { COOKBOOK_CONFIG_FILE } from '../cookbook/apply.js';
-import { type KitchenAI, resolveKitchenAI } from './ai.js';
+import {
+  type KitchenAI,
+  type KitchenInferenceSelection,
+  type KitchenPrompter,
+  resolveKitchenAI,
+} from './ai.js';
 import {
   type AppliedBody,
   type CookbookApplier,
@@ -33,6 +38,10 @@ export interface KitchenRunOptions {
   manifests?: string[];
   registry: boolean;
   port?: number;
+  /** Explicit noninteractive selection, or terminal prompt inputs. */
+  inference?: KitchenInferenceSelection;
+  interactive?: boolean;
+  prompt?: KitchenPrompter;
   log?: (line: string) => void;
   /** Called once the server is listening (tests read the URL and token here). */
   onReady?: (server: KitchenServer) => void;
@@ -83,14 +92,19 @@ export async function runKitchen(
   const dir = resolve(options.dir);
   checkTargetDir(dir);
 
+  const ai =
+    options.overrides && 'ai' in options.overrides
+      ? (options.overrides.ai ?? null)
+      : await resolveKitchenAI({
+          dir,
+          selection: options.inference,
+          interactive: options.interactive,
+          prompt: options.prompt,
+        });
   const planner =
     options.overrides?.planner ??
     (await resolvePlanner({ planner: options.planner, dir, log }));
   const core = options.overrides?.core ?? (await loadPlannerCore(planner));
-  const ai =
-    options.overrides && 'ai' in options.overrides
-      ? (options.overrides.ai ?? null)
-      : await resolveKitchenAI({ dir });
 
   const server = await startKitchenServer({
     planner,
@@ -122,7 +136,7 @@ export async function runKitchen(
     log(
       ai
         ? `Chat is answered by ${ai.label}.`
-        : 'No AI provider is configured (set an `ai` block in smrt.config.ts, SMRT_AI_PROVIDER, or e.g. OPENAI_API_KEY), so the planner runs its in-browser model. You can also build the cookbook by hand.',
+        : 'Manual planning selected. No model, account authorization, paid inference, or browser model download will be used.',
     );
     log(`Project directory: ${dir}`);
     log(

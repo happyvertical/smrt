@@ -8,6 +8,8 @@ Code: `src/commands/kitchen.ts` (registration, Ctrl-C), `src/commands/kitchen/`
 ```
 smrt kitchen [dir] [--planner <dir>] [--template <t>] [--no-open] [--no-install]
              [--manifests <p>]... [--no-registry] [--port <n>]
+             [--inference <manual|configured|chatgpt>]
+             [--provider <name>] [--model <id>] [--account <issued-client-id>]
 smrt kitchen apply <url|file> [dir]     # = cookbook apply (any URL that returns cookbook JSON)
 ```
 
@@ -17,7 +19,10 @@ Checked before anything starts.
 ## Flow
 
 1. Find the planner (below), import its plain-Node `./core`.
-2. Resolve the model; start the server on `127.0.0.1` (random port, or `--port`) with a random
+2. In a terminal, explicitly choose manual planning, **Continue with ChatGPT**, or a configured
+   API/local provider. In a noninteractive run, pass `--inference`; ChatGPT also requires an
+   issued saved `--account` and discovered `--model`. Then start the server on `127.0.0.1`
+   (random port, or `--port`) with a random
    one-time token; open `http://127.0.0.1:<port>/#kitchen=<token>` in the browser (`--no-open`
    skips opening; the same address is printed as `Open <url>`, because the token is in it).
 3. The page chats through `/api/planner/chat`, the user builds a cookbook and chooses
@@ -31,7 +36,7 @@ Checked before anything starts.
 
 | Path | |
 | --- | --- |
-| `GET /planner.config.json` | `{ inference, kitchen: { endpoint: "/api/kitchen/cookbook" } }`, **never a token**; `inference` is `{ mode: "host", host: { endpoint: "/api/planner/chat" } }`, or `{ mode: "browser" }` with no model |
+| `GET /planner.config.json` | `{ inference, kitchen: { endpoint: "/api/kitchen/cookbook" } }`, **never a token**; `inference` is always `{ mode: "host", host: { endpoint: "/api/planner/chat" } }`. Manual mode answers chat with 503, leaving editing/export available without starting or downloading a browser model. |
 | `POST /api/planner/chat` | host contract v1: `parseHostRequest` -> `buildHostPrompt` -> model -> `parseHostReply` -> reply JSON. 400 bad request, 502 model failure (message not forwarded), 503 no model |
 | `POST /api/kitchen/cookbook` | header `x-kitchen-token`, same-origin JSON; 200 `{ ok, dir, mode, installed, added, nextSteps }`, 4xx `{ ok: false, errors }` |
 | everything else (GET/HEAD) | the planner's `app/` directory; `/` serves `index.html`; no path leaves `app/` |
@@ -62,13 +67,30 @@ side in `happyvertical/smrt-planner` `docs/inference-host.md` ("Send to kitchen"
 together. The kitchen defends against browsers, not against other users on the same machine
 (who can read your terminal and process list): run it on a machine you trust.
 
-## Model
+## Inference
 
-`ai.ts` loads `smrt.config.*` (from `dir` if it exists, else the cwd) and resolves the provider
-with smrt-config's `tryResolveConfiguredAIProvider` (config `ai` block, `SMRT_AI_*`, then a
-provider key variable such as `OPENAI_API_KEY`), then builds it with `getAI` from
-`@happyvertical/ai`. Calls are `chat([system, ...messages], { temperature: 0 })`. With no provider
-the config is served in `browser` mode and the terminal says so.
+Inference is selected once per run and never falls back or switches billing paths:
+
+- `manual`: no model, authorization, paid request, or browser-model download. The planner remains
+  in host mode and its editing, layout, validation, export, and Send to kitchen paths remain usable.
+- `configured`: loads `smrt.config.*` (from `dir` if it exists, else cwd) and resolves the `ai`
+  block / `SMRT_AI_*` settings. `--provider` and `--model` are explicit overrides. Provider
+  `baseUrl` remains the supported seam for a local endpoint. The terminal prints provider/model,
+  never a key. This choice covers both API-backed and local providers.
+- `chatgpt`: uses `LocalChatGPTSessionManager` from `@happyvertical/auth/local`, whose protected
+  host/session file is outside the project. New-account selection opens the system browser for
+  OAuth PKCE dynamic registration and explicit `chatgpt.tokens.use.direct` consent. There is no
+  static client ID: OpenAI issues a client ID for the selected account/workspace and the SDK saves
+  it. Saved registrations and the account's discovered models are selected explicitly. Inference
+  uses the SDK's `chatgpt-plan` provider, which streams Responses requests with `store: false`.
+  This follows OpenAI's [local open-source plan-usage flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in),
+  where `dynamic_agent_client` is only the first-registration entrypoint.
+
+Provider/model/account flags that do not apply to the chosen mode are rejected. Noninteractive
+runs without an explicit mode fail before planner download, authorization, or inference. Usage
+limits, workspace restrictions, revoked sessions, and transient plan-service failures return typed
+safe errors with guidance to reauthorize, wait/check usage, or restart and explicitly choose
+another provider.
 
 ## Finding the planner
 
