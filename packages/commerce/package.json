@@ -26,6 +26,10 @@
     "./invoices": {
       "types": "./dist/invoices.d.ts",
       "import": "./dist/invoices.js"
+    },
+    "./cost-billing": {
+      "types": "./dist/cost-billing.d.ts",
+      "import": "./dist/cost-billing.js"
     }
   },
   "files": [

@@ -576,3 +576,10 @@ for server handlers from `@happyvertical/smrt-commerce/invoices`.
 caller-owned sources and approvals. See [the editor contract](agents/invoice-preparation.md),
 [calculation rules](agents/invoice-calculations.md), and the required
 [existing-database storage migration](agents/invoice-quantity.md).
+
+## Exact cost billing
+
+The independent `@happyvertical/smrt-commerce/cost-billing` entry point provides
+exact signed reimbursement/fee calculations, ordered generic markup provenance,
+and explicit line or invoice tax rounding. See [the cost billing contract](agents/cost-billing.md).
+It does not alter Invoice persistence, editor defaults or settlement behavior.

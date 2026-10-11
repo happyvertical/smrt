@@ -1,6 +1,6 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
 export default createPackageConfig('commerce', {
-  entries: ['ui', 'playground', 'invoices'],
+  entries: ['ui', 'playground', 'invoices', 'cost-billing'],
   svelte: 'svelte',
 });

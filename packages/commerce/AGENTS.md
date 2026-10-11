@@ -193,3 +193,8 @@ extension conventions are documented in [agents/quote-ui.md](agents/quote-ui.md)
 `PurchaseOrderEditor` preserves allocation IDs and explicit zeroes, including
 retained reduction rows; the server validates review fingerprints before recording.
 See [agents/purchasing-ui.md](agents/purchasing-ui.md) for caller responsibilities.
+
+## Exact cost billing
+
+Pure signed cost billing and explicit tax rounding are available through the
+independent `cost-billing` subpath; see [contract](agents/cost-billing.md).
