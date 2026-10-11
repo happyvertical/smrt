@@ -20,7 +20,10 @@ import {
   type TransactionRunner,
 } from './execution-internal.js';
 import { type ExtractionResult, providerIdentity } from './extraction-types.js';
-import { IntakeFeedbackService } from './feedback.js';
+import {
+  FeedbackRetrievalDeniedError,
+  IntakeFeedbackService,
+} from './feedback.js';
 import type {
   GenerationStageConfiguration,
   ProposalConfiguration,
@@ -36,6 +39,7 @@ import type {
   ProposalCatalogEntry,
 } from './proposal-dto.js';
 import { GenerationSnapshotStaleError } from './proposal-errors.js';
+import { assertProposalLimits } from './proposal-limits.js';
 import {
   record,
   safeUsage,
@@ -89,27 +93,7 @@ export class IngestionProposalService {
       : null;
     text(config.version);
     text(config.promptVersion);
-    if (
-      [
-        'maxHandlers',
-        'maxCandidates',
-        'maxSuggestions',
-        'maxInputBytes',
-        'maxOutputBytes',
-        'maxQueryLength',
-        'timeoutMs',
-      ].some(
-        (key) =>
-          !Number.isSafeInteger(
-            config.limits[key as keyof typeof config.limits],
-          ) || config.limits[key as keyof typeof config.limits] <= 0,
-      ) ||
-      config.limits.maxHandlers > 20 ||
-      config.limits.maxCandidates > 20 ||
-      config.limits.maxSuggestions > 20 ||
-      config.limits.timeoutMs > 2_147_483_647
-    )
-      throw new Error('Invalid proposal limits');
+    assertProposalLimits(config.limits);
     this.config = {
       ...config,
       limits: structuredClone(config.limits),
@@ -619,31 +603,38 @@ export class IngestionProposalService {
         output.offered.length
       ) {
         const feedbackQuery = query.slice(0, 4096);
-        feedbackSelection = await new IntakeFeedbackService(
-          this.options,
-          this.execution,
-        ).retrieve({
-          itemId: lease.itemId,
-          query: feedbackQuery,
-          offered: output.offered,
-          promptVersion: this.config.promptVersion,
-          configurationVersion: this.config.version,
-          model: this.identity,
-          providers: [
-            this.identity.provider,
-            ...(this.decisionIdentity ? [this.decisionIdentity.provider] : []),
-          ],
-        });
-        output.provenance.feedback = {
-          query: feedbackQuery,
-          selection: {
-            version: feedbackSelection.version,
-            configurationDigest: feedbackSelection.configurationDigest,
-            examples: feedbackSelection.examples.map(
-              ({ feedbackId, digest }) => ({ feedbackId, digest }),
-            ),
-          },
-        };
+        try {
+          feedbackSelection = await new IntakeFeedbackService(
+            this.options,
+            this.execution,
+          ).retrieve({
+            itemId: lease.itemId,
+            query: feedbackQuery,
+            offered: output.offered,
+            promptVersion: this.config.promptVersion,
+            configurationVersion: this.config.version,
+            model: this.identity,
+            providers: [
+              this.identity.provider,
+              ...(this.decisionIdentity
+                ? [this.decisionIdentity.provider]
+                : []),
+            ],
+          });
+        } catch (error) {
+          if (!(error instanceof FeedbackRetrievalDeniedError)) throw error;
+        }
+        if (feedbackSelection)
+          output.provenance.feedback = {
+            query: feedbackQuery,
+            selection: {
+              version: feedbackSelection.version,
+              configurationDigest: feedbackSelection.configurationDigest,
+              examples: feedbackSelection.examples.map(
+                ({ feedbackId, digest }) => ({ feedbackId, digest }),
+              ),
+            },
+          };
       }
       const humanCorrection = generation.configuration.humanCorrection;
       if (

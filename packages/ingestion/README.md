@@ -182,3 +182,26 @@ metadata does not supply a host, source, provider, or demo fixture, and it does
 not change the preview-only status. Both recipes declare `both` runtime: their
 components render in a browser, while the authenticated review host and package
 dependency closure require a server.
+
+## First analysis and host constraints
+
+`receive` retains evidence and queues the initial dispatch, but does not choose
+an extraction configuration. Before a worker can analyze a new item, the host must
+call `analyze(itemId, { stage: 'extract', extraction: { configurationRevision,
+limits } }, requestId)`, then claim that returned revision and run `extractAnalysis`.
+Use a stable request ID for retries. `repairDispatches` repairs queue delivery;
+it does not supply the missing extraction request. After extraction, use
+`prepareGeneration` and `analyze` to request interpretation.
+
+Retention requires `replayUntil >= expiresAt`; an earlier replay deadline rejects
+even a fresh delivery as `expired`. The replay tombstone must outlive retained
+source bytes. Set both deadlines explicitly before calling `receive`.
+
+Handler preview `normalizedArgs` must equal the submitted arguments exactly.
+It is an integrity assertion, not a normalization hook: defaults or tidying must
+happen before submitting args for preview, so review binds exactly what was sent.
+
+Proposal limits must be positive safe integers. `maxHandlers`, `maxCandidates`
+and `maxSuggestions` are each capped at 20; `timeoutMs` is capped at 2147483647.
+Invalid limits are rejected when constructing `IngestionService`, before receipt
+or interpretation. See [REVIEW.md](REVIEW.md) for the published server review host.

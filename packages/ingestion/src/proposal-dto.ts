@@ -116,3 +116,8 @@ export interface PreviewGeneratedInput {
 export type GeneratedPreview =
   | { kind: 'operation'; review: ProposalReview }
   | { kind: 'plan'; review: PlanReview };
+
+/** Persisted interpretation payload under CompletedAnalysisSnapshot.result.output. */
+export interface GenerationAnalysisOutput {
+  proposals: GenerationOutput;
+}

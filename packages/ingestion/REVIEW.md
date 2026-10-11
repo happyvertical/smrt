@@ -135,3 +135,34 @@ page using fresh cursors, then publish the combined authorized set together. Old
 page payloads are cleared while loading; any unavailable page clears all payloads.
 This keeps plan controls and earlier steps visible across page boundaries without
 reusing a prior authorization decision.
+
+## Published server adapter
+
+Import `createIntakeReviewHost` and `IntakeReviewHostOptions` from
+`@happyvertical/smrt-ingestion/server`. Call `createIntakeReviewHost(service,
+options)` with a service constructed from the current authenticated session.
+The returned `IntakeReviewHost` implements inbox state projection across saved
+review pages, current generation loading, stable `ui:<index>` intention keys,
+action/plan preview CAS lookup, decisions, apply, corrections, candidates, split
+and feedback. Repeated preparation of an unchanged authorized suggestion retains
+its current review instead of creating a new revision. Changed arguments still
+require explicit re-preview and a fresh human decision.
+Lists scan 20 items per page; filtered pages may be empty with a `nextCursor`.
+Continue until the cursor is absent. Listing does not load original bytes.
+
+Supply four application adapters: `upload(files, requestId)` (authenticated
+receipt plus first extraction request), `assignment(itemId)` (durable read),
+`assign(input)` (manager authorization, eligible assignees, durable CAS and request
+replay protection), and `evidence(part)` (safe label/text or authenticated
+same-origin URL). Optional `label(item)` changes presentation. Optional
+`enableFeedback: true` exposes the optional feedback callback when the service
+has feedback configured. Optional `onSplit(itemId, revision)` wakes the host worker after the durable extraction
+request; repair dispatches if wakeup fails. The factory creates no assignment
+schema and grants no permissions. Create it per session, authenticate every HTTP
+call and enforce CSRF before dispatching a mutation.
+
+`GenerationAnalysisOutput` is exported by `/dto` and describes the interpretation
+wrapper `{ proposals: GenerationOutput }` under `analysis.result.output`.
+The factory unwraps this into `ItemReviewView.generation`. Stale generation is
+omitted while authorized saved reviews remain available; access denials propagate.
+The reference application still owns its fixture provisioning and HTTP transport.
