@@ -75,7 +75,8 @@ not raw SQL.
 `consume` re-checks the ledger before consuming (defence in depth against a
 status written around the service): the `created` event at sequence 1, no
 terminal event, and `approved` events from at least `requiredApprovals`
-distinct human actors other than the requester; otherwise it refuses
+distinct human actors; requester events count only with `selfApproved: true`
+and a valid `selfApprovalPermission` audit slug. Otherwise it refuses
 `unbacked_approval`. Quorum counting in `decide` applies the same filter.
 
 ## Out of scope here (later slices of #3716)
@@ -91,3 +92,22 @@ distinct human actors other than the requester; otherwise it refuses
 Known gaps: listing every holder of a permission needs a users-package
 helper (for notifications); a vote stays counted if the approver later loses
 the permission.
+
+## Permission-gated self-decisions
+
+A kind may opt in with `selfApprovalPermission: 'content.approve-self'`.
+The requester must be human and hold that permission plus every normal snapshot,
+current kind and tenant-policy decision permission. All three verdicts use this
+allowance. Without the opt-in or grant, `self_approval` remains the refusal.
+Self-decisions record `selfApproved` and `selfApprovalPermission` on the event;
+ordinary events default to false and an empty slug. These fields are service-only,
+not caller input. Deploy the generated event-column migration before upgrading
+runtime code; existing events default to false/empty and cannot gain self authority.
+Like other votes, an authorized self vote remains counted after permission or kind
+configuration changes. It counts once, never bypasses quorum, expiry or tenancy,
+and remains atomic with the guarded transition.
+
+DuckDB deployments on `@happyvertical/sql` 0.103.1 may repeatedly recreate the
+unchanged request/sequence index during migration because index introspection
+retains SQL identifier quotes; see [SDK #1395](https://github.com/happyvertical/sdk/issues/1395).
+The new audit columns converge and existing ordinary approvals remain consumable.

@@ -226,8 +226,8 @@ function assertPrincipal(principal: ApprovalPrincipal): void {
 
 /**
  * Distinct actors whose `approved` events count toward quorum: human
- * principals other than the requester (a forged or legacy event from an
- * agent, a service, or the requester never counts).
+ * principals, including explicitly ledgered self-decisions. Legacy unmarked
+ * requester events and non-human events never count.
  */
 function countedApprovers(
   approvals: readonly ApprovalEvent[],
@@ -239,7 +239,9 @@ function countedApprovers(
         (event) =>
           event.type === 'approved' &&
           event.actorType === 'human' &&
-          event.actorId !== request.requestedBy,
+          (event.actorId !== request.requestedBy ||
+            (event.selfApproved === true &&
+              isPermissionSlug(event.selfApprovalPermission))),
       )
       .map((event) => event.actorId),
   );
@@ -437,7 +439,8 @@ export class ApprovalService {
 
   /**
    * Record a decision. Only a `human` principal of the request's tenant who
-   * is not the requester and holds every required permission may decide,
+   * holds every required permission may decide (requesters also need the
+   * kind's explicit selfApprovalPermission),
    * once, while the request is pending and unexpired. `approve` counts
    * toward the quorum of distinct approvers; `reject` and `request_changes`
    * end the request.
@@ -475,10 +478,17 @@ export class ApprovalService {
             request.id,
           );
         }
-        if (principal.id === request.requestedBy) {
+        const selfApproved = principal.id === request.requestedBy;
+        const selfApprovalPermission = selfApproved
+          ? requireApprovalKind(request.kind).selfApprovalPermission
+          : undefined;
+        if (
+          selfApproved &&
+          (!selfApprovalPermission || !principal.can(selfApprovalPermission))
+        ) {
           return refusal(
             'self_approval',
-            'the requester cannot decide their own request',
+            'the requester lacks the kind self-approval allowance',
             request.id,
           );
         }
@@ -577,6 +587,8 @@ export class ApprovalService {
           subjectRevisionHash: request.subjectRevisionHash,
           sequence: next,
           voteKey: principal.id,
+          selfApproved,
+          selfApprovalPermission,
           now,
         });
         await this.recordChange(tx, String(request.id), tenantId);
@@ -1165,6 +1177,8 @@ export class ApprovalService {
       subjectRevisionHash: string;
       sequence: number;
       voteKey?: string;
+      selfApproved?: boolean;
+      selfApprovalPermission?: string;
       now: Date;
     },
   ): Promise<void> {
@@ -1179,6 +1193,8 @@ export class ApprovalService {
       subjectRevisionHash: input.subjectRevisionHash,
       sequence: input.sequence,
       voteKey: input.voteKey ?? null,
+      selfApproved: input.selfApproved ?? false,
+      selfApprovalPermission: input.selfApprovalPermission ?? '',
       occurredAt: input.now,
       // The only place an event insert is authorized.
       ...serviceWriteOption(),
@@ -1189,8 +1205,9 @@ export class ApprovalService {
    * Defence in depth for `consume`: the request row says `approved`, so the
    * ledger must agree. It needs the `created` event at sequence 1, no
    * terminal event, and approvals from at least `requiredApprovals` distinct
-   * human actors other than the requester. Catches a status written around
-   * the service (raw SQL); model-layer inserts are already capability-gated.
+   * human actors, with explicit audit markers for self-decisions. Catches a
+   * status written around the service (raw SQL); model-layer inserts are
+   * already capability-gated.
    */
   private async ledgerBacksApproval(
     tx: DatabaseInterface,

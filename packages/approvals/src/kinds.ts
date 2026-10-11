@@ -94,6 +94,15 @@ export function defineApprovalKind(input: ApprovalKindInput): ApprovalKind {
       `Approval kind '${input.key}' permission must be a slug such as 'social.approve-post', got '${String(input.permission)}'.`,
     );
   }
+  if (
+    input.selfApprovalPermission !== undefined &&
+    !isPermissionSlug(input.selfApprovalPermission)
+  ) {
+    throw new ApprovalError(
+      'APPROVAL_INVALID',
+      'selfApprovalPermission must be a permission slug.',
+    );
+  }
   const requiredApprovals = input.defaults?.requiredApprovals ?? 1;
   const ttlMs = input.defaults?.ttlMs ?? DEFAULT_APPROVAL_TTL_MS;
   assertQuorum(
@@ -106,6 +115,7 @@ export function defineApprovalKind(input: ApprovalKindInput): ApprovalKind {
     key: input.key,
     subject: input.subject,
     permission: input.permission,
+    selfApprovalPermission: input.selfApprovalPermission,
     defaults: Object.freeze({ requiredApprovals, ttlMs }),
   });
   const existing = kinds.get(kind.key);
@@ -113,6 +123,7 @@ export function defineApprovalKind(input: ApprovalKindInput): ApprovalKind {
     if (
       existing.subject === kind.subject &&
       existing.permission === kind.permission &&
+      existing.selfApprovalPermission === kind.selfApprovalPermission &&
       existing.defaults.requiredApprovals === requiredApprovals &&
       existing.defaults.ttlMs === ttlMs
     ) {

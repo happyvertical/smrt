@@ -12,9 +12,16 @@ import { randomUUID } from 'node:crypto';
 import {
   GlobalInterceptors,
   isEmbeddedDatabase,
+  ObjectRegistry,
   withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
-import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
+import {
+  createMigrationDefinition,
+  type DatabaseInterface,
+  generateSchemaDiff,
+  getSQLFromDiff,
+  MigrationTracker,
+} from '@happyvertical/smrt-core/migrations';
 import {
   disableTenancy,
   enableTenancy,
@@ -36,6 +43,20 @@ import {
 export const SUBJECT = '@happyvertical/smrt-content:Content';
 export const DECIDE = 'content.approve-publish';
 export const EXTRA = 'content.approve-legal';
+const SELF = 'content.approve-self';
+const selfKind = defineApprovalKind({
+  key: 'content.self',
+  subject: SUBJECT,
+  permission: DECIDE,
+  selfApprovalPermission: SELF,
+});
+const dualSelfKind = defineApprovalKind({
+  key: 'content.self-dual',
+  subject: SUBJECT,
+  permission: DECIDE,
+  selfApprovalPermission: SELF,
+  defaults: { requiredApprovals: 2 },
+});
 const HOUR = 60 * 60 * 1000;
 
 /** One approver, the default kind. */
@@ -114,7 +135,10 @@ function requestId(result: { request: { id?: string | null } | null }): string {
 }
 
 /** Register the suite. `getDb` returns the lane's database. */
-export function defineApprovalSuite(getDb: () => DatabaseInterface): void {
+export function defineApprovalSuite(
+  getDb: () => DatabaseInterface,
+  engine: 'sqlite' | 'duckdb' | 'postgres',
+): void {
   const world = () => createWorld(getDb());
 
   beforeAll(() => {
@@ -153,6 +177,225 @@ export function defineApprovalSuite(getDb: () => DatabaseInterface): void {
     const events = await w.service.listEvents(w.requester, id);
     return events.map((event) => event.type);
   }
+
+  it('migrates legacy event columns with safe defaults and preserves ordinary approvals', async () => {
+    const w = world();
+    const id = await approved(w);
+    // DuckDB refuses DROP COLUMN while any explicit index depends on the table.
+    // Remove fixture indexes first; the canonical migration restores them too.
+    if (engine === 'duckdb') {
+      const indexes = await w.db.query(
+        "SELECT index_name FROM duckdb_indexes() WHERE table_name = 'approval_events'",
+      );
+      for (const row of indexes.rows)
+        await w.db.query(
+          `DROP INDEX "${String(row.index_name).replaceAll('"', '""')}"`,
+        );
+    }
+    await w.db.query('ALTER TABLE approval_events DROP COLUMN self_approved');
+    await w.db.query(
+      'ALTER TABLE approval_events DROP COLUMN self_approval_permission',
+    );
+    const schemas = Object.fromEntries(
+      Object.entries(ObjectRegistry.getAllSchemasAsDefinitions()).filter(
+        ([table]) =>
+          [
+            'approval_requests',
+            'approval_events',
+            'approval_policies',
+          ].includes(table),
+      ),
+    );
+    expect(Object.keys(schemas)).toHaveLength(3);
+    const migrate = async () => {
+      const diff = await generateSchemaDiff(w.db, schemas, {
+        engineHint: engine,
+      });
+      const statements = getSQLFromDiff(diff);
+      if (!statements.length) return { applied: false, statements };
+      const migration = createMigrationDefinition(
+        `self_approval_${randomUUID().replaceAll('-', '')}`,
+        statements,
+        [],
+        { packageName: '@happyvertical/smrt-approvals' },
+      );
+      await new MigrationTracker({ db: w.db, engineHint: engine }).applyAll(
+        [migration],
+        { postgresSafe: false },
+      );
+      return { applied: true, statements };
+    };
+    expect((await migrate()).applied).toBe(true);
+    const events = await w.service.listEvents(w.requester, id);
+    expect(events).toHaveLength(2);
+    for (const event of events)
+      expect(event).toMatchObject({
+        selfApproved: false,
+        selfApprovalPermission: '',
+      });
+    expect((await w.service.consume(w.requester, id, 'rev-1')).outcome).toBe(
+      'transitioned',
+    );
+    const repeated = await generateSchemaDiff(w.db, schemas, {
+      engineHint: engine,
+    });
+    // New audit columns converge. Unchanged DuckDB sequence-index introspection
+    // retains SQL quotes in sql@0.103.1 (happyvertical/sdk#1395).
+    expect(
+      getSQLFromDiff(repeated).filter((sql) =>
+        /self_approved|self_approval_permission/.test(sql),
+      ),
+    ).toEqual([]);
+    if (engine !== 'duckdb') expect(getSQLFromDiff(repeated)).toEqual([]);
+  });
+
+  describe('permission-gated self-decisions', () => {
+    it.each([
+      'approve',
+      'reject',
+      'request_changes',
+    ] as const)('ledgers an authorized self %s', async (decision) => {
+      const w = world();
+      const actor = w.principal('human', [DECIDE, SELF]);
+      const id = await open(w, selfKind, 'rev-1', actor);
+      const result = await w.service.decide(actor, id, {
+        decision,
+        reason: 'Owner decision',
+      });
+      expect(result.outcome).toBe('transitioned');
+      const ledger = await w.service.listEvents(actor, id);
+      expect(ledger[0]).toMatchObject({
+        selfApproved: false,
+        selfApprovalPermission: '',
+      });
+      expect(ledger[1]).toMatchObject({
+        actorId: actor.id,
+        selfApproved: true,
+        selfApprovalPermission: SELF,
+      });
+      if (decision === 'approve') {
+        expect(
+          (await w.service.consume(w.requester, id, 'rev-1')).outcome,
+        ).toBe('transitioned');
+      }
+    });
+
+    it('counts the self vote once alongside another human', async () => {
+      const w = world();
+      const actor = w.principal('human', [DECIDE, SELF]);
+      const id = await open(w, dualSelfKind, 'rev-1', actor);
+      expect(
+        (await w.service.decide(actor, id, { decision: 'approve' })).request,
+      ).toMatchObject({ status: 'pending', approvalCount: 1 });
+      expect(
+        (await w.service.decide(actor, id, { decision: 'approve' })).refusal
+          ?.reason,
+      ).toBe('already_decided');
+      expect(
+        (await w.service.decide(w.approverA, id, { decision: 'approve' }))
+          .request,
+      ).toMatchObject({ status: 'approved', approvalCount: 2 });
+      expect((await w.service.consume(w.requester, id, 'rev-1')).outcome).toBe(
+        'transitioned',
+      );
+    });
+
+    it.each([
+      ['human', [DECIDE], 'self_approval'],
+      ['human', [SELF], 'forbidden'],
+      ['agent', [DECIDE, SELF], 'not_human'],
+      ['service', [DECIDE, SELF], 'not_human'],
+    ] as const)('refuses unauthorized self actor %s %j', async (type, permissions, reason) => {
+      const w = world();
+      const actor = w.principal(type, [...permissions]);
+      const id = await open(w, selfKind, 'rev-1', actor);
+      expect(
+        (await w.service.decide(actor, id, { decision: 'approve' })).refusal
+          ?.reason,
+      ).toBe(reason);
+      expect(await eventTypes(w, id)).toEqual(['created']);
+    });
+
+    it('refuses unmarked legacy self votes during consume', async () => {
+      const w = world();
+      const actor = w.principal('human', [DECIDE, SELF]);
+      const id = await open(w, selfKind, 'rev-1', actor);
+      await w.service.decide(actor, id, { decision: 'approve' });
+      // Simulate a legacy/out-of-band self vote without the service audit marker.
+      await w.db.query(
+        'UPDATE approval_events SET self_approved = ? WHERE request_id = ? AND tenant_id = ? AND type = ?',
+        false,
+        id,
+        w.tenantId,
+        'approved',
+      );
+      expect(
+        (await w.service.consume(w.requester, id, 'rev-1')).refusal?.reason,
+      ).toBe('unbacked_approval');
+    });
+
+    it('rolls back the self decision if its event cannot be appended', async () => {
+      const w = world();
+      const actor = w.principal('human', [DECIDE, SELF]);
+      const id = await open(w, selfKind, 'rev-1', actor);
+      const name = `self-event-failure-${w.tenantId}`;
+      GlobalInterceptors.register({
+        name,
+        beforeSave: async (instance) => {
+          if (
+            instance.constructor.name === 'ApprovalEvent' &&
+            Reflect.get(instance, 'requestId') === id &&
+            Reflect.get(instance, 'type') === 'approved'
+          )
+            throw new Error('self event failed');
+        },
+      });
+      try {
+        await expect(
+          w.service.decide(actor, id, { decision: 'approve' }),
+        ).rejects.toThrow('Operation failed: save in ApprovalEvent');
+      } finally {
+        GlobalInterceptors.unregister(name);
+      }
+      expect(await eventTypes(w, id)).toEqual(['created']);
+      expect(
+        (await w.service.decide(actor, id, { decision: 'approve' })).request
+          ?.status,
+      ).toBe('approved');
+    });
+
+    it('keeps tenant, current policy, and expiry gates for an opted-in requester', async () => {
+      const w = world();
+      const actor = w.principal('human', [DECIDE, SELF]);
+      const id = await open(w, selfKind, 'rev-1', actor);
+      const foreign = { ...actor, tenantId: randomUUID() };
+      expect(
+        (await w.service.decide(foreign, id, { decision: 'approve' })).refusal
+          ?.reason,
+      ).toBe('not_found');
+      await withTenant({ tenantId: foreign.tenantId }, async () => {
+        expect(
+          (await w.service.decide(actor, id, { decision: 'approve' })).refusal
+            ?.reason,
+        ).toBe('tenant_mismatch');
+      });
+      await w.service.setPolicy(
+        w.principal('human', [MANAGE_APPROVAL_POLICY_PERMISSION]),
+        selfKind,
+        { requiredPermission: EXTRA },
+      );
+      expect(
+        (await w.service.decide(actor, id, { decision: 'approve' })).refusal
+          ?.reason,
+      ).toBe('forbidden');
+      const permitted = { ...actor, can: () => true };
+      w.clock.advance(8 * 24 * HOUR);
+      expect(
+        (await w.service.decide(permitted, id, { decision: 'approve' })).refusal
+          ?.reason,
+      ).toBe('expired');
+    });
+  });
 
   describe('requestApproval', () => {
     it('opens a pending request with the kind defaults and a created event', async () => {

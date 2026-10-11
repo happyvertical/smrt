@@ -53,7 +53,7 @@ const opened = await approvals.requestApproval(author, {
   requestKey: `publish:${post.id}:${revisionHash(post)}`,
 });
 
-// Only a human of the same tenant, other than the requester, holding the
+// Only a human of the same tenant holding the
 // kind's permission, may decide, once.
 await approvals.decide(editor, opened.request.id, { decision: 'approve' });
 
@@ -123,3 +123,15 @@ for the design invariants.
 ## License
 
 MIT
+
+### Optional self-approval
+
+Set `selfApprovalPermission: 'content.approve-self'` in `defineApprovalKind` to
+allow a human requester holding that slug **and all normal decision permissions**
+to approve, reject, or request changes on their own request. Omit it to retain the
+default `self_approval` refusal. A self-decision records `selfApproved: true` and
+`selfApprovalPermission` on its immutable event. Its approval counts as one vote
+and can be consumed normally; larger quorums still require other humans.
+Deploy manifest migrations for the two new event columns before running the new
+service. Existing unmarked self events do not count. Recorded votes retain their
+authority if permissions subsequently change, just like ordinary approvals.

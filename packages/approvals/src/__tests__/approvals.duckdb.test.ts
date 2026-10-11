@@ -24,5 +24,5 @@ describe('approvals (DuckDB)', () => {
     await (db as { close?: () => Promise<void> }).close?.();
   });
 
-  defineApprovalSuite(() => db);
+  defineApprovalSuite(() => db, 'duckdb');
 });

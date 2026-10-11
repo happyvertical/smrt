@@ -96,6 +96,8 @@ export interface ApprovalKindInput {
   subject: string;
   /** Permission slug a principal must hold to decide a request of this kind. */
   permission: string;
+  /** Additional permission allowing a human requester to decide their own request. */
+  selfApprovalPermission?: string;
   /** Package defaults. */
   defaults?: ApprovalKindDefaults;
 }
@@ -105,6 +107,8 @@ export interface ApprovalKind {
   readonly key: string;
   readonly subject: string;
   readonly permission: string;
+  /** Optional opt-in; supplements every normal decision permission. */
+  readonly selfApprovalPermission?: string;
   readonly defaults: Readonly<Required<ApprovalKindDefaults>>;
 }
 
@@ -126,7 +130,7 @@ export type ApprovalRefusalReason =
   | 'not_pending'
   /** The request's expiry has passed. */
   | 'expired'
-  /** The requester tried to decide their own request. */
+  /** The requester lacks the explicit kind allowance to decide their own request. */
   | 'self_approval'
   /** A non-human principal tried to decide. */
   | 'not_human'
