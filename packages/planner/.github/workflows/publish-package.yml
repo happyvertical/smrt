@@ -1,0 +1,320 @@
+name: Publish package
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Publish the release, or retry only the npmjs mirror
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - mirror
+      mirror_version:
+        description: Existing primary version to mirror (required in mirror mode)
+        required: false
+        type: string
+
+concurrency:
+  group: publish-package-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  PRIMARY_REGISTRY: https://npm.happyvertical.com/
+  NPMJS_REGISTRY: https://registry.npmjs.org/
+
+jobs:
+  safeguards:
+    name: Verify release safeguards
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+    steps:
+      - name: Require main
+        run: |
+          if [ "${{ github.ref }}" != 'refs/heads/main' ]; then
+            echo '::error::Package publication is restricted to main.'
+            exit 1
+          fi
+
+      - name: Verify the release environment policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/environments/release" \
+            > "$RUNNER_TEMP/release-environment.json"
+          gh api "repos/$GITHUB_REPOSITORY/environments/release/deployment-branch-policies?per_page=100" \
+            > "$RUNNER_TEMP/release-branches.json"
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const environment = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/release-environment.json`));
+          const branches = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/release-branches.json`));
+          const policy = environment.deployment_branch_policy;
+          const onlyMain = branches.total_count === 1 &&
+            branches.branch_policies?.[0]?.name === 'main' &&
+            branches.branch_policies?.[0]?.type === 'branch';
+          if (!policy || policy.protected_branches !== false ||
+              policy.custom_branch_policies !== true || !onlyMain) {
+            throw new Error('release must use one custom deployment branch policy: main');
+          }
+          console.log('release environment is restricted to main');
+          NODE
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Verify package metadata
+        id: package
+        env:
+          MODE: ${{ inputs.mode }}
+          MIRROR_VERSION: ${{ inputs.mirror_version }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json'));
+          if (pkg.name !== '@happyvertical/smrt-planner') throw new Error('unexpected package name');
+          if (pkg.private === true) throw new Error('package is still private');
+          if (!/^0\.\d+\.\d+$/.test(pkg.version)) throw new Error('only 0.x releases are automated');
+          const mirrorVersion = process.env.MIRROR_VERSION?.trim() ?? '';
+          if (process.env.MODE === 'mirror' && !mirrorVersion) {
+            throw new Error('mirror mode requires mirror_version');
+          }
+          if (process.env.MODE === 'release' && mirrorVersion) {
+            throw new Error('mirror_version is only valid in mirror mode');
+          }
+          const version = process.env.MODE === 'mirror' ? mirrorVersion : pkg.version;
+          if (!/^0\.\d+\.\d+$/.test(version)) throw new Error('only 0.x releases are automated');
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          console.log(`selected ${process.env.MODE} version ${version}`);
+          NODE
+
+  build:
+    name: Build and verify package
+    needs: safeguards
+    if: inputs.mode == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 26.9.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm package
+      - run: pnpm test:release-workflow
+
+      - name: Pack and verify the consumer artifact
+        run: |
+          set -euo pipefail
+          mkdir release-artifact
+          pnpm pack --pack-destination release-artifact
+          mapfile -t tarballs < <(find release-artifact -maxdepth 1 -name '*.tgz')
+          [ "${#tarballs[@]}" -eq 1 ]
+          pnpm test:package -- "${tarballs[0]}"
+          openssl dgst -sha512 "${tarballs[0]}"
+
+      - name: Upload immutable package artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: smrt-planner-package-${{ needs.safeguards.outputs.version }}
+          path: release-artifact/*.tgz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-primary:
+    name: Publish primary registry
+    needs:
+      - safeguards
+      - build
+    if: inputs.mode == 'release'
+    environment: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 26.9.0
+
+      - name: Download verified package artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: smrt-planner-package-${{ needs.safeguards.outputs.version }}
+          path: release-artifact
+
+      - name: Publish or resume the primary release
+        env:
+          PRIMARY_TOKEN: ${{ secrets.NPM_HAPPYVERTICAL_PUBLISH_TOKEN }}
+          VERSION: ${{ needs.safeguards.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PRIMARY_TOKEN:-}" ]; then
+            echo '::error::NPM_HAPPYVERTICAL_PUBLISH_TOKEN is unavailable to the protected release job.'
+            exit 1
+          fi
+          rc="$RUNNER_TEMP/primary-npmrc"
+          umask 077
+          printf '//npm.happyvertical.com/:_authToken=%s\n' "$PRIMARY_TOKEN" > "$rc"
+          export NPM_CONFIG_USERCONFIG="$rc"
+          npm whoami --registry "$PRIMARY_REGISTRY" \
+            --@happyvertical:registry="$PRIMARY_REGISTRY" >/dev/null
+          tarball=$(find release-artifact -maxdepth 1 -name '*.tgz')
+          [ "$(printf '%s\n' "$tarball" | wc -l)" -eq 1 ]
+          local_integrity="sha512-$(openssl dgst -sha512 -binary "$tarball" | base64 -w0)"
+          args=(--registry "$PRIMARY_REGISTRY" --@happyvertical:registry="$PRIMARY_REGISTRY")
+          if remote=$(npm view "@happyvertical/smrt-planner@$VERSION" dist.integrity "${args[@]}" --prefer-online 2>&1); then
+            if [ "$remote" != "$local_integrity" ]; then
+              echo '::error::The primary already has this version with different contents; bump the version.'
+              exit 1
+            fi
+            echo "@happyvertical/smrt-planner@$VERSION already has the verified bytes; resuming."
+          elif printf '%s' "$remote" | grep -qE 'E404|404 Not Found'; then
+            npm publish "$tarball" "${args[@]}" --access public
+          else
+            echo '::error::Could not determine primary registry release state.'
+            exit 1
+          fi
+          for attempt in 1 2 3 4 5 6; do
+            visible=$(npm view "@happyvertical/smrt-planner@$VERSION" dist.integrity "${args[@]}" --prefer-online 2>/dev/null || true)
+            [ "$visible" = "$local_integrity" ] && exit 0
+            sleep $((attempt * 10))
+          done
+          echo '::error::Primary publication did not become visible with the verified integrity.'
+          exit 1
+
+  mirror-npmjs:
+    name: Mirror release to npmjs
+    needs:
+      - safeguards
+      - build
+      - publish-primary
+    if: inputs.mode == 'release'
+    environment: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 26.9.0
+
+      - name: Download the primary package artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: smrt-planner-package-${{ needs.safeguards.outputs.version }}
+          path: release-artifact
+
+      - name: Mirror the verified bytes
+        env:
+          NPMJS_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.safeguards.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NPMJS_TOKEN:-}" ]; then
+            echo '::error::NOT MIRRORED: NPM_TOKEN is unavailable to the protected release job.'
+            exit 1
+          fi
+          rc="$RUNNER_TEMP/npmjs-npmrc"
+          umask 077
+          printf '//registry.npmjs.org/:_authToken=%s\n' "$NPMJS_TOKEN" > "$rc"
+          export NPM_CONFIG_USERCONFIG="$rc"
+          tarball=$(find release-artifact -maxdepth 1 -name '*.tgz')
+          [ "$(printf '%s\n' "$tarball" | wc -l)" -eq 1 ]
+          local_integrity="sha512-$(openssl dgst -sha512 -binary "$tarball" | base64 -w0)"
+          args=(--registry "$NPMJS_REGISTRY" --@happyvertical:registry="$NPMJS_REGISTRY")
+          if current=$(npm view "@happyvertical/smrt-planner@$VERSION" dist.integrity "${args[@]}" --prefer-online 2>&1); then
+            [ "$current" = "$local_integrity" ] || { echo '::error::NOT MIRRORED: npmjs has different bytes for this version.'; exit 1; }
+            echo "@happyvertical/smrt-planner@$VERSION is already mirrored."
+            exit 0
+          elif ! printf '%s' "$current" | grep -qE 'E404|404 Not Found'; then
+            echo '::error::NOT MIRRORED: could not determine npmjs release state.'
+            exit 1
+          fi
+          npm publish "$tarball" "${args[@]}" --access public
+          for attempt in 1 2 3 4 5 6; do
+            current=$(npm view "@happyvertical/smrt-planner@$VERSION" dist.integrity "${args[@]}" --prefer-online 2>/dev/null || true)
+            [ "$current" = "$local_integrity" ] && exit 0
+            sleep $((attempt * 10))
+          done
+          echo '::error::NOT MIRRORED: npmjs did not expose the verified integrity.'
+          exit 1
+
+  retry-mirror:
+    name: Retry npmjs mirror from primary
+    needs: safeguards
+    if: inputs.mode == 'mirror'
+    environment: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 26.9.0
+
+      - name: Download primary bytes and retry npmjs
+        env:
+          PRIMARY_TOKEN: ${{ secrets.NPM_HAPPYVERTICAL_PUBLISH_TOKEN }}
+          NPMJS_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.safeguards.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PRIMARY_TOKEN:-}" ] || [ -z "${NPMJS_TOKEN:-}" ]; then
+            echo '::error::Mirror retry requires both organization publish credentials.'
+            exit 1
+          fi
+          rc="$RUNNER_TEMP/mirror-npmrc"
+          umask 077
+          printf '//npm.happyvertical.com/:_authToken=%s\n//registry.npmjs.org/:_authToken=%s\n' \
+            "$PRIMARY_TOKEN" "$NPMJS_TOKEN" > "$rc"
+          export NPM_CONFIG_USERCONFIG="$rc"
+          primary_args=(--registry "$PRIMARY_REGISTRY" --@happyvertical:registry="$PRIMARY_REGISTRY")
+          npmjs_args=(--registry "$NPMJS_REGISTRY" --@happyvertical:registry="$NPMJS_REGISTRY")
+          expected=$(npm view "@happyvertical/smrt-planner@$VERSION" dist.integrity "${primary_args[@]}" --prefer-online)
+          mkdir release-artifact
+          (cd release-artifact && npm pack "@happyvertical/smrt-planner@$VERSION" "${primary_args[@]}" >/dev/null)
+          tarball=$(find release-artifact -maxdepth 1 -name '*.tgz')
+          [ "$(printf '%s\n' "$tarball" | wc -l)" -eq 1 ]
+          actual="sha512-$(openssl dgst -sha512 -binary "$tarball" | base64 -w0)"
+          [ "$actual" = "$expected" ] || { echo '::error::Downloaded primary tarball failed its integrity check.'; exit 1; }
+          if current=$(npm view "@happyvertical/smrt-planner@$VERSION" dist.integrity "${npmjs_args[@]}" --prefer-online 2>&1); then
+            [ "$current" = "$expected" ] || { echo '::error::npmjs has different bytes for this version.'; exit 1; }
+            echo "@happyvertical/smrt-planner@$VERSION is already mirrored."
+            exit 0
+          elif ! printf '%s' "$current" | grep -qE 'E404|404 Not Found'; then
+            echo '::error::Could not determine npmjs release state.'
+            exit 1
+          fi
+          npm publish "$tarball" "${npmjs_args[@]}" --access public
+          for attempt in 1 2 3 4 5 6; do
+            current=$(npm view "@happyvertical/smrt-planner@$VERSION" dist.integrity "${npmjs_args[@]}" --prefer-online 2>/dev/null || true)
+            [ "$current" = "$expected" ] && exit 0
+            sleep $((attempt * 10))
+          done
+          echo '::error::npmjs did not expose the primary integrity after retry.'
+          exit 1
