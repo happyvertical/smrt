@@ -10,7 +10,7 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   in `SUGGESTED_EXPENSE_CATEGORIES`), `amount` integer minor units + ISO 4217
   `currency`, `incurredOn` (`YYYY-MM-DD` text: a calendar date, not an
   instant), `recordedAt`, `recordedByProfileId`, `paidBy` (`company` |
-  `person`) + `paidByProfileId`, `vendorId`, `commitmentId` /
+  `person` | `third-party`) + `paidByProfileId` / `paidByName`, `vendorId`, `commitmentId` /
   `commitmentLineId`, review fields, `reimbursable` / `reimbursedAt` /
   `reimbursementReference`.
 - **ExpenseReceipt** (`expense_receipts`): noun-specific asset join
@@ -97,6 +97,17 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   through the registry and returns `null` for a foreign-tenant row. One cost
   object per expense (columns, not a `SmrtPolymorphicAssociation` join) so a
   cost can never roll up into two jobs.
+
+## Optional financial facts
+
+`financialBreakdown` is guarded JSON text (`get/setFinancialBreakdown`), absent
+for legacy rows. Exact `getCostBasis()` returns null without facts. Complete facts
+reconcile subtotal + signed tax components to amount/currency; recoverable amounts
+are explicit. No tax law or customer pricing is inferred. `third-party` payer
+requires `paidByName` and is not reimbursable. Negative amounts require `refundOfId`
+(same-owner/currency positive source, checked through the bound executor).
+All three fields participate in the reviewed-money freeze. See the README and
+[financial facts test matrix](agents/financial-facts-test-matrix.md).
 
 ## Cross-package references
 

@@ -21,7 +21,13 @@ import {
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
+  expenseCostBasis,
+  parseExpenseFinancialBreakdown,
+} from '../financial-facts.js';
+import {
+  type ExpenseCostBasis,
   ExpenseError,
+  type ExpenseFinancialBreakdown,
   type ExpenseOptions,
   type ExpensePayer,
   type ExpenseReviewStatus,
@@ -67,6 +73,9 @@ const REVIEW_TRANSITIONS: Record<
  */
 const LOCKED_WHEN_REVIEWED = [
   ['amount', 'amount'],
+  ['financialBreakdown', 'financial_breakdown'],
+  ['paidByName', 'paid_by_name'],
+  ['refundOfId', 'refund_of_id'],
   ['currency', 'currency'],
   ['incurredOn', 'incurred_on'],
   ['recordedAt', 'recorded_at'],
@@ -184,13 +193,25 @@ export class Expense extends SmrtObject {
   @field({ type: 'text' })
   description: string = '';
 
-  /** Amount in integer minor units (cents). `= 0` makes the column INTEGER. */
+  /** Integer minor units; negative only for a refund linked by refundOfId. */
   @field({ type: 'integer' })
   amount: number = 0;
 
   /** ISO 4217 currency code, upper case. Required. */
   @field({ type: 'text' })
   currency: string = '';
+
+  /** Optional supplier facts as guarded JSON text; null or empty means unknown. */
+  @field({ type: 'text' })
+  financialBreakdown: string | null = null;
+
+  /** Name of the third party who paid; no employee reimbursement is implied. */
+  @field({ type: 'text' })
+  paidByName: string | null = null;
+
+  /** Positive source expense reversed by this negative refund; no settlement. */
+  @foreignKey('Expense', { onDelete: 'RESTRICT' })
+  refundOfId: string | null = null;
 
   /** Calendar date the cost was incurred, `YYYY-MM-DD`. Required. */
   @field({ type: 'text' })
@@ -203,7 +224,7 @@ export class Expense extends SmrtObject {
   @crossPackageRef(PROFILE)
   recordedByProfileId: string | null = null;
 
-  /** `company`, or `person` (then {@link Expense.paidByProfileId} is set). */
+  /** Company, named person (profile), or named third party (paidByName). */
   @field({ type: 'text' })
   paidBy: ExpensePayer = 'company';
 
@@ -272,6 +293,10 @@ export class Expense extends SmrtObject {
       this.description = options.description;
     if (options.amount !== undefined) this.amount = options.amount;
     if (options.currency !== undefined) this.currency = options.currency;
+    if (options.financialBreakdown !== undefined)
+      this.financialBreakdown = options.financialBreakdown;
+    if (options.paidByName !== undefined) this.paidByName = options.paidByName;
+    if (options.refundOfId !== undefined) this.refundOfId = options.refundOfId;
     if (options.incurredOn !== undefined) this.incurredOn = options.incurredOn;
     if (options.recordedAt !== undefined) this.recordedAt = options.recordedAt;
     if (options.recordedByProfileId !== undefined)
@@ -290,6 +315,33 @@ export class Expense extends SmrtObject {
       this.reimbursedAt = options.reimbursedAt;
     if (options.reimbursementReference !== undefined)
       this.reimbursementReference = options.reimbursementReference;
+  }
+
+  /** Read validated supplier facts, or null when none were recorded. */
+  getFinancialBreakdown(): ExpenseFinancialBreakdown | null {
+    return parseExpenseFinancialBreakdown(
+      this.financialBreakdown,
+      this.amount,
+      this.currency,
+    );
+  }
+
+  /** Set complete supplier facts; null explicitly clears facts on an unreviewed row. */
+  setFinancialBreakdown(value: ExpenseFinancialBreakdown | null): void {
+    if (value === null) {
+      this.financialBreakdown = null;
+      return;
+    }
+    expenseCostBasis(value, this.amount, this.currency);
+    this.financialBreakdown = JSON.stringify(value);
+  }
+
+  /** Return exact retained purchase cost; legacy unknown tax facts return null. */
+  getCostBasis(): ExpenseCostBasis | null {
+    const facts = this.getFinancialBreakdown();
+    return facts === null
+      ? null
+      : expenseCostBasis(facts, this.amount, this.currency);
   }
 
   /** True when the person who paid has been paid back. */
@@ -485,6 +537,7 @@ export class Expense extends SmrtObject {
     this.assertReviewedLock(persisted);
     await this.assertCommitment(persisted);
     await this.assertVendor(persisted);
+    await this.assertRefund();
 
     if (!this.recordedAt) this.recordedAt = new Date();
     try {
@@ -517,7 +570,14 @@ export class Expense extends SmrtObject {
 
   private validateShape(): void {
     const label = this.id || '<new>';
-    assertMinorUnits('Expense', label, 'amount', this.amount);
+    assertMinorUnits(
+      'Expense',
+      label,
+      'amount',
+      this.refundOfId && typeof this.amount === 'number'
+        ? Math.abs(this.amount)
+        : this.amount,
+    );
     assertIsoCurrency('Expense', label, this.currency);
     assertIsoDate('Expense', label, 'incurredOn', this.incurredOn);
     if (!CATEGORY_PATTERN.test(this.category) || this.category.length > 64) {
@@ -537,10 +597,34 @@ export class Expense extends SmrtObject {
     if (this.costObjectType) {
       assertQualifiedClassName('Expense', label, this.costObjectType);
     }
-    if (this.paidBy !== 'company' && this.paidBy !== 'person') {
+    this.getFinancialBreakdown();
+    if (
+      this.paidBy === 'third-party'
+        ? typeof this.paidByName !== 'string' || !this.paidByName.trim()
+        : this.paidByName !== null && this.paidByName !== ''
+    ) {
       throw new ExpenseError(
         'EXPENSE_INVALID',
-        `Expense ${label}: paidBy must be 'company' or 'person'.`,
+        'Only a third-party payer requires paidByName.',
+      );
+    }
+    if (
+      this.refundOfId !== null &&
+      (typeof this.refundOfId !== 'string' || !this.refundOfId.trim())
+    ) {
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'refundOfId must name a source expense or be null.',
+      );
+    }
+    if (
+      this.paidBy !== 'company' &&
+      this.paidBy !== 'person' &&
+      this.paidBy !== 'third-party'
+    ) {
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        `Expense ${label}: paidBy must be 'company', 'person' or 'third-party'.`,
       );
     }
     if (this.paidBy === 'person' && !this.paidByProfileId) {
@@ -550,7 +634,7 @@ export class Expense extends SmrtObject {
           '(paidByProfileId).',
       );
     }
-    if (this.paidBy === 'company' && this.paidByProfileId) {
+    if (this.paidBy !== 'person' && this.paidByProfileId) {
       throw new ExpenseError(
         'EXPENSE_INVALID',
         `Expense ${label}: paidByProfileId is only set when paidBy is 'person'.`,
@@ -729,6 +813,33 @@ export class Expense extends SmrtObject {
         'EXPENSE_VENDOR_MISMATCH',
         `Expense ${this.id || '<new>'}: vendor ${this.vendorId} was not ` +
           "found in this expense's tenant.",
+      );
+    }
+  }
+
+  private async assertRefund(): Promise<void> {
+    if (!this.refundOfId) return;
+    if (this.refundOfId === this.id || this.amount >= 0) {
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'A refund must be negative and name a different positive source expense.',
+      );
+    }
+    const { ExpenseCollection } = await import(
+      '../collections/ExpenseCollection.js'
+    );
+    const expenses = await ExpenseCollection.create({ db: this.db });
+    const source = await expenses.get({ id: this.refundOfId });
+    if (
+      !source ||
+      !sameTenant(source.tenantId, effectiveTenant(this.tenantId)) ||
+      source.currency !== this.currency ||
+      source.amount <= 0 ||
+      source.refundOfId
+    ) {
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Refund source must be a positive non-refund expense in the same tenant and currency.',
       );
     }
   }

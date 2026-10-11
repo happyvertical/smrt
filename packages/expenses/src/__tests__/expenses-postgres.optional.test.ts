@@ -43,6 +43,8 @@ import {
   hideReceiptFromTenantReads,
 } from './helpers/expense-suite.js';
 
+import { proveFinancialFactsMigration } from './helpers/financial-facts-migration.js';
+
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
 const PACKAGE_TABLES = ['expenses', 'expense_receipts'];
@@ -121,8 +123,7 @@ describePostgres('expenses on PostgreSQL', () => {
       url: String(url),
       classes: [],
     });
-    const migrated = await dbMigrate(db);
-    expect(migrated.applied).toBe(true);
+    await proveFinancialFactsMigration(db, 'postgres');
   });
 
   afterAll(async () => {
@@ -142,6 +143,9 @@ describePostgres('expenses on PostgreSQL', () => {
         id: 'uuid',
         tenant_id: 'uuid',
         amount: 'bigint',
+        financial_breakdown: 'text',
+        paid_by_name: 'text',
+        refund_of_id: 'uuid',
         currency: 'text',
         incurred_on: 'text',
         cost_object_type: 'text',
