@@ -23,5 +23,5 @@ describe('approvals (SQLite)', () => {
     await (db as { close?: () => Promise<void> }).close?.();
   });
 
-  defineApprovalSuite(() => db);
+  defineApprovalSuite(() => db, 'sqlite');
 });

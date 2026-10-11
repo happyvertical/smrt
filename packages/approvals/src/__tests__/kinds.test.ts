@@ -58,6 +58,8 @@ describe('defineApprovalKind', () => {
     [{ subject: '@scope/pkg' }],
     [{ permission: 'approve' }],
     [{ permission: '' }],
+    [{ selfApprovalPermission: '' }],
+    [{ selfApprovalPermission: 'invalid' }],
     [{ defaults: { requiredApprovals: 0 } }],
     [{ defaults: { requiredApprovals: 1.5 } }],
     [{ defaults: { requiredApprovals: 26 } }],
@@ -72,6 +74,23 @@ describe('defineApprovalKind', () => {
         ...override,
       }),
     ).toThrow(expect.objectContaining({ code: 'APPROVAL_INVALID' }));
+  });
+
+  it('includes the self-approval opt-in in registry identity', () => {
+    const input = {
+      key: 'kinds-test.self',
+      subject: '@happyvertical/smrt-social:SocialPost',
+      permission: 'social.approve-post',
+      selfApprovalPermission: 'social.approve-self',
+    };
+    const registered = defineApprovalKind(input);
+    expect(defineApprovalKind(input)).toBe(registered);
+    expect(registered.selfApprovalPermission).toBe(
+      input.selfApprovalPermission,
+    );
+    expect(() =>
+      defineApprovalKind({ ...input, selfApprovalPermission: undefined }),
+    ).toThrow(expect.objectContaining({ code: 'APPROVAL_KIND_CONFLICT' }));
   });
 
   it('reports an unknown kind', () => {

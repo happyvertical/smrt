@@ -34,6 +34,8 @@ export interface ApprovalEventOptions extends SmrtObjectOptions {
   actorId?: string;
   actorType?: ApprovalPrincipalType;
   reason?: string;
+  selfApproved?: boolean;
+  selfApprovalPermission?: string;
   subjectRevisionHash?: string;
   sequence?: number;
   voteKey?: string | null;
@@ -120,6 +122,14 @@ export class ApprovalEvent extends SmrtObject {
   @field({ type: 'datetime', readonly: true })
   occurredAt: Date | null = null;
 
+  /** Whether the requester used the explicit self-decision allowance. */
+  @field({ type: 'boolean', readonly: true, default: false })
+  selfApproved: boolean = false;
+
+  /** Permission checked when this self-decision was recorded. Empty otherwise. */
+  @field({ type: 'text', readonly: true, default: '' })
+  selfApprovalPermission: string = '';
+
   constructor(options: ApprovalEventOptions = {}) {
     super(options);
     adoptServiceWrite(this, options);
@@ -129,6 +139,10 @@ export class ApprovalEvent extends SmrtObject {
     if (options.actorId !== undefined) this.actorId = options.actorId;
     if (options.actorType !== undefined) this.actorType = options.actorType;
     if (options.reason !== undefined) this.reason = options.reason;
+    if (options.selfApproved !== undefined)
+      this.selfApproved = options.selfApproved;
+    if (options.selfApprovalPermission !== undefined)
+      this.selfApprovalPermission = options.selfApprovalPermission;
     if (options.subjectRevisionHash !== undefined)
       this.subjectRevisionHash = options.subjectRevisionHash;
     if (options.sequence !== undefined) this.sequence = options.sequence;

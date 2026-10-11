@@ -141,6 +141,6 @@ describePostgres('approvals on PostgreSQL', () => {
   });
 
   describe('behaviour', () => {
-    defineApprovalSuite(() => db);
+    defineApprovalSuite(() => db, 'postgres');
   });
 });

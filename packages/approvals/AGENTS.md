@@ -13,7 +13,8 @@ before changing a transition, the guard predicates, or the surface.
   insert, in one transaction. Zero rows means a concurrent writer won: retry
   from a fresh read, never write anyway. Keep the predicate the arbiter; the
   in-transaction reads only classify refusals.
-- Only `human` principals decide; never the requester; one decision per actor
+- Only `human` principals decide; requesters additionally need the kind's
+  explicit `selfApprovalPermission`; one decision per actor
   (unique `(request_id, vote_key)`); quorum counts distinct approver events.
   Agents and services may request, consume, and expire.
 - Tenant: every statement names `tenant_id`, the work runs in
