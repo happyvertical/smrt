@@ -4,6 +4,7 @@
  */
 
 import {
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -65,16 +66,23 @@ export class Role extends SmrtObject implements RoleContract {
   /**
    * Display name for the role
    */
+  @field({
+    description: 'The name of this set of permissions.',
+  })
   name: string = '';
 
   /**
    * Description of the role
    */
+  @field({ description: 'What this role allows and who should receive it.' })
   description: string = '';
 
   /**
    * Whether this is a system role (cannot be deleted)
    */
+  @field({
+    description: 'Whether this is a built-in role protected from deletion.',
+  })
   isSystem: boolean = false;
 
   /**
@@ -86,6 +94,10 @@ export class Role extends SmrtObject implements RoleContract {
    * pre-existing resolver behavior. Flag structural roles like a network-level
    * owner/admin; leave per-tenant roles like member/viewer unflagged.
    */
+  @field({
+    description:
+      'Whether this role can give members access to organizations below theirs.',
+  })
   inheritsToDescendants: boolean = false;
 
   constructor(options: RoleOptions = {}) {

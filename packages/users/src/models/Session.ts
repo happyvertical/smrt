@@ -121,6 +121,7 @@ export class Session extends SmrtObject {
    * User who owns this session
    */
   @foreignKey('User')
+  @field({ description: 'The person signed in through this session.' })
   userId: string = '';
 
   /**
@@ -133,7 +134,10 @@ export class Session extends SmrtObject {
   /**
    * Session status
    */
-  @field({ type: 'text' })
+  @field({
+    description: 'Whether this sign-in session is active or has ended.',
+    type: 'text',
+  })
   status: SessionStatus = SessionStatus.ACTIVE;
 
   /**
@@ -142,27 +146,41 @@ export class Session extends SmrtObject {
    * Indexed: `deleteExpired()` — and the retention sweep that now schedules it
    * (#2375) — scans this column on every pass.
    */
-  @field({ type: 'datetime', indexed: true })
+  @field({
+    description:
+      'When this session expires unless renewed within its allowed limits.',
+    type: 'datetime',
+    indexed: true,
+  })
   expiresAt: Date = new Date();
 
   /**
    * User agent string from the browser
    */
+  @field({
+    description:
+      'The browser or device reported when this session was created.',
+  })
   userAgent: string = '';
 
   /**
    * IP address of the client
    */
+  @field({ description: 'The network address reported for this session.' })
   ipAddress: string = '';
 
   /**
    * Last activity timestamp (updated on each request)
    */
+  @field({ description: 'When this session was last used.' })
   lastAccessedAt: Date = new Date();
 
   /**
    * Custom session data (JSON serializable)
    */
+  @field({
+    description: 'Additional session details maintained by your application.',
+  })
   data: Record<string, unknown> = {};
 
   /**
@@ -170,7 +188,11 @@ export class Session extends SmrtObject {
    * Null for sessions minted before this column existed or by hosts that do
    * not set it.
    */
-  @field({ type: 'text', nullable: true })
+  @field({
+    description: 'The sign-in method used to establish this session.',
+    type: 'text',
+    nullable: true,
+  })
   authMethod: SessionAuthMethod | null = null;
 
   /**

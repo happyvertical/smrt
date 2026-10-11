@@ -8,7 +8,7 @@
 // Register the package manifest before this module's @smrt() decorator
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
-import { smrt } from '@happyvertical/smrt-core';
+import { field, smrt } from '@happyvertical/smrt-core';
 import type { EmailOptions } from '../types';
 import { Message } from './Message';
 
@@ -20,31 +20,66 @@ import { Message } from './Message';
 })
 export class Email extends Message {
   // RFC 822 fields
+  @field({
+    description:
+      'The email reference assigned by the sender for tracking replies.',
+  })
   messageId = ''; // RFC 822 Message-ID header
+  @field({
+    description: 'The sender-assigned reference of the email being replied to.',
+  })
   inReplyTo = '';
 
   // Additional recipients
+  @field({ description: 'Recipients receiving a visible copy of this email.' })
   ccAddresses = '';
+  @field({
+    description:
+      'Recipients receiving a copy without appearing in the visible recipient list.',
+  })
   bccAddresses = '';
+  @field({ description: 'The address replies should be sent to.' })
   replyToAddress = '';
+  @field({ description: 'The name associated with the reply address.' })
   replyToName = '';
 
   // Email-specific content
+  @field({ description: 'The plain-text version of the email.' })
   textBody = '';
+  @field({ description: 'The formatted version of the email.' })
   htmlBody = '';
 
   // Location
+  @field({
+    description:
+      'The mailbox folder reference supplied by the email connection.',
+  })
   folderId = '';
+  @field({
+    description: 'The location of this email within the mailbox folders.',
+  })
   folderPath = '';
+  @field({
+    description: 'Labels applied to this email by the mailbox provider.',
+  })
   labels = ''; // JSON array (Gmail)
+  @field({ description: 'Mailbox markers such as read, answered, or flagged.' })
   flags = ''; // JSON array (IMAP)
 
   // Email-specific status flags
+  @field({ description: 'Whether this email has been replied to.' })
   isAnswered = false;
+  @field({ description: 'Whether this email is saved as an unfinished draft.' })
   isDraft = false;
 
   // Raw data
+  @field({
+    description: 'The original email content as received from the mail server.',
+  })
   rawMessage = '';
+  @field({
+    description: 'Delivery and routing details included with the email.',
+  })
   headers = ''; // JSON object
 
   constructor(options: EmailOptions = {}) {

@@ -8,7 +8,7 @@
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
 import type { FetchOptions, GetEmailClientOptions } from '@happyvertical/email';
-import { smrt } from '@happyvertical/smrt-core';
+import { field, smrt } from '@happyvertical/smrt-core';
 import type {
   EmailAccountOptions,
   MessageSenderInterface,
@@ -25,7 +25,11 @@ import { Account } from './Account';
   cli: { include: ['list', 'get'] },
 })
 export class EmailAccount extends Account {
+  @field({ description: 'The email address associated with this mailbox.' })
   email = '';
+  @field({
+    description: 'The time in minutes between scheduled mailbox checks.',
+  })
   syncIntervalMinutes = 60;
 
   constructor(options: EmailAccountOptions = {}) {
