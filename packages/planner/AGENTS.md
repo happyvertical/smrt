@@ -231,9 +231,10 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
 - Package name is `@happyvertical/smrt-planner`. Publish only with
   `.github/workflows/publish-package.yml` from `main`: the workflow verifies the `release` environment's
   exact `main` branch policy before a secret-bearing job, then publishes one validated tarball to
-  npm.happyvertical.com and mirrors those bytes to npmjs. Its planner-specific secrets must live on that
-  environment so broad organization secrets cannot substitute. Use the mirror-only dispatch to retry
-  npmjs from primary bytes. Never publish from a workstation; see [releasing](docs/releasing.md).
+  npm.happyvertical.com and mirrors those bytes to npmjs. Only jobs bound to that environment may read
+  the existing organization publish credentials; no pull-request workflow may reference them. Their
+  organization-wide visibility remains tracked in `happyvertical/iac#2165`. Use the mirror-only dispatch
+  to retry npmjs from primary bytes. Never publish from a workstation; see [releasing](docs/releasing.md).
 - `src/lib/ai/`: THINK (the language model), HEAR (voice typing) and SPEAK
   (read replies aloud with `speechSynthesis`) as one store. `state.svelte.ts`
   (`AiState`, singleton in `instance.ts`) owns the `AssistantSession`, the

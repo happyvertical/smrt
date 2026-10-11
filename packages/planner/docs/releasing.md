@@ -7,24 +7,21 @@ best-effort mirror. Workstations never publish the package.
 
 ## One-time protected environment setup
 
-An owner must finish this setup before merging the publication change. Create
-the `release` environment with one custom deployment branch policy: the branch
-`main`. Do not use the broader "protected branches" option, and do not add tag
-or wildcard policies. The workflow reads the environment policy through the
-GitHub API and stops before any secret-bearing job if it is missing or broader
-than that exact rule.
+Create the `release` environment with one custom deployment branch policy: the
+branch `main`. Do not use the broader "protected branches" option, and do not
+add tag or wildcard policies. The workflow reads the environment policy through
+the GitHub API and stops before any credential-bearing job if it is missing or
+broader than that exact rule.
 
-Store these secrets directly on the `release` environment:
-
-- `PLANNER_NPM_HAPPYVERTICAL_PUBLISH_TOKEN`: a scoped publisher for
-  `https://npm.happyvertical.com/`.
-- `PLANNER_NPMJS_TOKEN`: the npmjs token allowed to publish the package mirror.
-
-The planner-specific names are deliberate. The workflow never reads the
-legacy organization secrets `NPM_HAPPYVERTICAL_PUBLISH_TOKEN` or `NPM_TOKEN`,
-so organization-secret visibility cannot silently substitute for missing
-environment protection. Enter values from a private machine and never paste
-them into an issue, pull request, command log, or workflow input.
+The protected publication jobs use the existing organization secrets
+`NPM_HAPPYVERTICAL_PUBLISH_TOKEN` and `NPM_TOKEN`. No pull-request workflow
+references either secret, and every job that does reference one declares the
+`release` environment. The environment therefore gates this publication path,
+but it does not narrow the credentials' organization-wide repository exposure.
+Rotation and migration to environment-local secrets remain tracked in
+[`happyvertical/iac#2165`](https://github.com/happyvertical/iac/issues/2165).
+Never paste secret values into an issue, pull request, command log, or workflow
+input.
 
 With GitHub CLI, an owner can create the environment and branch rule with:
 
@@ -36,15 +33,11 @@ gh api --method PUT \
 gh api --method POST \
   repos/happyvertical/smrt-planner/environments/release/deployment-branch-policies \
   -f name=main -f type=branch
-gh secret set PLANNER_NPM_HAPPYVERTICAL_PUBLISH_TOKEN \
-  --env release --repo happyvertical/smrt-planner
-gh secret set PLANNER_NPMJS_TOKEN \
-  --env release --repo happyvertical/smrt-planner
 ```
 
-The `gh secret set` commands prompt for the values. If the environment or
-policies already exist, inspect them before changing anything; there must be
-exactly one deployment branch policy when the workflow is dispatched.
+If the environment or policies already exist, inspect them before changing
+anything; there must be exactly one deployment branch policy when the workflow
+is dispatched.
 
 ## Publish a version
 

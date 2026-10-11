@@ -168,12 +168,12 @@ jobs:
 
       - name: Publish or resume the primary release
         env:
-          PRIMARY_TOKEN: ${{ secrets.PLANNER_NPM_HAPPYVERTICAL_PUBLISH_TOKEN }}
+          PRIMARY_TOKEN: ${{ secrets.NPM_HAPPYVERTICAL_PUBLISH_TOKEN }}
           VERSION: ${{ needs.safeguards.outputs.version }}
         run: |
           set -euo pipefail
           if [ -z "${PRIMARY_TOKEN:-}" ]; then
-            echo '::error::The release environment is missing PLANNER_NPM_HAPPYVERTICAL_PUBLISH_TOKEN.'
+            echo '::error::NPM_HAPPYVERTICAL_PUBLISH_TOKEN is unavailable to the protected release job.'
             exit 1
           fi
           rc="$RUNNER_TEMP/primary-npmrc"
@@ -231,12 +231,12 @@ jobs:
 
       - name: Mirror the verified bytes
         env:
-          NPMJS_TOKEN: ${{ secrets.PLANNER_NPMJS_TOKEN }}
+          NPMJS_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ needs.safeguards.outputs.version }}
         run: |
           set -euo pipefail
           if [ -z "${NPMJS_TOKEN:-}" ]; then
-            echo '::error::NOT MIRRORED: the release environment is missing PLANNER_NPMJS_TOKEN.'
+            echo '::error::NOT MIRRORED: NPM_TOKEN is unavailable to the protected release job.'
             exit 1
           fi
           rc="$RUNNER_TEMP/npmjs-npmrc"
@@ -279,13 +279,13 @@ jobs:
 
       - name: Download primary bytes and retry npmjs
         env:
-          PRIMARY_TOKEN: ${{ secrets.PLANNER_NPM_HAPPYVERTICAL_PUBLISH_TOKEN }}
-          NPMJS_TOKEN: ${{ secrets.PLANNER_NPMJS_TOKEN }}
+          PRIMARY_TOKEN: ${{ secrets.NPM_HAPPYVERTICAL_PUBLISH_TOKEN }}
+          NPMJS_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ needs.safeguards.outputs.version }}
         run: |
           set -euo pipefail
           if [ -z "${PRIMARY_TOKEN:-}" ] || [ -z "${NPMJS_TOKEN:-}" ]; then
-            echo '::error::Mirror retry requires both planner-specific release environment secrets.'
+            echo '::error::Mirror retry requires both organization publish credentials.'
             exit 1
           fi
           rc="$RUNNER_TEMP/mirror-npmrc"
