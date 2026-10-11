@@ -33,6 +33,7 @@ import {
   appendChange,
   isEmbeddedDatabase,
   isUniqueViolationError,
+  withEmbeddedWriteQueue,
   withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
 import {
@@ -1075,7 +1076,12 @@ export class ApprovalService {
         `The principal's tenant does not match the active tenant context.`,
       );
     }
-    return await withTenant({ tenantId: principal.tenantId }, fn);
+    // Keep post-commit reads with embedded writers on their shared connection.
+    return await withEmbeddedWriteQueue(
+      this.db,
+      isEmbeddedDatabase(this.db),
+      () => withTenant({ tenantId: principal.tenantId }, fn),
+    );
   }
 
   /**
