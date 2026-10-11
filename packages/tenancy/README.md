@@ -111,7 +111,7 @@ host callback before allowing relationship changes.
 | `withTenant(ctx, fn)` | Run code scoped to a tenant |
 | `withTenantSync(ctx, fn)` | Synchronous variant |
 | `withSystemContext(fn)` | Bypass all tenant checks (admin/migrations) |
-| `withSuperAdminBypass(fn)` | Keep tenant context but disable auto-filtering |
+| `withSuperAdminBypass(fn)` | Keep tenant context; skip tenant enforcement only for classes with `allowSuperAdminBypass: true` |
 | `enterTenantContext(ctx)` | Enter context without callback (for middleware) |
 
 ### Context Accessors

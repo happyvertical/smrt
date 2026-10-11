@@ -117,6 +117,8 @@ export async function runKitchen(
         ' ',
       ),
     );
+    // The token rides in the address's fragment, so this is the link to open.
+    log(`Open ${server.openUrl}`);
     log(
       ai
         ? `Chat is answered by ${ai.label}.`
@@ -128,7 +130,7 @@ export async function runKitchen(
     );
     options.onReady?.(server);
     if (options.open)
-      (options.overrides?.openBrowser ?? openInBrowser)(server.url);
+      (options.overrides?.openBrowser ?? openInBrowser)(server.openUrl);
     return await (options.stop
       ? Promise.race([server.applied, options.stop])
       : server.applied);

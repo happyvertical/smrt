@@ -205,7 +205,7 @@ describe('planner.config.json', () => {
     expect(response.status).toBe(200);
     expect(await readJson(response)).toEqual({
       inference: { mode: 'host', host: { endpoint: '/api/planner/chat' } },
-      kitchen: { endpoint: '/api/kitchen/cookbook', token: 'test-token' },
+      kitchen: { endpoint: '/api/kitchen/cookbook' },
     });
   });
 
@@ -215,10 +215,38 @@ describe('planner.config.json', () => {
     const body = await (await fetch(`${origin}/planner.config.json`)).json();
     expect(body).toEqual({
       inference: { mode: 'browser' },
-      kitchen: { endpoint: '/api/kitchen/cookbook', token: 'test-token' },
+      kitchen: { endpoint: '/api/kitchen/cookbook' },
     });
     const chat = await fetch(`${origin}/api/planner/chat`, json({}));
     expect(chat.status).toBe(503);
+  });
+
+  it('never serves the token: it is only in the address to open, as a fragment', async () => {
+    const { origin, server } = await start();
+    expect(server.openUrl).toBe(`${server.url}#kitchen=test-token`);
+    expect(server.url).not.toContain('test-token');
+    // Any local process that can send this server's Host reads these. None
+    // may carry the token, whatever the method, path or error.
+    for (const path of [
+      '/planner.config.json',
+      '/',
+      '/index.html',
+      '/nope.txt',
+      '/api/planner/chat',
+      '/api/kitchen/cookbook',
+    ]) {
+      for (const method of ['GET', 'HEAD', 'POST']) {
+        const response = await fetch(`${origin}${path}`, {
+          method,
+          headers: { host: `127.0.0.1:${server.port}` },
+        });
+        const text = method === 'HEAD' ? '' : await response.text();
+        const headers = JSON.stringify([...response.headers]);
+        expect(text + headers, `${method} ${path}`).not.toContain('test-token');
+      }
+    }
+    const config = await (await fetch(`${origin}/planner.config.json`)).json();
+    expect(JSON.stringify(config)).not.toContain('token');
   });
 
   it('draws the token at random when none is given', async () => {
@@ -552,7 +580,10 @@ describe('runKitchen', () => {
       },
     });
     expect(applied).toMatchObject({ ok: true, dir: project, mode: 'new' });
-    expect(opened).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
+    // The token rides in the fragment of the address that is opened and printed.
+    expect(opened).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/#kitchen=run-token$/);
+    expect(lines.join('\n')).toContain(`Open ${opened}`);
+    expect(lines.join('\n')).not.toMatch(/at http[^\s]*run-token/);
     expect(lines.join('\n')).toContain('Chat is answered by stub (test-model)');
     expect(existsSync(join(project, 'smrt.cookbook.json'))).toBe(true);
   });

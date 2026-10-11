@@ -67,8 +67,8 @@ not only collection list/get:
   read another tenant's row and `getId()` can never adopt another tenant's
   same-slug row id (which would steer a later `save()` onto the foreign row).
   Required-mode classes fail closed (`TenantContextError`) when hydrated
-  outside a tenant context; `withSystemContext()` / super-admin bypass remain
-  the explicit cross-tenant paths.
+  outside a tenant context; `withSystemContext()` / super-admin bypass (opted-in
+  classes only) remain the explicit cross-tenant paths.
 - **Vector search**: `semanticSearch()` / `findSimilarToEmbedding()` restrict
   candidates to the tenant's rows BEFORE top-K ranking (the tenant predicate is
   resolved through the `beforeList` pipeline), so results are never starved by
@@ -78,9 +78,9 @@ not only collection list/get:
   (`__collection__:<tenantId>`) under an active tenant context. Isolation is
   strict: tenant-keyed memory never falls back to the shared `__collection__`
   key, and memory learned outside a tenant context is invisible inside one.
-  Two edge semantics to know: under `withSuperAdminBypass()` reads skip
-  filtering but memory still keys to the active tenant (scoped tighter, not a
-  leak), and an empty-string tenant id resolves to the shared key (an
+  Two edge semantics to know: under `withSuperAdminBypass()` reads of an
+  opted-in class skip filtering but memory still keys to the active tenant
+  (scoped tighter, not a leak), and an empty-string tenant id resolves to the shared key (an
   empty-string tenant is a misconfiguration — real tenant ids are uuids).
 
 ## Registration — Two Patterns
@@ -116,7 +116,7 @@ Modes: `'required'` (default — throws without context) or `'optional'` (passes
 
 ## Super Admin Bypass
 
-`withSuperAdminBypass()` keeps tenant context but disables auto-filtering. Different from `withSystemContext()` which removes context entirely.
+`withSuperAdminBypass()` keeps tenant context and lifts tenant enforcement (list/get filtering, raw-SQL policy, save/delete validation) **only for classes that opt in with `allowSuperAdminBypass: true`** (`@TenantScoped({ allowSuperAdminBypass: true })` or `@smrt({ tenantScoped: { allowSuperAdminBypass: true } })`). Every other tenant-scoped class — the flag defaults to `false` — stays scoped to the caller's tenant under bypass; unresolved config fails closed (#2973). Different from `withSystemContext()`, which removes context entirely and skips all checks.
 
 ## Gotchas
 

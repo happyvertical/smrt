@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.55.12
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - never re-run resolve() from createSessionHandler's session fallback (#3773) (users)
+  - open the one-time token as a URL fragment, not in planner.config.json (#3750) (#3772) (kitchen)
+  - hosted STI subclass routes authorize the base's permission slugs (#3771) (core)
+- @happyvertical/smrt-config@0.55.12
+  - @happyvertical/smrt-scanner@0.55.12
+  - @happyvertical/smrt-types@0.55.12
+
 ## 0.55.11
 
 ### Patch Changes
