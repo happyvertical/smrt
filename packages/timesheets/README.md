@@ -354,3 +354,46 @@ long as clients can retry their ids.
 `./rollup` provides per-person integer-second regular/overtime rollups, immutable
 confirmation, and attributed append-only adjustments. Consumer resolvers own
 calendar/timezone, holiday and overtime rules. See the [contract and example](agents/period-rollup.md).
+
+## Effective-dated labour pricing
+
+`DatedLabourCommercialResolver` is an opt-in `ServiceCommercialResolver` for
+host-authorized human labour. Supply `DatedLabourCommercialInput` with an explicit
+`tenantId`, `participantProfileId`, `workDate` (`YYYY-MM-DD`), uppercase three-letter
+`currency`, `billable` boolean, and `schedule`. Each `DatedLabourRatePeriod` has
+`effectiveFrom`, optional `effectiveUntil` (exclusive), `currency`, and independent
+`customer`, `wage`, and `burden` rates. Each `DatedLabourRate` supplies `id`, `version`,
+and `rateMinor`: nonnegative hourly minor-unit decimal text, up to 18 fractional
+digits, at most 40 total characters, and within JavaScript's safe numeric range.
+Burden is an **additive hourly amount**, not a percentage; the host supplies any percentage conversion and
+classification policy. There are no statutory, tax, overtime or currency defaults.
+
+The resolver rejects invalid calendar dates, overlapping periods (including
+unselected periods), missing applicable rates, currency mismatches, unsafe rates,
+unsafe totals, ambiguous duration evidence and mismatched tenant/worker identity.
+Adjacent half-open periods are valid. Decimal-hours evidence uses its original
+text (with the same precision and text-length limits as rates); measured seconds use the exact rational `seconds / 3600`. Each of customer,
+wage and burden rounds half up independently to integer minor units; compensation
+is the safe integer sum of rounded wage and burden. For example, `1.0005` hours at
+customer `12345`, wage `6000`, burden `1000` yields charge `12351` and compensation
+`7004` (`6003 + 1001`). Nonbillable time yields zero customer charge and retains
+compensation. Even nonbillable time requires valid customer rate terms.
+
+The host must authorize the schedule, worker and tenant and bind the supplied
+work date to its authoritative entry evidence. Base entries have no authoritative
+work-date field; the resolver never infers one from timestamps or process time.
+Construct the resolver for the authorized entry's work date and pass it to
+`ServiceEvidenceService.create(options, resolver)`. Existing resolvers and legacy
+approval defaults are unchanged. Selection copies and whitelists supplied terms,
+so later caller mutation cannot change an in-flight approval. Client snapshot
+terms contain only the customer rate's ID, version and hourly rate plus work-date,
+period, currency, billability, duration and rounding provenance. Compensation
+terms contain separate wage/burden IDs, versions, hourly rates and rounded amounts;
+never expose those snapshots to client audiences.
+
+The existing lifecycle makes persisted snapshots immutable and corrections append
+new evidence. Approval remains resumable, not an all-or-nothing transaction. When
+reconstructing a resolver after an interrupted approval, the host must restore
+**the originally selected authorized date and rate terms**, not reselect from a
+newly edited schedule; this helper introduces no persistence schema or schedule
+lookup service. Fully completed approval retries retain their existing snapshots.
