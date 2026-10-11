@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.55.14
+
+### Patch Changes
+
+- ### Features
+  
+  - add shared cost and pricing foundations (release 1) (#3796)
+- @happyvertical/smrt-config@0.55.14
+  - @happyvertical/smrt-scanner@0.55.14
+  - @happyvertical/smrt-types@0.55.14
+
 ## 0.55.13
 
 ### Patch Changes
