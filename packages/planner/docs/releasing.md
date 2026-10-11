@@ -63,7 +63,9 @@ by that run. A different integrity stops the workflow and requires a new
 version.
 
 If only the npmjs mirror fails, dispatch the workflow again from `main` with
-mode `mirror`. That path downloads the published primary tarball, verifies its
-integrity, and publishes those exact bytes to npmjs; it does not rebuild or
+mode `mirror` and enter the failed release in `mirror_version` (for example,
+`0.0.1`). The explicit version lets an operator recover an older release after
+`main` has advanced. That path downloads the selected primary tarball, verifies
+its integrity, and publishes those exact bytes to npmjs; it does not rebuild or
 write to the primary registry. Mirror failures remain visible but do not turn a
 successful primary publication into a failed release.

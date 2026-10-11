@@ -11,6 +11,10 @@ on:
         options:
           - release
           - mirror
+      mirror_version:
+        description: Existing primary version to mirror (required in mirror mode)
+        required: false
+        type: string
 
 concurrency:
   group: publish-package-${{ github.ref }}
@@ -68,16 +72,28 @@ jobs:
 
       - name: Verify package metadata
         id: package
+        env:
+          MODE: ${{ inputs.mode }}
+          MIRROR_VERSION: ${{ inputs.mirror_version }}
         run: |
           node --input-type=module <<'NODE'
-          import { readFileSync } from 'node:fs';
+          import { appendFileSync, readFileSync } from 'node:fs';
           const pkg = JSON.parse(readFileSync('package.json'));
           if (pkg.name !== '@happyvertical/smrt-planner') throw new Error('unexpected package name');
           if (pkg.private === true) throw new Error('package is still private');
           if (!/^0\.\d+\.\d+$/.test(pkg.version)) throw new Error('only 0.x releases are automated');
-          console.log(`version=${pkg.version}`);
+          const mirrorVersion = process.env.MIRROR_VERSION?.trim() ?? '';
+          if (process.env.MODE === 'mirror' && !mirrorVersion) {
+            throw new Error('mirror mode requires mirror_version');
+          }
+          if (process.env.MODE === 'release' && mirrorVersion) {
+            throw new Error('mirror_version is only valid in mirror mode');
+          }
+          const version = process.env.MODE === 'mirror' ? mirrorVersion : pkg.version;
+          if (!/^0\.\d+\.\d+$/.test(version)) throw new Error('only 0.x releases are automated');
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          console.log(`selected ${process.env.MODE} version ${version}`);
           NODE
-          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build and verify package

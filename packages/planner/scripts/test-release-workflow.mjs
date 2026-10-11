@@ -9,6 +9,9 @@ const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
 
 const required = [
   'workflow_dispatch:',
+  'mirror_version:',
+  'mirror mode requires mirror_version',
+  'mirror_version is only valid in mirror mode',
   "refs/heads/main",
   'environments/release',
   'deployment-branch-policies',
