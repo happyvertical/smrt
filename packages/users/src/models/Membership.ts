@@ -46,7 +46,8 @@ export interface MembershipOptions extends SmrtObjectOptions {
   // is authentication-only, so a generated POST/PUT here is privilege escalation).
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: { skipApiCheck: true },
+  // #3742: CLI mirrors the read-only surface; `cli` without `include` is full CRUD.
+  cli: { include: ['list', 'get'] },
   // Serves the tenant-scoped membership lookup without combining the two
   // foreign-key indexes at query time (#2821).
   indexes: [

@@ -52,7 +52,8 @@ export interface RoleOptions extends SmrtObjectOptions {
   // permission-gated services, not auth-only generated CRUD.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: { skipApiCheck: true },
+  // #3742: CLI mirrors the read-only surface; `cli` without `include` is full CRUD.
+  cli: { include: ['list', 'get'] },
 })
 export class Role extends SmrtObject implements RoleContract {
   /**

@@ -40,7 +40,8 @@ export interface GroupMemberOptions extends SmrtObjectOptions {
   // be explicit: an omitted mcp config generates the FULL tool surface.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  // #3742: CLI mirrors the read-only surface; `cli: true` is full CRUD.
+  cli: { include: ['list', 'get'] },
 })
 export class GroupMember extends SmrtObject {
   /**

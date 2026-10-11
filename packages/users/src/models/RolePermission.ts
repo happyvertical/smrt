@@ -40,7 +40,8 @@ export interface RolePermissionOptions extends SmrtObjectOptions {
   // be explicit: an omitted mcp config generates the FULL tool surface.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  // #3742: CLI mirrors the read-only surface; `cli: true` is full CRUD.
+  cli: { include: ['list', 'get'] },
   // One durable grant per pair; core uses conflict-tolerant natural-key writes.
   conflictColumns: ['role_id', 'permission_id'],
 })

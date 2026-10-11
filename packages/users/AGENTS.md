@@ -55,8 +55,11 @@ are not prerequisites for unrelated user-package work.
 - Generated REST/MCP operations on identity/RBAC models are list/get only.
   Route authentication does not authorize authority mutations, and these models
   are not tenant-scoped. Use permission-gated services or explicitly checked
-  consumer handlers. CLI remains a local-operator surface. Preserve the
-  registry assertions in `security-audit-1400.test.ts`.
+  consumer handlers. Generated CLI is list/get or closed (`cli: false` for
+  credential/grant models) because agents shell out to it; a `cli` without
+  `include` is full CRUD (#3742). Their catalog slugs stay full via
+  `USERS_AUTHORITY_CATALOG_MODELS`. Preserve the registry assertions in
+  `security-audit-1400.test.ts` and `issue-3742-cli-surface-lockdown.test.ts`.
 - Resource guards take the resource tenant, not the session tenant. Omit a
   session membership when targeting a different tenant; mismatches fail closed.
   `loadSessionContext().tenantAuthorization` must be checked by required-tenant

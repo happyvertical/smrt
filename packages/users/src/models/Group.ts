@@ -41,7 +41,8 @@ export interface GroupOptions extends SmrtObjectOptions {
   // permission-gated services, not auth-only generated CRUD.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  // #3742: CLI mirrors the read-only surface; `cli: true` is full CRUD.
+  cli: { include: ['list', 'get'] },
 })
 export class Group extends SmrtObject {
   /**
