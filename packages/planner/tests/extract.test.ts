@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { dropUnrenderableRecipes } from '../src/lib/catalog/generate/build.ts';
 import {
   extractPackage,
   packageId,
@@ -67,6 +68,144 @@ describe('extractPackage', () => {
     ]);
     expect(item.fields[0].system).toBe(true);
     expect(item.fields[1].required).toBe(true);
+  });
+
+  it('keeps fieldless task models and their recipes without promoting collections', () => {
+    const task = '@happyvertical/smrt-webhooks:WebhookDeliveryTask';
+    const retryTask = '@happyvertical/smrt-webhooks:WebhookRetryTask';
+    const collection = '@happyvertical/smrt-webhooks:WebhookDeliveryCollection';
+    const fixture: RawPackage = {
+      packageName: '@happyvertical/smrt-webhooks',
+      version: '0.55.11',
+      description: 'Outbound webhooks',
+      knowledge: null,
+      manifest: {
+        packageName: '@happyvertical/smrt-webhooks',
+        objects: {
+          [task]: {
+            className: 'WebhookDeliveryTask',
+            qualifiedName: task,
+            collection: 'webhookdeliverytasks',
+            extends: 'SmrtObject',
+            schema: { tableName: '_smrt_webhook_delivery_tasks' },
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: false, mcp: false, cli: false },
+          },
+          [collection]: {
+            className: 'WebhookDeliveryCollection',
+            qualifiedName: collection,
+            collection: 'webhookdeliveries',
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'WebhookDelivery',
+            schema: { tableName: '_smrt_webhook_deliveries' },
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+          [retryTask]: {
+            className: 'WebhookRetryTask',
+            qualifiedName: retryTask,
+            collection: 'webhookretrytasks',
+            extends: 'ApplicationTask',
+            schema: { tableName: '_smrt_webhook_retry_tasks' },
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: false, mcp: false, cli: false },
+          },
+        },
+        recipes: [
+          {
+            id: 'integrations.webhooks',
+            label: 'Outbound webhooks',
+            summary: 'Deliver signed events.',
+            synonyms: [],
+            models: [task],
+            nav: [],
+            requires: [],
+            runtime: 'server',
+          },
+        ],
+      },
+    };
+    const extracted = extractPackage(fixture);
+    expect(extracted.models.map((model) => model.id)).toEqual([
+      task,
+      retryTask,
+    ]);
+    expect(extracted.models[0].exposed).toBe(false);
+    const log: string[] = [];
+    const catalog = dropUnrenderableRecipes([extracted], (message) =>
+      log.push(message),
+    );
+    expect(catalog[0]?.recipes?.map((recipe) => recipe.id)).toEqual([
+      'integrations.webhooks',
+    ]);
+    expect(log).toEqual([]);
+  });
+
+  it('excludes derived collections by manifest ancestry, including qualified bases', () => {
+    const packageName = '@happyvertical/smrt-messages';
+    const account = `${packageName}:EmailAccount`;
+    const base = `${packageName}:AccountCollection`;
+    const derived = `${packageName}:EmailAccountCollection`;
+    const indirect = `${packageName}:MailAccounts`;
+    const common = {
+      collection: 'accounts',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+      schema: { tableName: 'accounts' },
+    };
+    const fixture: RawPackage = {
+      packageName,
+      version: '0.55.11',
+      description: 'Messages',
+      knowledge: null,
+      manifest: {
+        packageName,
+        objects: {
+          [account]: {
+            ...common,
+            className: 'EmailAccount',
+            qualifiedName: account,
+            extends: 'Account',
+            fields: { name: { type: 'text' } },
+          },
+          [base]: {
+            ...common,
+            className: 'AccountCollection',
+            qualifiedName: base,
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Account',
+          },
+          [derived]: {
+            ...common,
+            className: 'EmailAccountCollection',
+            qualifiedName: derived,
+            extends: 'AccountCollection',
+          },
+          [indirect]: {
+            ...common,
+            className: 'MailAccounts',
+            qualifiedName: indirect,
+            extends: derived,
+          },
+        },
+      },
+    };
+    expect(extractPackage(fixture).models.map((model) => model.id)).toEqual([
+      account,
+    ]);
+  });
+
+  it('terminates malformed cyclic ancestry without dropping legacy value models', () => {
+    const fixture = structuredClone(raw);
+    const item = fixture.manifest.objects['@happyvertical/smrt-shop:Item'];
+    item.extends = item.qualifiedName;
+    expect(extractPackage(fixture).models.map((model) => model.id)).toEqual([
+      item.qualifiedName,
+    ]);
   });
 
   it('derives surfaces from decoratorConfig when there is no knowledge', () => {
