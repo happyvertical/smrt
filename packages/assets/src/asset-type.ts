@@ -4,7 +4,7 @@
  * Lookup table for asset type classification (e.g., 'image', 'video', 'document')
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { AssetTypeOptions } from './types';
 
 @smrt({
@@ -15,7 +15,13 @@ import type { AssetTypeOptions } from './types';
 })
 export class AssetType extends SmrtObject {
   // slug is inherited as an accessor from SmrtObject
+  @field({
+    description: 'The name of this file category, such as Image or Document.',
+  })
   name = ''; // Display name (e.g., 'Image', 'Video')
+  @field({
+    description: 'Explain which kinds of files belong in this category.',
+  })
   description = ''; // Optional description
 
   constructor(options: AssetTypeOptions = {}) {

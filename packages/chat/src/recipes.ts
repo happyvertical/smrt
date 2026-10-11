@@ -98,7 +98,7 @@ export class ChatRoomsRecipe extends SmrtRecipe {
   };
   static nav = [
     {
-      label: 'Chat Rooms',
+      label: 'Chat rooms',
       model: ChatRoom,
       icon: 'users',
       description: 'Team conversations organized by topic or audience.',
@@ -112,11 +112,6 @@ export class ChatRoomsRecipe extends SmrtRecipe {
       path: '/chat/rooms',
       export: '@happyvertical/smrt-chat/svelte#ChatLayout',
       label: 'Team chat',
-    },
-    {
-      kind: 'playground',
-      export: '@happyvertical/smrt-chat/playground#default',
-      label: 'Static chat fixtures',
     },
   ] as const;
   static demoSeed = {

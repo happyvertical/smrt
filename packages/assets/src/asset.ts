@@ -14,6 +14,7 @@
 
 import {
   crossPackageRef,
+  field,
   foreignKey,
   ObjectRegistry,
   type SmrtCollection,
@@ -75,22 +76,52 @@ export class Asset extends SmrtObject {
   tenantId: string | null = null;
 
   // Core fields
+  @field({ description: 'A recognizable name for this file or media item.' })
   name = ''; // User-friendly name
   // slug is inherited as an accessor from SmrtObject
+  @field({
+    description: 'Where the original file is stored or can be retrieved.',
+  })
   sourceUri = ''; // URI to the actual file (e.g., 's3://bucket/key', 'file:///path')
+  @field({
+    description: 'The file format, such as image/jpeg or application/pdf.',
+  })
   mimeType = ''; // MIME type (e.g., 'image/jpeg', 'video/mp4')
+  @field({
+    description: 'Explain what the file contains and when it should be used.',
+  })
   description = ''; // Optional description
+  @field({
+    description: 'Additional details recorded while processing this file.',
+  })
   metadata = ''; // JSON metadata owned by SMRT asset processors
+  @field({
+    description: 'The revision number of this file in its version history.',
+  })
   version = 1; // Version number
 
   // Foreign key references (stored as IDs/slugs)
   // Self-referential: the version chain points at the first version's
   // Asset record (createNewVersion() chains via primaryVersionId).
   @foreignKey('Asset')
+  @field({
+    description:
+      'The first version of this file, linking its revision history.',
+  })
   primaryVersionId: string | null = null; // Points to first version's ID
+  @field({
+    description: 'The category of asset, such as an image, video, or document.',
+  })
   typeSlug = ''; // FK to AssetType.slug
+  @field({
+    description:
+      'The stage of this asset, such as draft, published, or archived.',
+  })
   statusSlug = ''; // FK to AssetStatus.slug
   @crossPackageRef('@happyvertical/smrt-profiles:Profile')
+  @field({
+    description: 'The person or organization responsible for this asset.',
+  })
   ownerProfileId: string | null = null; // FK to Profile.id (nullable)
   /**
    * FK to the source Asset this one was derived from (e.g. thumbnail
@@ -102,13 +133,30 @@ export class Asset extends SmrtObject {
    * table is `source_asset_id`.
    */
   @foreignKey('Asset')
+  @field({
+    description: 'The original asset used to produce this file or variation.',
+  })
   sourceAssetId: string | null = null;
   @foreignKey('Folder')
+  @field({
+    description: 'The folder that organizes this file in the asset library.',
+  })
   folderId: string | null = null; // FK to Folder.id
 
   // Provenance fields
+  @field({
+    description: 'The service or source from which this file was obtained.',
+  })
   sourceType = ''; // 'local', 'shutterstock', 'google-photos', 'upstream-smrt'
+  @field({
+    description:
+      'The reference used to identify this file at its original source.',
+  })
   externalId = ''; // Original ID in upstream source
+  @field({
+    description:
+      'References that connect this file to copies held by other services.',
+  })
   externalRefs = ''; // JSON map of provider references, keyed by provider slug
 
   // Timestamps
