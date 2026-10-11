@@ -14,6 +14,7 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  isPostgresDatabase,
   isUniqueViolationError,
   ObjectRegistry,
   SmrtObject,
@@ -516,7 +517,12 @@ export class Expense extends SmrtObject {
   override async save(): Promise<this> {
     this.normalize();
     this.validateShape();
+    return this.withTransaction(() => this.saveValidated());
+  }
 
+  /** Keep both directions of refund validation and the write on one executor. */
+  private async saveValidated(): Promise<this> {
+    await this.lockRefundRows();
     const persisted = await this.readPersisted();
     // The guards below check `persisted`; pin the write to that row.
     const inserting = await pinNaturalKey('Expense', this, persisted);
@@ -537,7 +543,8 @@ export class Expense extends SmrtObject {
     this.assertReviewedLock(persisted);
     await this.assertCommitment(persisted);
     await this.assertVendor(persisted);
-    await this.assertRefund();
+    await this.assertInboundRefunds(persisted);
+    await this.assertRefund(persisted);
 
     if (!this.recordedAt) this.recordedAt = new Date();
     try {
@@ -817,7 +824,64 @@ export class Expense extends SmrtObject {
     }
   }
 
-  private async assertRefund(): Promise<void> {
+  /**
+   * Source edits and refund writes contend on the same source row. Acquire
+   * rows in deterministic order before either relationship check, and hold
+   * them through commit. SQLite's write transaction supplies serialization.
+   */
+  private async lockRefundRows(): Promise<void> {
+    if (!isPostgresDatabase(this.db)) return;
+    const ids = [
+      ...new Set(
+        [this.id, this.refundOfId].filter((id): id is string => Boolean(id)),
+      ),
+    ].sort();
+    if (ids.length === 0) return;
+    const table = `"${this.tableName.replace(/"/g, '""')}"`;
+    await this.db.query(
+      `SELECT id FROM ${table} WHERE id IN (${ids.map(() => '?').join(', ')}) ` +
+        'AND tenant_id IS NOT DISTINCT FROM ? ORDER BY id FOR UPDATE',
+      ...ids,
+      effectiveTenant(this.tenantId),
+    );
+  }
+
+  /** Refuse source corrections that invalidate any same-owner refund. */
+  private async assertInboundRefunds(
+    persisted: PersistedRow | null,
+  ): Promise<void> {
+    if (
+      !persisted ||
+      (Number(persisted.amount) === this.amount &&
+        String(persisted.currency ?? '') === this.currency &&
+        asNullableString(persisted.refund_of_id) === this.refundOfId)
+    )
+      return;
+    const { ExpenseCollection } = await import(
+      '../collections/ExpenseCollection.js'
+    );
+    const expenses = await ExpenseCollection.create({ db: this.db });
+    const invalidated = await expenses.list({
+      where: {
+        refundOfId: this.id,
+        tenantId: effectiveTenant(this.tenantId),
+        ...(this.amount > 0 && !this.refundOfId
+          ? { 'currency !=': this.currency }
+          : {}),
+      },
+      select: ['id'],
+      limit: 1,
+      cache: false,
+    });
+    if (invalidated.length > 0) {
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'A referenced refund source must remain positive, non-refund, and in the currency of its refunds.',
+      );
+    }
+  }
+
+  private async assertRefund(persisted: PersistedRow | null): Promise<void> {
     if (!this.refundOfId) return;
     if (this.refundOfId === this.id || this.amount >= 0) {
       throw new ExpenseError(
@@ -829,7 +893,10 @@ export class Expense extends SmrtObject {
       '../collections/ExpenseCollection.js'
     );
     const expenses = await ExpenseCollection.create({ db: this.db });
-    const source = await expenses.get({ id: this.refundOfId });
+    const source = await expenses.get(
+      { id: this.refundOfId },
+      { cache: false },
+    );
     if (
       !source ||
       !sameTenant(source.tenantId, effectiveTenant(this.tenantId)) ||
@@ -841,6 +908,17 @@ export class Expense extends SmrtObject {
         'EXPENSE_INVALID',
         'Refund source must be a positive non-refund expense in the same tenant and currency.',
       );
+    }
+    if (!persisted || persisted.refund_of_id !== this.refundOfId) {
+      // A row lock alone cannot refresh an existing REPEATABLE READ snapshot.
+      // Advance the source through public CAS so stale source writers abort.
+      if (!source.updated_at) {
+        throw new ExpenseError(
+          'EXPENSE_INVALID',
+          'Refund source has no revision.',
+        );
+      }
+      await source.claimRevision(source.updated_at);
     }
   }
 

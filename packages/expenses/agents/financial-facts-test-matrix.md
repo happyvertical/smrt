@@ -65,3 +65,32 @@ under the evidence directory above.
 Final correction validation: 62 backend + 15 UI tests and 56 PostgreSQL tests
 passed, including both migration lanes. The unchanged browser contract retains
 the 11-pass evidence above.
+
+
+## Inbound refund source invariant — review thread 4243223180
+
+Risk remains high (financial relationship mutation). Baseline is release
+`d372e2df68f1000bbfccb9dbe88afcd7d78ece9b`. Execute before/after evidence for
+the new regressions; the existing per-row revision guard alone cannot protect a
+source/refund pair from concurrent edits.
+
+| Behavior / reachable trigger | Positive | Negative / failure | Actor / context | Executor / transaction | Runtime / dialect | External edge | Level / command |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Source save with inbound refunds | Unrelated edits and positive same-currency corrections remain valid; unreferenced sources remain editable | Zero amount, changed currency, or conversion to refund refused; source and reviewed refund unchanged | Same owner, source unreviewed or reopened, refund reviewed | Bound transaction; existing revision CAS retained | SQLite/PostgreSQL | Refund source eligibility preserved in both directions | Shared integration S/P |
+| Inbound lookup ownership | NULL owner and tenant-owned references enforced outside context too | Malformed foreign-owner inbound fixture must not block another tenant; ordinary cross-tenant creation remains refused | Active tenant / no context × own / foreign / global | Public projected list with owner predicate, existing refund FK index | SQLite/PostgreSQL | No cross-tenant lookup bypass or existence disclosure | Shared integration S/P |
+| Caller transaction affinity | Guard sees uncommitted inbound refund; valid retry after rollback | Invalid source edit rolls back sibling refund mutation; original rows remain valid | Same tenant author | Existing public nested transaction and withDatabase APIs | SQLite/PostgreSQL | No independent root transaction or partial commit | Shared integration S/P |
+| Source/refund concurrent save | Winner preserves eligible persisted relationship | Refund-first blocks source edit; source-first makes later refund fail on current source | Same tenant, distinct real connections | Ordered PostgreSQL row locks held from validation through commit; SQLite write transaction serialization | PostgreSQL interleaving plus shared SQLite atomicity | No blanket source freeze or settlement limits | Real-PG integration P |
+| Stale repeatable-read source snapshot | Fresh same-currency positive edit succeeds | Snapshot pinned before independent refund commit; stale currency edit aborts serialization; fresh invalid edit rejects | Same tenant | Public source revision claim in refund transaction | PostgreSQL REPEATABLE READ | No missed committed refund under stale snapshot | Real-PG integration P |
+
+The source revision advances atomically on a new/changed refund link through the
+public revision API, including rollback with a caller transaction. Source
+instances loaded before linking must be reloaded for subsequent valid edits.
+
+Reproduction evidence in the external `inbound-refunds/` directory: baseline
+SQLite fails all four new shared regressions, baseline PostgreSQL fails those
+four plus both writer-order cases. Row locks without a source revision claim
+also fail the repeatable-read regression (`base-rr.log`). The corrected focused
+runs pass four SQLite and seven PostgreSQL cases (`fixed-sqlite.log`,
+`fixed-postgres.log`). Final committed-head package build, full test, PostgreSQL,
+typecheck, and browser commands are recorded with HEAD and exit status in
+`validation-records.json` and their named logs in that same evidence directory.

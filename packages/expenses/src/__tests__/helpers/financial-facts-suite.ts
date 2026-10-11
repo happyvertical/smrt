@@ -271,7 +271,12 @@ export function defineFinancialFactsSuite(getWorld: () => ExpenseWorld): void {
             world.expense({ amount: -100, ...patch }),
           ).rejects.toMatchObject({ code: 'EXPENSE_INVALID' });
         }
-        await expect(source.delete()).rejects.toThrow();
+        await expect(
+          (await world.expenses.get(
+            { id: source.id },
+            { cache: false },
+          ))!.delete(),
+        ).rejects.toThrow();
         expect(await world.expenses.get({ id: source.id })).not.toBeNull();
         refund.refundOfId = refund.id;
         await expect(refund.save()).rejects.toMatchObject({
@@ -279,6 +284,147 @@ export function defineFinancialFactsSuite(getWorld: () => ExpenseWorld): void {
         });
         expect((await world.expenses.get({ id: refund.id }))?.refundOfId).toBe(
           source.id,
+        );
+      });
+    });
+
+    it.each([
+      'unreviewed',
+      'reopened',
+    ] as const)('preserves inbound reviewed refunds when the source is %s', async (state) => {
+      const world = getWorld();
+      await world.inTenant(async () => {
+        const source = await world.expense({ amount: 1000 });
+        const another = await world.expense({ amount: 2000 });
+        const reviewerProfileId = randomUUID();
+        if (state === 'reopened') {
+          await source.review({ reviewerProfileId });
+          await source.reopen({ reviewerProfileId });
+        }
+        const refund = await world.expense({
+          amount: -100,
+          refundOfId: source.id,
+        });
+        await refund.review({ reviewerProfileId });
+        for (const patch of [
+          { currency: 'EUR' },
+          { amount: 0 },
+          { amount: -100, refundOfId: another.id },
+        ]) {
+          const loaded = (await world.expenses.get({ id: source.id }))!;
+          Object.assign(loaded, patch);
+          await expect(loaded.save()).rejects.toMatchObject({
+            code: 'EXPENSE_INVALID',
+          });
+          expect(await world.expenses.get({ id: source.id })).toMatchObject({
+            amount: 1000,
+            currency: 'USD',
+            refundOfId: null,
+          });
+          expect(await world.expenses.get({ id: refund.id })).toMatchObject({
+            amount: -100,
+            currency: 'USD',
+            refundOfId: source.id,
+            reviewStatus: 'reviewed',
+          });
+        }
+        const freshSource = (await world.expenses.get(
+          { id: source.id },
+          { cache: false },
+        ))!;
+        freshSource.description = 'Corrected description';
+        await freshSource.save();
+        freshSource.amount = 1200;
+        await freshSource.save();
+        expect(await world.expenses.get({ id: source.id })).toMatchObject({
+          description: 'Corrected description',
+          amount: 1200,
+        });
+        another.amount = 0;
+        another.currency = 'EUR';
+        await another.save();
+      });
+    });
+
+    it('scopes inbound refund checks to the source owner even outside an active context', async () => {
+      const world = getWorld();
+      const other = await createWorld(world.db);
+      const source = await world.inTenant(() =>
+        world.expense({ amount: 1000 }),
+      );
+      const foreignSource = await other.inTenant(() =>
+        other.expense({ amount: 1000 }),
+      );
+      const foreignRefund = await other.inTenant(() =>
+        other.expense({ amount: -100, refundOfId: foreignSource.id }),
+      );
+      // Simulate a malformed legacy row without weakening the public write path.
+      await world.db.query(
+        'UPDATE expenses SET refund_of_id = ? WHERE id = ?',
+        source.id,
+        foreignRefund.id,
+      );
+      source.currency = 'EUR';
+      await source.save();
+      expect((await world.expenses.get({ id: source.id }))?.currency).toBe(
+        'EUR',
+      );
+      const ownRefund = await world.inTenant(() =>
+        world.expense({ amount: -100, currency: 'EUR', refundOfId: source.id }),
+      );
+      source.amount = 0;
+      await expect(source.save()).rejects.toMatchObject({
+        code: 'EXPENSE_INVALID',
+      });
+      expect((await world.expenses.get({ id: ownRefund.id }))?.refundOfId).toBe(
+        source.id,
+      );
+      const global = await world.expense({ amount: 1000 });
+      const globalRefund = await world.expense({
+        amount: -100,
+        refundOfId: global.id,
+      });
+      global.currency = 'EUR';
+      await expect(global.save()).rejects.toMatchObject({
+        code: 'EXPENSE_INVALID',
+      });
+      expect(
+        (await world.expenses.get({ id: globalRefund.id }))?.currency,
+      ).toBe('USD');
+    });
+
+    it('checks uncommitted inbound refunds on the caller executor and rolls back together', async () => {
+      const world = getWorld();
+      const transactional = world.db as DatabaseInterface & {
+        transaction<T>(work: (tx: DatabaseInterface) => Promise<T>): Promise<T>;
+      };
+      await world.inTenant(async () => {
+        const source = await world.expense({ amount: 1000 });
+        let refundId: string | null = null;
+        await expect(
+          transactional.transaction(async (tx) => {
+            const expenses = await ExpenseCollection.create({ db: tx });
+            const refund = await expenses.create({
+              amount: -100,
+              currency: 'USD',
+              incurredOn: '2026-10-01',
+              refundOfId: source.id,
+            });
+            refundId = refund.id ?? null;
+            const loaded = (await expenses.get({ id: source.id }))!;
+            loaded.currency = 'EUR';
+            await loaded.save();
+          }),
+        ).rejects.toMatchObject({ code: 'EXPENSE_INVALID' });
+        expect(await world.expenses.get({ id: refundId })).toBeNull();
+        expect(await world.expenses.get({ id: source.id })).toMatchObject({
+          amount: 1000,
+          currency: 'USD',
+        });
+        source.currency = 'EUR';
+        await source.save();
+        expect((await world.expenses.get({ id: source.id }))?.currency).toBe(
+          'EUR',
         );
       });
     });
@@ -354,7 +500,10 @@ export function defineFinancialFactsSuite(getWorld: () => ExpenseWorld): void {
           total: -1100,
         });
         const reviewerProfileId = randomUUID();
-        await source.review({ reviewerProfileId });
+        await (await world.expenses.get(
+          { id: source.id },
+          { cache: false },
+        ))!.review({ reviewerProfileId });
         await refund.review({ reviewerProfileId });
         expect(await world.expenses.totalsByCurrency()).toEqual({
           USD: { amount: 9900, count: 2 },

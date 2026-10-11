@@ -106,8 +106,24 @@ reconcile subtotal + signed tax components to amount/currency; recoverable amoun
 are explicit. No tax law or customer pricing is inferred. `third-party` payer
 requires `paidByName` and is not reimbursable. Negative amounts require `refundOfId`
 (same-owner/currency positive source, checked through the bound executor).
+Source edits also check inbound same-owner refunds: a referenced source stays
+positive, non-refund, and in their currency. `save()` encloses guards and write
+in the public `withTransaction()` boundary; PostgreSQL locks its row and proposed
+source in id order before either refund check, while SQLite serializes writes.
+The inbound projected lookup uses the existing `refund_of_id` index and an
+explicit owner filter. Keep caller transaction affinity and per-row revision
+checks; neither an unlocked lookup nor revision CAS alone protects this pair.
 All three fields participate in the reviewed-money freeze. See the README and
 [financial facts test matrix](agents/financial-facts-test-matrix.md).
+
+Linking a new refund (or changing its source) also claims the source revision in
+that same transaction through `claimRevision(source.updated_at)`. This makes a
+source edit under an older PostgreSQL `REPEATABLE READ` snapshot fail with a
+serialization error instead of missing the new refund. Reload a source after
+linking a refund before editing/reviewing it; on a serialization failure, retry
+the entire caller transaction with fresh instances. Failed outer transactions
+roll back both the refund and the source revision claim. Existing-link saves do
+not advance the source revision.
 
 ## Cross-package references
 

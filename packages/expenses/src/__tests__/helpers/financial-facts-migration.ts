@@ -75,7 +75,9 @@ export async function proveFinancialFactsMigration(
     refundOfId: id,
   });
   await refund.save();
-  await expect(loaded!.delete()).rejects.toThrow();
+  await expect(
+    (await expenses.get({ id }, { cache: false }))!.delete(),
+  ).rejects.toThrow();
   expect(await expenses.get({ id })).not.toBeNull();
   expect((await expenses.get({ id: refund.id! }))?.refundOfId).toBe(id);
   const again = await migrate();

@@ -45,6 +45,8 @@ import {
 
 import { proveFinancialFactsMigration } from './helpers/financial-facts-migration.js';
 
+import { defineRefundConcurrency } from './helpers/refund-concurrency.js';
+
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
 const PACKAGE_TABLES = ['expenses', 'expense_receipts'];
@@ -246,6 +248,10 @@ describePostgres('expenses on PostgreSQL', () => {
         disableTenancy();
       }
     });
+  });
+
+  describe('refund concurrency', () => {
+    defineRefundConcurrency(() => db);
   });
 
   describe('behaviour', () => {

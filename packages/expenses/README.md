@@ -230,9 +230,29 @@ visible in the same tenant and currency. Refund breakdown components are negativ
 and refund-of-refund sources fail closed. Source lookup uses the caller's database
 executor. This link retains provenance only: it does not allocate settlements,
 cap cumulative refunds, issue credits, or determine entitlement. A source may
-later be explicitly reopened and corrected; every later refund save revalidates
-the current source, so an incompatible correction must be reconciled before that
-refund can be saved again.
+be explicitly reopened and corrected, but existing same-owner refunds prevent
+changes that would make it zero/nonpositive, turn it into a refund, or change
+its currency away from theirs. Unrelated edits and positive same-currency amount
+corrections remain allowed; there is no cumulative refund limit.
+
+Expense saves validate and persist in one transaction, including nested caller
+transactions. On PostgreSQL, source edits and refund writes acquire ordered
+row locks on the expense and proposed source before relationship validation,
+keeping the source/refund checks valid through the write and commit. SQLite uses
+the framework's serialized write transactions. The existing per-row revision
+check still rejects stale object writes; protecting the relationship additionally
+requires these locks and the source revision claim below. Callers must not concurrently reuse the same mutable
+model instance while it is temporarily transaction-bound. Direct SQL writes
+remain outside these model-level guarantees.
+
+Linking a new refund (or changing its source) also claims the source revision in
+that same transaction through `claimRevision(source.updated_at)`. This makes a
+source edit under an older PostgreSQL `REPEATABLE READ` snapshot fail with a
+serialization error instead of missing the new refund. Reload a source after
+linking a refund before editing/reviewing it; on a serialization failure, retry
+the entire caller transaction with fresh instances. Failed outer transactions
+roll back both the refund and the source revision claim. Existing-link saves do
+not advance the source revision.
 
 Financial breakdown, third-party payer name, and refund provenance join the
 existing reviewed-money lock. Save `reopen()` first, then correct facts and review
