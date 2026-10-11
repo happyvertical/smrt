@@ -1,5 +1,31 @@
 # @happyvertical/smrt-core
 
+## 0.55.13
+
+### Patch Changes
+
+- ### Features
+  
+  - complete cookbook v1 validator contract (#3782) (core)
+  - publish the intake review host factory (#3780) (ingestion)
+  - permit explicitly authorized self-approval (#3774) (approvals)
+  
+  ### Bug Fixes
+  
+  - finish app-wide feature catalogue (#3779) (recipes)
+  - declared columns win over STI _meta_data keys (#3238) (#3781) (core)
+  - keep NULL-tenant dispatches system-only on tenant list/get reads (#3301) (#3778) (core)
+  - refuse a foreign-ambient-tenant runtime report save before confirmation (#3768) (#3777) (chat)
+  - close generated CLI CRUD on locked-down identity/RBAC models (#3776) (users)
+  - honour per-class allowSuperAdminBypass in interceptors (#2973) (#3775) (tenancy)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.103.2 (#3783) (deps)
+- @happyvertical/smrt-config@0.55.13
+  - @happyvertical/smrt-scanner@0.55.13
+  - @happyvertical/smrt-types@0.55.13
+
 ## 0.55.12
 
 ### Patch Changes
