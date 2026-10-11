@@ -29,6 +29,7 @@
     "theme": { "$ref": "#/$defs/theme" },
     "overviews": {
       "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
       "additionalProperties": { "$ref": "#/$defs/overviewOverride" }
     }
   },
@@ -119,11 +120,53 @@
         "version": { "const": 1 },
         "order": { "$ref": "#/$defs/stringList" },
         "removed": { "$ref": "#/$defs/stringList" },
-        "added": { "type": "array", "items": { "type": "object" } },
+        "added": { "type": "array", "items": { "$ref": "#/$defs/overviewWidget" } },
         "changed": {
           "type": "object",
-          "additionalProperties": { "type": "object" }
+          "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+          "additionalProperties": { "$ref": "#/$defs/overviewPatch" }
         }
+      },
+      "additionalProperties": true
+    },
+    "overviewWidget": {
+      "type": "object",
+      "required": ["id", "type", "span", "options"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+        "type": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+        "span": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "options": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" }
+            ]
+          }
+        },
+        "version": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "overviewPatch": {
+      "type": "object",
+      "properties": {
+        "span": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "options": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" }
+            ]
+          }
+        },
+        "version": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": true
     }
