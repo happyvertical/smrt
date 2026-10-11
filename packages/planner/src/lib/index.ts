@@ -8,6 +8,7 @@
 export {
   type ByoPresetDefinition,
   type ConfigResult,
+  type CredentialPersistence,
   type InferenceConfig,
   type InferenceMode,
   loadInferenceConfig,

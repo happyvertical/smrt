@@ -176,13 +176,15 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   `$app/*` (section and model pages, the palette) are app-only: packaged but not reachable from
   either entry, so `@sveltejs/kit` is an optional peer. Everything the entries reach reads its base
   path from `planner/app.svelte.ts` (`setBasePath`), which the layout sets from `$app/paths`. The
-  package is `private` until its name and registry are decided; flipping that is the publish step.
+  published root app remains available through `appDir`; subpath consumers use the owning-package
+  `materializeApp({ outDir, basePath, config })` contract, never rewrite packaged files themselves.
 - `src/lib/core/`: the `./core` export, for plain Node servers (no Vite, no runes, no `.svelte`).
   `headless.ts` (`createHeadlessPlanner`: the engine over a plain-object plan, with `focus`),
   `catalog.ts` (recipes, library cookbooks, `defaultCatalog`), `prompt.ts` (`buildHostPrompt`, which
   calls the browser assistant's `buildSystemPrompt` and adds the host-only commands section: never a
   second copy of the prompt), `reply.ts` (`replySchema`, `parseHostReply`), `request.ts`
-  (`parseHostRequest`), `app.ts` (`appDir`, the `./app` export; the only Node-built-in module here).
+  (`parseHostRequest`), `app.ts` (`appDir` plus atomic prefix-safe `materializeApp`, the `./app`
+  export; the only Node-built-in module here).
   Everything it imports must stay rune-free and import JSON with `with { type: 'json' }`;
   `tests/core-package.test.ts` packages with svelte-package and runs it under bare `node`.
   `theme/theme.ts` reads the preset list from smrt-ui's Node-safe `@happyvertical/smrt-ui/themes/presets`
@@ -205,17 +207,19 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   `applyChange` through `recipeState`, `prompt.ts` the recipe vocabulary,
   `models.ts` the offered models, `prefs.ts` the localStorage preference
   (model choice and consent; not part of the cookbook). It never navigates.
-- `src/lib/inference/` (#23): where the model runs. `config.ts` is `planner.config.json`
-  (`inference: { mode: browser|host|byo, host?: { endpoint }, byo?: { presets? } }`; invalid falls back
-  to `browser` with a notice; a mounted `Planner`'s `inference` prop overrides it), `host.ts` the host
+- `src/lib/inference/` (#23, #30): where the model runs. `config.ts` is `planner.config.json`
+  (`inference: { mode: manual|browser|host|byo, alternatives?, credentialPersistence?, host?, byo? }`;
+  an absent config keeps the standalone browser default, while an invalid present config fails visibly
+  to manual; a mounted `Planner`'s `inference` prop overrides it), `host.ts` the host
   `ChatModel` (POSTs `{ version, message, snapshot, history? }`; the server owns the prompt),
   `openai.ts` the browser fetch client for OpenAI-compatible endpoints plus Test connection,
-  `presets.ts` Ollama/OpenRouter/OpenAI/custom with CORS notes, `byo.svelte.ts` the AI page state (key in
-  `smrt-planner:inference-key:v1` saved with the origin it was entered for, sent only as the
-  Authorization header to that origin, https or loopback only). The wire
+  `presets.ts` Ollama/OpenRouter/OpenAI/custom with CORS notes, `byo.svelte.ts` the AI page state
+  (memory-only hosted keys; compatible local persistence stays separate at
+  `smrt-planner:inference-key:v1`; every key is origin-bound and sent only as Authorization over
+  https or loopback). The wire
   contract and config are specified in `docs/inference-host.md`; change them together with that file.
-  `AiState.configure` applies a config (the layout fetches it); Think's `where` reads In browser /
-  Server / Your model: <name>.
+  `AiState.configure` applies a policy (the layout fetches it) and changes modes only through
+  `selectInference`; Think's `where` reads Off / In browser / Server / Your model: <name>.
 - `src/lib/kitchen/`: Send to kitchen (smrt#3750). `client.ts` is the `kitchen` block of
   `planner.config.json` (`{ endpoint }` only, parsed by `inference/config.ts` into
   `ConfigResult.kitchen`; a `token` there is ignored) and `sendToKitchen` (POST the cookbook,

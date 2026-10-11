@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-planner",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "license": "MIT",
   "description": "The smrt planner as a mountable Svelte component with a typed command set and plan snapshot.",
@@ -74,6 +74,7 @@
     "@sveltejs/package": "^3.0.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@types/node": "^24.13.6",
+    "playwright-core": "^1.64.0",
     "publint": "^0.3.25",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",

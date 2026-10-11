@@ -168,11 +168,11 @@ describe('host mode wire contract', () => {
     }
   });
 
-  it('falls back to browser, with a notice, on a bad prop', () => {
+  it('fails closed to manual, with a notice, on a bad prop', () => {
     const assistant = createPlannerAssistant(controller(), {
       mode: 'host',
     } as never);
-    expect(assistant.mode).toBe('browser');
+    expect(assistant.mode).toBe('manual');
     expect(assistant.notice).toBeTruthy();
   });
 });

@@ -154,7 +154,13 @@ export function createPlannerAssistant(
       chat = () => host;
     } else if (result.config.mode === 'byo') {
       const presets = result.config.byo?.presets;
-      chat = () => savedByoChat(browserStorage(), presets);
+      chat = () =>
+        savedByoChat(
+          browserStorage(),
+          presets,
+          undefined,
+          result.config.credentialPersistence,
+        );
     }
   }
   const themeUndos = new ThemeUndos(theme, controller);

@@ -13,7 +13,9 @@ defaults. A mounted `Planner` can pass the same object as its `inference` prop
 ```json
 {
   "inference": {
-    "mode": "browser | host | byo",
+    "mode": "manual | browser | host | byo",
+    "alternatives": ["browser"],
+    "credentialPersistence": "memory | local",
     "host": { "endpoint": "/api/planner/chat" },
     "byo": { "presets": ["ollama", "openrouter", "openai", "custom"] }
   }
@@ -21,6 +23,12 @@ defaults. A mounted `Planner` can pass the same object as its `inference` prop
 ```
 
 - `mode` defaults to `browser`.
+- `alternatives` is an optional ordered list of other modes the visitor may
+  select. A multi-mode policy also exposes **Manual planning**. Selection is
+  always explicit: a provider error never changes mode or starts a download.
+- `credentialPersistence` defaults to `local` for compatibility. `memory`
+  keeps provider keys only in the current tab while endpoint/model preferences
+  remain in `localStorage`; use it for a public hosted planner.
 - `host.endpoint` is required for `host`: an `http(s)://` URL, or a path on the
   page's own origin. A cross-origin endpoint must answer CORS (see below).
 - `byo.presets` is optional. Entries are built-in ids (`ollama`, `openrouter`,
@@ -31,12 +39,15 @@ defaults. A mounted `Planner` can pass the same object as its `inference` prop
   **Send to kitchen** (Download stays as the secondary option) once the page
   also holds the one-time token, which is **never in this file**; see "Send to
   kitchen" below. A `token` in the file is ignored. Unusable values are ignored.
-- Anything invalid (bad JSON, unknown mode, `host` without a usable endpoint,
-  malformed presets) falls back to `browser` and shows a visible notice on the
-  AI page. A 404 or an HTML fallback page is "no file", with no notice.
+- Anything invalid (bad JSON, duplicate/unknown modes, `host` without a usable
+  endpoint, malformed presets) fails closed to `manual` and shows a visible
+  notice. It does not enable WebLLM. A 404 or an HTML fallback page is "no
+  file", so the compatible standalone default remains `browser` without a
+  notice.
 
 | Mode | Where the model runs | Setup | Hear / Speak |
 | --- | --- | --- | --- |
+| `manual` | nowhere | none; edit, validate and export normally | in browser |
 | `browser` | WebLLM in a worker (WebGPU) | download on the AI page | in browser |
 | `host` | the host's server | none | in browser |
 | `byo` | the visitor's OpenAI-compatible endpoint | AI page: preset, model, key, Test connection | in browser |
@@ -120,16 +131,19 @@ a custom OpenAI-compatible address. Each has a model field and, except Ollama,
 a key field, plus **Test connection** (one tiny completion that exercises the
 address, the model and the key).
 
-- The key is stored only in this browser: `localStorage` key
-  `smrt-planner:inference-key:v1`, apart from the choices in
-  `smrt-planner:inference:v1`. It is sent only as `Authorization: Bearer <key>`
-  to the chosen address, never in a URL, a body, a message or a log.
+- With `credentialPersistence: "memory"`, a key exists only in the running
+  `ByoModel`. Reload requires re-entry. Endpoint/model preferences persist in
+  `smrt-planner:inference:v1`; the key is absent from local/session storage,
+  IndexedDB, URL/history, cookbook, plan snapshots, exports, config and logs.
+  The compatible `local` policy stores keys separately at
+  `smrt-planner:inference-key:v1`. In either policy the key is sent only as
+  `Authorization: Bearer <key>` to the chosen address, never in a URL, body,
+  message or log.
 - A key is saved **with the origin it was entered for** (`{ origin, key }`):
   changing the address to another origin, or a config that reuses a preset id
   such as `openai` for another `baseUrl`, does not send the saved key there (the
   AI page says a key is saved for another address). A key saved without an
-  origin is dropped. Keys are per browser origin, not per path: planner apps
-  served from one origin share `localStorage`.
+  origin is dropped. Locally persisted keys are per browser origin, not path.
 - A key is only sent over `https`, or over `http` to this computer
   (`localhost`, `*.localhost`, `127.0.0.0/8`, `[::1]`). A keyless preset (Ollama
   on another machine) sends no key, so plain `http` is fine for it.
@@ -315,34 +329,48 @@ and unknown ids.
 ### Serving the planner app: `@happyvertical/smrt-planner/app`
 
 `pnpm package` also builds the prerendered static app into the package's
-`app/` directory. `appDir` from `@happyvertical/smrt-planner/app` is its absolute path (Node
-only; `appFile('x')` resolves one file in it). The files are also addressable as
-`smrt-planner/app/*`.
+`app/` directory. `appDir` from `@happyvertical/smrt-planner/app` remains its
+absolute root-build path (Node only; `appFile('x')` resolves one file in it).
+For a subpath deployment, `materializeApp` is the supported build contract:
 
 ```js
-import { appDir } from '@happyvertical/smrt-planner/app';
-// serve appDir at `/` or at `/planner`; for example with sirv, express.static or serve-static
+import { materializeApp } from '@happyvertical/smrt-planner/app';
+
+materializeApp({
+  outDir: '/deployment/build/plan',
+  basePath: '/plan',
+  config: {
+    inference: {
+      mode: 'byo',
+      alternatives: ['browser'],
+      credentialPersistence: 'memory',
+      byo: { presets: ['ollama', 'openrouter', 'openai', 'custom'] }
+    }
+  }
+});
 ```
 
-- **Base path.** The app is built with SvelteKit's relative paths: every asset
-  and link in each prerendered page is relative, and the page works out its base
-  from `location` in the browser. The same files serve at `/`, at `/planner/`
-  or anywhere else, with no rebuild or setting. Serve `index.html` for
-  directories (every route is `<dir>/index.html`, trailing slash always) and
-  redirect `/planner` to `/planner/`.
-- **`404.html`** is the SPA fallback for paths that were not prerendered; it is
-  built for base `/`, so at a sub-path serve it only if you built from source
-  with `BASE_PATH=/planner pnpm build`, or answer unknown paths with `404`.
-- **Config.** The app fetches `<base>/planner.config.json` at startup. Answer
-  that one path yourself (or copy `appDir` to a writable directory and add the
-  file) to choose the inference mode:
+- **Base path.** `basePath` is a leading-slash, no-trailing-slash prefix such as
+  `/plan`. The output root is copied to that prefix by the consumer. Every
+  prerendered route and the generated fallback retains the prefix; `_app/**`
+  is requested under `/plan/_app/**` even from arbitrary-depth URLs.
+- **`404.html`.** `materializeApp` rewrites the packaged root fallback's asset
+  imports and SvelteKit runtime base in the owning package. A CDN may answer
+  page-like `/plan/**` misses with that file while leaving file-like misses and
+  every non-`/plan` miss as a real 404.
+- **Config.** The API validates and writes `planner.config.json`; malformed
+  policies, unsafe base paths, credential-shaped fields, credential-bearing
+  endpoint URLs and non-empty destinations fail before a partial tree is
+  exposed. Repeated calls with the same package/options produce the same file
+  bytes. The standalone root app may still serve `appDir` and answer config
+  itself:
 
   ```json
   { "inference": { "mode": "host", "host": { "endpoint": "/api/planner/chat" } } }
   ```
 
-  `endpoint` is a path on the page's own origin, so it is the same whatever the
-  base is. Without the file the app runs in `browser` mode.
+  `endpoint` is a path on the page's own origin. Without the file the app runs
+  in the compatible single `browser` mode.
 - The directory is about 70 MB (the on-device model runtime is most of it);
   serve it with compression and long-lived caching for `_app/immutable/`.
 

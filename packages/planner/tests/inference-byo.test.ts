@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AiState } from '../src/lib/ai/state.svelte.ts';
+import { serializeCookbook } from '../src/lib/cookbook/file.ts';
+import { cookbookStore } from '../src/lib/cookbook/store.svelte.ts';
 import {
   BYO_KEYS_KEY,
   BYO_PREFS_KEY,
@@ -11,6 +13,7 @@ import {
   normalizeBaseUrl,
   testConnection,
 } from '../src/lib/inference/openai.ts';
+import { plannerController } from '../src/lib/planner/instance.ts';
 import { recipes } from '../src/lib/recipes/index.ts';
 import { recipeState } from '../src/lib/recipes/state.svelte.ts';
 import { completion, startStub } from './stub-server.ts';
@@ -23,6 +26,7 @@ function storage() {
     data,
     getItem: (k: string) => data.get(k) ?? null,
     setItem: (k: string, v: string) => void data.set(k, v),
+    removeItem: (k: string) => void data.delete(k),
   } as unknown as Storage & { data: Map<string, string> };
 }
 
@@ -222,6 +226,36 @@ describe('ByoModel (the AI page state)', () => {
     expect(byo.preset?.cors).toMatch(/OLLAMA_ORIGINS/);
   });
 
+  it('keeps hosted credentials in tab memory while persisting endpoint/model preferences', () => {
+    const store = storage();
+    store.data.set(
+      BYO_KEYS_KEY,
+      JSON.stringify({ custom: { origin: 'https://old.example', key: KEY } }),
+    );
+    const byo = new ByoModel({
+      storage: store,
+      credentialPersistence: 'memory',
+    });
+    byo.select('custom');
+    byo.setBaseUrl('https://models.example/v1');
+    byo.setModel('private-model');
+    byo.setKey(KEY);
+    expect(byo.key).toBe(KEY);
+    expect(store.data.get(BYO_PREFS_KEY)).toContain('private-model');
+    expect(store.data.has(BYO_KEYS_KEY)).toBe(false);
+    expect(JSON.stringify(plannerController.snapshot())).not.toContain(KEY);
+    expect(serializeCookbook(cookbookStore.snapshot())).not.toContain(KEY);
+
+    const reload = new ByoModel({
+      storage: store,
+      credentialPersistence: 'memory',
+    });
+    expect(reload.baseUrl).toBe('https://models.example/v1');
+    expect(reload.model).toBe('private-model');
+    expect(reload.key).toBe('');
+    expect(reload.active).toBe(false);
+  });
+
   it('fails the test with a message, not an exception, when incomplete', async () => {
     const byo = new ByoModel({ storage: storage() });
     byo.select('openai');
@@ -232,6 +266,50 @@ describe('ByoModel (the AI page state)', () => {
 });
 
 describe('AiState in byo mode', () => {
+  it('switches only when selected and never falls back or downloads after provider failure', async () => {
+    let downloads = 0;
+    const state = new AiState({
+      storage: storage(),
+      session: {
+        store: recipeState,
+        recipes,
+        webgpu: () => true,
+        host: {
+          createWorker: () =>
+            ({ terminate: () => undefined }) as unknown as Worker,
+          createEngine: async () => {
+            downloads += 1;
+            throw new Error('must not load');
+          },
+        },
+      },
+      voice: { createModel: () => ({}) as never },
+      synth: null,
+      mic: false,
+    });
+    state.configure({
+      config: {
+        mode: 'byo',
+        alternatives: ['browser'],
+        credentialPersistence: 'memory',
+        byo: { presets: ['openai'] },
+      },
+    });
+    expect(state.availableModes).toEqual(['byo', 'browser', 'manual']);
+    expect(state.inference.mode).toBe('byo');
+    expect((await state.byo?.test())?.ok).toBe(false);
+    expect(state.inference.mode).toBe('byo');
+    expect(downloads).toBe(0);
+
+    state.selectInference('browser');
+    expect(state.inference.mode).toBe('browser');
+    expect(state.session.status).toBe('idle');
+    expect(downloads).toBe(0);
+    state.selectInference('manual');
+    expect(state.inference.mode).toBe('manual');
+    expect(downloads).toBe(0);
+  });
+
   it('works without WebGPU and says "Your model" in Think', async () => {
     const stub = await startStub(() => ({
       body: completion(
@@ -319,10 +397,10 @@ describe('AiState in byo mode', () => {
     local.configure({
       config: { mode: 'browser' },
       notice:
-        'The assistant settings could not be used (x), so it runs in your browser instead.',
+        'The assistant settings could not be used (x), so inference is off. The planner still works manually.',
     });
     expect(local.capabilities[0]?.where).toBe('In browser');
-    expect(local.notice).toMatch(/runs in your browser instead/);
+    expect(local.notice).toMatch(/inference is off/);
   });
 
   it('does not decide the first-run form until the config has arrived', () => {

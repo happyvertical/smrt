@@ -15,7 +15,10 @@ import { startStub } from './stub-server.ts';
 const file = (inference: unknown) => JSON.stringify({ inference });
 
 describe('planner.config.json', () => {
-  it('accepts the three modes', () => {
+  it('accepts the compatible single modes', () => {
+    expect(parseInferenceConfig(file({ mode: 'manual' })).config).toEqual({
+      mode: 'manual',
+    });
     expect(parseInferenceConfig(file({ mode: 'browser' })).config).toEqual({
       mode: 'browser',
     });
@@ -37,6 +40,26 @@ describe('planner.config.json', () => {
     expect(parseInferenceConfig(file({ mode: 'byo' })).notice).toBeUndefined();
   });
 
+  it('accepts an ordered hosted policy with memory-only credentials', () => {
+    expect(
+      parseInferenceConfig(
+        file({
+          mode: 'byo',
+          alternatives: ['browser'],
+          credentialPersistence: 'memory',
+          byo: { presets: ['ollama', 'openrouter', 'openai', 'custom'] },
+        }),
+      ),
+    ).toEqual({
+      config: {
+        mode: 'byo',
+        alternatives: ['browser'],
+        credentialPersistence: 'memory',
+        byo: { presets: ['ollama', 'openrouter', 'openai', 'custom'] },
+      },
+    });
+  });
+
   it('defaults to browser with no notice when nothing is said', () => {
     expect(parseInferenceConfig('{}')).toEqual({ config: DEFAULT_INFERENCE });
     expect(parseInferenceConfig(file({}))).toEqual({
@@ -48,6 +71,15 @@ describe('planner.config.json', () => {
     ['not json', 'nope {'],
     ['an array', '[]'],
     ['unknown mode', file({ mode: 'cloud' })],
+    ['duplicate mode', file({ mode: 'byo', alternatives: ['byo'] })],
+    [
+      'duplicate alternative',
+      file({ mode: 'byo', alternatives: ['browser', 'browser'] }),
+    ],
+    [
+      'unknown credential persistence',
+      file({ mode: 'byo', credentialPersistence: 'session' }),
+    ],
     ['host without endpoint', file({ mode: 'host' })],
     [
       'host with a javascript: url',
@@ -57,16 +89,24 @@ describe('planner.config.json', () => {
       'host with a protocol-relative url',
       file({ mode: 'host', host: { endpoint: '//evil.example/x' } }),
     ],
+    [
+      'host with a credential URL',
+      file({ mode: 'host', host: { endpoint: 'https://x.test/?token=nope' } }),
+    ],
+    [
+      'host with a relative credential URL',
+      file({ mode: 'host', host: { endpoint: '/chat?api_key=nope' } }),
+    ],
     ['empty presets', file({ mode: 'byo', byo: { presets: [] } })],
     [
       'malformed preset',
       file({ mode: 'byo', byo: { presets: [{ id: 'x' }] } }),
     ],
     ['inference not an object', file('browser')],
-  ])('falls back to browser with a visible notice: %s', (_name, text) => {
+  ])('fails closed to manual with a visible notice: %s', (_name, text) => {
     const result = parseInferenceConfig(text);
-    expect(result.config).toEqual({ mode: 'browser' });
-    expect(result.notice).toMatch(/runs in your browser instead/);
+    expect(result.config).toEqual({ mode: 'manual' });
+    expect(result.notice).toMatch(/inference is off/);
   });
 
   it('takes presets by id or by definition', () => {
@@ -100,7 +140,7 @@ describe('planner.config.json', () => {
       configFromProp({ mode: 'host', host: { endpoint: '/x' } }).config.mode,
     ).toBe('host');
     const bad = configFromProp({ mode: 'host' });
-    expect(bad.config.mode).toBe('browser');
+    expect(bad.config.mode).toBe('manual');
     expect(bad.notice).toBeTruthy();
   });
 });
@@ -155,7 +195,7 @@ describe('loading the file', () => {
     const stub = await startStub(() => ({ raw: true, body: '{ broken' }));
     try {
       const result = await loadInferenceConfig(stub.origin);
-      expect(result.config.mode).toBe('browser');
+      expect(result.config.mode).toBe('manual');
       expect(result.notice).toMatch(/valid JSON/);
     } finally {
       await stub.close();

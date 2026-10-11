@@ -25,6 +25,29 @@ describe('AI setup page by mode', () => {
     expect(body).toContain('Your model');
   });
 
+  it('hosted policy starts with BYO and offers explicit WebLLM and manual choices', () => {
+    aiState.configure({
+      config: {
+        mode: 'byo',
+        alternatives: ['browser'],
+        credentialPersistence: 'memory',
+        byo: { presets: ['openai'] },
+      },
+    });
+    const initial = render(AiSetup, { props: { show: ['think'] } }).body;
+    expect(initial).toContain('Assistant mode');
+    expect(initial).toContain('Your model');
+    expect(initial).toContain('In-browser model (WebLLM)');
+    expect(initial).toContain('Manual planning');
+    expect(initial).toContain('Kept only in this tab until reload');
+
+    aiState.selectInference('manual');
+    const manual = render(AiSetup, { props: { show: ['think'] } }).body;
+    expect(manual).toContain('Inference off');
+    expect(manual).toContain('provider is contacted');
+    expect(manual).not.toContain('Download');
+  });
+
   it('host: names the server and shows no download', () => {
     aiState.configure({
       config: { mode: 'host', host: { endpoint: '/api/planner/chat' } },
@@ -38,9 +61,9 @@ describe('AI setup page by mode', () => {
     aiState.configure({
       config: { mode: 'browser' },
       notice:
-        'The assistant settings could not be used (x), so it runs in your browser instead.',
+        'The assistant settings could not be used (x), so inference is off. The planner still works manually.',
     });
     const { body } = render(AiSetup, { props: { show: ['think'] } });
-    expect(body).toContain('runs in your browser instead');
+    expect(body).toContain('inference is off');
   });
 });
