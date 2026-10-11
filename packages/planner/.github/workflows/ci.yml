@@ -32,3 +32,12 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: pnpm package
+      - run: pnpm test:release-workflow
+      - name: Verify packed package consumer
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/package"
+          pnpm pack --pack-destination "$RUNNER_TEMP/package"
+          mapfile -t tarballs < <(find "$RUNNER_TEMP/package" -maxdepth 1 -name '*.tgz')
+          [ "${#tarballs[@]}" -eq 1 ]
+          pnpm test:package -- "${tarballs[0]}"

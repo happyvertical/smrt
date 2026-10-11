@@ -1,7 +1,6 @@
 {
   "name": "@happyvertical/smrt-planner",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "license": "MIT",
   "description": "The smrt planner as a mountable Svelte component with a typed command set and plan snapshot.",
@@ -44,15 +43,17 @@
     "catalog:generate": "node scripts/generate-catalog.ts",
     "typecheck": "svelte-kit sync && tsc --noEmit -p tsconfig.json && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
+    "test:package": "node scripts/test-packed-package.mjs",
+    "test:release-workflow": "node scripts/test-release-workflow.mjs",
     "lint": "biome ci .",
     "package": "svelte-package -i src/lib -o dist --tsconfig tsconfig.package.json && node scripts/package-app.ts && publint"
   },
   "dependencies": {
     "@happyvertical/ai": "^0.103.1",
-    "@happyvertical/smrt-chat": "^0.55.11",
-    "@happyvertical/smrt-core": "^0.55.11",
-    "@happyvertical/smrt-svelte": "^0.55.11",
-    "@happyvertical/smrt-ui": "^0.55.11",
+    "@happyvertical/smrt-chat": "^0.55.12",
+    "@happyvertical/smrt-core": "^0.55.12",
+    "@happyvertical/smrt-svelte": "^0.55.12",
+    "@happyvertical/smrt-ui": "^0.55.12",
     "@happyvertical/speech": "^0.103.1",
     "@huggingface/transformers": "^4.3.0",
     "@mlc-ai/web-llm": "^0.2.85"

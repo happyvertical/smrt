@@ -228,14 +228,12 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   is `kitchenState` (`config` needs endpoint and token; `needsLink` is endpoint without token), which
   `ExportPanel` reads to show **Send to kitchen** first and Download second, or the missing-link
   notice. Contract: `docs/inference-host.md`; the server side is smrt `packages/cli/agents/kitchen.md`.
-- Package name is `@happyvertical/smrt-planner`, still `private`. Publishing to npm.happyvertical.com
-  follows the sdk and smrt convention (publish token only in a `release` environment whose deployment
-  rule allows `main`, registry host a literal in the workflow, `NPM_HAPPYVERTICAL_PUBLISH_TOKEN` as
-  the org secret, npmjs as a best-effort mirror with `NPM_TOKEN`). This repo has no `release`
-  environment, no ruleset and no publish workflow, so `private` stays until those exist; then add a
-  single-package workflow (the sdk/smrt ones are changeset/monorepo based and use scripts and a
-  `setup-environment` action this repo lacks), drop `private`, and set the version (0.0.1, about
-  20 MB packed, 84 MB unpacked, 815 files). Never publish from a workstation.
+- Package name is `@happyvertical/smrt-planner`. Publish only with
+  `.github/workflows/publish-package.yml` from `main`: the workflow verifies the `release` environment's
+  exact `main` branch policy before a secret-bearing job, then publishes one validated tarball to
+  npm.happyvertical.com and mirrors those bytes to npmjs. Its planner-specific secrets must live on that
+  environment so broad organization secrets cannot substitute. Use the mirror-only dispatch to retry
+  npmjs from primary bytes. Never publish from a workstation; see [releasing](docs/releasing.md).
 - `src/lib/ai/`: THINK (the language model), HEAR (voice typing) and SPEAK
   (read replies aloud with `speechSynthesis`) as one store. `state.svelte.ts`
   (`AiState`, singleton in `instance.ts`) owns the `AssistantSession`, the
@@ -292,6 +290,8 @@ pnpm lint
 pnpm test
 pnpm build
 pnpm package
+pnpm test:release-workflow
+# Then pack once and pass that tarball to: pnpm test:package -- <tarball>
 ```
 
 `pnpm build` writes the static site to `build/`.

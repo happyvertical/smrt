@@ -62,11 +62,19 @@ sidebar footer show **Think** (the language model), **Hear** (voice typing) and
 choose and download them. A first visit with nothing built starts there; "I don't
 need AI, let's just build" skips it for good. Live s-m-r-t objects are tracked in #4.
 
-## Use it as a package
+## Install the package
 
-The planner also builds as a Svelte package (`pnpm package`, output in `dist/`;
-it is not published yet). A host page mounts it in its own layout and drives it
-with a typed command set:
+The primary package registry is `npm.happyvertical.com`. Configure the scope
+once, then install the planner:
+
+```bash
+pnpm config set @happyvertical:registry https://npm.happyvertical.com/
+pnpm add @happyvertical/smrt-planner
+```
+
+The same version is mirrored to npmjs on a best-effort basis. The planner is a
+Svelte package; a host page mounts it in its own layout and drives it with a
+typed command set:
 
 ```svelte
 <script lang="ts">
@@ -149,8 +157,14 @@ rerunning later may change the file; commit the result when it does.
 | `pnpm catalog:generate` | Regenerate the committed catalog |
 | `pnpm typecheck` | `svelte-kit sync`, `tsc`, `svelte-check` |
 | `pnpm test` | Vitest |
+| `pnpm test:package -- <tarball>` | Install and exercise an already packed tarball as an isolated consumer |
+| `pnpm test:release-workflow` | Check the protected publication workflow contract |
 | `pnpm lint` | Biome |
 | `pnpm package` | `svelte-package` into `dist/`, then `publint` |
+
+Maintainers publish only through the protected GitHub Actions workflow. See
+[the release procedure](docs/releasing.md); never publish this package from a
+workstation.
 
 ## License
 
