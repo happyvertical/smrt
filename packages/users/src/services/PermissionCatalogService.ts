@@ -549,6 +549,40 @@ function getCustomMethodExposureNames(
   );
 }
 
+/**
+ * Identity/RBAC models whose operation slugs are catalogued as their FULL
+ * vocabulary (CRUD plus every public custom method), independent of which
+ * generated transports they expose (#3742).
+ *
+ * Their generated REST/MCP surface is read-only (#1400) and their generated
+ * CLI is now read-only or closed (#3742), yet the permission-gated users
+ * services and consumers' hand-written handlers still assert slugs such as
+ * `memberships.create` or `tenants.moveToParent` through
+ * `assertOperationPermission()`, which requires catalog presence. Those slugs
+ * used to be catalogued only because the CLI accidentally exposed full CRUD;
+ * closing the transport must not silently drop them from the catalog (and so
+ * from role seeding).
+ */
+const USERS_AUTHORITY_CATALOG_MODELS: ReadonlySet<string> = new Set(
+  [
+    'Group',
+    'GroupMember',
+    'GroupRole',
+    'Membership',
+    'MembershipOverride',
+    'Permission',
+    'ResourceGrant',
+    'Role',
+    'RolePermission',
+    'Session',
+    'Tenant',
+    'TenantIntegration',
+    'TenantPermissionOverride',
+    'User',
+    'UsersMagicLinkToken',
+  ].map((className) => `@happyvertical/smrt-users:${className}`),
+);
+
 function isOperationEnabled(config: unknown, action: string): boolean {
   if (config === false) {
     return false;
@@ -938,12 +972,18 @@ export class PermissionCatalogService {
         registered,
         manifestEntry,
       );
+      // Authority models catalog their full vocabulary even though their
+      // generated CLI is closed or read-only (#3742).
+      const catalogCliConfig =
+        qualifiedName && USERS_AUTHORITY_CATALOG_MODELS.has(qualifiedName)
+          ? true
+          : objectConfig.cli;
 
       const readExposed =
         isOperationEnabled(objectConfig.api, 'list') ||
         isOperationEnabled(objectConfig.api, 'get') ||
-        isOperationEnabled(objectConfig.cli, 'list') ||
-        isOperationEnabled(objectConfig.cli, 'get') ||
+        isOperationEnabled(catalogCliConfig, 'list') ||
+        isOperationEnabled(catalogCliConfig, 'get') ||
         isOperationEnabled(objectConfig.mcp, 'list') ||
         isOperationEnabled(objectConfig.mcp, 'get');
       if (readExposed) {
@@ -984,7 +1024,7 @@ export class PermissionCatalogService {
       for (const action of ['create', 'update', 'delete'] as const) {
         const exposed =
           isOperationEnabled(objectConfig.api, action) ||
-          isOperationEnabled(objectConfig.cli, action) ||
+          isOperationEnabled(catalogCliConfig, action) ||
           isOperationEnabled(objectConfig.mcp, action);
         if (!exposed) {
           continue;
@@ -1007,7 +1047,7 @@ export class PermissionCatalogService {
       );
       const customApiMethods = new Set<string>();
       const customCliMethods = getCustomMethodExposureNames(
-        objectConfig.cli,
+        catalogCliConfig,
         publicCustomMethodNames,
       );
       const customMcpMethods = getCustomMethodExposureNames(

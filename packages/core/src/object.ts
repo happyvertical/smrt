@@ -77,7 +77,12 @@ import {
   timestampColumnsToProve,
   unchangedIndexedColumns,
 } from './unchanged-indexed';
-import { fieldsFromClass, tableNameFromClass, toSnakeCase } from './utils';
+import {
+  fieldsFromClass,
+  sanitizeMetaData,
+  tableNameFromClass,
+  toSnakeCase,
+} from './utils';
 
 /**
  * Converts a hydration filter key to its column name, PRESERVING a leading
@@ -2728,6 +2733,18 @@ export class SmrtObject extends SmrtClass {
       } else {
         data[toSnakeCase(key)] = value;
       }
+    }
+    // The STI meta blob never carries row identity (#3238): drop `id`,
+    // tenant-ownership and `_`-prefixed keys a `transformJSON()` override or
+    // caller-shaped meta object put there, so they cannot round-trip back
+    // over the real columns on hydration. A JSON-string blob is sanitized too.
+    if (data._meta_data) {
+      // Inherited fields so a parent's custom tenant field is reserved too.
+      const reservedFields = Object.fromEntries(
+        this.getRegisteredClassInfo()?.inheritedFields ??
+          ObjectRegistry.getFields(this.getResolvedQualifiedName()),
+      );
+      data._meta_data = sanitizeMetaData(data._meta_data, reservedFields);
     }
     // `updated_at` is the framework revision token. A legacy model field
     // named `updatedAt` also snake-cases to this column, so assert the

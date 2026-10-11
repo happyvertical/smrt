@@ -183,6 +183,30 @@ export {
   VoiceGatewayTurn,
   VoiceSession,
 } from './models/index.js';
+// Assistant tools that change customizable overview pages (#3727 phase 4).
+export {
+  createMemoryOverviewUndoStore,
+  createOverviewTools,
+  defaultOverviewUndoStore,
+  formatOverviewIssues,
+  OVERVIEW_APPLY_FUNCTION_NAME,
+  OVERVIEW_APPLY_TOOL_SLUG,
+  OVERVIEW_DESCRIBE_FUNCTION_NAME,
+  OVERVIEW_DESCRIBE_TOOL_SLUG,
+  OVERVIEW_TOOL_MAX_OPERATIONS,
+  OVERVIEW_UNDO_FUNCTION_NAME,
+  OVERVIEW_UNDO_TOOL_SLUG,
+  type OverviewToolAuditEntry,
+  type OverviewToolCheck,
+  OverviewToolError,
+  type OverviewToolPersistResult,
+  type OverviewToolPlan,
+  type OverviewToolSurface,
+  type OverviewToolsHost,
+  type OverviewToolsOptions,
+  type OverviewUndoEntry,
+  type OverviewUndoStore,
+} from './overview-tools.js';
 export {
   type AuthoredConversationMessages,
   type BindPersonaToSessionOptions,
@@ -201,7 +225,7 @@ export {
   runPersonaConversationTurn,
 } from './persona-conversation.js';
 // Declared recipes (#3719)
-export { AssistantRecipe } from './recipes.js';
+export { AssistantRecipe, ChatRoomsRecipe } from './recipes.js';
 // Assistant tools for reports defined at runtime from a user request (#3711).
 export {
   createRuntimeReportTools,

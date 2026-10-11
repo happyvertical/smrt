@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-svelte",
-  "version": "0.55.9",
+  "version": "0.55.12",
   "smrtJsdoc": "strict",
   "description": "Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups",
   "type": "module",
@@ -20,6 +20,12 @@
       "svelte": "./dist/components/forms/index.js",
       "import": "./dist/components/forms/index.js",
       "default": "./dist/components/forms/index.js"
+    },
+    "./notifications": {
+      "types": "./dist/components/notifications/index.d.ts",
+      "svelte": "./dist/components/notifications/index.js",
+      "import": "./dist/components/notifications/index.js",
+      "default": "./dist/components/notifications/index.js"
     },
     "./settings": {
       "types": "./dist/components/settings/index.d.ts",
@@ -56,6 +62,17 @@
       "svelte": "./dist/components/overview/index.js",
       "import": "./dist/components/overview/index.js",
       "default": "./dist/components/overview/index.js"
+    },
+    "./cookbook": {
+      "types": "./dist/components/cookbook/index.d.ts",
+      "svelte": "./dist/components/cookbook/index.js",
+      "import": "./dist/components/cookbook/index.js",
+      "default": "./dist/components/cookbook/index.js"
+    },
+    "./cookbook/server": {
+      "types": "./dist/components/cookbook/server.d.ts",
+      "import": "./dist/components/cookbook/server.js",
+      "default": "./dist/components/cookbook/server.js"
     },
     "./overview/server": {
       "types": "./dist/components/overview/server.d.ts",

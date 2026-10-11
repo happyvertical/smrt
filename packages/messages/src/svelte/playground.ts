@@ -88,6 +88,16 @@ export default {
   moduleMeta: MESSAGES_MODULE_META,
   entries: [
     {
+      id: 'mailbox',
+      title: 'Mailbox',
+      description:
+        'Interactive fictional inbox. Compose and send are mocked; no mail is delivered.',
+      loadComponent: () => import('./components/MailboxDemo.svelte'),
+      order: 0,
+      props: {},
+      modes: { mock: { label: 'Mock sending' } },
+    },
+    {
       id: 'account-list',
       title: 'Account List',
       description:

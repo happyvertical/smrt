@@ -1,5 +1,46 @@
 # @happyvertical/smrt-core
 
+## 0.55.12
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - never re-run resolve() from createSessionHandler's session fallback (#3773) (users)
+  - open the one-time token as a URL fragment, not in planner.config.json (#3750) (#3772) (kitchen)
+  - hosted STI subclass routes authorize the base's permission slugs (#3771) (core)
+- @happyvertical/smrt-config@0.55.12
+  - @happyvertical/smrt-scanner@0.55.12
+  - @happyvertical/smrt-types@0.55.12
+
+## 0.55.11
+
+### Patch Changes
+
+- ### Features
+  
+  - headless cookbook engine and local Kitchen plugin (#3753, #3752) (#3765)
+  - cookbook contract, apply, kitchen and cookbook app shell (epic #3747) (#3764)
+  - release phase 2 report and overview extensions (#3763)
+- @happyvertical/smrt-config@0.55.11
+  - @happyvertical/smrt-scanner@0.55.11
+  - @happyvertical/smrt-types@0.55.11
+
+## 0.55.10
+
+### Patch Changes
+
+- ### Features
+  
+  - release communication and identity recipes (#3739)
+  - smrt-preferences UI-preference persistence (#3727 phase 3) (#3757) (preferences)
+  - assistant overview operations with Undo (#3727 phase 4) (#3746) (overviews)
+  - smrt-approvals core package (slice 1 of #3716) (#3745) (approvals)
+  - add configurable helpers and photo characters (#3733)
+- @happyvertical/smrt-config@0.55.10
+  - @happyvertical/smrt-scanner@0.55.10
+  - @happyvertical/smrt-types@0.55.10
+
 ## 0.55.9
 
 ### Patch Changes

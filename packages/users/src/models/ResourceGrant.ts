@@ -32,7 +32,9 @@ export interface ResourceGrantOptions extends SmrtObjectOptions {
   tenantScoped: true,
   api: { include: [] },
   mcp: { include: [] },
-  cli: { skipApiCheck: true },
+  // #3742: no generated CLI either — a `cli` config without `include` is full
+  // CRUD, and even `include: []` exposes public custom methods.
+  cli: false,
   indexes: [
     { name: 'resource_grants_lookup_idx', columns: ['tenantId', 'userId'] },
   ],

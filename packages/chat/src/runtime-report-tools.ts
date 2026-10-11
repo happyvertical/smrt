@@ -247,12 +247,28 @@ async function withPrincipalTenant<T>(
   run: PrincipalRun,
   fn: (tenantId: string) => Promise<T>,
 ): Promise<T> {
+  const { tenantId, enterContext } = principalTenantScope(run);
+  return enterContext
+    ? withTenant({ tenantId }, () => fn(tenantId))
+    : fn(tenantId);
+}
+
+/**
+ * The tenant binding `withPrincipalTenant` applies, checked without running
+ * anything: the principal's tenant, and whether its context must be entered.
+ * Throws when the principal has no tenant or an ambient tenant disagrees with
+ * it (outside a system-context/super-admin path). `apply` calls this before
+ * asking a human to confirm, so a save that would be refused never records a
+ * confirmation (#3768).
+ */
+function principalTenantScope(run: PrincipalRun): {
+  tenantId: string;
+  enterContext: boolean;
+} {
   const tenantId = requirePrincipalTenant(run);
-  if (!isTenancyEnabled()) return fn(tenantId);
+  if (!isTenancyEnabled()) return { tenantId, enterContext: false };
   const active = getCurrentTenant();
-  if (active === undefined) {
-    return withTenant({ tenantId }, () => fn(tenantId));
-  }
+  if (active === undefined) return { tenantId, enterContext: true };
   if (
     active.tenantId !== tenantId &&
     !isSystemContext() &&
@@ -260,7 +276,7 @@ async function withPrincipalTenant<T>(
   ) {
     throw new DataSurfaceDeniedError();
   }
-  return fn(tenantId);
+  return { tenantId, enterContext: false };
 }
 
 /** Whether the principal may `read` a configured source (never throws). */
@@ -590,8 +606,9 @@ export function createRuntimeReportTools(
           'does not match the spec; preview the spec again and pass its specHash',
         );
       }
-      // Before asking a human to confirm anything that cannot be stored.
-      requirePrincipalTenant(run);
+      // Before asking a human to confirm anything that cannot be stored: no
+      // principal tenant, or an ambient tenant that disagrees with it (#3768).
+      principalTenantScope(run);
       if (!options.confirmation) {
         throw new RuntimeReportError(
           'invalid_operation',

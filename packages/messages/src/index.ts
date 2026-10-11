@@ -173,3 +173,5 @@ export type {
 
 ensureBuiltinMessagingProvidersRegistered();
 ensureMessagingPermissionsRegistered();
+
+export { MailboxRecipe, NotificationsRecipe } from './recipes.js';

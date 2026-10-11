@@ -1,0 +1,173 @@
+{
+  "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+  "version": 1,
+  "theme": {
+    "custom": {
+      "primary": "#0f766e",
+      "fontFamily": "ui-rounded"
+    }
+  },
+  "recipes": [
+    "commerce.agreements",
+    "commerce.customers",
+    "commerce.invoicing",
+    "events.calendar",
+    "inventory.stock",
+    "ledgers.bookkeeping",
+    "products.simple"
+  ],
+  "features": [],
+  "policies": [
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Agreement",
+      "fieldName": "terms",
+      "scopeType": "app",
+      "defaultValue": "\"Due on receipt\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Customer",
+      "fieldName": "creditLimit",
+      "scopeType": "app",
+      "visibility": "hidden"
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Customer",
+      "fieldName": "customerType",
+      "scopeType": "app",
+      "visibility": "hidden"
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Customer",
+      "fieldName": "paymentTerms",
+      "scopeType": "app",
+      "defaultValue": "\"Due on receipt\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Customer",
+      "fieldName": "taxExempt",
+      "scopeType": "app",
+      "visibility": "hidden"
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Invoice",
+      "fieldName": "currency",
+      "scopeType": "app",
+      "defaultValue": "\"USD\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Invoice",
+      "fieldName": "terms",
+      "scopeType": "app",
+      "defaultValue": "\"Due on receipt\""
+    },
+    {
+      "objectRef": "@happyvertical/smrt-commerce:Customer",
+      "fieldName": "taxId",
+      "scopeType": "app",
+      "visibility": "hidden"
+    }
+  ],
+  "layout": {
+    "version": 1,
+    "sectionOrder": [
+      "custom:classes",
+      "custom:members",
+      "custom:shop",
+      "custom:billing",
+      "section:accounting"
+    ],
+    "itemOrder": {
+      "custom:classes": [
+        "item:events:Event",
+        "item:events:EventSeries",
+        "item:events:EventType"
+      ],
+      "custom:members": [
+        "item:commerce:Customer",
+        "item:commerce:Agreement"
+      ],
+      "custom:shop": [
+        "item:products:Product",
+        "item:inventory:StockLevel"
+      ],
+      "custom:billing": [
+        "item:commerce:Invoice",
+        "item:commerce:Payment"
+      ]
+    },
+    "hidden": [
+      "item:commerce:Contract",
+      "item:inventory:InventoryLocation",
+      "item:inventory:StockMovement"
+    ],
+    "moved": {
+      "item:events:Event": "custom:classes",
+      "item:events:EventSeries": "custom:classes",
+      "item:events:EventType": "custom:classes",
+      "item:commerce:Customer": "custom:members",
+      "item:commerce:Agreement": "custom:members",
+      "item:products:Product": "custom:shop",
+      "item:inventory:StockLevel": "custom:shop",
+      "item:commerce:Invoice": "custom:billing",
+      "item:commerce:Payment": "custom:billing"
+    },
+    "customSections": [
+      {
+        "id": "custom:classes",
+        "label": "Classes"
+      },
+      {
+        "id": "custom:members",
+        "label": "Members"
+      },
+      {
+        "id": "custom:shop",
+        "label": "Shop"
+      },
+      {
+        "id": "custom:billing",
+        "label": "Billing"
+      }
+    ],
+    "items": {
+      "item:events:Event": {
+        "label": "Classes",
+        "description": "Every class on your timetable, with who's teaching and where."
+      },
+      "item:events:EventSeries": {
+        "label": "Class series",
+        "description": "Weekly classes that repeat, so you set them up once."
+      },
+      "item:events:EventType": {
+        "label": "Class types",
+        "description": "Your styles, like Vinyasa or Yin, with length and price."
+      },
+      "item:commerce:Customer": {
+        "label": "Members",
+        "description": "Your students, with how to reach them and what they have booked."
+      },
+      "item:commerce:Agreement": {
+        "label": "Memberships",
+        "description": "Memberships and class packs, with who holds them and when they renew."
+      },
+      "item:inventory:StockLevel": {
+        "label": "Stock",
+        "description": "Mats, props and retail items on hand."
+      }
+    },
+    "sections": {
+      "custom:classes": {
+        "icon": "school"
+      },
+      "custom:members": {
+        "icon": "users"
+      },
+      "custom:shop": {
+        "icon": "shoppingBag"
+      },
+      "custom:billing": {
+        "icon": "receipt"
+      }
+    }
+  }
+}

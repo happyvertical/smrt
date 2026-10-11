@@ -114,7 +114,9 @@ export function generateSessionId(): string {
   // Sessions should not be exposed via public API for security
   api: { include: ['get', 'delete'] },
   mcp: { include: [] },
-  cli: { skipApiCheck: true },
+  // #3742: no generated CLI either — a `cli` config without `include` is full
+  // CRUD, and even `include: []` exposes public custom methods.
+  cli: false,
 })
 export class Session extends SmrtObject {
   /**

@@ -43,21 +43,23 @@ export {
   generateThemeVariables,
   variablesToStyleString,
 } from './css-generator.js';
-export { glassTheme } from './glass/index.js';
-export { happyverticalTheme } from './happyvertical/index.js';
-// Theme definitions
-export { materialTheme } from './material/index.js';
-
-// Registry
+// Preset data and registry (single source: ./presets.ts, Node-safe)
 export {
   availablePresets,
   getAllThemes,
   getTheme,
   getThemeName,
   getThemeOptions,
+  glassTheme,
+  happyverticalTheme,
   isValidPreset,
+  materialTheme,
+  smrtTheme,
+  studioTheme,
+  type ThemePresetSummary,
+  themePresets,
   themes,
-} from './registry.js';
+} from './presets.js';
 // Shared tokens (if needed for custom themes)
 export {
   appleEasing,
@@ -67,8 +69,6 @@ export {
   spacingScale,
   studioEasing,
 } from './shared.js';
-export { smrtTheme } from './smrt/index.js';
-export { studioTheme } from './studio/index.js';
 // Main components
 export { default as ThemeProvider } from './ThemeProvider.svelte';
 // Pre-paint bootstrap script

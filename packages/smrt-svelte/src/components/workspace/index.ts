@@ -111,6 +111,11 @@ export {
   stripUnpersistedSettings,
 } from './admin-shell/settings.js';
 export {
+  type ShellSettingsDeltaCheck,
+  type ShellSettingsIssue,
+  sanitizeShellSettingsDelta,
+} from './admin-shell/settings-delta.js';
+export {
   isShellIconName,
   SHELL_DEFAULT_SECTION_ICON,
   SHELL_ICON_PATHS,

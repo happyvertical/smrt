@@ -59,6 +59,7 @@ components are exempt — they *are* the primitives.
 | `./registry` | `ModuleUIRegistry` for cross-package component discovery |
 | `./theme` | deprecated compatibility path forwarding to the canonical theme system |
 | `./themes` | canonical `ThemeProvider`, context, preset token system (material/glass/studio/smrt/happyvertical), and CSS generation |
+| `./themes/presets` | Node-safe preset data (ids, labels, palettes, `themePresets`, theme definitions); imports no `.svelte`; `./themes` re-exports it, so it is the single source |
 | `./themes/styles/smrt.css` | static SMRT theme CSS (dark-first amber instrument-panel look) + signature `.smrt-*` flourish utilities |
 | `./themes/styles/fonts.css` | optional self-hosted `@font-face` for the SMRT type stack (Space Grotesk / Inter / JetBrains Mono) |
 | `./themes/styles/happyvertical.css` | static HappyVertical "Day Shift" brand CSS (enamel/faceplate calm instrument panel) + amber focus rule + `.hv-*` utilities |

@@ -106,8 +106,8 @@ describe('RBAC/identity generated CRUD lockdown (#1400)', () => {
 
       // A `null` surface means `api: true` / `mcp: true` (full CRUD generated) —
       // the dangerous default this finding is about. Authority tables must use an
-      // explicit read-only include list. (cli is intentionally not asserted: it
-      // is a local-operator surface, outside the network/agent threat model.)
+      // explicit read-only include list. (cli is asserted separately in
+      // issue-3742-cli-surface-lockdown.test.ts: agents shell out to it too.)
       for (const [name, surface] of [
         ['api', api],
         ['mcp', mcp],

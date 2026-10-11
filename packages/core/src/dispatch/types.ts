@@ -104,7 +104,11 @@ export interface DispatchListOptions {
    * active scope. Semantics:
    *
    * - omitted / `enforced: false` → no tenant filter (pre-tenancy behavior).
-   * - `enforced: true`, `tenantId: T` → `(tenant_id = T OR tenant_id IS NULL)`.
+   * - `enforced: true`, `tenantId: T` → `(tenant_id = T OR tenant_id IS NULL)`
+   *   inside the collection (processing paths claim global work), but the
+   *   public `DispatchBus.list()` narrows this to `tenant_id = T` only: global
+   *   (NULL-tenant) rows are system-only on inspection reads (#3301) because
+   *   their payload may belong to another tenant.
    * - `enforced: true`, `tenantId: null` → `tenant_id IS NULL` only (fail-closed
    *   global scope when tenancy is on but no tenant context is active).
    *

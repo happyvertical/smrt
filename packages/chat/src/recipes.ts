@@ -11,6 +11,7 @@ import { SmrtRecipe } from '@happyvertical/smrt-core';
 import { AgentSession } from './models/AgentSession.js';
 import { ChatMessage } from './models/ChatMessage.js';
 import { ChatParticipant } from './models/ChatParticipant.js';
+import { ChatReaction } from './models/ChatReaction.js';
 import { ChatRoom } from './models/ChatRoom.js';
 import { ChatThread } from './models/ChatThread.js';
 
@@ -68,4 +69,79 @@ export class AssistantRecipe extends SmrtRecipe {
       browserOptions: ['webllm', 'bitgpu'],
     },
   ] as const;
+}
+/** Team rooms and their conversations. */
+export class ChatRoomsRecipe extends SmrtRecipe {
+  static id = 'chat.rooms';
+  static help = './chat-rooms.recipe.md';
+  static label = 'Team Chat';
+  static summary =
+    'Organize team conversations in rooms with threads and reactions.';
+  static synonyms = ['team chat', 'channels', 'group chat', 'conversations'];
+  static models = [
+    ChatRoom,
+    ChatMessage,
+    ChatParticipant,
+    ChatThread,
+    ChatReaction,
+  ];
+  static group = {
+    id: 'team-collaboration',
+    label: 'Team collaboration',
+    summary: 'Keep conversations and shared work in one place.',
+  };
+  static section = {
+    id: 'team',
+    label: 'Team',
+    icon: 'users',
+    description: 'People and the conversations that keep them aligned.',
+  };
+  static nav = [
+    {
+      label: 'Chat Rooms',
+      model: ChatRoom,
+      icon: 'users',
+      description: 'Team conversations organized by topic or audience.',
+      noun: 'chat room',
+    },
+  ];
+  static runtime = 'both' as const;
+  static surfaces = [
+    {
+      kind: 'route',
+      path: '/chat/rooms',
+      export: '@happyvertical/smrt-chat/svelte#ChatLayout',
+      label: 'Team chat',
+    },
+    {
+      kind: 'playground',
+      export: '@happyvertical/smrt-chat/playground#default',
+      label: 'Static chat fixtures',
+    },
+  ] as const;
+  static demoSeed = {
+    export: '@happyvertical/smrt-chat/playground#chatRoomsFixture',
+  } as const;
+  static options = {
+    ChatRoom: {
+      fields: {
+        metadata: { visibility: 'hidden' },
+        createdByProfileId: { visibility: 'hidden' },
+        lastMessageAt: { label: 'Last message', order: 1 },
+      },
+    },
+    ChatMessage: {
+      fields: {
+        metadata: { visibility: 'hidden' },
+        toolCallData: { visibility: 'hidden' },
+        attachments: { visibility: 'advanced' },
+      },
+    },
+    ChatParticipant: {
+      fields: {
+        lastReadMessageId: { visibility: 'hidden' },
+        lastSeenAt: { visibility: 'advanced' },
+      },
+    },
+  } as const;
 }

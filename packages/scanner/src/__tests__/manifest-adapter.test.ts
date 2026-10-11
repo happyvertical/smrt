@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ManifestAdapter } from '../manifest-adapter.js';
+import { defaultCollectionName, ManifestAdapter } from '../manifest-adapter.js';
 import type { RawFieldDefinition } from '../types.js';
 
 describe('ManifestAdapter', () => {
@@ -835,5 +835,15 @@ describe('ManifestAdapter', () => {
         expect(result.required).toBe(false);
       });
     });
+  });
+});
+
+describe('defaultCollectionName', () => {
+  it('lowercases and pluralizes the class name, as the adapter does', () => {
+    expect(defaultCollectionName('ProductionOrder')).toBe('productionorders');
+    expect(defaultCollectionName('City')).toBe('cities');
+    expect(defaultCollectionName('Day')).toBe('days');
+    expect(defaultCollectionName('Address')).toBe('addresses');
+    expect(defaultCollectionName('Batch')).toBe('batches');
   });
 });

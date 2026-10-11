@@ -8,6 +8,17 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  'messages.mailbox_demo.disclaimer':
+    'Demo mailbox. Sending is mocked; no mail server is contacted.',
+  'messages.mailbox_demo.compose': 'Compose',
+  'messages.mailbox_demo.back': 'Back to mailbox',
+  'messages.mailbox_demo.sent':
+    'Mock send complete: {subject}. No email was delivered.',
+  'messages.mailbox_demo.inbox': 'Demo Inbox',
+  'messages.mailbox_demo.subject': 'Welcome to your mailbox',
+  'messages.mailbox_demo.body':
+    'Open this message, or compose a mock reply. Nothing leaves this browser.',
+  'messages.mailbox_demo.sender': 'Demo colleague',
   // MessageStatusIndicator
   'messages.message_status_indicator.status': 'Message status',
   'messages.message_status_indicator.unread': 'Unread',

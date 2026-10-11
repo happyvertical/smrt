@@ -1066,6 +1066,36 @@ describe('createRuntimeReportTools', () => {
       ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
     });
 
+    it('a principal whose tenant disagrees with the ambient one is refused before confirmation on apply (#3768)', async () => {
+      const confirmSave = vi.fn();
+      const tools = toolMap({ confirmation: { confirmSave } });
+      const runB = fakeRun({ tenantId: TENANT_B });
+      const preview = await call(
+        tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+        runB,
+        {
+          phase: 'preview',
+          spec: SPEC,
+        },
+      );
+      await expect(
+        underAmbient(
+          tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+          runB,
+          TENANT_A,
+          {
+            phase: 'apply',
+            spec: SPEC,
+            specHash: preview.specHash,
+          },
+        ),
+      ).rejects.toBeInstanceOf(DataSurfaceDeniedError);
+      // The human is never asked to confirm a save that will be refused.
+      expect(confirmSave).not.toHaveBeenCalled();
+      const rows = await db.query('SELECT COUNT(*) AS n FROM runtime_reports');
+      expect(Number((rows.rows[0] as { n: unknown }).n)).toBe(0);
+    });
+
     it('a tenant-less persona cannot save into the ambient tenant', async () => {
       const confirmSave = vi.fn();
       const tools = toolMap({ confirmation: { confirmSave } });

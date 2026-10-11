@@ -14,11 +14,13 @@
  * moved to `@happyvertical/smrt-agents/svelte`.
  */
 
+export * from './components/activity/index.js';
 export * from './components/audit/index.js';
 // Form components
 export * from './components/forms/index.js';
 // Module components (for dynamic module UI rendering)
 export * from './components/module/index.js';
+export * from './components/notifications/index.js';
 // Authenticated browser-side data-surface command/ack/event bridge
 export * from './data-surface.js';
 // Hooks

@@ -95,6 +95,15 @@ const sampleMessages = [
   },
 ];
 
+/**
+ * Browser-safe static fixture for hosts demonstrating the chat.rooms recipe.
+ * It is intentionally mock data and does not connect to ChatService.
+ */
+export const chatRoomsFixture = {
+  rooms: sampleRooms,
+  messages: sampleMessages,
+};
+
 const loadMessageInput = () =>
   import('./components/messages/MessageInput.svelte');
 const loadMessageList = () =>
@@ -115,14 +124,16 @@ export default {
       loadComponent: loadRoomList,
       order: 1,
       props: {
-        rooms: sampleRooms,
+        rooms: chatRoomsFixture.rooms,
         currentRoomId: 'room-editorial',
         onselectroom: noop,
         oncreateroom: noop,
       },
       modes: {
         mock: {
-          label: 'Mock',
+          label: 'Static mock fixture',
+          description:
+            'Static room data only; no live chat service is connected.',
         },
       },
     },
@@ -134,14 +145,16 @@ export default {
       loadComponent: loadMessageList,
       order: 2,
       props: {
-        messages: sampleMessages,
+        messages: chatRoomsFixture.messages,
         currentProfileId: 'profile-taylor',
         onreply: noop,
         onreact: noop,
       },
       modes: {
         mock: {
-          label: 'Mock',
+          label: 'Static mock fixture',
+          description:
+            'Static transcript data only; no live chat service is connected.',
         },
       },
     },
@@ -164,7 +177,9 @@ export default {
       },
       modes: {
         mock: {
-          label: 'Mock',
+          label: 'Static mock fixture',
+          description:
+            'Static composer state only; no live chat service is connected.',
         },
       },
     },

@@ -189,3 +189,40 @@ Account credentials are stored via `credentialSecretId` pointing to smrt-secrets
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+### Notification bell and mailbox recipes
+
+`Messages` exports `NotificationsRecipe` (`messages.notifications`) and `MailboxRecipe`
+(`messages.mailbox`). The mailbox playground offers an interactive fictional inbox;
+its compose action reports a mock send and never calls a mail transport.
+
+For a server-rendered authorized host, construct `createUserNotificationBellProvider`
+from `@happyvertical/smrt-messages/svelte` with a `UserNotificationService`, the signed-in
+`userId`, and the authorized `tenantIds`. Pass that provider to `NotificationBell`
+from `@happyvertical/smrt-svelte/notifications`. Browser hosts implement the same
+provider interface over authenticated server endpoints; never send database services
+to a browser. Replace the provider when the user or tenant context changes. Optional
+`subscribe` connects a host-owned transport; the UI unsubscribes on disposal.
+
+The Messaging feature card offers mailbox and notification controls independently.
+Mailbox navigation includes a stable Failed sends entry filtered by `sendStatus = failed`.
+Notifications deliberately declare no generic model navigation: recipient-scoped
+provider access remains required.
+
+The mailbox route surface resolves `MessageList`; the host supplies authorized
+`messages`, account DTOs, and callbacks. Its `email-inbox` provider lists the
+implemented IMAP, POP3, and Gmail readers; the optional `email-send` provider
+lists SMTP and Gmail sending. Import `@happyvertical/smrt-messages/providers/email`
+on the server and keep credentials in the existing secret-backed account setup.
+Provider metadata names implementations, not automatic connections or credentials.
+The `MailboxDemo` playground remains self-contained and every send is mocked.
+Its JSON demo seed is a fictional `MessageList` props payload, never a live account.
+
+The notification surface places `NotificationBell` at `header.end`. The required
+`user-notification-service` implementation maps to `createUserNotificationBellProvider`
+and still needs a host-authorized signed-in user and tenant set. Browser hosts
+bridge that service through authenticated endpoints. The JSON `items` seed is
+presentation data: a demo host wraps it in an in-memory `NotificationProvider`;
+it must never route demo mutations to the production notification service.
+All these recipes use `runtime: both` because the UI is browser-safe while live
+mail and notification persistence remain server operations.

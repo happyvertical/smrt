@@ -15,6 +15,8 @@ import './__smrt-register__.js';
 // override them via `resolvePrompt()` without further plumbing.
 import './prompts.js';
 
+export type { AuditActivityEntry, AuditActivityOptions } from './activity';
+export { auditActivityEntries } from './activity';
 // Agent (bot) profile resolution (#2995)
 export {
   AGENT_PROFILE_CONTEXT,
@@ -158,7 +160,7 @@ export {
   promptMessageOptions,
   smrtProfilesGenerateBioPrompt,
 } from './prompts';
-
+export { AuditLogRecipe } from './recipes.js';
 // Export types
 export type {
   ReciprocalHandler,

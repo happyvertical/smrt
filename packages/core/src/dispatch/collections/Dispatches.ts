@@ -25,10 +25,20 @@ import type {
  *
  *  - tenancy off / no scope → no predicate (pre-tenancy behavior)
  *  - `enforced` + active tenant T → `(tenant_id = ? OR tenant_id IS NULL)`
+ *    for processing paths, or `tenant_id = ?` only for the bus's public
+ *    inspection reads (`includeGlobal: false`, #3301)
  *  - `enforced` + no active tenant → `tenant_id IS NULL` (fail-closed global)
  *
  * @param placeholder - Engine-specific positional placeholder (e.g. `$3`) used
  *   when a tenant id value is bound. Ignored for the no-value branches.
+ * @param includeGlobal - Whether an active tenant also matches global (NULL)
+ *   rows. Processing paths (claim/findPending/retry/cleanup) keep `true` so a
+ *   tenant worker can pick up global work (including the wildcard path of
+ *   `DispatchBus.process()`, which uses `list`). The bus's public inspection
+ *   reads (`DispatchBus.list()` / `get()`) pass `false`: a global row's
+ *   payload is not owned by the tenant (e.g. a delivery emitted outside tenant
+ *   context for another tenant's recipient), so global rows are visible to
+ *   system scope only.
  * @returns `true` when a value placeholder was consumed (so the caller can
  *   advance its param index), `false` otherwise.
  */
@@ -37,12 +47,17 @@ function pushTenantPredicate(
   params: unknown[],
   scope: DispatchTenantScope | undefined,
   placeholder: string,
+  includeGlobal = true,
 ): boolean {
   if (!scope?.enforced) {
     return false;
   }
   if (scope.tenantId !== null) {
-    conditions.push(`(tenant_id = ${placeholder} OR tenant_id IS NULL)`);
+    conditions.push(
+      includeGlobal
+        ? `(tenant_id = ${placeholder} OR tenant_id IS NULL)`
+        : `tenant_id = ${placeholder}`,
+    );
     params.push(scope.tenantId);
     return true;
   }
@@ -172,19 +187,24 @@ export class DispatchCollection {
   /**
    * Get a dispatch by ID, enforcing the active tenant scope (S5 #1398).
    *
-   * Applies the same tenant predicate as {@link list}/{@link findPending}, so a
-   * cross-tenant or out-of-scope id lookup returns `null` rather than leaking
-   * the row. The scope is derived server-side by the DispatchBus.
+   * Applies the same tenant predicate as {@link list}, so a cross-tenant or
+   * out-of-scope id lookup returns `null` rather than leaking the row. The
+   * scope is derived server-side by the DispatchBus.
+   *
+   * @param includeGlobal - Whether an active tenant also matches global
+   *   (NULL-tenant) rows. `DispatchBus.get()` passes `false` so global rows are
+   *   system-only on inspection reads (#3301).
    */
   static async getScoped(
     db: DatabaseInterface,
     id: string,
     tenantScope?: DispatchTenantScope,
+    includeGlobal = true,
   ): Promise<Dispatch | null> {
     const conditions: string[] = ['id = $1'];
     const params: unknown[] = [id];
 
-    pushTenantPredicate(conditions, params, tenantScope, '$2');
+    pushTenantPredicate(conditions, params, tenantScope, '$2', includeGlobal);
 
     const { rows } = await db.query(
       `SELECT * FROM _smrt_dispatch WHERE ${conditions.join(' AND ')} LIMIT 1`,
@@ -197,10 +217,17 @@ export class DispatchCollection {
 
   /**
    * List dispatches with filtering
+   *
+   * @param includeGlobal - Whether an active tenant also matches global
+   *   (NULL-tenant) rows. Defaults to `true`, which the wildcard path of
+   *   `DispatchBus.process()` relies on to claim global work. The public
+   *   `DispatchBus.list()` passes `false` so global rows are system-only on
+   *   inspection reads (#3301).
    */
   static async list(
     db: DatabaseInterface,
     options: DispatchListOptions = {},
+    includeGlobal = true,
   ): Promise<Dispatch[]> {
     const conditions: string[] = [];
     const params: unknown[] = [];
@@ -232,13 +259,15 @@ export class DispatchCollection {
     }
 
     // Tenant isolation (S5 #1398). Scope is derived server-side by the bus;
-    // callers cannot widen it. See DispatchListOptions.tenantScope.
+    // callers cannot widen it. See DispatchListOptions.tenantScope and the
+    // `includeGlobal` parameter (#3301).
     if (
       pushTenantPredicate(
         conditions,
         params,
         options.tenantScope,
         `$${paramIndex}`,
+        includeGlobal,
       )
     ) {
       paramIndex++;

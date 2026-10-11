@@ -1,0 +1,349 @@
+{
+  "recipes": [
+    {
+      "id": "commerce.customers",
+      "className": "CustomersRecipe",
+      "label": "Customers",
+      "summary": "",
+      "synonyms": [],
+      "models": [
+        "@happyvertical/smrt-commerce:Customer"
+      ],
+      "nav": [
+        {
+          "label": "Customers",
+          "model": "@happyvertical/smrt-commerce:Customer",
+          "icon": "users"
+        }
+      ],
+      "requires": [],
+      "section": {
+        "id": "people",
+        "label": "People"
+      }
+    },
+    {
+      "id": "commerce.vendors",
+      "className": "VendorsRecipe",
+      "label": "Vendors",
+      "summary": "",
+      "synonyms": [],
+      "models": [
+        "@happyvertical/smrt-commerce:Vendor"
+      ],
+      "nav": [
+        {
+          "label": "Vendors",
+          "model": "@happyvertical/smrt-commerce:Vendor"
+        }
+      ],
+      "requires": [],
+      "section": {
+        "id": "people",
+        "label": "People"
+      }
+    },
+    {
+      "id": "commerce.sales",
+      "className": "SalesRecipe",
+      "label": "Sales",
+      "summary": "",
+      "synonyms": [],
+      "models": [
+        "@happyvertical/smrt-commerce:Order",
+        "@happyvertical/smrt-commerce:Customer"
+      ],
+      "nav": [
+        {
+          "label": "Orders",
+          "model": "@happyvertical/smrt-commerce:Order",
+          "icon": "shoppingBag"
+        }
+      ],
+      "requires": [
+        "commerce.customers"
+      ],
+      "section": {
+        "id": "sales",
+        "label": "Sales"
+      },
+      "options": {
+        "@happyvertical/smrt-commerce:Order": {
+          "fields": {
+            "number": {
+              "locked": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "commerce.invoicing",
+      "className": "InvoicingRecipe",
+      "label": "Invoicing",
+      "summary": "",
+      "synonyms": [],
+      "models": [
+        "@happyvertical/smrt-commerce:Invoice",
+        "@happyvertical/smrt-commerce:InvoiceLineItem"
+      ],
+      "nav": [
+        {
+          "label": "Invoices",
+          "model": "@happyvertical/smrt-commerce:Invoice"
+        }
+      ],
+      "requires": [
+        "commerce.customers"
+      ],
+      "section": {
+        "id": "billing",
+        "label": "Billing"
+      }
+    },
+    {
+      "id": "commerce.purchases",
+      "className": "PurchasesRecipe",
+      "label": "Purchases",
+      "summary": "",
+      "synonyms": [],
+      "models": [],
+      "nav": [],
+      "requires": [],
+      "requiresAny": [
+        [
+          "commerce.vendors",
+          "commerce.customers"
+        ]
+      ]
+    },
+    {
+      "id": "inventory.stock",
+      "className": "StockRecipe",
+      "label": "Stock",
+      "summary": "",
+      "synonyms": [],
+      "models": [
+        "@happyvertical/smrt-inventory:StockLevel"
+      ],
+      "nav": [
+        {
+          "label": "Stock levels",
+          "model": "@happyvertical/smrt-inventory:StockLevel"
+        }
+      ],
+      "requires": []
+    }
+  ],
+  "models": [
+    {
+      "id": "@happyvertical/smrt-commerce:Customer",
+      "name": "Customer",
+      "packageId": "commerce",
+      "exposed": true,
+      "fields": [
+        {
+          "name": "id",
+          "system": true
+        },
+        {
+          "name": "name"
+        },
+        {
+          "name": "notes"
+        },
+        {
+          "name": "paymentTerms"
+        }
+      ]
+    },
+    {
+      "id": "@happyvertical/smrt-commerce:Vendor",
+      "name": "Vendor",
+      "packageId": "commerce",
+      "exposed": true,
+      "fields": [
+        {
+          "name": "id",
+          "system": true
+        },
+        {
+          "name": "name"
+        }
+      ]
+    },
+    {
+      "id": "@happyvertical/smrt-commerce:Order",
+      "name": "Order",
+      "packageId": "commerce",
+      "exposed": true,
+      "fields": [
+        {
+          "name": "id",
+          "system": true
+        },
+        {
+          "name": "number"
+        },
+        {
+          "name": "notes"
+        },
+        {
+          "name": "currency",
+          "default": "USD"
+        },
+        {
+          "name": "terms"
+        }
+      ]
+    },
+    {
+      "id": "@happyvertical/smrt-commerce:Invoice",
+      "name": "Invoice",
+      "packageId": "commerce",
+      "exposed": true,
+      "fields": [
+        {
+          "name": "id",
+          "system": true
+        },
+        {
+          "name": "number"
+        },
+        {
+          "name": "currency",
+          "default": "USD"
+        },
+        {
+          "name": "terms"
+        }
+      ]
+    },
+    {
+      "id": "@happyvertical/smrt-commerce:InvoiceLineItem",
+      "name": "InvoiceLineItem",
+      "packageId": "commerce",
+      "exposed": true,
+      "fields": [
+        {
+          "name": "id",
+          "system": true
+        },
+        {
+          "name": "description"
+        },
+        {
+          "name": "taxRate",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "id": "@happyvertical/smrt-commerce:ProductionOrder",
+      "name": "ProductionOrder",
+      "packageId": "commerce",
+      "exposed": true,
+      "fields": [
+        {
+          "name": "id",
+          "system": true
+        },
+        {
+          "name": "number"
+        }
+      ]
+    },
+    {
+      "id": "@happyvertical/smrt-inventory:StockLevel",
+      "name": "StockLevel",
+      "packageId": "inventory",
+      "exposed": true,
+      "fields": [
+        {
+          "name": "id",
+          "system": true
+        },
+        {
+          "name": "quantity"
+        }
+      ]
+    },
+    {
+      "id": "@happyvertical/smrt-ads:AdFormat",
+      "name": "AdFormat",
+      "packageId": "ads",
+      "exposed": true,
+      "fields": [
+        {
+          "name": "id",
+          "system": true
+        },
+        {
+          "name": "name"
+        }
+      ]
+    },
+    {
+      "id": "@happyvertical/smrt-commerce:Internal",
+      "name": "Internal",
+      "packageId": "commerce",
+      "exposed": false,
+      "fields": [
+        {
+          "name": "id",
+          "system": true
+        },
+        {
+          "name": "x"
+        }
+      ]
+    }
+  ],
+  "cookbooks": [
+    {
+      "id": "bakery",
+      "name": "Bakery",
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "recipes": [
+          "commerce.sales",
+          "inventory.stock"
+        ],
+        "features": [
+          "@happyvertical/smrt-commerce:ProductionOrder"
+        ],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          }
+        ],
+        "theme": {
+          "custom": {
+            "primary": "#b45309"
+          }
+        }
+      }
+    },
+    {
+      "id": "studio",
+      "name": "Studio",
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "recipes": [
+          "commerce.invoicing"
+        ],
+        "features": [],
+        "policies": [],
+        "theme": {
+          "preset": "glass",
+          "colorScheme": "dark"
+        }
+      }
+    }
+  ]
+}

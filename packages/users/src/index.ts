@@ -58,6 +58,12 @@
 // downstream. Must come first so the side effect runs ahead of the class
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
+
+export {
+  UsersRolesAndPermissionsRecipe,
+  UsersSignInRecipe,
+} from './recipes.js';
+
 // Contribute expired-credential retention to the framework sweep as soon as
 // this package is loaded (#2375), so `smrt db:prune` and any host process see
 // the tasks without an app-level wiring step. Registering is not scheduling:

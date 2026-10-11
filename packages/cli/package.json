@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-cli",
-  "version": "0.55.9",
+  "version": "0.55.12",
   "description": "Developer CLI for SMRT framework - introspection, testing, and project management",
   "type": "module",
   "main": "./dist/index.js",
@@ -13,6 +13,7 @@
     "bin",
     "dist",
     "scripts",
+    "cookbooks",
     "README.md",
     "CLAUDE.md",
     "AGENTS.md",
@@ -54,12 +55,14 @@
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
+    "@modelcontextprotocol/server": "2.0.0",
     "acorn": "^8.18.0",
     "fast-glob": "3.3.3",
     "tar": "^7.5.22",
     "ajv": "8.20.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "24.13.6",
     "tsx": "^4.23.13",
     "typescript": "6.0.3",

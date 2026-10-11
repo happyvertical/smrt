@@ -161,3 +161,24 @@ assignment ownership, and the maintained upload-to-domain-result browser fixture
 Optional explicit feedback and scoped example retrieval are documented in
 [FEEDBACK.md](FEEDBACK.md). Approval and execution outcomes remain separate from
 interpretation correctness; routing policy adoption is explicit and versioned.
+
+## Recipe preview
+
+`ingestion.inbox` and `ingestion.review` declare the user-facing inbox and
+review workflows for app discovery. The reference workflow and measured
+evaluation are now published, but the evaluation did not meet supported-reference
+quality gates and did not establish safety. Automation remains disabled. The
+recipes do not configure a source or provider, expose generic CRUD routes, or
+enable automatic execution. Mount `IntakeInbox` and `IntakeReview` with an
+authenticated `IntakeReviewHost`; [REVIEW.md](REVIEW.md) remains the source of
+truth for its scoped callbacks and freshness checks. See the [adoption
+checklist](../../docs/evaluation/3677-adoption.md) and [measured
+report](../../docs/evaluation/3677-measured-evaluation.md) for the release
+limits.
+
+The recipe manifest registers those existing browser components as
+`/ingestion/inbox` and `/ingestion/review` routes for a host to mount. The route
+metadata does not supply a host, source, provider, or demo fixture, and it does
+not change the preview-only status. Both recipes declare `both` runtime: their
+components render in a browser, while the authenticated review host and package
+dependency closure require a server.

@@ -74,7 +74,7 @@ export interface AccessRequestOptions {
   // CLOSED generated surface — all access flows through AccessRequestService.
   api: { include: [] },
   mcp: { include: [] },
-  cli: { include: [] },
+  cli: false,
 })
 export class AccessRequest extends SmrtObject {
   /**

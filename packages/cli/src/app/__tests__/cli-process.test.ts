@@ -14,7 +14,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -38,10 +38,22 @@ afterEach(() => {
   }
 });
 
+function hasCleanAncestors(directory: string): boolean {
+  for (let current = resolve(directory); ; current = dirname(current)) {
+    if (existsSync(join(current, 'node_modules'))) return false;
+    if (dirname(current) === current) return true;
+  }
+}
+
 function application(viteBin = './bin/vite.mjs', viteSource?: string): string {
-  const root = realpathSync(
-    mkdtempSync(join(realpathSync(tmpdir()), 'smrt-app-process-')),
-  );
+  const parent = [tmpdir(), homedir()]
+    .map((directory) => realpathSync(directory))
+    .find(hasCleanAncestors);
+  if (!parent)
+    throw new Error(
+      'Choose a TMPDIR with no ancestor node_modules directories',
+    );
+  const root = realpathSync(mkdtempSync(join(parent, 'smrt-app-process-')));
   roots.push(root);
   writeFileSync(
     join(root, 'package.json'),

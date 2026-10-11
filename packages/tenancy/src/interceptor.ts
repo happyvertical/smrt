@@ -132,6 +132,19 @@ function getTenancyIdentity(
 }
 
 /**
+ * Whether an active super-admin bypass applies to this class (#2973).
+ *
+ * The ambient `withSuperAdminBypass()` flag only lifts tenant enforcement for
+ * classes that opt in with `allowSuperAdminBypass: true`. Classes that leave
+ * it at the `false` default — or whose config cannot be resolved — keep their
+ * full tenant boundary (fail closed).
+ */
+function isSuperAdminBypassAllowed(tenancyIdentity: string): boolean {
+  if (!isSuperAdminBypass()) return false;
+  return getTenantScopedConfig(tenancyIdentity)?.allowSuperAdminBypass === true;
+}
+
+/**
  * Extract a plain-object snapshot of an instance for dispatch payloads.
  *
  * Prefers `toJSON()` when available (all real SmrtObject instances) because
@@ -234,9 +247,9 @@ export function createTenantInterceptor(
         return; // Not tenant-scoped, pass through
       }
 
-      // Check for super admin bypass
-      if (isSuperAdminBypass()) {
-        return; // Bypass enabled, pass through
+      // Super-admin bypass applies only to classes that opt in (#2973)
+      if (isSuperAdminBypassAllowed(tenancyIdentity)) {
+        return; // Bypass enabled and allowed for this class, pass through
       }
 
       // Check for system context (explicit bypass via withSystemContext)
@@ -386,7 +399,7 @@ export function createTenantInterceptor(
         return;
       }
 
-      if (isSuperAdminBypass()) {
+      if (isSuperAdminBypassAllowed(tenancyIdentity)) {
         return;
       }
 
@@ -483,7 +496,7 @@ export function createTenantInterceptor(
         return; // Explicitly allowed
       }
 
-      if (isSuperAdminBypass()) {
+      if (isSuperAdminBypassAllowed(tenancyIdentity)) {
         opts.onRawQuery?.(className, queryOptions.sql, context);
         return;
       }
@@ -546,7 +559,7 @@ export function createTenantInterceptor(
         return;
       }
 
-      if (isSuperAdminBypass()) {
+      if (isSuperAdminBypassAllowed(tenancyIdentity)) {
         return;
       }
 
@@ -612,7 +625,7 @@ export function createTenantInterceptor(
         return;
       }
 
-      if (isSuperAdminBypass()) {
+      if (isSuperAdminBypassAllowed(tenancyIdentity)) {
         return;
       }
 

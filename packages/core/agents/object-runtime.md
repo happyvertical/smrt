@@ -166,12 +166,23 @@ instances and never use this path to overwrite a loaded revision.
 - Wildcards: `campaign.*` matches `campaign.completed` (single segment only)
 - Tables: `_smrt_dispatch`, `_smrt_dispatch_subscriptions`
 - Status: `pending → processing → completed` (or `failed`)
+- Tenancy (`dispatch/tenant-resolver.ts`): `emit` stamps the server-derived
+  tenant; no context stores `tenant_id` NULL (global). Under an active tenant,
+  processing (`process`/`retry`/`cleanup`) matches that tenant plus global rows,
+  but inspection reads (`list`/`get`) match that tenant only — global rows are
+  system-only because their payload may belong to another tenant (#3301). Emit
+  tenant-owned deliveries inside the tenant context so the owner can see them.
 
 ## Single Table Inheritance (STI)
 
 - Base: `@smrt({ tableStrategy: 'sti' })` — children inherit, share one table
 - Discriminator: `_meta_type` column with qualified names (`@happyvertical/smrt-content:Article`)
 - Child fields: `@meta()` decorator → stored in `_meta_data` JSONB (not as columns)
+- Columns win over `_meta_data` (#3238): `formatDataJs` never lets a meta key
+  shadow a column the row carries, except a field the class declares
+  `@meta()` (a same-named column then belongs to an STI sibling). `id`, tenant-ownership and `_`-prefixed
+  keys (`isReservedMetaDataKey`, inherited tenant fields included) are dropped
+  from the blob on hydration and save, object or JSON text (`sanitizeMetaData`).
 - Polymorphic queries: collection loads `_meta_type`, creates correct subclass dynamically
 - Validation: fail-fast on save if `_meta_type` missing or mismatched
 

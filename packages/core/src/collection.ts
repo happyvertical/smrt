@@ -4730,7 +4730,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const concreteFields: Record<string, CollectionFieldDefinition> = {};
     for (const [fieldName, field] of registeredFields) {
-      concreteFields[fieldName] = { type: field.type };
+      // Tenancy markers travel with the type so `formatDataJs` reserves an
+      // inherited custom tenant field against `_meta_data` (#3238).
+      concreteFields[fieldName] = {
+        type: field.type,
+        __tenancy: field.__tenancy ?? field._meta?.__tenancy,
+      };
     }
     polymorphicFields.set(metaType, concreteFields);
     return concreteFields;

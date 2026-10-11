@@ -2,8 +2,9 @@
  * CLI Commands - Export all command modules
  */
 
-// Config commands
 export { configExportCommand } from './config-export.js';
+// Config commands
+export { cookbookCommands } from './cookbook.js';
 // Migration commands
 export { dbDiffCommand } from './db-diff.js';
 export { dbGenerateCommand } from './db-generate.js';
@@ -21,6 +22,7 @@ export { generateCommands } from './generate.js';
 export { gitCommands } from './git.js';
 export { gnodeCommands } from './gnode.js';
 export { initCommands } from './init.js';
+export { kitchenCommands } from './kitchen.js';
 export { mcpAppsCommands } from './mcp-apps-packaging.js';
 export { playgroundCommands } from './playground.js';
 export { utilityCommands } from './utilities.js';

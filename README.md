@@ -197,6 +197,7 @@ Status legend:
 | [`smrt-users`](./packages/users/README.md) | Stable | Users, tenants, sessions, RBAC, permissions, and RLS. |
 | [`smrt-profiles`](./packages/profiles/README.md) | Stable | Identity profiles, authentication bindings, and relationships. |
 | [`smrt-personas`](./packages/personas/README.md) | Preview | Context-scoped agent personas and governed learning loop. |
+| [`smrt-approvals`](./packages/approvals/README.md) | Experimental | Revision-bound, single-use approvals with quorum, expiry, and an append-only decision ledger. |
 | [`smrt-playbooks`](./packages/playbooks/README.md) | Preview | Layered playbook registry, overrides, and plan resolution. |
 | [`smrt-prompts`](./packages/prompts/README.md) | Stable | Typed prompt registry and tenant-aware overrides. |
 | [`smrt-projects`](./packages/projects/README.md) | Preview | Provider-neutral projects, repositories, issues, and delivery work. |
@@ -218,6 +219,8 @@ Status legend:
 | [`smrt-voice`](./packages/voice/README.md) | Stable | Voice profiles, synthesis, cloning, and word timing. |
 | [`smrt-messages`](./packages/messages/README.md) | Stable | Provider-neutral multi-channel messages and credentials. |
 | [`smrt-chat`](./packages/chat/README.md) | Stable | Rooms, DMs, threads, sessions, and agent conversations. |
+| [`smrt-comments`](./packages/comments/README.md) | Preview | Record comments and mention notification hooks. |
+| [`smrt-webhooks`](./packages/webhooks/README.md) | Preview | Signed outbound webhooks, durable retries, and delivery administration. |
 | [`smrt-social`](./packages/social/README.md) | Stable | Social account OAuth, publishing, and scheduling. |
 
 ### Business and domain
@@ -247,6 +250,7 @@ Status legend:
 | [`smrt-features`](./packages/features/README.md) | Preview | Code-first feature flags and tenant overrides. |
 | [`smrt-languages`](./packages/languages/README.md) | Preview | Language strings, overrides, and translation jobs. |
 | [`smrt-fields`](./packages/fields/README.md) | Preview | Layered field policy store, resolution engine, and form surfaces. |
+| [`smrt-preferences`](./packages/preferences/README.md) | Preview | Organization defaults and personal user-interface preferences: overview layouts and the shell layout. |
 
 ### Web, mobile, and templates
 

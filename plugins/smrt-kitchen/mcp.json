@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "smrt-kitchen": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@happyvertical/smrt-cli@>=0.55.11 <1", "kitchen", "mcp"]
+    }
+  }
+}

@@ -28,7 +28,7 @@ export type CliAuthRequestStatus =
   // session id minted on approval. Never in the change feed (#2937).
   sensitive: true,
   api: { include: [] },
-  cli: { include: [] },
+  cli: false,
   mcp: { include: [] },
 })
 export class UsersCliAuthRequest extends SmrtObject {

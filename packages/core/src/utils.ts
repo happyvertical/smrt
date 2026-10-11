@@ -302,6 +302,66 @@ export function tableNameFromClass(
 }
 
 /**
+ * Keys that may never be read from (or written to) the STI `_meta_data` blob
+ * (#3238): framework `_`-prefixed keys, the primary key, and tenant-ownership
+ * fields. These identities live in real columns only; a meta key of the same
+ * name is untrusted payload and is dropped rather than allowed to shadow them.
+ *
+ * @param key - A `_meta_data` key (camelCase or snake_case)
+ * @param fields - Optional field definitions; any field carrying a tenancy
+ *   marker (`__tenancy.isTenantIdField`) is reserved under its own name too
+ */
+export function isReservedMetaDataKey(
+  key: string,
+  fields?: Record<string, unknown>,
+): boolean {
+  if (key.startsWith('_')) return true;
+  const camelKey = toCamelCase(key);
+  if (camelKey === 'id' || camelKey === 'tenantId') return true;
+  const field = (fields?.[camelKey] ?? fields?.[key]) as
+    | {
+        __tenancy?: { isTenantIdField?: boolean };
+        _meta?: { __tenancy?: { isTenantIdField?: boolean } };
+      }
+    | undefined;
+  return Boolean(
+    field?.__tenancy?.isTenantIdField ||
+      field?._meta?.__tenancy?.isTenantIdField,
+  );
+}
+
+/**
+ * Returns the STI `_meta_data` value with every reserved key
+ * (`isReservedMetaDataKey`) removed, in the representation it arrived in: an
+ * object stays an object, a JSON string is re-serialized (#3238). A value with
+ * no reserved key, or one that is not a JSON object, is returned unchanged.
+ *
+ * @param metaData - `_meta_data` as stored (JSON text) or already parsed
+ * @param fields - Optional field definitions (see `isReservedMetaDataKey`)
+ */
+export function sanitizeMetaData(
+  metaData: unknown,
+  fields?: Record<string, unknown>,
+): unknown {
+  let parsed: unknown = metaData;
+  if (typeof metaData === 'string') {
+    try {
+      parsed = JSON.parse(metaData);
+    } catch {
+      return metaData;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return metaData;
+  }
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  const kept = entries.filter(([key]) => !isReservedMetaDataKey(key, fields));
+  if (kept.length === entries.length) return metaData;
+  const sanitized = Object.fromEntries(kept);
+  return typeof metaData === 'string' ? JSON.stringify(sanitized) : sanitized;
+}
+
+/**
  * Formats data for JavaScript by converting date strings to Date objects
  * and snake_case column names to camelCase properties
  *
@@ -350,9 +410,37 @@ export function formatDataJs<
       });
     }
 
-    // Merge meta fields into a copy (will be formatted below). Spreading
-    // `metaData` last preserves the original precedence of Object.assign.
-    mergedData = { ...data, ...metaData };
+    // Merge meta fields into a copy (will be formatted below). Declared
+    // columns win (#3238): a `_meta_data` key never shadows a column the row
+    // carries, so `{ tenantId: <other tenant> }` in the meta blob cannot
+    // replace the row's real `tenant_id` (or `id`, `_meta_type`, ...).
+    // The retained blob is sanitized too, so code reading `_meta_data` off
+    // the hydrated row never sees a forged `id` / tenant / `_meta_*` key.
+    mergedData = {
+      ...data,
+      _meta_data: sanitizeMetaData(data._meta_data, fields),
+    };
+    const columnKeys = new Set(
+      Object.keys(data).map((key) =>
+        key.startsWith('_') ? key : toCamelCase(key),
+      ),
+    );
+    for (const [key, value] of Object.entries(metaData)) {
+      if (isReservedMetaDataKey(key, fields)) continue;
+      const camelKey = toCamelCase(key);
+      if (columnKeys.has(camelKey)) {
+        // An STI child's own `@meta()` field may share its name with a
+        // sibling's real column. That column belongs to the sibling (NULL or
+        // its DDL default on this child's rows), so the field this class
+        // declares as meta takes the meta value. Otherwise the column wins.
+        const fieldType = (fields?.[camelKey] ?? fields?.[key])?.type;
+        if (fieldType !== 'meta') continue;
+        for (const column of Object.keys(data)) {
+          if (toCamelCase(column) === camelKey) delete mergedData[column];
+        }
+      }
+      mergedData[key] = value;
+    }
 
     if (process.env.DEBUG_STI) {
       logger.debug('[formatDataJs] After merge, data keys', {

@@ -1,0 +1,11 @@
+{
+  "name": "smrt-kitchen",
+  "version": "0.1.0",
+  "description": "Plan a business app with SMRT recipes in conversation, check it, and create the project on your machine. Runs locally; no separate model, API key or hosted service.",
+  "author": { "name": "HappyVertical", "url": "https://s-m-r-t.dev" },
+  "homepage": "https://s-m-r-t.dev",
+  "repository": "https://github.com/happyvertical/smrt",
+  "license": "MIT",
+  "keywords": ["smrt", "cookbook", "planner", "app-builder", "mcp"],
+  "mcpServers": "./mcp.json"
+}

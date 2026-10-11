@@ -7,6 +7,15 @@
  * published on `@happyvertical/smrt-svelte/overview/server`.
  */
 export {
+  createOverviewAssistant,
+  OverviewAssistant,
+  type OverviewAssistantApplyResult,
+  type OverviewAssistantBatch,
+  type OverviewAssistantOptions,
+  type OverviewAssistantUndoResult,
+  useOverviewAssistantTools,
+} from './assistant.svelte.js';
+export {
   createOverview,
   OverviewController,
   type OverviewControllerOptions,
@@ -30,6 +39,7 @@ export {
   parseMarkdown,
   safeHref,
 } from './markdown.js';
+export { default as OverviewAssistantUndo } from './OverviewAssistantUndo.svelte';
 export { default as OverviewGrid } from './OverviewGrid.svelte';
 export { spanFromKey, spanFromPointer } from './resize.js';
 export * from './server.js';

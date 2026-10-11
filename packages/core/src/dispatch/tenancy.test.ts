@@ -268,6 +268,71 @@ describe('DispatchBus tenant isolation (S5 #1398)', () => {
     });
   });
 
+  describe('global (NULL-tenant) dispatches are system-only on reads (#3301)', () => {
+    // A delivery emitted outside any tenant context (e.g. a background mailer
+    // for tenant B) is stored with tenant_id NULL. Its payload carries tenant
+    // B's recipient and subject, so a tenant-A admin listing dispatches must
+    // never see it.
+    async function emitGlobalDelivery() {
+      activeTenant = undefined;
+      return bus.emit(
+        'communication.delivered',
+        { to: 'resident@tenant-b.example', subject: 'Tenant B notice' },
+        { source: 'mailer' },
+      );
+    }
+
+    it('list() under tenant A excludes global deliveries (no tenant B recipient/subject leak)', async () => {
+      activeTenant = 'tenant-a';
+      await bus.emit(
+        'communication.delivered',
+        { to: 'resident@tenant-a.example', subject: 'Tenant A notice' },
+        { source: 'mailer' },
+      );
+      await emitGlobalDelivery();
+
+      activeTenant = 'tenant-a';
+      const listed = await bus.list({});
+      expect(listed.map((d) => d.tenantId)).toEqual(['tenant-a']);
+      expect(JSON.stringify(listed)).not.toContain('tenant-b.example');
+      expect(JSON.stringify(listed)).not.toContain('Tenant B notice');
+    });
+
+    it('get() under tenant A cannot fetch a global delivery by id', async () => {
+      const global = await emitGlobalDelivery();
+      activeTenant = 'tenant-a';
+      expect(await bus.get(global.id)).toBeNull();
+    });
+
+    it('system scope (tenancy on, no tenant) still lists and fetches global deliveries', async () => {
+      const global = await emitGlobalDelivery();
+      activeTenant = undefined;
+      const listed = await bus.list({});
+      expect(listed.map((d) => d.id)).toEqual([global.id]);
+      expect((await bus.get(global.id))?.id).toBe(global.id);
+    });
+
+    it('a tenant processor can still claim global work (processing semantics unchanged)', async () => {
+      await emitGlobalDelivery();
+      activeTenant = 'tenant-a';
+      await bus.subscribe({
+        signalType: 'communication.delivered',
+        subscriber: 'worker',
+      });
+      expect(await bus.process('worker', async () => {})).toBe(1);
+    });
+
+    it('a tenant wildcard processor can still claim global work', async () => {
+      await emitGlobalDelivery();
+      activeTenant = 'tenant-a';
+      await bus.subscribe({
+        signalType: 'communication.*',
+        subscriber: 'wildcard-worker',
+      });
+      expect(await bus.process('wildcard-worker', async () => {})).toBe(1);
+    });
+  });
+
   describe('source is untrusted caller metadata', () => {
     it('a spoofed source does not override the server-derived tenant', async () => {
       activeTenant = 'tenant-a';
