@@ -14,7 +14,9 @@ export type FeatureScopeType = 'global' | 'tenant';
  * `@happyvertical/smrt-core`'s internal (non-exported) `SmrtObjectConstructor`
  * and remains assignable to it for `ObjectRegistry.getClassByConstructor`.
  */
-export type FeatureTargetConstructor = new (...args: unknown[]) => SmrtObject;
+export type FeatureTargetConstructor = new (
+  ...args: ConstructorParameters<typeof SmrtObject>
+) => SmrtObject;
 
 export enum FeatureOverrideEffect {
   INHERIT = 'inherit',

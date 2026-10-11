@@ -1,6 +1,6 @@
 # @happyvertical/smrt-features
 
-Code-first feature flags for s-m-r-t applications, with global, app-level, and tenant-hierarchy resolution.
+Code-first feature flags for s-m-r-t applications, with global and tenant-hierarchy resolution.
 
 ## Installation
 
@@ -10,48 +10,71 @@ pnpm add @happyvertical/smrt-features
 
 ## Quick start
 
+Declare features on their owning class. Import that class before syncing or
+resolving it. Supply `dbOptions` for your migrated application database and
+`currentTenantId` from your authenticated server context.
+
 ```typescript
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import {
-  FeatureDefinition,
   FeatureResolver,
   FeatureSyncService,
 } from '@happyvertical/smrt-features';
 
-// 1. Sync code-defined feature definitions at startup
-await FeatureSyncService.syncDefinitions({
-  manifest: [
-    {
-      key: 'commerce.invoice.draft-mode',
-      description: 'Allow users to save invoices as drafts before sending',
-      defaultEffect: 'enabled',
-      allowedScopes: ['global', 'tenant', 'user'],
+@smrt({
+  packageName: '@your/app',
+  features: {
+    drafts: {
+      defaultEnabled: false,
+      label: 'Invoice drafts',
+      description: 'Save invoices as drafts before sending.',
     },
-    // ...
-  ],
-});
+  },
+})
+export class Invoice extends SmrtObject {}
 
-// 2. Resolve at runtime
-const enabled = await FeatureResolver.isEnabled('commerce.invoice.draft-mode', {
+const sync = new FeatureSyncService(dbOptions);
+await sync.syncDefinitions({ constructors: [Invoice] });
+
+// This example uses flat tenant resolution.
+const resolver = new FeatureResolver(dbOptions, {
+  tenantHierarchyLoader: async () => null,
+});
+const enabled = await resolver.isEnabledFor(Invoice, 'drafts', {
   tenantId: currentTenantId,
-  userId: currentUserId,
+});
+// Equivalent key-based lookup:
+const enabledByKey = await resolver.isEnabled('@your/app:Invoice#drafts', {
+  tenantId: currentTenantId,
 });
 ```
 
+Keys have the form `<qualifiedClassName>#<localId>`. The example's key is
+`@your/app:Invoice#drafts`. `syncDefinitions()` takes optional `classNames`,
+`constructors`, and `pruneStale` options; a filtered sync never prunes sibling
+class definitions. An unfiltered sync uses all registered classes and prunes
+stale definitions in touched packages by default. `syncManifest()` separately
+accepts a SMRT `SmartObjectManifest` containing class decorator metadata.
+
 ## Resolution
 
-Features resolve in this priority order:
+The resolver starts with the registered class's `defaultEnabled` (falling
+back to the synced definition), then applies the global override and tenant
+overrides. Without a tenant context, only the global override applies.
 
-1. **User override** (most specific) — `FeatureOverride` row with `scopeType: 'user'` for the active user
-2. **Tenant override** — `FeatureOverride` row with `scopeType: 'tenant'`. Walks the tenant hierarchy if `@happyvertical/smrt-users` is installed.
-3. **Global override** — `FeatureOverride` row with `scopeType: 'global'`
-4. **Code default** — registered via `FeatureSyncService` from the manifest
-
-The first match wins.
+The default hierarchy loader discovers `@happyvertical/smrt-users` when
+available. Alternatively, supply `tenantHierarchyLoader` as the resolver's
+second constructor argument; return a `FeatureTenantHierarchyProvider` or
+`null` for flat tenant resolution. Hierarchy traversal runs root to leaf:
+a child inherits its parent's state only when the parent has
+`cascadePermissions` and the child has `inheritPermissions`; otherwise its
+baseline resets to the global state. Each tenant's own override then applies.
+`inherit` preserves that baseline. Supported scopes are `global` and `tenant`.
 
 ## Storage
 
-- `_smrt_feature_definitions` — code-owned feature shape (default effect, allowed scopes, metadata)
-- `_smrt_feature_overrides` — runtime overrides at any scope level
+- `_smrt_feature_definitions` — code-owned class identity, local id, boolean default, label, description, and metadata
+- `_smrt_feature_overrides` — runtime override keyed by feature key, scope type, and scope id
 
 ## Generated surfaces
 
@@ -219,8 +242,7 @@ silently reverting all tenants to the definition default — the change looks
 harmless in a diff and shows up as flags mysteriously resetting. Treat a key
 as immutable once shipped. A rename needs a data migration that rewrites
 `_smrt_feature_overrides.feature_key`, not an edit. (Renaming the owning
-package is the usual way this happens: keep the old key namespace and let
-`packageName` track the new package.)
+package is the usual way this happens: migrate stored keys when the qualified class identity changes.)
 
 ## Documentation
 
