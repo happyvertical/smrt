@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "smrt-planner",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd /Users/will/Work/_trees/smrt-planner/layout-tab && pnpm exec vite dev --port 5191 --strictPort"],
+      "port": 5191
+    }
+  ]
+}
