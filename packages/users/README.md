@@ -362,6 +362,12 @@ await createSessionCookie(event, userId, tenantId, { db }); // login
 await destroySessionCookie(event, { db });                   // logout
 ```
 
+The handler only handles its own session/context initialization failures:
+without `postgresRls` the request continues once with empty locals; with
+`postgresRls` it returns 500. Errors thrown downstream of `resolve()` —
+including SvelteKit `redirect()` from a later handle — propagate unchanged and
+the downstream chain runs exactly once.
+
 ### OIDC login with Kanidm or Dex
 
 Kanidm and Dex both work through the generic s-m-r-t OIDC flow. Configure one or
