@@ -79,10 +79,12 @@ export function expenseCostBasis(
     codes.add(component.code);
     const charged = minor(component.amount);
     const recovered = minor(component.recoverableAmount);
+    const chargedMagnitude = charged < 0n ? -charged : charged;
+    const recoveredMagnitude = recovered < 0n ? -recovered : recovered;
     if (
       !consistent(charged) ||
       !consistent(recovered) ||
-      (charged >= 0n ? recovered > charged : recovered < charged)
+      recoveredMagnitude > chargedMagnitude
     ) {
       return invalid(
         'tax and recovery must share the total sign, with recovery bounded by tax.',

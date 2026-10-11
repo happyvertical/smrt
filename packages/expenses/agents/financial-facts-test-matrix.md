@@ -13,6 +13,7 @@ PostgreSQL, using the caller-bound database executor and active tenant. Commands
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Optional source facts through create/save/load | Legacy amount roundtrip has no breakdown or inferred basis; explicit facts survive reload | Unknown keys, malformed JSON/types/currency, mismatched total/sign, duplicate component, overflow rejected | Consumer with same active tenant | Bound collection database, no multirow mutation | Node SQLite/PostgreSQL | Optional missing facts; unknown values fail closed | Integration S/P |
 | Exact basis through getCostBasis | Partial recovery and negative refund exact minor units | Unsafe numbers and inconsistent recovery rejected | Consumer reading source facts | Pure synchronous calculation; N/A transaction (no writes) | Node plus persisted roundtrip both dialects | Structural typed result usable without dependency | Unit/integration S/P |
+| Refund zero-tax recovery boundary | Zero charged and zero recovered accepted | Negative recovery against zero tax rejected by setter and save; persisted facts unchanged | Same tenant author | Bound collection database; retry after correction | SQLite/PostgreSQL | Exact magnitude bound includes zero | Regression integration S/P |
 | Named third-party payer save | Name persists without employee reimbursement | Missing name, incompatible profile/name, reimbursable rejected; company/person unchanged | Same tenant expense author | Bound database | SQLite/PostgreSQL | New enum explicit, unknown rejected | Integration S/P |
 | Refund source save | Negative refund references positive same-owner/currency source | Self, missing, cross-tenant/global, currency mismatch, refund-of-refund rejected | Active tenant × same/foreign/global resource | Lookup uses same database executor; transaction rollback and retry | SQLite/PostgreSQL | No settlement or cumulative refund entitlement inferred | Integration S/P |
 | Reviewed facts save/reopen/review | Reopen, correct, review permitted | Direct financial/payer/refund mutation and mutation alongside reopen rejected; failed save preserves persisted row | Consumer review method; existing authorization contract unchanged | Revision-guarded single-row save; transaction rollback | SQLite/PostgreSQL | Existing closed generated surface retained | Integration S/P |
@@ -20,8 +21,9 @@ PostgreSQL, using the caller-bound database executor and active tenant. Commands
 | Additive schema migration | Existing row retains amount and absent financial facts; repeat migration no-op | Live parity and column types asserted | Schema operator, no end-user authorization | Public dbMigrate migration path | SQLite/PostgreSQL | Existing deployed schema upgraded | Migration S/P |
 
 Additional gates: package typecheck, build, browser harness; root combined release
-validation and exact-head review belong to the coordinator. This is an additive
-feature, so bug-fix base regression comparison is N/A. No network provider is
+validation and exact-head review belong to the coordinator. Original additive
+feature rows do not require a bug-fix comparison; the zero-tax correction has
+explicit failing-base evidence below. No network provider is
 introduced: upstream provider failure is N/A. Refund lookup failure is tested.
 
 ## Executed release evidence
@@ -48,3 +50,18 @@ Full output is retained outside the checkout under
 `core-build.log`. Initial diagnostic runs remain there for failure provenance.
 The redundant whole-workspace build was stopped to reduce memory contention;
 the coordinator owns the final combined root gates and exact-head review.
+
+
+## Zero-tax refund correction
+
+The added regression fails against feature commit `08a791a93`: a refund with
+subtotal/total -100, tax 0, and recoverable tax -1 was accepted. Comparing exact
+BigInt magnitudes fixes the bound without changing the sign requirements.
+The shared regression also rejects raw-save bypass, verifies stored facts are
+unchanged after failure, and permits retry with zero recovery. Evidence is in
+`zero-tax-base.log` (expected failure), `zero-tax-test.log`,
+`zero-tax-postgres.log`, `zero-tax-typecheck.log`, and `zero-tax-build.log`
+under the evidence directory above.
+Final correction validation: 62 backend + 15 UI tests and 56 PostgreSQL tests
+passed, including both migration lanes. The unchanged browser contract retains
+the 11-pass evidence above.

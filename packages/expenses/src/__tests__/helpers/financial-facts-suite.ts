@@ -105,6 +105,43 @@ export function defineFinancialFactsSuite(getWorld: () => ExpenseWorld): void {
       });
     });
 
+    it('rejects recovery against zero tax on refunds without changing stored facts', async () => {
+      const world = getWorld();
+      await world.inTenant(async () => {
+        const source = await world.expense({ amount: 100 });
+        const refund = await world.expense({
+          amount: -100,
+          refundOfId: source.id,
+        });
+        const invalid: ExpenseFinancialBreakdown = {
+          currency: 'USD',
+          subtotal: -100,
+          total: -100,
+          taxes: [{ code: 'supplier-tax', amount: 0, recoverableAmount: -1 }],
+        };
+        expect(() => refund.setFinancialBreakdown(invalid)).toThrow(
+          'recovery bounded by tax',
+        );
+        refund.financialBreakdown = JSON.stringify(invalid);
+        await expect(refund.save()).rejects.toMatchObject({
+          code: 'EXPENSE_INVALID',
+        });
+        expect(
+          (await world.expenses.get({ id: refund.id }))?.getCostBasis(),
+        ).toBeNull();
+        invalid.taxes[0].recoverableAmount = 0;
+        refund.setFinancialBreakdown(invalid);
+        await refund.save();
+        expect(
+          (await world.expenses.get({ id: refund.id }))?.getCostBasis(),
+        ).toMatchObject({
+          recoverableTax: 0,
+          nonRecoverableTax: 0,
+          costBasis: -100,
+        });
+      });
+    });
+
     it('revalidates facts against changed amount and currency and does not partially save', async () => {
       const world = getWorld();
       await world.inTenant(async () => {
