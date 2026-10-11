@@ -125,6 +125,7 @@ function getApiWritableAllowlist(apiConfig: unknown): string[] | null {
 
 /** Mirror of sveltekit-generator.ts `resolvePermissionCollection` (#2977). */
 function resolvePermissionCollection(objectDef: SmartObjectDefinition): string {
+  if (objectDef.permissionCollection) return objectDef.permissionCollection;
   const configured = (
     objectDef.decoratorConfig as { collection?: unknown } | undefined
   )?.collection;
