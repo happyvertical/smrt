@@ -79,7 +79,8 @@ inputs the caller cannot supply through the spec:
   tenant, while compilation uses the principal's tenant. The chat tools bind the
   two: they enter the principal's tenant context for `list`/`get`/`save` (as the
   data-surface guard does), refuse when an ambient tenant disagrees with the
-  principal, require a tenant for any stored-report use, and pass the principal
+  principal (on `apply`, before the human is asked to confirm, #3768), require
+  a tenant for any stored-report use, and pass the principal
   tenant as an explicit owner filter (`getRuntimeReport`/`listRuntimeReports`
   accept `tenantId`) that still holds under a system context.
 
