@@ -15,7 +15,8 @@ Applications supply a trusted `IntakeExecutionOptions.handlers` catalog.
 schemas for arguments/results, allowlisted `resultModels`, `validate`, `preview`,
 a registered `{model, action, version}` operation and explicit effect/idempotency/
 open-world capability declaration. Preview returns display, exact normalized
-arguments and target revision preconditions. There is no arbitrary tool execution
+arguments and target revision preconditions. `normalizedArgs` must equal the
+submitted args exactly; default or normalize before submission, never in preview. There is no arbitrary tool execution
 or expression evaluation. Reviewer display wraps application fields under `preview`
 and symbolic metadata under `dependencies`; plan steps additionally wrap that
 object under `step` alongside the plan preview. Application display keys cannot

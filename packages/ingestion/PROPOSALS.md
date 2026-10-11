@@ -171,3 +171,11 @@ Generative responses and the separate injected PDF split boundaries establish
 deterministic orchestration, not model accuracy or OCR quality. No held-out routing
 evaluation or automatic approval is claimed. Missing/unknown AI completion remains
 explicit under [SDK #1381](https://github.com/happyvertical/sdk/issues/1381).
+
+Proposal limits are checked at `IngestionService` construction: positive safe
+integers, at most 20 handlers/candidates/suggestions and 2147483647 ms timeout.
+Interpretation output uses the exported `GenerationAnalysisOutput` wrapper at
+`analysis.result.output.proposals`; the published review host unwraps it.
+An explicit feedback `retrieve` denial omits optional examples and feedback
+provenance and continues generation. Item/execution denials, unexpected failures,
+and revocation after examples were selected still fail closed before disclosure.

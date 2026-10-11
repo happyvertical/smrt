@@ -1,3 +1,11 @@
+/** Explicit optional-example denial, distinct from item or execution authorization failure. */
+export class FeedbackRetrievalDeniedError extends Error {
+  constructor() {
+    super('Feedback unavailable');
+    this.name = 'FeedbackRetrievalDeniedError';
+  }
+}
+
 import { randomUUID } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
@@ -656,7 +664,7 @@ export class IntakeFeedbackService {
             operation: 'retrieve',
           }))
         )
-          throw new Error('Feedback unavailable');
+          throw new FeedbackRetrievalDeniedError();
       };
       await authorize();
       const scope = this.scope();
