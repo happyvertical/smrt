@@ -6,6 +6,7 @@ import { createServer } from 'vite';
 test('Provider server rendering keeps voice off and never detects browser capabilities', async () => {
   const server = await createServer({
     configFile: 'e2e/vite.config.ts',
+    cacheDir: resolve('node_modules/.vite/provider-mode-ssr'),
     server: { middlewareMode: true },
   });
   try {
