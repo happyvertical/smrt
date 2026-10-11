@@ -30,6 +30,7 @@ import {
   renderForeignKeyAddStatements,
   renderForeignKeyOrphanDetector,
   renderForeignKeyOrphanRepair,
+  renderForeignKeyReference,
   renderForeignKeyReplaceStatements,
   schemaForeignKeys,
   schemaForeignKeysForEngine,
@@ -52,6 +53,7 @@ import {
 import type {
   ColumnAlteration,
   ColumnDefinition,
+  ForeignKeyDefinition,
   IndexDefinition,
   SchemaChange,
   SchemaDefinition,
@@ -544,6 +546,17 @@ export function canonicalizeDefault(
  * SchemaComparer class for comparing manifest schemas to database
  */
 export class SchemaComparer {
+  /** SQLite can add a nullable reference only when old rows receive NULL. */
+  private canInlineNewReference(column: ColumnDefinition | undefined): boolean {
+    return (
+      this.engine === 'sqlite' &&
+      column !== undefined &&
+      !column.notNull &&
+      !column.backfill &&
+      (column.defaultValue === undefined || column.defaultValue === null)
+    );
+  }
+
   private db: DatabaseInterface;
   private options: DiffOptions;
   private engine: DatabaseEngine;
@@ -1446,6 +1459,14 @@ export class SchemaComparer {
       );
       if (exact) continue;
 
+      // The matching ADD COLUMN carries this constraint atomically. Existing
+      // columns and non-NULL defaults still need a deliberate table rebuild.
+      if (
+        !dbSchema.columns[foreignKey.column] &&
+        this.canInlineNewReference(manifest.columns[foreignKey.column])
+      )
+        continue;
+
       const orphanOptions = await this.getForeignKeyOrphanOptions(
         tableName,
         manifest,
@@ -1912,7 +1933,16 @@ export class SchemaComparer {
       if (!dbColumnNames.has(colName)) {
         // Column doesn't exist - add it
         changes.push(
-          ...(await this.generateAddColumnChanges(tableName, colName, colDef)),
+          ...(await this.generateAddColumnChanges(
+            tableName,
+            colName,
+            colDef,
+            this.canInlineNewReference(colDef)
+              ? schemaForeignKeysForEngine(manifest, this.engine).filter(
+                  (fk) => fk.column === colName,
+                )
+              : [],
+          )),
         );
       } else {
         // Column exists - check for type mismatch
@@ -4823,6 +4853,7 @@ export class SchemaComparer {
     tableName: string,
     colName: string,
     colDef: ColumnDefinition,
+    inlineReferences: ForeignKeyDefinition[] = [],
   ): Promise<SchemaChange[]> {
     // mapType maps abstract types per dialect (UUID→native uuid / TEXT — R11);
     // invalid types fall back to TEXT, matching the compareColumns guard.
@@ -4947,6 +4978,9 @@ export class SchemaComparer {
       }
     }
 
+    for (const reference of inlineReferences) {
+      parts.push(renderForeignKeyReference(tableName, reference));
+    }
     const addColumn = `ALTER TABLE ${quotedTable} ADD COLUMN ${parts.join(' ')}`;
 
     if (enforceNotNull && !inlineConstraintsAllowed) {

@@ -6,7 +6,7 @@ review, reimbursement recording, and drawdown of a purchase-order commitment.
 
 - **Expense** — polymorphic cost object, category, amount in integer minor
   units with currency, incurred date apart from recorded time, who recorded
-  it, who paid (the company or a named person out of pocket), optional
+  it, who paid (the company, a named person, or a named third party), optional
   smrt-commerce vendor and commitment, and a review state.
 - **ExpenseReceipt** — expense ↔ smrt-assets `Asset` join with uploader,
   filename, MIME type, byte count and `contentSha256`. The same file twice on
@@ -197,3 +197,66 @@ capture, and `ExpenseReviewQueue` for native approval/rejection with retained
 reasons. `ExpenseForm` includes an optional amount keypad and editable
 cost-object references. See [the UI contract](agents/expense-ui.md) for public
 Props, request identity, no-JavaScript behavior and server responsibilities.
+
+## Optional supplier financial facts
+
+Existing expenses retain only their recorded amount: `getFinancialBreakdown()`
+and `getCostBasis()` return `null` until a caller supplies explicit facts. An
+empty tax array asserts no tax; absent facts never imply tax-free treatment.
+
+`setFinancialBreakdown({ currency, subtotal, taxes, total })` accepts integer
+minor units. Each tax component is `{ code, amount, recoverableAmount }`: its
+unique lower-case kebab-case code is caller-defined and its recoverable portion
+is explicit, including zero. Subtotal plus taxes must exactly equal both total
+and `Expense.amount`, in `Expense.currency`. Components share the total's sign,
+recovery cannot exceed charged tax, and all values must be safe integers.
+Unknown fields and malformed persisted JSON fail closed. The `financialBreakdown`
+text column stores these facts; use the helpers rather than editing JSON.
+
+`getCostBasis()` returns `{ currency, subtotal, taxTotal, recoverableTax,
+nonRecoverableTax, total, costBasis }`. Cost basis equals subtotal plus
+non-recoverable tax (equivalently total minus recoverable tax), with no rounding.
+For example, subtotal 10000, tax 1000 and recoverable tax 400 yield basis 10600.
+This is a purchase-cost fact, not a customer markup or sales-tax decision.
+Callers select their tax treatment; the package supplies no jurisdiction defaults.
+
+`paidBy: 'third-party'` requires `paidByName`. It excludes `paidByProfileId` and
+`reimbursable`; company and person behavior remains unchanged. No reimbursement
+or settlement is inferred from the named payer.
+
+Negative amounts require `refundOfId`, naming a positive non-refund expense
+visible in the same tenant and currency. Refund breakdown components are negative
+(or zero), including recovered tax. Self, missing, foreign-owner, currency-mismatched,
+and refund-of-refund sources fail closed. Source lookup uses the caller's database
+executor. This link retains provenance only: it does not allocate settlements,
+cap cumulative refunds, issue credits, or determine entitlement. A source may
+be explicitly reopened and corrected, but existing same-owner refunds prevent
+changes that would make it zero/nonpositive, turn it into a refund, or change
+its currency away from theirs. Unrelated edits and positive same-currency amount
+corrections remain allowed; there is no cumulative refund limit.
+
+Expense saves validate and persist in one transaction, including nested caller
+transactions. On PostgreSQL, source edits and refund writes acquire ordered
+row locks on the expense and proposed source before relationship validation,
+keeping the source/refund checks valid through the write and commit. SQLite uses
+the framework's serialized write transactions. The existing per-row revision
+check still rejects stale object writes; protecting the relationship additionally
+requires these locks and the source revision claim below. Callers must not concurrently reuse the same mutable
+model instance while it is temporarily transaction-bound. Direct SQL writes
+remain outside these model-level guarantees.
+
+Linking a new refund (or changing its source) also claims the source revision in
+that same transaction through `claimRevision(source.updated_at)`. This makes a
+source edit under an older PostgreSQL `REPEATABLE READ` snapshot fail with a
+serialization error instead of missing the new refund. Reload a source after
+linking a refund before editing/reviewing it; on a serialization failure, retry
+the entire caller transaction with fresh instances. Failed outer transactions
+roll back both the refund and the source revision claim. Existing-link saves do
+not advance the source revision.
+
+Financial breakdown, third-party payer name, and refund provenance join the
+existing reviewed-money lock. Save `reopen()` first, then correct facts and review
+again; corrections cannot ride alongside the reopen operation. New columns are
+additive via `smrt db:migrate`; legacy amounts survive without invented facts.
+The SQLite and PostgreSQL suites execute upgrades from the preceding schema and
+check that repeat migration is a no-op.
