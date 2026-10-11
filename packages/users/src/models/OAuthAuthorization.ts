@@ -42,7 +42,7 @@ function tokenClaims(value: unknown): OAuthTokenClaims {
   sensitive: true,
   api: { include: [] },
   mcp: { include: [] },
-  cli: { include: [] },
+  cli: false,
 })
 export class UsersOAuthClient extends SmrtObject {
   @field({ type: 'text', required: true, unique: true }) clientId = '';
@@ -70,7 +70,7 @@ export class UsersOAuthClient extends SmrtObject {
   sensitive: true,
   api: { include: [] },
   mcp: { include: [] },
-  cli: { include: [] },
+  cli: false,
 })
 export class UsersOAuthAuthorizationCode extends SmrtObject {
   @field({ nullable: true, indexed: true }) authorizationId: string | null =
@@ -100,7 +100,7 @@ export class UsersOAuthAuthorizationCode extends SmrtObject {
   sensitive: true,
   api: { include: [] },
   mcp: { include: [] },
-  cli: { include: [] },
+  cli: false,
 })
 export class UsersOAuthRefreshGrant extends SmrtObject {
   @field({ nullable: true, indexed: true }) authorizationId: string | null =
@@ -131,7 +131,7 @@ export class UsersOAuthRefreshGrant extends SmrtObject {
   sensitive: true,
   api: { include: [] },
   mcp: { include: [] },
-  cli: { include: [] },
+  cli: false,
 })
 export class UsersOAuthAccessTokenRevocation extends SmrtObject {
   @field({ type: 'text', required: true, unique: true, sensitive: true }) jti =
@@ -145,7 +145,7 @@ export class UsersOAuthAccessTokenRevocation extends SmrtObject {
   sensitive: true,
   api: { include: [] },
   mcp: { include: [] },
-  cli: { include: [] },
+  cli: false,
 })
 export class UsersOAuthAuthorization extends SmrtObject {
   @field({ type: 'text', indexed: true }) subject = '';
@@ -170,7 +170,7 @@ export class UsersOAuthAuthorization extends SmrtObject {
   sensitive: true,
   api: { include: [] },
   mcp: { include: [] },
-  cli: { include: [] },
+  cli: false,
 })
 export class UsersOAuthRefreshFamily extends SmrtObject {
   @field({ nullable: true, indexed: true }) authorizationId: string | null =

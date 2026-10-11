@@ -45,6 +45,12 @@ const EXPECTED_CLI_CRUD: Record<string, readonly string[]> = {
   ResourceGrant: [],
   AccessRequest: [],
   UsersCliAuthRequest: [],
+  UsersOAuthClient: [],
+  UsersOAuthAuthorizationCode: [],
+  UsersOAuthAuthorization: [],
+  UsersOAuthRefreshGrant: [],
+  UsersOAuthRefreshFamily: [],
+  UsersOAuthAccessTokenRevocation: [],
   Membership: ['list', 'get'],
   MembershipOverride: ['list', 'get'],
   User: ['list', 'get'],
@@ -120,6 +126,11 @@ describe('generated CLI lockdown for identity/RBAC models (#3742)', () => {
     for (const surface of knowledge.surfaces ?? []) {
       if (surface.kind !== 'cli' || !surface.objectName) continue;
       if (!lockedQualifiedNames.has(surface.objectName)) continue;
+      const modelName = surface.objectName.slice(PACKAGE.length + 1);
+      expect(
+        EXPECTED_CLI_CRUD[modelName]?.length,
+        `${modelName} must not emit custom CLI methods or CRUD commands`,
+      ).not.toBe(0);
       if (!(CRUD as readonly string[]).includes(surface.operation)) continue;
       const ops = cliCrud.get(surface.objectName) ?? [];
       ops.push(surface.operation);
