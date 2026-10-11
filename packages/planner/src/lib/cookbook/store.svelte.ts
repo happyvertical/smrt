@@ -12,6 +12,7 @@ import {
   writeSettings,
 } from '../settings/app-settings.ts';
 import { compactTheme, type ThemeSetting } from '../theme/theme.ts';
+import { assembleCookbook } from './assemble.ts';
 import { cookbookFromLegacySearch, hasLegacyState } from './legacy.ts';
 import {
   BACKUP_KEY,
@@ -22,12 +23,7 @@ import {
   saveCookbook,
   writeKey,
 } from './storage.ts';
-import {
-  COOKBOOK_SCHEMA,
-  COOKBOOK_VERSION,
-  type Cookbook,
-  type CookbookResult,
-} from './types.ts';
+import type { Cookbook, CookbookResult } from './types.ts';
 import { parseCookbookText } from './validate.ts';
 
 /** Where the planner's AppShell keeps its own settings (panel states, sizes). */
@@ -47,6 +43,9 @@ export type PersistState = 'unknown' | 'ok' | 'memory';
 export class CookbookStore {
   /** The shell layout, owned here and passed to `AppShell`. */
   layout = $state<ShellLayout | undefined>();
+  /** The app's name and description (`set_name`); not shown in the UI yet. */
+  name = $state<string | undefined>();
+  description = $state<string | undefined>();
   /** The app's theme; undefined is the default. The shell applies it live. */
   theme = $state<ThemeSetting | undefined>();
   /**
@@ -80,23 +79,13 @@ export class CookbookStore {
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   snapshot(): Cookbook {
-    const cookbook: Cookbook = {
-      $schema: COOKBOOK_SCHEMA,
-      version: COOKBOOK_VERSION,
-      ...recipeState.snapshot(),
-    };
-    if (this.layout) cookbook.layout = this.layout;
-    const theme = compactTheme(
-      $state.snapshot(this.theme) as ThemeSetting | undefined,
-    );
-    if (theme) cookbook.theme = theme;
-    const ids = Object.keys(this.overviews).sort();
-    if (ids.length) {
-      cookbook.overviews = Object.fromEntries(
-        ids.map((id) => [id, this.overviews[id]]),
-      );
-    }
-    return cookbook;
+    return assembleCookbook(recipeState.data, {
+      layout: this.layout,
+      theme: $state.snapshot(this.theme) as ThemeSetting | undefined,
+      overviews: this.overviews,
+      name: this.name,
+      description: this.description,
+    });
   }
 
   /** A page's stored override, or `null` when it is on its defaults. */
@@ -126,6 +115,8 @@ export class CookbookStore {
     recipeState.load(cookbook);
     this.layout = cookbook.layout;
     this.theme = cookbook.theme;
+    this.name = cookbook.name;
+    this.description = cookbook.description;
     this.overviews = { ...(cookbook.overviews ?? {}) };
     setSampleTaxRate(
       hasTaxRateRow(cookbook) ? readSettings(cookbook).taxRate : undefined,
@@ -184,6 +175,8 @@ export class CookbookStore {
     recipeState.clear();
     this.layout = undefined;
     this.theme = undefined;
+    this.name = undefined;
+    this.description = undefined;
     this.overviews = {};
     try {
       globalThis.localStorage?.removeItem(SHELL_STORAGE_KEY);

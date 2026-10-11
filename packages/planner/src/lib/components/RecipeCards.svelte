@@ -9,9 +9,9 @@ import {
   type PlannerCard,
   subLockNote,
   subSwitchChange,
-} from '$lib/recipes/cards.ts';
-import { recipes, recipesById } from '$lib/recipes/index.ts';
-import { recipeState } from '$lib/recipes/state.svelte.ts';
+} from '../recipes/cards.ts';
+import { recipes, recipesById } from '../recipes/index.ts';
+import { recipeState } from '../recipes/state.svelte.ts';
 
 const cards = buildCards(recipes);
 

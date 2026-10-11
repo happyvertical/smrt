@@ -1,15 +1,16 @@
 <script lang="ts">
 import { Button } from '@happyvertical/smrt-ui';
 import { Alert, ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
-import { downloadCookbook } from '$lib/cookbook/file.ts';
-import { cookbookStore } from '$lib/cookbook/store.svelte.ts';
-import type { Cookbook } from '$lib/cookbook/types.ts';
-import { parseCookbookText } from '$lib/cookbook/validate.ts';
-import { useDataSource } from '$lib/data/context.ts';
-import { humanize } from '$lib/data/format.ts';
-import { getLibraryCookbook } from '$lib/library/index.ts';
-import { libraryState } from '$lib/library/state.svelte.ts';
-import { recipesById } from '$lib/recipes/index.ts';
+import { downloadCookbook } from '../cookbook/file.ts';
+import { cookbookStore } from '../cookbook/store.svelte.ts';
+import type { Cookbook } from '../cookbook/types.ts';
+import { parseCookbookText } from '../cookbook/validate.ts';
+import { useDataSource } from '../data/context.ts';
+import { humanize } from '../data/format.ts';
+import { kitchenState } from '../kitchen/state.svelte.ts';
+import { getLibraryCookbook } from '../library/index.ts';
+import { libraryState } from '../library/state.svelte.ts';
+import { recipesById } from '../recipes/index.ts';
 
 let fileInput: HTMLInputElement | undefined = $state();
 /** A validated import waiting for the visitor's confirmation. */
@@ -98,7 +99,15 @@ function confirmReset() {
   </section>
 
   <div class="actions">
-    <Button onclick={() => downloadCookbook(cookbookStore.snapshot(), exportName())}>Export cookbook</Button>
+    {#if kitchenState.config}
+      <Button
+        disabled={kitchenState.status === 'sending'}
+        onclick={() => kitchenState.send(cookbookStore.snapshot())}
+      >{kitchenState.status === 'sending' ? 'Sending to kitchen…' : 'Send to kitchen'}</Button>
+      <Button variant="secondary" onclick={() => downloadCookbook(cookbookStore.snapshot(), exportName())}>Download cookbook</Button>
+    {:else}
+      <Button onclick={() => downloadCookbook(cookbookStore.snapshot(), exportName())}>Export cookbook</Button>
+    {/if}
     <Button variant="secondary" onclick={() => fileInput?.click()}>Import cookbook…</Button>
     <Button variant="secondary" onclick={() => (confirmingReset = true)}>Reset</Button>
     <input
@@ -111,10 +120,51 @@ function confirmReset() {
     />
   </div>
 
+  {#if kitchenState.needsLink}
+    <Alert variant="info" title="Send to kitchen needs its link">
+      The kitchen is running, but this page was opened without its one-time
+      token. Open the address <code>smrt kitchen</code> printed (it ends in
+      <code>#kitchen=…</code>), or download the cookbook and run
+      <code>smrt cookbook apply</code> on the file.
+    </Alert>
+  {/if}
+  {#if kitchenState.tokenInConfig}
+    <Alert variant="warning" title="Send to kitchen is off">
+      This version of <code>smrt kitchen</code> puts its one-time token in a
+      file other programs on this computer can read, so the planner does not
+      use it. Update the <code>smrt</code> CLI, or download the cookbook and run
+      <code>smrt cookbook apply</code> on the file.
+    </Alert>
+  {/if}
   {#if error}
     <Alert variant="error" title="Import failed">{error}</Alert>
   {/if}
   <p class="notice" role="status" aria-live="polite">{notice}</p>
+  {#if kitchenState.outcome}
+    <div class="kitchen" role="status" aria-live="polite">
+      {#if kitchenState.outcome.ok}
+        <Alert variant="success" title="Sent to the kitchen">
+          {kitchenState.outcome.result.mode === 'update' ? 'Updated' : 'Created'} the project{kitchenState.outcome.result.dir ? ` in ${kitchenState.outcome.result.dir}` : ''}.
+          {#if kitchenState.outcome.result.nextSteps.length}
+            Next, in your terminal:
+            <ul>
+              {#each kitchenState.outcome.result.nextSteps as step (step)}
+                <li><code>{step}</code></li>
+              {/each}
+            </ul>
+          {/if}
+        </Alert>
+      {:else}
+        <Alert variant="error" title="The kitchen could not use this cookbook">
+          <ul>
+            {#each kitchenState.outcome.errors as message (message)}
+              <li>{message}</li>
+            {/each}
+          </ul>
+        </Alert>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <ConfirmDialog

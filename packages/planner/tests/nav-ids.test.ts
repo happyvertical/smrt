@@ -14,6 +14,7 @@ import {
   recipeNav,
   recipes,
 } from '../src/lib/recipes/index.ts';
+import { UPSTREAM_GAPS } from './upstream-gaps.ts';
 
 describe('navigation item ids', () => {
   it('are item:<pkg>:<Model>, with an explicit key for a repeat', () => {
@@ -29,6 +30,7 @@ describe('navigation item ids', () => {
       for (const e of recipeNav(recipe)) {
         const id = navItemId(e.packageId, e.model.name, e.key);
         const shape = `${navSectionOf(recipe).id}|${e.label}`;
+        if (UPSTREAM_GAPS.sharedNavId.has(id)) continue;
         expect(seen.get(id) ?? shape, `${id} in ${recipe.id}`).toBe(shape);
         seen.set(id, shape);
       }

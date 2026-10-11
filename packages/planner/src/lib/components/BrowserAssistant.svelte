@@ -32,6 +32,15 @@ const session = $derived(aiState.session);
 const voice = $derived(aiState.voice);
 const model = $derived(getModel(session.prefs.modelId));
 const dataSource = useDataSource();
+const thinkName = $derived(
+  session.mode === 'browser'
+    ? model
+      ? shortLabel(model)
+      : ''
+    : session.mode === 'host'
+      ? 'Server'
+      : session.remoteLabel,
+);
 
 // Applying a cookbook runs the Cookbooks tab's path, with the cookbook's own
 // settings. It only ever runs from the confirm button below.
@@ -131,7 +140,7 @@ $effect(() => {
   {:else if session.status === 'ready'}
     <div class="top">
       <div class="bar">
-        <span class="model-name">{model ? shortLabel(model) : ''}</span>
+        <span class="model-name">{thinkName}</span>
         <a
           class="model-link"
           href={appHref('/ai/')}
@@ -182,8 +191,10 @@ $effect(() => {
     <div class="panel">
       <h2>Assistant</h2>
       <p>
-        Describe your business and an assistant adds the matching recipes. It
-        runs on your own device, so nothing you type leaves this page.
+        Describe your business and an assistant adds the matching recipes.
+        {aiState.inference.mode === 'browser'
+          ? 'It runs on your own device, so nothing you type leaves this page.'
+          : aiState.privacyNote}
       </p>
       <AiSetup show={['think']} />
       <a href={appHref('/ai/')}>All AI settings</a>

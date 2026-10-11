@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  applySettings,
   buildResponseSchema,
   parseChange,
   type SettingsStore,
@@ -134,26 +133,6 @@ function memorySettings(initial: Partial<AppSettings> = {}) {
   const store: SettingsStore = { read: () => value, write };
   return { store, write, get: () => value };
 }
-
-describe('applySettings', () => {
-  it('writes changes and says so tersely, taxRate as a fraction', () => {
-    const memory = memorySettings();
-    expect(applySettings(memory.store, { currency: 'CAD', taxRate: 13 })).toBe(
-      'Currency CAD, tax 13%.',
-    );
-    expect(memory.get()).toMatchObject({ currency: 'CAD', taxRate: 0.13 });
-    expect(applySettings(memory.store, { paymentTerms: 'Net 30' })).toBe(
-      'Terms Net 30.',
-    );
-  });
-
-  it('writes nothing when nothing changes', () => {
-    const memory = memorySettings({ currency: 'CAD' });
-    expect(applySettings(memory.store, { currency: 'CAD' })).toBe('');
-    expect(applySettings(memory.store, {})).toBe('');
-    expect(memory.write).not.toHaveBeenCalled();
-  });
-});
 
 describe('cookbook offers', () => {
   it('applies only on accept, and the latest offer wins', () => {

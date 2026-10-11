@@ -4,7 +4,7 @@
 // several recipes' groups (Sales: Customers and Sales) a single gear opens a
 // small menu so the sidebar row never overflows.
 import { Icon } from '@happyvertical/smrt-ui';
-import { appHref } from '$lib/planner/app.svelte.ts';
+import { appHref } from '../planner/app.svelte.ts';
 import SectionIcons from './SectionIcons.svelte';
 
 // Material Design Icons "settings" (Apache-2.0); smrt-ui's Icon fills its path.

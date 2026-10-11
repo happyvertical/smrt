@@ -1,8 +1,15 @@
 <script lang="ts">
-import { cookbookStore } from '$lib/cookbook/store.svelte.ts';
-import type { AppSettings as Settings } from '$lib/settings/app-settings.ts';
+import { cookbookStore } from '../cookbook/store.svelte.ts';
+import type { AppSettings as Settings } from '../settings/app-settings.ts';
 import AppSettings from './AppSettings.svelte';
 import ThemeSection from './ThemeSection.svelte';
+
+interface SettingsPanelProps {
+  /** Show the theme preset and light/dark controls (they need a theme provider). */
+  themeControls?: boolean;
+}
+
+let { themeControls = true }: SettingsPanelProps = $props();
 
 // The editor holds its own copy so typing is never fought by the store;
 // changes reach the cookbook after a short pause (and its save follows).
@@ -35,7 +42,7 @@ $effect(() => {
     keep their values.
   </p>
   <AppSettings value={draft} onchange={change} idPrefix="app-settings-tab" />
-  <ThemeSection />
+  <ThemeSection provider={themeControls} />
 </div>
 
 <svelte:window onpagehide={commit} />

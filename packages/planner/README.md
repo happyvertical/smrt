@@ -62,6 +62,48 @@ sidebar footer show **Think** (the language model), **Hear** (voice typing) and
 choose and download them. A first visit with nothing built starts there; "I don't
 need AI, let's just build" skips it for good. Live s-m-r-t objects are tracked in #4.
 
+## Use it as a package
+
+The planner also builds as a Svelte package (`pnpm package`, output in `dist/`;
+it is not published yet). A host page mounts it in its own layout and drives it
+with a typed command set:
+
+```svelte
+<script lang="ts">
+import { Planner, createPlannerController } from '@happyvertical/smrt-planner';
+
+const controller = createPlannerController();
+</script>
+
+<Planner {controller} basePath="/planner" />
+```
+
+```ts
+import { commandTools, createPlannerController } from '@happyvertical/smrt-planner/commands';
+
+const controller = createPlannerController();
+const result = controller.run({
+  name: 'add_recipes',
+  input: { ids: ['commerce.sales'] },
+});
+// { ok: true, snapshot, receipt } | { ok: false, error: { code, message } }
+controller.subscribe((snapshot) => render(snapshot));
+```
+
+`commandTools` is every command as `{ name, description, inputSchema }`: pass it
+straight to an LLM or an MCP server as tool definitions. `controller.snapshot()`
+is a compact read-only plan (a few KB) fit for a model prompt. Commands: 
+`add_recipes`, `remove_recipes`, `add_features`, `remove_features`,
+`add_cookbook`, `remove_cookbook`, `apply_cookbook`, `import_cookbook`,
+`set_settings`, `set_policy`, `set_theme`, `reset_theme`, `rename_section`,
+`rename_item`, `hide`, `show`, `focus`, `export_cookbook`, `undo`.
+
+`@happyvertical/smrt-planner` and `@happyvertical/smrt-planner/commands` are Svelte source (runes) and JSON,
+so consume them through Vite or another Svelte-compiling bundler. A plain Node
+server uses `@happyvertical/smrt-planner/core` instead (command schemas, the assistant prompt,
+reply validation, the library catalog) and can serve the prebuilt app from
+`@happyvertical/smrt-planner/app`; see `docs/inference-host.md`.
+
 ## How the catalog is generated
 
 `src/lib/catalog/catalog.json` is **committed** and is the only thing the app
@@ -108,6 +150,7 @@ rerunning later may change the file; commit the result when it does.
 | `pnpm typecheck` | `svelte-kit sync`, `tsc`, `svelte-check` |
 | `pnpm test` | Vitest |
 | `pnpm lint` | Biome |
+| `pnpm package` | `svelte-package` into `dist/`, then `publint` |
 
 ## License
 

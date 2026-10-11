@@ -1,4 +1,4 @@
-import { availablePresets } from '@happyvertical/smrt-ui/themes';
+import { availablePresets } from '@happyvertical/smrt-ui/themes/presets';
 
 /**
  * The app's look, kept in the app document (smrt#3604): a built-in smrt-ui
@@ -23,6 +23,7 @@ export interface ThemeSetting {
   custom?: CustomTheme;
 }
 
+/** smrt-ui's built-in presets (its Node-safe `themes/presets` subpath). */
 export const THEME_PRESETS: readonly string[] = availablePresets;
 export const DEFAULT_PRESET = 'smrt';
 export const DEFAULT_COLOR_SCHEME: ColorSchemeSetting = 'system';

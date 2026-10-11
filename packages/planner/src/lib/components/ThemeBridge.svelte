@@ -3,9 +3,9 @@ import {
   getThemeContext,
   type ThemePreset,
 } from '@happyvertical/smrt-ui/themes';
-import { cookbookStore } from '$lib/cookbook/store.svelte.ts';
-import { resolveTheme } from '$lib/theme/runtime.ts';
-import type { ColorSchemeSetting } from '$lib/theme/theme.ts';
+import { cookbookStore } from '../cookbook/store.svelte.ts';
+import { resolveTheme } from '../theme/runtime.ts';
+import type { ColorSchemeSetting } from '../theme/theme.ts';
 
 // The app document owns the theme. This applies it to the shell's
 // ThemeProvider once the saved document is read, and reads back a change made

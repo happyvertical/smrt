@@ -1,22 +1,12 @@
-import { isShellLayoutEmpty } from '@happyvertical/smrt-svelte/workspace/layout';
 import type { CookbookStore } from '../cookbook/store.svelte.ts';
 import type { Cookbook, CookbookResult } from '../cookbook/types.ts';
 import { parseCookbook } from '../cookbook/validate.ts';
 import { setSamplePack } from '../data/packs.ts';
-import { type AppSettings, writeSettings } from '../settings/app-settings.ts';
+import type { AppSettings } from '../settings/app-settings.ts';
+import { isCookbookEmpty, resolveLibraryCookbook } from './document.ts';
 import type { LibraryCookbook } from './types.ts';
 
-/** Nothing built yet: no recipes, features, saved options, narrowing, layout or theme. */
-export function isCookbookEmpty(cookbook: Cookbook): boolean {
-  return (
-    cookbook.recipes.length === 0 &&
-    cookbook.features.length === 0 &&
-    cookbook.policies.length === 0 &&
-    Object.keys(cookbook.exposure ?? {}).length === 0 &&
-    cookbook.theme === undefined &&
-    isShellLayoutEmpty(cookbook.layout)
-  );
-}
+export { isCookbookEmpty } from './document.ts';
 
 /** Applying replaces the current recipes and menu, so it asks first unless empty. */
 export function needsConfirm(store: Pick<CookbookStore, 'snapshot'>): boolean {
@@ -35,13 +25,7 @@ export function applyLibraryCookbook(
   store: Pick<CookbookStore, 'replace'> & Partial<Pick<CookbookStore, 'theme'>>,
   settings?: AppSettings,
 ): CookbookResult {
-  // `settings` are the visitor's edits of the cookbook's starting values; the
-  // cookbook's own data is never changed (writeSettings returns a copy).
-  const result = parseCookbook(
-    settings
-      ? writeSettings(structuredClone(cookbook.document), settings)
-      : cookbook.document,
-  );
+  const result = resolveLibraryCookbook(cookbook, parseCookbook, settings);
   if (result.ok) {
     // A cookbook without a theme leaves the visitor's own look alone.
     const keep = result.cookbook.theme ? undefined : store.theme;

@@ -1,5 +1,6 @@
 import type { SessionStatus } from '../assistant/session.svelte.ts';
 import type { VoiceStatus } from '../assistant/voice.svelte.ts';
+import type { InferenceMode } from '../inference/config.ts';
 
 /**
  * What the three capabilities look like to the visitor, derived from the
@@ -20,6 +21,8 @@ export interface CapabilitySummary {
   state: CapabilityState;
   /** The accessible name and tooltip: "Think: Qwen3 1.7B ready". */
   label: string;
+  /** Where it runs: "In browser", "Server", "Your model: gpt-4o-mini". Think only. */
+  where?: string;
 }
 
 export interface CapabilityInput {
@@ -31,6 +34,10 @@ export interface CapabilityInput {
     progress: number;
     /** A model has been downloaded before. */
     downloaded: boolean;
+    /** Where the model runs; default `browser`. */
+    mode?: InferenceMode;
+    /** Remote modes: the model's name, e.g. `gpt-4o-mini`. */
+    remote?: string;
   };
   hear: {
     status: VoiceStatus;
@@ -55,6 +62,31 @@ export function deriveCapabilities(
 }
 
 function thinkSummary(t: CapabilityInput['think']): CapabilitySummary {
+  const base = { id: 'think', name: 'Think' } as const;
+  if (t.mode === 'host') {
+    return {
+      ...base,
+      state: t.status === 'ready' ? 'ready' : 'available',
+      label: 'Think: Server',
+      where: 'Server',
+    };
+  }
+  if (t.mode === 'byo') {
+    const where = t.remote ? `Your model: ${t.remote}` : '';
+    return t.status === 'ready' && t.remote
+      ? { ...base, state: 'ready', label: `Think: ${where}`, where }
+      : {
+          ...base,
+          state: 'available',
+          label: 'Think: your own model not connected',
+          where: 'Your model',
+        };
+  }
+  const browser = thinkInBrowser(t);
+  return { ...browser, where: 'In browser' };
+}
+
+function thinkInBrowser(t: CapabilityInput['think']): CapabilitySummary {
   const base = { id: 'think', name: 'Think' } as const;
   if (t.status === 'unsupported') {
     return {

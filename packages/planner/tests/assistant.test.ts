@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  applyChange,
   buildResponseSchema,
   describeChange,
   parseChange,
@@ -43,6 +42,26 @@ describe('schema', () => {
   });
 });
 
+describe('describeChange', () => {
+  it('says what was added, removed and kept, by label', () => {
+    expect(
+      describeChange(
+        { added: ['commerce.sales'], removed: [], kept: [] },
+        recipes,
+      ),
+    ).toMatch(/^Added /);
+    expect(
+      describeChange(
+        { added: [], removed: [], kept: ['commerce.customers'] },
+        recipes,
+      ),
+    ).toBe('Kept Customers (needed).');
+    expect(describeChange({ added: [], removed: [], kept: [] }, recipes)).toBe(
+      '',
+    );
+  });
+});
+
 describe('parseChange', () => {
   it('drops unknown ids, repeats and ids both added and removed', () => {
     const change = parseChange(
@@ -81,50 +100,6 @@ describe('parseChange', () => {
       settings: {},
       theme: {},
     });
-  });
-});
-
-describe('applyChange', () => {
-  it('goes through the recipe store, pulling in requires', () => {
-    const applied = applyChange(recipeState, {
-      add: ['commerce.sales'],
-      remove: [],
-    });
-    expect(applied.added.sort()).toEqual([
-      'commerce.customers',
-      'commerce.sales',
-    ]);
-    expect(recipeState.has('commerce.customers')).toBe(true);
-    expect(describeChange(applied, recipes)).toMatch(/^Added /);
-  });
-
-  it('adds the first alternative of requiresAny', () => {
-    applyChange(recipeState, { add: ['inventory.stock'], remove: [] });
-    expect(recipeState.has('products.simple')).toBe(true);
-  });
-
-  it('keeps a recipe another added recipe needs and says so', () => {
-    recipeState.add('commerce.sales');
-    const applied = applyChange(recipeState, {
-      add: [],
-      remove: ['commerce.customers'],
-    });
-    expect(applied.removed).toEqual([]);
-    expect(applied.kept).toEqual(['commerce.customers']);
-    expect(describeChange(applied, recipes)).toBe('Kept Customers (needed).');
-    expect(recipeState.has('commerce.customers')).toBe(true);
-  });
-
-  it('removes a recipe nothing needs', () => {
-    recipeState.add('commerce.vendors');
-    const applied = applyChange(recipeState, {
-      add: [],
-      remove: ['commerce.vendors'],
-    });
-    expect(applied.removed).toEqual(['commerce.vendors']);
-    expect(describeChange({ added: [], removed: [], kept: [] }, recipes)).toBe(
-      '',
-    );
   });
 });
 

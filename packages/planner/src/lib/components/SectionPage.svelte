@@ -13,24 +13,24 @@ import {
   useShellLayout,
 } from '@happyvertical/smrt-svelte/workspace';
 import { page } from '$app/state';
-import SectionActions from '$lib/components/SectionActions.svelte';
-import SectionIcons from '$lib/components/SectionIcons.svelte';
-import SectionOverview from '$lib/components/SectionOverview.svelte';
-import { cookbookStore } from '$lib/cookbook/store.svelte.ts';
-import { useDataSource } from '$lib/data/context.ts';
-import { humanize, navNoun, pluralize, recordCount } from '$lib/data/format.ts';
-import { sectionOverview } from '$lib/overviews/definitions.ts';
-import { appHref } from '$lib/planner/app.svelte.ts';
-import { requestCreate } from '$lib/planner/create.ts';
-import { recipeModels, recipesById } from '$lib/recipes/index.ts';
-import { inScope } from '$lib/recipes/scope.ts';
-import { recipeState } from '$lib/recipes/state.svelte.ts';
-import { entryIndex, optionGroups } from '$lib/sections/entries.ts';
+import { cookbookStore } from '../cookbook/store.svelte.ts';
+import { useDataSource } from '../data/context.ts';
+import { humanize, navNoun, pluralize, recordCount } from '../data/format.ts';
+import { sectionOverview } from '../overviews/definitions.ts';
+import { appHref } from '../planner/app.svelte.ts';
+import { requestCreate } from '../planner/create.ts';
+import { recipeModels, recipesById } from '../recipes/index.ts';
+import { inScope } from '../recipes/scope.ts';
+import { recipeState } from '../recipes/state.svelte.ts';
+import { entryIndex, optionGroups } from '../sections/entries.ts';
 import {
   DEFAULT_SECTION_ICON,
   sectionInfo,
   sectionTitle,
-} from '$lib/sections/info.ts';
+} from '../sections/info.ts';
+import SectionActions from './SectionActions.svelte';
+import SectionIcons from './SectionIcons.svelte';
+import SectionOverview from './SectionOverview.svelte';
 
 interface SectionPageProps {
   /** The layout id: `section:<id>`, `custom:<id>` or `package:<id>`. */

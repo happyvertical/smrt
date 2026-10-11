@@ -1,5 +1,5 @@
 import { applyUpstreamOverlay } from '../upstream/overlay.ts';
-import raw from './catalog.json';
+import raw from './catalog.json' with { type: 'json' };
 import type { Catalog, CatalogModel, CatalogPackage } from './types.ts';
 
 export type * from './types.ts';

@@ -2,14 +2,11 @@ import type { Recipe } from '../recipes/types.ts';
 import type { AppSettings } from '../settings/app-settings.ts';
 import { CURRENCY_CODES } from '../settings/currencies.ts';
 import {
-  COLOR_SCHEMES,
   type ColorSchemeSetting,
-  describeTheme,
   normalizeHex,
   THEME_PRESETS,
   type ThemeSetting,
 } from '../theme/theme.ts';
-import { formatTaxPercent } from './prompt.ts';
 
 /** Settings as the model states them: tax in percent. All optional. */
 export interface SettingsPatch {
@@ -51,7 +48,15 @@ export interface AssistantChange {
   cookbook: string | null;
   settings: SettingsPatch;
   theme: ThemePatch;
+  /**
+   * Command calls a trusted host server asked for (`parseChange` with
+   * `commands: true`); the controller validates each one. Absent otherwise.
+   */
+  commands?: { name: string; input: unknown }[];
 }
+
+/** Most command calls one reply may carry. */
+export const MAX_COMMANDS = 8;
 
 /** The slice of the cookbook store that holds the app theme. */
 export interface ThemeStore {
@@ -133,7 +138,7 @@ export function buildResponseSchema(
 }
 
 /** Keep only valid settings: circulating currency, tax 0-100, short terms. */
-function parseSettings(value: unknown): SettingsPatch {
+export function parseSettings(value: unknown): SettingsPatch {
   const out: SettingsPatch = {};
   if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
   const object = value as Record<string, unknown>;
@@ -163,7 +168,7 @@ function parseSettings(value: unknown): SettingsPatch {
 }
 
 /** Keep only a known preset, a hex colour and light or dark. */
-function parseThemePatch(value: unknown): ThemePatch {
+export function parseThemePatch(value: unknown): ThemePatch {
   const out: ThemePatch = {};
   if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
   const object = value as Record<string, unknown>;
@@ -219,6 +224,7 @@ export function parseChange(
   input: string,
   recipes: readonly Pick<Recipe, 'id'>[],
   cookbooks: readonly { id: string }[] = [],
+  options: { commands?: boolean } = {},
 ): AssistantChange {
   const known = new Set(recipes.map((recipe) => recipe.id));
   const raw = stripThinking(input);
@@ -256,6 +262,7 @@ export function parseChange(
   const add = pick(object.add);
   const remove = pick(object.remove);
   const both = new Set(add.filter((id) => remove.includes(id)));
+  const commands = options.commands ? pickCommands(object.commands) : [];
   return {
     reply: typeof object.reply === 'string' ? object.reply.trim() : '',
     add: add.filter((id) => !both.has(id)),
@@ -267,23 +274,22 @@ export function parseChange(
         : null,
     settings: parseSettings(object.settings),
     theme: parseThemePatch(object.theme),
+    ...(commands.length ? { commands } : {}),
   };
 }
 
-/** Apply a change through the store and report what really changed. */
-export function applyChange(
-  store: RecipeStore,
-  change: Pick<AssistantChange, 'add' | 'remove'>,
-): AppliedChange {
-  const before = new Set(store.ids);
-  if (change.add.length) store.add(...change.add);
-  if (change.remove.length) store.remove(...change.remove);
-  const after = new Set(store.ids);
-  return {
-    added: [...after].filter((id) => !before.has(id)),
-    removed: [...before].filter((id) => !after.has(id)),
-    kept: change.remove.filter((id) => after.has(id) && before.has(id)),
-  };
+/** `{ name, input }` entries; the controller rejects unknown names and bad input. */
+function pickCommands(value: unknown): { name: string; input: unknown }[] {
+  if (!Array.isArray(value)) return [];
+  const out: { name: string; input: unknown }[] = [];
+  for (const entry of value) {
+    if (out.length >= MAX_COMMANDS) break;
+    if (!entry || typeof entry !== 'object') continue;
+    const { name, input } = entry as { name?: unknown; input?: unknown };
+    if (typeof name !== 'string') continue;
+    out.push({ name, input: input ?? {} });
+  }
+  return out;
 }
 
 /** A sentence for the chat saying what changed, by recipe label. */
@@ -301,78 +307,4 @@ export function describeChange(
     parts.push(`Kept ${names(applied.kept)} (needed).`);
   }
   return parts.join(' ');
-}
-
-/**
- * Write the settings that really change (they are reversible, so no click)
- * and say so tersely, e.g. "Currency CAD, tax 13%." Returns '' when nothing
- * changed.
- */
-export function applySettings(
-  store: SettingsStore,
-  patch: SettingsPatch,
-): string {
-  const before = store.read();
-  const next: AppSettings = { ...before };
-  const parts: string[] = [];
-  if (patch.currency && patch.currency !== before.currency) {
-    next.currency = patch.currency;
-    parts.push(`currency ${patch.currency}`);
-  }
-  if (patch.taxRate !== undefined) {
-    const fraction = Number((patch.taxRate / 100).toFixed(6));
-    if (fraction !== before.taxRate) {
-      next.taxRate = fraction;
-      parts.push(`tax ${formatTaxPercent(fraction)}`);
-    }
-  }
-  if (patch.paymentTerms && patch.paymentTerms !== before.paymentTerms) {
-    next.paymentTerms = patch.paymentTerms;
-    parts.push(`terms ${patch.paymentTerms}`);
-  }
-  if (!parts.length) return '';
-  store.write(next);
-  const text = parts.join(', ');
-  return `${text[0].toUpperCase()}${text.slice(1)}.`;
-}
-
-/** What applying a theme change did, so the chat can say it and offer Undo. */
-export interface AppliedTheme {
-  /** A terse sentence, e.g. "Theme: glass." */
-  text: string;
-  /** The theme before the change, for Undo (undefined was the default). */
-  previous: ThemeSetting | undefined;
-}
-
-/**
- * Apply a theme change (reversible, so no click) and say so tersely.
- * Returns null when nothing would change. A preset replaces a brand colour; a
- * brand colour sits on top of the preset; light or dark is kept either way.
- */
-export function applyThemePatch(
-  store: ThemeStore,
-  patch: ThemePatch,
-): AppliedTheme | null {
-  if (!patch.preset && !patch.primary && !patch.colorScheme) return null;
-  const previous = store.read();
-  const next: ThemeSetting = { ...previous };
-  if (patch.preset) {
-    next.preset = patch.preset;
-    delete next.custom;
-  }
-  if (patch.primary) {
-    next.custom = {
-      primary: patch.primary,
-      ...(previous?.custom?.fontFamily
-        ? { fontFamily: previous.custom.fontFamily }
-        : {}),
-    };
-  }
-  if (patch.colorScheme && COLOR_SCHEMES.includes(patch.colorScheme)) {
-    next.colorScheme = patch.colorScheme;
-  }
-  if (JSON.stringify(next) === JSON.stringify(previous ?? {})) return null;
-  store.write(next);
-  const text = `Theme: ${describeTheme(store.read())}.`;
-  return { text, previous };
 }

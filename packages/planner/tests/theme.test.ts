@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  applyThemePatch,
   buildResponseSchema,
   parseChange,
   type ThemeStore,
@@ -246,29 +245,11 @@ describe('assistant theme', () => {
     expect(props(true).theme).toMatchObject({ type: 'object' });
   });
 
-  it('applies a patch tersely and returns the previous theme', () => {
-    const mem = memoryTheme({ preset: 'glass', colorScheme: 'dark' });
-    const applied = applyThemePatch(mem.store, { primary: '#d97706' });
-    expect(applied?.text).toBe('Theme: brand colour #d97706, dark.');
-    expect(applied?.previous).toEqual({ preset: 'glass', colorScheme: 'dark' });
-    expect(mem.get()).toEqual({
-      preset: 'glass',
-      colorScheme: 'dark',
-      custom: { primary: '#d97706' },
-    });
-    // A preset replaces the brand colour.
-    applyThemePatch(mem.store, { preset: 'studio' });
-    expect(mem.get()?.custom).toBeUndefined();
-    expect(applyThemePatch(mem.store, { preset: 'studio' })).toBeNull();
-    expect(applyThemePatch(mem.store, {})).toBeNull();
-  });
-
   it('undoes a change, once', () => {
     const mem = memoryTheme({ preset: 'glass' });
     const undos = new ThemeUndos(mem.store);
-    const applied = applyThemePatch(mem.store, { colorScheme: 'dark' });
-    const ref = undos.record(applied?.previous);
-    expect(mem.get()?.colorScheme).toBe('dark');
+    const ref = undos.record(mem.get());
+    mem.store.write({ preset: 'glass', colorScheme: 'dark' });
     undos.undo(ref.undoId);
     expect(mem.get()).toEqual({ preset: 'glass' });
     expect(undos.undos[ref.undoId].status).toBe('undone');
@@ -280,8 +261,8 @@ describe('assistant theme', () => {
   it('undo returns to the default when there was no theme', () => {
     const mem = memoryTheme();
     const undos = new ThemeUndos(mem.store);
-    const applied = applyThemePatch(mem.store, { preset: 'glass' });
-    const ref = undos.record(applied?.previous);
+    const ref = undos.record(mem.get());
+    mem.store.write({ preset: 'glass' });
     undos.undo(ref.undoId);
     expect(mem.get()).toBeUndefined();
   });

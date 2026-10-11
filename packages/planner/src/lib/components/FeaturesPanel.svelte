@@ -1,17 +1,17 @@
 <script lang="ts">
 import { Disclosure } from '@happyvertical/smrt-ui';
 import { SearchInput, ToggleButton } from '@happyvertical/smrt-ui/forms';
-import { catalog } from '$lib/catalog/index.ts';
+import { catalog } from '../catalog/index.ts';
 import {
   alsoAdds,
   buildFeatureCards,
   cardsByGroup,
   featureGroups,
   filterFeatureCards,
-} from '$lib/features/catalogue.ts';
-import { recipes, recipesById } from '$lib/recipes/index.ts';
-import { removalBlockers } from '$lib/recipes/resolve.ts';
-import { recipeState } from '$lib/recipes/state.svelte.ts';
+} from '../features/catalogue.ts';
+import { recipes, recipesById } from '../recipes/index.ts';
+import { removalBlockers } from '../recipes/resolve.ts';
+import { recipeState } from '../recipes/state.svelte.ts';
 import FeatureCard from './FeatureCard.svelte';
 import RecordFeatures from './RecordFeatures.svelte';
 

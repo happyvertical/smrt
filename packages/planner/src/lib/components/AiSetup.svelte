@@ -1,6 +1,11 @@
 <script lang="ts">
 import { Button, Icon } from '@happyvertical/smrt-ui';
-import { Select, Switch } from '@happyvertical/smrt-ui/forms';
+import {
+  FieldLabel,
+  Input,
+  Select,
+  Switch,
+} from '@happyvertical/smrt-ui/forms';
 import { HEAR_ICON, SPEAK_ICON, THINK_ICON } from '../ai/icons.ts';
 import { aiState } from '../ai/instance.ts';
 import type { CapabilityId } from '../ai/status.ts';
@@ -32,6 +37,12 @@ const summaries = $derived(aiState.capabilities);
 const capabilityState = (id: CapabilityId) =>
   summaries.find((s) => s.id === id)?.state ?? 'available';
 
+const mode = $derived(aiState.inference.mode);
+const byo = $derived(aiState.byo);
+const thinkWhere = $derived(
+  summaries.find((s) => s.id === 'think')?.where ?? '',
+);
+
 const model = $derived(getModel(session.prefs.modelId));
 // A roomy graphics card can run the smarter model; it is only suggested, the
 // visitor's own choice is never changed for them.
@@ -57,6 +68,10 @@ const speechChoice = $derived(speechModelChoice(voice.model));
 const handsFreeAvailable = $derived(voice.status === 'ready');
 </script>
 
+{#if aiState.notice}
+  <p class="notice" role="status">{aiState.notice}</p>
+{/if}
+
 <div class="cards">
   {#if show.includes('think')}
     <section class="card" data-state={capabilityState('think')} aria-labelledby="ai-think">
@@ -64,10 +79,112 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
         <span class="badge"><Icon path={THINK_ICON} size={22} /></span>
         <div>
           <h2 id="ai-think">Think</h2>
-          <p class="sub">The assistant's language model</p>
+          <p class="sub">
+            The assistant's language model{thinkWhere ? `: ${thinkWhere}` : ''}
+          </p>
         </div>
       </header>
-      {#if session.status === 'unsupported'}
+      {#if mode === 'host'}
+        <p class="status">Server</p>
+        <p class="meta">
+          This site's server answers the assistant. What you type, and a short
+          summary of your plan, is sent to it. Nothing is downloaded.
+        </p>
+      {:else if mode === 'byo' && byo}
+        {@const preset = byo.preset}
+        <label>
+          Model provider
+          <Select
+            value={byo.presetId}
+            onchange={(event) => byo.select(event.currentTarget.value)}
+          >
+            {#each byo.presets as option (option.id)}
+              <option value={option.id}>{option.label}</option>
+            {/each}
+          </Select>
+        </label>
+        <div class="field">
+          <FieldLabel for="byo-url" label="Address" />
+          <Input
+            id="byo-url"
+            type="url"
+            autocomplete="off"
+            spellcheck={false}
+            placeholder="https://example.com/v1"
+            value={byo.baseUrl}
+            readonly={!preset?.customUrl}
+            oninput={(event) => byo.setBaseUrl(event.currentTarget.value)}
+          />
+        </div>
+        <div class="field">
+          <FieldLabel for="byo-model" label="Model" />
+          <Input
+            id="byo-model"
+            type="text"
+            autocomplete="off"
+            spellcheck={false}
+            value={byo.model}
+            oninput={(event) => byo.setModel(event.currentTarget.value)}
+          />
+        </div>
+        {#if !preset?.keyless}
+          <div class="field">
+            <FieldLabel for="byo-key" label="Key" />
+            <Input
+              id="byo-key"
+              type="password"
+              autocomplete="off"
+              spellcheck={false}
+              placeholder="Paste your key"
+              value={byo.key}
+              oninput={(event) => byo.setKey(event.currentTarget.value)}
+            />
+          </div>
+          {#if byo.keyForOtherAddress}
+            <p class="meta">
+              A key is saved for another address, so it is not used here. Paste it again for this address.
+            </p>
+          {/if}
+          <p class="meta">
+            Stored only in this browser, and sent only to {byo.baseUrl || 'the address above'} (https, or this computer).
+            <button class="link" type="button" onclick={() => byo.forgetKey()}>
+              Forget the key
+            </button>
+          </p>
+        {/if}
+        {#if preset?.cors}
+          <p class="meta"><strong>Browser access.</strong> {preset.cors}</p>
+        {/if}
+        <p class="meta">
+          What you type, and a short summary of your plan, is sent to this
+          endpoint.
+        </p>
+        {#if byo.testStatus === 'ok' || byo.testStatus === 'failed' || byo.testStatus === 'testing'}
+          <p
+            class={byo.testStatus === 'failed' ? 'error' : 'status'}
+            role={byo.testStatus === 'failed' ? 'alert' : 'status'}
+          >
+            {byo.testStatus === 'testing' ? 'Testing…' : byo.testMessage}
+          </p>
+        {/if}
+        {#if byo.active}
+          <p class="status" role="status">Using {byo.model}.</p>
+        {/if}
+        <div class="actions">
+          <Button
+            variant="secondary"
+            disabled={byo.testStatus === 'testing'}
+            onclick={() => void byo.test()}
+          >
+            Test connection
+          </Button>
+          {#if byo.active}
+            <Button variant="secondary" onclick={() => byo.stop()}>Stop using</Button>
+          {:else}
+            <Button disabled={!byo.complete} onclick={() => byo.use()}>Use this model</Button>
+          {/if}
+        </div>
+      {:else if session.status === 'unsupported'}
         <p role="status">
           This browser has no WebGPU, which the model needs. Try a recent
           Chrome, Edge or Safari on a computer. The Planner works without it.
@@ -356,5 +473,27 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
 
   .error {
     color: var(--smrt-color-error);
+  }
+
+  .notice {
+    margin: 0 0 var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-3);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md, 8px);
+  }
+
+  .field {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+  }
+
+  .link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--smrt-color-primary);
+    text-decoration: underline;
+    cursor: pointer;
+    font: inherit;
   }
 </style>

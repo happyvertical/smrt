@@ -1,35 +1,35 @@
 <script lang="ts">
 import { useShellLayout } from '@happyvertical/smrt-svelte/workspace';
 import { page } from '$app/state';
-import { catalog, getModel } from '$lib/catalog/index.ts';
-import FormWorkspace from '$lib/components/FormWorkspace.svelte';
-import ModelWorkspace from '$lib/components/ModelWorkspace.svelte';
-import SectionIcons from '$lib/components/SectionIcons.svelte';
-import { cookbookStore } from '$lib/cookbook/store.svelte.ts';
-import { humanize, navNoun } from '$lib/data/format.ts';
-import { activeForms } from '$lib/forms/active.ts';
-import { PRODUCT } from '$lib/forms/stock.ts';
-import { appHref } from '$lib/planner/app.svelte.ts';
-import { selection } from '$lib/planner/selection.svelte.ts';
-import { FEATURE_SECTION } from '$lib/recipes/features.ts';
-import { renderHelp } from '$lib/recipes/help.ts';
+import { catalog, getModel } from '../catalog/index.ts';
+import { cookbookStore } from '../cookbook/store.svelte.ts';
+import { humanize, navNoun } from '../data/format.ts';
+import { activeForms } from '../forms/active.ts';
+import { PRODUCT } from '../forms/stock.ts';
+import { appHref } from '../planner/app.svelte.ts';
+import { selection } from '../planner/selection.svelte.ts';
+import { FEATURE_SECTION } from '../recipes/features.ts';
+import { renderHelp } from '../recipes/help.ts';
 import {
   helpModels,
   navPath,
   recipeNav,
   recipes,
   sectionId,
-} from '$lib/recipes/index.ts';
+} from '../recipes/index.ts';
 import {
   childLinks,
   childTitle,
   hasNavPage,
   lineageNames,
-} from '$lib/recipes/plumbing.ts';
-import { pageScope, scopePreset } from '$lib/recipes/scope.ts';
-import { navSectionOf } from '$lib/recipes/sections.ts';
-import { recipeState } from '$lib/recipes/state.svelte.ts';
-import { sectionPath } from '$lib/sections/path.ts';
+} from '../recipes/plumbing.ts';
+import { pageScope, scopePreset } from '../recipes/scope.ts';
+import { navSectionOf } from '../recipes/sections.ts';
+import { recipeState } from '../recipes/state.svelte.ts';
+import { sectionPath } from '../sections/path.ts';
+import FormWorkspace from './FormWorkspace.svelte';
+import ModelWorkspace from './ModelWorkspace.svelte';
+import SectionIcons from './SectionIcons.svelte';
 
 interface ModelPageProps {
   packageId: string;

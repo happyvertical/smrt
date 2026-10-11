@@ -5,7 +5,7 @@
     {
       "id": "ads",
       "packageName": "@happyvertical/smrt-ads",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Advertising delivery and tracking models for SMRT framework",
       "models": [
         {
@@ -1927,7 +1927,7 @@
     {
       "id": "analytics",
       "packageName": "@happyvertical/smrt-analytics",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Analytics integration models for SMRT framework",
       "models": [
         {
@@ -4226,9 +4226,384 @@
       ]
     },
     {
+      "id": "approvals",
+      "packageName": "@happyvertical/smrt-approvals",
+      "version": "0.55.11",
+      "description": "Approval decision gate for the SMRT framework: revision-bound, single-use approvals with quorum, expiry, and an append-only event ledger",
+      "models": [
+        {
+          "id": "@happyvertical/smrt-approvals:ApprovalEvent",
+          "name": "ApprovalEvent",
+          "collection": "approvalevents",
+          "description": "One immutable entry in an approval request's history.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "requestId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-approvals:ApprovalRequest"
+            },
+            {
+              "name": "type",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "actorId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "actorType",
+              "type": "text",
+              "required": false,
+              "enum": [
+                "human",
+                "agent",
+                "service"
+              ]
+            },
+            {
+              "name": "reason",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "subjectRevisionHash",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "sequence",
+              "type": "integer",
+              "required": false
+            },
+            {
+              "name": "voteKey",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "occurredAt",
+              "type": "datetime",
+              "required": false
+            }
+          ],
+          "rest": [
+            {
+              "method": "GET",
+              "path": "/approvalevents"
+            },
+            {
+              "method": "GET",
+              "path": "/approvalevents/[id]"
+            }
+          ],
+          "mcp": [
+            {
+              "operation": "get",
+              "name": "approvalevent_get"
+            },
+            {
+              "operation": "list",
+              "name": "approvalevent_list"
+            }
+          ],
+          "cli": [],
+          "methods": [
+            {
+              "name": "delete",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<void>",
+              "aiCallable": false
+            },
+            {
+              "name": "save",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-approvals:ApprovalRequest"
+          ],
+          "exposed": true
+        },
+        {
+          "id": "@happyvertical/smrt-approvals:ApprovalPolicy",
+          "name": "ApprovalPolicy",
+          "collection": "approvalpolicies",
+          "description": "Tenant-level tightening of an approval kind. One row per tenant and kind.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "kind",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "requiredApprovals",
+              "type": "integer",
+              "required": false
+            },
+            {
+              "name": "ttlMs",
+              "type": "integer",
+              "required": false
+            },
+            {
+              "name": "requiredPermission",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "updatedBy",
+              "type": "text",
+              "required": false
+            }
+          ],
+          "rest": [
+            {
+              "method": "GET",
+              "path": "/approvalpolicies"
+            },
+            {
+              "method": "GET",
+              "path": "/approvalpolicies/[id]"
+            }
+          ],
+          "mcp": [
+            {
+              "operation": "get",
+              "name": "approvalpolicy_get"
+            },
+            {
+              "operation": "list",
+              "name": "approvalpolicy_list"
+            }
+          ],
+          "cli": [],
+          "methods": [
+            {
+              "name": "save",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            }
+          ],
+          "references": [],
+          "exposed": true
+        },
+        {
+          "id": "@happyvertical/smrt-approvals:ApprovalRequest",
+          "name": "ApprovalRequest",
+          "collection": "approvalrequests",
+          "description": "A request for approval of one subject revision.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "kind",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "subjectType",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "subjectId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "subjectRevisionHash",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "requestKey",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "requestedBy",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "requestedByType",
+              "type": "text",
+              "required": false,
+              "enum": [
+                "human",
+                "agent",
+                "service"
+              ]
+            },
+            {
+              "name": "summary",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "status",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "requiredApprovals",
+              "type": "integer",
+              "required": false
+            },
+            {
+              "name": "approvalCount",
+              "type": "integer",
+              "required": false
+            },
+            {
+              "name": "requiredPermissions",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "version",
+              "type": "integer",
+              "required": false
+            },
+            {
+              "name": "expiresAt",
+              "type": "datetime",
+              "required": false
+            },
+            {
+              "name": "decidedAt",
+              "type": "datetime",
+              "required": false
+            },
+            {
+              "name": "consumedAt",
+              "type": "datetime",
+              "required": false
+            },
+            {
+              "name": "consumedBy",
+              "type": "text",
+              "required": false
+            }
+          ],
+          "rest": [
+            {
+              "method": "GET",
+              "path": "/approvalrequests"
+            },
+            {
+              "method": "GET",
+              "path": "/approvalrequests/[id]"
+            }
+          ],
+          "mcp": [
+            {
+              "operation": "get",
+              "name": "approvalrequest_get"
+            },
+            {
+              "operation": "list",
+              "name": "approvalrequest_list"
+            }
+          ],
+          "cli": [],
+          "methods": [
+            {
+              "name": "delete",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<void>",
+              "aiCallable": false
+            },
+            {
+              "name": "expiresAtMs",
+              "async": false,
+              "parameters": [],
+              "returnType": "number",
+              "aiCallable": false
+            },
+            {
+              "name": "getRequiredPermissions",
+              "async": false,
+              "parameters": [],
+              "returnType": "string[]",
+              "aiCallable": false
+            },
+            {
+              "name": "isConsumed",
+              "async": false,
+              "parameters": [],
+              "returnType": "boolean",
+              "aiCallable": false
+            },
+            {
+              "name": "save",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
+              "name": "setRequiredPermissions",
+              "async": false,
+              "parameters": [
+                "slugs: any"
+              ],
+              "returnType": "void",
+              "aiCallable": false
+            }
+          ],
+          "references": [],
+          "exposed": true
+        }
+      ],
+      "dependencies": [
+        "users"
+      ],
+      "surfaceSource": "knowledge",
+      "browser": {
+        "status": "server-only",
+        "issues": [
+          "#3617",
+          "#3624",
+          "#3626"
+        ],
+        "via": [
+          "@happyvertical/smrt-profiles",
+          "@happyvertical/smrt-tenancy",
+          "@happyvertical/smrt-users"
+        ]
+      }
+    },
+    {
       "id": "assets",
       "packageName": "@happyvertical/smrt-assets",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Asset management system with versioning, metadata, and AI-powered operations for SMRT framework",
       "models": [
         {
@@ -6018,12 +6393,221 @@
         "via": [
           "@happyvertical/smrt-tenancy"
         ]
-      }
+      },
+      "recipes": [
+        {
+          "id": "assets.attachments",
+          "label": "Attachments",
+          "summary": "Attach authorized files to records and retain their history.",
+          "synonyms": [
+            "file attachments",
+            "record files",
+            "supporting documents"
+          ],
+          "models": [
+            "@happyvertical/smrt-assets:Asset",
+            "@happyvertical/smrt-assets:AssetAssociation"
+          ],
+          "nav": [
+            {
+              "label": "Attachments",
+              "model": "@happyvertical/smrt-assets:Asset",
+              "icon": "fileText",
+              "description": "Supporting files connected to the record you are viewing.",
+              "noun": "attachment"
+            }
+          ],
+          "requires": [
+            "assets.library"
+          ],
+          "group": {
+            "id": "assets",
+            "label": "Files and media",
+            "summary": "Organize files and media, then attach them to the records that need them."
+          },
+          "section": {
+            "id": "assets",
+            "label": "Assets",
+            "icon": "folder",
+            "description": "Files, media and attachments for your work."
+          },
+          "options": {
+            "@happyvertical/smrt-assets:Asset": {
+              "fields": {
+                "name": {
+                  "label": "File name",
+                  "order": 1
+                },
+                "description": {
+                  "label": "Description",
+                  "order": 2
+                },
+                "mimeType": {
+                  "label": "File type",
+                  "order": 3
+                }
+              }
+            },
+            "@happyvertical/smrt-assets:AssetAssociation": {
+              "fields": {
+                "assetId": {
+                  "label": "Attachment",
+                  "order": 1
+                },
+                "role": {
+                  "label": "Role",
+                  "order": 2
+                },
+                "sortOrder": {
+                  "label": "Display order",
+                  "order": 3
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nAttachments keep authorized supporting files connected to a record without making a public storage link. The application supplies the authorization and upload endpoint; this recipe records the asset and its relationship.\n\n## Tasks\n\n### Describe an attachment\n\n1. Use a clear {field:Asset.name} so people can identify the file.\n2. Add a {field:Asset.description} when the attachment needs context.\n3. Check the {field:Asset.mimeType} before offering the file to a viewer.\n\n### Link an attachment to a record\n\n1. Select the {field:AssetAssociation.assetId} to link.\n2. Set a {field:AssetAssociation.role} when the record uses more than one file.\n3. Adjust {field:AssetAssociation.sortOrder} to control display order.\n",
+            "fieldRefs": [
+              "Asset.description",
+              "Asset.mimeType",
+              "Asset.name",
+              "AssetAssociation.assetId",
+              "AssetAssociation.role",
+              "AssetAssociation.sortOrder"
+            ]
+          },
+          "runtime": "both",
+          "demoSeed": {
+            "export": "@happyvertical/smrt-assets/playground#assetAttachmentMockAttachments"
+          },
+          "demo": {
+            "mode": "server",
+            "reasons": [
+              "Needs a server because its package depends on @happyvertical/smrt-tenancy, which do not build for a browser (#3624)."
+            ]
+          },
+          "effectiveDemo": {
+            "mode": "server",
+            "reasons": [
+              "Needs a server because its package depends on @happyvertical/smrt-tenancy, which do not build for a browser (#3624).",
+              "Needs assets.library, which is server."
+            ]
+          }
+        },
+        {
+          "id": "assets.library",
+          "label": "Asset Library",
+          "summary": "Organize files and media with folders, types, and statuses.",
+          "synonyms": [
+            "media library",
+            "file library",
+            "digital assets"
+          ],
+          "models": [
+            "@happyvertical/smrt-assets:Asset",
+            "@happyvertical/smrt-assets:Folder",
+            "@happyvertical/smrt-assets:AssetType",
+            "@happyvertical/smrt-assets:AssetStatus",
+            "@happyvertical/smrt-assets:AssetMetafield"
+          ],
+          "nav": [
+            {
+              "label": "Assets",
+              "model": "@happyvertical/smrt-assets:Asset",
+              "icon": "archive",
+              "description": "Files and media you can organize, reuse and share.",
+              "noun": "asset"
+            },
+            {
+              "label": "Folders",
+              "model": "@happyvertical/smrt-assets:Folder",
+              "icon": "folder",
+              "description": "Organize assets into clear, reusable groups.",
+              "noun": "folder"
+            }
+          ],
+          "requires": [],
+          "group": {
+            "id": "assets",
+            "label": "Files and media",
+            "summary": "Organize files and media, then attach them to the records that need them."
+          },
+          "section": {
+            "id": "assets",
+            "label": "Assets",
+            "icon": "folder",
+            "description": "Files, media and attachments for your work."
+          },
+          "options": {
+            "@happyvertical/smrt-assets:Asset": {
+              "fields": {
+                "name": {
+                  "label": "Name",
+                  "order": 1
+                },
+                "description": {
+                  "order": 2
+                },
+                "folderId": {
+                  "label": "Folder",
+                  "order": 3
+                },
+                "typeSlug": {
+                  "label": "Type",
+                  "order": 4
+                },
+                "statusSlug": {
+                  "label": "Status",
+                  "order": 5
+                },
+                "mimeType": {
+                  "label": "File type",
+                  "order": 6
+                }
+              }
+            },
+            "@happyvertical/smrt-assets:Folder": {
+              "fields": {
+                "name": {
+                  "label": "Name",
+                  "order": 1
+                },
+                "description": {
+                  "order": 2
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nThe Asset Library keeps files and media in one place. Organize assets into folders, classify them by type and status, and keep a clear description for people who need to find them later.\n\n## Tasks\n\n### Add an asset\n\n1. Give the asset a recognizable {field:Asset.name}.\n2. Add a {field:Asset.description} that explains how the file can be used.\n3. Select its {field:Asset.folderId}, {field:Asset.typeSlug}, and {field:Asset.statusSlug}.\n4. Confirm the {field:Asset.mimeType} matches the file you intend to manage.\n\n### Organize folders\n\n1. Create a folder with a descriptive {field:Folder.name}.\n2. Use the {field:Folder.description} to explain the folder's purpose.\n",
+            "fieldRefs": [
+              "Asset.description",
+              "Asset.folderId",
+              "Asset.mimeType",
+              "Asset.name",
+              "Asset.statusSlug",
+              "Asset.typeSlug",
+              "Folder.description",
+              "Folder.name"
+            ]
+          },
+          "runtime": "both",
+          "demoSeed": {
+            "export": "@happyvertical/smrt-assets/playground#assetGridMockAssets"
+          },
+          "demo": {
+            "mode": "server",
+            "reasons": [
+              "Needs a server because its package depends on @happyvertical/smrt-tenancy, which do not build for a browser (#3624)."
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "chat",
       "packageName": "@happyvertical/smrt-chat",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Chat rooms, DMs, threads, and agent conversations for the SMRT framework",
       "models": [
         {
@@ -8397,6 +8981,8 @@
         }
       ],
       "dependencies": [
+        "assets",
+        "images",
         "profiles",
         "reports",
         "users"
@@ -8410,11 +8996,13 @@
           "#3624",
           "#3625",
           "#3626",
-          "#3627"
+          "#3627",
+          "#3628"
         ],
         "reason": "node:crypto + node:async_hooks",
         "via": [
           "@happyvertical/smrt-agents",
+          "@happyvertical/smrt-images",
           "@happyvertical/smrt-jobs",
           "@happyvertical/smrt-profiles",
           "@happyvertical/smrt-reports",
@@ -8485,8 +9073,263 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: node:crypto + node:async_hooks; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3617, #3624, #3625, #3626, #3627).",
+              "Needs a server because its package does not build for a browser: node:crypto + node:async_hooks; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-images, @happyvertical/smrt-jobs, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3617, #3624, #3625, #3626, #3627, #3628).",
               "Provider llm has an in-browser option (webllm, bitgpu)."
+            ]
+          }
+        },
+        {
+          "id": "chat.rooms",
+          "label": "Team Chat",
+          "summary": "Organize team conversations in rooms with threads and reactions.",
+          "synonyms": [
+            "team chat",
+            "channels",
+            "group chat",
+            "conversations"
+          ],
+          "models": [
+            "@happyvertical/smrt-chat:ChatRoom",
+            "@happyvertical/smrt-chat:ChatMessage",
+            "@happyvertical/smrt-chat:ChatParticipant",
+            "@happyvertical/smrt-chat:ChatThread",
+            "@happyvertical/smrt-chat:ChatReaction"
+          ],
+          "nav": [
+            {
+              "label": "Chat Rooms",
+              "model": "@happyvertical/smrt-chat:ChatRoom",
+              "icon": "users",
+              "description": "Team conversations organized by topic or audience.",
+              "noun": "chat room"
+            }
+          ],
+          "requires": [],
+          "group": {
+            "id": "team-collaboration",
+            "label": "Team collaboration",
+            "summary": "Keep conversations and shared work in one place."
+          },
+          "section": {
+            "id": "team",
+            "label": "Team",
+            "icon": "users",
+            "description": "People and the conversations that keep them aligned."
+          },
+          "options": {
+            "@happyvertical/smrt-chat:ChatRoom": {
+              "fields": {
+                "metadata": {
+                  "visibility": "hidden"
+                },
+                "createdByProfileId": {
+                  "visibility": "hidden"
+                },
+                "lastMessageAt": {
+                  "label": "Last message",
+                  "order": 1
+                }
+              }
+            },
+            "@happyvertical/smrt-chat:ChatMessage": {
+              "fields": {
+                "metadata": {
+                  "visibility": "hidden"
+                },
+                "toolCallData": {
+                  "visibility": "hidden"
+                },
+                "attachments": {
+                  "visibility": "advanced"
+                }
+              }
+            },
+            "@happyvertical/smrt-chat:ChatParticipant": {
+              "fields": {
+                "lastReadMessageId": {
+                  "visibility": "hidden"
+                },
+                "lastSeenAt": {
+                  "visibility": "advanced"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nTeam Chat keeps conversations in rooms so people can find the right discussion,\nfollow threads, and see reactions without mixing unrelated work together. The\nroom and message lists are read-only generated views. Create rooms, manage\nmembers, and send messages through the app's authorized chat workflow.\n\n## Tasks\n\n### Find the right room\n\n1. Open **Chat Rooms** from the navigation.\n2. Search for a room by its **{field:ChatRoom.name}**, or use its\n   **{field:ChatRoom.topic}** to tell similar rooms apart.\n3. Open the room and check **{field:ChatRoom.lastMessageAt}** to see where the\n   most recent discussion happened.\n\n### Follow a conversation\n\n1. Read the room messages and open a thread when you need the discussion in\n   one place.\n2. Use the thread **{field:ChatThread.title}** to describe the subject when\n   your app supplies one.\n3. Add a reaction by choosing the **{field:ChatReaction.emoji}** that best\n   communicates your response.\n\n### Keep a room useful\n\n1. Give the room a clear **{field:ChatRoom.name}** and a short\n   **{field:ChatRoom.description}**.\n2. Set **{field:ChatRoom.roomType}** deliberately: public for broad team\n   discussion, private for restricted groups, and direct messages for one-to-one\n   conversations.\n3. Use a focused **{field:ChatMessage.content}** so teammates can scan the\n   conversation and reply in context.\n",
+            "fieldRefs": [
+              "ChatMessage.content",
+              "ChatReaction.emoji",
+              "ChatRoom.description",
+              "ChatRoom.lastMessageAt",
+              "ChatRoom.name",
+              "ChatRoom.roomType",
+              "ChatRoom.topic",
+              "ChatThread.title"
+            ]
+          },
+          "surfaces": [
+            {
+              "kind": "route",
+              "path": "/chat/rooms",
+              "export": "@happyvertical/smrt-chat/svelte#ChatLayout",
+              "label": "Team chat"
+            },
+            {
+              "kind": "playground",
+              "export": "@happyvertical/smrt-chat/playground#default",
+              "label": "Static chat fixtures"
+            }
+          ],
+          "runtime": "both",
+          "demoSeed": {
+            "export": "@happyvertical/smrt-chat/playground#chatRoomsFixture"
+          },
+          "demo": {
+            "mode": "server",
+            "reasons": [
+              "Needs a server because its package does not build for a browser: node:crypto + node:async_hooks; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-images, @happyvertical/smrt-jobs, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3617, #3624, #3625, #3626, #3627, #3628)."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "comments",
+      "packageName": "@happyvertical/smrt-comments",
+      "version": "0.55.11",
+      "description": "Record comments and mention hooks for SMRT applications",
+      "models": [
+        {
+          "id": "@happyvertical/smrt-comments:Comment",
+          "name": "Comment",
+          "collection": "comments",
+          "fields": [
+            {
+              "name": "metaType",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "metaId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "role",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "sortOrder",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "authorUserId",
+              "type": "crossPackageRef",
+              "required": true,
+              "related": "@happyvertical/smrt-users:User"
+            },
+            {
+              "name": "body",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "mentions",
+              "type": "text",
+              "required": false
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "hydrate",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<T | null>",
+              "aiCallable": false
+            },
+            {
+              "name": "listForRecord",
+              "async": true,
+              "parameters": [
+                "recordType: string",
+                "recordId: string"
+              ],
+              "returnType": "Promise<Comment[]>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-users:User"
+          ],
+          "exposed": false
+        }
+      ],
+      "dependencies": [
+        "messages",
+        "users"
+      ],
+      "surfaceSource": "knowledge",
+      "browser": {
+        "status": "server-only",
+        "issues": [
+          "#3624"
+        ],
+        "via": [
+          "@happyvertical/smrt-tenancy"
+        ]
+      },
+      "recipes": [
+        {
+          "id": "comments.records",
+          "label": "Record comments",
+          "summary": "Discuss work directly on the records it concerns.",
+          "synonyms": [
+            "comments",
+            "mentions",
+            "discussion"
+          ],
+          "models": [
+            "@happyvertical/smrt-comments:Comment"
+          ],
+          "nav": [],
+          "requires": [],
+          "group": {
+            "id": "comments",
+            "label": "Comments",
+            "summary": "Keep discussions alongside the records your team works on."
+          },
+          "help": {
+            "markdown": "## Overview\n\nRecord comments keep a discussion next to the work it concerns. Open a record\nyou can access to read its discussion or add a comment. Comments are part of\nthe record page, rather than a separate list of every discussion.\n\n## Tasks\n\n### Add a comment\n\nOpen the record, find Comments, write your message and choose Post comment.\nYour app controls who can read the record and who can contribute to its discussion.\n\n### Mention someone\n\nIf your app provides mention selection, choose a teammate who can access the\nrecord. When mention notifications are connected, that person receives a\nnotification. Typing a name alone does not select a recipient.\n\n### Check a failed post\n\nIf posting reports an error, refresh the discussion before trying again. A\ncomment may have been saved even when its mention notification could not be\ndelivered. If it appears in the discussion, do not post it a second time.\n",
+            "fieldRefs": []
+          },
+          "surfaces": [
+            {
+              "kind": "playground",
+              "export": "@happyvertical/smrt-comments/svelte#RecordCommentsPlayground",
+              "label": "Record discussion preview"
+            }
+          ],
+          "runtime": "both",
+          "demoSeed": {
+            "export": "@happyvertical/smrt-comments/svelte#recordCommentsDemo"
+          },
+          "demo": {
+            "mode": "server",
+            "reasons": [
+              "Needs a server because its package depends on @happyvertical/smrt-tenancy, which do not build for a browser (#3624)."
             ]
           }
         }
@@ -8495,7 +9338,7 @@
     {
       "id": "commerce",
       "packageName": "@happyvertical/smrt-commerce",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Commerce models for the SMRT framework - contracts, fulfillments, payments",
       "models": [
         {
@@ -19388,7 +20231,7 @@
     {
       "id": "content",
       "packageName": "@happyvertical/smrt-content",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Content processing module for SMRT framework - handles documents, web content, and media",
       "models": [
         {
@@ -26540,7 +27383,7 @@
     {
       "id": "events",
       "packageName": "@happyvertical/smrt-events",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Hierarchical event management with participant tracking and SMRT framework support",
       "models": [
         {
@@ -28904,7 +29747,7 @@
     {
       "id": "expenses",
       "packageName": "@happyvertical/smrt-expenses",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Expense records for the SMRT framework - reviewed costs against a cost object, deduplicated receipts, and commitment drawdown",
       "models": [
         {
@@ -29340,7 +30183,7 @@
     {
       "id": "facts",
       "packageName": "@happyvertical/smrt-facts",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Distributed memory and knowledge management with provenance tracking for SMRT framework",
       "models": [
         {
@@ -31852,7 +32695,7 @@
     {
       "id": "fields",
       "packageName": "@happyvertical/smrt-fields",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Layered field policy store and resolver (defaults, visibility tiers, help text) for SMRT objects",
       "models": [
         {
@@ -32533,7 +33376,7 @@
     {
       "id": "human-resources",
       "packageName": "@happyvertical/smrt-human-resources",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "HR records for the SMRT framework: who works for an organization, as what, and with what standing — employment with dated terms, and qualifications with expiry",
       "models": [
         {
@@ -33053,7 +33896,7 @@
     {
       "id": "images",
       "packageName": "@happyvertical/smrt-images",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Image asset management with AI-powered categorization, search, editing, and metadata extraction for SMRT framework",
       "models": [
         {
@@ -33723,990 +34566,9 @@
       }
     },
     {
-      "id": "ingestion",
-      "packageName": "@happyvertical/smrt-ingestion",
-      "version": "0.55.9",
-      "description": "Durable tenant-scoped intake and evidence foundations",
-      "models": [
-        {
-          "id": "@happyvertical/smrt-ingestion:IntakeAction",
-          "name": "IntakeAction",
-          "collection": "intakeactions",
-          "description": "Durable IntakeAction record; mutations belong to the server service.",
-          "fields": [
-            {
-              "name": "tenantId",
-              "type": "text",
-              "required": true,
-              "system": true
-            },
-            {
-              "name": "confidentialScopeId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "itemId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeItem"
-            },
-            {
-              "name": "actionKey",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "state",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "proposalRevision",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "reviewVersion",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "executionAttempt",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "fence",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "resultDigest",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "data",
-              "type": "json",
-              "required": true
-            }
-          ],
-          "rest": [],
-          "mcp": [],
-          "cli": [],
-          "methods": [
-            {
-              "name": "getData",
-              "async": false,
-              "parameters": [],
-              "returnType": "Record<string, unknown>",
-              "aiCallable": false
-            }
-          ],
-          "references": [
-            "@happyvertical/smrt-ingestion:IntakeItem"
-          ],
-          "exposed": false
-        },
-        {
-          "id": "@happyvertical/smrt-ingestion:IntakeAnalysis",
-          "name": "IntakeAnalysis",
-          "collection": "intakeanalysises",
-          "description": "Durable IntakeAnalysis record; mutations belong to the server service.",
-          "fields": [
-            {
-              "name": "tenantId",
-              "type": "text",
-              "required": true,
-              "system": true
-            },
-            {
-              "name": "confidentialScopeId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "itemId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeItem"
-            },
-            {
-              "name": "revision",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "fence",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "attemptNumber",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "currentAttemptId",
-              "type": "foreignKey",
-              "required": false,
-              "related": "@happyvertical/smrt-ingestion:IntakeAnalysisAttempt"
-            },
-            {
-              "name": "state",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "inputDigest",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "data",
-              "type": "json",
-              "required": true
-            }
-          ],
-          "rest": [],
-          "mcp": [],
-          "cli": [],
-          "methods": [
-            {
-              "name": "getData",
-              "async": false,
-              "parameters": [],
-              "returnType": "Record<string, unknown>",
-              "aiCallable": false
-            }
-          ],
-          "references": [
-            "@happyvertical/smrt-ingestion:IntakeAnalysisAttempt",
-            "@happyvertical/smrt-ingestion:IntakeItem"
-          ],
-          "exposed": false
-        },
-        {
-          "id": "@happyvertical/smrt-ingestion:IntakeAnalysisAttempt",
-          "name": "IntakeAnalysisAttempt",
-          "collection": "intakeanalysisattempts",
-          "description": "Durable IntakeAnalysisAttempt record; mutations belong to the server service.",
-          "fields": [
-            {
-              "name": "tenantId",
-              "type": "text",
-              "required": true,
-              "system": true
-            },
-            {
-              "name": "confidentialScopeId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "itemId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeItem"
-            },
-            {
-              "name": "analysisId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeAnalysis"
-            },
-            {
-              "name": "attemptNumber",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "fence",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "state",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "leaseToken",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "leaseUntil",
-              "type": "datetime",
-              "required": false
-            },
-            {
-              "name": "outputDigest",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "safeError",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "confidence",
-              "type": "decimal",
-              "required": false
-            },
-            {
-              "name": "data",
-              "type": "json",
-              "required": true
-            }
-          ],
-          "rest": [],
-          "mcp": [],
-          "cli": [],
-          "methods": [
-            {
-              "name": "getData",
-              "async": false,
-              "parameters": [],
-              "returnType": "Record<string, unknown>",
-              "aiCallable": false
-            }
-          ],
-          "references": [
-            "@happyvertical/smrt-ingestion:IntakeAnalysis",
-            "@happyvertical/smrt-ingestion:IntakeItem"
-          ],
-          "exposed": false
-        },
-        {
-          "id": "@happyvertical/smrt-ingestion:IntakeDeletion",
-          "name": "IntakeDeletion",
-          "collection": "intakedeletions",
-          "description": "Durable IntakeDeletion record; mutations belong to the server service.",
-          "fields": [
-            {
-              "name": "tenantId",
-              "type": "text",
-              "required": true,
-              "system": true
-            },
-            {
-              "name": "confidentialScopeId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "itemId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeItem"
-            },
-            {
-              "name": "state",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "data",
-              "type": "json",
-              "required": true
-            }
-          ],
-          "rest": [],
-          "mcp": [],
-          "cli": [],
-          "methods": [
-            {
-              "name": "getData",
-              "async": false,
-              "parameters": [],
-              "returnType": "Record<string, unknown>",
-              "aiCallable": false
-            }
-          ],
-          "references": [
-            "@happyvertical/smrt-ingestion:IntakeItem"
-          ],
-          "exposed": false
-        },
-        {
-          "id": "@happyvertical/smrt-ingestion:IntakeDispatch",
-          "name": "IntakeDispatch",
-          "collection": "intakedispatches",
-          "description": "Durable IntakeDispatch record; mutations belong to the server service.",
-          "fields": [
-            {
-              "name": "tenantId",
-              "type": "text",
-              "required": true,
-              "system": true
-            },
-            {
-              "name": "confidentialScopeId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "itemId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeItem"
-            },
-            {
-              "name": "stage",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "revision",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "state",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "jobId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "deliveries",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "data",
-              "type": "json",
-              "required": true
-            }
-          ],
-          "rest": [],
-          "mcp": [],
-          "cli": [],
-          "methods": [
-            {
-              "name": "getData",
-              "async": false,
-              "parameters": [],
-              "returnType": "Record<string, unknown>",
-              "aiCallable": false
-            }
-          ],
-          "references": [
-            "@happyvertical/smrt-ingestion:IntakeItem"
-          ],
-          "exposed": false
-        },
-        {
-          "id": "@happyvertical/smrt-ingestion:IntakeEvidence",
-          "name": "IntakeEvidence",
-          "collection": "intakeevidences",
-          "description": "Durable IntakeEvidence record; mutations belong to the server service.",
-          "fields": [
-            {
-              "name": "tenantId",
-              "type": "text",
-              "required": true,
-              "system": true
-            },
-            {
-              "name": "confidentialScopeId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "itemId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeItem"
-            },
-            {
-              "name": "partId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "parentEvidenceId",
-              "type": "foreignKey",
-              "required": false,
-              "related": "@happyvertical/smrt-ingestion:IntakeEvidence"
-            },
-            {
-              "name": "assetId",
-              "type": "crossPackageRef",
-              "required": false,
-              "related": "@happyvertical/smrt-assets:Asset"
-            },
-            {
-              "name": "state",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "contentHash",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "byteLength",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "mediaType",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "sourceUri",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "data",
-              "type": "json",
-              "required": true
-            }
-          ],
-          "rest": [],
-          "mcp": [],
-          "cli": [],
-          "methods": [
-            {
-              "name": "getData",
-              "async": false,
-              "parameters": [],
-              "returnType": "Record<string, unknown>",
-              "aiCallable": false
-            }
-          ],
-          "references": [
-            "@happyvertical/smrt-assets:Asset",
-            "@happyvertical/smrt-ingestion:IntakeEvidence",
-            "@happyvertical/smrt-ingestion:IntakeItem"
-          ],
-          "exposed": false
-        },
-        {
-          "id": "@happyvertical/smrt-ingestion:IntakeExecution",
-          "name": "IntakeExecution",
-          "collection": "intakeexecutions",
-          "description": "Durable IntakeExecution record; mutations belong to the server service.",
-          "fields": [
-            {
-              "name": "tenantId",
-              "type": "text",
-              "required": true,
-              "system": true
-            },
-            {
-              "name": "confidentialScopeId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "itemId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeItem"
-            },
-            {
-              "name": "actionId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeAction"
-            },
-            {
-              "name": "attemptNumber",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "fence",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "state",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "bindingHash",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "resultDigest",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "idempotencyKey",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "data",
-              "type": "json",
-              "required": true
-            }
-          ],
-          "rest": [],
-          "mcp": [],
-          "cli": [],
-          "methods": [
-            {
-              "name": "getData",
-              "async": false,
-              "parameters": [],
-              "returnType": "Record<string, unknown>",
-              "aiCallable": false
-            }
-          ],
-          "references": [
-            "@happyvertical/smrt-ingestion:IntakeAction",
-            "@happyvertical/smrt-ingestion:IntakeItem"
-          ],
-          "exposed": false
-        },
-        {
-          "id": "@happyvertical/smrt-ingestion:IntakeFeedback",
-          "name": "IntakeFeedback",
-          "collection": "intakefeedbacks",
-          "description": "Durable IntakeFeedback record; mutations belong to the server service.",
-          "fields": [
-            {
-              "name": "tenantId",
-              "type": "text",
-              "required": true,
-              "system": true
-            },
-            {
-              "name": "confidentialScopeId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "itemId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeItem"
-            },
-            {
-              "name": "requestKey",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "supersedesId",
-              "type": "foreignKey",
-              "required": false,
-              "related": "@happyvertical/smrt-ingestion:IntakeFeedback"
-            },
-            {
-              "name": "kind",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "data",
-              "type": "json",
-              "required": true
-            }
-          ],
-          "rest": [],
-          "mcp": [],
-          "cli": [],
-          "methods": [
-            {
-              "name": "getData",
-              "async": false,
-              "parameters": [],
-              "returnType": "Record<string, unknown>",
-              "aiCallable": false
-            }
-          ],
-          "references": [
-            "@happyvertical/smrt-ingestion:IntakeFeedback",
-            "@happyvertical/smrt-ingestion:IntakeItem"
-          ],
-          "exposed": false
-        },
-        {
-          "id": "@happyvertical/smrt-ingestion:IntakeItem",
-          "name": "IntakeItem",
-          "collection": "intakeitems",
-          "description": "Durable IntakeItem record; mutations belong to the server service.",
-          "fields": [
-            {
-              "name": "tenantId",
-              "type": "text",
-              "required": true,
-              "system": true
-            },
-            {
-              "name": "confidentialScopeId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "sourceId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "sourceVersion",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "deliveryKey",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "payloadDigest",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "scopeDigest",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "receiptState",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "processingState",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "visibility",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "receiptVersion",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "analysisRevision",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "fence",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "leaseToken",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "leaseUntil",
-              "type": "datetime",
-              "required": false
-            },
-            {
-              "name": "expiresAt",
-              "type": "datetime",
-              "required": true
-            },
-            {
-              "name": "replayUntil",
-              "type": "datetime",
-              "required": true
-            },
-            {
-              "name": "cancelled",
-              "type": "boolean",
-              "required": true
-            },
-            {
-              "name": "traceId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "data",
-              "type": "json",
-              "required": true
-            }
-          ],
-          "rest": [],
-          "mcp": [],
-          "cli": [],
-          "methods": [
-            {
-              "name": "getData",
-              "async": false,
-              "parameters": [],
-              "returnType": "Record<string, unknown>",
-              "aiCallable": false
-            }
-          ],
-          "references": [],
-          "exposed": false
-        },
-        {
-          "id": "@happyvertical/smrt-ingestion:IntakePlan",
-          "name": "IntakePlan",
-          "collection": "intakeplans",
-          "description": "Durable IntakePlan record; mutations belong to the server service.",
-          "fields": [
-            {
-              "name": "tenantId",
-              "type": "text",
-              "required": true,
-              "system": true
-            },
-            {
-              "name": "confidentialScopeId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "itemId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeItem"
-            },
-            {
-              "name": "planKey",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "revision",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "digest",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "data",
-              "type": "json",
-              "required": true
-            }
-          ],
-          "rest": [],
-          "mcp": [],
-          "cli": [],
-          "methods": [
-            {
-              "name": "getData",
-              "async": false,
-              "parameters": [],
-              "returnType": "Record<string, unknown>",
-              "aiCallable": false
-            }
-          ],
-          "references": [
-            "@happyvertical/smrt-ingestion:IntakeItem"
-          ],
-          "exposed": false
-        },
-        {
-          "id": "@happyvertical/smrt-ingestion:IntakeProposal",
-          "name": "IntakeProposal",
-          "collection": "intakeproposals",
-          "description": "Durable IntakeProposal record; mutations belong to the server service.",
-          "fields": [
-            {
-              "name": "tenantId",
-              "type": "text",
-              "required": true,
-              "system": true
-            },
-            {
-              "name": "confidentialScopeId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "itemId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeItem"
-            },
-            {
-              "name": "actionId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeAction"
-            },
-            {
-              "name": "analysisId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeAnalysis"
-            },
-            {
-              "name": "analysisAttemptId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeAnalysisAttempt"
-            },
-            {
-              "name": "revision",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "bindingHash",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "data",
-              "type": "json",
-              "required": true
-            }
-          ],
-          "rest": [],
-          "mcp": [],
-          "cli": [],
-          "methods": [
-            {
-              "name": "getData",
-              "async": false,
-              "parameters": [],
-              "returnType": "Record<string, unknown>",
-              "aiCallable": false
-            }
-          ],
-          "references": [
-            "@happyvertical/smrt-ingestion:IntakeAction",
-            "@happyvertical/smrt-ingestion:IntakeAnalysis",
-            "@happyvertical/smrt-ingestion:IntakeAnalysisAttempt",
-            "@happyvertical/smrt-ingestion:IntakeItem"
-          ],
-          "exposed": false
-        },
-        {
-          "id": "@happyvertical/smrt-ingestion:IntakeReviewDecision",
-          "name": "IntakeReviewDecision",
-          "collection": "intakereviewdecisions",
-          "description": "Durable IntakeReviewDecision record; mutations belong to the server service.",
-          "fields": [
-            {
-              "name": "tenantId",
-              "type": "text",
-              "required": true,
-              "system": true
-            },
-            {
-              "name": "confidentialScopeId",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "itemId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeItem"
-            },
-            {
-              "name": "actionId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeAction"
-            },
-            {
-              "name": "proposalId",
-              "type": "foreignKey",
-              "required": true,
-              "related": "@happyvertical/smrt-ingestion:IntakeProposal"
-            },
-            {
-              "name": "reviewVersion",
-              "type": "integer",
-              "required": true
-            },
-            {
-              "name": "bindingHash",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "decision",
-              "type": "text",
-              "required": true
-            },
-            {
-              "name": "data",
-              "type": "json",
-              "required": true
-            }
-          ],
-          "rest": [],
-          "mcp": [],
-          "cli": [],
-          "methods": [
-            {
-              "name": "getData",
-              "async": false,
-              "parameters": [],
-              "returnType": "Record<string, unknown>",
-              "aiCallable": false
-            }
-          ],
-          "references": [
-            "@happyvertical/smrt-ingestion:IntakeAction",
-            "@happyvertical/smrt-ingestion:IntakeItem",
-            "@happyvertical/smrt-ingestion:IntakeProposal"
-          ],
-          "exposed": false
-        }
-      ],
-      "dependencies": [
-        "assets",
-        "content",
-        "messages",
-        "users"
-      ],
-      "surfaceSource": "knowledge",
-      "browser": {
-        "status": "server-only",
-        "issues": [
-          "#3615",
-          "#3617",
-          "#3624",
-          "#3625",
-          "#3626",
-          "#3627"
-        ],
-        "via": [
-          "@happyvertical/smrt-agents",
-          "@happyvertical/smrt-jobs",
-          "@happyvertical/smrt-profiles",
-          "@happyvertical/smrt-reports",
-          "@happyvertical/smrt-secrets",
-          "@happyvertical/smrt-tenancy",
-          "@happyvertical/smrt-users"
-        ]
-      }
-    },
-    {
       "id": "inventory",
       "packageName": "@happyvertical/smrt-inventory",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Multi-location stock tracking for the SMRT framework — Sku, InventoryLocation, StockLevel, StockMovement, and a stock-mutation service",
       "models": [
         {
@@ -35462,7 +35324,7 @@
     {
       "id": "ledgers",
       "packageName": "@happyvertical/smrt-ledgers",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Double-entry accounting ledger for the SMRT framework",
       "models": [
         {
@@ -37039,7 +36901,7 @@
     {
       "id": "manufacturing",
       "packageName": "@happyvertical/smrt-manufacturing",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Bills of materials, cost rollup, and production-order operations for the SMRT framework — strictly industry-neutral",
       "models": [
         {
@@ -38091,7 +37953,7 @@
     {
       "id": "marketing",
       "packageName": "@happyvertical/smrt-marketing",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Cross-channel campaign coordination, immutable performance evidence, budget pacing, and reusable Svelte marketing surfaces for SMRT",
       "models": [
         {
@@ -38829,7 +38691,7 @@
     {
       "id": "messages",
       "packageName": "@happyvertical/smrt-messages",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Unified multi-channel messaging with STI-based hierarchies",
       "models": [
         {
@@ -45463,12 +45325,208 @@
           "@happyvertical/smrt-tenancy",
           "@happyvertical/smrt-users"
         ]
-      }
+      },
+      "recipes": [
+        {
+          "id": "messages.mailbox",
+          "label": "Mailbox",
+          "summary": "Read and compose email from your connected accounts.",
+          "synonyms": [
+            "email",
+            "inbox",
+            "mail"
+          ],
+          "models": [
+            "@happyvertical/smrt-messages:Email",
+            "@happyvertical/smrt-messages:EmailAccount"
+          ],
+          "nav": [
+            {
+              "label": "Mailbox",
+              "model": "@happyvertical/smrt-messages:Email",
+              "icon": "folder",
+              "description": "Read email from your connected accounts.",
+              "key": "mailbox",
+              "noun": "email"
+            },
+            {
+              "label": "Failed sends",
+              "model": "@happyvertical/smrt-messages:Email",
+              "icon": "fileText",
+              "description": "Review email whose last send attempt failed.",
+              "key": "failed-sends",
+              "noun": "email",
+              "filter": {
+                "field": "sendStatus",
+                "value": "failed"
+              }
+            }
+          ],
+          "requires": [],
+          "group": {
+            "id": "messages",
+            "label": "Messaging",
+            "summary": "Choose email and personal updates independently."
+          },
+          "section": {
+            "id": "messages",
+            "label": "Messaging",
+            "icon": "folder",
+            "description": "Read email and keep up with updates addressed to you."
+          },
+          "help": {
+            "markdown": "## Your mailbox\nRead messages, open a conversation, or compose an email using a connected account.\nChoose the sender account, add recipients, and check the subject and message before sending.\n\n## Failed sends\nUse Failed sends to review email whose last send attempt failed. Returning to the mailbox shows all email again.\nCheck the failure and sender connection before retrying through your application. This view does not resend email automatically.\n\n## Preview\nThe playground uses fictional messages. Sending and saving are mocked and never contact a mail server.\n\n## Connect an account\nYour application administrator connects an authorized email provider on the server. Real sending and mailbox synchronization require that connection; a preview does not verify delivery.\n",
+            "fieldRefs": []
+          },
+          "surfaces": [
+            {
+              "kind": "route",
+              "path": "/messages/mailbox",
+              "export": "@happyvertical/smrt-messages/svelte#MessageList",
+              "label": "Mailbox"
+            },
+            {
+              "kind": "playground",
+              "export": "@happyvertical/smrt-messages/svelte#MailboxDemo",
+              "label": "Mailbox with mocked sending"
+            }
+          ],
+          "providers": [
+            {
+              "id": "email-inbox",
+              "kind": "email",
+              "options": [
+                "imap",
+                "pop3",
+                "gmail"
+              ],
+              "required": true
+            },
+            {
+              "id": "email-send",
+              "kind": "email",
+              "options": [
+                "smtp",
+                "gmail"
+              ],
+              "required": false
+            }
+          ],
+          "runtime": "both",
+          "demoSeed": {
+            "data": {
+              "accounts": [
+                {
+                  "id": "demo-account",
+                  "name": "Demo Inbox",
+                  "providerType": "email",
+                  "email": "you@example.com",
+                  "isActive": true
+                }
+              ],
+              "messages": [
+                {
+                  "id": "demo-welcome",
+                  "type": "email",
+                  "accountId": "demo-account",
+                  "subject": "Welcome to your mailbox",
+                  "body": "Fictional mail. Sending is mocked; nothing leaves this browser.",
+                  "senderName": "Demo colleague",
+                  "senderAddress": "colleague@example.com",
+                  "recipientAddresses": [
+                    {
+                      "address": "you@example.com"
+                    }
+                  ],
+                  "date": "2026-01-01T12:00:00Z",
+                  "isRead": false,
+                  "isFlagged": false,
+                  "hasAttachments": false
+                }
+              ]
+            }
+          },
+          "demo": {
+            "mode": "server",
+            "reasons": [
+              "Needs a server because its package depends on @happyvertical/smrt-profiles, @happyvertical/smrt-secrets, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3617, #3624, #3626, #3627)."
+            ]
+          }
+        },
+        {
+          "id": "messages.notifications",
+          "label": "Notifications",
+          "summary": "See updates addressed to you and mark them read.",
+          "synonyms": [
+            "alerts",
+            "notification bell"
+          ],
+          "models": [
+            "@happyvertical/smrt-messages:UserNotification"
+          ],
+          "nav": [],
+          "requires": [],
+          "group": {
+            "id": "messages",
+            "label": "Messaging",
+            "summary": "Choose email and personal updates independently."
+          },
+          "section": {
+            "id": "messages",
+            "label": "Messaging",
+            "icon": "folder",
+            "description": "Read email and keep up with updates addressed to you."
+          },
+          "help": {
+            "markdown": "## Notifications\nOpen the notification bell to see updates addressed to you. Unread updates have a visible marker.\nChoose Mark read for one update or Mark all read for every unread update in your authorized accounts.\nFollow a notification link to open its related record when one is available.\n\n## Availability\nNotifications are scoped to the signed-in person. Your application connects the notification provider and may enable live updates. If loading fails, try again after the connection returns.\n",
+            "fieldRefs": []
+          },
+          "surfaces": [
+            {
+              "kind": "shell-widget",
+              "slot": "header.end",
+              "export": "@happyvertical/smrt-svelte/notifications#NotificationBell",
+              "label": "Notifications"
+            }
+          ],
+          "providers": [
+            {
+              "id": "notifications",
+              "kind": "notifications",
+              "options": [
+                "user-notification-service"
+              ],
+              "required": true
+            }
+          ],
+          "runtime": "both",
+          "demoSeed": {
+            "data": {
+              "items": [
+                {
+                  "id": "demo-notification",
+                  "title": "You were mentioned",
+                  "body": "A fictional update for the demo user.",
+                  "occurredAt": "2026-01-01T12:00:00Z",
+                  "severity": "info",
+                  "readAt": null
+                }
+              ]
+            }
+          },
+          "demo": {
+            "mode": "server",
+            "reasons": [
+              "Needs a server because its package depends on @happyvertical/smrt-profiles, @happyvertical/smrt-secrets, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3617, #3624, #3626, #3627)."
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "places",
       "packageName": "@happyvertical/smrt-places",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Hierarchical place management with geo integration and SMRT framework support",
       "models": [
         {
@@ -46446,9 +46504,173 @@
       }
     },
     {
+      "id": "preferences",
+      "packageName": "@happyvertical/smrt-preferences",
+      "version": "0.55.11",
+      "description": "Tenant defaults and per-user overrides for user-interface preferences (overview layouts, shell layout), validated per registered kind",
+      "models": [
+        {
+          "id": "@happyvertical/smrt-preferences:UiPreferenceRecord",
+          "name": "UiPreferenceRecord",
+          "collection": "uipreferencerecords",
+          "description": "One stored user-interface preference (#3727): the canonical payload of a registered preference kind (overview, shell-layout, ...) for one surface at one tier of one tenant.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "kind",
+              "type": "text",
+              "required": true,
+              "default": ""
+            },
+            {
+              "name": "surfaceId",
+              "type": "text",
+              "required": true,
+              "default": ""
+            },
+            {
+              "name": "scopeType",
+              "type": "text",
+              "required": true,
+              "default": "tenant"
+            },
+            {
+              "name": "userId",
+              "type": "crossPackageRef",
+              "required": false,
+              "related": "@happyvertical/smrt-users:User"
+            },
+            {
+              "name": "scopeKey",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "payloadJson",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "formatVersion",
+              "type": "integer",
+              "required": false
+            },
+            {
+              "name": "updatedBy",
+              "type": "crossPackageRef",
+              "required": false,
+              "related": "@happyvertical/smrt-users:User"
+            }
+          ],
+          "rest": [
+            {
+              "method": "POST",
+              "path": "/uipreferencerecords/findTier"
+            }
+          ],
+          "mcp": [
+            {
+              "operation": "findTier",
+              "name": "uipreferencerecordcollection_findtier"
+            }
+          ],
+          "cli": [],
+          "methods": [
+            {
+              "name": "delete",
+              "async": true,
+              "parameters": [
+                "options?: DeleteOptions"
+              ],
+              "returnType": "Promise<void>",
+              "aiCallable": false
+            },
+            {
+              "name": "findTier",
+              "async": true,
+              "parameters": [
+                "tenantId: string",
+                "kind: string",
+                "surfaceId: string",
+                "scope: PreferenceScope",
+                "userId?: string"
+              ],
+              "returnType": "Promise<UiPreferenceRecord | null>",
+              "aiCallable": true
+            },
+            {
+              "name": "getPayload",
+              "async": false,
+              "parameters": [],
+              "returnType": "unknown",
+              "aiCallable": false
+            },
+            {
+              "name": "loadFromId",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<void>",
+              "aiCallable": false
+            },
+            {
+              "name": "loadFromSlug",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<void>",
+              "aiCallable": false
+            },
+            {
+              "name": "save",
+              "async": true,
+              "parameters": [
+                "options?: SaveOptions"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
+              "name": "setPayload",
+              "async": false,
+              "parameters": [
+                "value: unknown"
+              ],
+              "returnType": "void",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-users:User"
+          ],
+          "exposed": true
+        }
+      ],
+      "dependencies": [
+        "users"
+      ],
+      "surfaceSource": "knowledge",
+      "browser": {
+        "status": "server-only",
+        "issues": [
+          "#3617",
+          "#3624",
+          "#3626"
+        ],
+        "via": [
+          "@happyvertical/smrt-profiles",
+          "@happyvertical/smrt-tenancy",
+          "@happyvertical/smrt-users"
+        ]
+      }
+    },
+    {
       "id": "products",
       "packageName": "@happyvertical/smrt-products",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "SMRT products module: triple-purpose microservice template for standalone apps, federated modules, and NPM libraries",
       "models": [
         {
@@ -48032,7 +48254,7 @@
     {
       "id": "profiles",
       "packageName": "@happyvertical/smrt-profiles",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Profile management system with relationships, metadata, and reciprocal associations for SMRT framework",
       "models": [
         {
@@ -53834,12 +54056,82 @@
         "via": [
           "@happyvertical/smrt-tenancy"
         ]
-      }
+      },
+      "recipes": [
+        {
+          "id": "profiles.audit-log",
+          "label": "Activity log",
+          "summary": "Review who changed a record and when.",
+          "synonyms": [
+            "audit trail",
+            "record history",
+            "activity"
+          ],
+          "models": [
+            "@happyvertical/smrt-profiles:AuditLog"
+          ],
+          "nav": [],
+          "requires": [],
+          "group": {
+            "id": "activity",
+            "label": "Activity",
+            "summary": "Review authorized record history independently of messaging."
+          },
+          "section": {
+            "id": "activity",
+            "label": "Activity",
+            "icon": "book",
+            "description": "See who changed records and why."
+          },
+          "help": {
+            "markdown": "## Activity log\nReview changes to records you are authorized to inspect. Each activity shows the actor, action, time, and recorded reason or resource.\nOpen the related record when your application provides a link.\n\n## Record history\nThe application enables auditing on selected models and authorizes audit reads. Only recorded events appear; enabling auditing does not reconstruct earlier changes.\nSensitive audit details are available only through the application's authorized history service.\n",
+            "fieldRefs": []
+          },
+          "surfaces": [
+            {
+              "kind": "route",
+              "path": "/activity",
+              "export": "@happyvertical/smrt-svelte#ActivityList",
+              "label": "Activity log"
+            }
+          ],
+          "providers": [
+            {
+              "id": "audit-trail",
+              "kind": "activity",
+              "options": [
+                "audit-log"
+              ],
+              "required": true
+            }
+          ],
+          "runtime": "both",
+          "demoSeed": {
+            "data": {
+              "entries": [
+                {
+                  "id": "demo-audit",
+                  "title": "Demo colleague · updated",
+                  "detail": "Approved a fictional record.",
+                  "occurredAt": "2026-01-01T12:00:00Z",
+                  "href": null
+                }
+              ]
+            }
+          },
+          "demo": {
+            "mode": "server",
+            "reasons": [
+              "Needs a server because its package does not build for a browser: node:crypto in root; core migrations (node:os); and its package depends on @happyvertical/smrt-tenancy, which do not build for a browser (#3617, #3624, #3626)."
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "projects",
       "packageName": "@happyvertical/smrt-projects",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Provider-agnostic project management models (Issues, PRs, Repositories, Projects) for SMRT framework",
       "models": [
         {
@@ -57425,7 +57717,7 @@
     {
       "id": "properties",
       "packageName": "@happyvertical/smrt-properties",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Digital property and zone management models for SMRT framework",
       "models": [
         {
@@ -58496,7 +58788,7 @@
     {
       "id": "reports",
       "packageName": "@happyvertical/smrt-reports",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Materialized aggregate report models for SMRT",
       "models": [
         {
@@ -59212,7 +59504,7 @@
     {
       "id": "sales",
       "packageName": "@happyvertical/smrt-sales",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Modular sales for the SMRT framework: agreement execution, CRM, referral intake, neutral commissions, and reusable Svelte surfaces",
       "models": [
         {
@@ -66304,7 +66596,7 @@
     {
       "id": "sites",
       "packageName": "@happyvertical/smrt-sites",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Site lifecycle management for multi-tenant SMRT networks",
       "models": [
         {
@@ -66852,7 +67144,7 @@
     {
       "id": "social",
       "packageName": "@happyvertical/smrt-social",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Social media account management for multi-platform publishing in the SMRT ecosystem",
       "models": [
         {
@@ -67939,7 +68231,7 @@
     {
       "id": "subscriptions",
       "packageName": "@happyvertical/smrt-subscriptions",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Tenant subscriptions, entitlement resolution, usage thresholds, and subscription UI for SMRT",
       "models": [
         {
@@ -69880,7 +70172,7 @@
     {
       "id": "support",
       "packageName": "@happyvertical/smrt-support",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "AI-first Support Cases: channel-neutral intake, lifecycle, routing, service targets, and service time for the SMRT framework",
       "models": [
         {
@@ -73374,12 +73666,14 @@
           "#3624",
           "#3625",
           "#3626",
-          "#3627"
+          "#3627",
+          "#3628"
         ],
         "reason": "core migrations (node:os)",
         "via": [
           "@happyvertical/smrt-agents",
           "@happyvertical/smrt-chat",
+          "@happyvertical/smrt-images",
           "@happyvertical/smrt-jobs",
           "@happyvertical/smrt-profiles",
           "@happyvertical/smrt-projects",
@@ -73395,7 +73689,7 @@
     {
       "id": "tags",
       "packageName": "@happyvertical/smrt-tags",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Reusable tagging system with hierarchies, contexts, and multi-language support for SMRT framework",
       "models": [
         {
@@ -74350,7 +74644,7 @@
     {
       "id": "timesheets",
       "packageName": "@happyvertical/smrt-timesheets",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Shared time entries for the SMRT framework: who worked how long on what, approval and correction, with immutable charge and compensation snapshots",
       "models": [
         {
@@ -75322,7 +75616,7 @@
     {
       "id": "users",
       "packageName": "@happyvertical/smrt-users",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups",
       "models": [
         {
@@ -80439,12 +80733,151 @@
           "@happyvertical/smrt-profiles",
           "@happyvertical/smrt-tenancy"
         ]
-      }
+      },
+      "recipes": [
+        {
+          "id": "users.roles-and-permissions",
+          "label": "Roles and permissions",
+          "summary": "Manage tenant roles, memberships, permissions, and controlled sharing.",
+          "synonyms": [
+            "access control",
+            "rbac",
+            "sharing"
+          ],
+          "models": [
+            "@happyvertical/smrt-users:Role",
+            "@happyvertical/smrt-users:Permission",
+            "@happyvertical/smrt-users:Membership",
+            "@happyvertical/smrt-users:ResourceGrant"
+          ],
+          "nav": [
+            {
+              "label": "Roles",
+              "model": "@happyvertical/smrt-users:Role",
+              "icon": "users",
+              "description": "Define tenant permission bundles.",
+              "noun": "role"
+            },
+            {
+              "label": "Permissions",
+              "model": "@happyvertical/smrt-users:Permission",
+              "icon": "settings",
+              "description": "Review operations available to roles.",
+              "noun": "permission"
+            }
+          ],
+          "requires": [],
+          "group": {
+            "id": "account-access",
+            "label": "Account access",
+            "summary": "Sign in and manage account sessions."
+          },
+          "section": {
+            "id": "access-control",
+            "label": "Access control",
+            "icon": "users",
+            "description": "Manage tenant roles, permissions, and reviewed sharing."
+          },
+          "options": {
+            "@happyvertical/smrt-users:ResourceGrant": {
+              "exposure": {
+                "api": false,
+                "mcp": false,
+                "cli": false
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nRoles and permissions control tenant access. Denies take precedence, and role changes should be reviewed before they are applied.\n\n## Tasks\n\n- Create a role and assign only the permissions required for its work.\n- Add a member to the correct tenant through {field:Membership.tenantId} and assign a role through {field:Membership.roleId}.\n- Use a resource grant only when a record needs a reviewed exception to its ordinary role rules.\n",
+            "fieldRefs": [
+              "Membership.roleId",
+              "Membership.tenantId"
+            ]
+          },
+          "demo": {
+            "mode": "server",
+            "reasons": [
+              "Needs a server because its package does not build for a browser: node:crypto/async_hooks; core migrations; and its package depends on @happyvertical/smrt-profiles, @happyvertical/smrt-tenancy, which do not build for a browser (#3617, #3624, #3626)."
+            ]
+          }
+        },
+        {
+          "id": "users.sign-in",
+          "label": "Sign in",
+          "summary": "Access an account through an application-authorized sign-in flow.",
+          "synonyms": [
+            "log in",
+            "authentication",
+            "single sign-on"
+          ],
+          "models": [
+            "@happyvertical/smrt-users:User",
+            "@happyvertical/smrt-users:Session"
+          ],
+          "nav": [
+            {
+              "label": "Security sessions",
+              "model": "@happyvertical/smrt-users:Session",
+              "icon": "settings",
+              "description": "Review active sessions and sign out unrecognized devices.",
+              "noun": "security session"
+            }
+          ],
+          "requires": [],
+          "group": {
+            "id": "account-access",
+            "label": "Account access",
+            "summary": "Sign in and manage account sessions."
+          },
+          "section": {
+            "id": "account-security",
+            "label": "Account security",
+            "icon": "settings",
+            "description": "Review account access and active sessions."
+          },
+          "options": {
+            "@happyvertical/smrt-users:Session": {
+              "exposure": {
+                "api": false,
+                "mcp": false,
+                "cli": false
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nUse your organization’s approved sign-in method. Sessions are managed on the server and are never shared through API or MCP tools.\n\n## Tasks\n\n- Review active sign-in sessions from your account security page and end sessions you no longer recognize.\n- Ask an administrator for recovery help if you lose access to every available credential.\n",
+            "fieldRefs": []
+          },
+          "surfaces": [
+            {
+              "kind": "settings-panel",
+              "export": "@happyvertical/smrt-users/svelte#AccountSecurityPanel",
+              "label": "Account security"
+            }
+          ],
+          "providers": [
+            {
+              "id": "oidc",
+              "kind": "oauth",
+              "options": [
+                "oidc"
+              ],
+              "required": false
+            }
+          ],
+          "demo": {
+            "mode": "server",
+            "reasons": [
+              "Needs a server because its package does not build for a browser: node:crypto/async_hooks; core migrations; and its package depends on @happyvertical/smrt-profiles, @happyvertical/smrt-tenancy, which do not build for a browser (#3617, #3624, #3626)."
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "video",
       "packageName": "@happyvertical/smrt-video",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Video content management for AI-powered video production in the SMRT ecosystem",
       "models": [
         {
@@ -87769,7 +88202,7 @@
     {
       "id": "voice",
       "packageName": "@happyvertical/smrt-voice",
-      "version": "0.55.9",
+      "version": "0.55.11",
       "description": "Voice profile management for AI-powered voice synthesis and cloning in the SMRT ecosystem",
       "models": [
         {

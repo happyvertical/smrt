@@ -1,10 +1,10 @@
 import { catalog, getModelByQualifiedName } from '../catalog/index.ts';
 import type { CatalogModel, CatalogPackage } from '../catalog/types.ts';
 import { FEATURE_ENTRY_ICON } from './features.ts';
-import descriptionsFile from './help/descriptions.json';
+import descriptionsFile from './help/descriptions.json' with { type: 'json' };
 import type { HelpModel } from './help.ts';
 import { mergeRecipes, type RecipeOverlay } from './merge.ts';
-import overlay from './overlay.json';
+import overlay from './overlay.json' with { type: 'json' };
 import { type FieldPolicyRow, resolveFields } from './policy.ts';
 import {
   buildSections,

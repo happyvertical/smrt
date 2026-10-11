@@ -1,4 +1,5 @@
 <script lang="ts">
+import { aiState } from '$lib/ai/instance.ts';
 import AiSetup from '$lib/components/AiSetup.svelte';
 import { appHref } from '$lib/planner/app.svelte.ts';
 </script>
@@ -10,9 +11,7 @@ import { appHref } from '$lib/planner/app.svelte.ts';
 <main>
   <p class="meta"><a href={appHref('/')}>Planner</a> / AI models</p>
   <h1>Set up your assistant</h1>
-  <p class="privacy">
-    Everything runs on this device. Nothing you type or say leaves the page.
-  </p>
+  <p class="privacy">{aiState.privacyNote}</p>
   <AiSetup />
 </main>
 

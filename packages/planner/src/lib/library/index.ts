@@ -1,5 +1,5 @@
 import { recipesById } from '../recipes/index.ts';
-import raw from './library.json';
+import raw from './library.json' with { type: 'json' };
 import type { LibraryCookbook, LibraryFile } from './types.ts';
 
 export { COOKBOOK_ICONS } from './icons.ts';

@@ -137,6 +137,56 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   widgets and unknown ids are dropped and reported (`CookbookResult.dropped`), only canonical
   non-empty overrides are kept. `page.ts`: the controller wiring (`override` reads
   `cookbookStore.overview(id)`, `onchange` writes `setOverview`), shared by the page and the tests.
+- `src/lib/planner/commands/`: the planner command set (#22) is **smrt's cookbook command engine**
+  (`@happyvertical/smrt-core/cookbook/engine`, smrt#3753) behind the planner's names; the planner is an
+  adapter, so every rule of the commands (validation, revisions, command ids, atomic batches, undo,
+  receipts, snapshot, `validate`/`export`) lives upstream. Fix a rule there, never here. Planner-side:
+  `adapter.ts` (`createPlannerAdapter`, rune-free: `focus`, the planner tab/section cells, keeping the
+  engine in step with an app whose UI edits the document between commands, handing the engine's new
+  document back through a `PlannerPort`, the planner's strict import check before the engine's, "a
+  library cookbook with no theme keeps the person's look"), `catalog.ts` (`engineCatalog()`: the
+  planner's recipes, catalog models, library cookbooks, smrt-ui presets, currencies and setting targets
+  as an `EngineCatalog`; nothing is bundled in the engine), `schemas.ts` (`commandTools` /
+  `commandSchemas` / `buildCommandTools(recipeIds, cookbookIds)` over the engine's, plus the `focus`
+  tool), `types.ts` (the engine's types; `PlanSnapshot` adds `focus`; `PlannerCommand` adds `focus`),
+  `controller.svelte.ts` (`createPlannerController(store)`: the adapter over `cookbookStore` with
+  `$state` cells and one `$effect` that tells subscribers about manual edits; `portFromStore`),
+  `slices.ts` (`createSliceController`: the same over a bare recipe/settings/theme store, for hosts and
+  tests). Commands are `{ name, input, id?, expectedRevision? }` and return
+  `{ ok: true, snapshot, receipt, data?, replayed? } | { ok: false, error }`; `batch({ commands })`
+  is all or nothing. A manual edit in the app (a store changed outside a command) is adopted on the next
+  call as one revision and a new undo epoch: older undo ids answer `not_found`. Page customisations
+  (`overviews`) are edited outside the plan and do not move the revision. Add a command upstream, then
+  add its `EXAMPLES` row in `tests/planner-commands.test.ts`; `tests/headless-planner.test.ts` runs one
+  script through the browser controller, the headless planner and a bare `createCookbookEngine`.
+  `instance.ts` is the app's controller; `plannerRuntime` is how the layout lends it the data-source
+  reset and section navigation. `Planner.svelte` is the mountable component (props in `types.ts`);
+  the static app's Planner page renders the same one (`layout="shell"`, `persistence="host"`).
+  `assistant.ts` builds a chat transport over any controller. The stores (`cookbookStore`,
+  `recipeState`) are still module singletons: one planner per page. Still planner-side and NOT yet
+  deleted because the UI uses them directly (follow-up: route the UI through commands):
+  `recipes/plan-data.ts`, `recipes/resolve.ts`, `settings/app-settings.ts`, `cookbook/assemble.ts`
+  and `cookbook/parse.ts` (the import check, which also migrates old ids and checks page
+  customisations; smrt-svelte's core widgets import `.svelte`, so a Node host drops `overviews` and
+  says so).
+- Packaging: `pnpm package` (`svelte-package` with `tsconfig.package.json`, then `publint`) builds
+  `dist/` from `src/lib` with exports `.`, `./commands`, `./core` and `./app`, then
+  `scripts/package-app.ts` builds the static app into `app/`. Code in `src/lib` imports relatively,
+  never through `$lib` (svelte-package does not resolve kit aliases here). The components that import
+  `$app/*` (section and model pages, the palette) are app-only: packaged but not reachable from
+  either entry, so `@sveltejs/kit` is an optional peer. Everything the entries reach reads its base
+  path from `planner/app.svelte.ts` (`setBasePath`), which the layout sets from `$app/paths`. The
+  package is `private` until its name and registry are decided; flipping that is the publish step.
+- `src/lib/core/`: the `./core` export, for plain Node servers (no Vite, no runes, no `.svelte`).
+  `headless.ts` (`createHeadlessPlanner`: the engine over a plain-object plan, with `focus`),
+  `catalog.ts` (recipes, library cookbooks, `defaultCatalog`), `prompt.ts` (`buildHostPrompt`, which
+  calls the browser assistant's `buildSystemPrompt` and adds the host-only commands section: never a
+  second copy of the prompt), `reply.ts` (`replySchema`, `parseHostReply`), `request.ts`
+  (`parseHostRequest`), `app.ts` (`appDir`, the `./app` export; the only Node-built-in module here).
+  Everything it imports must stay rune-free and import JSON with `with { type: 'json' }`;
+  `tests/core-package.test.ts` packages with svelte-package and runs it under bare `node`.
+  `theme/theme.ts` reads the preset list from smrt-ui's Node-safe `@happyvertical/smrt-ui/themes/presets`
+  (no copy, no drift test).
 - `src/lib/planner/`: the package selection (`?p=a,b`, the only URL state;
   `app.svelte.ts` `appHref` carries it; `selection.svelte.ts`
   is the one store the control panel, navigation and a future chat assistant
@@ -155,6 +205,37 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   `applyChange` through `recipeState`, `prompt.ts` the recipe vocabulary,
   `models.ts` the offered models, `prefs.ts` the localStorage preference
   (model choice and consent; not part of the cookbook). It never navigates.
+- `src/lib/inference/` (#23): where the model runs. `config.ts` is `planner.config.json`
+  (`inference: { mode: browser|host|byo, host?: { endpoint }, byo?: { presets? } }`; invalid falls back
+  to `browser` with a notice; a mounted `Planner`'s `inference` prop overrides it), `host.ts` the host
+  `ChatModel` (POSTs `{ version, message, snapshot, history? }`; the server owns the prompt),
+  `openai.ts` the browser fetch client for OpenAI-compatible endpoints plus Test connection,
+  `presets.ts` Ollama/OpenRouter/OpenAI/custom with CORS notes, `byo.svelte.ts` the AI page state (key in
+  `smrt-planner:inference-key:v1` saved with the origin it was entered for, sent only as the
+  Authorization header to that origin, https or loopback only). The wire
+  contract and config are specified in `docs/inference-host.md`; change them together with that file.
+  `AiState.configure` applies a config (the layout fetches it); Think's `where` reads In browser /
+  Server / Your model: <name>.
+- `src/lib/kitchen/`: Send to kitchen (smrt#3750). `client.ts` is the `kitchen` block of
+  `planner.config.json` (`{ endpoint }` only, parsed by `inference/config.ts` into
+  `ConfigResult.kitchen`; a `token` there is ignored) and `sendToKitchen` (POST the cookbook,
+  `x-kitchen-token` header, outcome never throws). The one-time token is NEVER in the config:
+  `smrt kitchen` opens `http://127.0.0.1:<port>/#kitchen=<token>`, `fragment.ts` reads it from
+  `location.hash`, the layout strips the `kitchen` parameter with a replacing `goto` (not bare `replaceState`: that
+  leaves the token in `page.url` and the history state's `pageurl`) before the first URL rewrite and
+  hands the token to `kitchenState` (memory only, never storage or a URL); a `token` still in the
+  config (an older CLI) is never read, only reported (`tokenInConfig`) and Send stays off. `state.svelte.ts`
+  is `kitchenState` (`config` needs endpoint and token; `needsLink` is endpoint without token), which
+  `ExportPanel` reads to show **Send to kitchen** first and Download second, or the missing-link
+  notice. Contract: `docs/inference-host.md`; the server side is smrt `packages/cli/agents/kitchen.md`.
+- Package name is `@happyvertical/smrt-planner`, still `private`. Publishing to npm.happyvertical.com
+  follows the sdk and smrt convention (publish token only in a `release` environment whose deployment
+  rule allows `main`, registry host a literal in the workflow, `NPM_HAPPYVERTICAL_PUBLISH_TOKEN` as
+  the org secret, npmjs as a best-effort mirror with `NPM_TOKEN`). This repo has no `release`
+  environment, no ruleset and no publish workflow, so `private` stays until those exist; then add a
+  single-package workflow (the sdk/smrt ones are changeset/monorepo based and use scripts and a
+  `setup-environment` action this repo lacks), drop `private`, and set the version (0.0.1, about
+  20 MB packed, 84 MB unpacked, 815 files). Never publish from a workstation.
 - `src/lib/ai/`: THINK (the language model), HEAR (voice typing) and SPEAK
   (read replies aloud with `speechSynthesis`) as one store. `state.svelte.ts`
   (`AiState`, singleton in `instance.ts`) owns the `AssistantSession`, the
@@ -210,6 +291,7 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
+pnpm package
 ```
 
 `pnpm build` writes the static site to `build/`.

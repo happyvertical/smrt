@@ -1,6 +1,6 @@
 <script lang="ts">
-import { humanize } from '$lib/data/format.ts';
-import { appHref } from '$lib/planner/app.svelte.ts';
+import { humanize } from '../data/format.ts';
+import { appHref } from '../planner/app.svelte.ts';
 import {
   getRecipe,
   navPath,
@@ -8,9 +8,9 @@ import {
   recipeNav,
   recipePackage,
   sectionId,
-} from '$lib/recipes/index.ts';
-import { recipeState } from '$lib/recipes/state.svelte.ts';
-import type { Recipe } from '$lib/recipes/types.ts';
+} from '../recipes/index.ts';
+import { recipeState } from '../recipes/state.svelte.ts';
+import type { Recipe } from '../recipes/types.ts';
 import ModelOptions from './ModelOptions.svelte';
 
 interface RecipeOptionsProps {

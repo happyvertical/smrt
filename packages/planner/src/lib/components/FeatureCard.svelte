@@ -1,7 +1,7 @@
 <script lang="ts">
 import { Badge, Disclosure } from '@happyvertical/smrt-ui';
 import { Switch } from '@happyvertical/smrt-ui/forms';
-import { type FeatureCard, optionList } from '$lib/features/catalogue.ts';
+import { type FeatureCard, optionList } from '../features/catalogue.ts';
 
 interface Props {
   card: FeatureCard;

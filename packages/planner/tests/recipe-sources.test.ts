@@ -4,7 +4,7 @@ import { catalog } from '../src/lib/catalog/index.ts';
 import { libraryCookbooks } from '../src/lib/library/index.ts';
 import { recipes, recipesById } from '../src/lib/recipes/index.ts';
 import { mergeRecipes } from '../src/lib/recipes/merge.ts';
-import overlay from '../src/lib/recipes/overlay.json';
+import overlay from '../src/lib/recipes/overlay.json' with { type: 'json' };
 import type { Recipe } from '../src/lib/recipes/types.ts';
 
 const upstream = catalog.packages.flatMap((pkg) => pkg.recipes ?? []);

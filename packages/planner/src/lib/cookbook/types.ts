@@ -30,6 +30,10 @@ export const COOKBOOK_VERSION = 1;
 export interface Cookbook {
   $schema: string;
   version: typeof COOKBOOK_VERSION;
+  /** The app's name (`set_name`); absent means the applied cookbook's, else `my-app`. */
+  name?: string;
+  /** A line about the app (`set_name`). */
+  description?: string;
   /** Added recipe ids, sorted; requirements are already included. */
   recipes: string[];
   /**

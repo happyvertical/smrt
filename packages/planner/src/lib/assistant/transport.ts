@@ -5,12 +5,14 @@ import type {
   AssistantThreadSummary,
   AssistantTransport,
 } from '@happyvertical/smrt-chat/svelte';
+import {
+  createSliceController,
+  type PlannerController,
+} from '../planner/commands/index.ts';
 import type { Recipe } from '../recipes/types.ts';
 import type { ThemeSetting } from '../theme/theme.ts';
 import {
-  applyChange,
-  applySettings,
-  applyThemePatch,
+  type AppliedChange,
   buildResponseSchema,
   describeChange,
   parseChange,
@@ -54,7 +56,27 @@ export interface BrowserTransportOptions {
   settings?: SettingsStore;
   /** The app theme the assistant may change; each change can be undone. */
   theme?: ThemeStore;
-  themeUndos?: { record(previous: ThemeSetting | undefined): ThemeUndoRef };
+  themeUndos?: {
+    record(
+      previous: ThemeSetting | undefined,
+      commandUndoId?: string,
+    ): ThemeUndoRef;
+  };
+  /**
+   * The planner controller every change goes through. Omitted, one is made
+   * over `store`, `settings` and `theme`, so the assistant needs no more than
+   * it did before; the app passes its own so manual edits and the assistant
+   * share one Undo history and one snapshot.
+   */
+  controller?: PlannerController;
+  /**
+   * Apply `commands` a reply carries, through the controller. Only for a
+   * server the host chose (host mode); a local or bring-your-own model's
+   * reply is held to the schema's recipes, settings and theme.
+   */
+  acceptCommands?: boolean | (() => boolean);
+  /** Said when `model()` is null; the default asks for a download. */
+  unavailable?: string | (() => string);
   now?: () => number;
   /** Called with each reply the model produced (not errors), e.g. to read it aloud. */
   onReply?: (text: string) => void;
@@ -72,6 +94,73 @@ export const GREETING = 'What would you like to build?';
 const HISTORY_TURNS = 6;
 /** A turn's JSON fits well inside this; a looping model is cut off, not left running. */
 const MAX_REPLY_TOKENS = 400;
+
+const hasKeys = (value: object) => Object.keys(value).length > 0;
+
+/** Run one command; what it said, or nothing when it was refused. */
+function runCommand(
+  controller: PlannerController,
+  name: 'set_settings' | 'set_theme',
+  input: object,
+): { summary: string; undoId?: string } {
+  const result = controller.run({ name, input });
+  return result.ok
+    ? { summary: result.receipt.summary, undoId: result.receipt.undoId }
+    : { summary: '' };
+}
+
+const runSummary = (
+  controller: PlannerController,
+  name: 'set_settings' | 'set_theme',
+  input: object,
+) => runCommand(controller, name, input).summary;
+
+/**
+ * Command calls from a host server, in order. A refused one is said once and
+ * stops the rest, so a half-applied sequence never looks complete.
+ */
+function runCommands(
+  controller: PlannerController,
+  calls: readonly { name: string; input: unknown }[],
+): string {
+  const lines: string[] = [];
+  for (const call of calls) {
+    const result = controller.run(call);
+    if (!result.ok) {
+      lines.push(
+        `The server's ${call.name} was refused: ${result.error.message}`,
+      );
+      break;
+    }
+    if (result.receipt.summary) lines.push(result.receipt.summary);
+  }
+  return lines.join(' ');
+}
+
+/**
+ * The model's `add` and `remove` as commands, reported as one change: what
+ * really ended up on or off, after `requires`, and what was kept because
+ * another recipe needs it.
+ */
+function applyRecipes(
+  controller: PlannerController,
+  change: { add: string[]; remove: string[] },
+): AppliedChange {
+  const added = change.add.length
+    ? controller.run({ name: 'add_recipes', input: { ids: change.add } })
+    : null;
+  const removed = change.remove.length
+    ? controller.run({ name: 'remove_recipes', input: { ids: change.remove } })
+    : null;
+  const on = added?.ok ? (added.receipt.changes?.added ?? []) : [];
+  const off = removed?.ok ? (removed.receipt.changes?.removed ?? []) : [];
+  return {
+    // A recipe added and removed in one turn (one pulled in by the other) is neither.
+    added: on.filter((id) => !off.includes(id)),
+    removed: off.filter((id) => !on.includes(id)),
+    kept: removed?.ok ? (removed.receipt.changes?.kept ?? []) : [],
+  };
+}
 
 /**
  * An `AssistantTransport` that runs entirely in the browser: one thread, kept
@@ -116,6 +205,13 @@ export function createBrowserAssistantTransport(
     thread.lastMessageAt = message.createdAt;
     return message;
   };
+  const planner =
+    options.controller ??
+    createSliceController({
+      store: options.store,
+      settings: options.settings,
+      theme: options.theme,
+    });
   const index = buildMatchIndex(options.recipes, options.cookbooks ?? [], {
     theme: !!options.theme,
   });
@@ -128,6 +224,9 @@ export function createBrowserAssistantTransport(
     if (!model) {
       return {
         content:
+          (typeof options.unavailable === 'function'
+            ? options.unavailable()
+            : options.unavailable) ??
           'Download a model first, then I can help. The cards on the Planner page work without one.',
       };
     }
@@ -168,21 +267,34 @@ export function createBrowserAssistantTransport(
         maxTokens: MAX_REPLY_TOKENS,
         signal: controller.signal,
       });
-      const change = parseChange(raw, options.recipes, cookbooks);
-      const applied = applyChange(options.store, change);
-      const themed = options.theme
-        ? applyThemePatch(options.theme, change.theme)
-        : null;
+      const change = parseChange(raw, options.recipes, cookbooks, {
+        commands:
+          typeof options.acceptCommands === 'function'
+            ? options.acceptCommands()
+            : options.acceptCommands,
+      });
+      const applied = applyRecipes(planner, change);
+      const settingsText =
+        options.settings && hasKeys(change.settings)
+          ? runSummary(planner, 'set_settings', change.settings)
+          : '';
+      const previousTheme = options.theme?.read();
+      const themed =
+        options.theme && hasKeys(change.theme)
+          ? runCommand(planner, 'set_theme', change.theme)
+          : null;
       const undo =
-        themed && options.themeUndos
-          ? options.themeUndos.record(themed.previous)
+        themed?.undoId && options.themeUndos
+          ? options.themeUndos.record(previousTheme, themed.undoId)
           : undefined;
+      const commandText = (change.commands ?? []).length
+        ? runCommands(planner, change.commands ?? [])
+        : '';
       const summary = [
         describeChange(applied, options.recipes),
-        options.settings
-          ? applySettings(options.settings, change.settings)
-          : '',
-        themed?.text ?? '',
+        settingsText,
+        themed?.summary ?? '',
+        commandText,
       ]
         .filter(Boolean)
         .join(' ');

@@ -1,6 +1,7 @@
 import { createSpeechModel } from '../assistant/voice-host.ts';
 import { browserStorage } from '../cookbook/storage.ts';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
+import { plannerController } from '../planner/instance.ts';
 import { recipes } from '../recipes/index.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
 import { AiState } from './state.svelte.ts';
@@ -11,6 +12,7 @@ export const aiState = new AiState({
   session: {
     store: recipeState,
     recipes,
+    controller: plannerController,
     settings: {
       read: () => cookbookStore.settings(),
       write: (settings) => cookbookStore.setSettings(settings),

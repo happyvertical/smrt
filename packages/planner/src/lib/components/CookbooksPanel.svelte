@@ -2,26 +2,26 @@
 import { Button } from '@happyvertical/smrt-ui';
 import { Alert, ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { onMount } from 'svelte';
-import { cookbookStore } from '$lib/cookbook/store.svelte.ts';
-import { useDataSource } from '$lib/data/context.ts';
+import { cookbookStore } from '../cookbook/store.svelte.ts';
+import { useDataSource } from '../data/context.ts';
 import {
   applyLibraryCookbook,
   holdsCookbook,
   needsConfirm,
-} from '$lib/library/apply.ts';
+} from '../library/apply.ts';
 import {
   COOKBOOK_ICONS,
   type LibraryCookbook,
   libraryCookbooks,
   libraryRecipeLabels,
-} from '$lib/library/index.ts';
-import { previewMenu } from '$lib/library/menu.ts';
-import { libraryState } from '$lib/library/state.svelte.ts';
-import { recipeState } from '$lib/recipes/state.svelte.ts';
+} from '../library/index.ts';
+import { previewMenu } from '../library/menu.ts';
+import { libraryState } from '../library/state.svelte.ts';
+import { recipeState } from '../recipes/state.svelte.ts';
 import {
   type AppSettings as Settings,
   settingsOfCookbook,
-} from '$lib/settings/app-settings.ts';
+} from '../settings/app-settings.ts';
 import AppSettings from './AppSettings.svelte';
 
 const dataSource = useDataSource();

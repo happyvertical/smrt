@@ -7,7 +7,7 @@
 import { useShellLayout } from '@happyvertical/smrt-svelte/workspace';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
-import { appHref } from '$lib/planner/app.svelte.ts';
+import { appHref } from '../planner/app.svelte.ts';
 
 const layout = useShellLayout();
 

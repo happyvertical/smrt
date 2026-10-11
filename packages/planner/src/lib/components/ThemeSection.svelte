@@ -5,8 +5,19 @@ import {
   ColorSchemeToggle,
   ThemeSwitcher,
 } from '@happyvertical/smrt-ui/themes';
-import { cookbookStore } from '$lib/cookbook/store.svelte.ts';
-import { normalizeHex, THEME_FONTS } from '$lib/theme/theme.ts';
+import { cookbookStore } from '../cookbook/store.svelte.ts';
+import { normalizeHex, THEME_FONTS } from '../theme/theme.ts';
+
+interface ThemeSectionProps {
+  /**
+   * Show the preset and light/dark controls, which drive a smrt-ui theme
+   * provider. A host that applies the cookbook's theme itself turns them off
+   * and keeps the brand colour, which only writes the document.
+   */
+  provider?: boolean;
+}
+
+let { provider = true }: ThemeSectionProps = $props();
 
 // The app's look. The preset and scheme controls change the shell's theme
 // provider, which ThemeBridge reads back into the document; the brand colour
@@ -46,10 +57,12 @@ function resetToPreset() {
     The look of this app. It is saved with your cookbook and applies as you
     change it.
   </p>
-  <div class="row">
-    <ThemeSwitcher label="Preset" variant="select" showIcons={false} />
-    <ColorSchemeToggle variant="segmented" ariaLabel="Colour scheme" />
-  </div>
+  {#if provider}
+    <div class="row">
+      <ThemeSwitcher label="Preset" variant="select" showIcons={false} />
+      <ColorSchemeToggle variant="segmented" ariaLabel="Colour scheme" />
+    </div>
+  {/if}
   <div class="brand">
     <div class="field">
       <FieldLabel for="theme-brand-colour" label="Brand colour" />

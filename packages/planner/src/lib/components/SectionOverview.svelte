@@ -12,11 +12,11 @@ import {
 } from '@happyvertical/smrt-svelte/overview';
 import { useShellLayout } from '@happyvertical/smrt-svelte/workspace';
 import { onDestroy, untrack } from 'svelte';
-import { cookbookStore } from '$lib/cookbook/store.svelte.ts';
-import { useDataSource } from '$lib/data/context.ts';
-import { createSectionOverview } from '$lib/overviews/page.ts';
-import { appHref } from '$lib/planner/app.svelte.ts';
-import type { SectionEntry } from '$lib/sections/entries.ts';
+import { cookbookStore } from '../cookbook/store.svelte.ts';
+import { useDataSource } from '../data/context.ts';
+import { createSectionOverview } from '../overviews/page.ts';
+import { appHref } from '../planner/app.svelte.ts';
+import type { SectionEntry } from '../sections/entries.ts';
 
 interface SectionOverviewProps {
   definition: OverviewDefinition;

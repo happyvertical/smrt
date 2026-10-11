@@ -10,10 +10,10 @@ import {
 } from '@happyvertical/smrt-svelte/command-palette';
 import { useShellLayout } from '@happyvertical/smrt-svelte/workspace';
 import { goto } from '$app/navigation';
-import { plannerProviders } from '$lib/features/palette.ts';
-import { appHref } from '$lib/planner/app.svelte.ts';
-import { recipes } from '$lib/recipes/index.ts';
-import { recipeState } from '$lib/recipes/state.svelte.ts';
+import { plannerProviders } from '../features/palette.ts';
+import { appHref } from '../planner/app.svelte.ts';
+import { recipes } from '../recipes/index.ts';
+import { recipeState } from '../recipes/state.svelte.ts';
 
 const layout = useShellLayout();
 

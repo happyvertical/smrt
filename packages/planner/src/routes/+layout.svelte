@@ -5,11 +5,12 @@ import {
   type ShellNavGroup,
   type ShellNavItem,
 } from '@happyvertical/smrt-svelte/workspace';
-import { afterNavigate, replaceState } from '$app/navigation';
+import { afterNavigate, goto, replaceState } from '$app/navigation';
+import { base } from '$app/paths';
 import { page } from '$app/state';
 import { aiState } from '$lib/ai/instance.ts';
 import smrtMark from '$lib/assets/smrt-mark.svg';
-import { catalog, exposedModels, getPackage } from '$lib/catalog/index.ts';
+import { exposedModels, getPackage } from '$lib/catalog/index.ts';
 import AiStatusIcons from '$lib/components/AiStatusIcons.svelte';
 import BrowserAssistant from '$lib/components/BrowserAssistant.svelte';
 import PlannerEditBridge from '$lib/components/PlannerEditBridge.svelte';
@@ -23,11 +24,16 @@ import {
 } from '$lib/cookbook/store.svelte.ts';
 import { provideDataSource } from '$lib/data/context.ts';
 import { humanize } from '$lib/data/format.ts';
-import { createMemoryDataSource } from '$lib/data/source.ts';
-import { catalogModels } from '$lib/forms/shared.ts';
-import { PROFILE_TYPE, stockSamples, VARIANT } from '$lib/forms/stock.ts';
+import { createPlannerDataSource } from '$lib/data/planner-source.ts';
+import { loadInferenceConfig } from '$lib/inference/config.ts';
+import {
+  type KitchenFragment,
+  readKitchenFragment,
+} from '$lib/kitchen/fragment.ts';
+import { kitchenState } from '$lib/kitchen/state.svelte.ts';
 import { libraryState } from '$lib/library/state.svelte.ts';
-import { appHref, appQuery } from '$lib/planner/app.svelte.ts';
+import { appHref, appQuery, setBasePath } from '$lib/planner/app.svelte.ts';
+import { plannerRuntime } from '$lib/planner/instance.ts';
 import { hasAppState, withTab } from '$lib/planner/query.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
 import { plannerTab } from '$lib/planner/tab.svelte.ts';
@@ -40,7 +46,6 @@ import {
   recipes,
   sectionId,
 } from '$lib/recipes/index.ts';
-import { childLinks } from '$lib/recipes/plumbing.ts';
 import { recipeState } from '$lib/recipes/state.svelte.ts';
 import { sectionPath } from '$lib/sections/path.ts';
 import type { LayoutProps } from './$types';
@@ -50,27 +55,17 @@ let { children }: LayoutProps = $props();
 // Sample data follows the cookbook last applied (nothing in the SSR render).
 libraryState.load();
 
-// The seam for live objects: swap this for a collection-backed DataSource.
-provideDataSource(
-  createMemoryDataSource({
-    // Added, edited and deleted rows survive a reload; Reset clears them.
-    storage: browserStorage(),
-    // Fields the views hide still carry their policy default, e.g. the
-    // `contractType` that tells an Order from a PurchaseOrder.
-    defaults: (model) => recipeState.apply(model).background,
-    // Variants only make sense under a product a form creates, so they start
-    // empty, as do Profile types: a form adds the one it needs. Locations, SKUs
-    // and stock are sampled together (one SKU per product).
-    empty: [VARIANT, PROFILE_TYPE],
-    samples: stockSamples(catalogModels),
-    // Every sample parent comes with line items: the same parent-to-children
-    // lookup the record view uses, so what it shows is what was seeded.
-    children: {
-      models: catalog.packages.flatMap((p) => p.models),
-      links: (id) => childLinks(catalog, recipes, id),
-    },
-  }),
-);
+// The seam for live objects: swap createPlannerDataSource for a collection-backed DataSource.
+const dataSource = provideDataSource(createPlannerDataSource());
+
+// The static app serves from `base`; the planner builds its links from it.
+setBasePath(base);
+
+// The controller's commands reach the running app through these.
+plannerRuntime.onReplaced = () => dataSource.reset?.();
+plannerRuntime.openSection = (id) => {
+  void goto(appHref(sectionPath(id)));
+};
 
 // No Planner entry: the shell's Edit layout toggle goes to the Planner page.
 const nav: ShellNavItem[] = [];
@@ -217,6 +212,7 @@ const navGroups: ShellNavGroup[] = $derived([
 // prerendered, so both are only read in the browser, after navigation.
 let ready = false;
 let hydrated = false;
+let kitchenFragment: KitchenFragment = { present: false, hash: '' };
 
 const onPlanner = () => page.route.id === '/';
 
@@ -240,7 +236,19 @@ afterNavigate((navigation) => {
     cookbookStore.hydrate(location.search);
     // The AI state reads its saved choices and decides whether this is a first
     // visit (nothing set up, nothing built, "no AI" not chosen).
+    // Where the model runs comes from `planner.config.json` next to the app;
+    // the first-visit decision waits for it.
+    aiState.awaitConfig();
     aiState.hydrate(!!(recipeState.ids.length || recipeState.features.length));
+    // `smrt kitchen` opens the page with its one-time token in the fragment
+    // (`#kitchen=<token>`), never in planner.config.json. Read it now, keep it
+    // in memory, and remove it from the address in `sync` below.
+    kitchenFragment = readKitchenFragment(location.hash);
+    const kitchenToken = kitchenFragment.token;
+    void loadInferenceConfig(base).then((result) => {
+      aiState.configure(result);
+      kitchenState.configure(result.kitchen, kitchenToken);
+    });
   }
   if (hasAppState(location.search)) selection.fromSearch(location.search);
   if (onPlanner()) {
@@ -254,7 +262,33 @@ afterNavigate((navigation) => {
   }
   // SvelteKit runs the initial 'enter' callbacks before the router counts as
   // started, and replaceState throws until then, so wait one microtask.
-  const sync = () => {
+  const sync = async () => {
+    // The token is out of the address (and its history entry) before anything
+    // else reads or rewrites the URL. `replaceState` alone would leave it in
+    // SvelteKit's own copy of the address (`page.url`, and the `pageurl` in
+    // the history state), so this is a real navigation, replacing the entry.
+    if (kitchenFragment.present) {
+      // Once only: the navigation below runs this callback again.
+      const clean = `${location.pathname}${location.search}${kitchenFragment.hash}`;
+      kitchenFragment = { present: false, hash: kitchenFragment.hash };
+      try {
+        await goto(clean, {
+          replaceState: true,
+          noScroll: true,
+          keepFocus: true,
+        });
+      } catch {
+        // The router refused: strip it by hand, from SvelteKit's copy too.
+        history.replaceState(
+          {
+            ...history.state,
+            'sveltekit:pageurl': new URL(clean, location.href).href,
+          },
+          '',
+          clean,
+        );
+      }
+    }
     ready = true;
     syncUrl();
   };
