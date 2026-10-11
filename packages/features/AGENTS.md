@@ -1,6 +1,6 @@
 # smrt-features
 
-Code-first feature flag system with global, app-level, and tenant-hierarchy resolution.
+Code-first feature flag system with global and tenant-hierarchy resolution.
 
 ## Core pieces
 
@@ -14,19 +14,20 @@ Code-first feature flag system with global, app-level, and tenant-hierarchy reso
 
 ## Resolution chain (priority high → low)
 
-1. User scope (`scopeType: 'user'`) — when context includes a userId
-2. Tenant scope (`scopeType: 'tenant'`) — walks up the tenant hierarchy when a `FeatureTenantHierarchyProvider` is configured (DI); otherwise resolves a flat tenant scope
-3. Global scope (`scopeType: 'global'`, `scopeId: GLOBAL_FEATURE_SCOPE_ID`)
-4. Definition default (registered in code)
+1. Tenant scope (`scopeType: 'tenant'`) — root-to-leaf traversal; a child inherits only when its parent allows cascading and it allows inheritance, otherwise its baseline resets to global
+2. Global scope (`scopeType: 'global'`, `scopeId: GLOBAL_FEATURE_SCOPE_ID`)
+3. Boolean `defaultEnabled` from the registered class, falling back to its synced definition
+
+`FeatureResolver` is instantiated with database options; call `isEnabled(key, { tenantId })` or `isEnabledFor(Class, localId, { tenantId })` on that instance. With no tenant context only global/default apply. There is no user scope.
 
 ## Conventions
 
-- Feature keys should be namespaced by package or domain, e.g. `commerce.invoice.draft-mode`, `content.editor.ai-suggestions`
-- Definitions are code-owned. Don't write `FeatureDefinition` rows directly — use `FeatureSyncService.syncDefinitions()` at startup with the manifest of expected features
+- Declare features in `@smrt({ features: { drafts: { defaultEnabled: false } } })`. Keys are `<qualifiedClassName>#<localId>`, e.g. `@your/app:Invoice#drafts`.
+- Definitions are code-owned. Construct `new FeatureSyncService(dbOptions)` and call `syncDefinitions({ classNames?, constructors?, pruneStale? })`; filtered syncs never prune siblings. `syncManifest(manifest)` accepts a SMRT class manifest with decorator metadata.
 - Neither object exposes generated REST routes, MCP tools, or CLI commands (`api: false`, `mcp: false`, `cli: false`, #3013): override rows can target any scope and the object is not tenant-scoped, so a generated authentication-only surface would let any signed-in principal set another tenant's flag. Hosts write overrides server-side with `FeatureOverrideService` (which requires an explicit authorizer for every write) or `FeatureOverrideCollection.setOverride()` / `removeOverride()` only after their own authorization decision.
-- Overrides are write-time validated against the matching definition (effect must be a known `FeatureOverrideEffect`, scope must be valid for the definition's `allowedScopes`)
-- Tenant-hierarchy resolution is an optional integration wired by dependency injection (`FeatureTenantHierarchyProvider`), not a static dependency — `smrt-features` never imports `@happyvertical/smrt-users`. Without a configured provider, tenant-hierarchy resolution falls back to a flat tenant scope. (The consumer that wants hierarchy installs `smrt-users` itself and supplies the provider; `smrt-users` is a dev-only dependency here for tests.)
-- Every collection this package builds internally (`FeatureResolver`'s ancestor-chain override read, `FeatureSettingsService`'s catalog enumeration, `FeatureSyncService`'s prune enumeration) is created through the internal `src/list-bounds.ts#withoutListBounds`, so a host-configured `defaultListLimit`/`maxListLimit` on the caller's options bag can never silently truncate one of these correctness-critical reads (#3056, same hazard class as `smrt-users`' `authorization-read-options.ts#withoutListBounds`, #3048). Neither object exposes a generated, paginated list surface (see above), so there is no legitimate internal read here that a host bound should reach. This package still never imports `smrt-users`, so the two-line helper is a local copy rather than a shared import.
+- `FeatureOverrideCollection.setOverride()` persists typed values but does not validate them against a definition. `FeatureOverrideService` adds authorization; `FeatureSettingsService` additionally rejects unknown keys and invalid scope shapes. Definitions have no `allowedScopes` or `defaultEffect` fields.
+- The default hierarchy loader dynamically discovers `@happyvertical/smrt-users`; a missing dependency falls back to flat tenant lookup. Hosts can override `tenantHierarchyLoader` with a provider or `null`. Other loading failures propagate.
+- Every collection this package builds internally (`FeatureResolver`'s ancestor-chain override read, `FeatureSettingsService`'s catalog enumeration, `FeatureSyncService`'s prune enumeration) is created through the internal `src/list-bounds.ts#withoutListBounds`, so a host-configured `defaultListLimit`/`maxListLimit` on the caller's options bag can never silently truncate one of these correctness-critical reads (#3056, same hazard class as `smrt-users`' `authorization-read-options.ts#withoutListBounds`, #3048). Neither object exposes a generated, paginated list surface (see above), so there is no legitimate internal read here that a host bound should reach. The helper is local to avoid a required dependency on `smrt-users`.
 
 ## Management UI (`./svelte`)
 
@@ -40,8 +41,8 @@ Code-first feature flag system with global, app-level, and tenant-hierarchy reso
 
 ## Feature keys are persisted identifiers
 
-Overrides are stored keyed by the exact `featureKey` string and the resolver looks them up by that string. **Renaming a key orphans every existing override and silently reverts all tenants to the definition default.** Treat a shipped key as immutable; a rename needs a data migration over `_smrt_feature_overrides.feature_key`, not an edit. Renaming the owning package is the usual trigger — keep the old key namespace and let `packageName` track the new package.
+Overrides are stored keyed by the exact `featureKey` string and the resolver looks them up by that string. **Renaming a key orphans every existing override and silently reverts all tenants to the definition default.** Treat a shipped key as immutable; a rename needs a data migration over `_smrt_feature_overrides.feature_key`, not an edit. Renaming the owning package is the usual trigger — migrate persisted keys when the qualified class identity changes.
 
 ## Integration with `@happyvertical/smrt-users`
 
-When `smrt-users` is present, `FeatureResolver` uses it to walk the tenant hierarchy (parent → grandparent → root). Configure via `FeatureTenantHierarchyProvider`. Without it, tenant lookup is single-level.
+When `smrt-users` is present, `FeatureResolver` uses it to walk the tenant hierarchy (parent → grandparent → root). The default loader discovers it dynamically; a custom `tenantHierarchyLoader` may supply a `FeatureTenantHierarchyProvider`. Without it, tenant lookup is single-level.
