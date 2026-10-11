@@ -25,6 +25,8 @@ export const CHAT_PATH = '/api/planner/chat';
 export const COOKBOOK_PATH = '/api/kitchen/cookbook';
 export const CONFIG_PATH = '/planner.config.json';
 export const TOKEN_HEADER = 'x-kitchen-token';
+/** The fragment key the planner reads the one-time token from (`#kitchen=<token>`). */
+export const KITCHEN_FRAGMENT = 'kitchen';
 
 const CHAT_LIMIT = 256 * 1024;
 const COOKBOOK_LIMIT = 2 * 1024 * 1024;
@@ -43,7 +45,14 @@ export interface KitchenServerOptions {
 }
 
 export interface KitchenServer {
+  /** The server's address, with no secret in it. */
   url: string;
+  /**
+   * The address to open: `url` plus `#kitchen=<token>`. A fragment is never
+   * sent to a server, so the token reaches the page without being readable
+   * from any endpoint; the planner reads it from `location.hash` and strips it.
+   */
+  openUrl: string;
   port: number;
   token: string;
   /** `host` when the chat endpoint is served, else `browser`. */
@@ -131,7 +140,7 @@ export async function startKitchenServer(
       mode === 'host'
         ? { mode: 'host', host: { endpoint: CHAT_PATH } }
         : { mode: 'browser' },
-    kitchen: { endpoint: COOKBOOK_PATH, token },
+    kitchen: { endpoint: COOKBOOK_PATH },
   });
 
   function checkToken(supplied: string | undefined): boolean {
@@ -309,6 +318,7 @@ export async function startKitchenServer(
 
   return {
     url: `http://127.0.0.1:${port}/`,
+    openUrl: `http://127.0.0.1:${port}/#${KITCHEN_FRAGMENT}=${token}`,
     port,
     token,
     mode,

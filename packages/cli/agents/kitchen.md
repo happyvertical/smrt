@@ -18,7 +18,8 @@ Checked before anything starts.
 
 1. Find the planner (below), import its plain-Node `./core`.
 2. Resolve the model; start the server on `127.0.0.1` (random port, or `--port`) with a random
-   one-time token; open the browser (`--no-open` to skip).
+   one-time token; open `http://127.0.0.1:<port>/#kitchen=<token>` in the browser (`--no-open`
+   skips opening; the same address is printed as `Open <url>`, because the token is in it).
 3. The page chats through `/api/planner/chat`, the user builds a cookbook and chooses
    **Send to kitchen**, which POSTs it to `/api/kitchen/cookbook`.
 4. The server validates (`validateCookbook` + recipe index, as `cookbook validate`), runs the
@@ -30,7 +31,7 @@ Checked before anything starts.
 
 | Path | |
 | --- | --- |
-| `GET /planner.config.json` | `{ inference, kitchen: { endpoint: "/api/kitchen/cookbook", token } }`; `inference` is `{ mode: "host", host: { endpoint: "/api/planner/chat" } }`, or `{ mode: "browser" }` with no model |
+| `GET /planner.config.json` | `{ inference, kitchen: { endpoint: "/api/kitchen/cookbook" } }`, **never a token**; `inference` is `{ mode: "host", host: { endpoint: "/api/planner/chat" } }`, or `{ mode: "browser" }` with no model |
 | `POST /api/planner/chat` | host contract v1: `parseHostRequest` -> `buildHostPrompt` -> model -> `parseHostReply` -> reply JSON. 400 bad request, 502 model failure (message not forwarded), 503 no model |
 | `POST /api/kitchen/cookbook` | header `x-kitchen-token`, same-origin JSON; 200 `{ ok, dir, mode, installed, added, nextSteps }`, 4xx `{ ok: false, errors }` |
 | everything else (GET/HEAD) | the planner's `app/` directory; `/` serves `index.html`; no path leaves `app/` |
@@ -39,11 +40,22 @@ Guards: every request's `Host` must be this server (DNS rebinding); the cookbook
 matching `Origin` header (chat: matching if present), `content-type: application/json`, a
 timing-safe token match, and is refused after a success. Bodies are capped (chat 256 KB,
 cookbook 2 MB). No CORS headers are sent. Only one cookbook POST applies at a time
-(the slot is claimed before the body is read). The token is served from
-`/planner.config.json`, which any local process that sends this server's `Host` can read:
-the kitchen defends against browsers, not against other users on the same machine, so run
-it on a machine you trust. Keeping the token out of that endpoint needs a planner contract
-change (token in the opened URL's fragment).
+(the slot is claimed before the body is read).
+
+### The token is in the URL fragment
+
+The one-time token is **not served by any endpoint**: `/planner.config.json` carries only the
+cookbook endpoint, so another local process that sends this server's `Host` cannot read it. The
+token is the fragment of the address the CLI opens and prints, `http://127.0.0.1:<port>/#kitchen=<token>`
+(`server.openUrl`; `server.url` has no secret). A fragment is never sent to a server. The planner reads
+`location.hash`, keeps the token in memory only (not in storage, not in any request but the cookbook
+POST's `x-kitchen-token` header), and strips the `kitchen` parameter from the address with
+`replaceState` before anything else reads the URL, so it is not in the history entry either.
+Opening the address without the fragment (or reloading after it was stripped) leaves the page without
+a token: the export panel then says so and offers Download. The contract is specified on the planner
+side in `happyvertical/smrt-planner` `docs/inference-host.md` ("Send to kitchen"); change both
+together. The kitchen defends against browsers, not against other users on the same machine
+(who can read your terminal and process list): run it on a machine you trust.
 
 ## Model
 
