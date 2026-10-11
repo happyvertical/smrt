@@ -139,6 +139,7 @@ describe('cookbook v1', () => {
         layout: {
           sections: ['section:known'],
           items: ['item:known'],
+          placementItems: ['item:known'],
         },
       },
     );
@@ -156,6 +157,56 @@ describe('cookbook v1', () => {
     ]);
     expect(result.diagnostics.map((issue) => issue.path)).toContain(
       'layout.moved.item:known',
+    );
+  });
+
+  it('checks placement items against the host catalog and destinations against shell slots', () => {
+    const placementItems = ['dock:assistant', 'slot:header.end', 'host:clock'];
+    const valid = {
+      version: 1,
+      recipes: [],
+      policies: [],
+      layout: {
+        version: 1,
+        placements: {
+          'dock:assistant': 'leftSidebar.footer',
+          'slot:header.end': 'footer.end',
+          'host:clock': 'header.center',
+        },
+      },
+    };
+    expect(validateCookbook(valid, { layout: { placementItems } }).ok).toBe(
+      true,
+    );
+    expect(matches(valid), JSON.stringify(matches.errors)).toBe(true);
+
+    const invalid = {
+      ...valid,
+      layout: {
+        version: 1,
+        placements: {
+          'host:clock': 'nonexistent.slot',
+          'host:missing': 'header.start',
+        },
+      },
+    };
+    const result = validateCookbook(invalid, {
+      layout: { placementItems },
+    });
+    expect(result.ok).toBe(false);
+    expect(matches(invalid)).toBe(false);
+    if (result.ok) throw new Error('fixture must fail');
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'unknown_layout_slot',
+          path: 'layout.placements.host:clock',
+        }),
+        expect.objectContaining({
+          code: 'unknown_layout_id',
+          path: 'layout.placements.host:missing',
+        }),
+      ]),
     );
   });
 

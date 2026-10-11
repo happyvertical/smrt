@@ -511,6 +511,9 @@ export function diagnose(
     layout: {
       sections: nav.map((section) => section.id),
       items: nav.flatMap((section) => section.items.map((item) => item.id)),
+      ...(catalog.placementItems
+        ? { placementItems: catalog.placementItems }
+        : {}),
     },
     overviewIds: [
       ...nav.map((section) => section.id),

@@ -6,6 +6,7 @@ import type {
   CookbookOverviewWidget,
   CookbookPolicyRow,
   CookbookTheme,
+  RecipeShellSlot,
 } from '@happyvertical/smrt-types';
 
 export type { Cookbook } from '@happyvertical/smrt-types';
@@ -31,6 +32,8 @@ export interface CookbookValidateOptions {
   layout?: {
     sections?: Iterable<string>;
     items?: Iterable<string>;
+    /** Movable shell item ids resolved by the host (`dock:`, `slot:`, or host ids). */
+    placementItems?: Iterable<string>;
   };
   /** Overview page ids defined by the resolved app shell. */
   overviewIds?: Iterable<string>;
@@ -75,6 +78,19 @@ export type CookbookValidation =
 const VISIBILITIES = new Set(['basic', 'advanced', 'hidden']);
 const SURFACES = new Set(['api', 'mcp', 'cli']);
 const SCHEMES = new Set(['light', 'dark', 'system']);
+const SHELL_SLOT_VALUES = [
+  'header.start',
+  'header.center',
+  'header.end',
+  'footer.start',
+  'footer.center',
+  'footer.end',
+  'leftSidebar.header',
+  'leftSidebar.footer',
+  'rightSidebar.header',
+  'rightSidebar.footer',
+] as const satisfies readonly RecipeShellSlot[];
+const SHELL_SLOTS = new Set<string>(SHELL_SLOT_VALUES);
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -207,6 +223,18 @@ function checkLayout(value: unknown, diagnostics: CookbookDiagnostic[]) {
           ? 'layout.itemOrder must map ids to lists of strings'
           : `layout.${key} must map ids to strings`,
       );
+    }
+  }
+  if (isObject(value.placements)) {
+    for (const [id, slot] of Object.entries(value.placements)) {
+      if (typeof slot === 'string' && !SHELL_SLOTS.has(slot)) {
+        error(
+          diagnostics,
+          'unknown_layout_slot',
+          `layout.placements.${id}`,
+          `Unknown shell slot "${slot}".`,
+        );
+      }
     }
   }
   for (const key of ['sections', 'items', 'panels'] as const) {
@@ -631,6 +659,9 @@ export function validateCookbook(
     const items = options.layout.items
       ? new Set(options.layout.items)
       : undefined;
+    const placementItems = options.layout.placementItems
+      ? new Set(options.layout.placementItems)
+      : undefined;
     if (sections && Array.isArray(input.layout.customSections)) {
       for (const section of input.layout.customSections) {
         if (isObject(section) && typeof section.id === 'string') {
@@ -698,7 +729,14 @@ export function validateCookbook(
     }
     if (isObject(input.layout.placements)) {
       for (const id of Object.keys(input.layout.placements)) {
-        check(id, `layout.placements.${id}`, 'item');
+        if (placementItems && !placementItems.has(id)) {
+          error(
+            diagnostics,
+            'unknown_layout_id',
+            `layout.placements.${id}`,
+            `Unknown layout placement item "${id}".`,
+          );
+        }
       }
     }
   }

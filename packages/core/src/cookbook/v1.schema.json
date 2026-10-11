@@ -69,7 +69,7 @@
         },
         "placements": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": { "$ref": "#/$defs/shellSlot" }
         },
         "sections": {
           "type": "object",
@@ -96,6 +96,20 @@
         }
       },
       "additionalProperties": true
+    },
+    "shellSlot": {
+      "enum": [
+        "header.start",
+        "header.center",
+        "header.end",
+        "footer.start",
+        "footer.center",
+        "footer.end",
+        "leftSidebar.header",
+        "leftSidebar.footer",
+        "rightSidebar.header",
+        "rightSidebar.footer"
+      ]
     },
     "theme": {
       "type": "object",

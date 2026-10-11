@@ -355,16 +355,23 @@ describe('commands', () => {
         path: 'recipes[2]',
       }),
     ]);
-    const bad = diagnose(catalog, {
-      ...engine().cookbook(),
-      recipes: ['commerce.sales'],
-      features: ['@x/y:Z'],
-      theme: { preset: 'neon' },
-      layout: { version: 1, hidden: ['item:ghost'] },
-      policies: [
-        { objectRef: `${C}Vendor`, fieldName: 'name', scopeType: 'app' },
-      ],
-    });
+    const bad = diagnose(
+      { ...catalog, placementItems: ['dock:assistant'] },
+      {
+        ...engine().cookbook(),
+        recipes: ['commerce.sales'],
+        features: ['@x/y:Z'],
+        theme: { preset: 'neon' },
+        layout: {
+          version: 1,
+          hidden: ['item:ghost'],
+          placements: { 'dock:assistant': 'header.end' },
+        },
+        policies: [
+          { objectRef: `${C}Vendor`, fieldName: 'name', scopeType: 'app' },
+        ],
+      },
+    );
     expect(bad.map((d) => d.code).sort()).toEqual([
       'missing_requirement',
       'policy_not_covered',

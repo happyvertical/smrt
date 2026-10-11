@@ -24,7 +24,8 @@ planner-side.
 - Versioning: add optional fields within `version: 1`; readers keep and ignore
   unknown keys (`additionalProperties: true`). A breaking change is `version: 2`.
 - Layout and overview values are typed structurally so smrt-types and core never
-  depend on smrt-svelte. Hosts pass manifest-derived `layout` ids,
+  depend on smrt-svelte. Hosts pass manifest-derived navigation ids and resolved
+  shell `placementItems` (dock, slot-content, recipe, and host ids) in `layout`,
   `themePresets`, `overviewIds`, and a `validateOverview` callback to the core
   validator for checks that need resolved pages or a widget registry. The
   callback returns canonical plain data; cookbook values are never executed.
