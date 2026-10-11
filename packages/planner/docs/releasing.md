@@ -53,7 +53,10 @@ is dispatched.
 The primary job is safe to rerun. If the version already exists there, it
 continues only when the registry integrity exactly matches the artifact built
 by that run. A different integrity stops the workflow and requires a new
-version.
+version. Before any credential-bearing job starts, CI downloads the uploaded
+artifact into the same path used by the publish jobs and runs an npm publish
+dry run against its absolute filename. This catches package-spec parsing errors
+without contacting a registry for publication.
 
 If only the npmjs mirror fails, dispatch the workflow again from `main` with
 mode `mirror` and enter the failed release in `mirror_version` (for example,

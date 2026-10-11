@@ -20,6 +20,8 @@ const required = [
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
   'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
   'pnpm test:package',
+  'Verify downloaded publish input',
+  'npm publish --dry-run --ignore-scripts "${tarballs[0]}"',
   'dist.integrity',
   'continue-on-error: true',
 ];
@@ -72,6 +74,15 @@ for (const file of readdirSync(resolve('.github/workflows'))) {
 const bestEffortJobs = workflow.match(/continue-on-error: true/g) ?? [];
 if (bestEffortJobs.length !== 1) {
   throw new Error('only the release-mode npmjs mirror may be best effort');
+}
+
+if (workflow.includes('find release-artifact')) {
+  throw new Error('npm tarball paths must not be ambiguous package specs');
+}
+const absoluteArtifactLookups =
+  workflow.match(/find "\$PWD\/release-artifact"/g) ?? [];
+if (absoluteArtifactLookups.length !== 5) {
+  throw new Error('every packed or downloaded tarball lookup must be absolute');
 }
 
 if (pkg.private === true) throw new Error('package remains private');
