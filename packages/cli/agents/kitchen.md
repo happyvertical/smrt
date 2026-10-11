@@ -50,9 +50,14 @@ token is the fragment of the address the CLI opens and prints, `http://127.0.0.1
 (`server.openUrl`; `server.url` has no secret). A fragment is never sent to a server. The planner reads
 `location.hash`, keeps the token in memory only (not in storage, not in any request but the cookbook
 POST's `x-kitchen-token` header), and strips the `kitchen` parameter from the address with
-`replaceState` before anything else reads the URL, so it is not in the history entry either.
+a replacing navigation (`goto(..., { replaceState: true })`, because a bare `history.replaceState` would leave the
+token in SvelteKit's own copy of the address) before anything else reads the URL, so it is not in the history
+entry either.
 Opening the address without the fragment (or reloading after it was stripped) leaves the page without
-a token: the export panel then says so and offers Download. The contract is specified on the planner
+a token: the export panel then says so and offers Download. A planner older than this contract shows no Send
+button at all, and a planner at this contract served by an older CLI (which still puts `token` in the config)
+refuses to use it and says to update the CLI, so release this change before, or with, the planner's first
+publish. The contract is specified on the planner
 side in `happyvertical/smrt-planner` `docs/inference-host.md` ("Send to kitchen"); change both
 together. The kitchen defends against browsers, not against other users on the same machine
 (who can read your terminal and process list): run it on a machine you trust.
