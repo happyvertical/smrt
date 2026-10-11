@@ -80,6 +80,7 @@ export class AssistantSession {
   private loaded: LoadedModel | null = null;
   private chat: ChatModel | null = null;
   private abort: AbortController | null = null;
+  private loadGeneration = 0;
   private readonly options: SessionOptions;
 
   constructor(options: SessionOptions) {
@@ -158,6 +159,7 @@ export class AssistantSession {
     this.error = '';
     this.progress = { progress: 0, text: 'Starting' };
     const abort = new AbortController();
+    const generation = ++this.loadGeneration;
     this.abort = abort;
     try {
       const loaded = await loadModel(
@@ -168,6 +170,10 @@ export class AssistantSession {
         abort.signal,
         this.options.host ?? browserHost,
       );
+      if (generation !== this.loadGeneration || this.mode !== 'browser') {
+        loaded.dispose();
+        return;
+      }
       this.loaded = loaded;
       // Consent is recorded only once the download completed: a cancelled or
       // failed attempt must show the size and memory warning again.
@@ -186,6 +192,7 @@ export class AssistantSession {
       );
       this.status = 'ready';
     } catch (error) {
+      if (generation !== this.loadGeneration) return;
       if (abort.signal.aborted) {
         this.status = 'idle';
       } else {
@@ -193,7 +200,7 @@ export class AssistantSession {
         this.status = 'error';
       }
     } finally {
-      this.abort = null;
+      if (generation === this.loadGeneration) this.abort = null;
     }
   }
 
@@ -205,7 +212,10 @@ export class AssistantSession {
   /** Free the model, for example to choose another. */
   unload(): void {
     // A load in progress is aborted too, which terminates its worker.
-    this.abort?.abort();
+    this.loadGeneration += 1;
+    const abort = this.abort;
+    this.abort = null;
+    abort?.abort();
     this.transport.abort();
     this.loaded?.dispose();
     this.loaded = null;

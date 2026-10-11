@@ -106,6 +106,30 @@ describe('AssistantSession', () => {
     expect(store.getItem(PREFS_KEY)).toBeNull();
   });
 
+  it('does not let an aborted browser load overwrite a selected remote mode', async () => {
+    const session = new AssistantSession({
+      store: recipeState,
+      recipes,
+      storage: null,
+      webgpu: () => true,
+      host: {
+        createWorker: () => ({ terminate: vi.fn() }) as unknown as Worker,
+        createEngine: () => new Promise(() => {}),
+      },
+    });
+    const remote = { message: vi.fn() };
+
+    const started = session.start();
+    expect(session.status).toBe('loading');
+    session.setMode('byo');
+    session.useRemote(remote, 'Remote');
+    expect(session.status).toBe('ready');
+
+    await started;
+    expect(session.mode).toBe('byo');
+    expect(session.status).toBe('ready');
+  });
+
   it('shows an error when loading fails', async () => {
     const session = new AssistantSession({
       store: recipeState,
