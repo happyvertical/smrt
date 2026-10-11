@@ -5,7 +5,7 @@
 ### Patch Changes
 
 - ### Bug Fixes
-  
+
   - never re-run resolve() from createSessionHandler's session fallback (#3773) (users)
   - open the one-time token as a URL fragment, not in planner.config.json (#3750) (#3772) (kitchen)
   - hosted STI subclass routes authorize the base's permission slugs (#3771) (core)
