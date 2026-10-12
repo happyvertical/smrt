@@ -757,6 +757,15 @@ export class ShellState {
   }
 
   private closeExclusivePeers(edge: PanelEdge): void {
+    // Phone: the two side surfaces (menu drawer, tools drawer or sheet) are
+    // exclusive. Not persisted: the other side's stored state belongs to the
+    // wider viewports.
+    if (this.viewport === 'phone' && (edge === 'left' || edge === 'right')) {
+      const other = edge === 'left' ? 'right' : 'left';
+      if (this.panels[other] === 'expanded' && this.isEdgeShown(other)) {
+        this.panels[other] = 'collapsed';
+      }
+    }
     const group = this.config.panels[edge].exclusiveGroup;
     if (!group) return;
     for (const peer of PANEL_EDGES) {

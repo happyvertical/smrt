@@ -330,11 +330,11 @@ export interface ShellStateSnapshot {
   settings: ShellSettingsDelta;
 }
 
-/** Phone behavior switches for `AdminShell` (all off by default). */
+/** Phone behavior switches for `AdminShell` (`scrim`, `swipeToClose` and `hideOnScroll` default on). */
 export interface AdminShellPhoneOptions {
-  /** Dim the page behind an open side drawer or sheet; a tap closes it. */
+  /** Dim the page behind an open side drawer or sheet; a tap closes it (default true). */
   scrim?: boolean;
-  /** Close drawers by swiping them away (left drawer left, right drawer right, sheet down). */
+  /** Close drawers by swiping them away: left drawer left, right drawer right, sheet down (default true). */
   swipeToClose?: boolean;
   /** Hide the `phoneTopBar` while scrolling down (default true). */
   hideOnScroll?: boolean;

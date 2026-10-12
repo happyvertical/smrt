@@ -265,7 +265,7 @@ test('a top-hidden default phone shell keeps its header and one supported menu o
   await expect(
     page
       .locator('.smrt-admin-shell__edge--left')
-      .getByRole('button', { name: 'Collapse Left sidebar' }),
+      .getByRole('button', { name: 'Close menu' }),
   ).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(menu).toBeFocused();
@@ -283,7 +283,7 @@ test('narrow navigation opens, restores focus and excludes closed drawer control
   await menu.click();
   await expect(drawer).not.toHaveAttribute('inert');
   await expect(
-    drawer.getByRole('button', { name: 'Collapse Left sidebar' }),
+    drawer.getByRole('button', { name: 'Close menu' }),
   ).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(drawer).toHaveAttribute('inert', '');
@@ -297,7 +297,7 @@ test('narrow navigation opens, restores focus and excludes closed drawer control
   await menu.click();
   await expect(drawer).toBeVisible();
   await expect(
-    drawer.getByRole('button', { name: 'Collapse Left sidebar' }),
+    drawer.getByRole('button', { name: 'Close menu' }),
   ).toBeFocused();
 });
 
@@ -307,7 +307,7 @@ test('supplied tenant navigation keeps its collapse control and touch rail targe
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/?left=expanded');
   const drawer = page.locator('.smrt-admin-shell__edge--left');
-  await drawer.getByRole('button', { name: 'Collapse Left sidebar' }).click();
+  await drawer.getByRole('button', { name: 'Collapse sidebar' }).click();
   await expect(drawer).toHaveAttribute('data-state', 'collapsed');
   const bounds = await drawer.boundingBox();
   for (const link of await drawer.getByRole('link').all()) {
@@ -346,7 +346,7 @@ test('sidebar-only chrome keeps brand and account access across rail states', as
   );
   await page.keyboard.press('Escape');
 
-  await rail.getByRole('button', { name: 'Expand Left sidebar' }).click();
+  await rail.getByRole('button', { name: 'Expand sidebar' }).click();
   await expect(
     rail.locator('.smrt-admin-shell__brand:not(.compact)'),
   ).toContainText('Mobile shell fixture');
@@ -436,4 +436,36 @@ test('grouped navigation keeps labelled keyboard-collapsible touch controls in t
     .locator('.smrt-admin-shell__edge--left')
     .boundingBox();
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(rail!.x + rail!.width);
+});
+
+test('a phone reaches the right edge through the Tools opener and exclusive drawers', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/?tool=1');
+  const tools = page.getByRole('button', { name: 'Tools', exact: true });
+  const menu = page.getByRole('button', { name: 'Menu', exact: true });
+  await expect(tools).toBeVisible();
+  const box = await tools.boundingBox();
+  expect(box!.x + box!.width).toBeLessThanOrEqual(375);
+  expect(box!.height).toBeGreaterThanOrEqual(48);
+  await tools.click();
+  const right = page.locator('.smrt-admin-shell__edge--right');
+  await expect(right).toHaveAttribute('data-state', 'expanded');
+  await expect(right).toBeInViewport();
+  await expect(page.getByTestId('admin-shell-scrim')).toBeVisible();
+  await page
+    .getByTestId('admin-shell-scrim')
+    .click({ position: { x: 5, y: 400 } });
+  await expect(right).toHaveAttribute('data-state', 'collapsed');
+  await menu.click();
+  await expect(page.locator('.smrt-admin-shell__edge--left')).toHaveAttribute(
+    'data-state',
+    'expanded',
+  );
+  await page.getByRole('button', { name: 'Close menu' }).first().click();
+  await expect(page.locator('.smrt-admin-shell__edge--left')).toHaveAttribute(
+    'data-state',
+    'collapsed',
+  );
 });

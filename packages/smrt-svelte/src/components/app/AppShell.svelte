@@ -719,6 +719,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       {edgeToggles}
       {hotkeys}
       brandInSlot
+      phoneDockOpener={dockToggles.length === 0}
       bind:rootElement={shellRoot}
       {floatingReserve}
     >
