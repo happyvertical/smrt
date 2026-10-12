@@ -5,18 +5,30 @@
  * with `cookbook apply`. The host reasons; nothing here calls a model or
  * holds a credential.
  *
- * Plans live in this process, one engine per plan id. Nothing is stored
- * remotely; `apply_plan` writes `smrt.cookbook.json` into the project.
+ * Plans may be stored on local disk, one engine state per plan id. Nothing is
+ * stored remotely; `apply_plan` writes `smrt.cookbook.json` into the project.
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { isAbsolute } from 'node:path';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { isAbsolute, join } from 'node:path';
 import {
   buildBatchTool,
   type CommandError,
   type CookbookEngine,
   checkSchema,
   createCookbookEngine,
+  type EngineState,
   type ExportData,
   type JsonSchema,
   type PlanSnapshot,
@@ -34,6 +46,16 @@ import {
 export const MAX_PLANS = 20;
 
 export interface KitchenToolsOptions extends CatalogOptions {
+  /** Opt-in static MCP Apps capability probe; does not enable Planner editing. */
+  uiSmoke?: boolean;
+  /** Self-contained Planner MCP App HTML, built by smrt-planner. */
+  plannerUi?: string;
+  /** Private local directory for plans that must survive a server restart. */
+  plansDir?: string;
+  /** Optional loopback port for the live browser preview; 0 chooses a free port. */
+  previewPort?: number;
+  /** Exact local Vite origin permitted to use the preview bridge. */
+  previewOrigin?: string;
   /** Default project template for `apply_plan` (default: smrt-start). */
   template?: string;
   /** Replaces the catalog loader (tests). */
@@ -96,6 +118,18 @@ const snapshotSchema: JsonSchema = {
   },
   required: ['revision'],
   additionalProperties: true,
+};
+
+/** A document and snapshot captured together from the current engine state. */
+const stateSchema: JsonSchema = {
+  type: 'object',
+  description:
+    'Current authoritative state; paired atomically, including on replay.',
+  properties: {
+    snapshot: snapshotSchema,
+    cookbook: { type: 'object', additionalProperties: true },
+  },
+  required: ['snapshot', 'cookbook'],
 };
 
 /** An output schema: `ok` always, `error` when it is false, plus the extras. */
@@ -214,7 +248,7 @@ export const KITCHEN_TOOLS: readonly KitchenToolDefinition[] = [
     name: 'start_plan',
     title: 'Start a plan',
     description:
-      'Start a new plan for an app, empty or from a ready-made cookbook (see list_cookbooks). Returns the plan id every other tool takes. The plan lives in this server process until apply_plan writes it to a project.',
+      'Start a new plan for an app, empty or from a ready-made cookbook (see list_cookbooks). Returns the plan id every other tool takes.',
     inputSchema: input({
       cookbook: {
         type: 'string',
@@ -230,7 +264,11 @@ export const KITCHEN_TOOLS: readonly KitchenToolDefinition[] = [
       },
     }),
     outputSchema: output(
-      { planId: { type: 'string' }, snapshot: snapshotSchema },
+      {
+        planId: { type: 'string' },
+        snapshot: snapshotSchema,
+        state: stateSchema,
+      },
       [],
     ),
     annotations: annotations('Start a plan', {}),
@@ -255,6 +293,7 @@ export const KITCHEN_TOOLS: readonly KitchenToolDefinition[] = [
       receipt: { type: 'object', additionalProperties: true },
       results: { type: 'array', items: { type: 'object' } },
       snapshot: snapshotSchema,
+      state: stateSchema,
     }),
     annotations: annotations('Change the plan', { idempotentHint: true }),
   },
@@ -267,8 +306,21 @@ export const KITCHEN_TOOLS: readonly KitchenToolDefinition[] = [
     outputSchema: output({
       planId: { type: 'string' },
       snapshot: snapshotSchema,
+      state: stateSchema,
     }),
     annotations: annotations('Get the plan', READ_ONLY),
+  },
+  {
+    name: 'open_preview',
+    title: 'Open the live app preview',
+    description:
+      'Return a local browser URL for this plan when the Kitchen preview bridge is enabled. The app shell and chat then use the same plan.',
+    inputSchema: input({ planId }, ['planId']),
+    outputSchema: output({
+      planId: { type: 'string' },
+      url: { type: 'string' },
+    }),
+    annotations: annotations('Open the live app preview', READ_ONLY),
   },
   {
     name: 'validate_plan',
@@ -412,6 +464,8 @@ export function describeSnapshot(snapshot: PlanSnapshot): string {
 
 interface Plan {
   engine: CookbookEngine;
+  /** Exact bytes last read or written; a different file invalidates undo. */
+  serialized?: string;
 }
 
 /** The first `max` lines, then a count of the rest. */
@@ -436,6 +490,10 @@ const words = (text: string): string[] =>
 export class KitchenSession {
   private loaded?: Promise<LoadedCatalog>;
   private readonly plans = new Map<string, Plan>();
+  private readonly updates = new Map<string, Promise<void>>();
+  previewUrl?: string;
+  /** Plans `open_preview` handed to the browser; the preview bridge serves only these. */
+  readonly previewPlans = new Set<string>();
 
   constructor(private readonly options: KitchenToolsOptions) {}
 
@@ -452,13 +510,121 @@ export class KitchenSession {
     return this.loaded;
   }
 
-  private plan(id: unknown): Plan | KitchenToolResult {
+  private planPath(id: string): string {
+    if (!/^plan-[a-f0-9-]{8,36}$/.test(id)) throw new Error('Invalid plan id.');
+    if (!this.options.plansDir)
+      throw new Error('Plans directory is not configured.');
+    return join(this.options.plansDir, `${id}.json`);
+  }
+
+  private savePlan(id: string, engine: CookbookEngine): void {
+    if (!this.options.plansDir) return;
+    mkdirSync(this.options.plansDir, { recursive: true, mode: 0o700 });
+    const target = this.planPath(id);
+    const temporary = `${target}.${randomUUID()}.tmp`;
+    const serialized = `${JSON.stringify(engine.state())}\n`;
+    try {
+      writeFileSync(temporary, serialized, { mode: 0o600 });
+      renameSync(temporary, target);
+      this.plans.set(id, { engine, serialized });
+    } finally {
+      if (existsSync(temporary)) rmSync(temporary);
+    }
+  }
+
+  /** Serialize the read/check/write transaction across Kitchen processes. */
+  private async lockPlan(
+    id: string,
+  ): Promise<(() => void) | KitchenToolResult> {
+    if (!this.options.plansDir) return () => {};
+    mkdirSync(this.options.plansDir, { recursive: true, mode: 0o700 });
+    const path = `${this.planPath(id)}.lock`;
+    const token = randomUUID();
+    const deadline = Date.now() + 30_000;
+    for (;;) {
+      try {
+        const fd = openSync(path, 'wx', 0o600);
+        try {
+          writeFileSync(fd, JSON.stringify({ pid: process.pid, token }));
+        } catch {
+          rmSync(path, { force: true });
+          return fail(
+            'unavailable',
+            'The plan cannot be locked on this device.',
+          );
+        } finally {
+          closeSync(fd);
+        }
+        return () => {
+          try {
+            const owner = JSON.parse(readFileSync(path, 'utf8')) as {
+              token?: string;
+            };
+            if (owner.token === token) unlinkSync(path);
+          } catch {
+            // A failed cleanup must not hide the authoritative command result.
+          }
+        };
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') {
+          return fail(
+            'unavailable',
+            'The plan cannot be locked on this device.',
+          );
+        }
+      }
+      // A crashed owner can leave a stale lock. Automatic stale-lock removal
+      // cannot be made safe with an unlink race against a new owner, so fail
+      // closed and require operator recovery after the bounded wait.
+      if (Date.now() >= deadline) {
+        return fail(
+          'conflict',
+          'This plan is busy in another Kitchen session. Retry the same command; if it stays busy, stop Kitchen and remove its stale plan lock.',
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+  }
+
+  private async plan(id: unknown): Promise<Plan | KitchenToolResult> {
+    if (typeof id === 'string' && this.options.plansDir) {
+      if (!/^plan-[a-f0-9-]{8,36}$/.test(id)) {
+        return fail('not_found', `No plan ${JSON.stringify(id)}.`, {
+          path: 'planId',
+        });
+      }
+      let serialized: string;
+      try {
+        serialized = readFileSync(this.planPath(id), 'utf8');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          return fail('not_found', `No plan ${JSON.stringify(id)}.`, {
+            path: 'planId',
+          });
+        }
+        throw error;
+      }
+      const cached = this.plans.get(id);
+      if (cached?.serialized === serialized) return cached;
+      const saved = JSON.parse(serialized) as EngineState;
+      const { catalog } = await this.catalog();
+      const plan = {
+        engine: createCookbookEngine({
+          catalog,
+          state: saved,
+          undoPrefix: `undo-${randomUUID()}`,
+        }),
+        serialized,
+      };
+      this.plans.set(id, plan);
+      return plan;
+    }
     const plan = typeof id === 'string' ? this.plans.get(id) : undefined;
     return (
       plan ??
       fail(
         'not_found',
-        `No plan ${JSON.stringify(id)} in this server; call start_plan (a restart forgets plans).`,
+        `No plan ${JSON.stringify(id)} in this server; call start_plan.`,
         { path: 'planId' },
       )
     );
@@ -515,12 +681,34 @@ export class KitchenSession {
       case 'run_commands':
         return this.runCommands(args);
       case 'get_plan': {
-        const plan = this.plan(args.planId);
+        const plan = await this.plan(args.planId);
         if (!('engine' in plan)) return plan;
         const snapshot = plan.engine.snapshot();
         return {
-          data: { ok: true, planId: args.planId, snapshot },
+          data: {
+            ok: true,
+            planId: args.planId,
+            snapshot,
+            state: { snapshot, cookbook: plan.engine.cookbook() },
+          },
           text: describeSnapshot(snapshot),
+        };
+      }
+      case 'open_preview': {
+        const plan = await this.plan(args.planId);
+        if (!('engine' in plan)) return plan;
+        if (!this.previewUrl || !this.options.previewOrigin) {
+          return fail(
+            'unavailable',
+            'The local preview bridge is not enabled.',
+          );
+        }
+        const port = new URL(this.previewUrl).port;
+        this.previewPlans.add(args.planId as string);
+        const url = `${this.options.previewOrigin}/?kitchenPlan=${encodeURIComponent(args.planId as string)}&kitchenPort=${port}`;
+        return {
+          data: { ok: true, planId: args.planId, url },
+          text: `Open the live app shell: ${url}`,
         };
       }
       case 'validate_plan':
@@ -586,7 +774,10 @@ export class KitchenSession {
     args: Record<string, unknown>,
   ): Promise<KitchenToolResult> {
     const { catalog } = await this.catalog();
-    const engine = createCookbookEngine({ catalog });
+    const engine = createCookbookEngine({
+      catalog,
+      undoPrefix: `undo-${randomUUID()}`,
+    });
     // Apply the starting point first so a refusal (an unknown cookbook) keeps
     // its own error; nothing is stored unless every step worked.
     const steps: unknown[] = [];
@@ -600,24 +791,73 @@ export class KitchenSession {
       const result = engine.run(step);
       if (!result.ok) return failFrom(result.error);
     }
-    const id = `plan-${randomUUID().slice(0, 8)}`;
-    this.plans.set(id, { engine });
-    while (this.plans.size > MAX_PLANS) {
-      const oldest = this.plans.keys().next().value;
-      if (oldest === undefined) break;
-      this.plans.delete(oldest);
+    const id = `plan-${randomUUID()}`;
+    if (this.options.plansDir) {
+      try {
+        this.savePlan(id, engine);
+      } catch {
+        return fail(
+          'unavailable',
+          'The plan could not be saved on this device.',
+        );
+      }
+    } else {
+      this.plans.set(id, { engine });
+      while (this.plans.size > MAX_PLANS) {
+        const oldest = this.plans.keys().next().value;
+        if (oldest === undefined) break;
+        this.plans.delete(oldest);
+      }
     }
     const snapshot = engine.snapshot();
     return {
-      data: { ok: true, planId: id, snapshot },
+      data: {
+        ok: true,
+        planId: id,
+        snapshot,
+        state: { snapshot, cookbook: engine.cookbook() },
+      },
       text: `Started ${id}.\n${describeSnapshot(snapshot)}`,
     };
   }
 
-  private runCommands(args: Record<string, unknown>): KitchenToolResult {
-    const plan = this.plan(args.planId);
+  private async runCommands(
+    args: Record<string, unknown>,
+  ): Promise<KitchenToolResult> {
+    const id = args.planId as string;
+    const previous = this.updates.get(id) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const current = previous.then(() => gate);
+    this.updates.set(id, current);
+    await previous;
+    try {
+      const lock = await this.lockPlan(id);
+      if (typeof lock !== 'function') return lock;
+      try {
+        return await this.runCommandsUnlocked(args);
+      } finally {
+        lock();
+      }
+    } finally {
+      release();
+      if (this.updates.get(id) === current) this.updates.delete(id);
+    }
+  }
+
+  private async runCommandsUnlocked(
+    args: Record<string, unknown>,
+  ): Promise<KitchenToolResult> {
+    const plan = await this.plan(args.planId);
     if (!('engine' in plan)) return plan;
     const { planId: _planId, ...batch } = args;
+    if (!Array.isArray(batch.commands)) {
+      return fail('invalid_input', 'commands must be an array.', {
+        path: 'commands',
+      });
+    }
     const commands = batch.commands as { name?: unknown }[];
     // `undo` is refused inside a batch; a lone one is run as a command.
     const lone =
@@ -631,7 +871,31 @@ export class KitchenSession {
           })
         : null;
     if (lone) {
-      if (!lone.ok) return failFrom(lone.error);
+      if (!lone.ok) {
+        const failed = failFrom(lone.error);
+        return {
+          ...failed,
+          data: {
+            ...failed.data,
+            planId: args.planId,
+            state: {
+              snapshot: plan.engine.snapshot(),
+              cookbook: plan.engine.cookbook(),
+            },
+          },
+        };
+      }
+      if (!lone.replayed) {
+        try {
+          this.savePlan(args.planId as string, plan.engine);
+        } catch {
+          this.plans.delete(args.planId as string);
+          return fail(
+            'unavailable',
+            'The plan could not be saved on this device.',
+          );
+        }
+      }
       return {
         data: {
           ok: true,
@@ -640,6 +904,10 @@ export class KitchenSession {
           receipt: lone.receipt,
           results: [lone.receipt],
           snapshot: lone.snapshot,
+          state: {
+            snapshot: plan.engine.snapshot(),
+            cookbook: plan.engine.cookbook(),
+          },
         },
         text: `${lone.receipt.summary}\n${describeSnapshot(lone.snapshot)}`,
       };
@@ -653,9 +921,21 @@ export class KitchenSession {
           planId: args.planId,
           error: result.error,
           snapshot: current,
+          state: { snapshot: current, cookbook: plan.engine.cookbook() },
         },
         text: `Error ${result.error.code}: ${result.error.message}\nNothing was changed (revision ${current.revision}).`,
       };
+    }
+    if (!result.replayed) {
+      try {
+        this.savePlan(args.planId as string, plan.engine);
+      } catch {
+        this.plans.delete(args.planId as string);
+        return fail(
+          'unavailable',
+          'The plan could not be saved on this device.',
+        );
+      }
     }
     return {
       data: {
@@ -665,6 +945,10 @@ export class KitchenSession {
         receipt: result.receipt,
         results: result.results.map((r) => r.receipt),
         snapshot: result.snapshot,
+        state: {
+          snapshot: plan.engine.snapshot(),
+          cookbook: plan.engine.cookbook(),
+        },
       },
       text: `${result.replayed ? 'Already applied (same id): ' : ''}${result.results
         .map((r) => r.receipt.summary)
@@ -675,7 +959,7 @@ export class KitchenSession {
   private async validatePlan(
     args: Record<string, unknown>,
   ): Promise<KitchenToolResult> {
-    const plan = this.plan(args.planId);
+    const plan = await this.plan(args.planId);
     if (!('engine' in plan)) return plan;
     const { index } = await this.catalog();
     const checked = plan.engine.run({ name: 'validate' });
@@ -705,8 +989,10 @@ export class KitchenSession {
     };
   }
 
-  private exportPlan(args: Record<string, unknown>): KitchenToolResult {
-    const plan = this.plan(args.planId);
+  private async exportPlan(
+    args: Record<string, unknown>,
+  ): Promise<KitchenToolResult> {
+    const plan = await this.plan(args.planId);
     if (!('engine' in plan)) return plan;
     const result = plan.engine.run({
       name: 'export_cookbook',
@@ -729,7 +1015,7 @@ export class KitchenSession {
   private async applyPlan(
     args: Record<string, unknown>,
   ): Promise<KitchenToolResult> {
-    const plan = this.plan(args.planId);
+    const plan = await this.plan(args.planId);
     if (!('engine' in plan)) return plan;
     const dir = args.dir as string;
     if (!isAbsolute(dir)) {

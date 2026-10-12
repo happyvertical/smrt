@@ -43,7 +43,7 @@ interface Props {
    * picker); their entries are edited on the section's own page with
    * `ShellSectionMenu`. Default `'items'`.
    */
-  navMode?: 'items' | 'sections';
+  navMode?: 'items' | 'sections' | 'sections-with-items';
 }
 
 let {
@@ -350,7 +350,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
             aria-label={t(M['ui.layout_edit.edit_section'], { label: entry.label })}
             onpointerenter={(event) => onhover(entry.id, event)}
             onclick={() => onactivate(entry.id)}
-          >{#if navMode === 'sections'}<span class="smrt-nav-editor__section-icon"><ShellSectionIcon name={entry.icon} iconComponent={IconComponent} /></span>{/if}{entry.label}</button>
+          >{#if navMode !== 'items'}<span class="smrt-nav-editor__section-icon"><ShellSectionIcon name={entry.icon} iconComponent={IconComponent} /></span>{/if}{entry.label}</button>
           <span class="smrt-nav-editor__overlay">
             {@render toggles(entry)}
             {@render actions(entry)}
@@ -377,7 +377,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
                 }}
               />
               {@render toggles(entry)}
-              {#if navMode === 'sections'}
+              {#if navMode !== 'items'}
                 <ShellIconButton
                   data-section-icon={entry.id}
                   aria-haspopup="true"
@@ -396,7 +396,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
                 />
               {/if}
               {@render actions(entry)}
-              {#if navMode === 'sections' && iconPicker === entry.id}
+              {#if navMode !== 'items' && iconPicker === entry.id}
                 <div
                   class="smrt-nav-editor__icons"
                   role="group"

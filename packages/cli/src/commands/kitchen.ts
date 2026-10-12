@@ -49,6 +49,11 @@ class KitchenStopped extends Error {
 const apply = cookbookCommands['cookbook apply'];
 
 interface KitchenMcpCliOptions {
+  'planner-ui'?: string;
+  'plans-dir'?: string;
+  'preview-port'?: string;
+  'preview-origin'?: string;
+  'ui-smoke'?: boolean;
   template?: string;
   manifests?: string[] | string;
   'no-registry'?: boolean;
@@ -146,6 +151,32 @@ export const kitchenCommands: Record<string, CLICommand> = {
       'Serve the Kitchen planning tools over stdio MCP for a local agent plugin (ChatGPT, Codex, Claude); no model or credential is used',
     args: [],
     options: {
+      'ui-smoke': {
+        type: 'boolean',
+        description:
+          'Expose a static MCP Apps resource to check local desktop rendering',
+        default: false,
+      },
+      'planner-ui': {
+        type: 'string',
+        description:
+          'Path to self-contained smrt-planner app/mcp.html for local MCP Apps rendering',
+      },
+      'plans-dir': {
+        type: 'string',
+        description:
+          'Private local directory holding restart-safe Kitchen plans',
+      },
+      'preview-port': {
+        type: 'string',
+        description:
+          'Loopback HTTP port for a live browser preview (0 chooses a free port)',
+      },
+      'preview-origin': {
+        type: 'string',
+        description:
+          'Exact 127.0.0.1 browser origin allowed to call the preview bridge',
+      },
       template: {
         type: 'string',
         description:
@@ -179,6 +210,14 @@ export const kitchenCommands: Record<string, CLICommand> = {
     handler: async (_args: string[], options: KitchenMcpCliOptions) => {
       const { runKitchenMcp } = await import('./kitchen/mcp/server.js');
       await runKitchenMcp({
+        uiSmoke: options['ui-smoke'],
+        plannerUi: options['planner-ui'],
+        plansDir: options['plans-dir'],
+        previewPort:
+          options['preview-port'] === undefined
+            ? undefined
+            : Number(options['preview-port']),
+        previewOrigin: options['preview-origin'],
         dir: process.cwd(),
         template: options.template,
         manifests: asList(options.manifests),

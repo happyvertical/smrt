@@ -35,6 +35,49 @@ afterEach(() => {
 });
 
 describe('AdminShell', () => {
+  it('uses an icon above navigation to open and close the left sidebar', async () => {
+    const state = createShellState({
+      config: { top: false, left: { initial: 'expanded' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        edgeToggles: { left: true },
+        tenantPanel: textSnippet('navigation'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      const toggle = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Collapse Left sidebar"]',
+      );
+      const navigation = container.querySelector(
+        '.smrt-admin-shell__tenant-content',
+      );
+      expect(toggle).not.toBeNull();
+      expect(navigation).not.toBeNull();
+      expect(toggle?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+      expect(toggle?.textContent).not.toContain('Left sidebar');
+      expect(toggle).toHaveAttribute('title', 'Collapse Left sidebar');
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(toggle?.compareDocumentPosition(navigation as Node)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      toggle?.click();
+      await tick();
+      const opener = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Expand Left sidebar"]',
+      );
+      expect(opener?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+      expect(opener).toHaveAttribute('title', 'Expand Left sidebar');
+      expect(opener).toHaveAttribute('aria-expanded', 'false');
+    } finally {
+      await unmount(component);
+    }
+  });
+
   it('keeps a consumer header and default phone menu opener when the top edge is unavailable', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: query.includes('max-width'),
@@ -335,7 +378,7 @@ describe('AdminShell', () => {
     }
   });
 
-  it('links full and compact branding home with an accessible title', async () => {
+  it('keeps a single linked brand in the header when the sidebar is collapsed', async () => {
     const state = createShellState({
       config: { left: { initial: 'collapsed' } },
     });
@@ -354,15 +397,19 @@ describe('AdminShell', () => {
       const links = container.querySelectorAll<HTMLAnchorElement>(
         '.smrt-admin-shell__brand-link',
       );
-      expect(links).toHaveLength(2);
+      expect(links).toHaveLength(1);
       expect([...links].map((link) => link.getAttribute('href'))).toEqual([
-        '/home',
         '/home',
       ]);
       expect([...links].map((link) => link.getAttribute('aria-label'))).toEqual(
-        ['Shop', 'Shop'],
+        ['Shop'],
       );
-      expect(links[1].textContent?.trim()).toBe('S');
+      expect(
+        container.querySelector('header .smrt-admin-shell__brand-link'),
+      ).toBe(links[0]);
+      expect(
+        container.querySelector('aside .smrt-admin-shell__brand-link'),
+      ).toBeNull();
     } finally {
       unmount(component);
     }
@@ -395,7 +442,7 @@ describe('AdminShell', () => {
     }
   });
 
-  it('passes full and compact context to custom brand snippets', async () => {
+  it('keeps a custom header brand out of the collapsed sidebar', async () => {
     const brand = createRawSnippet<[{ compact: boolean }]>((context) => ({
       render: () =>
         `<span>${context().compact ? 'Compact mark' : 'Full mark'}</span>`,
@@ -413,7 +460,7 @@ describe('AdminShell', () => {
     try {
       await tick();
       expect(container.textContent).toContain('Full mark');
-      expect(container.textContent).toContain('Compact mark');
+      expect(container.textContent).not.toContain('Compact mark');
     } finally {
       unmount(component);
     }

@@ -106,8 +106,12 @@ export interface CookbookTheme {
   /** A built-in smrt-ui preset name. */
   preset?: string;
   colorScheme?: 'light' | 'dark' | 'system';
+  /** Font key applied independently of the selected preset or brand colour. */
+  fontFamily?: string;
   /** A brand colour theme; wins over `preset` while present. */
   custom?: { primary: string; fontFamily?: string };
+  /** Stored source text for host-defined styles; consumers do not execute it. */
+  customCss?: string;
 }
 
 export interface Cookbook {

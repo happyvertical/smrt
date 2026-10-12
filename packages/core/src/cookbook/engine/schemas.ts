@@ -201,6 +201,10 @@ export function buildCommandTools(catalog: EngineCatalog): CommandTool[] {
           enum: ['light', 'dark', 'system'],
           description: 'Light, dark or follow the device.',
         },
+        fontFamily: {
+          anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }],
+          description: 'Font key. Null restores the preset font.',
+        },
       }),
     },
     {

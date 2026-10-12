@@ -72,9 +72,9 @@ describe.each(FIXTURE_NAMES)('buildCookbookShell: %s fixture', (name) => {
     expect(referencedSections.filter((id) => !sectionIds.has(id))).toEqual([]);
   });
 
-  it('uses navMode sections with an icon and href on every section', () => {
+  it('uses expanded section subnav with an icon and href on every section', () => {
     const shell = buildCookbookShell({ cookbook: fixture(name), catalog });
-    expect(shell.navMode).toBe('sections');
+    expect(shell.navMode).toBe('sections-with-items');
     for (const group of shell.navGroups) {
       expect(group.href).toMatch(/^\/s\/section-/);
       expect(group.items.length).toBeGreaterThan(0);

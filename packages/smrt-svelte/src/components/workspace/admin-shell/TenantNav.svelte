@@ -1,9 +1,10 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import type { Component } from 'svelte';
+import { type Component, onMount } from 'svelte';
+import { fly } from 'svelte/transition';
 import { M } from '../../../i18n/strings.workspace.js';
 import ShellSectionIcon from './ShellSectionIcon.svelte';
-import { SHELL_DEFAULT_SECTION_ICON, SHELL_ICON_PATHS } from './shell-icons.js';
+import { SHELL_DEFAULT_SECTION_ICON } from './shell-icons.js';
 import type { ShellNavGroup, ShellNavItem } from './types.js';
 
 const DEFAULT_ACTION_ICON = 'settings';
@@ -27,10 +28,11 @@ interface Props {
   onNavigate?: () => void;
   /**
    * `'items'` (default) lists every group's entries. `'sections'` shows only
-   * the sections, one icon link each, to the section's own page
+   * the sections. `'sections-with-items'` also shows entries when expanded.
+   * Section links go to the section's own page
    * (`ShellNavGroup.href`, else `sectionHref(id)`, else its first entry).
    */
-  navMode?: 'items' | 'sections';
+  navMode?: 'items' | 'sections' | 'sections-with-items';
   /** Section page for groups without an `href` (e.g. user-created ones). */
   sectionHref?: (sectionId: string) => string | undefined;
 }
@@ -48,6 +50,20 @@ let {
   sectionHref,
 }: Props = $props();
 const { t } = useI18n();
+let ready = $state(false);
+onMount(() => {
+  ready = true;
+});
+
+function reveal() {
+  const reduced =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const canAnimate =
+    typeof Element !== 'undefined' &&
+    typeof Element.prototype.animate === 'function';
+  return { x: 12, duration: ready && !reduced && canAnimate ? 260 : 0 };
+}
 
 function isActive(item: ShellNavItem): boolean {
   return item.href === currentHref || currentHref.startsWith(`${item.href}/`);
@@ -123,7 +139,7 @@ function fallbackIcon(label: string): string {
     {@const action = showAction(item, groupCurrent ?? isItemCurrent(item))
       ? item.action
       : undefined}
-    <div class="smrt-tenant-nav__section">
+    <div class="smrt-tenant-nav__section" in:fly={reveal()}>
       <div class="smrt-tenant-nav__row">
       <a
         href={item.href}
@@ -137,7 +153,7 @@ function fallbackIcon(label: string): string {
             {#if IconComponent}
               <IconComponent name={item.icon} size={18} />
             {:else}
-              {item.icon}
+              <ShellSectionIcon name={item.icon} size={18} />
             {/if}
           </span>
         {:else if collapsed}
@@ -170,10 +186,8 @@ function fallbackIcon(label: string): string {
           <span class="smrt-tenant-nav__icon" aria-hidden="true">
             {#if IconComponent}
               <IconComponent name={action.icon ?? DEFAULT_ACTION_ICON} size={16} />
-            {:else if action.icon}
-              {action.icon}
             {:else}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d={SHELL_ICON_PATHS.settings} /></svg>
+              <ShellSectionIcon name={action.icon ?? DEFAULT_ACTION_ICON} size={16} />
             {/if}
           </span>
         </a>
@@ -192,7 +206,7 @@ function fallbackIcon(label: string): string {
                   {#if IconComponent}
                     <IconComponent name={child.icon} size={16} />
                   {:else}
-                    {child.icon}
+                    <ShellSectionIcon name={child.icon} size={16} />
                   {/if}
                 </span>
               {/if}
@@ -217,11 +231,11 @@ function fallbackIcon(label: string): string {
 >
 
   {@render navItems(items)}
-  {#each groups as group}
-    {#if navMode === 'sections'}
+  {#each groups as group (groupId(group))}
+    {#if navMode === 'sections' || navMode === 'sections-with-items'}
       {@const href = groupHref(group)}
       {#if href}
-        <div class="smrt-tenant-nav__section" data-nav-section={groupId(group)}>
+        <div class="smrt-tenant-nav__section" data-nav-section={groupId(group)} in:fly={reveal()}>
           <div class="smrt-tenant-nav__row">
             <a
               {href}
@@ -245,6 +259,11 @@ function fallbackIcon(label: string): string {
               {/if}
             </a>
           </div>
+          {#if navMode === 'sections-with-items' && !collapsed && group.items.length}
+            <div class="smrt-tenant-nav__subnav">
+              {@render navItems(group.items, isGroupCurrent(group))}
+            </div>
+          {/if}
         </div>
       {/if}
     {:else if group.showTitle === false}
@@ -315,6 +334,11 @@ function fallbackIcon(label: string): string {
     outline-offset: 2px;
   }
   .smrt-tenant-nav__group-items { margin-block-start: var(--smrt-spacing-1); }
+  .smrt-tenant-nav__subnav {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    padding-inline-start: var(--smrt-spacing-4);
+  }
   .smrt-tenant-nav--collapsed .smrt-tenant-nav__heading {
     display: grid;
     place-items: center;

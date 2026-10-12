@@ -1,0 +1,9 @@
+# Cookbook custom CSS source text test matrix
+
+Issue: [#3802](https://github.com/happyvertical/smrt/issues/3802)
+
+| Behavior / invariant | Reachable trigger | Positive case | Negative / failure case | Actor / context | Data executor / transaction | Supported runtime / dialect | External contract edge | Test level | Validation command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| An optional custom CSS string remains in a v1 cookbook | Validate or parse a cookbook with `theme.customCss` | Validator and JSON Schema accept source text up to 65,536 characters; absence still works | Non-string or longer value is rejected with a field-specific error | Planner visitor or host agent importing a cookbook | N/A: pure document validation | Browser and Node / JSON | `@happyvertical/smrt-types` and core v1 schema agree | Unit | `pnpm --filter @happyvertical/smrt-core exec vitest run src/cookbook/cookbook.test.ts` |
+| Engine retains the text without executing it | Import, edit preset, export and restore an engine state | Exact CSS text survives canonicalization and an unrelated theme edit | CSS is never added to the resolved theme or interpreted by the engine | Planner visitor or host agent | In-memory command engine; import is atomic | Browser and Node / JSON | Cookbook engine import/export and persisted state; smrt-svelte theme resolver ignores the text | Unit | `pnpm --filter @happyvertical/smrt-core exec vitest run src/cookbook/engine/__tests__/engine.test.ts`; `pnpm --filter @happyvertical/smrt-svelte exec vitest run src/components/cookbook/__tests__/catalog.test.ts` |
+| Clearing theme removes the text | Run `reset_theme` | Canonical cookbook has no theme when it held only CSS | No stale CSS is exported | Planner visitor or host agent | In-memory command engine | Browser and Node / JSON | Theme reset command | Unit | `pnpm --filter @happyvertical/smrt-core exec vitest run src/cookbook/engine/__tests__/engine.test.ts` |

@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,11 +17,13 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addManifest, createRecipeIndex } from '../cookbook/recipe-index.js';
+import { KITCHEN_BRIDGE } from '../kitchen/mcp/bridge.js';
 import {
   catalogFromIndex,
   loadLibrary,
   packageIdOf,
 } from '../kitchen/mcp/catalog.js';
+import { startKitchenPreview } from '../kitchen/mcp/preview.js';
 import { KITCHEN_TOOLS, KitchenSession } from '../kitchen/mcp/tools.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -192,6 +195,287 @@ describe('KitchenSession (in process)', () => {
   });
 });
 
+describe('durable Kitchen plan and local preview', () => {
+  it('keeps undo usable in the same durable session', async () => {
+    const session = new KitchenSession({
+      dir: work,
+      manifests: [manifests],
+      registry: false,
+      plansDir: join(work, 'durable-undo'),
+    });
+    const planId = (await session.call('start_plan', {})).data.planId as string;
+    const added = await session.call('run_commands', {
+      planId,
+      commands: [{ name: 'add_recipes', input: { ids: ['commerce.sales'] } }],
+    });
+    expect(added.data.ok).toBe(true);
+    const undoId = (added.data.receipt as { undoId: string }).undoId;
+    const undone = await session.call('run_commands', {
+      planId,
+      commands: [{ name: 'undo', input: { undoId } }],
+    });
+    expect(undone.data.ok).toBe(true);
+    expect((undone.data.snapshot as { recipes: unknown[] }).recipes).toEqual(
+      [],
+    );
+  });
+
+  it('serializes writers from separate sessions sharing a plans directory', async () => {
+    const options = {
+      dir: work,
+      manifests: [manifests],
+      registry: false,
+      plansDir: join(work, 'durable-writers'),
+    };
+    const first = new KitchenSession(options);
+    const second = new KitchenSession(options);
+    const started = await first.call('start_plan', {});
+    const planId = started.data.planId as string;
+    const expectedRevision = (started.data.snapshot as { revision: number })
+      .revision;
+    const results = await Promise.all([
+      first.call('run_commands', {
+        planId,
+        expectedRevision,
+        id: 'writer-one',
+        commands: [{ name: 'set_name', input: { name: 'First' } }],
+      }),
+      second.call('run_commands', {
+        planId,
+        expectedRevision,
+        id: 'writer-two',
+        commands: [{ name: 'set_name', input: { name: 'Second' } }],
+      }),
+    ]);
+    expect(results.map((result) => result.data.ok).sort()).toEqual([
+      false,
+      true,
+    ]);
+    expect(results.find((result) => !result.data.ok)?.data.error).toMatchObject(
+      { code: 'conflict' },
+    );
+    const final = (await second.call('get_plan', { planId })).data.snapshot as {
+      app: { name: string };
+      revision: number;
+    };
+    expect(final.revision).toBe(expectedRevision + 1);
+    expect(['First', 'Second']).toContain(final.app.name);
+  });
+
+  it('retains revisions and batch retries across session restarts', async () => {
+    const plansDir = join(work, 'durable-plans');
+    const options = {
+      dir: work,
+      manifests: [manifests],
+      registry: false,
+      plansDir,
+    };
+    const first = new KitchenSession(options);
+    const started = await first.call('start_plan', { name: 'Shared' });
+    const planId = started.data.planId as string;
+    const revision = (started.data.snapshot as { revision: number }).revision;
+    const batch = {
+      planId,
+      id: 'durable-batch',
+      expectedRevision: revision,
+      commands: [{ name: 'add_recipes', input: { ids: ['commerce.sales'] } }],
+    };
+    const changed = await first.call('run_commands', batch);
+    expect(changed.data.ok).toBe(true);
+    const next = new KitchenSession(options);
+    const restored = await next.call('get_plan', { planId });
+    expect(restored.data.snapshot).toEqual({
+      ...(changed.data.snapshot as object),
+      undo: [],
+    });
+    const replay = await next.call('run_commands', batch);
+    expect(replay.data).toMatchObject({ ok: true, replayed: true });
+    const stale = await next.call('run_commands', {
+      ...batch,
+      id: 'new-batch',
+    });
+    expect(stale.data).toMatchObject({
+      ok: false,
+      error: { code: 'conflict' },
+    });
+    expect((await next.call('get_plan', { planId })).data.snapshot).toEqual(
+      restored.data.snapshot,
+    );
+    const newer = await next.call('run_commands', {
+      planId,
+      expectedRevision: (restored.data.snapshot as { revision: number })
+        .revision,
+      commands: [{ name: 'set_name', input: { name: 'Newer change' } }],
+    });
+    expect(newer.data.ok).toBe(true);
+    const oldUndoId = (changed.data.receipt as { undoId: string }).undoId;
+    const newUndoId = (newer.data.receipt as { undoId: string }).undoId;
+    expect(newUndoId).not.toBe(oldUndoId);
+    const wrongUndo = await next.call('run_commands', {
+      planId,
+      commands: [{ name: 'undo', input: { undoId: oldUndoId } }],
+    });
+    expect(wrongUndo.data).toMatchObject({
+      ok: false,
+      error: { code: 'not_found' },
+    });
+    expect(
+      (await next.call('get_plan', { planId })).data.snapshot,
+    ).toMatchObject({
+      app: { name: 'Newer change' },
+    });
+  });
+
+  it('only accepts the configured browser origin and submits through the same session', async () => {
+    const origin = 'http://127.0.0.1:5173';
+    const session = new KitchenSession({
+      dir: work,
+      manifests: [manifests],
+      registry: false,
+      previewOrigin: origin,
+    });
+    const planId = (await session.call('start_plan', {})).data.planId as string;
+    const unbound = (await session.call('start_plan', {})).data
+      .planId as string;
+    const preview = await startKitchenPreview(session, 0, origin);
+    session.previewUrl = preview.url;
+    const path = `${preview.url}/plans/${planId}`;
+    try {
+      // Only plans handed out by open_preview are served.
+      expect((await fetch(path, { headers: { Origin: origin } })).status).toBe(
+        404,
+      );
+      expect((await session.call('open_preview', { planId })).data.ok).toBe(
+        true,
+      );
+      expect(
+        (
+          await fetch(`${preview.url}/plans/${unbound}`, {
+            headers: { Origin: origin },
+          })
+        ).status,
+      ).toBe(404);
+      const refused = await fetch(path, {
+        headers: { Origin: 'http://evil.invalid' },
+      });
+      expect(refused.status).toBe(403);
+      expect(
+        (
+          await fetch(`${preview.url}/plans/other`, {
+            headers: { Origin: origin },
+          })
+        ).status,
+      ).toBe(404);
+      expect(
+        (
+          await fetch(`${path}/commands`, {
+            method: 'POST',
+            headers: { Origin: origin, 'Content-Type': 'text/plain' },
+            body: '{}',
+          })
+        ).status,
+      ).toBe(415);
+      expect(
+        (
+          await fetch(`${path}/commands`, {
+            method: 'POST',
+            headers: { Origin: origin, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ padding: 'x'.repeat(2_097_152) }),
+          })
+        ).status,
+      ).toBe(413);
+      const malformed = await fetch(`${path}/commands`, {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: '[]',
+      });
+      expect(malformed.status).toBe(400);
+      expect(await malformed.json()).toMatchObject({
+        ok: false,
+        error: { code: 'invalid_input' },
+      });
+      const badJson = await fetch(`${path}/commands`, {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: '{',
+      });
+      expect(badJson.status).toBe(400);
+      expect(await badJson.json()).toMatchObject({
+        ok: false,
+        error: { code: 'invalid_input' },
+      });
+      const initial = await fetch(path, { headers: { Origin: origin } });
+      expect(initial.status).toBe(200);
+      expect(initial.headers.get('access-control-allow-origin')).toBe(origin);
+      const snapshot = (
+        (await initial.json()) as { snapshot: { revision: number } }
+      ).snapshot;
+      const edited = await fetch(`${path}/commands`, {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expectedRevision: snapshot.revision,
+          commands: [{ name: 'set_name', input: { name: 'From browser' } }],
+        }),
+      });
+      expect(
+        ((await edited.json()) as { snapshot: { app: { name: string } } })
+          .snapshot.app.name,
+      ).toBe('From browser');
+      expect(
+        (
+          (await session.call('get_plan', { planId })).data.snapshot as {
+            app: { name: string };
+          }
+        ).app.name,
+      ).toBe('From browser');
+      // A multibyte character split across request chunks survives intact.
+      const revision = (
+        (await session.call('get_plan', { planId })).data.snapshot as {
+          revision: number;
+        }
+      ).revision;
+      const body = Buffer.from(
+        JSON.stringify({
+          expectedRevision: revision,
+          commands: [{ name: 'set_name', input: { name: 'Café 🍰' } }],
+        }),
+      );
+      const split = body.indexOf(Buffer.from('🍰')) + 2;
+      const status = await new Promise<number>(
+        (resolveStatus, rejectStatus) => {
+          const req = request(
+            `${path}/commands`,
+            {
+              method: 'POST',
+              headers: { Origin: origin, 'Content-Type': 'application/json' },
+            },
+            (res) => {
+              res.resume();
+              resolveStatus(res.statusCode ?? 0);
+            },
+          );
+          req.on('error', rejectStatus);
+          req.write(body.subarray(0, split));
+          setTimeout(() => req.end(body.subarray(split)), 50);
+        },
+      );
+      expect(status).toBe(200);
+      expect(
+        (
+          (await session.call('get_plan', { planId })).data.snapshot as {
+            app: { name: string };
+          }
+        ).app.name,
+      ).toBe('Café 🍰');
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        preview.server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+});
+
 describe('undo through run_commands', () => {
   it('runs a lone undo as a command', async () => {
     const session = new KitchenSession({
@@ -266,6 +550,125 @@ describe('smrt kitchen mcp over stdio', () => {
     await client?.close();
   });
 
+  it('keeps planning tools available when the optional Planner artifact is missing', async () => {
+    const missingTransport = new StdioClientTransport({
+      command: tsx,
+      args: [
+        join(cliRoot, 'src/index.ts'),
+        'kitchen',
+        'mcp',
+        '--no-registry',
+        '--manifests',
+        manifests,
+        '--planner-ui',
+        join(work, 'not-built.html'),
+      ],
+      cwd: work,
+      env: { PATH: process.env.PATH ?? '', HOME: work },
+      stderr: 'pipe',
+    });
+    const missingClient = new Client({
+      name: 'missing-ui-test',
+      version: '1.0.0',
+    });
+    try {
+      await missingClient.connect(missingTransport);
+      const tools = await missingClient.listTools();
+      expect(tools.tools.map((tool) => tool.name)).toContain('start_plan');
+      expect(tools.tools.map((tool) => tool.name)).not.toContain('render_plan');
+      const started = await missingClient.callTool({
+        name: 'start_plan',
+        arguments: {},
+      });
+      expect(started.structuredContent).toMatchObject({ ok: true });
+    } finally {
+      await missingClient.close();
+    }
+  }, 60_000);
+
+  it('serves rebuilt Planner UI from the same MCP process', async () => {
+    const uiFile = join(work, 'planner-reload.html');
+    writeFileSync(
+      uiFile,
+      '<!doctype html><html><head></head><body>first</body></html>',
+    );
+    const uiTransport = new StdioClientTransport({
+      command: tsx,
+      args: [
+        join(cliRoot, 'src/index.ts'),
+        'kitchen',
+        'mcp',
+        '--no-registry',
+        '--planner-ui',
+        uiFile,
+      ],
+      cwd: work,
+      env: { PATH: process.env.PATH ?? '', HOME: work },
+      stderr: 'pipe',
+    });
+    const uiClient = new Client({
+      name: 'kitchen-ui-reload-test',
+      version: '1.0.0',
+    });
+    try {
+      await uiClient.connect(uiTransport);
+      const listed = await uiClient.listTools();
+      const updateTool = listed.tools.find(
+        (tool) => tool.name === 'planner_ui_update',
+      );
+      expect(updateTool?._meta?.ui).toMatchObject({ visibility: ['app'] });
+      const first = await uiClient.callTool({
+        name: 'planner_ui_update',
+        arguments: { version: '' },
+      });
+      const firstData = first.structuredContent as {
+        changed: boolean;
+        version: string;
+        html: string;
+      };
+      expect(firstData.changed).toBe(true);
+      expect(firstData.html).toContain('window.__smrtKitchenUiVersion=');
+      expect(firstData.html).toContain('first</body>');
+      const unchanged = await uiClient.callTool({
+        name: 'planner_ui_update',
+        arguments: { version: firstData.version },
+      });
+      expect(unchanged.structuredContent).toMatchObject({ changed: false });
+      expect(unchanged.structuredContent).not.toHaveProperty('html');
+
+      writeFileSync(
+        uiFile,
+        '<!doctype html><html><head></head><body>second</body></html>',
+      );
+      const changed = await uiClient.callTool({
+        name: 'planner_ui_update',
+        arguments: { version: firstData.version, planId: 'plan-test' },
+      });
+      const changedData = changed.structuredContent as {
+        changed: boolean;
+        version: string;
+        html: string;
+      };
+      expect(changedData.changed).toBe(true);
+      expect(changedData.version).not.toBe(firstData.version);
+      expect(changedData.html).toContain(
+        'window.__smrtKitchenReloadPlanId="plan-test"',
+      );
+      expect(changedData.html).toContain('second</body>');
+      writeFileSync(uiFile, '<html><body>incomplete</body></html>');
+      const incomplete = await uiClient.callTool({
+        name: 'planner_ui_update',
+        arguments: { version: changedData.version },
+      });
+      expect(incomplete.structuredContent).toMatchObject({
+        changed: false,
+        error: { code: 'unavailable' },
+      });
+    } finally {
+      await uiClient.close();
+    }
+  }, 60_000);
+
   it('lists the tools with schemas and annotations', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
@@ -274,6 +677,7 @@ describe('smrt kitchen mcp over stdio', () => {
         'export_plan',
         'get_plan',
         'list_cookbooks',
+        'open_preview',
         'run_commands',
         'search_recipes',
         'start_plan',
@@ -568,6 +972,56 @@ describe('smrt kitchen mcp over stdio', () => {
     // Every stdout line is a JSON-RPC message; the CLI's own notices go to stderr.
     for (const line of lines) expect(JSON.parse(line).jsonrpc).toBe('2.0');
   });
+
+  it('exits when the host closes stdin while the preview bridge is listening', async () => {
+    const child = spawn(
+      tsx,
+      [
+        join(cliRoot, 'src/index.ts'),
+        'kitchen',
+        'mcp',
+        '--no-registry',
+        '--preview-port',
+        '0',
+        '--preview-origin',
+        'http://127.0.0.1:5173',
+      ],
+      {
+        cwd: work,
+        env: { PATH: process.env.PATH ?? '', HOME: work },
+        stdio: ['pipe', 'ignore', 'pipe'],
+      },
+    );
+    try {
+      await new Promise<void>((resolveReady, rejectReady) => {
+        const timer = setTimeout(
+          () => rejectReady(new Error('preview never started')),
+          20_000,
+        );
+        let stderr = '';
+        child.stderr.on('data', (chunk: Buffer) => {
+          stderr += chunk.toString();
+          if (stderr.includes('Live preview bridge')) {
+            clearTimeout(timer);
+            resolveReady();
+          }
+        });
+      });
+      const exited = new Promise<number | null>((resolveExit) =>
+        child.once('exit', (code) => resolveExit(code)),
+      );
+      child.stdin.end();
+      const code = await Promise.race([
+        exited,
+        new Promise<'alive'>((resolveAlive) =>
+          setTimeout(() => resolveAlive('alive'), 5_000),
+        ),
+      ]);
+      expect(code).not.toBe('alive');
+    } finally {
+      if (child.exitCode === null) child.kill('SIGKILL');
+    }
+  }, 30_000);
 
   it('refuses unknown plans, tools and bad input without crashing', async () => {
     expect(

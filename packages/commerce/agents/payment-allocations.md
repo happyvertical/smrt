@@ -43,3 +43,22 @@ snapshots fail closed through the same revision writes. SQLite serializes the
 owning write transaction. DuckDB is not a supported commerce allocation store:
 the existing declared foreign keys require ON UPDATE CASCADE, which its DDL
 boundary explicitly refuses; no weaker schema is substituted.
+
+### Undelivered invoice payment progress
+
+Allocation may move an undelivered DRAFT invoice to PARTIAL or PAID without a
+customer delivery event. Neither operation invents `sentAt` or `viewedAt`.
+After allocations are removed, reload the parent and call
+`updatePaymentStatus(remainingTotal)` and `save()` within the caller transaction.
+Zero remaining allocations restore DRAFT only for an undelivered invoice;
+a delivered invoice returns to SENT/VIEWED according to its delivery history.
+DRAFT cannot conceal positive allocations. A DRAFT save checks both its supplied
+delivery timestamps and the currently persisted timestamps, so clearing them
+locally during reversal cannot bypass the undelivered requirement. This guard
+does not introduce an immutable lifetime delivery-history record.
+
+If a prepaid invoice is actually delivered later, call `markSent()` and save.
+For PARTIAL/PAID invoices it records the first `sentAt` while preserving payment
+status, paid amount, paid date and any existing view timestamp. Repeating this
+call preserves the first send timestamp. It records the caller's delivery
+event; it does not send a customer message or manufacture earlier delivery.

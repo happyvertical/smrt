@@ -183,15 +183,12 @@ for (const width of [390, 1280]) {
       await home.evaluate((el) => getComputedStyle(el).outlineStyle),
     ).not.toBe('none');
     if (width > 768) {
-      const compact = page.locator(
-        '.smrt-admin-shell__edge--left .smrt-admin-shell__brand-link',
-      );
-      await expect(compact).toBeInViewport();
-      const mark = await compact.boundingBox();
-      const rail = await page
-        .locator('.smrt-admin-shell__edge--left')
-        .boundingBox();
-      expect(mark!.width).toBeLessThanOrEqual(rail!.width);
+      // With the header showing the brand, the rail does not repeat it (#3798).
+      await expect(
+        page.locator(
+          '.smrt-admin-shell__edge--left .smrt-admin-shell__brand-link',
+        ),
+      ).toHaveCount(0);
     }
   });
 }

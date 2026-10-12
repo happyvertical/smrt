@@ -50,17 +50,21 @@ export function resolveCookbookTheme(
       ? theme.colorScheme
       : DEFAULT_COLOR_SCHEME;
   const primary = theme?.custom ? normalizeHex(theme.custom.primary) : null;
+  const font = theme?.fontFamily ?? theme?.custom?.fontFamily;
+  const fontFamily =
+    typeof font === 'string' && Object.hasOwn(THEME_FONTS, font)
+      ? font
+      : undefined;
   if (theme?.custom && primary) {
-    const font = theme.custom.fontFamily;
-    const fontFamily =
-      typeof font === 'string' && Object.hasOwn(THEME_FONTS, font)
-        ? font
-        : undefined;
     return {
       preset: brandThemeId(primary, fontFamily),
       colorScheme,
       brand: { primary, ...(fontFamily ? { fontFamily } : {}) },
     };
   }
-  return { preset: theme?.preset || DEFAULT_THEME_PRESET, colorScheme };
+  return {
+    preset: theme?.preset || DEFAULT_THEME_PRESET,
+    colorScheme,
+    ...(fontFamily ? { fontFamily } : {}),
+  };
 }

@@ -788,6 +788,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     return shell.config.panels[edge].label;
   }
 
+  function leftToggleLabel(): string {
+    return t(M[edgeExpanded('left') ? 'ui.admin_shell.collapse_panel' : 'ui.admin_shell.expand_panel'], {
+      panel: labelFor('left'),
+    });
+  }
+
   function hotkeyFor(edge: PanelEdge): string {
     return formatHotkeyBinding(
       resolveHotkey(edge, shell.config.panels[edge], shell.settings),
@@ -897,14 +903,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   <Button
     variant="ghost"
     size="sm"
-    class="smrt-admin-shell__edge-toggle"
-    aria-label={edge === 'left' ? t(M[edgeExpanded(edge) ? 'ui.admin_shell.collapse_panel' : 'ui.admin_shell.expand_panel'], { panel: labelFor(edge) }) : undefined}
+    class="smrt-admin-shell__edge-toggle {edge === 'left' ? 'smrt-admin-shell__edge-toggle--left' : ''}"
+    aria-label={edge === 'left' ? leftToggleLabel() : undefined}
+    title={edge === 'left' ? leftToggleLabel() : undefined}
     aria-expanded={edgeExpanded(edge)}
     aria-controls={`smrt-admin-shell-${edge}-panel`}
     onclick={() => shell.togglePanel(edge)}
   >
-    {#if edge === 'left' && !edgeExpanded(edge)}<span aria-hidden="true">›</span>{:else}<span>{labelFor(edge)}</span>{/if}
-    {#if showsHotkeyFor(edge) && (edge !== 'left' || edgeExpanded(edge))}
+    {#if edge === 'left'}
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        {#if edgeExpanded('left')}<path d="m15 18-6-6 6-6" />{:else}<path d="m9 18 6-6-6-6" />{/if}
+      </svg>
+    {:else}<span>{labelFor(edge)}</span>{/if}
+    {#if edge !== 'left' && showsHotkeyFor(edge)}
       <kbd class="smrt-admin-shell__edge-toggle-kbd">{hotkeyFor(edge)}</kbd>
     {/if}
     <ActivityBadge {edge} />
@@ -1107,7 +1118,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {@render resizer('left')}
       <div class="smrt-admin-shell__rail">
         {@render regionEdit('leftSidebar')}
-        {#if (panelState('top') === 'hidden' || !edgeExpanded('left')) && (homeHref || logoSrc || brand)}{@render shellBrand(!edgeExpanded('left'))}{/if}
+        {#if panelState('top') === 'hidden' && (homeHref || logoSrc || brand)}{@render shellBrand(!edgeExpanded('left'))}{/if}
         {#if showToggle('left') || isPhone}{@render edgeToggle('left')}{/if}
         {#if shownOpen('left') || (tenantPanel && keepsContent('left'))}
           <div
@@ -1924,6 +1935,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size);
+  }
+
+  :global(.smrt-admin-shell__edge-toggle--left.button.ghost) {
+    flex: 0 0 auto;
+    inline-size: max(2.75rem, var(--smrt-control-target-min, 0px));
+    block-size: max(2.75rem, var(--smrt-control-target-min, 0px));
+    padding: 0;
+    color: var(--smrt-color-on-surface-variant);
+  }
+
+  :global(.smrt-admin-shell__edge-toggle--left.button.ghost:hover) {
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
   }
 
   .smrt-admin-shell__drawer {

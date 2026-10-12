@@ -19,6 +19,15 @@ Fields: `$schema`, `version: 1`, optional `name`/`description`, `recipes`,
 the document; the planner's library wrapper (id, icon, keywords, settings) is
 planner-side.
 
+`theme.customCss` is optional source text (at most 65,536 characters). It is
+portable through validation and engine import/export, but no cookbook consumer
+injects it into a page automatically. An app may use it when generating its own
+stylesheet after review.
+
+`theme.fontFamily` is an optional host font key independent of the preset and
+brand colour. A host that knows the key applies it; unknown keys are retained
+in the portable document. Older `theme.custom.fontFamily` values still read.
+
 ## Rules
 
 - Versioning: add optional fields within `version: 1`; readers keep and ignore

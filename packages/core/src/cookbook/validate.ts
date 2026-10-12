@@ -289,6 +289,34 @@ function checkTheme(value: unknown, diagnostics: CookbookDiagnostic[]) {
     );
   }
   if (
+    value.fontFamily !== undefined &&
+    (typeof value.fontFamily !== 'string' || !value.fontFamily)
+  ) {
+    error(
+      diagnostics,
+      'invalid_value',
+      'theme.fontFamily',
+      'theme.fontFamily must be a non-empty string',
+    );
+  }
+  if (value.customCss !== undefined) {
+    if (typeof value.customCss !== 'string') {
+      error(
+        diagnostics,
+        'invalid_type',
+        'theme.customCss',
+        'theme.customCss must be a string',
+      );
+    } else if (Array.from(value.customCss).length > 65536) {
+      error(
+        diagnostics,
+        'invalid_value',
+        'theme.customCss',
+        'theme.customCss must be at most 65,536 characters',
+      );
+    }
+  }
+  if (
     value.colorScheme !== undefined &&
     !(typeof value.colorScheme === 'string' && SCHEMES.has(value.colorScheme))
   ) {

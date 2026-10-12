@@ -1,4 +1,6 @@
+import { getTheme } from '@happyvertical/smrt-ui/themes';
 import { describe, expect, it } from 'vitest';
+import { applyCookbookTheme } from '../brand-theme.js';
 import {
   catalogFromManifests,
   narrowCatalog,
@@ -120,6 +122,41 @@ describe('resolveCookbookTheme', () => {
       preset: 'glass',
       colorScheme: 'dark',
     });
+  });
+
+  it('changes the font while preserving a preset palette and spacing', () => {
+    const resolved = resolveCookbookTheme({
+      preset: 'glass',
+      fontFamily: 'Georgia',
+    });
+    expect(resolved).toEqual({
+      preset: 'glass',
+      colorScheme: 'system',
+      fontFamily: 'Georgia',
+    });
+    const derived = getTheme(applyCookbookTheme(resolved));
+    const base = getTheme('glass');
+    expect(derived.light).toEqual(base.light);
+    expect(derived.dark).toEqual(base.dark);
+    expect(derived.spacing).toEqual(base.spacing);
+    expect(derived.borderRadius).toEqual(base.borderRadius);
+    expect(derived.fontFamily).toContain('Georgia');
+    expect(
+      resolveCookbookTheme({ preset: 'glass', fontFamily: 'Unknown' }),
+    ).toEqual({
+      preset: 'glass',
+      colorScheme: 'system',
+    });
+  });
+
+  it('does not apply stored custom CSS while resolving the visible theme', () => {
+    expect(
+      resolveCookbookTheme({
+        preset: 'glass',
+        colorScheme: 'dark',
+        customCss: 'body { display: none; }',
+      }),
+    ).toEqual({ preset: 'glass', colorScheme: 'dark' });
   });
 
   it('turns a brand colour into a stable brand theme id and ignores bad input', () => {
