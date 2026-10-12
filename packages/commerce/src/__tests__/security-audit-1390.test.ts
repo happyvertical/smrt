@@ -298,6 +298,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     await alloc.save();
     await invoice.loadFromId();
 
+    invoice.updatePaymentStatus(40);
     // Caller tries to claim the invoice is fully paid; the guard re-derives
     // amountPaid from the single $40 allocation.
     invoice.amountPaid = 100;
@@ -305,7 +306,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     expect(invoice.amountPaid).toBe(40);
   });
 
-  it('rejects an illegal status flip done via raw assignment', async () => {
+  it('rejects an unbacked paid status done via raw assignment', async () => {
     const invoice = await invoices.create({
       currency: 'USD',
       invoiceNumber: 'INV-STATUS',
@@ -316,9 +317,9 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     });
     await invoice.save();
 
-    // DRAFT → PAID is not a legal direct transition.
+    // DRAFT → PAID requires covering allocations even though the edge is legal.
     invoice.status = InvoiceStatus.PAID;
-    await expect(invoice.save()).rejects.toThrow(/illegal status transition/);
+    await expect(invoice.save()).rejects.toThrow(/does not cover totalAmount/);
   });
 
   it('rejects SENT → PAID when no allocations cover the total (#1390 PAID requires covering allocations)', async () => {
