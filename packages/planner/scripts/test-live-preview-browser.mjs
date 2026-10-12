@@ -13,6 +13,7 @@ const empty = {
 };
 let origin = '';
 let attempts = 0;
+let reads = 0;
 const calls = [];
 const preview = createHttpServer(async (request, response) => {
   response.setHeader('Access-Control-Allow-Origin', origin);
@@ -23,6 +24,7 @@ const preview = createHttpServer(async (request, response) => {
     return;
   }
   if (request.url === `/plans/${planId}` && request.method === 'GET') {
+    reads++;
     response.setHeader('Content-Type', 'application/json');
     response.end(JSON.stringify({ planId, state: { snapshot: { revision: 1 }, cookbook: empty } }));
     return;
@@ -65,6 +67,11 @@ try {
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('dialog', (dialog) => dialog.accept());
   await page.goto(`${origin}/?kitchenPlan=${planId}&kitchenPort=${previewPort}`);
+  // Clicks before hydration are ignored; the first plan read means the app is live.
+  for (let waited = 0; reads === 0; waited += 100) {
+    if (waited > 20000) throw Error('live preview never read the plan');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
   await page.getByRole('button', { name: /Bakery/ }).click();
   await page.getByRole('button', { name: 'Use this cookbook' }).click();
   await page.getByRole('dialog', { name: 'Kitchen edit needs attention' }).waitFor({ timeout: 20000 });

@@ -110,9 +110,9 @@ describe('theme validation', () => {
 
   it('compares themes with defaults filled in', () => {
     expect(
-      themeEquals(undefined, { preset: 'smrt', colorScheme: 'system' }),
+      themeEquals(undefined, { preset: 'glass', colorScheme: 'system' }),
     ).toBe(true);
-    expect(themeEquals({ preset: 'glass' }, undefined)).toBe(false);
+    expect(themeEquals({ preset: 'smrt' }, undefined)).toBe(false);
     expect(describeTheme({ preset: 'glass', colorScheme: 'dark' })).toBe(
       'glass, dark',
     );
@@ -230,7 +230,7 @@ describe('cookbook themes', () => {
       colorScheme: 'system',
     });
     expect(resolveTheme(undefined)).toEqual({
-      preset: 'smrt',
+      preset: 'glass',
       colorScheme: 'system',
     });
   });

@@ -5,7 +5,7 @@ import { availablePresets } from '@happyvertical/smrt-ui/themes/presets';
  * preset, a light/dark/system choice and optionally a brand colour that
  * `createThemeFromColor` expands into a full theme. Custom CSS source is
  * stored with the cookbook for a host to use.
- * Absent means the default (the `smrt` preset, following the system scheme).
+ * Absent means the default (the `glass` preset, following the system scheme).
  */
 export type ColorSchemeSetting = 'light' | 'dark' | 'system';
 
@@ -28,7 +28,7 @@ export interface ThemeSetting {
 
 /** smrt-ui's built-in presets (its Node-safe `themes/presets` subpath). */
 export const THEME_PRESETS: readonly string[] = availablePresets;
-export const DEFAULT_PRESET = 'smrt';
+export const DEFAULT_PRESET = 'glass';
 export const DEFAULT_COLOR_SCHEME: ColorSchemeSetting = 'system';
 export const COLOR_SCHEMES: readonly ColorSchemeSetting[] = [
   'light',

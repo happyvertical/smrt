@@ -6,13 +6,13 @@ import {
 } from '../src/lib/index.ts';
 
 describe('Planner shell defaults', () => {
-  it('starts navigation collapsed with a native left-edge control', () => {
+  it('starts navigation expanded with its footer controls in the sidebar', () => {
     const props = plannerShellProps();
     expect(props.edgeToggles).toBe(PLANNER_SHELL_EDGE_TOGGLES);
     expect(props.config).toBe(PLANNER_SHELL_PANEL_DEFAULTS);
     expect(props.edgeToggles).toEqual({ left: true });
     expect(props.config.left).toMatchObject({
-      initial: 'collapsed',
+      initial: 'expanded',
     });
   });
 
@@ -21,6 +21,12 @@ describe('Planner shell defaults', () => {
       initial: 'collapsed',
       rail: false,
       presentation: 'overlay',
+    });
+  });
+
+  it('hides the separate bottom panel by default', () => {
+    expect(plannerShellProps().config.bottom).toMatchObject({
+      initial: 'hidden',
     });
   });
 });

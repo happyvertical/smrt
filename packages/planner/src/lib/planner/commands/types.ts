@@ -26,6 +26,7 @@ export const PLANNER_TAB_IDS = [
   'recipes',
   'features',
   'layout',
+  'theme',
   'settings',
   'export',
 ] as const;

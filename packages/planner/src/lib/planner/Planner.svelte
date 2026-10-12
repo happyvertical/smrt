@@ -21,6 +21,7 @@ import { createPlannerDataSource } from '../data/planner-source.ts';
 import { activeForms } from '../forms/active.ts';
 import { recipes } from '../recipes/index.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
+import { DEFAULT_PRESET } from '../theme/theme.ts';
 import PlannerControls from './PlannerControls.svelte';
 import PlannerLifecycle from './PlannerLifecycle.svelte';
 import { plannerShellProps } from './shell.ts';
@@ -55,7 +56,14 @@ const shellCatalog: ComponentProps<typeof CookbookApp>['catalog'] = {
     })),
   ),
 };
-const cookbook = $derived(cookbookStore.snapshot());
+// The shell falls back to its own default preset; give it the Planner's so the
+// shell provider and ThemeBridge agree when a cookbook names no theme.
+const cookbook = $derived.by(() => {
+  const value = cookbookStore.snapshot();
+  return value.theme?.preset || value.theme?.custom
+    ? value
+    : { ...value, theme: { ...value.theme, preset: DEFAULT_PRESET } };
+});
 const shell = $derived(
   buildCookbookShell({
     cookbook: cookbook as ComponentProps<typeof CookbookApp>['cookbook'],

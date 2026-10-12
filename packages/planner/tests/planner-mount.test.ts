@@ -8,6 +8,7 @@ import {
 import { PLANNER_TAB_IDS } from '../src/lib/planner/commands/index.ts';
 import Planner from '../src/lib/planner/Planner.svelte';
 import PlannerControls from '../src/lib/planner/PlannerControls.svelte';
+import { plannerTab } from '../src/lib/planner/tab.svelte.ts';
 
 describe('Planner component', () => {
   it('renders the app shell and its customization controls without a host router', () => {
@@ -16,14 +17,13 @@ describe('Planner component', () => {
     for (const label of [
       'Cookbooks',
       'Recipes',
-      'Features',
-      'Layout',
+      'Theme',
       'Settings',
       'Export',
     ]) {
       expect(body, label).toContain(label);
     }
-    expect(PLANNER_TAB_IDS).toHaveLength(6);
+    expect(PLANNER_TAB_IDS).toHaveLength(7);
   });
 
   it('builds its links from basePath, not from SvelteKit', () => {
@@ -32,6 +32,17 @@ describe('Planner component', () => {
     expect(appHref('/recipes/sales/')).toBe('/kitchen/recipes/sales/');
     setBasePath('');
     expect(appHref('/ai/')).toBe('/ai/');
+  });
+
+  it('keeps Features and Layout reachable after they left the tab strip', () => {
+    try {
+      plannerTab.active = 'features';
+      const { body } = render(PlannerControls, { props: {} });
+      expect(body).toContain('Show all');
+      expect(body).not.toMatch(/role="tab"[^>]*>\s*Features/);
+    } finally {
+      plannerTab.active = 'cookbooks';
+    }
   });
 
   it('offers the controls separately for hosts with their own shell', () => {

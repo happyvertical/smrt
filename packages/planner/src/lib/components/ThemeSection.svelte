@@ -3,7 +3,8 @@ import { Button } from '@happyvertical/smrt-ui';
 import { FieldLabel, Input, Select } from '@happyvertical/smrt-ui/forms';
 import {
   ColorSchemeToggle,
-  ThemeSwitcher,
+  themePresets,
+  tryGetThemeContext,
 } from '@happyvertical/smrt-ui/themes';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
 import { normalizeHex, THEME_FONTS } from '../theme/theme.ts';
@@ -22,7 +23,15 @@ let { provider = true }: ThemeSectionProps = $props();
 // The app's look. The preset and scheme controls change the shell's theme
 // provider, which ThemeBridge reads back into the document; the brand colour
 // writes the document and the bridge applies it.
+const context = tryGetThemeContext();
 const custom = $derived(cookbookStore.theme?.custom);
+const icons: Record<string, string> = {
+  material: '◆',
+  glass: '◇',
+  studio: '▣',
+  smrt: '✦',
+  happyvertical: '⬡',
+};
 let hex = $state('');
 let invalid = $state(false);
 
@@ -57,9 +66,27 @@ function resetToPreset() {
     The look of this app. It is saved with your cookbook and applies as you
     change it.
   </p>
-  {#if provider}
+  {#if provider && context}
+    <div class="cards" role="group" aria-label="Theme look">
+      {#each themePresets as preset (preset.id)}
+        {@const palette = context.state.resolvedScheme === 'dark' ? preset.dark : preset.light}
+        <button type="button" class="choice preset"
+          class:selected={!custom && (cookbookStore.theme?.preset ?? 'glass') === preset.id}
+          aria-pressed={!custom && (cookbookStore.theme?.preset ?? 'glass') === preset.id}
+          onclick={() => context?.setPreset(preset.id)}
+          style:--preview-bg={palette.background}
+          style:--preview-surface={palette.surface}
+          style:--preview-primary={palette.primary}
+          style:--preview-ink={palette.onSurface}>
+          <span class="choice-name"><span class="choice-icon" aria-hidden="true">{icons[preset.id]}</span>{preset.label}</span>
+          <span class="preview" aria-hidden="true">
+            <span class="preview-sidebar"><span></span><span></span><span></span></span>
+            <span class="preview-main"><span class="preview-title"></span><span class="preview-body"><span></span><span></span></span></span>
+          </span>
+        </button>
+      {/each}
+    </div>
     <div class="row">
-      <ThemeSwitcher label="Preset" variant="select" showIcons={false} />
       <ColorSchemeToggle variant="segmented" ariaLabel="Colour scheme" />
     </div>
   {/if}
@@ -124,6 +151,21 @@ function resetToPreset() {
 </section>
 
 <style>
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(10rem, 100%), 1fr)); gap: .75rem; }
+  .choice { display: grid; align-content: start; gap: .8rem; min-block-size: 8.5rem; padding: .85rem; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large, .75rem); background: var(--smrt-color-surface-container-low); color: var(--smrt-color-on-surface); text-align: start; cursor: pointer; transition: border-color .15s, background .15s, transform .15s; }
+  .choice:hover { border-color: var(--smrt-color-primary); background: var(--smrt-color-surface-container); transform: translateY(-2px); }
+  .choice.selected { border: 2px solid var(--smrt-color-primary); padding: calc(.85rem - 1px); background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+  .choice:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
+  .choice-name { display: inline-flex; align-items: center; gap: .55rem; font-size: 1rem; font-weight: 700; line-height: 1.2; }
+  .choice-icon { display: inline-grid; place-items: center; flex: none; inline-size: 1.5rem; block-size: 1.5rem; font-size: 1.35rem; color: var(--smrt-color-primary); }
+  .preview { display: flex; overflow: hidden; inline-size: 100%; block-size: 4.5rem; border-radius: .4rem; border: 1px solid color-mix(in srgb, var(--preview-ink) 20%, transparent); background: var(--preview-bg); }
+  .preview-sidebar { display: grid; align-content: start; gap: .35rem; inline-size: 23%; padding: .5rem .3rem; background: var(--preview-primary); }
+  .preview-sidebar span { block-size: .22rem; border-radius: 1rem; background: var(--preview-surface); opacity: .8; }
+  .preview-main { display: grid; align-content: start; gap: .4rem; flex: 1; padding: .6rem; }
+  .preview-title { inline-size: 55%; block-size: .32rem; border-radius: 1rem; background: var(--preview-ink); opacity: .7; }
+  .preview-body { display: grid; gap: .25rem; padding: .35rem; border-radius: .2rem; background: var(--preview-surface); }
+  .preview-body span { block-size: .2rem; border-radius: 1rem; background: var(--preview-primary); opacity: .7; }
+  .preview-body span:last-child { inline-size: 70%; opacity: .35; }
   .theme {
     display: grid;
     gap: var(--smrt-spacing-3);
