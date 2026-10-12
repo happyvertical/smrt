@@ -230,6 +230,17 @@ export function paymentRetryContract(postgres = false, enabled = true): void {
       },
     );
 
+    it('rejects missing revision metadata without posting', async () => {
+      const payment = await pending();
+      payment.updated_at = null;
+      await expect(payment.recordPayment(posting)).rejects.toThrow(
+        'Payment revision is missing',
+      );
+      expect(await journals.count({ where: { sourceRef: payment.id } })).toBe(
+        0,
+      );
+    });
+
     it('denies a foreign tenant before creating a journal', async () => {
       enableTenancy();
       const payment = await withTenant(

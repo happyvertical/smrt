@@ -641,6 +641,11 @@ export class Payment extends SmrtObject {
         // The revision claim is a write fence, including under PostgreSQL
         // repeatable-read snapshots. A stale contender must reload and retry
         // instead of posting from an earlier pending-payment snapshot.
+        if (!this.updated_at) {
+          throw new Error(
+            'Payment revision is missing; reload before recording',
+          );
+        }
         await this.claimRevision(this.updated_at);
         await this.postPaymentInTransaction(options);
       });
