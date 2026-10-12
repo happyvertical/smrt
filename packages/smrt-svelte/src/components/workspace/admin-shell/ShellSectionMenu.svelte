@@ -205,10 +205,12 @@ function onmove(move: SortableItemMove<SortableItem>): void {
       {#each entries as entry (entry.id)}
         <li class="smrt-section-menu__card">
           <a class="smrt-section-menu__card-link" href={entry.href} onclick={onNavigate}>
-            <span class="smrt-section-menu__card-icon">
-              <ShellSectionIcon name={entry.icon ?? SHELL_DEFAULT_SECTION_ICON} size={32} iconComponent={IconComponent} />
+            <span class="smrt-section-menu__card-heading">
+              <span class="smrt-section-menu__card-icon">
+                <ShellSectionIcon name={entry.icon ?? SHELL_DEFAULT_SECTION_ICON} size={28} iconComponent={IconComponent} />
+              </span>
+              <span class="smrt-section-menu__card-title">{entry.label}</span>
             </span>
-            <span class="smrt-section-menu__card-title">{entry.label}</span>
             {#if entry.item.description}
               <span class="smrt-section-menu__desc">{entry.item.description}</span>
             {/if}
@@ -257,9 +259,7 @@ function onmove(move: SortableItemMove<SortableItem>): void {
   .smrt-section-menu__chevron { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); }
   /* Fixed icon column so labels align whatever the glyph (or a missing one). */
   .smrt-section-menu :global(.smrt-shell-section-icon) { inline-size: 20px; block-size: 20px; }
-  /* Cards draw a 32px icon: its box must match, or the glyph spills out of
-     the centred circle. */
-  .smrt-section-menu__card-icon :global(.smrt-shell-section-icon) { inline-size: 32px; block-size: 32px; }
+  .smrt-section-menu__card-icon :global(.smrt-shell-section-icon) { inline-size: 28px; block-size: 28px; }
   /* Cards: a responsive grid; the whole card is one stretched link. */
   .smrt-section-menu__cards, .smrt-section-menu--cards :global(.smrt-sortable__items) { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr)); gap: var(--smrt-spacing-3); margin: 0; padding: 0; list-style: none; }
   .smrt-section-menu__card { position: relative; display: flex; flex-direction: column; gap: var(--smrt-spacing-3); min-inline-size: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); transition: background-color 120ms, border-color 120ms, transform 120ms; }
@@ -268,7 +268,8 @@ function onmove(move: SortableItemMove<SortableItem>): void {
   .smrt-section-menu__card-link::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
   .smrt-section-menu__card-link:focus-visible { outline: none; }
   .smrt-section-menu__card-link:focus-visible::after { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
-  .smrt-section-menu__card-icon { display: inline-grid; place-items: center; inline-size: 56px; block-size: 56px; border-radius: var(--smrt-radius-full, 9999px); background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+  .smrt-section-menu__card-heading { display: flex; align-items: center; gap: var(--smrt-spacing-2); min-inline-size: 0; }
+  .smrt-section-menu__card-icon { display: inline-grid; place-items: center; flex: 0 0 28px; inline-size: 28px; block-size: 28px; color: var(--smrt-color-primary); }
   .smrt-section-menu__card-title { font-size: var(--smrt-typography-title-medium-size, 1rem); font-weight: var(--smrt-typography-weight-medium, 500); overflow-wrap: anywhere; }
   .smrt-section-menu__desc { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
   .smrt-section-menu__card-foot { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2); }

@@ -1,7 +1,9 @@
 import {
   createThemeFromColor,
+  getTheme,
   isValidPreset,
   registerTheme,
+  type Theme,
   type ThemePreset,
 } from '@happyvertical/smrt-ui/themes';
 import { DEFAULT_THEME_PRESET, THEME_FONTS } from './theme.js';
@@ -30,7 +32,27 @@ export function applyCookbookTheme(theme: ResolvedCookbookTheme): ThemePreset {
     }
     return theme.preset as ThemePreset;
   }
-  return (
+  const basePreset = (
     isValidPreset(theme.preset) ? theme.preset : DEFAULT_THEME_PRESET
   ) as ThemePreset;
+  const font = theme.fontFamily && THEME_FONTS[theme.fontFamily];
+  if (!font) return basePreset;
+  const id = `cookbook-preset-${basePreset}-${theme.fontFamily?.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+  if (!registered.has(id)) {
+    const base = getTheme(basePreset);
+    const typography = Object.fromEntries(
+      Object.entries(base.typography).map(([key, token]) => [
+        key,
+        { ...token, fontFamily: 'var(--smrt-font-family)' },
+      ]),
+    ) as Theme['typography'];
+    registerTheme({
+      ...base,
+      id: id as ThemePreset,
+      fontFamily: font,
+      typography,
+    });
+    registered.add(id);
+  }
+  return id as ThemePreset;
 }
