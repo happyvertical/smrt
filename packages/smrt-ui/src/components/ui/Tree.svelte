@@ -134,7 +134,7 @@ function onItemKeydown(event: KeyboardEvent, index: number, item: FlatNode) {
       role="treeitem"
       class="tree__item"
       class:selected={selectedId === item.node.id}
-      style:padding-left="calc({item.depth} * var(--smrt-spacing-4, 16px) + var(--smrt-spacing-2, 8px))"
+      style:padding-left="calc({item.depth} * var(--smrt-spacing-4) + var(--smrt-spacing-2))"
       aria-level={item.depth + 1}
       aria-selected={selectedId === item.node.id}
       aria-expanded={item.hasChildren ? item.isExpanded : undefined}
@@ -168,11 +168,11 @@ function onItemKeydown(event: KeyboardEvent, index: number, item: FlatNode) {
   .tree__item {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-1, 4px);
-    padding-top: var(--smrt-spacing-1, 4px);
-    padding-bottom: var(--smrt-spacing-1, 4px);
-    padding-right: var(--smrt-spacing-2, 8px);
-    border-radius: var(--smrt-radius-small, 4px);
+    gap: var(--smrt-spacing-1);
+    padding-top: var(--smrt-spacing-1);
+    padding-bottom: var(--smrt-spacing-1);
+    padding-right: var(--smrt-spacing-2);
+    border-radius: var(--smrt-radius-small);
     cursor: pointer;
     color: var(--smrt-color-on-surface);
     user-select: none;

@@ -285,7 +285,7 @@ async function suggestionChanged(): Promise<void> {
 @layer smrt.theme {
   .field-policy-control-panel { display: grid; gap: var(--smrt-spacing-4); }
   .field-policy-control-panel header p, .field-policy-control-panel__detail > p { color: var(--smrt-color-on-surface-variant); }
-  .field-policy-control-panel__error { color: var(--smrt-color-error, #b42318); }
+  .field-policy-control-panel__error { color: var(--smrt-color-error); }
   .field-policy-control-panel__layers { display: grid; gap: var(--smrt-spacing-2); }
   .field-policy-control-panel__layers div { display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: var(--smrt-spacing-2); }
   .field-policy-control-panel__layers dt { font-weight: 600; }

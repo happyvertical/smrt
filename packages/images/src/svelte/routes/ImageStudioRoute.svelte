@@ -147,16 +147,16 @@ function handleEditorSave(image: StudioImage) {
     display: flex;
     flex-direction: column;
     gap: 1.75rem;
-    color: var(--smrt-color-on-surface, #e2e8f0);
+    color: var(--smrt-color-on-surface);
     background:
       radial-gradient(circle at top, color-mix(in srgb, var(--smrt-color-primary) 22%, transparent), transparent 40%),
-      var(--smrt-color-background, #020617);
+      var(--smrt-color-background);
     min-height: 100vh;
   }
 
   .images-route__eyebrow {
     margin: 0 0 0.5rem;
-    color: var(--smrt-color-primary, #7dd3fc);
+    color: var(--smrt-color-primary);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
@@ -175,7 +175,7 @@ function handleEditorSave(image: StudioImage) {
   .images-route__lede,
   .images-route__section-copy p {
     margin: 0.75rem 0 0;
-    color: var(--smrt-color-on-surface-variant, #cbd5e1);
+    color: var(--smrt-color-on-surface-variant);
     line-height: 1.6;
     max-width: 60rem;
   }
@@ -193,7 +193,7 @@ function handleEditorSave(image: StudioImage) {
     border-radius: 0.85rem;
     background: color-mix(in srgb, var(--smrt-color-surface-container) 72%, transparent);
     border: 1px solid color-mix(in srgb, var(--smrt-color-primary) 20%, transparent);
-    color: var(--smrt-color-on-surface, #e0f2fe);
+    color: var(--smrt-color-on-surface);
   }
 
   .images-route__workspace-grid {

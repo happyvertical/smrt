@@ -261,16 +261,16 @@ function formatTimestamp(date?: string | Date | null): string {
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
   .room-list__header :global(.create-room-btn) {
     padding: 0.5rem 0.75rem;
-    border: 1px dashed var(--smrt-color-outline, #74777f);
+    border: 1px dashed var(--smrt-color-outline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     background: transparent;
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
   .room-list__header :global(.create-room-btn:hover) {
-    background: var(--smrt-color-primary-container, #d6e3ff);
+    background: var(--smrt-color-primary-container);
   }
 
   .room-group {
@@ -287,13 +287,13 @@ function formatTimestamp(date?: string | Date | null): string {
     background: none;
     cursor: pointer;
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
   }
 
   .room-group__header:hover {
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   .room-group__chevron {
@@ -311,7 +311,7 @@ function formatTimestamp(date?: string | Date | null): string {
   }
 
   .room-group__count {
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
   }
 
@@ -331,18 +331,18 @@ function formatTimestamp(date?: string | Date | null): string {
     background: none;
     cursor: pointer;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     border-radius: var(--smrt-radius-small, 0.25rem);
     text-align: left;
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
   .room-item:hover {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
   }
 
   .room-item--active {
-    background: var(--smrt-color-secondary-container, #d7e3f7);
+    background: var(--smrt-color-secondary-container);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
@@ -351,7 +351,7 @@ function formatTimestamp(date?: string | Date | null): string {
   }
 
   .room-item:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
@@ -359,7 +359,7 @@ function formatTimestamp(date?: string | Date | null): string {
     flex-shrink: 0;
     width: 1.25rem;
     text-align: center;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
@@ -374,7 +374,7 @@ function formatTimestamp(date?: string | Date | null): string {
     flex-shrink: 0;
     width: 2rem;
     height: 2rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     object-fit: cover;
   }
 
@@ -382,9 +382,9 @@ function formatTimestamp(date?: string | Date | null): string {
     flex-shrink: 0;
     width: 2rem;
     height: 2rem;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-primary-container, #d6e3ff);
-    color: var(--smrt-color-on-primary-container, #001a41);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -408,7 +408,7 @@ function formatTimestamp(date?: string | Date | null): string {
 
   .room-item__preview {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -424,7 +424,7 @@ function formatTimestamp(date?: string | Date | null): string {
 
   .room-item__time {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .unread-badge {
@@ -434,9 +434,9 @@ function formatTimestamp(date?: string | Date | null): string {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #fff);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
     padding: 0 0.25rem;
   }
@@ -449,7 +449,7 @@ function formatTimestamp(date?: string | Date | null): string {
     gap: 0.5rem;
     padding: 2rem 1rem;
     text-align: center;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .room-list__empty p {
@@ -460,7 +460,7 @@ function formatTimestamp(date?: string | Date | null): string {
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
   .room-list__empty :global(.create-link) {
     background: none;
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
     text-decoration: underline;
   }

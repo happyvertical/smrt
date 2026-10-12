@@ -113,7 +113,7 @@ const { t } = useI18n();
   .summary-card {
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-medium, 12px);
+    border-radius: var(--smrt-radius-medium);
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -135,7 +135,7 @@ const { t } = useI18n();
     font-weight: var(--smrt-typography-label-small-weight, 500);
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: var(--smrt-typography-label-small-tracking, 0.5px);
+    letter-spacing: var(--smrt-typography-label-small-tracking);
   }
 
   .value {

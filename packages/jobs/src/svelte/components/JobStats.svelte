@@ -165,24 +165,24 @@ const successRateFormatted = $derived(
 
   .stat-card__label {
     font: var(--smrt-typography-body-small-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     margin-top: var(--smrt-spacing-xs, 0.25rem);
   }
 
   .stat-card--pending .stat-card__value {
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   .stat-card--running .stat-card__value {
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .stat-card--completed .stat-card__value {
-    color: var(--smrt-color-tertiary, #006c4f);
+    color: var(--smrt-color-tertiary);
   }
 
   .stat-card--failed .stat-card__value {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .job-stats__queues {
@@ -218,7 +218,7 @@ const successRateFormatted = $derived(
 
   .queue-card__running {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .queue-card__stats {
@@ -239,7 +239,7 @@ const successRateFormatted = $derived(
 
   .queue-stat__label {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 }
 </style>

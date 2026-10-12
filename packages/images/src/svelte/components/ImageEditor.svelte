@@ -290,17 +290,17 @@ async function handleAIEdit() {
     flex-direction: column;
     gap: 1rem;
     padding: 1.5rem;
-    background: var(--smrt-color-surface-container, #1a1a1a);
-    color: var(--smrt-color-on-surface, #fff);
-    border-radius: var(--smrt-radius-lg, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #333);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+    border-radius: var(--smrt-radius-lg);
+    border: 1px solid var(--smrt-color-outline-variant);
   }
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #333);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     padding-bottom: 1rem;
     margin-bottom: 0.5rem;
   }
@@ -322,7 +322,7 @@ async function handleAIEdit() {
   .empty-state {
     padding: 2rem;
     text-align: center;
-    color: var(--smrt-color-outline, #666);
+    color: var(--smrt-color-outline);
   }
 
   .editor-content {
@@ -338,9 +338,9 @@ async function handleAIEdit() {
     background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
-    background-color: var(--smrt-color-surface-container-high, #242424);
-    border-radius: var(--smrt-radius-md, 6px);
-    border: 1px dashed var(--smrt-color-outline-variant, #444);
+    background-color: var(--smrt-color-surface-container-high);
+    border-radius: var(--smrt-radius-md);
+    border: 1px dashed var(--smrt-color-outline-variant);
   }
 
   .editor-controls {
@@ -354,8 +354,8 @@ async function handleAIEdit() {
   /* Segmented button style for tabs */
   .mode-selector {
     display: flex;
-    background: var(--smrt-color-surface-container-high, #242424);
-    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-surface-container-high);
+    border-radius: var(--smrt-radius-full);
     padding: 0.25rem;
     gap: 0.25rem;
   }
@@ -367,14 +367,14 @@ async function handleAIEdit() {
     flex: 1;
     padding: 0.6rem 1rem;
     font-weight: var(--smrt-typography-weight-medium, 500);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
   }
 
   .tool-section h4 {
     margin: 0 0 1rem 0;
     font-size: var(--smrt-typography-title-medium-size, 0.95rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface-variant, #ccc);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .row {
@@ -390,7 +390,7 @@ async function handleAIEdit() {
     flex-direction: column;
     font-size: var(--smrt-typography-label-medium-size, 0.8rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-outline, #888);
+    color: var(--smrt-color-outline);
     gap: 0.25rem;
   }
 
@@ -415,18 +415,18 @@ async function handleAIEdit() {
   /* Migrated Buttons keep their bespoke filled-tonal / text-link / pill looks.
      :global() pierces into each Button's rendered <button> (see #1589). */
   .tool-section :global(.tonal-btn--filled) {
-    background: var(--smrt-color-surface-container-highest, #333);
-    color: var(--smrt-color-primary, #3b82f6);
-    border: 1px solid var(--smrt-color-outline-variant, #444);
+    background: var(--smrt-color-surface-container-highest);
+    color: var(--smrt-color-primary);
+    border: 1px solid var(--smrt-color-outline-variant);
     padding: 0.6rem 1.2rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: background 0.2s;
     margin-top: 1.25rem;
   }
 
   .tool-section :global(.tonal-btn--filled:hover:not(:disabled)) {
-    background: var(--smrt-color-surface-container-high, #3f3f3f);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .tool-section :global(.text-btn--link) {
@@ -434,12 +434,12 @@ async function handleAIEdit() {
     padding: 0;
   }
   .tool-section :global(.text-btn--link:hover) {
-    color: var(--smrt-color-on-surface, #fff);
+    color: var(--smrt-color-on-surface);
   }
 
   .tool-section :global(.primary-btn--pill) {
     padding: 0.6rem 1.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
@@ -449,23 +449,23 @@ async function handleAIEdit() {
 
   .hint {
     font-size: var(--smrt-typography-body-small-size, 0.8rem);
-    color: var(--smrt-color-outline, #888);
+    color: var(--smrt-color-outline);
     margin: 0 0 0.5rem 0;
   }
 
   .error-msg {
-    color: var(--smrt-color-error, #ef4444);
+    color: var(--smrt-color-error);
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
     padding: 0.5rem;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .success-msg {
-    color: var(--smrt-color-success, #22c55e);
+    color: var(--smrt-color-success);
     background: color-mix(in srgb, var(--smrt-color-success) 10%, transparent);
     padding: 0.5rem;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 }

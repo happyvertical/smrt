@@ -192,12 +192,12 @@ async function handleSubmit() {
   }
 
   small {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .error {
     margin: 0;
-    color: var(--smrt-color-error, #b91c1c);
+    color: var(--smrt-color-error);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     line-height: var(--smrt-typography-body-medium-line-height, 1.25rem);
     letter-spacing: var(--smrt-typography-body-medium-tracking, 0.015625rem);

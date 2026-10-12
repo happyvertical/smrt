@@ -86,7 +86,7 @@ function enhanceForm(form: HTMLFormElement) {
     gap: 0.35rem;
   }
   [role='alert'] {
-    color: var(--smrt-color-error, #b3261e);
+    color: var(--smrt-color-error);
   }
 }
 </style>

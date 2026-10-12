@@ -192,96 +192,96 @@ function formatDuration(ms: number | undefined): string {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .tool-call {
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    border-radius: var(--smrt-radius-medium, 8px);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-medium);
     overflow: hidden;
     font-family: var(--smrt-font-family, system-ui);
   }
 
   .tool-call--pending {
-    border-left: 3px solid var(--smrt-color-outline, #74777f);
+    border-left: 3px solid var(--smrt-color-outline);
   }
 
   .tool-call--running {
-    border-left: 3px solid var(--smrt-color-primary, #005ac1);
+    border-left: 3px solid var(--smrt-color-primary);
   }
 
   .tool-call--success {
-    border-left: 3px solid var(--smrt-color-success, #1e8e3e);
+    border-left: 3px solid var(--smrt-color-success);
   }
 
   .tool-call--error {
-    border-left: 3px solid var(--smrt-color-error, #b3261e);
+    border-left: 3px solid var(--smrt-color-error);
   }
 
   .tool-call--awaiting-confirmation {
-    border-left: 3px solid var(--smrt-color-tertiary, #7d5260);
+    border-left: 3px solid var(--smrt-color-tertiary);
   }
 
   .tool-call--applied {
-    border-left: 3px solid var(--smrt-color-success, #1e8e3e);
+    border-left: 3px solid var(--smrt-color-success);
   }
 
   .tool-call__header {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     width: 100%;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     border: none;
-    background: var(--smrt-color-surface-container-low, #f7f7fb);
+    background: var(--smrt-color-surface-container-low);
     cursor: pointer;
     text-align: left;
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     font: inherit;
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
   .tool-call__header:hover {
-    background: var(--smrt-color-surface-container, #f0f0f4);
+    background: var(--smrt-color-surface-container);
   }
 
   .tool-call__header:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
   .tool-call__status-dot {
     width: 8px;
     height: 8px;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     flex-shrink: 0;
   }
 
   .tool-call--pending .tool-call__status-dot {
-    background: var(--smrt-color-outline, #74777f);
+    background: var(--smrt-color-outline);
   }
 
   .tool-call--running .tool-call__status-dot {
-    background: var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-primary);
     animation: pulse 1.5s ease-in-out infinite;
   }
 
   .tool-call--success .tool-call__status-dot {
-    background: var(--smrt-color-success, #1e8e3e);
+    background: var(--smrt-color-success);
   }
 
   .tool-call--error .tool-call__status-dot {
-    background: var(--smrt-color-error, #b3261e);
+    background: var(--smrt-color-error);
   }
 
   .tool-call--awaiting-confirmation .tool-call__status-dot {
-    background: var(--smrt-color-tertiary, #7d5260);
+    background: var(--smrt-color-tertiary);
   }
 
   .tool-call--applied .tool-call__status-dot {
-    background: var(--smrt-color-success, #1e8e3e);
+    background: var(--smrt-color-success);
   }
 
   .tool-call__applied-fallback {
     margin: 0;
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .tool-call__name {
@@ -297,22 +297,22 @@ function formatDuration(ms: number | undefined): string {
   .tool-call__header-right {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     flex-shrink: 0;
   }
 
   .tool-call__duration {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   .tool-call__status-label {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .tool-call__chevron {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     transition: transform var(--smrt-duration-short2, 150ms);
   }
 
@@ -321,33 +321,33 @@ function formatDuration(ms: number | undefined): string {
   }
 
   .tool-call__body {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px) var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3) var(--smrt-spacing-3);
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-2, 8px);
-    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    background: var(--smrt-color-surface, #fefbff);
+    gap: var(--smrt-spacing-2);
+    border-top: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
   }
 
   .tool-call__section {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .tool-call__section-label {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: var(--smrt-typography-label-small-tracking, 0.5px);
+    letter-spacing: var(--smrt-typography-label-small-tracking);
   }
 
   .tool-call__json {
     margin: 0;
-    padding: var(--smrt-spacing-2, 8px);
-    border-radius: var(--smrt-radius-small, 4px);
-    background: var(--smrt-color-surface-container-low, #f7f7fb);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    padding: var(--smrt-spacing-2);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
     font-family: var(--smrt-font-family-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', monospace);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     line-height: var(--smrt-typography-body-small-line-height, 1.5);
@@ -359,30 +359,30 @@ function formatDuration(ms: number | undefined): string {
   }
 
   .tool-call__json--result {
-    background: var(--smrt-color-success-container, #f1f8e9);
-    color: var(--smrt-color-on-success-container, #33691e);
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
   }
 
   .tool-call__json--error {
-    background: var(--smrt-color-error-container, #ffdad6);
-    color: var(--smrt-color-on-error-container, #410002);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 
   .tool-call__running {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .tool-call__spinner {
     width: 16px;
     height: 16px;
-    border: 2px solid var(--smrt-color-primary-container, #d6e3ff);
-    border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border: 2px solid var(--smrt-color-primary-container);
+    border-top-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.8s linear infinite;
   }
 
@@ -409,7 +409,7 @@ function formatDuration(ms: number | undefined): string {
 
     .tool-call__spinner {
       animation: none;
-      border-top-color: var(--smrt-color-primary, #005ac1);
+      border-top-color: var(--smrt-color-primary);
     }
 
     .tool-call--running .tool-call__status-dot {

@@ -215,20 +215,20 @@ const stats = $derived.by(() => {
 
   .stat-card__label {
     font: var(--smrt-typography-body-small-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     margin-top: var(--smrt-spacing-xs, 0.25rem);
   }
 
   .stat-card--active .stat-card__value {
-    color: var(--smrt-color-tertiary, #006c4f);
+    color: var(--smrt-color-tertiary);
   }
 
   .stat-card--running .stat-card__value {
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .stat-card--error .stat-card__value {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .agent-dashboard__section {
@@ -249,7 +249,7 @@ const stats = $derived.by(() => {
   .empty-state {
     padding: var(--smrt-spacing-lg, 1.5rem);
     text-align: center;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .empty-state p {

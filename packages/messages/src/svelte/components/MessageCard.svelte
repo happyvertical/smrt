@@ -193,20 +193,20 @@ const _slackMeta = $derived.by(() => {
   .message-card {
     display: flex;
     align-items: stretch;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .message-card:hover {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
   }
 
   .message-card--selected {
-    background: var(--smrt-color-secondary-container, #d7e3f7);
+    background: var(--smrt-color-secondary-container);
   }
 
   .message-card--unread {
-    background: var(--smrt-color-surface, #fefbff);
+    background: var(--smrt-color-surface);
   }
 
   .select-col {
@@ -231,7 +231,7 @@ const _slackMeta = $derived.by(() => {
   }
 
   .message-content:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
@@ -251,7 +251,7 @@ const _slackMeta = $derived.by(() => {
 
   .sender-name {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -263,8 +263,8 @@ const _slackMeta = $derived.by(() => {
 
   .account-label {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-variant);
     padding: 0.125rem 0.375rem;
     border-radius: var(--smrt-radius-small, 0.25rem);
     white-space: nowrap;
@@ -279,7 +279,7 @@ const _slackMeta = $derived.by(() => {
 
   .date {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
   }
 
@@ -292,7 +292,7 @@ const _slackMeta = $derived.by(() => {
 
   .subject {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -311,7 +311,7 @@ const _slackMeta = $derived.by(() => {
 
   .preview {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -320,7 +320,7 @@ const _slackMeta = $derived.by(() => {
   .meta-inline {
     flex-shrink: 0;
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /*
@@ -337,7 +337,7 @@ const _slackMeta = $derived.by(() => {
     border: none;
     background: none;
     font-size: var(--smrt-typography-body-large-size, 1rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     opacity: 0.5;
     transition: opacity var(--smrt-duration-short2, 150ms);
   }

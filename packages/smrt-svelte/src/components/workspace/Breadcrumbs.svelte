@@ -129,7 +129,7 @@ const lastIndex = $derived(crumbs.length - 1);
   .crumb-link:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
   }
 
   @media (max-width: 640px) {

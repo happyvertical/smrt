@@ -62,7 +62,8 @@ describe('touch density', () => {
     expect(container.querySelector('.smrt-theme-root')).toHaveAttribute(
       'style',
       expect.stringContaining(
-        '--smrt-control-target-min: var(--smrt-touch-target-min, 48px)',
+        // No hex/px fallback: --smrt-touch-target-min is theme-required (#3826).
+        '--smrt-control-target-min: var(--smrt-touch-target-min)',
       ),
     );
     expect(screen.getByRole('textbox', { name: 'Name' })).toHaveAttribute(

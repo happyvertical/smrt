@@ -314,11 +314,11 @@ function handleInput(e: Event) {
     position: relative;
     display: flex;
     align-items: flex-start;
-    background-color: var(--smrt-color-surface, #fff);
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: var(--smrt-radius-small, 6px);
+    background-color: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-small);
     min-height: 40px;
-    padding: 0 var(--smrt-spacing-3, 12px);
+    padding: 0 var(--smrt-spacing-3);
     transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
@@ -330,8 +330,8 @@ function handleInput(e: Event) {
     flex: 1;
     display: flex;
     flex-direction: column;
-    padding-top: var(--smrt-spacing-2, 8px);
-    padding-bottom: var(--smrt-spacing-2, 8px);
+    padding-top: var(--smrt-spacing-2);
+    padding-bottom: var(--smrt-spacing-2);
   }
 
 
@@ -340,7 +340,7 @@ function handleInput(e: Event) {
     background: transparent;
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: var(--smrt-typography-body-large-line-height, 1.5);
-    letter-spacing: var(--smrt-typography-body-large-tracking, 0.5px);
+    letter-spacing: var(--smrt-typography-body-large-tracking);
     color: var(--smrt-color-on-surface);
     width: 100%;
     padding: 0;
@@ -369,10 +369,10 @@ function handleInput(e: Event) {
     border: none;
     background: transparent;
     color: var(--smrt-textarea-input-field-color);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     cursor: pointer;
     margin-right: -8px;
-    margin-top: var(--smrt-spacing-2, 8px);
+    margin-top: var(--smrt-spacing-2);
     transition: all 200ms;
   }
 
@@ -382,7 +382,7 @@ function handleInput(e: Event) {
   }
 
   .supporting-text {
-    padding: var(--smrt-spacing-1, 4px) 0 0;
+    padding: var(--smrt-spacing-1) 0 0;
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     min-height: 16px;
   }

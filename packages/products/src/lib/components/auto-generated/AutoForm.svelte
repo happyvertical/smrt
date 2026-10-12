@@ -158,9 +158,9 @@ function _getFieldType(
     max-width: 600px;
     margin: 0 auto;
     padding: 1.5rem;
-    background: var(--smrt-color-surface, #fff);
-    border-radius: var(--smrt-radius-md, 8px);
-    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
+    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-radius-md);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
   }
 
   .form-header {
@@ -171,13 +171,13 @@ function _getFieldType(
   .form-title {
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
     margin: 0 0 0.5rem 0;
   }
 
   .form-subtitle {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -192,27 +192,27 @@ function _getFieldType(
     gap: 0.75rem;
     margin-top: 1.5rem;
     padding-top: 1.5rem;
-    border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border-top: 1px solid var(--smrt-color-outline-variant);
   }
 
   .form-debug {
     margin-top: 2rem;
     padding: 1rem;
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
     border-radius: var(--smrt-radius-sm, 0.375rem);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border: 1px solid var(--smrt-color-outline-variant);
   }
 
   .form-debug summary {
     cursor: pointer;
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #374151);
+    color: var(--smrt-color-on-surface);
   }
 
   .form-debug pre {
     margin-top: 0.5rem;
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     white-space: pre-wrap;
     word-break: break-word;
   }

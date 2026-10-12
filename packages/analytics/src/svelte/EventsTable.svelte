@@ -144,7 +144,7 @@ function statusClass(status: string): string {
 	.status-pill {
 		display: inline-block;
 		padding: 0.125rem 0.5rem;
-		border-radius: var(--smrt-radius-full, 9999px);
+		border-radius: var(--smrt-radius-full);
 		font-size: var(--smrt-typography-label-small-size, 0.6875rem);
 		font-weight: var(--smrt-typography-weight-medium, 500);
 	}

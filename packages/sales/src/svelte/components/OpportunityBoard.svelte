@@ -130,7 +130,7 @@ function stageNameOf(stageId: string | null): string {
 
   .sales-opportunity-board__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -143,18 +143,18 @@ function stageNameOf(stageId: string | null): string {
   .column {
     flex: 1 0 14rem;
     min-width: 14rem;
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface-container-low);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
     padding: var(--smrt-spacing-2, 0.5rem);
   }
 
   .column.won {
-    border-top: 3px solid var(--smrt-color-success, #16a34a);
+    border-top: 3px solid var(--smrt-color-success);
   }
 
   .column.lost {
-    border-top: 3px solid var(--smrt-color-error, #dc2626);
+    border-top: 3px solid var(--smrt-color-error);
   }
 
   .column__title {
@@ -168,7 +168,7 @@ function stageNameOf(stageId: string | null): string {
   }
 
   .column__count {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-weight: var(--smrt-typography-weight-normal, 400);
   }
 
@@ -182,7 +182,7 @@ function stageNameOf(stageId: string | null): string {
   }
 
   .column__placeholder {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     text-align: center;
     padding: var(--smrt-spacing-2, 0.5rem);
   }
@@ -191,18 +191,18 @@ function stageNameOf(stageId: string | null): string {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1, 0.25rem);
-    background: var(--smrt-color-surface, #fff);
-    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
-    border-radius: var(--smrt-radius-sm, 4px);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-sm);
     padding: var(--smrt-spacing-2, 0.5rem);
   }
 
   .card--won {
-    border-color: var(--smrt-color-success, #16a34a);
+    border-color: var(--smrt-color-success);
   }
 
   .card--lost {
-    border-color: var(--smrt-color-error, #dc2626);
+    border-color: var(--smrt-color-error);
   }
 
   .card__name {
@@ -210,7 +210,7 @@ function stageNameOf(stageId: string | null): string {
   }
 
   .card__owner {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
 

@@ -135,10 +135,10 @@ const hasDocuments = $derived(
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .meeting-view {
-    --smrt-meeting-view-bg: var(--smrt-color-surface, #ffffff);
-    --smrt-meeting-view-border: var(--smrt-color-surface-container-high, #e5e7eb);
-    --smrt-meeting-view-header-bg: var(--smrt-color-surface-variant, #f5f5f5);
-    --smrt-meeting-view-card-hover: var(--smrt-color-surface-variant, #f5f5f5);
+    --smrt-meeting-view-bg: var(--smrt-color-surface);
+    --smrt-meeting-view-border: var(--smrt-color-surface-container-high);
+    --smrt-meeting-view-header-bg: var(--smrt-color-surface-variant);
+    --smrt-meeting-view-card-hover: var(--smrt-color-surface-variant);
 
     background: var(--smrt-meeting-view-bg);
   }
@@ -153,7 +153,7 @@ const hasDocuments = $derived(
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-xs, 0.25rem);
-    color: var(--smrt-color-primary, #1976d2);
+    color: var(--smrt-color-primary);
     text-decoration: none;
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     margin-bottom: var(--smrt-spacing-md, 1rem);
@@ -161,7 +161,7 @@ const hasDocuments = $derived(
   }
 
   .back-link:hover {
-    color: var(--smrt-color-primary, #0d47a1);
+    color: var(--smrt-color-primary);
   }
 
   .council-badge {
@@ -171,21 +171,21 @@ const hasDocuments = $derived(
     padding: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-sm, 0.5rem);
     background: var(--smrt-meeting-view-bg);
     border: 1px solid var(--smrt-meeting-view-border);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #666);
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: var(--smrt-spacing-sm, 0.5rem);
   }
 
   .council-icon {
-    font-size: var(--smrt-typography-label-large-size, 14px);
+    font-size: var(--smrt-typography-label-large-size);
   }
 
   .meeting-title {
     margin: 0;
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #333);
+    color: var(--smrt-color-on-surface);
     line-height: var(--smrt-typography-headline-small-line-height, 1.3);
   }
 
@@ -194,7 +194,7 @@ const hasDocuments = $derived(
     align-items: center;
     gap: var(--smrt-spacing-md, 1rem);
     margin-top: var(--smrt-spacing-sm, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #666);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 
@@ -215,7 +215,7 @@ const hasDocuments = $derived(
     margin: 0 0 var(--smrt-spacing-md, 1rem) 0;
     font-size: var(--smrt-typography-title-medium-size, 1.125rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #333);
+    color: var(--smrt-color-on-surface);
   }
 
   .documents-grid {
@@ -231,15 +231,15 @@ const hasDocuments = $derived(
     padding: var(--smrt-spacing-md, 1rem);
     background: var(--smrt-meeting-view-bg);
     border: 1px solid var(--smrt-meeting-view-border);
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     text-decoration: none;
-    color: var(--smrt-color-on-surface, #333);
+    color: var(--smrt-color-on-surface);
     transition: all var(--smrt-duration-fast, 150ms);
   }
 
   .document-card:hover {
     background: var(--smrt-meeting-view-card-hover);
-    border-color: var(--smrt-color-outline-variant, #d1d5db);
+    border-color: var(--smrt-color-outline-variant);
     transform: translateY(-1px);
   }
 
@@ -248,7 +248,7 @@ const hasDocuments = $derived(
   }
 
   .document-icon {
-    font-size: var(--smrt-typography-headline-small-size, 24px);
+    font-size: var(--smrt-typography-headline-small-size);
     flex-shrink: 0;
   }
 
@@ -266,25 +266,25 @@ const hasDocuments = $derived(
   .document-desc {
     display: block;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #666);
-    margin-top: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-on-surface-variant);
+    margin-top: var(--smrt-spacing-1);
   }
 
   .document-arrow {
     flex-shrink: 0;
-    font-size: var(--smrt-typography-body-large-size, 16px);
-    color: var(--smrt-color-on-surface-variant, #666);
+    font-size: var(--smrt-typography-body-large-size);
+    color: var(--smrt-color-on-surface-variant);
     transition: transform var(--smrt-duration-fast, 150ms);
   }
 
   .empty-state {
     text-align: center;
     padding: var(--smrt-spacing-3xl, 4rem) var(--smrt-spacing-lg, 1.5rem);
-    color: var(--smrt-color-on-surface-variant, #666);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .empty-icon {
-    font-size: var(--smrt-typography-display-medium-size, 48px);
+    font-size: var(--smrt-typography-display-medium-size);
     display: block;
     margin-bottom: var(--smrt-spacing-md, 1rem);
     opacity: 0.5;

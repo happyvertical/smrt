@@ -226,15 +226,15 @@ const colorClass = $derived.by(() => {
   }
 
   .currency-display.negative {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 
   .currency-display.positive {
-    color: var(--smrt-color-tertiary, #16a34a);
+    color: var(--smrt-color-tertiary);
   }
 
   .currency-display.invalid {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 }
 </style>

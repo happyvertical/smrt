@@ -102,33 +102,33 @@ export interface Props {
   .attachment-upload {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   .attachment-list {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .attachment-item {
     display: inline-flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    border-radius: var(--smrt-radius-sm, 8px);
-    background: var(--smrt-color-surface-variant, #e7e0ec);
-    font-size: var(--smrt-typography-body-medium-size, 13px);
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size);
     font-family: var(--smrt-font-family, system-ui);
   }
 
   .filename {
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .size {
-    color: var(--smrt-color-outline, #79747e);
-    font-size: var(--smrt-typography-label-small-size, 11px);
+    color: var(--smrt-color-outline);
+    font-size: var(--smrt-typography-label-small-size);
   }
 
   /*
@@ -140,22 +140,22 @@ export interface Props {
   .attachment-item :global(.remove) {
     background: none;
     border: none;
-    padding: 0 var(--smrt-spacing-1, 4px);
-    color: var(--smrt-color-error, #ba1a1a);
-    font-size: var(--smrt-typography-label-large-size, 14px);
+    padding: 0 var(--smrt-spacing-1);
+    color: var(--smrt-color-error);
+    font-size: var(--smrt-typography-label-large-size);
   }
 
   .drop-zone {
-    border: 2px dashed var(--smrt-color-outline-variant, #cac4d0);
-    border-radius: var(--smrt-radius-md, 12px);
-    padding: var(--smrt-spacing-3, 12px);
+    border: 2px dashed var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
+    padding: var(--smrt-spacing-3);
     text-align: center;
     transition: border-color var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .drop-zone.drag-over {
-    border-color: var(--smrt-color-primary, #6750a4);
-    background: var(--smrt-color-primary-container, #eaddff);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
   }
 
   .upload-label {
@@ -171,8 +171,8 @@ export interface Props {
   }
 
   .upload-text {
-    color: var(--smrt-color-outline, #79747e);
-    font-size: var(--smrt-typography-body-medium-size, 13px);
+    color: var(--smrt-color-outline);
+    font-size: var(--smrt-typography-body-medium-size);
     font-family: var(--smrt-font-family, system-ui);
   }
 }

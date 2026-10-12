@@ -119,15 +119,15 @@ const icons = {
     background-color: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
     border-radius: var(--smrt-radius-3xl, 32px); /* M3 extra large shape */
-    padding: var(--smrt-spacing-6, 24px);
+    padding: var(--smrt-spacing-6);
   }
 
   .sm .icon-container {
     width: 64px;
     height: 64px;
     margin-bottom: 1.5rem;
-    border-radius: var(--smrt-radius-xl, 16px);
-    padding: var(--smrt-spacing-4, 16px);
+    border-radius: var(--smrt-radius-xl);
+    padding: var(--smrt-spacing-4);
   }
 
   .lg .icon-container {
@@ -135,7 +135,7 @@ const icons = {
     height: 120px;
     margin-bottom: 2.5rem;
     border-radius: var(--smrt-radius-3xl, 32px);
-    padding: var(--smrt-spacing-8, 32px);
+    padding: var(--smrt-spacing-8);
   }
 
   .empty-title {
@@ -165,15 +165,15 @@ const icons = {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: 0 var(--smrt-spacing-6, 24px);
+    gap: var(--smrt-spacing-2);
+    padding: 0 var(--smrt-spacing-6);
     height: 40px;
     font: var(--smrt-typography-label-large-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-primary);
     background-color: var(--smrt-color-primary);
     border: none;
-    border-radius: var(--smrt-radius-2xl, 24px);
+    border-radius: var(--smrt-radius-2xl);
     text-decoration: none;
     cursor: pointer;
     transition: box-shadow 200ms, background-color 200ms;

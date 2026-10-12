@@ -152,7 +152,7 @@ useControlRegistration(() => {
   .switch[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-full); }
   @media (prefers-reduced-motion: reduce) { .switch__track, .switch__thumb { transition: none; } }
 
-  .switch[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .switch[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .switch[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .switch { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
 }

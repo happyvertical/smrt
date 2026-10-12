@@ -90,7 +90,7 @@ const periodLabel = $derived(
 
   .smrt-subscription-summary__label,
   .smrt-subscription-summary dt {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.8rem);
   }
 

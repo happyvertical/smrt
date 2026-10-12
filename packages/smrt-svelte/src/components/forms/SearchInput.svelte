@@ -220,15 +220,15 @@ const sizeClasses = {
     display: flex;
     align-items: center;
     width: 100%;
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background: var(--smrt-color-surface-container-low);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-md, 0.5rem);
     transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .search-input:focus-within {
-    background: var(--smrt-color-surface, #ffffff);
-    border-color: var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-surface);
+    border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 3px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
   }
 
@@ -242,7 +242,7 @@ const sizeClasses = {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .search-input__spinner {
@@ -261,12 +261,12 @@ const sizeClasses = {
     border: none;
     background: transparent;
     font-family: inherit;
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
     outline: none;
   }
 
   .search-input__field::placeholder {
-    color: var(--smrt-color-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /* Hide default search clear button */
@@ -282,19 +282,19 @@ const sizeClasses = {
     padding: 0;
     border: none;
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .search-input__clear:hover {
-    color: var(--smrt-color-on-surface, #111827);
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    color: var(--smrt-color-on-surface);
+    background: var(--smrt-color-surface-container);
   }
 
   .search-input__clear:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 

@@ -239,17 +239,17 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
     margin: 0;
     padding: 0.625rem 0.75rem;
     border-radius: 0.375rem;
-    background: var(--smrt-color-surface-variant, #f3f4f6);
+    background: var(--smrt-color-surface-variant);
   }
 
   .fs-flash-error {
-    color: var(--smrt-color-error, #991b1b);
-    background: var(--smrt-color-error-container, #fef2f2);
+    color: var(--smrt-color-error);
+    background: var(--smrt-color-error-container);
   }
 
   .fs-empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -282,14 +282,14 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
 
   .fs-description {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     line-height: 1.45;
   }
 
   .fs-key,
   .fs-package {
     font-size: 0.8125rem;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     overflow-wrap: anywhere;
   }
 
@@ -309,15 +309,15 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
 
   .fs-field-label {
     font-size: 0.8125rem;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .fs-field select {
     width: 100%;
     padding: 0.375rem 0.5rem;
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.375rem;
-    background: var(--smrt-color-surface, #fff);
+    background: var(--smrt-color-surface);
     color: inherit;
     font: inherit;
   }

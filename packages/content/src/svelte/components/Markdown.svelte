@@ -95,13 +95,13 @@ const rendered = $derived(renderMarkdownToHtml(content));
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface-variant);
     padding: 0.125rem 0.375rem;
-    border-radius: var(--smrt-radius-small, 4px);
+    border-radius: var(--smrt-radius-small);
   }
 
   .markdown-content :global(pre) {
     background: var(--smrt-color-surface-container-high);
     padding: var(--smrt-spacing-md, 0.75rem);
-    border-radius: var(--smrt-radius-medium, 8px);
+    border-radius: var(--smrt-radius-medium);
     overflow-x: auto;
     margin: var(--smrt-spacing-md, 0.75rem) 0;
   }
@@ -122,7 +122,7 @@ const rendered = $derived(renderMarkdownToHtml(content));
     width: min(100%, 48rem);
     height: auto;
     margin: var(--smrt-spacing-lg, 1rem) 0;
-    border-radius: var(--smrt-radius-medium, 8px);
+    border-radius: var(--smrt-radius-medium);
   }
 }
 </style>

@@ -22,7 +22,7 @@
  * Run: `node scripts/check-smrt-token-vocabulary.mjs` (wired into `pnpm lint`).
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -127,9 +127,119 @@ function main() {
   return violations;
 }
 
+/**
+ * Style-literal ratchet (issue #3826). Scans `.svelte` `<style>` blocks, with CSS
+ * comments removed, for bare colour literals and raw px lengths, and compares the
+ * per-file counts with `smrt-style-literal-allowlist.json`. Counts must match
+ * exactly: a new literal fails, and an allow-list entry the source no longer
+ * needs also fails so the list stays honest. `1px` (hairlines) and `0` are
+ * allowed everywhere; theme-required `var(--smrt-*, literal)` fallbacks are
+ * removed by `scripts/codemod-smrt-fallbacks.mjs`.
+ */
+const ALLOWLIST_PATH = join(ROOT, 'scripts', 'smrt-style-literal-allowlist.json');
+const STYLE_BLOCK_RE = /<style[^>]*>([\s\S]*?)<\/style>/g;
+const CSS_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
+// Colour literals only: `#1589` in a comment is an issue reference, and `url(#id)`
+// is an SVG reference. Both are excluded.
+const HEX_RE =
+  /(?<![\w&-])(?<!url\()#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![\w-])/g;
+const PX_RE = /(?<![\w.-])-?\d*\.?\d+px\b/g;
+const GLOBAL_PX = new Set(['0px', '1px']);
+
+/** `{ hex: { file: { literal: n } }, px: { file: n } }` for component style blocks. */
+function collectStyleLiterals() {
+  const hex = {};
+  const px = {};
+  for (const pkg of readdirSync(PACKAGES, { withFileTypes: true })) {
+    if (!pkg.isDirectory()) continue;
+    for (const file of listSources(join(PACKAGES, pkg.name, 'src'))) {
+      if (!file.endsWith('.svelte')) continue;
+      const rel = relative(ROOT, file);
+      if (TEST_FILE.test(rel)) continue;
+      const text = readFileSync(file, 'utf8');
+      const hexCounts = new Map();
+      let pxCount = 0;
+      for (const block of text.matchAll(STYLE_BLOCK_RE)) {
+        const css = block[1].replace(CSS_COMMENT_RE, '');
+        for (const m of css.matchAll(HEX_RE)) {
+          const key = m[0].toLowerCase();
+          hexCounts.set(key, (hexCounts.get(key) ?? 0) + 1);
+        }
+        for (const m of css.matchAll(PX_RE)) {
+          if (!GLOBAL_PX.has(m[0])) pxCount++;
+        }
+      }
+      if (hexCounts.size > 0) hex[rel] = Object.fromEntries([...hexCounts].sort());
+      if (pxCount > 0) px[rel] = pxCount;
+    }
+  }
+  return { hex, px };
+}
+
+function readAllowlist() {
+  if (!existsSync(ALLOWLIST_PATH)) return { hex: {}, px: {} };
+  return JSON.parse(readFileSync(ALLOWLIST_PATH, 'utf8'));
+}
+
+/** Literal violations: actual counts must equal the allow-list exactly. */
+function literalViolations(literals) {
+  const allow = readAllowlist();
+  const out = [];
+  const files = new Set([
+    ...Object.keys(literals.hex),
+    ...Object.keys(allow.hex ?? {}),
+    ...Object.keys(literals.px),
+    ...Object.keys(allow.px ?? {}),
+  ]);
+  for (const file of [...files].sort()) {
+    const actualHex = literals.hex[file] ?? {};
+    const allowedHex = allow.hex?.[file] ?? {};
+    const values = new Set([...Object.keys(actualHex), ...Object.keys(allowedHex)]);
+    for (const value of [...values].sort()) {
+      const actual = actualHex[value] ?? 0;
+      const allowed = allowedHex[value] ?? 0;
+      if (actual === allowed) continue;
+      out.push(
+        actual > allowed
+          ? `${file}: bare colour ${value} x${actual} (allow-listed ${allowed}); use a --smrt-color-* token or allow-list it in scripts/smrt-style-literal-allowlist.json`
+          : `${file}: allow-list entry ${value} x${allowed} is stale (actual ${actual}); regenerate with --write-allowlist`,
+      );
+    }
+    const actualPx = literals.px[file] ?? 0;
+    const allowedPx = allow.px?.[file] ?? 0;
+    if (actualPx === allowedPx) continue;
+    out.push(
+      actualPx > allowedPx
+        ? `${file}: ${actualPx} raw px value(s) (allow-listed ${allowedPx}); use a --smrt-spacing-*/--smrt-radius-* token where one fits, or allow-list it`
+        : `${file}: px allow-list entry ${allowedPx} is stale (actual ${actualPx}); regenerate with --write-allowlist`,
+    );
+  }
+  return out;
+}
+
 const violations = main();
-if (violations.length === 0) {
-  console.log('smrt token vocabulary: clean (every custom property uses --smrt-*).');
+const literals = collectStyleLiterals();
+
+if (process.argv.includes('--write-allowlist')) {
+  const body = {
+    $comment:
+      'Per-file counts of bare colour literals and raw px lengths in component <style> blocks. Regenerate with `node scripts/check-smrt-token-vocabulary.mjs --write-allowlist`; shrink it when a literal is converted.',
+    hex: literals.hex,
+    px: literals.px,
+  };
+  writeFileSync(ALLOWLIST_PATH, `${JSON.stringify(body, null, 2)}\n`);
+  console.log(
+    `wrote ${ALLOWLIST_PATH.replace(ROOT + '/', '')}: ${Object.keys(literals.hex).length} hex file(s), ${Object.keys(literals.px).length} px file(s).`,
+  );
+  process.exit(0);
+}
+
+const literalFailures = literalViolations(literals);
+
+if (violations.length === 0 && literalFailures.length === 0) {
+  console.log(
+    'smrt token vocabulary: clean (every custom property uses --smrt-*; style literals match the allow-list).',
+  );
   process.exit(0);
 }
 
@@ -139,8 +249,11 @@ for (const v of violations) {
     `${v.file}:${v.line}: ${v.label} uses --${v.name}${legacy}; use a --smrt-* token or --smrt-<component>-<name>`,
   );
 }
-console.error(
-  `\n${violations.length} non-smrt custom propert${violations.length === 1 ? 'y' : 'ies'}. ` +
-    'Run `node scripts/codemod-smrt-tokens.mjs` for legacy names.',
-);
+if (violations.length > 0) {
+  console.error(
+    `\n${violations.length} non-smrt custom propert${violations.length === 1 ? 'y' : 'ies'}. ` +
+      'Run `node scripts/codemod-smrt-tokens.mjs` for legacy names.',
+  );
+}
+for (const message of literalFailures) console.error(message);
 process.exit(1);

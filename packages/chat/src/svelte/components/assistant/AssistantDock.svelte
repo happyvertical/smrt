@@ -1005,8 +1005,8 @@ async function handleConfirmAction(requestId: string) {
     height: 100%;
     min-height: 0;
     font-family: var(--smrt-font-family, system-ui, sans-serif);
-    background: var(--smrt-color-surface, #ffffff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
   }
 
   .assistant-dock-layout {
@@ -1021,9 +1021,9 @@ async function handleConfirmAction(requestId: string) {
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.35rem 0.75rem;
-    border-top: 1px solid var(--smrt-color-outline-variant, #c4c7c5);
+    border-top: 1px solid var(--smrt-color-outline-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
-    color: var(--smrt-color-on-surface-variant, #44474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .assistant-dock-run {
@@ -1032,16 +1032,16 @@ async function handleConfirmAction(requestId: string) {
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.35rem 0.75rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c7c5);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .assistant-dock-tool-request {
     margin: 0.5rem 0;
     padding: 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant, #c4c7c5);
-    border-radius: var(--smrt-radius-md, 8px);
-    background: var(--smrt-color-surface-container, #f3f3f3);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
+    background: var(--smrt-color-surface-container);
   }
 
   .assistant-dock-tool-request p {
@@ -1053,7 +1053,7 @@ async function handleConfirmAction(requestId: string) {
   }
 
   .assistant-dock-tool-request-warning {
-    color: var(--smrt-color-error, #b3261e);
+    color: var(--smrt-color-error);
   }
 
   .assistant-dock-tool-request-details pre {
@@ -1093,15 +1093,15 @@ async function handleConfirmAction(requestId: string) {
       display: flex;
       justify-content: flex-start;
       align-items: center;
-      gap: var(--smrt-spacing-2, 8px);
+      gap: var(--smrt-spacing-2);
       flex-shrink: 0;
       width: 100%;
       min-height: 44px;
-      padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+      padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
       border: none;
-      border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-      background: var(--smrt-color-surface-container-low, #f7f7fb);
-      color: var(--smrt-color-on-surface, #1a1c1e);
+      border-bottom: 1px solid var(--smrt-color-outline-variant);
+      background: var(--smrt-color-surface-container-low);
+      color: var(--smrt-color-on-surface);
       font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
       font-family: inherit;
       border-radius: 0;
@@ -1111,7 +1111,7 @@ async function handleConfirmAction(requestId: string) {
 
     .assistant-dock .assistant-dock-layout > :global(.assistant-dock-threads-toggle::before) {
       content: '▸' / '';
-      color: var(--smrt-color-on-surface-variant, #43474e);
+      color: var(--smrt-color-on-surface-variant);
     }
 
     .assistant-dock .assistant-dock-layout[data-threads-open]
@@ -1120,7 +1120,7 @@ async function handleConfirmAction(requestId: string) {
     }
 
     .assistant-dock .assistant-dock-layout > :global(.assistant-dock-threads-toggle:focus-visible) {
-      outline: 2px solid var(--smrt-color-primary, #005ac1);
+      outline: 2px solid var(--smrt-color-primary);
       outline-offset: -2px;
     }
 
@@ -1132,7 +1132,7 @@ async function handleConfirmAction(requestId: string) {
       display: flex;
       max-width: none;
       max-height: 40%;
-      border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+      border-bottom: 1px solid var(--smrt-color-outline-variant);
     }
 
     .assistant-dock-threads > :global(.assistant-thread-list) {
@@ -1152,11 +1152,11 @@ async function handleConfirmAction(requestId: string) {
 
   .assistant-dock-empty {
     margin: 0;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    background: var(--smrt-color-surface-container-low, #f7f7fb);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-container-low);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .assistant-dock-scroll {
@@ -1164,8 +1164,8 @@ async function handleConfirmAction(requestId: string) {
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-3, 12px);
-    padding: var(--smrt-spacing-3, 12px);
+    gap: var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-3);
     min-height: 0;
   }
 
@@ -1175,7 +1175,7 @@ async function handleConfirmAction(requestId: string) {
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   /* Narrow-dock friendly bubbles: the user's message sits right, the
@@ -1189,26 +1189,26 @@ async function handleConfirmAction(requestId: string) {
   .assistant-dock-messages > li :global(.bubble),
   .assistant-dock-streaming :global(.bubble) {
     max-width: 85%;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border-radius: var(--smrt-radius-large, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border-radius: var(--smrt-radius-large);
     overflow-wrap: anywhere;
   }
 
   .assistant-dock-messages > li[data-role='user'] :global(.bubble),
   .assistant-dock-messages > li[data-role='user'] :global(.bubble--own) {
     align-self: flex-end;
-    background: var(--smrt-color-primary-container, #d8e2ff);
-    color: var(--smrt-color-on-primary-container, #001a41);
-    border-radius: var(--smrt-radius-large, 12px);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    border-radius: var(--smrt-radius-large);
   }
 
   .assistant-dock-messages > li:not([data-role='user']) :global(.bubble--agent),
   .assistant-dock-streaming :global(.bubble--agent) {
     align-self: flex-start;
-    background: var(--smrt-color-surface-container, #f0f0f4);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
     border-left: none;
-    border-radius: var(--smrt-radius-large, 12px);
+    border-radius: var(--smrt-radius-large);
   }
 
   .assistant-dock-streaming {
@@ -1223,9 +1223,9 @@ async function handleConfirmAction(requestId: string) {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-5, 20px);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-5);
+    color: var(--smrt-color-on-surface-variant);
     text-align: center;
   }
 
@@ -1235,7 +1235,7 @@ async function handleConfirmAction(requestId: string) {
   }
 
   .assistant-dock-thread-state h2 {
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-title-medium-font, 600 1rem/1.4 sans-serif);
   }
 
@@ -1248,7 +1248,7 @@ async function handleConfirmAction(requestId: string) {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   .assistant-dock-thread-loading {
@@ -1256,7 +1256,7 @@ async function handleConfirmAction(requestId: string) {
   }
 
   .assistant-dock-tool-call {
-    margin-top: var(--smrt-spacing-2, 8px);
+    margin-top: var(--smrt-spacing-2);
     min-width: 0;
   }
 
@@ -1267,17 +1267,17 @@ async function handleConfirmAction(requestId: string) {
 
   .assistant-dock-attachments {
     list-style: none;
-    margin: var(--smrt-spacing-2, 8px) 0 0;
+    margin: var(--smrt-spacing-2) 0 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .assistant-dock-attachment {
     display: flex;
     align-items: baseline;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
 
@@ -1303,64 +1303,64 @@ async function handleConfirmAction(requestId: string) {
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   .assistant-dock-action-unknown {
-    margin-top: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border-radius: var(--smrt-radius-medium, 8px);
-    background: var(--smrt-color-tertiary-container, #ffd8e4);
-    color: var(--smrt-color-on-tertiary-container, #31111d);
+    margin-top: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
 
   .assistant-dock-action-unknown p {
-    margin: 0 0 var(--smrt-spacing-2, 8px);
+    margin: 0 0 var(--smrt-spacing-2);
   }
 
   .assistant-dock-stale {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border-radius: var(--smrt-radius-medium, 8px);
-    background: var(--smrt-color-tertiary-container, #ffd8e4);
-    color: var(--smrt-color-on-tertiary-container, #31111d);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
 
   .assistant-dock-stale p {
-    margin: 0 0 var(--smrt-spacing-2, 8px);
+    margin: 0 0 var(--smrt-spacing-2);
   }
 
   .assistant-dock-failed {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border-radius: var(--smrt-radius-medium, 8px);
-    background: var(--smrt-color-error-container, #ffdad6);
-    color: var(--smrt-color-on-error-container, #410002);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
 
   .assistant-dock-failed p {
-    margin: 0 0 var(--smrt-spacing-2, 8px);
+    margin: 0 0 var(--smrt-spacing-2);
   }
 
   .assistant-dock-error {
     margin: 0;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-    color: var(--smrt-color-on-error-container, #410002);
-    background: var(--smrt-color-error-container, #ffdad6);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    color: var(--smrt-color-on-error-container);
+    background: var(--smrt-color-error-container);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .assistant-dock-single-actions {
     display: flex;
     justify-content: flex-end;
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px) 0;
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2) 0;
   }
 
   .assistant-dock-composer-header {
-    padding: 0 var(--smrt-spacing-2, 8px);
-    padding-top: var(--smrt-spacing-2, 8px);
+    padding: 0 var(--smrt-spacing-2);
+    padding-top: var(--smrt-spacing-2);
   }
 }
 </style>

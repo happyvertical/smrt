@@ -104,7 +104,7 @@ const safeHtml = $derived(
     width: min(100%, 48rem);
     height: auto;
     margin: var(--smrt-spacing-lg, 1rem) 0;
-    border-radius: var(--smrt-radius-medium, 8px);
+    border-radius: var(--smrt-radius-medium);
   }
 
   .content-body-renderer :global(figure[data-smrt-inline-image]) {

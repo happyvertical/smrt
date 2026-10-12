@@ -112,7 +112,7 @@ function handleEdit() {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.12em);
     text-transform: uppercase;
-    color: var(--smrt-color-primary, #0f766e);
+    color: var(--smrt-color-primary);
   }
 
   /* The open-preview button renders via <Button variant="primary"> (issue
@@ -121,13 +121,13 @@ function handleEdit() {
   .preview-card :global(.preview-open) {
     justify-self: start;
     border: 0;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     padding: 0.75rem 1rem;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .status {
-    color: var(--smrt-color-primary, #0f766e);
+    color: var(--smrt-color-primary);
     font-size: var(--smrt-typography-body-large-size, 0.95rem);
   }
 }

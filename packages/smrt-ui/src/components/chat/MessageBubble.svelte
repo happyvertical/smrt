@@ -131,10 +131,10 @@ const timeText = $derived(
   .bubble {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     max-width: 75%;
-    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
-    border-radius: var(--smrt-radius-large, 12px);
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+    border-radius: var(--smrt-radius-large);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     line-height: 1.4;
     word-break: break-word;
@@ -142,39 +142,39 @@ const timeText = $derived(
 
   /* default — a peer message; `own` is the current viewer's message. */
   .bubble--default {
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    color: var(--smrt-color-on-surface, #1b1b1f);
-    border-bottom-left-radius: var(--smrt-radius-small, 4px);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+    border-bottom-left-radius: var(--smrt-radius-small);
   }
   .bubble--default.bubble--own {
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
-    border-bottom-right-radius: var(--smrt-radius-small, 4px);
-    border-bottom-left-radius: var(--smrt-radius-large, 12px);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    border-bottom-right-radius: var(--smrt-radius-small);
+    border-bottom-left-radius: var(--smrt-radius-large);
   }
 
   /* agent — assistant message, accented on the leading edge. */
   .bubble--agent {
-    background: var(--smrt-color-tertiary-container, #ffd8e4);
-    color: var(--smrt-color-on-tertiary-container, #31111d);
-    border-bottom-left-radius: var(--smrt-radius-small, 4px);
-    border-left: 3px solid var(--smrt-color-tertiary, #7d5260);
+    background: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
+    border-bottom-left-radius: var(--smrt-radius-small);
+    border-left: 3px solid var(--smrt-color-tertiary);
   }
   .bubble--agent.bubble--own {
     border-left: none;
-    border-right: 3px solid var(--smrt-color-tertiary, #7d5260);
-    border-bottom-right-radius: var(--smrt-radius-small, 4px);
-    border-bottom-left-radius: var(--smrt-radius-large, 12px);
+    border-right: 3px solid var(--smrt-color-tertiary);
+    border-bottom-right-radius: var(--smrt-radius-small);
+    border-bottom-left-radius: var(--smrt-radius-large);
   }
 
   /* system — centered notice. */
   .bubble--system {
     max-width: 100%;
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     text-align: center;
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    padding: var(--smrt-spacing-2, 6px) var(--smrt-spacing-4, 16px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-4);
     border-radius: 0;
     align-self: center;
   }
@@ -188,7 +188,7 @@ const timeText = $derived(
   .bubble__header {
     display: flex;
     align-items: baseline;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
   .bubble__author {
     font-weight: var(--smrt-typography-weight-semibold, 600);
@@ -196,7 +196,7 @@ const timeText = $derived(
   }
   .bubble__time {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
     opacity: 0.8;
   }
 
@@ -213,7 +213,7 @@ const timeText = $derived(
   .bubble__actions {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 }
 </style>

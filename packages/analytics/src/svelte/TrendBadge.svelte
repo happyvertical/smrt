@@ -28,7 +28,7 @@ const display = $derived(percent === null ? 'new' : `${Math.abs(percent)}%`);
 		align-items: center;
 		gap: 0.25rem;
 		padding: 0.125rem 0.5rem;
-		border-radius: var(--smrt-radius-full, 9999px);
+		border-radius: var(--smrt-radius-full);
 		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
 		font-weight: var(--smrt-typography-weight-semibold, 600);
 		line-height: 1;

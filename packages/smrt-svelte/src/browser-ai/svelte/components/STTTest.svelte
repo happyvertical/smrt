@@ -206,29 +206,29 @@ function clearLogs() {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .stt-test {
-    padding: var(--smrt-spacing-md, 16px);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-radius: var(--smrt-radius-medium, 8px);
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    padding: var(--smrt-spacing-md);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface-container-low);
     max-width: 500px;
   }
 
   h3 {
-    margin: 0 0 var(--smrt-spacing-md, 16px);
+    margin: 0 0 var(--smrt-spacing-md);
     font: var(--smrt-typography-title-large-font, 1.125rem / 1.25 sans-serif);
   }
 
   .controls {
     display: flex;
-    gap: var(--smrt-spacing-sm, 12px);
+    gap: var(--smrt-spacing-sm);
     align-items: flex-end;
-    margin-bottom: var(--smrt-spacing-md, 16px);
+    margin-bottom: var(--smrt-spacing-md);
   }
 
   .adapter-select {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     flex: 1;
   }
 
@@ -238,43 +238,43 @@ function clearLogs() {
 
   .status {
     display: flex;
-    gap: var(--smrt-spacing-md, 16px);
+    gap: var(--smrt-spacing-md);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    margin-bottom: var(--smrt-spacing-md, 16px);
-    padding: var(--smrt-spacing-sm, 8px);
+    margin-bottom: var(--smrt-spacing-md);
+    padding: var(--smrt-spacing-sm);
     background: var(--smrt-color-surface, white);
-    border-radius: var(--smrt-radius-small, 4px);
+    border-radius: var(--smrt-radius-small);
   }
 
   .status-item {
     display: flex;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .record-controls {
     display: flex;
     justify-content: center;
-    margin: var(--smrt-spacing-md, 20px) 0;
+    margin: var(--smrt-spacing-md) 0;
   }
 
   .record-btn {
-    padding: var(--smrt-spacing-md, 16px) var(--smrt-spacing-xl, 32px);
+    padding: var(--smrt-spacing-md) var(--smrt-spacing-xl);
     font: var(--smrt-typography-label-large-font, 500 1rem / 1.25 sans-serif);
-    background: var(--smrt-color-tertiary, #006c4f);
-    color: var(--smrt-color-on-tertiary, #ffffff);
+    background: var(--smrt-color-tertiary);
+    color: var(--smrt-color-on-tertiary);
     border: none;
-    border-radius: var(--smrt-radius-medium, 8px);
+    border-radius: var(--smrt-radius-medium);
     cursor: pointer;
     transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
   }
 
   .record-btn:hover:not(:disabled) {
-    background: var(--smrt-color-tertiary-container, #006c4f);
+    background: var(--smrt-color-tertiary-container);
     opacity: 0.9;
   }
 
   .record-btn.recording {
-    background: var(--smrt-color-error, #ba1a1a);
+    background: var(--smrt-color-error);
     animation: pulse 1s infinite;
   }
 
@@ -289,25 +289,25 @@ function clearLogs() {
   }
 
   .error {
-    padding: var(--smrt-spacing-md, 12px);
-    background: var(--smrt-color-error-container, #ffdad6);
-    border: 1px solid var(--smrt-color-error, #ba1a1a);
-    border-radius: var(--smrt-radius-small, 6px);
-    color: var(--smrt-color-on-error-container, #410002);
+    padding: var(--smrt-spacing-md);
+    background: var(--smrt-color-error-container);
+    border: 1px solid var(--smrt-color-error);
+    border-radius: var(--smrt-radius-small);
+    color: var(--smrt-color-on-error-container);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    margin-bottom: var(--smrt-spacing-md, 16px);
+    margin-bottom: var(--smrt-spacing-md);
   }
 
   .result {
-    margin-bottom: var(--smrt-spacing-md, 16px);
+    margin-bottom: var(--smrt-spacing-md);
   }
 
   .transcript {
-    margin-top: var(--smrt-spacing-sm, 8px);
-    padding: var(--smrt-spacing-md, 12px);
+    margin-top: var(--smrt-spacing-sm);
+    padding: var(--smrt-spacing-md);
     background: var(--smrt-color-surface, white);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-radius: var(--smrt-radius-small, 6px);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-small);
     min-height: 60px;
     font: var(--smrt-typography-body-large-font, 1rem / 1.5 sans-serif);
   }
@@ -320,21 +320,21 @@ function clearLogs() {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: var(--smrt-spacing-sm, 8px);
+    margin-bottom: var(--smrt-spacing-sm);
   }
 
   .log-list {
-    background: var(--smrt-color-inverse-surface, #1f2937);
-    color: var(--smrt-color-inverse-on-surface, #d1d5db);
-    padding: var(--smrt-spacing-sm, 8px);
-    border-radius: var(--smrt-radius-small, 4px);
+    background: var(--smrt-color-inverse-surface);
+    color: var(--smrt-color-inverse-on-surface);
+    padding: var(--smrt-spacing-sm);
+    border-radius: var(--smrt-radius-small);
     max-height: 150px;
     overflow-y: auto;
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
   }
 
   .log-entry {
-    padding: var(--smrt-spacing-1, 4px) 0;
+    padding: var(--smrt-spacing-1) 0;
   }
 
   @media (prefers-reduced-motion: reduce) {

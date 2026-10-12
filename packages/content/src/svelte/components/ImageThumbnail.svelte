@@ -133,7 +133,7 @@ $effect(() => {
   .smrt-thumbnail-skeleton {
     width: 100%;
     height: 100%;
-    background: var(--smrt-color-surface-container-high, #242424);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .smrt-thumbnail-missing {
@@ -145,10 +145,10 @@ $effect(() => {
     background:
       linear-gradient(
         135deg,
-        color-mix(in srgb, var(--smrt-color-surface-container-low, #1f2937) 92%, transparent),
-        color-mix(in srgb, var(--smrt-color-surface-container-high, #111827) 96%, transparent)
+        color-mix(in srgb, var(--smrt-color-surface-container-low) 92%, transparent),
+        color-mix(in srgb, var(--smrt-color-surface-container-high) 96%, transparent)
       );
-    color: var(--smrt-color-on-surface-variant, #cbd5e1);
+    color: var(--smrt-color-on-surface-variant);
     text-align: center;
   }
 

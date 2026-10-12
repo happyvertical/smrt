@@ -129,14 +129,14 @@ const rate = $derived(winRate(opportunities));
   }
 
   .tile {
-    background: var(--smrt-color-surface, #fff);
-    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
     padding: var(--smrt-spacing-3, 0.75rem);
   }
 
   .tile dt {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -157,7 +157,7 @@ const rate = $derived(winRate(opportunities));
     font-size: var(--smrt-typography-title-small-size, 0.875rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .stages__list {
@@ -174,7 +174,7 @@ const rate = $derived(winRate(opportunities));
     align-items: baseline;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-1, 0.25rem) 0;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
@@ -184,7 +184,7 @@ const rate = $derived(winRate(opportunities));
   }
 
   .stages__count {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
 

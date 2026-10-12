@@ -114,22 +114,22 @@ const _tags = $derived.by(() => {
   .title {
     margin: 0;
     font: var(--smrt-typography-title-large-font, 600 1.375rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     transition: color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .article-link:hover .title {
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .article-link:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
     border-radius: var(--smrt-radius-medium, 0.5rem);
   }
 
   .excerpt {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     line-height: var(--smrt-typography-body-large-line-height, 1.5);
     margin: 0;
   }
@@ -140,7 +140,7 @@ const _tags = $derived.by(() => {
     gap: var(--smrt-spacing-md, 1rem);
     align-items: center;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .author {

@@ -85,13 +85,13 @@ setFormGroupContext(
 	.form-hint {
 		margin: 0.25rem 0 0;
 		font-size: var(--smrt-typography-body-small-size, 0.75rem);
-		color: var(--smrt-color-on-surface-variant, #6b7280);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	.form-error {
 		margin: 0.25rem 0 0;
 		font-size: var(--smrt-typography-body-small-size, 0.75rem);
-		color: var(--smrt-color-error, #ba1a1a);
+		color: var(--smrt-color-error);
 	}
 }
 </style>

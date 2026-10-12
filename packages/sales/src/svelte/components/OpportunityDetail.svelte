@@ -325,7 +325,7 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
   }
 
   .facts__item dt {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
 
@@ -337,18 +337,18 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
   .outcome {
     margin: 0;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-radius: var(--smrt-radius-sm, 4px);
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-surface-container);
   }
 
   .outcome--won {
-    background: var(--smrt-color-success-container, #dcfce7);
-    color: var(--smrt-color-on-success-container, #14532d);
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
   }
 
   .outcome--lost {
-    background: var(--smrt-color-error-container, #fee2e2);
-    color: var(--smrt-color-on-error-container, #7f1d1d);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 
   .controls {
@@ -381,12 +381,12 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
     font-size: var(--smrt-typography-title-small-size, 0.875rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -405,20 +405,20 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
     align-items: baseline;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem);
-    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
-    border-radius: var(--smrt-radius-sm, 4px);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-sm);
   }
 
   .timeline__item.next-action {
-    border-color: var(--smrt-color-primary, #2563eb);
-    background: var(--smrt-color-primary-container, #eff6ff);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
   }
 
   .timeline__kind {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .timeline__summary {
@@ -428,12 +428,12 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
   .timeline__dates {
     display: inline-flex;
     gap: var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
 
   .timeline__dates .overdue {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
@@ -458,12 +458,12 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     margin-right: var(--smrt-spacing-1, 0.25rem);
   }
 
   .conversions__note {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     margin-left: var(--smrt-spacing-1, 0.25rem);
   }
 

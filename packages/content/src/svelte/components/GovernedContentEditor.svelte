@@ -399,7 +399,7 @@ function handleSave(data: ContentData) {
   }
 
   .publish-readiness-card--advisory {
-    border-color: color-mix(in srgb, var(--smrt-color-tertiary, #d97706) 45%, transparent);
+    border-color: color-mix(in srgb, var(--smrt-color-tertiary) 45%, transparent);
   }
 
   .publish-readiness-card--blocked {

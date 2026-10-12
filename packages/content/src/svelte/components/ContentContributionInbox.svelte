@@ -325,7 +325,7 @@ $effect(() => {
     justify-content: center;
     min-width: 1.75rem;
     padding: 0.15rem 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary-container);
   }
 

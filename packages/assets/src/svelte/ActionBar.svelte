@@ -124,8 +124,8 @@ const count = $derived(selectedAssets.length);
     justify-content: space-between;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
-    background: var(--smrt-color-primary-container, #dbeafe);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background: var(--smrt-color-primary-container);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     animation: slideDown 200ms ease;
   }
 
@@ -143,7 +143,7 @@ const count = $derived(selectedAssets.length);
   .action-bar__count {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-primary-container, #002d6c);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .action-bar__actions {

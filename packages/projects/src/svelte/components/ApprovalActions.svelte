@@ -118,7 +118,7 @@ const canDelete = $derived(status === 'draft' && ondelete);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-label-large-weight, 500);
     padding: 0.5rem 1rem;
-    border-radius: var(--smrt-radius-small, 8px);
+    border-radius: var(--smrt-radius-small);
   }
 
   .status-message.success {

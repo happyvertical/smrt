@@ -203,8 +203,8 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     justify-content: space-between;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
-    background: var(--smrt-color-surface, #ffffff);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background: var(--smrt-color-surface);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     flex-wrap: wrap;
   }
 
@@ -232,14 +232,14 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     min-width: 180px;
     max-width: 320px;
     height: 36px;
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background: var(--smrt-color-surface-container-low);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     transition: border-color 150ms ease;
   }
 
   .asset-toolbar__search:focus-within {
-    border-color: var(--smrt-color-primary, #005ac1);
+    border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 2px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
   }
 
@@ -247,7 +247,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     display: flex;
     align-items: center;
     padding-left: var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /* The search field renders via <Input class="search-field"> (issue #1589). It
@@ -263,7 +263,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
     outline: none;
     min-width: 0;
   }
@@ -274,7 +274,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
   }
 
   .asset-toolbar__search :global(.search-field::placeholder) {
-    color: var(--smrt-color-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .asset-toolbar__search :global(.search-field::-webkit-search-cancel-button) {
@@ -291,13 +291,13 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     padding: 0;
     border: none;
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
-    border-radius: var(--smrt-radius-full, 9999px);
+    color: var(--smrt-color-on-surface-variant);
+    border-radius: var(--smrt-radius-full);
   }
 
   .asset-toolbar__search :global(.search-clear:hover) {
-    color: var(--smrt-color-on-surface, #111827);
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    color: var(--smrt-color-on-surface);
+    background: var(--smrt-color-surface-container);
   }
 
   /* Selects render via <Select class="asset-toolbar__select"> (issue #1589). The
@@ -308,19 +308,19 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     width: auto;
     height: 36px;
     padding: 0 var(--smrt-spacing-8, 2rem) 0 var(--smrt-spacing-3, 0.75rem);
-    background-color: var(--smrt-color-surface-container-low, #f9fafb);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background-color: var(--smrt-color-surface-container-low);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
     cursor: pointer;
   }
 
   /* View Toggle */
   .view-toggle {
     display: flex;
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
   }
@@ -338,7 +338,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
   }
 
   .view-toggle :global(.view-toggle__btn:not(:last-child)) {
-    border-right: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border-right: 1px solid var(--smrt-color-outline-variant);
   }
 
   /* Upload Button — renders via <Button variant="primary" class="upload-btn">

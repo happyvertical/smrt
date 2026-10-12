@@ -96,7 +96,7 @@ function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
   .empty {
     text-align: center;
     padding: var(--smrt-spacing-3xl, 3rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .loading p,

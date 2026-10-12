@@ -104,12 +104,12 @@ const _lastSyncFormatted = $derived.by(() => {
   .name {
     margin: 0;
     font: var(--smrt-typography-title-medium-font, 500 1rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   .email {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -117,7 +117,7 @@ const _lastSyncFormatted = $derived.by(() => {
 
   .provider {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
@@ -136,22 +136,22 @@ const _lastSyncFormatted = $derived.by(() => {
   }
 
   .status--active {
-    background: var(--smrt-color-tertiary-container, #d7f8d7);
-    color: var(--smrt-color-on-tertiary-container, #0a3a0a);
+    background: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
   }
 
   .status--inactive {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .sync-time {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .unread-count {
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .actions {
@@ -171,20 +171,20 @@ const _lastSyncFormatted = $derived.by(() => {
    */
   .actions :global(.action-btn) {
     padding: 0.375rem 0.75rem;
-    border: 1px solid var(--smrt-color-outline, #72787e);
+    border: 1px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    background: var(--smrt-color-surface, #fefbff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
   }
 
   .actions :global(.action-btn):hover {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
   }
 
   .actions :global(.action-btn--danger) {
-    color: var(--smrt-color-error, #ba1a1a);
-    border-color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
+    border-color: var(--smrt-color-error);
   }
 }
 </style>

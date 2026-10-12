@@ -599,7 +599,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     justify-content: center;
     min-height: 2.5rem;
     padding: 0 1rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     border: 1px solid var(--smrt-color-outline-variant);
     background: color-mix(
       in srgb,
@@ -681,7 +681,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     align-items: center;
     min-height: 2rem;
     padding: 0 0.8rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: color-mix(
       in srgb,
       var(--smrt-color-surface-container-low) 90%,
@@ -741,7 +741,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
   }
 
   .inline-form-shell :global(.load-button) {
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     border: 1px solid color-mix(
       in srgb,
       var(--smrt-color-primary) 35%,
@@ -760,7 +760,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     justify-content: center;
     min-width: 2rem;
     min-height: 2rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: color-mix(
       in srgb,
       var(--smrt-color-primary) 14%,

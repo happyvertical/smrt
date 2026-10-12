@@ -230,6 +230,6 @@ function choose(id: string) {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-article{min-width:0;overflow-wrap:anywhere;border-block-start:1px solid var(--smrt-color-outline-variant,#ccc);padding-block:1rem}.controls{display:flex;flex-wrap:wrap;gap:.5rem;margin-block:.75rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}fieldset{margin-block:1rem;min-width:0}
+article{min-width:0;overflow-wrap:anywhere;border-block-start:1px solid var(--smrt-color-outline-variant);padding-block:1rem}.controls{display:flex;flex-wrap:wrap;gap:.5rem;margin-block:.75rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}fieldset{margin-block:1rem;min-width:0}
 }
 </style>

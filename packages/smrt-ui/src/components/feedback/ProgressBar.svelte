@@ -112,12 +112,12 @@ const displayLabel = $derived.by(() => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: var(--smrt-spacing-2, 8px);
+    margin-bottom: var(--smrt-spacing-2);
   }
 
   .progress-label {
     font: var(--smrt-typography-label-large-font);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .sm .progress-label {
@@ -127,14 +127,14 @@ const displayLabel = $derived.by(() => {
   .over-badge {
     font: var(--smrt-typography-label-small-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .progress-track {
     width: 100%;
     height: 4px;
-    background-color: var(--smrt-color-surface-container-highest, #e0e2ec);
-    border-radius: var(--smrt-radius-sm, 4px);
+    background-color: var(--smrt-color-surface-container-highest);
+    border-radius: var(--smrt-radius-sm);
     overflow: hidden;
   }
 
@@ -144,7 +144,7 @@ const displayLabel = $derived.by(() => {
 
   .lg .progress-track {
     height: 8px;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
   }
 
   .progress-bar {
@@ -158,8 +158,8 @@ const displayLabel = $derived.by(() => {
     }
   }
 
-  .color-primary { background-color: var(--smrt-color-primary, #005ac1); }
-  .color-tertiary { background-color: var(--smrt-color-tertiary, #6b5778); }
-  .color-error { background-color: var(--smrt-color-error, #ba1a1a); }
+  .color-primary { background-color: var(--smrt-color-primary); }
+  .color-tertiary { background-color: var(--smrt-color-tertiary); }
+  .color-error { background-color: var(--smrt-color-error); }
 }
 </style>

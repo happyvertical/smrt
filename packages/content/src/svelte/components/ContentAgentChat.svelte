@@ -536,7 +536,7 @@ async function handleSendMessage(content: string) {
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--smrt-color-surface, #fefbff);
+    background: var(--smrt-color-surface);
     overflow: hidden;
   }
 
@@ -548,18 +548,18 @@ async function handleSendMessage(content: string) {
     height: 100%;
     padding: 2rem;
     text-align: center;
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   .spinner {
     display: inline-block;
     width: 16px;
     height: 16px;
-    border: 2px solid var(--smrt-color-outline-variant, #c4c6d0);
-    border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-top-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-full);
     animation: spin 1s linear infinite;
-    margin-right: var(--smrt-spacing-2, 8px);
+    margin-right: var(--smrt-spacing-2);
     vertical-align: middle;
   }
   
@@ -568,31 +568,31 @@ async function handleSendMessage(content: string) {
   }
 
   .model-bar {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    background: var(--smrt-color-surface-container-lowest, #ffffff);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    background: var(--smrt-color-surface-container-lowest);
   }
 
   .content-agent-chat-container :global(.smrt-select) {
     width: 100%;
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    border-radius: var(--smrt-radius-md, 8px);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    border-radius: var(--smrt-radius-md);
     border: none;
-    background: var(--smrt-color-surface-container-low, #f7f7fb);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     outline: none;
     cursor: pointer;
   }
 
   .content-agent-chat-container :global(.smrt-select:disabled) {
-    background: var(--smrt-color-surface-container, #f3f4f9);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
     cursor: not-allowed;
     opacity: 0.7;
   }
 
   .content-agent-chat-container :global(.smrt-select:focus) {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
   }
 
   .chat-main {
@@ -615,9 +615,9 @@ async function handleSendMessage(content: string) {
   .topic-footer {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    background: var(--smrt-color-surface-container-lowest, #ffffff);
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    background: var(--smrt-color-surface-container-lowest);
   }
 
   .topic-footer :global(.smrt-select) {
@@ -627,12 +627,12 @@ async function handleSendMessage(content: string) {
   .topic-footer :global(.topic-action-btn) {
     display: inline-flex;
     align-items: center;
-    gap: var(--smrt-spacing-1, 4px);
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    border-radius: var(--smrt-radius-sm, 4px);
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-sm);
     background: none;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     cursor: pointer;
     white-space: nowrap;
@@ -640,36 +640,36 @@ async function handleSendMessage(content: string) {
   }
 
   .topic-footer :global(.topic-action-btn:hover:not(:disabled)) {
-    background: var(--smrt-color-surface-variant, #e1e2e8);
-    color: var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-primary);
   }
 
   .topic-footer :global(.topic-cancel-btn) {
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
     border: none;
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   .new-topic-row {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     width: 100%;
   }
 
   .new-topic-row :global(.new-topic-input) {
     flex: 1;
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    border-radius: var(--smrt-radius-sm, 4px);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-sm);
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     outline: none;
-    background: var(--smrt-color-surface, #ffffff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
   }
 
   .new-topic-row :global(.new-topic-input:focus) {
-    border-color: var(--smrt-color-primary, #005ac1);
+    border-color: var(--smrt-color-primary);
   }
 }
 </style>

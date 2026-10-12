@@ -117,7 +117,7 @@ function handleInput(event: Event & { currentTarget: HTMLTextAreaElement }) {
     min-height: 0;
     box-sizing: border-box;
     border: 0;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     background: transparent;
     color: var(--smrt-color-on-surface);
     font: inherit;
@@ -149,13 +149,13 @@ function handleInput(event: Event & { currentTarget: HTMLTextAreaElement }) {
   }
 
   .content-title-field-shell :global(.content-title-field):focus {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
     background: var(--smrt-color-surface-container-low, rgb(0 0 0 / 4%));
   }
 
   .content-title-field-shell :global(.content-title-field[aria-invalid='true']) {
-    outline: 2px solid var(--smrt-color-error, #b3261e);
+    outline: 2px solid var(--smrt-color-error);
     outline-offset: 2px;
   }
 }

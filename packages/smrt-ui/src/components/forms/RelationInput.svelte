@@ -347,7 +347,7 @@ $effect(() => () => clearTimeout(timer));
 @layer smrt.theme {
   .relation-input {
     display: grid;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     min-width: 0;
   }
   .field {
@@ -355,8 +355,8 @@ $effect(() => () => clearTimeout(timer));
   }
   .field :global(.clear) {
     position: absolute;
-    right: var(--smrt-spacing-1, 4px);
-    bottom: var(--smrt-spacing-1, 4px);
+    right: var(--smrt-spacing-1);
+    bottom: var(--smrt-spacing-1);
   }
   .option-label,
   .option-detail {

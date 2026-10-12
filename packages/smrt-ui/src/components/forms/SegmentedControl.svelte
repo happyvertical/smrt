@@ -259,7 +259,7 @@ useControlRegistration(() => {
   label:has(input:focus-visible) { outline: 2px solid var(--smrt-color-primary); outline-offset: -3px; } label.disabled, label:has(input:disabled) { opacity: .5; cursor: not-allowed; }
   :global(.segmented[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
 
-  .segmented[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .segmented[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .segmented[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   label { min-height: max(2.5rem, var(--smrt-control-target-min, 0px)); min-width: var(--smrt-control-target-min, 0px); }
   input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }

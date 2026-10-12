@@ -2212,16 +2212,16 @@ function handleEditorDragEnd() {
     block-size: 44px;
     padding: 0;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: color-mix(in srgb, var(--smrt-color-surface) 94%, transparent);
-    color: var(--smrt-color-primary, #3558d6);
+    color: var(--smrt-color-primary);
     box-shadow: var(--smrt-elevation-3, 0 0.4rem 1rem color-mix(in srgb, var(--smrt-color-shadow) 20%, transparent));
     cursor: pointer;
   }
 
   .image-change-badge:hover,
   .image-change-badge:focus-visible {
-    background: var(--smrt-color-primary-container, #dde3ff);
+    background: var(--smrt-color-primary-container);
   }
 
   .image-control-popover :global(.editor-popover-button.editor-popover-button--change) {
@@ -2231,7 +2231,7 @@ function handleEditorDragEnd() {
     padding: 0 0.7rem 0 0.55rem;
     gap: 0.3rem;
     display: inline-flex;
-    color: var(--smrt-color-primary, #3558d6);
+    color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
@@ -2256,7 +2256,7 @@ function handleEditorDragEnd() {
     gap: 0.1rem;
     padding: 0.25rem;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: color-mix(in srgb, var(--smrt-color-surface) 96%, transparent);
     color: var(--smrt-color-on-surface);
     box-shadow: var(--smrt-elevation-5, 0 0.75rem 1.75rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent));
@@ -2279,7 +2279,7 @@ function handleEditorDragEnd() {
     height: 2rem;
     min-width: 2rem;
     padding: 0;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
   }
 
   /* Move up / Move down: full 44px touch targets. */
@@ -2300,7 +2300,7 @@ function handleEditorDragEnd() {
     left: 1rem;
     right: 1rem;
     height: 4px;
-    border-radius: var(--smrt-radius-sm, 2px);
+    border-radius: var(--smrt-radius-sm);
     background: var(--smrt-color-primary);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--smrt-color-primary) 25%, transparent);
     pointer-events: none;
@@ -2325,7 +2325,7 @@ function handleEditorDragEnd() {
     width: 1.45rem;
     height: 1.45rem;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface);
     box-shadow: var(--smrt-elevation-4, 0 0.45rem 1rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent));
     cursor: nwse-resize;

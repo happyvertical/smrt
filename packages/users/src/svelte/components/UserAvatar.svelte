@@ -76,7 +76,7 @@ function getColor(name: string): string {
     justify-content: center;
     width: 2.5rem;
     height: 2.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     color: var(--smrt-color-on-primary, white);
     font: var(--smrt-typography-label-large-font, 600 0.875rem / 1.25 sans-serif);
   }

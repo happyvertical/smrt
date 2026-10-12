@@ -163,13 +163,13 @@ export function getElement(): HTMLSelectElement | null {
 		padding: 0.5rem 2rem 0.5rem 0.75rem;
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 		line-height: var(--smrt-typography-body-medium-line-height, 1.5);
-		color: var(--smrt-color-on-surface, #1f2937);
-		background-color: var(--smrt-color-surface, #fff);
+		color: var(--smrt-color-on-surface);
+		background-color: var(--smrt-color-surface);
 		background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2379747e' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
 		background-position: right 0.5rem center;
 		background-repeat: no-repeat;
 		background-size: 1.5em 1.5em;
-		border: 1px solid var(--smrt-color-outline, #6b7280);
+		border: 1px solid var(--smrt-color-outline);
 		border-radius: 0.375rem;
 		appearance: none;
 		cursor: pointer;
@@ -180,17 +180,17 @@ export function getElement(): HTMLSelectElement | null {
 
 	.select:focus {
 		outline: none;
-		border-color: var(--smrt-color-primary, #005ac1);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #005ac1) 10%, transparent);
+		border-color: var(--smrt-color-primary);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
 	}
 
 	.select[data-smrt-highlighted='true'] {
-		outline: 3px solid var(--smrt-color-tertiary, #7d5260);
+		outline: 3px solid var(--smrt-color-tertiary);
 		outline-offset: 3px;
 	}
 
 	.select:disabled {
-		background-color: var(--smrt-color-surface-container-high, #f3f4f6);
+		background-color: var(--smrt-color-surface-container-high);
 		cursor: not-allowed;
 		opacity: 0.7;
 	}
@@ -210,7 +210,7 @@ export function getElement(): HTMLSelectElement | null {
 		}
 	}
 
-  .select[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .select[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .select[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .select { min-height: var(--smrt-control-target-min, 0px); }
 }

@@ -266,7 +266,7 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
     padding: 0.25rem 0.75rem;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-label-medium-weight, 500);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     white-space: nowrap;
     text-transform: capitalize;
     background-color: var(--smrt-badge-bg);

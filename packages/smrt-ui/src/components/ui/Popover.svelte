@@ -118,7 +118,7 @@ $effect(() => {
   .popover__trigger:focus-visible, .popover__panel:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   .popover__trigger:disabled { opacity: .5; cursor: not-allowed; }
   /* Icon trigger: a 44px round glyph in the surrounding colour. Hover and open nudge the glyph; focus keeps the standard primary ring (a soft ring in the glyph's colour fell under 3:1 on ordinary surfaces). */
-  .popover__trigger--icon { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; inline-size: 2.75rem; block-size: 2.75rem; padding: 0; border: none; border-radius: var(--smrt-radius-full, 999px); background: transparent; color: inherit; }
+  .popover__trigger--icon { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; inline-size: 2.75rem; block-size: 2.75rem; padding: 0; border: none; border-radius: var(--smrt-radius-full); background: transparent; color: inherit; }
   .popover__trigger--icon:hover:not(:disabled), .popover__trigger--icon[aria-expanded='true'] { background: transparent; color: color-mix(in srgb, currentColor 80%, var(--smrt-color-on-surface)); }
   .popover__trigger--icon:focus-visible { background: transparent; }
   .popover__panel { position: absolute; z-index: var(--smrt-z-index-popover, 1000); box-sizing: border-box; inline-size: var(--smrt-popover-panel-width, auto); min-width: min(16rem, calc(100vw - 2rem)); max-width: calc(100vw - 2rem); padding: var(--smrt-popover-panel-padding, var(--smrt-spacing-4)); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large); background: var(--smrt-color-surface-container); color: var(--smrt-color-on-surface); box-shadow: var(--smrt-elevation-3); }

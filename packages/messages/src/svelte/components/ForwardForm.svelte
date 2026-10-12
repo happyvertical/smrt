@@ -108,47 +108,47 @@ export interface Props {
   .forward-form {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-3, 12px);
-    border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
-    border-radius: var(--smrt-radius-md, 12px);
-    background: var(--smrt-color-surface, #fffbfe);
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-3);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
+    background: var(--smrt-color-surface);
     font-family: var(--smrt-font-family, system-ui);
   }
 
   .forward-header {
-    font-size: var(--smrt-typography-title-small-size, 13px);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    font-size: var(--smrt-typography-title-small-size);
+    color: var(--smrt-color-on-surface-variant);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .forwarded-original {
-    padding: var(--smrt-spacing-2, 8px);
-    background: var(--smrt-color-surface-variant, #e7e0ec);
-    border-radius: var(--smrt-radius-sm, 8px);
+    padding: var(--smrt-spacing-2);
+    background: var(--smrt-color-surface-variant);
+    border-radius: var(--smrt-radius-sm);
     max-height: 300px;
     overflow-y: auto;
   }
 
   .forwarded-text {
     margin: 0;
-    font-size: var(--smrt-typography-body-small-size, 12px);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    font-size: var(--smrt-typography-body-small-size);
+    color: var(--smrt-color-on-surface-variant);
     white-space: pre-wrap;
     font-family: var(--smrt-font-family, system-ui);
   }
 
   .send-error {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border-radius: var(--smrt-radius-sm, 8px);
-    background: var(--smrt-color-error-container, #ffdad6);
-    color: var(--smrt-color-on-error-container, #410002);
-    font-size: var(--smrt-typography-body-small-size, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+    font-size: var(--smrt-typography-body-small-size);
   }
 
   .actions {
     display: flex;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   /*
@@ -158,7 +158,7 @@ export interface Props {
    * issue #1589.
    */
   .actions :global(.btn-text) {
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
   }
 }
 </style>

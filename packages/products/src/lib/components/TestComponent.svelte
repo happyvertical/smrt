@@ -20,9 +20,9 @@ const { t } = useI18n();
 @layer smrt.theme {
   .test-component {
     padding: 1rem;
-    border: 1px solid var(--smrt-color-outline-variant, #ccc);
-    border-radius: var(--smrt-radius-sm, 4px);
-    background: var(--smrt-color-surface-container-low, #f9f9f9);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-surface-container-low);
   }
 }
 </style>

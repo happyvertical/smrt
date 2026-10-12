@@ -90,7 +90,7 @@ async function handleToggle() {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--smrt-spacing-sm, 8px);
+    gap: var(--smrt-spacing-sm);
   }
 
   .mic-button {
@@ -98,8 +98,8 @@ async function handleToggle() {
     height: 3rem;
     border-radius: var(--smrt-radius-full, 50%);
     border: none;
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -109,7 +109,7 @@ async function handleToggle() {
   }
 
   .mic-button:hover:not(:disabled) {
-    background: var(--smrt-color-primary-container, #005ac1);
+    background: var(--smrt-color-primary-container);
     opacity: 0.9;
     transform: scale(1.05);
   }
@@ -120,7 +120,7 @@ async function handleToggle() {
   }
 
   .mic-button.listening {
-    background: var(--smrt-color-error, #ba1a1a);
+    background: var(--smrt-color-error);
     animation: pulse 1.5s ease-in-out infinite;
   }
 
@@ -165,12 +165,12 @@ async function handleToggle() {
   .error {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-sm, 8px);
-    padding: var(--smrt-spacing-md, 12px) var(--smrt-spacing-md, 16px);
-    background: var(--smrt-color-error-container, #ffdad6);
-    border: 1px solid var(--smrt-color-error, #ba1a1a);
-    border-radius: var(--smrt-radius-medium, 8px);
-    color: var(--smrt-color-on-error-container, #410002);
+    gap: var(--smrt-spacing-sm);
+    padding: var(--smrt-spacing-md) var(--smrt-spacing-md);
+    background: var(--smrt-color-error-container);
+    border: 1px solid var(--smrt-color-error);
+    border-radius: var(--smrt-radius-medium);
+    color: var(--smrt-color-on-error-container);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
 
@@ -180,8 +180,8 @@ async function handleToggle() {
     justify-content: center;
     width: 20px;
     height: 20px;
-    background: var(--smrt-color-error, #ba1a1a);
-    color: var(--smrt-color-on-error, #ffffff);
+    background: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
     border-radius: var(--smrt-radius-full, 50%);
     font-weight: var(--smrt-typography-weight-bold, 700);
     font: var(--smrt-typography-label-small-font, 0.75rem / 1 sans-serif);

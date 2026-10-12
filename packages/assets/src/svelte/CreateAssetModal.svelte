@@ -235,8 +235,8 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     margin: var(--smrt-spacing-2, 0.5rem) 0 0;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     border-radius: var(--smrt-radius-medium, 0.5rem);
-    background: var(--smrt-color-error-container, #fde8e6);
-    color: var(--smrt-color-on-error-container, #410002);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
     font-size: var(--smrt-typography-body-small-size, 0.8rem);
   }
 
@@ -247,7 +247,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     align-items: center;
     justify-content: center;
     padding: var(--smrt-spacing-8, 2rem);
-    border: 2px dashed var(--smrt-color-outline-variant, #d1d5db);
+    border: 2px dashed var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     cursor: pointer;
     transition: all 150ms ease;
@@ -255,25 +255,25 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
   }
 
   .dropzone:hover, .dropzone--active {
-    border-color: var(--smrt-color-primary, #005ac1);
+    border-color: var(--smrt-color-primary);
     background: var(--smrt-color-primary-container, rgba(0, 90, 193, 0.05));
   }
 
   .dropzone__icon {
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: var(--smrt-spacing-3, 0.75rem);
   }
 
   .dropzone__text {
     margin: 0;
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
   }
 
   .dropzone__hint {
     margin: var(--smrt-spacing-1, 0.25rem) 0 0;
     font-size: var(--smrt-typography-body-small-size, 0.8rem);
-    color: var(--smrt-color-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .dropzone__input {
@@ -286,7 +286,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     align-items: center;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-3, 0.75rem);
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     margin-bottom: var(--smrt-spacing-4, 1rem);
   }
@@ -305,7 +305,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     align-items: center;
     justify-content: center;
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-small, 0.25rem);
   }
 
@@ -326,14 +326,14 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
   .file-preview__size {
     display: block;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .file-preview__warning {
     display: block;
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-error, #dc2626);
-    margin-top: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-error);
+    margin-top: var(--smrt-spacing-1);
   }
 
   /* file-preview__remove renders via <Button class="file-preview__remove">
@@ -346,13 +346,13 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     padding: 0;
     border: none;
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
-    border-radius: var(--smrt-radius-full, 9999px);
+    color: var(--smrt-color-on-surface-variant);
+    border-radius: var(--smrt-radius-full);
   }
 
   .file-preview :global(.file-preview__remove:hover) {
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    color: var(--smrt-color-error, #dc2626);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-error);
   }
 
   /* Form fields */
@@ -371,14 +371,14 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
   .form-label {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
   }
 
   .form-label__warning {
     font-weight: var(--smrt-typography-weight-normal, 400);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-error, #dc2626);
-    margin-left: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-error);
+    margin-left: var(--smrt-spacing-1);
   }
 }
 </style>

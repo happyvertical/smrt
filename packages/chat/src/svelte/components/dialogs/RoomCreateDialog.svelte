@@ -213,16 +213,16 @@ $effect(() => {
 
   .field__label {
     font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   .field__required {
-    color: var(--smrt-color-error, #b3261e);
+    color: var(--smrt-color-error);
   }
 
   .field__hint {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     text-align: right;
   }
 
@@ -237,7 +237,7 @@ $effect(() => {
     align-items: flex-start;
     gap: 0.75rem;
     padding: 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     cursor: pointer;
     transition: border-color var(--smrt-duration-short2, 150ms),
@@ -245,17 +245,17 @@ $effect(() => {
   }
 
   .type-option:hover {
-    background: var(--smrt-color-surface-container, #f0f0f4);
+    background: var(--smrt-color-surface-container);
   }
 
   .type-option--selected {
-    border-color: var(--smrt-color-primary, #005ac1);
-    background: var(--smrt-color-primary-container, #d6e3ff);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
   }
 
   .type-option__radio {
     margin-top: 0.125rem;
-    accent-color: var(--smrt-color-primary, #005ac1);
+    accent-color: var(--smrt-color-primary);
   }
 
   .type-option__content {
@@ -266,13 +266,13 @@ $effect(() => {
 
   .type-option__label {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .type-option__description {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   @media (prefers-reduced-motion: reduce) {

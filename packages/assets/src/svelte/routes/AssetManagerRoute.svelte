@@ -110,7 +110,7 @@ const customActions = [
 
   .assets-route__eyebrow {
     margin: 0 0 0.5rem;
-    color: var(--smrt-color-primary, #0f766e);
+    color: var(--smrt-color-primary);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
@@ -125,7 +125,7 @@ const customActions = [
   .assets-route__lede {
     max-width: 56rem;
     margin: 0.75rem 0 0;
-    color: var(--smrt-color-on-surface-variant, #475569);
+    color: var(--smrt-color-on-surface-variant);
     line-height: 1.6;
   }
 
@@ -147,8 +147,8 @@ const customActions = [
   }
 
   .assets-route__panel {
-    background: var(--smrt-color-surface, #fff);
-    border: 1px solid var(--smrt-color-outline-variant, #dbe3ef);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 1rem;
     padding: 1.25rem;
     box-shadow: var(--smrt-elevation-5, 0 10px 30px color-mix(in srgb, var(--smrt-color-shadow) 6%, transparent));
@@ -161,15 +161,15 @@ const customActions = [
 
   .assets-route__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .assets-route__message {
     margin: 0.75rem 0 0;
     padding: 0.75rem 0.875rem;
     border-radius: 0.75rem;
-    background: var(--smrt-color-primary-container, #ecfeff);
-    color: var(--smrt-color-on-primary-container, #155e75);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .assets-route__selection-list {
@@ -186,13 +186,13 @@ const customActions = [
     gap: 0.25rem;
     padding: 0.625rem 0.75rem;
     border-radius: 0.75rem;
-    background: var(--smrt-color-surface-container, #f8fafc);
-    border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-outline-variant);
   }
 
   .assets-route__selection-list code {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-primary-container, #155e75);
+    color: var(--smrt-color-on-primary-container);
   }
 
   @media (max-width: 960px) {

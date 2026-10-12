@@ -503,9 +503,9 @@ function removeAttachment(id: string) {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .assistant-composer {
-    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    background: var(--smrt-color-surface, #ffffff);
-    padding: var(--smrt-spacing-2, 8px);
+    border-top: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
+    padding: var(--smrt-spacing-2);
     flex-shrink: 0;
     container-type: inline-size;
   }
@@ -514,7 +514,7 @@ function removeAttachment(id: string) {
   .assistant-composer-row {
     display: flex;
     align-items: flex-end;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   :global(.assistant-composer-attach) {
@@ -525,15 +525,15 @@ function removeAttachment(id: string) {
     width: 44px;
     height: 44px;
     padding: 0;
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-surface-container-low, #f7f7fb);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
   }
 
   :global(.assistant-composer-attach:hover:not(:disabled)) {
-    background: var(--smrt-color-surface-container, #f0f0f4);
+    background: var(--smrt-color-surface-container);
   }
 
   :global(.assistant-composer-attach:disabled) {
@@ -572,11 +572,11 @@ function removeAttachment(id: string) {
 
   :global(.assistant-composer-send) {
     flex-shrink: 0;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     border: none;
-    border-radius: var(--smrt-radius-medium, 8px);
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
     cursor: pointer;
   }
@@ -590,21 +590,21 @@ function removeAttachment(id: string) {
     list-style: none;
     display: flex;
     flex-wrap: wrap;
-    gap: var(--smrt-spacing-2, 8px);
-    margin: 0 0 var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
+    margin: 0 0 var(--smrt-spacing-2);
     padding: 0;
   }
 
   .assistant-composer-chip {
     display: inline-flex;
     align-items: center;
-    gap: var(--smrt-spacing-1, 4px);
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-surface-container-low, #f7f7fb);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container-low);
+    border: 1px solid var(--smrt-color-outline-variant);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     max-width: 160px;
   }
 
@@ -617,18 +617,18 @@ function removeAttachment(id: string) {
   :global(.assistant-composer-chip-remove) {
     border: none;
     background: none;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     line-height: 1;
     padding: 0;
   }
 
   .assistant-composer-error {
-    margin: 0 0 var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border-radius: var(--smrt-radius-medium, 8px);
-    background: var(--smrt-color-error-container, #ffdad6);
-    color: var(--smrt-color-on-error-container, #410002);
+    margin: 0 0 var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
 

@@ -61,9 +61,9 @@ const _icon = $derived.by(() => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-secondary-container, #d7e3f7);
-    color: var(--smrt-color-on-secondary-container, #101c2b);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
     font-weight: var(--smrt-typography-weight-medium, 500);
     flex-shrink: 0;
   }
@@ -87,18 +87,18 @@ const _icon = $derived.by(() => {
   }
 
   .avatar--email {
-    background: var(--smrt-color-primary-container, #d6e2ff);
-    color: var(--smrt-color-on-primary-container, #001a41);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .avatar--slack {
-    background: var(--smrt-color-tertiary-container, #e8def8);
-    color: var(--smrt-color-on-tertiary-container, #4a1175);
+    background: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
   }
 
   .avatar--twitter {
-    background: var(--smrt-color-secondary-container, #d3e8fd);
-    color: var(--smrt-color-on-secondary-container, #0c4a6e);
+    background: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
   }
 
   .icon {

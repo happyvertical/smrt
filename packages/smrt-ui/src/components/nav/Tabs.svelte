@@ -290,7 +290,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 0 var(--smrt-spacing-4, 16px);
+    padding: 0 var(--smrt-spacing-4);
     height: 48px;
     font: var(--smrt-typography-title-small-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
@@ -336,7 +336,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
   .tab-content-wrapper {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     height: 100%;
   }
 
@@ -350,7 +350,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     bottom: 0;
     height: 3px;
     background-color: var(--smrt-color-primary);
-    border-radius: var(--smrt-radius-sm, 4px) var(--smrt-radius-sm, 4px) 0 0;
+    border-radius: var(--smrt-radius-sm) var(--smrt-radius-sm) 0 0;
     transition: width 200ms, opacity 200ms;
     width: 0;
     opacity: 0;
@@ -386,7 +386,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
   .tabs-links {
     display: flex;
     align-items: stretch;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     width: 100%;
     border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
@@ -395,7 +395,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     display: flex;
     flex: 1 1 auto;
     min-width: 0;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     overflow-x: auto;
     scrollbar-width: thin;
   }
@@ -404,9 +404,9 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     display: inline-flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     min-height: 44px;
-    padding: 0 var(--smrt-spacing-4, 16px);
+    padding: 0 var(--smrt-spacing-4);
     margin-bottom: -1px;
     border-bottom: 2px solid transparent;
     color: var(--smrt-color-on-surface-variant);
@@ -472,7 +472,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     z-index: var(--smrt-z-index-dropdown, 20);
     display: grid;
     min-width: 12rem;
-    padding: var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-1);
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-small, 0.5rem);
     background: var(--smrt-color-surface);

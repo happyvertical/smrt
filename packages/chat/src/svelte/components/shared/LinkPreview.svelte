@@ -48,7 +48,7 @@ const hostname = $derived.by(() => {
 @layer smrt.theme {
   .link-preview {
     display: flex;
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
     text-decoration: none;
@@ -66,7 +66,7 @@ const hostname = $derived.by(() => {
     min-height: 60px;
     flex-shrink: 0;
     overflow: hidden;
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
   }
 
   .link-preview__image img {
@@ -87,7 +87,7 @@ const hostname = $derived.by(() => {
   .link-preview__title {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #1b1b1f);
+    color: var(--smrt-color-on-surface);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -95,7 +95,7 @@ const hostname = $derived.by(() => {
 
   .link-preview__description {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     display: -webkit-box;
     -webkit-line-clamp: 2;
     line-clamp: 2;
@@ -105,7 +105,7 @@ const hostname = $derived.by(() => {
 
   .link-preview__domain {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 }
 </style>

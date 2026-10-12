@@ -279,7 +279,7 @@ function navChildrenId(href: string): string {
     font-size: var(--smrt-typography-label-small-size, 0.7rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     line-height: var(--smrt-typography-label-small-line-height, 1.2);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
   }

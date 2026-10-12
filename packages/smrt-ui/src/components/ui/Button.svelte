@@ -257,7 +257,7 @@ function handleClick(event: MouseEvent) {
     height: 1em;
     border: 2px solid currentColor;
     border-right-color: transparent;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.75s linear infinite;
   }
 
@@ -314,7 +314,7 @@ function handleClick(event: MouseEvent) {
     }
   }
 
-  .button[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .button[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .button[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .button { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
 }

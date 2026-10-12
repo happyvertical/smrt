@@ -204,7 +204,7 @@ async function confirmDelete(): Promise<void> {
     margin: 0;
   }
   .smrt-detail-screen__field dt {
-    color: var(--smrt-color-on-surface-variant, #5f6368);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
   .smrt-detail-screen__field dd {
@@ -212,7 +212,7 @@ async function confirmDelete(): Promise<void> {
     overflow-wrap: anywhere;
   }
   .smrt-detail-screen__empty {
-    color: var(--smrt-color-on-surface-variant, #5f6368);
+    color: var(--smrt-color-on-surface-variant);
   }
   .smrt-detail-screen__block {
     margin: 0;

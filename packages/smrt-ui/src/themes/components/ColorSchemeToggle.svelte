@@ -122,9 +122,9 @@ const labels = {
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border: 1px solid var(--smrt-color-outline, #ccc);
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-surface-container-low, #f5f5f5);
+    border: 1px solid var(--smrt-color-outline);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface, inherit);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
@@ -132,7 +132,7 @@ const labels = {
   }
 
   .smrt-color-scheme-toggle__switch:hover {
-    background: var(--smrt-color-surface-container, #eee);
+    background: var(--smrt-color-surface-container);
   }
 
   .smrt-color-scheme-toggle__buttons {
@@ -145,9 +145,9 @@ const labels = {
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
     padding: var(--smrt-spacing-1_5, 0.375rem) var(--smrt-spacing-3, 0.75rem);
-    border: 1px solid var(--smrt-color-outline, #ccc);
+    border: 1px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-md, 0.5rem);
-    background: var(--smrt-color-surface-container-low, #f5f5f5);
+    background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface, inherit);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
@@ -155,19 +155,19 @@ const labels = {
   }
 
   .smrt-color-scheme-toggle__button:hover {
-    background: var(--smrt-color-surface-container, #eee);
+    background: var(--smrt-color-surface-container);
   }
 
   .smrt-color-scheme-toggle__button.active {
-    background: var(--smrt-color-primary-container, #e3f2fd);
-    color: var(--smrt-color-on-primary-container, #1565c0);
-    border-color: var(--smrt-color-primary, #2196f3);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    border-color: var(--smrt-color-primary);
   }
 
   .smrt-color-scheme-toggle__segmented {
     display: inline-flex;
-    background: var(--smrt-color-surface-container-lowest, #fafafa);
-    border: 1px solid var(--smrt-color-outline, #ccc);
+    background: var(--smrt-color-surface-container-lowest);
+    border: 1px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-lg, 0.75rem);
     padding: var(--smrt-spacing-0_5, 0.125rem);
   }
@@ -180,7 +180,7 @@ const labels = {
     border: none;
     border-radius: var(--smrt-radius-md, 0.5rem);
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #666);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
     transition: all 200ms ease;

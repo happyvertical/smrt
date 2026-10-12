@@ -413,7 +413,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
   .empty,
   .merged-note {
     margin: var(--smrt-spacing-1, 0.25rem) 0 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .facts {
@@ -425,7 +425,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
 
   .facts__item dt,
   .timeline__kind {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
 
@@ -434,7 +434,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
     overflow-wrap: anywhere;
   }
 
-  .linked-opportunity { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2, 0.5rem); padding: var(--smrt-spacing-3, 0.75rem); border: 1px solid var(--smrt-color-outline-variant, #d8dde6); border-radius: var(--smrt-radius-md, 0.5rem); }
+  .linked-opportunity { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2, 0.5rem); padding: var(--smrt-spacing-3, 0.75rem); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md, 0.5rem); }
   .linked-opportunity h3 { flex-basis: 100%; font-size: var(--smrt-typography-title-small-size, 1rem); }
 
   .controls,
@@ -444,8 +444,8 @@ function isOpenTask(activity: SalesActivityView): boolean {
     align-items: flex-end;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-3, 0.75rem);
-    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
-    border-radius: var(--smrt-radius-md, 8px);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
   }
 
   .sales-lead-detail :global(.control-form) {
@@ -467,7 +467,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
 
   h3 {
     margin-bottom: var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-title-small-size, 0.875rem);
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -488,13 +488,13 @@ function isOpenTask(activity: SalesActivityView): boolean {
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem);
-    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
-    border-radius: var(--smrt-radius-sm, 4px);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-sm);
   }
 
   .timeline__item.next-action {
-    border-color: var(--smrt-color-primary, #2563eb);
-    background: var(--smrt-color-primary-container, #eff6ff);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
   }
 
   .timeline__content {
@@ -517,12 +517,12 @@ function isOpenTask(activity: SalesActivityView): boolean {
     flex: 1 1 12rem;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
 
   .timeline__meta .overdue {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 

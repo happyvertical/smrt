@@ -105,7 +105,7 @@ const summary = $derived(
   .smrt-chart__bars { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: 0; list-style: none; }
   .smrt-chart__row { display: grid; grid-template-columns: minmax(4rem, 30%) minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-2); font-size: var(--smrt-typography-body-medium-size, 0.875rem); color: var(--smrt-color-on-surface); }
   .smrt-chart__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .smrt-chart__track { display: block; block-size: 0.625rem; border-radius: var(--smrt-radius-full, 9999px); background: var(--smrt-color-surface-container-high); overflow: hidden; }
+  .smrt-chart__track { display: block; block-size: 0.625rem; border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-high); overflow: hidden; }
   .smrt-chart__bar { display: block; block-size: 100%; border-radius: inherit; background: var(--smrt-color-primary); }
   .smrt-chart__value { font-variant-numeric: tabular-nums; color: var(--smrt-color-on-surface-variant); }
   .smrt-chart__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }

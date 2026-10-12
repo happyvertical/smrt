@@ -204,9 +204,9 @@ $effect(() => {
     appearance: none;
     font: inherit;
     cursor: pointer;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border-radius: var(--smrt-radius-medium, 8px);
-    border: 1px solid var(--smrt-color-outline, #79747e);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border-radius: var(--smrt-radius-medium);
+    border: 1px solid var(--smrt-color-outline);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
   }
@@ -224,7 +224,7 @@ $effect(() => {
     block-size: 2.75rem;
     padding: 0;
     border: none;
-    border-radius: var(--smrt-radius-full, 999px);
+    border-radius: var(--smrt-radius-full);
     background: transparent;
     color: inherit;
   }
@@ -241,14 +241,14 @@ $effect(() => {
     position: absolute;
     z-index: var(--smrt-z-index-dropdown, 1000);
     min-width: 10rem;
-    margin: var(--smrt-spacing-1, 4px) 0;
-    padding: var(--smrt-spacing-1, 4px);
+    margin: var(--smrt-spacing-1) 0;
+    padding: var(--smrt-spacing-1);
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
-    border-radius: var(--smrt-radius-medium, 8px);
-    background: var(--smrt-color-surface-container, #f3edf7);
-    border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
+    gap: var(--smrt-spacing-1);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-outline-variant);
     box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.15));
   }
 
@@ -273,16 +273,16 @@ $effect(() => {
     appearance: none;
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     /* A touch target: menu rows are at least 44px tall. */
     min-block-size: 2.75rem;
     box-sizing: border-box;
     font: inherit;
     text-align: left;
     cursor: pointer;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     border: none;
-    border-radius: var(--smrt-radius-small, 4px);
+    border-radius: var(--smrt-radius-small);
     background: none;
     color: var(--smrt-color-on-surface);
     white-space: nowrap;

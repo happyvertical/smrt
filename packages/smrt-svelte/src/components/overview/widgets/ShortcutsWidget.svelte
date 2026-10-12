@@ -74,7 +74,7 @@ const cards = $derived.by((): Card[] => {
   .smrt-shortcuts__card:hover { background: var(--smrt-color-surface-container-high); border-color: var(--smrt-color-outline); }
   .smrt-shortcuts__link { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-3); color: var(--smrt-color-on-surface); text-decoration: none; }
   .smrt-shortcuts__link:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; border-radius: inherit; }
-  .smrt-shortcuts__icon { display: inline-grid; place-items: center; inline-size: 3rem; block-size: 3rem; border-radius: var(--smrt-radius-full, 9999px); background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+  .smrt-shortcuts__icon { display: inline-grid; place-items: center; inline-size: 3rem; block-size: 3rem; border-radius: var(--smrt-radius-full); background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
   .smrt-shortcuts__icon :global(.smrt-shell-section-icon) { inline-size: 28px; block-size: 28px; }
   .smrt-shortcuts__title { font-weight: var(--smrt-typography-weight-medium, 500); overflow-wrap: anywhere; }
   .smrt-shortcuts__desc { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }

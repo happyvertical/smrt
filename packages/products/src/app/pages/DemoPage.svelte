@@ -189,29 +189,29 @@ function handleCustomSubmit(data: ProductData) {
     min-height: 100vh;
     background: linear-gradient(
       135deg,
-      var(--smrt-color-primary, #667eea) 0%,
-      var(--smrt-color-primary-container, #764ba2) 100%
+      var(--smrt-color-primary) 0%,
+      var(--smrt-color-primary-container) 100%
     );
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
   }
 
   .demo-header {
     text-align: center;
     padding: 2rem 1rem;
-    background: color-mix(in srgb, var(--smrt-color-surface, #fff) 95%, transparent);
+    background: color-mix(in srgb, var(--smrt-color-surface) 95%, transparent);
     margin-bottom: 2rem;
   }
 
   .demo-header h1 {
     font-size: var(--smrt-typography-display-medium-size, 2.5rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
     margin: 0 0 0.5rem 0;
   }
 
   .demo-subtitle {
     font-size: var(--smrt-typography-body-large-size, 1.125rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     margin: 0;
   }
 
@@ -230,7 +230,7 @@ function handleCustomSubmit(data: ProductData) {
   .demo-section {
     max-width: 1200px;
     margin: 0 auto;
-    background: color-mix(in srgb, var(--smrt-color-surface, #fff) 95%, transparent);
+    background: color-mix(in srgb, var(--smrt-color-surface) 95%, transparent);
     border-radius: var(--smrt-radius-xl, 1rem);
     padding: 2rem;
     margin-bottom: 2rem;
@@ -238,7 +238,7 @@ function handleCustomSubmit(data: ProductData) {
 
   .section-description {
     font-size: var(--smrt-typography-body-large-size, 1rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 2rem;
     text-align: center;
   }
@@ -252,7 +252,7 @@ function handleCustomSubmit(data: ProductData) {
   .demo-column h3 {
     text-align: center;
     margin-bottom: 1rem;
-    color: var(--smrt-color-on-surface, #374151);
+    color: var(--smrt-color-on-surface);
   }
 
   .comparison-grid {
@@ -263,9 +263,9 @@ function handleCustomSubmit(data: ProductData) {
 
   .comparison-column {
     padding: 1.5rem;
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
     border-radius: var(--smrt-radius-md, 0.5rem);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border: 1px solid var(--smrt-color-outline-variant);
   }
 
   .comparison-column h3 {
@@ -283,11 +283,11 @@ function handleCustomSubmit(data: ProductData) {
 
   .feature {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface, #374151);
+    color: var(--smrt-color-on-surface);
   }
 
   .demo-footer {
-    background: color-mix(in srgb, var(--smrt-color-surface, #fff) 95%, transparent);
+    background: color-mix(in srgb, var(--smrt-color-surface) 95%, transparent);
     padding: 2rem;
     margin-top: 2rem;
   }
@@ -302,7 +302,7 @@ function handleCustomSubmit(data: ProductData) {
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     margin-bottom: 1rem;
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
   }
 
   .framework-info ul {
@@ -315,7 +315,7 @@ function handleCustomSubmit(data: ProductData) {
 
   .framework-info li {
     padding: 0.75rem;
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-sm, 0.375rem);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }

@@ -153,8 +153,8 @@ function handleKeydown(e: KeyboardEvent) {
 	.overlay-content {
 		position: relative;
 		background: var(--smrt-color-surface-container-high, white);
-		border-radius: var(--smrt-radius-xl, 16px);
-		padding: var(--smrt-spacing-8, 32px) var(--smrt-spacing-10, 40px);
+		border-radius: var(--smrt-radius-xl);
+		padding: var(--smrt-spacing-8) var(--smrt-spacing-10);
 		max-width: 400px;
 		width: 90%;
 		text-align: center;
@@ -164,7 +164,7 @@ function handleKeydown(e: KeyboardEvent) {
 	.loading-icon {
 		width: 48px;
 		height: 48px;
-		margin: 0 auto var(--smrt-spacing-4, 16px);
+		margin: 0 auto var(--smrt-spacing-4);
 	}
 
 	.icon {
@@ -173,12 +173,12 @@ function handleKeydown(e: KeyboardEvent) {
 	}
 
 	.icon.spinner {
-		color: var(--smrt-color-primary, #3b82f6);
+		color: var(--smrt-color-primary);
 		animation: spin 1s linear infinite;
 	}
 
 	.icon.error {
-		color: var(--smrt-color-error, #ef4444);
+		color: var(--smrt-color-error);
 	}
 
 	@keyframes spin {
@@ -193,22 +193,22 @@ function handleKeydown(e: KeyboardEvent) {
 	.title {
 		font-size: var(--smrt-typography-title-large-size, 1.25rem);
 		font-weight: var(--smrt-typography-weight-semibold, 600);
-		color: var(--smrt-color-on-surface, #1f2937);
-		margin: 0 0 var(--smrt-spacing-4, 16px);
+		color: var(--smrt-color-on-surface);
+		margin: 0 0 var(--smrt-spacing-4);
 	}
 
 	.progress-container {
 		display: flex;
 		align-items: center;
-		gap: var(--smrt-spacing-3, 12px);
-		margin: var(--smrt-spacing-4, 16px) 0;
+		gap: var(--smrt-spacing-3);
+		margin: var(--smrt-spacing-4) 0;
 	}
 
 	.progress-bar {
 		flex: 1;
 		height: 8px;
-		background: var(--smrt-color-surface-container-highest, #e5e7eb);
-		border-radius: var(--smrt-radius-sm, 4px);
+		background: var(--smrt-color-surface-container-highest);
+		border-radius: var(--smrt-radius-sm);
 		overflow: hidden;
 	}
 
@@ -219,57 +219,57 @@ function handleKeydown(e: KeyboardEvent) {
 			var(--smrt-color-primary),
 			color-mix(in srgb, var(--smrt-color-primary) 70%, white)
 		);
-		border-radius: var(--smrt-radius-sm, 4px);
+		border-radius: var(--smrt-radius-sm);
 		transition: width var(--smrt-duration-short4, 300ms) var(--smrt-easing-standard, ease);
 	}
 
 	.progress-text {
 		font-size: var(--smrt-typography-label-large-size, 0.875rem);
 		font-weight: var(--smrt-typography-weight-semibold, 600);
-		color: var(--smrt-color-primary, #3b82f6);
+		color: var(--smrt-color-primary);
 		min-width: 40px;
 	}
 
 	.items-container {
 		display: flex;
 		flex-wrap: wrap;
-		gap: var(--smrt-spacing-2, 8px);
+		gap: var(--smrt-spacing-2);
 		justify-content: center;
-		margin-top: var(--smrt-spacing-4, 16px);
+		margin-top: var(--smrt-spacing-4);
 	}
 
 	.item-badge {
 		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-		padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-3, 12px);
-		border-radius: var(--smrt-radius-full, 9999px);
-		background: var(--smrt-color-primary-container, #dcfce7);
-		color: var(--smrt-color-on-primary-container, #166534);
+		padding: var(--smrt-spacing-1) var(--smrt-spacing-3);
+		border-radius: var(--smrt-radius-full);
+		background: var(--smrt-color-primary-container);
+		color: var(--smrt-color-on-primary-container);
 	}
 
 	.error-message {
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-		color: var(--smrt-color-error, #ef4444);
-		margin: var(--smrt-spacing-4, 16px) 0 0;
-		padding: var(--smrt-spacing-3, 12px);
-		background: var(--smrt-color-error-container, #fef2f2);
-		border-radius: var(--smrt-radius-md, 8px);
+		color: var(--smrt-color-error);
+		margin: var(--smrt-spacing-4) 0 0;
+		padding: var(--smrt-spacing-3);
+		background: var(--smrt-color-error-container);
+		border-radius: var(--smrt-radius-md);
 	}
 
 	.dismiss-btn {
-		margin-top: var(--smrt-spacing-5, 20px);
-		padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-5, 20px);
+		margin-top: var(--smrt-spacing-5);
+		padding: var(--smrt-spacing-3) var(--smrt-spacing-5);
 		font-size: var(--smrt-typography-label-large-size, 0.875rem);
-		color: var(--smrt-color-on-surface-variant, #6b7280);
+		color: var(--smrt-color-on-surface-variant);
 		background: transparent;
-		border: 1px solid var(--smrt-color-outline, #9ca3af);
-		border-radius: var(--smrt-radius-md, 8px);
+		border: 1px solid var(--smrt-color-outline);
+		border-radius: var(--smrt-radius-md);
 		cursor: pointer;
 		transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
 	}
 
 	.dismiss-btn:hover {
-		background: var(--smrt-color-surface-container-highest, #f3f4f6);
-		border-color: var(--smrt-color-outline, #9ca3af);
+		background: var(--smrt-color-surface-container-highest);
+		border-color: var(--smrt-color-outline);
 	}
 
 	.dismiss-btn:focus-visible {

@@ -562,7 +562,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     place-items: center;
     min-width: 1.5rem;
     height: 1.5rem;
-    border-radius: var(--smrt-radius-full, 999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     font-size: var(--smrt-typography-body-small-size, 0.8rem);
@@ -590,7 +590,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
   .tag {
     display: inline-block;
     padding: 0.05rem 0.4rem;
-    border-radius: var(--smrt-radius-full, 999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.72rem);
