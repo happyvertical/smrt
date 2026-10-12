@@ -592,6 +592,7 @@ async function settleAttempt(
           _insertOnly: true,
         });
       }
+      await invoice.loadFromId();
       invoice.updatePaymentStatus(
         await allocations.getTotalAllocatedToInvoice(String(invoice.id)),
       );

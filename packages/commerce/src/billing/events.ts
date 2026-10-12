@@ -495,6 +495,7 @@ async function settlePaidInvoice(
   // A written-off invoice paid later keeps its terminal status; the payment
   // and allocation above record the recovery.
   if (invoice.status === InvoiceStatus.WRITTEN_OFF) return true;
+  await invoice.loadFromId();
   invoice.updatePaymentStatus(
     await allocations.getTotalAllocatedToInvoice(String(invoice.id)),
   );

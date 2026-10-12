@@ -345,17 +345,29 @@ describe('commerce tenant isolation (#1600)', () => {
 
   it('PaymentAllocationCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const allocations = await PaymentAllocationCollection.create({ db });
-    // No paymentId/invoiceId → the FK-resolution caps are skipped; only the
-    // positive-amount check applies (amount = 1).
-    await withTenant({ tenantId: 'tenant-1' }, async () => {
-      await (await allocations.create({ amount: 1, notes: 't1-alloc' })).save();
-    });
-    await withTenant({ tenantId: 'tenant-2' }, async () => {
-      await (await allocations.create({ amount: 1, notes: 't2-alloc' })).save();
-    });
-    await withSystemContext(async () => {
-      await (await allocations.create({ amount: 1, notes: 'g-alloc' })).save();
-    });
+    const payments = await PaymentCollection.create({ db });
+    const invoices = await InvoiceCollection.create({ db });
+    const createAllocation = async (notes: string) => {
+      const payment = await payments.create({ amount: 1 });
+      const invoice = await invoices.create({
+        subtotal: 1,
+        totalAmount: 1,
+        currency: 'USD',
+      });
+      await allocations.create({
+        paymentId: payment.id,
+        invoiceId: invoice.id,
+        amount: 1,
+        notes,
+      });
+    };
+    await withTenant({ tenantId: 'tenant-1' }, () =>
+      createAllocation('t1-alloc'),
+    );
+    await withTenant({ tenantId: 'tenant-2' }, () =>
+      createAllocation('t2-alloc'),
+    );
+    await withSystemContext(() => createAllocation('g-alloc'));
 
     expect(
       sorted(

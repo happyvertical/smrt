@@ -107,6 +107,13 @@ await payment.recordPayment({
 
 `CustomerCollection`, `VendorCollection`, `ContractCollection`, `InvoiceCollection`, `InvoiceLineItemCollection`, `PaymentCollection`, `PaymentAllocationCollection`, `FulfillmentCollection`
 
+`PaymentAllocationCollection.allocatePayment()` splits a payment across invoices
+in one transaction using stable allocation IDs for retries. Direct allocation
+saves also enforce matching owners, customers and currencies and both balance
+caps. Read [payment allocation integrity](agents/payment-allocations.md) for
+replay, parent revision refresh and compatibility requirements.
+
+
 ### Enums
 
 | Export | Values |

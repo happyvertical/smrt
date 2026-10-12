@@ -12,6 +12,10 @@ import {
 } from '@happyvertical/smrt-core';
 import type { Journal, JournalEntryData } from '@happyvertical/smrt-ledgers';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  assertAllocationParent,
+  claimAllocationParent,
+} from '../allocation-integrity.js';
 import { minorToMajorUnits } from '../billing/units.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import {
@@ -501,20 +505,24 @@ export class Invoice extends SmrtObject {
    *  - **Status transitions** are validated against the prior persisted status.
    */
   override async save(): Promise<this> {
-    const persisted = await this.isSaved();
-    const prior = await this.resolvePriorStatus(persisted);
+    return this.withTransaction(async () => {
+      await claimAllocationParent(this, 'invoice');
+      const persisted = await this.isSaved();
+      const prior = await this.resolvePriorStatus(persisted);
 
-    this.assertAmountsAreMinorUnits();
-    await this.recomputeAmountsForSave(persisted);
-    this.assertNonNegativeAmounts();
-    this.assertStatusTransition(prior);
-    this.assertPaymentStatusConsistent();
+      this.assertAmountsAreMinorUnits();
+      await this.recomputeAmountsForSave(persisted);
+      this.assertNonNegativeAmounts();
+      this.assertStatusTransition(prior);
+      this.assertPaymentStatusConsistent();
 
-    const result = (await super.save()) as this;
-    // Once written, the current status becomes the new "prior" for the next
-    // save in this instance's lifetime.
-    loadedInvoiceStatus.set(this, this.status);
-    return result;
+      await assertAllocationParent(this, 'invoice');
+      const result = (await super.save()) as this;
+      // Once written, the current status becomes the new "prior" for the next
+      // save in this instance's lifetime.
+      loadedInvoiceStatus.set(this, this.status);
+      return result;
+    });
   }
 
   /**
@@ -553,9 +561,10 @@ export class Invoice extends SmrtObject {
       const { InvoiceLineItemCollection } = await import(
         '../collections/InvoiceLineItemCollection.js'
       );
-      const lineItemCollection = await InvoiceLineItemCollection.create(
-        this.options,
-      );
+      const lineItemCollection = await InvoiceLineItemCollection.create({
+        ...this.options,
+        db: this.db,
+      });
       const lineItems = await lineItemCollection.findByInvoice(this.id);
 
       if (lineItems.length > 0) {
@@ -589,9 +598,10 @@ export class Invoice extends SmrtObject {
       const { PaymentAllocationCollection } = await import(
         '../collections/PaymentAllocationCollection.js'
       );
-      const allocationCollection = await PaymentAllocationCollection.create(
-        this.options,
-      );
+      const allocationCollection = await PaymentAllocationCollection.create({
+        ...this.options,
+        db: this.db,
+      });
       const allocated = await allocationCollection.getTotalAllocatedToInvoice(
         this.id,
       );
