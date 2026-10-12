@@ -230,6 +230,9 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
     expect((await allocations.get(allocation.id))?.amount).toBe(2159);
 
     await invoice.loadFromId();
+    invoice.updatePaymentStatus(2159);
+    // Save still derives the amount from committed allocations, not this claim.
+    invoice.amountPaid = 1;
     await invoice.save();
     expect((await invoices.get(invoice.id))?.amountPaid).toBe(2159);
 
