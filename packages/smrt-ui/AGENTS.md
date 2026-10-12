@@ -100,6 +100,10 @@ other text pairing clears WCAG AA in both schemes.
 
 ## Rules
 
+- **Styling hooks are public API.** Every exported component's root carries
+  `data-smrt-component="<Name>"` (enforced by `pnpm check:component-roots`, run
+  from `pnpm lint`). Internal elements use role-named `data-smrt-part` values;
+  never encode state in a part name. See [agents/styling.md](agents/styling.md).
 - **No smrt domain imports.** A `@happyvertical/smrt-*` import other than
   `smrt-types` reintroduces the cycle. Components consume `var(--smrt-*)` CSS
   tokens directly and accept identity data via `smrt-types` contracts.
