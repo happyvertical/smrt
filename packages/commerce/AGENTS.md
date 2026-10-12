@@ -31,6 +31,9 @@ recipes show carry `@field({ description })` text; keep both in plain
 language for end users and update them when a recipe's fields change. See
 [core recipes](../core/agents/recipes.md).
 
+See [payment allocation integrity](agents/payment-allocations.md) for atomic splits,
+retry identity, parent corrections and supported dialects.
+
 ## Ledger Integration
 
 `@happyvertical/smrt-ledgers` is a regular dependency, loaded lazily via dynamic `import()` so the coupling stays runtime-only (no hard static import; the package graph stays a DAG — see #1582). Invoice stores `arJournalId` and `revenueJournalId` as string references. `recognizeRevenue()` creates a balanced AR journal entry; `getArJournal()` returns null when no journal has been recognized yet.

@@ -217,6 +217,7 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
     // an exact integer comparison with no tolerance.
     const payment = await payments.create({
       paymentNumber: 'PAY-2361',
+      currency: invoice.currency,
       amount: 2159,
     });
 
@@ -228,6 +229,7 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
 
     expect((await allocations.get(allocation.id))?.amount).toBe(2159);
 
+    await invoice.loadFromId();
     await invoice.save();
     expect((await invoices.get(invoice.id))?.amountPaid).toBe(2159);
 

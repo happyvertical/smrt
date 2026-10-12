@@ -19,8 +19,8 @@
  *  - [P1 tenant-isolation] FulfillmentLineItem loads the ordered ContractLineItem
  *    tenant-scoped (a foreign-tenant id fails closed) and rejects a line item
  *    that belongs to a different contract than the parent Fulfillment.
- *  - [P2 zero-total] PaymentAllocation skips the invoice-total cap for a
- *    total=0 invoice (does not throw) per the documented intent.
+ *  - [P2 zero-total] PaymentAllocation rejects allocation against a
+ *    total=0 invoice under the #3801 tightened financial contract.
  *
  * Real in-memory SQLite (no DB mocking), per repo testing conventions. Money
  * math is executed, not asserted from comments.
@@ -96,6 +96,7 @@ describe('Invoice payment-status epsilon (#1389 blocking)', () => {
     // (which validates PAID) must agree, so a fully-paid invoice is
     // PAID-and-saveable rather than PARTIAL-then-rejected.
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-EPS-1',
       totalAmount: 0,
     });
@@ -130,6 +131,7 @@ describe('Invoice payment-status epsilon (#1389 blocking)', () => {
       amount: 30,
     });
     await alloc.save();
+    await reloaded.loadFromId();
 
     const total = await allocations.getTotalAllocatedToInvoice(
       reloaded.id ?? '',
@@ -152,6 +154,7 @@ describe('Invoice payment-status epsilon (#1389 blocking)', () => {
     // The other half of the retired epsilon: 1¢ short used to fall inside the
     // 0.01 tolerance and read as fully paid. It is a shortfall (#2401).
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-EPS-2',
       subtotal: 30,
       taxAmount: 0,
@@ -168,6 +171,7 @@ describe('Invoice payment-status epsilon (#1389 blocking)', () => {
       amount: 29,
     });
     await alloc.save();
+    await invoice.loadFromId();
 
     const total = await allocations.getTotalAllocatedToInvoice(
       invoice.id ?? '',
@@ -213,6 +217,7 @@ describe('Invoice/ledger epsilon snap (#1389 major)', () => {
     // balances exactly — which is the property the snap was protecting.
     await expect(
       invoices.create({
+        currency: 'USD',
         invoiceNumber: 'INV-SNAP-MISMATCH',
         subtotal: 10000, // $100.00
         taxAmount: 0,
@@ -221,6 +226,7 @@ describe('Invoice/ledger epsilon snap (#1389 major)', () => {
     ).rejects.toThrow(/must equal subtotal \+ taxAmount/);
 
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-SNAP-1',
       subtotal: 10000,
       taxAmount: 0,
@@ -631,6 +637,7 @@ describe('PaymentAllocation invoice-level cap (#1389 speculative)', () => {
 
   it('rejects allocations from two different payments that jointly over-pay an invoice', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-CAP-1',
       subtotal: 100,
       taxAmount: 0,
@@ -665,6 +672,7 @@ describe('PaymentAllocation invoice-level cap (#1389 speculative)', () => {
 
   it('allows allocations from different payments that stay within the invoice total', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-CAP-2',
       subtotal: 100,
       taxAmount: 0,
@@ -692,13 +700,10 @@ describe('PaymentAllocation invoice-level cap (#1389 speculative)', () => {
     await expect(a2.save()).resolves.toBeTruthy();
   });
 
-  // Round-2 [P2 zero-total]: a freshly-created total=0 invoice must SKIP the
-  // invoice-total cap (the documented "zero/missing total skips the cap"
-  // intent), not be capped at 0. `Number.isFinite(0) === true`, so the prior
-  // `isFinite` guard wrongly fired `over-pay invoice` for any allocation
-  // against a total=0 invoice; the `> ALLOCATION_EPSILON` gate skips it.
-  it('does not throw when allocating against a total=0 invoice', async () => {
+  // #3801 deliberately closes the former zero-total bypass.
+  it('rejects allocation against a total=0 invoice', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-ZERO',
       subtotal: 0,
       taxAmount: 0,
@@ -707,16 +712,13 @@ describe('PaymentAllocation invoice-level cap (#1389 speculative)', () => {
     await invoice.save();
     expect(invoice.totalAmount).toBe(0);
 
-    // Payment large enough to clear the per-payment cap, so ONLY the
-    // invoice-total cap could (wrongly) reject here.
     const payment = await payments.create({ amount: 50, currency: 'USD' });
-    await payment.save();
-
-    const allocation = await allocations.create({
-      paymentId: payment.id,
-      invoiceId: invoice.id,
-      amount: 50,
-    });
-    await expect(allocation.save()).resolves.toBeTruthy();
+    await expect(
+      allocations.create({
+        paymentId: payment.id,
+        invoiceId: invoice.id,
+        amount: 50,
+      }),
+    ).rejects.toThrow(/over-pay invoice/);
   });
 });
