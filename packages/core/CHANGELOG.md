@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.55.16
+
+### Patch Changes
+
+- ### Features
+  
+  - support invoice-rounded editor totals (#3817) (commerce)
+  
+  ### Bug Fixes
+  
+  - preserve undelivered invoice payment lifecycle (#3819) (commerce)
+- @happyvertical/smrt-config@0.55.16
+  - @happyvertical/smrt-scanner@0.55.16
+  - @happyvertical/smrt-types@0.55.16
+
 ## 0.55.15
 
 ### Patch Changes
