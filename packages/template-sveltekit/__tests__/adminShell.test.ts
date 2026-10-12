@@ -45,6 +45,22 @@ describe('application shell', () => {
     expect(layout).toContain("'modelContext' in document");
   });
 
+  it('wires the account menu, sign-out, phone tab bar and chrome-free setup', () => {
+    expect(layout).toContain('user={data.session.user}');
+    expect(layout).toContain('onSignOut={signOut}');
+    expect(layout).toContain("import { signOut } from '$lib/sign-out'");
+    expect(layout).toContain('phoneTabBar');
+    expect(layout).toContain("chrome={!page.route.id?.startsWith('/setup')}");
+    expect(layout).not.toContain('TODO(');
+    expect(read('settings/+page.svelte')).toContain(
+      '<ShellSettingsPage onSignOut={signOut} />',
+    );
+    expect(read('../lib/sign-out.ts')).toContain("method: 'POST'");
+    expect(read('sign-out/+server.ts')).toContain(
+      'export const POST = createSignOutHandler(runtime)',
+    );
+  });
+
   it('mounts the shipped owner setup form over the runtime action', () => {
     expect(read('setup/+page.svelte')).toContain(
       '<OwnerSetupForm {data} {form} {enhance} />',
@@ -55,7 +71,7 @@ describe('application shell', () => {
   });
 
   it('mounts the shipped settings page inside the shell', () => {
-    expect(read('settings/+page.svelte')).toContain('<ShellSettingsPage />');
+    expect(read('settings/+page.svelte')).toContain('<ShellSettingsPage');
   });
 });
 

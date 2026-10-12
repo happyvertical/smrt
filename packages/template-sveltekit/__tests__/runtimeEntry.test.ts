@@ -71,6 +71,7 @@ describe('template runtime entry', () => {
         authenticated: false,
         activeTenantId: null,
         selectedTenantSlug: 'acme',
+        user: null,
       },
     });
   });

@@ -3,6 +3,7 @@
   import { webMcpToolDefinitions } from '@happyvertical/smrt-virt-web';
   import { AppShell } from '@happyvertical/smrt-svelte/app';
   import type { ShellNavItem } from '@happyvertical/smrt-svelte/workspace';
+  import { signOut } from '$lib/sign-out';
   import type { LayoutProps } from './$types';
 
   let { data, children }: LayoutProps = $props();
@@ -22,11 +23,6 @@
   );
 </script>
 
-<!--
-  TODO(#3852): enable the phone bottom tab bar via the new AppShell prop once
-  the dependency release that ships it is adopted.
-  TODO(#3853): wire the AppShell account menu prop (#3853) here.
--->
 <AppShell
   title="s-m-r-t app"
   {webmcp}
@@ -34,6 +30,10 @@
   currentHref={page.url.pathname}
   runtimeDiagnostics={data.session.authenticated}
   settingsHref="/settings"
+  user={data.session.user}
+  onSignOut={signOut}
+  phoneTabBar
+  chrome={!page.route.id?.startsWith('/setup')}
 >
   {@render children()}
 </AppShell>

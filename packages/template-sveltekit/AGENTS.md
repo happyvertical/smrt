@@ -95,6 +95,16 @@ It is the ground-up alternative to `smrt-saas-starter`.
   small explicit `nav`; `/setup` and `/settings` mount that package's
   `OwnerSetupForm` and `ShellSettingsPage`. Generated REST routes do not imply
   page routes.
+- Session user and sign-out: `+layout.server.ts` (`createSessionLayoutLoad()`)
+  returns `session.user` (`{ id, email, name? }` only, never the record or
+  tokens). The root layout passes it as AppShell `user` (account menu) with
+  `onSignOut` from `src/lib/sign-out.ts` (same-origin `fetch` `POST /sign-out`,
+  then `invalidateAll()` and `goto('/')`); the settings page passes the same
+  helper. `src/routes/sign-out/+server.ts` mounts `createSignOutHandler(runtime)`
+  (POST only, 405 otherwise; same-origin only, 403 otherwise; 204, or 303 to `/`
+  for an HTML form post). The layout enables `phoneTabBar` and sets
+  `chrome={!page.route.id?.startsWith('/setup')}` so `/setup` renders only the
+  chrome-free `OwnerSetupForm` card.
 - The Notes page is built from smrt-ui primitives only (`Button`, `Card`,
   `Form`, `FormGroup`, `Input`, `Textarea`, `EmptyState`): no raw `<form>`,
   `<input>`, or `<button>`, token spacing, and a "Start your first note" empty
