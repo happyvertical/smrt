@@ -55,7 +55,7 @@
     "test:e2e:quotes": "cd ../.. && node packages/commerce/test-support/quote-browser.mjs",
     "test:e2e:invoices": "playwright test -c e2e/invoices/playwright.config.ts",
     "test:e2e:pricing": "cd ../.. && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/pricing-browser.mjs node packages/commerce/test-support/quote-browser.mjs",
-    "test:e2e:purchasing": "cd ../.. && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/purchasing-browser-extension.mjs node packages/commerce/test-support/quote-browser.mjs"
+    "test:e2e:purchasing": "cd ../.. && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/purchasing-browser-extension.mjs node packages/commerce/test-support/quote-browser.mjs && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/purchasing-header-browser.mjs node packages/commerce/test-support/quote-browser.mjs"
   },
   "keywords": [
     "smrt",

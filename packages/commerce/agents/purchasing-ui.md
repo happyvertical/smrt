@@ -80,3 +80,30 @@ Composition regression: run the quote SSR lane, then the maintained quote browse
 host with `QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/quote-attachments-browser.mjs`.
 It submits actual Assets upload bytes and the separate editor action with and
 without JavaScript at 390px.
+
+## Purchase-order header
+
+`PurchaseOrderHeaderForm` (`purchase-order-header-form` registry slot) edits only
+`vendorId`, `reference`, `notes`, `expectedDate` and `shipTo`. It does not amend
+awards, allocations, totals or status. Supply `action`, caller-authorized `vendors`,
+raw `values`, canonical-key `errors`, optional `message`, `hiddenFields` and
+`names` for an existing endpoint. The native POST submitter defaults to
+`intent=saveHeader`; `intent`, `onsubmit` and `formAttributes` adapt transport.
+Readonly/busy are presentation controls, never authorization. The server must
+check active authority, vendor eligibility and any order-status edit policy.
+
+All header input remains text: even rejected calendar dates survive a rerender.
+The server validates `expectedDate` as YYYY-MM-DD or empty before saving. An
+unknown retained vendor appears explicitly unavailable but retains its ID on POST
+so a rejected submission cannot silently clear it. The caller must reject an
+unavailable vendor or explicitly permit keeping the existing relationship.
+`shipTo` is a delivery address/instructions snapshot, not a Profile reference.
+`PurchaseOrder.expectedDate` and `.shipTo` use existing STI metadata, default to
+empty strings, and accept `PurchaseOrderOptions`; no table migration is needed.
+Existing Contract fields own the other three values. Header persistence uses the
+existing SQLite/PostgreSQL Contract schema; DuckDB rejects its existing
+ON UPDATE CASCADE foreign keys and is not a supported Contract storage lane. Caller retry identities
+are rendered unchanged; the form itself never persists or retries a mutation.
+
+Header regression evidence uses the purchasing SSR suite and the shared quote
+browser host with `QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/purchasing-header-browser.mjs`.

@@ -122,6 +122,28 @@ export default {
   moduleMeta: COMMERCE_MODULE_META,
   entries: [
     {
+      id: 'purchase-order-header-form',
+      title: 'Purchase order header',
+      description:
+        'Retained delivery header with caller-owned validation and native transport.',
+      loadComponent: () =>
+        import('./components/PurchaseOrderHeaderForm.svelte'),
+      order: 32,
+      props: {
+        action: '#',
+        readonly: true,
+        vendors: [{ value: 'vendor-1', label: 'North Studio' }],
+        values: {
+          vendorId: 'vendor-1',
+          reference: 'PO-104',
+          expectedDate: '2026-11-02',
+          shipTo: 'Receiving dock',
+          notes: 'Call before delivery',
+        },
+      },
+      modes: { mock: { label: 'Header preview' } },
+    },
+    {
       id: 'purchase-order-editor',
       title: 'Purchase and award preparation',
       description:

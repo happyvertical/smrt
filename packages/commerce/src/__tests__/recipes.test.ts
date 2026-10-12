@@ -104,6 +104,17 @@ describe('commerce recipes (#3590)', () => {
   });
 
   describe('user-facing help (#3591)', () => {
+    it('explains the purchase delivery header shown by the recipe', () => {
+      const markdown = readFileSync(
+        new URL('../purchases.recipe.md', import.meta.url),
+        'utf8',
+      );
+      expect(extractFieldRefs(markdown)).toEqual(
+        expect.arrayContaining(['expectedDate', 'shipTo']),
+      );
+      expect(markdown).toContain('YYYY-MM-DD');
+    });
+
     const models = [
       [CustomersRecipe, { Customer: new Customer() }],
       [VendorsRecipe, { Vendor: new Vendor() }],

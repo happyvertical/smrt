@@ -173,6 +173,7 @@ export {
   type PaymentOption,
   PaymentStatus,
   PayoutStatus,
+  type PurchaseOrderOptions,
   type RecognizeRevenueOptions,
   type RecordPaymentOptions,
   VendorStatus,

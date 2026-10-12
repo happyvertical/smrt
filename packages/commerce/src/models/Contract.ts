@@ -17,6 +17,7 @@ import {
   ContractStatus,
   ContractType,
   type LicenseSaleOptions,
+  type PurchaseOrderOptions,
 } from '../types/index.js';
 import { Customer } from './Customer.js';
 import { Vendor } from './Vendor.js';
@@ -442,6 +443,28 @@ export class Agreement extends Contract {
 @smrt()
 export class PurchaseOrder extends Contract {
   override contractType = ContractType.PURCHASE_ORDER;
+
+  /** Expected delivery calendar date (YYYY-MM-DD), or empty when unspecified. */
+  @field({
+    description:
+      'The date you expect the delivery, as YYYY-MM-DD. Leave blank if it is not known.',
+  })
+  expectedDate: Meta<string> = '';
+
+  /** Delivery address/instructions snapshot, independent of the vendor address. */
+  @field({
+    description:
+      'Where this order should be delivered, including any delivery instructions.',
+  })
+  shipTo: Meta<string> = '';
+
+  /** Construct a purchase order with its optional delivery header. */
+  constructor(options: PurchaseOrderOptions = {}) {
+    super(options);
+    if (options.expectedDate !== undefined)
+      this.expectedDate = options.expectedDate;
+    if (options.shipTo !== undefined) this.shipTo = options.shipTo;
+  }
 }
 
 /**

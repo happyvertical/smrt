@@ -406,6 +406,14 @@ export interface ContractOptions extends SmrtObjectOptions {
   channelId?: string;
 }
 
+/** Purchase-order header options stored in the existing STI metadata. */
+export interface PurchaseOrderOptions extends ContractOptions {
+  /** Expected delivery calendar date (YYYY-MM-DD); empty means unspecified. */
+  expectedDate?: string;
+  /** Delivery address/instructions snapshot. */
+  shipTo?: string;
+}
+
 /**
  * Constructor options for {@link LicenseSale} (Contract STI subtype). Extends
  * {@link ContractOptions} with the licensing-specific meta fields.

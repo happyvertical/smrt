@@ -583,3 +583,13 @@ The independent `@happyvertical/smrt-commerce/cost-billing` entry point provides
 exact signed reimbursement/fee calculations, ordered generic markup provenance,
 and explicit line or invoice tax rounding. See [the cost billing contract](agents/cost-billing.md).
 It does not alter Invoice persistence, editor defaults or settlement behavior.
+
+### Purchase-order header editing
+
+Import `PurchaseOrderHeaderForm` from `@happyvertical/smrt-commerce/svelte` for a
+native POST of vendor, reference, notes, expected date and ship-to fields. Pass
+`action`, `vendors` and raw `values`; return canonical field `errors` and the same
+`hiddenFields` after server validation. This header-only form leaves purchase
+allocations and totals unchanged. `PurchaseOrder` stores `expectedDate` and
+`shipTo` in existing STI metadata. See [the purchasing contract](agents/purchasing-ui.md#purchase-order-header)
+for validation, retained values and transport details.
