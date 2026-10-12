@@ -7,7 +7,6 @@ import {
   field,
   foreignKey,
   type Meta,
-  meta,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
@@ -446,14 +445,14 @@ export class PurchaseOrder extends Contract {
   override contractType = ContractType.PURCHASE_ORDER;
 
   /** Expected delivery calendar date (YYYY-MM-DD), or empty when unspecified. */
-  @meta({
+  @field({
     description:
       'The date you expect the delivery, as YYYY-MM-DD. Leave blank if it is not known.',
   })
   expectedDate: Meta<string> = '';
 
   /** Delivery address/instructions snapshot, independent of the vendor address. */
-  @meta({
+  @field({
     description:
       'Where this order should be delivered, including any delivery instructions.',
   })
