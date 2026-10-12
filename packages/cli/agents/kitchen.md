@@ -140,7 +140,9 @@ client), `__tests__/kitchen-plugin.test.ts` (plugin files against the Agent Plug
 - `start_plan`, `get_plan`, and `run_commands` return `state: { snapshot, cookbook }`
   atomically. Read this field for live UI state; replayed command receipts and their
   original snapshots retain their previous meaning. The app bridge allows
-  get/run/export/validate plus its UI reload check.
+  get/run/export/validate plus its UI reload check. It sizes the app to the host frame, not its
+  content: `hostContext.containerDimensions.maxHeight`, else 720px; a host-fixed height or
+  fullscreen gets no size report.
 - Not here: public or remote HTTP transport. See the plugin README for local build/install and
   the explicit manual desktop capability check.
 
