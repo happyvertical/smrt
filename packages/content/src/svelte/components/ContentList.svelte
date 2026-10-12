@@ -3748,17 +3748,17 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     border-color: var(--smrt-color-outline);
   }
 
-  .view-btn {
-    color: var(--smrt-color-primary) !important;
+  .content-actions .view-btn {
+    color: var(--smrt-color-primary);
   }
 
   .content-actions :global(.delete-btn) {
-    color: var(--smrt-color-error) !important;
+    color: var(--smrt-color-error);
   }
 
-  .content-actions :global(.delete-btn:hover) {
-    background: var(--smrt-color-error-container) !important;
-    border-color: var(--smrt-color-error) !important;
+  .content-actions :global(.content-action-btn.delete-btn:not(:disabled):hover) {
+    background: var(--smrt-color-error-container);
+    border-color: var(--smrt-color-error);
   }
 
   /* GRID View Specifics */

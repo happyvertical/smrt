@@ -1750,7 +1750,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__tenant-stack[hidden],
   .smrt-admin-shell__panel[hidden],
   .smrt-admin-shell__drawer[hidden] {
-    display: none !important;
+    display: none;
   }
 
   .smrt-admin-shell__tenant-stack {

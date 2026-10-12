@@ -39,7 +39,7 @@ function formatBytes(bytes: number): string {
   <div class="progress-bar">
     <div
       class="progress-fill"
-      style:width="{progress?.percent ?? 0}%"
+      style:width={progress && progress.state !== 'idle' ? `${progress.percent ?? 0}%` : undefined}
       class:indeterminate={!progress || progress.state === 'idle'}
     ></div>
   </div>
@@ -99,7 +99,7 @@ function formatBytes(bytes: number): string {
   }
 
   .progress-fill.indeterminate {
-    width: 30% !important;
+    width: 30%;
     animation: indeterminate 1.5s infinite linear;
   }
 

@@ -264,8 +264,9 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     background: var(--smrt-color-surface-container-low, #f9fafb);
   }
 
-  .list-table__row--selected {
-    background: var(--smrt-color-primary-container, #dbeafe) !important;
+  /* Doubled class: ties :hover above on specificity and wins by source order. */
+  .list-table__row.list-table__row--selected {
+    background: var(--smrt-color-primary-container, #dbeafe);
   }
 
   .list-table__row td {

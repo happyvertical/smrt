@@ -2072,9 +2072,13 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   }
 
   .fact-chip :global(.fact-chip__remove) {
-    background: transparent !important;
-    color: var(--smrt-color-error) !important;
-    padding: 0 !important;
+    background: transparent;
+    color: var(--smrt-color-error);
+    padding: 0;
+  }
+
+  .fact-chip :global(.fact-chip__remove:hover:not(:disabled):not(.disabled)) {
+    background: transparent;
   }
 
   .review-card {
