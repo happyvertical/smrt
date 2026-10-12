@@ -74,6 +74,9 @@ const autoTheme = createThemeFromColor('#6366f1', 'indigo', 'Indigo Theme');
 registerTheme(autoTheme);
 ```
 
+Generated dark themes use tonal primary colors so primary text and icon
+containers remain readable even when the brand seed is very dark.
+
 ### Full Custom Theme with All Options
 
 ```typescript
