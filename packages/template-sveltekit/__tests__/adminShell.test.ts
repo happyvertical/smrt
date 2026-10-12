@@ -59,6 +59,7 @@ describe('application shell', () => {
     expect(read('sign-out/+server.ts')).toContain(
       'export const POST = createSignOutHandler(runtime)',
     );
+    expect(read('../lib/sign-out.ts')).toContain('if (!response.ok)');
   });
 
   it('mounts the shipped owner setup form over the runtime action', () => {

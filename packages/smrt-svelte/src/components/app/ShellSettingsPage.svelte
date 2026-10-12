@@ -4,7 +4,11 @@ import { M } from '../../i18n/strings.workspace.js';
 import ShellSettingsPanel from '../workspace/admin-shell/ShellSettingsPanel.svelte';
 
 interface Props {
-  /** Where the Account section's sign-out control goes; shown only when given. */
+  /**
+   * Where the Account section's sign-out link goes; shown only when given. A
+   * link is a GET: never point it at the runtime's POST-only `/sign-out`; use
+   * `onSignOut` for that.
+   */
   signOutHref?: string;
   /** Called by the sign-out control instead of following `signOutHref`. */
   onSignOut?: () => void;

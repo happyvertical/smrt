@@ -114,7 +114,11 @@ interface Props {
   accountMenu?: AppShellAccountMenu;
   /** Called when the account menu's Sign out is chosen (wins over `signOutHref`). */
   onSignOut?: () => void;
-  /** Where the account menu's Sign out link goes when there is no `onSignOut`. */
+  /**
+   * Where the account menu's Sign out link goes when there is no `onSignOut`.
+   * A link is a GET: never point it at the runtime's POST-only `/sign-out`
+   * route; pass `onSignOut` for that.
+   */
   signOutHref?: string;
   /**
    * The theme switcher (`ColorSchemeToggle` from `smrt-ui/themes`) as the
@@ -551,7 +555,16 @@ function accountPlacement(
   rail: boolean,
 ): 'top-start' | 'top-end' | 'bottom-start' | 'bottom-end' | 'inline-end' {
   if (rail) return 'inline-end';
-  if (!slot || shell.viewport === 'phone') return 'bottom-end';
+  if (!slot) return 'bottom-end';
+  // On phones the item may still sit in a stored footer slot: open the menu
+  // upward from a footer and align it to the trigger's own edge so it never
+  // leaves the viewport.
+  if (shell.viewport === 'phone') {
+    const region = slotRegion(slot);
+    if (region === 'footer')
+      return slot === 'footer.start' ? 'top-start' : 'top-end';
+    return slot === 'header.start' ? 'bottom-start' : 'bottom-end';
+  }
   switch (slot) {
     case 'leftSidebar.footer':
       return 'top-start';

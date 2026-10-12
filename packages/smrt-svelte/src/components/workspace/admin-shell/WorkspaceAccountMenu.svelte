@@ -40,7 +40,11 @@ export interface Props {
   disabled?: boolean;
   /** Adds a Settings link to the menu. */
   settingsHref?: string;
-  /** Adds a Sign out link to the menu (use `onSignOut` for a callback). */
+  /**
+   * Adds a Sign out link (a GET navigation) to the menu. Never point it at a
+   * POST-only route such as the runtime's `/sign-out`; use `onSignOut` for
+   * those. Use `onSignOut` for a callback.
+   */
   signOutHref?: string;
   /** Called when the user selects a different tenant. */
   onTenantSelect?: (tenantId: string) => void;
@@ -220,6 +224,7 @@ $effect(() => {
   title={summaryTitle}
   data-smrt-component="WorkspaceAccountMenu"
 >
+  <!-- raw-primitive-allow: menu trigger owns aria-haspopup/aria-expanded/aria-controls and an avatar + identity layout the Button primitive does not model -->
   <button
     bind:this={triggerEl}
     type="button"
@@ -267,6 +272,7 @@ $effect(() => {
               onclick={() => select(entry)}
             >{entry.label}</a>
           {:else}
+            <!-- raw-primitive-allow: role="menuitem" with roving tabindex inside a role="menu"; not a content button -->
             <button
               bind:this={itemEls[i]}
               type="button"
