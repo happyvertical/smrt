@@ -118,6 +118,9 @@
     "./styles/layers.css": {
       "default": "./dist/styles/layers.css"
     },
+    "./styles/unstyled.css": {
+      "default": "./dist/styles/unstyled.css"
+    },
     "./utils/*": {
       "default": "./dist/utils/*"
     },

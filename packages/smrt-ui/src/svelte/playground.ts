@@ -9,6 +9,7 @@ const loadCalendar = () => import('./playground/CalendarPreview.svelte');
 const loadCapture = () => import('./playground/CapturePreview.svelte');
 const loadPermissionPicker = () =>
   import('./playground/PermissionPickerPreview.svelte');
+const loadStyleless = () => import('./playground/StylelessPreview.svelte');
 
 export default {
   packageName: '@happyvertical/smrt-ui',
@@ -112,6 +113,16 @@ export default {
       loadComponent: loadCapture,
       order: 7,
       tags: ['forms', 'camera', 'signature', 'files'],
+      modes: { mock: { label: 'Interactive' } },
+    },
+    {
+      id: 'styleless-mode',
+      title: 'Styleless Mode',
+      description:
+        'Toggle unstyled.css across the catalogue: components keep layout and drop their themed look, so consumer CSS can restyle them.',
+      loadComponent: loadStyleless,
+      order: 10,
+      tags: ['styling', 'styleless', 'layers', 'restyling'],
       modes: { mock: { label: 'Interactive' } },
     },
   ],
