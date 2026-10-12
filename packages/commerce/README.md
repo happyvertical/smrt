@@ -600,7 +600,9 @@ caller-owned sources and approvals. See [the editor contract](agents/invoice-pre
 
 The independent `@happyvertical/smrt-commerce/cost-billing` entry point provides
 exact signed reimbursement/fee calculations, ordered generic markup provenance,
-and explicit line or invoice tax rounding. See [the cost billing contract](agents/cost-billing.md).
+and explicit line or invoice tax rounding. Its opt-in ordered tax calculator
+supports subset compounding with caller-selected signed invoice allocation.
+See [the cost billing contract](agents/cost-billing.md).
 It does not alter Invoice persistence, editor defaults or settlement behavior.
 
 ### Purchase-order header editing
