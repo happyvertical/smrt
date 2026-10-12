@@ -48,6 +48,8 @@ export interface CookbookEngineOptions {
   maxJournal?: number;
   /** How many undo entries are kept; default 20. */
   maxUndo?: number;
+  /** Optional namespace for process-local undo handles; default `undo`. */
+  undoPrefix?: string;
 }
 
 /**
@@ -326,7 +328,7 @@ export function createCookbookEngine(
   }
 
   function recordUndo(before: PlanState, after: PlanState): string {
-    const undoId = `undo-${++undoCounter}`;
+    const undoId = `${options.undoPrefix ?? 'undo'}-${++undoCounter}`;
     undos.set(undoId, { before: clone(before), after: clone(after) });
     undoIds = [...undoIds, undoId].slice(-maxUndo);
     for (const key of [...undos.keys()])
