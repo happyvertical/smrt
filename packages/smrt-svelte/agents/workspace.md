@@ -134,6 +134,16 @@ and accessible expand/collapse name. `showTenantToggle` is a deprecated alias fo
 `edgeToggles.left`. Migration: pass `edgeToggles` (true) to keep the previous
 behaviour.
 
+The left edge's toggle is an icon-only chevron, not a labelled button: it
+points the way the panel will move (left to collapse, right to expand), its
+accessible name is `Collapse <region>` / `Expand <region>` (the hotkey rides
+in the tooltip, there is no visible `<kbd>`), and off phones it is the last
+child of the rail, pinned to the bottom below the navigation and the
+`leftSidebar.footer` slot (`margin-block-start: auto`; it hugs the inner edge
+while expanded and centres in the collapsed rail). Phones keep it at the top
+of the drawer so opening the drawer still focuses the close control. The
+header, footer and right toggles keep their region label and hotkey hint.
+
 ### Moving items between slots
 
 Movable items have stable ids: dock toggles `dock:<tool>`, each host `slots`
