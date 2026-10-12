@@ -76,7 +76,7 @@ const displayLabel = $derived.by(() => {
 });
 </script>
 
-<div class="progress-container" class:sm={size === 'sm'} class:lg={size === 'lg'}>
+<div class="progress-container" class:sm={size === 'sm'} class:lg={size === 'lg'} data-smrt-component="ProgressBar">
   {#if showLabel || showValue}
     <div class="progress-header">
       <span class="progress-label">{displayLabel}</span>

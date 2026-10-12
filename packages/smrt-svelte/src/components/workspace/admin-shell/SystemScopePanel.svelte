@@ -17,7 +17,7 @@ const { t } = useI18n();
 
 <section
   class="smrt-system-scope-panel"
-  aria-label={t(M['ui.system_scope_panel.system_scope'])}
+  aria-label={t(M['ui.system_scope_panel.system_scope'])} data-smrt-component="SystemScopePanel"
 >
   {#each panels as panel (panel.id)}
     <section class="smrt-system-scope-panel__group" aria-label={panel.label}>

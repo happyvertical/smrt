@@ -312,7 +312,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   data-layout-editing=""
   data-nav-mode={navMode}
   aria-label={ariaLabel || t(M['ui.shell_layout_editor.sortable_label'])}
-  bind:this={rootEl}
+  bind:this={rootEl} data-smrt-component="ShellNavEditor"
 >
   <Sortable
     {containers}

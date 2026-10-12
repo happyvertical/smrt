@@ -288,7 +288,7 @@ $effect(() => {
 $effect(() => () => clearTimeout(timer));
 </script>
 
-<div class="relation-input" bind:this={rootEl}>
+<div class="relation-input" bind:this={rootEl} data-smrt-component="RelationInput">
   <div class="field">
     <Combobox
       {name}

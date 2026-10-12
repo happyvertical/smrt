@@ -24,7 +24,7 @@ const { tabs, onselect, onclose }: Props = $props();
 </script>
 
 {#if tabs.length > 0}
-  <nav class="tab-list" aria-label={t(M['chat.chat_tab_list.minimized_chats'])}>
+  <nav class="tab-list" aria-label={t(M['chat.chat_tab_list.minimized_chats'])} data-smrt-component="ChatTabList">
     {#each tabs as tab (tab.roomId)}
       <div class="tab-list__item">
         <!-- raw-primitive-allow: pressable circular avatar tab wrapping rich content (room avatar component and overlaid unread badge) that opens the chat on click; no Button primitive owns this structural avatar-tab pattern -->

@@ -143,14 +143,14 @@ const gridClasses = $derived.by(() => {
 </script>
 
 {#if header}
-  <div class="grid-header">
+  <div class="grid-header" data-smrt-component="Grid">
     {@render header()}
   </div>
 {/if}
 <div
   class={gridClasses}
   style={inlineStyles}
-  {...rest}
+  {...rest} data-smrt-component="Grid"
 >
   {@render children?.()}
 </div>

@@ -49,9 +49,9 @@ const cards = $derived.by((): Card[] => {
 </script>
 
 {#if cards.length === 0}
-  <p class="smrt-shortcuts__empty">{t(M['ui.overview.shortcuts.empty'])}</p>
+  <p class="smrt-shortcuts__empty" data-smrt-component="ShortcutsWidget">{t(M['ui.overview.shortcuts.empty'])}</p>
 {:else}
-  <ul class="smrt-shortcuts">
+  <ul class="smrt-shortcuts" data-smrt-component="ShortcutsWidget">
     {#each cards as card (card.id)}
       <li class="smrt-shortcuts__card">
         <a class="smrt-shortcuts__link" href={card.href}>

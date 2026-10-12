@@ -1633,7 +1633,7 @@ function handleEditorDragEnd() {
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div bind:this={rootElement} class="content-body-editor" onpointerleave={handleRootPointerLeave}>
+<div bind:this={rootElement} class="content-body-editor" onpointerleave={handleRootPointerLeave} data-smrt-component="ContentBodyEditor">
   <div class="body-editor-toolbar" aria-label={t(M['content.content_body_editor.toolbar'])}>
     <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.bold'])} aria-label={t(M['content.content_body_editor.bold'])} onclick={() => runCommand('bold')}>
       <strong>B</strong>

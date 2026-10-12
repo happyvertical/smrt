@@ -152,7 +152,7 @@ async function confirmDelete(): Promise<void> {
   </PageHeader>
 {/if}
 
-<article class="smrt-detail-screen" aria-label={heading}>
+<article class="smrt-detail-screen" aria-label={heading} data-smrt-component="DetailScreen">
   {#if sourceError}
     <Alert variant="error">{sourceError}</Alert>
   {:else}

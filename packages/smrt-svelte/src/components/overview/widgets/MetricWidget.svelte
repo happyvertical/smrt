@@ -56,7 +56,7 @@ const href = $derived(
 </script>
 
 {#if valid && metric}
-  <div class="smrt-metric">
+  <div class="smrt-metric" data-smrt-component="MetricWidget">
     {#if href}
       <a class="smrt-metric__value" {href}>{text}</a>
     {:else}
@@ -73,7 +73,7 @@ const href = $derived(
     {/if}
   </div>
 {:else}
-  <p class="smrt-metric__label">{t(M['ui.overview.no_data'])}</p>
+  <p class="smrt-metric__label" data-smrt-component="MetricWidget">{t(M['ui.overview.no_data'])}</p>
 {/if}
 
 <style>

@@ -41,7 +41,7 @@ function formatCharge(metric: CommercialMetricView): string {
 }
 </script>
 
-<section class="commercial-overview" aria-label={t(M['subscriptions.commercial.overview_label'])}>
+<section class="commercial-overview" aria-label={t(M['subscriptions.commercial.overview_label'])} data-smrt-component="CommercialOverview">
   {#each metrics as metric (metric.metricKey)}
     <article>
       <header><strong>{metric.metricKey}</strong><span class:blocked={metric.thresholdState === 'blocked'}>{metric.thresholdState ?? 'ok'}</span></header>

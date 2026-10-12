@@ -35,7 +35,7 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
 </script>
 
 {#snippet surface()}
-  <section class="spoken-captions" aria-label={speakerLabel}>
+  <section class="spoken-captions" aria-label={speakerLabel} data-smrt-component="SpokenCaptions">
     <p class="speaker"><span aria-hidden="true">◈</span> {speakerLabel}</p>
     <div class="caption-lines" aria-live={announce ? 'polite' : 'off'} aria-atomic="false">
       {#each visibleLines as line (line.id)}

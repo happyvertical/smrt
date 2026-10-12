@@ -62,7 +62,7 @@ setFormGroupContext(
 );
 </script>
 
-<div class="form-group">
+<div class="form-group" data-smrt-component="FormGroup">
 	<FieldLabel for={fieldId} {label} {required} />
 	{@render children()}
 	{#if hintId}

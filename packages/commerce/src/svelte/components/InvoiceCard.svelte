@@ -107,7 +107,7 @@ const isOverdue = $derived.by(() => {
 </script>
 
 {#if href}
-  <a class="invoice-card" {href} use:ripple>
+  <a class="invoice-card" {href} use:ripple data-smrt-component="InvoiceCard">
     <div class="card-header">
       <span class="invoice-number">{invoice.invoiceNumber}</span>
       <span class="status-badge {isOverdue ? 'status-error' : statusClass}">
@@ -133,7 +133,7 @@ const isOverdue = $derived.by(() => {
     {#if retained}{@render details?.(retained)}{/if}
   </a>
 {:else if retained}
-  <article class="invoice-card">
+  <article class="invoice-card" data-smrt-component="InvoiceCard">
     <div class="card-header">
       <span class="invoice-number">{invoice.invoiceNumber}</span>
       <span class="status-badge {statusClass}">{retained.statusLabel}</span>
@@ -150,7 +150,7 @@ const isOverdue = $derived.by(() => {
   </article>
 {:else}
   <!-- raw-primitive-allow: large pressable invoice card wrapping rich header/body/footer content with use:ripple, a structural selection control no Button primitive should own (mirrors the href anchor branch) -->
-  <button type="button" class="invoice-card" onclick={onclick} use:ripple>
+  <button type="button" class="invoice-card" onclick={onclick} use:ripple data-smrt-component="InvoiceCard">
     <div class="card-header">
       <span class="invoice-number">{invoice.invoiceNumber}</span>
       <span class="status-badge {isOverdue ? 'status-error' : statusClass}">

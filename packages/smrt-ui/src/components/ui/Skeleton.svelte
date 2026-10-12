@@ -36,7 +36,7 @@ const lineIndexes = $derived(
 );
 </script>
 
-<span class="skeleton-wrap" role="status" aria-label={label}>
+<span class="skeleton-wrap" role="status" aria-label={label} data-smrt-component="Skeleton">
   {#if variant === 'text'}
     {#each lineIndexes as i (i)}
       <span

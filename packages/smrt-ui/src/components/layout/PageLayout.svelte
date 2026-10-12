@@ -27,7 +27,7 @@ const {
 </script>
 
 <Container {maxWidth} data-page-layout-container>
-  <div class="page-layout gap-{gap} {className}" data-page-layout {...rest}>
+  <div class="page-layout gap-{gap} {className}" data-page-layout {...rest} data-smrt-component="PageLayout">
     {@render children()}
   </div>
 </Container>

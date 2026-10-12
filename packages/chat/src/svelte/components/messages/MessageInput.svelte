@@ -60,7 +60,7 @@ function handleInput(event: Event) {
 }
 </script>
 
-<div class="message-input" class:disabled>
+<div class="message-input" class:disabled data-smrt-component="MessageInput">
   {#if replyTo}
     <div class="message-input__reply">
       <div class="message-input__reply-body">

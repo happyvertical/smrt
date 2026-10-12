@@ -30,7 +30,7 @@ const descriptionId = $derived(
 );
 const errorId = $derived(error ? `fieldset-${instanceId}-error` : undefined);
 </script>
-<fieldset class="fieldset {className}" aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined} {...rest}>
+<fieldset class="fieldset {className}" aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined} {...rest} data-smrt-component="Fieldset">
   <legend>{legend}</legend>{#if description}<p id={descriptionId} class="description">{description}</p>{/if}<div class="content" class:content--stack={stack}>{@render children()}</div>{#if error}<p id={errorId} class="error" role="alert">{error}</p>{/if}
 </fieldset>
 <style>

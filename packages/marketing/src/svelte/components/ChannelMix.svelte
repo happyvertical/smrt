@@ -23,7 +23,7 @@ let { channels = [], currency = 'USD', locale }: Props = $props();
 const mix = $derived(calculateChannelMix(channels));
 </script>
 
-<section class="channel-mix">
+<section class="channel-mix" data-smrt-component="ChannelMix">
   <h3>Channel mix</h3>
   {#if mix.length === 0}
     <p class="empty">No channel performance yet.</p>

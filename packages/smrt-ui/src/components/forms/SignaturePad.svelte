@@ -313,7 +313,7 @@ useControlRegistration(() => {
   data-smrt-control={controlId}
   data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
-  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="SignaturePad"
 >
   <canvas
     bind:this={canvasEl}

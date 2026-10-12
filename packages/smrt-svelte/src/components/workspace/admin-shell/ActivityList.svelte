@@ -21,13 +21,13 @@ const activities = $derived(shell.listActivities(filter));
 </script>
 
 {#if activities.length > 0}
-  <div class="smrt-activity-list">
+  <div class="smrt-activity-list" data-smrt-component="ActivityList">
     {#each activities as activity (activity.id)}
       <ActivityItem {activity} />
     {/each}
   </div>
 {:else if !hideWhenEmpty}
-  <p class="smrt-activity-list__empty">
+  <p class="smrt-activity-list__empty" data-smrt-component="ActivityList">
     {emptyLabel ?? t(M['ui.activity_list.empty'])}
   </p>
 {/if}

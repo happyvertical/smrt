@@ -71,7 +71,7 @@ function errorText(kind: DictationErrorKind | null): string {
 }
 </script>
 
-<div class={`smrt-dictation-status ${className}`.trim()}>
+<div class={`smrt-dictation-status ${className}`.trim()} data-smrt-component="DictationStatus">
   <p
     class="smrt-dictation-status-line"
     class:smrt-dictation-status--empty={!showLine || announceOnly}

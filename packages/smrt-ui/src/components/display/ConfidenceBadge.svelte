@@ -92,7 +92,7 @@ const valueText = $derived(
   aria-valuemin={0}
   aria-valuemax={100}
   aria-valuetext={valueText}
-  aria-label={ariaLabel ?? defaultLabel}
+  aria-label={ariaLabel ?? defaultLabel} data-smrt-component="ConfidenceBadge"
 >
   <span class="confidence-bar" style:width="{clampedConfidence}%"></span>
   {#if showPercent}

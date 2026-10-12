@@ -42,7 +42,7 @@ const expandedTabs = $derived(tabs.filter((t) => t.isExpanded));
 const collapsedTabs = $derived(tabs.filter((t) => !t.isExpanded));
 </script>
 
-<div class="chat-tabs" aria-label={t(M['chat.chat_tabs.tabs_label'])}>
+<div class="chat-tabs" aria-label={t(M['chat.chat_tabs.tabs_label'])} data-smrt-component="ChatTabs">
   <div class="chat-tabs__expanded">
     {#each expandedTabs as tab (tab.roomId)}
       <ChatTab

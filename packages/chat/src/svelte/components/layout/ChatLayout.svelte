@@ -58,7 +58,7 @@ function handlePointerUp() {
 }
 </script>
 
-<div class="chat-layout" class:chat-layout--resizing={isResizing}>
+<div class="chat-layout" class:chat-layout--resizing={isResizing} data-smrt-component="ChatLayout">
   <aside
     class="chat-layout__sidebar"
     style:width="{sidebarWidth}px"

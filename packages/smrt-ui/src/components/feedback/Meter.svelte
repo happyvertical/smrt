@@ -34,7 +34,7 @@ let {
   class: className = '',
 }: Props = $props();
 </script>
-<div class="meter {className}"><div class="meter__header"><span>{label}</span>{#if showValue}<span>{formatValue(value)}</span>{/if}</div>
+<div class="meter {className}" data-smrt-component="Meter"><div class="meter__header"><span>{label}</span>{#if showValue}<span>{formatValue(value)}</span>{/if}</div>
   <meter {value} {min} {max} {low} {high} {optimum}>{formatValue(value)}</meter></div>
 <style>
   .meter { display: grid; gap: var(--smrt-spacing-2); color: var(--smrt-color-on-surface); }

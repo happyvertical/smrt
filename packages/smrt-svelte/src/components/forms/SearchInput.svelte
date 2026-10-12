@@ -132,7 +132,7 @@ const sizeClasses = {
 <div
   class="search-input {sizeClasses[size]}"
   class:search-input--disabled={disabled}
-  class:search-input--loading={loading}
+  class:search-input--loading={loading} data-smrt-component="SearchInput"
 >
   <span class="search-input__icon" aria-hidden="true">
     {#if loading}

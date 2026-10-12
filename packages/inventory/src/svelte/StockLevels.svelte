@@ -11,7 +11,7 @@ const visible = $derived(
   ),
 );
 </script>
-<table>
+<table data-smrt-component="StockLevels">
   <caption>Stock levels by location</caption>
   <thead><tr><th>Location</th><th>SKU</th><th>State</th><th>Quantity</th><th>Reorder point</th><th>Reorder quantity</th><th>Status</th></tr></thead>
   <tbody>

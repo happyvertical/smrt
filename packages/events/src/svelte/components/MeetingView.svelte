@@ -47,7 +47,7 @@ const hasDocuments = $derived(
 );
 </script>
 
-<div class="meeting-view">
+<div class="meeting-view" data-smrt-component="MeetingView">
   <header class="meeting-header">
     <a href={calendarUrl} class="back-link">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">

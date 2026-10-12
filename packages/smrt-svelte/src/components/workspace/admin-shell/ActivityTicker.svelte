@@ -41,7 +41,7 @@ function activityLabel(activity: ShellActivity): string {
 }
 </script>
 
-<div class="smrt-activity-ticker-shell">
+<div class="smrt-activity-ticker-shell" data-smrt-component="ActivityTicker">
 <div class="smrt-activity-ticker" class:multiple class:paused role="region" aria-label={label ?? t(M['ui.activity_ticker.label'])} style:--activity-ticker-duration={`${Math.max(20, running.length * 10)}s`}>
   {#if running.length === 0}
     <span class="smrt-activity-ticker__empty">{emptyLabel ?? t(M['ui.activity_ticker.empty'])}</span>

@@ -31,7 +31,7 @@ const variantClass = $derived.by(() => {
 <span
   class="role-badge {variantClass}"
   class:sm={size === 'sm'}
-  class:lg={size === 'lg'}
+  class:lg={size === 'lg'} data-smrt-component="RoleBadge"
 >
   {role.name}
 </span>

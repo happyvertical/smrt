@@ -130,7 +130,7 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
 }
 </script>
 
-<section class="permission-picker" aria-labelledby={labelId}>
+<section class="permission-picker" aria-labelledby={labelId} data-smrt-component="PermissionPicker">
   <div class="heading">
     <div>
       <h2 id={labelId}>{label}</h2>

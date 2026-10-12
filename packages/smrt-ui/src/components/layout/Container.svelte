@@ -14,7 +14,7 @@ interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'class'> {
 const { maxWidth = 'lg', children, ...rest }: Props = $props();
 </script>
 
-<div class="container max-w-{maxWidth}" {...rest}>
+<div class="container max-w-{maxWidth}" {...rest} data-smrt-component="Container">
   {@render children?.()}
 </div>
 

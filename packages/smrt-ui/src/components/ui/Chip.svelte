@@ -49,7 +49,7 @@ const {
   class:selected
   class:disabled
   class:selectable
-  class:closeable
+  class:closeable data-smrt-component="Chip"
 >
   {#if selectable}
     <button

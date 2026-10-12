@@ -26,7 +26,7 @@ const hostname = $derived.by(() => {
 });
 </script>
 
-<a class="link-preview" href={url} target="_blank" rel="noopener noreferrer">
+<a class="link-preview" href={url} target="_blank" rel="noopener noreferrer" data-smrt-component="LinkPreview">
   {#if imageUrl}
     <div class="link-preview__image">
       <img src={imageUrl} alt={title ?? ''} />

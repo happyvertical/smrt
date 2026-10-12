@@ -395,7 +395,7 @@ function handleCountryChange(e: Event) {
 }
 </script>
 
-  <div class="smrt-address" data-smrt-field-owner={fieldOwnerToken}>
+  <div class="smrt-address" data-smrt-field-owner={fieldOwnerToken} data-smrt-component="AddressInput">
   {#if label}
     <FieldLabel for={primaryFieldId} {label} {required} />
   {/if}

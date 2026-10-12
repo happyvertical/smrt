@@ -92,7 +92,7 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
   scope={as === 'th' ? 'col' : undefined}
   role={as === 'div' ? 'columnheader' : undefined}
   aria-sort={aria}
-  data-sort-column={columnId}
+  data-sort-column={columnId} data-smrt-component="SortableHeader"
 >
   {#if href}
     <a

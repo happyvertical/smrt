@@ -34,7 +34,7 @@ const replyCount = $derived(
 );
 </script>
 
-<aside class="thread-panel" aria-label={t(M['chat.thread_panel.thread_label'], { title: threadTitle })}>
+<aside class="thread-panel" aria-label={t(M['chat.thread_panel.thread_label'], { title: threadTitle })} data-smrt-component="ThreadPanel">
   <header class="thread-panel__header">
     <div class="thread-panel__header-text">
       <h3 class="thread-panel__title">{threadTitle}</h3>

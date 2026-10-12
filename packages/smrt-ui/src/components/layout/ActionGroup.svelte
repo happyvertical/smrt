@@ -25,7 +25,7 @@ const {
 }: Props = $props();
 </script>
 
-<div class="action-group gap-{gap} justify-{justify} {className}" {...rest}>
+<div class="action-group gap-{gap} justify-{justify} {className}" {...rest} data-smrt-component="ActionGroup">
   {@render children()}
 </div>
 

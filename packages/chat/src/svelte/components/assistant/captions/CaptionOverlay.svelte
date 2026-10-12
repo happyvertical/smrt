@@ -51,7 +51,7 @@ $effect(() => {
 });
 </script>
 
-<section bind:this={group} class="caption-overlay" aria-label={label}>
+<section bind:this={group} class="caption-overlay" aria-label={label} data-smrt-component="CaptionOverlay">
   <div bind:this={viewport} class="caption-overlay-viewport" onscroll={updatePosition}>
     <div bind:this={content} class="caption-overlay-content">
       {@render children()}

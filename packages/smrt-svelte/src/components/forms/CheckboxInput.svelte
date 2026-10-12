@@ -110,7 +110,7 @@ function handleChange(e: Event) {
 }
 </script>
 
-<div class="smrt-checkbox-field" class:disabled class:smrt-mode={isSmrt}>
+<div class="smrt-checkbox-field" class:disabled class:smrt-mode={isSmrt} data-smrt-component="CheckboxInput">
   <div class="container" use:ripple>
     <input
       type="checkbox"

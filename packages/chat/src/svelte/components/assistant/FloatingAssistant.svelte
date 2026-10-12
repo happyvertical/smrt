@@ -161,7 +161,7 @@ function handleKeydown(event: KeyboardEvent) {
   data-expanded={panelExpanded || undefined}
   hidden={!visible}
   inert={!visible}
-  aria-hidden={!visible}
+  aria-hidden={!visible} data-smrt-component="FloatingAssistant"
 >
   {#if launcherVisible}
     <Button

@@ -14,7 +14,7 @@ interface Props {
 const { product, onEdit, onDelete }: Props = $props();
 </script>
 
-<div class="product-card">
+<div class="product-card" data-smrt-component="ProductCard">
   <div class="product-header">
     <h3 class="product-name">{product.name}</h3>
     {#if product.manufacturer}

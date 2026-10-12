@@ -61,7 +61,7 @@ const icons = {
 };
 </script>
 
-<div class="empty-state" class:sm={size === 'sm'} class:lg={size === 'lg'}>
+<div class="empty-state" class:sm={size === 'sm'} class:lg={size === 'lg'} data-smrt-component="EmptyState">
   <div class="icon-container">
     {#if typeof icon === 'string'}
       {@html icons[icon] ?? icons.inbox}

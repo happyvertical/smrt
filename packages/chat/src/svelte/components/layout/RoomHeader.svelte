@@ -54,7 +54,7 @@ const roomTypeLabel = $derived.by(() => {
 });
 </script>
 
-<header class="room-header" aria-label={t(M['chat.room_header.room_label'], { name: room.name })}>
+<header class="room-header" aria-label={t(M['chat.room_header.room_label'], { name: room.name })} data-smrt-component="RoomHeader">
   <div class="room-header__info">
     <div class="room-header__title-row">
       {#if room.roomType !== 'dm'}

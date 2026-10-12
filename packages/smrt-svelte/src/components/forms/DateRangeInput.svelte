@@ -450,7 +450,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   class="smrt-daterange"
   class:listening={isRecording}
   class:parsing={isParsing}
-  data-smrt-field-owner={fieldOwnerToken}
+  data-smrt-field-owner={fieldOwnerToken} data-smrt-component="DateRangeInput"
 >
   {#if label}
     <FieldLabel for={primaryControlId} {label} {required} />

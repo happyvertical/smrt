@@ -36,7 +36,7 @@ function handleToggle(event: Event) {
 }
 </script>
 
-<details class="disclosure {className}" bind:open ontoggle={handleToggle}>
+<details class="disclosure {className}" bind:open ontoggle={handleToggle} data-smrt-component="Disclosure">
   <summary aria-disabled={disabled} onclick={(event) => disabled && event.preventDefault()}>
     <span>{title}</span><span class="chevron" aria-hidden="true">⌄</span>
   </summary>

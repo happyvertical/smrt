@@ -536,7 +536,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
     bind:this={reviewElement}
     class="staged-review"
     data-staged-control-review
-    aria-label={text.region}
+    aria-label={text.region} data-smrt-component="StagedControlReview"
   >
     <header>
       <div>
@@ -623,7 +623,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
 {/if}
 
 {#if summary && reviewActivated}
-  <p class="status visually-hidden" role="status" aria-live="polite" aria-atomic="true">{status}</p>
+  <p class="status visually-hidden" role="status" aria-live="polite" aria-atomic="true" data-smrt-component="StagedControlReview">{status}</p>
 {/if}
 
 <style>

@@ -106,7 +106,7 @@ $effect(() => {
 });
 </script>
 
-<div class="smrt-notification-bell">
+<div class="smrt-notification-bell" data-smrt-component="NotificationBell">
   <Button id={`${instanceId}-trigger`} aria-controls={`${instanceId}-panel`} variant="ghost" aria-haspopup="dialog" aria-expanded={open} onclick={() => (open = !open)}>
     {heading}{#if unread > 0}<span aria-label={t(M['ui.notification_bell.unread'], { count: unread })}> ({unread})</span>{/if}
   </Button>

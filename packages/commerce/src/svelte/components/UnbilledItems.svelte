@@ -98,7 +98,7 @@ const someSelected = $derived(
 );
 </script>
 
-<div class="unbilled-items">
+<div class="unbilled-items" data-smrt-component="UnbilledItems">
   {#if items.length === 0}
     <div class="empty-state">
       <p>{emptyMessage}</p>

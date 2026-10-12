@@ -56,7 +56,7 @@ $effect(() => {
 });
 </script>
 
-<div class="mini-chat">
+<div class="mini-chat" data-smrt-component="MiniChat">
   <div
     class="mini-chat__messages"
     style:max-height="{maxHeight}px"

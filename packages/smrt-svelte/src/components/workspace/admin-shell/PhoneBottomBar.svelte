@@ -50,7 +50,7 @@ function accessibleName(item: PhoneBottomBarItem): string {
 <nav
   class="smrt-phone-bottom-bar"
   aria-label={label ?? t(M['ui.phone_bottom_bar.label'])}
-  data-testid="phone-bottom-bar"
+  data-testid="phone-bottom-bar" data-smrt-component="PhoneBottomBar"
 >
   {#each items as item (item.id)}
     {#if item.href}

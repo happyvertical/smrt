@@ -57,9 +57,9 @@ const summary = $derived(
 </script>
 
 {#if points.length === 0}
-  <p class="smrt-chart__empty">{t(M['ui.overview.no_data'])}</p>
+  <p class="smrt-chart__empty" data-smrt-component="ChartWidget">{t(M['ui.overview.no_data'])}</p>
 {:else if style === 'line'}
-  <div class="smrt-chart">
+  <div class="smrt-chart" data-smrt-component="ChartWidget">
     <svg class="smrt-chart__line" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label={summary}>
       <polyline points={polyline} fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" />
     </svg>
@@ -83,7 +83,7 @@ const summary = $derived(
     </table>
   </div>
 {:else}
-  <ul class="smrt-chart__bars" aria-label={summary}>
+  <ul class="smrt-chart__bars" aria-label={summary} data-smrt-component="ChartWidget">
     {#each points as point, index (index)}
       <li class="smrt-chart__row">
         <span class="smrt-chart__label">{point.label}</span>

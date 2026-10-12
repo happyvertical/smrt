@@ -166,7 +166,7 @@ async function runAction(toast: Toast) {
   style:--toast-right={bounds ? `${bounds.right}px` : undefined}
   style:--toast-bottom={bounds ? `${bounds.bottom}px` : undefined}
   style:--toast-left={bounds ? `${bounds.left}px` : undefined}
-  style:--toast-region-width={bounds ? `${bounds.width}px` : undefined}
+  style:--toast-region-width={bounds ? `${bounds.width}px` : undefined} data-smrt-component="ToastViewport"
 >
   {#each toasts as toast (toast.id)}
     <div role="group" aria-label={toast.title ?? 'Notification'}

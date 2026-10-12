@@ -16,7 +16,7 @@ const { children }: Props = $props();
 const currentYear = new Date().getFullYear();
 </script>
 
-<footer class="site-footer">
+<footer class="site-footer" data-smrt-component="Footer">
   <Container>
     <div class="footer-content">
       <p class="copyright">&copy; {currentYear} {t(M['ui.footer.all_rights_reserved'])}</p>

@@ -298,7 +298,7 @@ function handleInput(e: Event) {
 }
 </script>
 
-<div class="smrt-phone" class:listening={isHolding}>
+<div class="smrt-phone" class:listening={isHolding} data-smrt-component="PhoneInput">
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}

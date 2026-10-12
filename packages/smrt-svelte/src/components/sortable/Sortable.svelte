@@ -278,7 +278,7 @@ function containerRank(id: string): number {
   bind:this={root}
   class="smrt-sortable"
   role="group"
-  aria-label={label ?? t(M['ui.sortable.label'])}
+  aria-label={label ?? t(M['ui.sortable.label'])} data-smrt-component="Sortable"
 >
   {#each fixed as container (container.id)}
     {@render containerBlock(container, false)}

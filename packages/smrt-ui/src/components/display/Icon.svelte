@@ -50,7 +50,7 @@ const pxSize = $derived(typeof size === 'number' ? `${size}px` : size);
   fill={color}
   aria-hidden={!isInformative}
   aria-label={ariaLabel}
-  role={isInformative ? 'img' : undefined}
+  role={isInformative ? 'img' : undefined} data-smrt-component="Icon"
 >
   <path d={finalPath} />
 </svg>

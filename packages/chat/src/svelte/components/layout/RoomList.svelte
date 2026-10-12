@@ -69,7 +69,7 @@ function formatTimestamp(date?: string | Date | null): string {
 }
 </script>
 
-<nav class="room-list" aria-label={t(M['chat.room_list.rooms_label'])}>
+<nav class="room-list" aria-label={t(M['chat.room_list.rooms_label'])} data-smrt-component="RoomList">
   {#if oncreateroom}
     <div class="room-list__header">
       <Button

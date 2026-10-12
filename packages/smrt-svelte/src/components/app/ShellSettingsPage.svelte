@@ -6,7 +6,7 @@ import ShellSettingsPanel from '../workspace/admin-shell/ShellSettingsPanel.svel
 const { t } = useI18n();
 </script>
 
-<section class="smrt-shell-settings-page">
+<section class="smrt-shell-settings-page" data-smrt-component="ShellSettingsPage">
   <header>
     <h1>{t(M['ui.shell_settings_page.heading'])}</h1>
     <p>{t(M['ui.shell_settings_page.description'])}</p>

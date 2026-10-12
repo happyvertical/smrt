@@ -276,7 +276,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
 }
 </script>
 
-<div class="content-picture-drawer">
+<div class="content-picture-drawer" data-smrt-component="ContentPictureDrawer">
   <header class="drawer-header">
     <h2>{t(M['content.content_picture_drawer.title'])}</h2>
     {#if onClose}

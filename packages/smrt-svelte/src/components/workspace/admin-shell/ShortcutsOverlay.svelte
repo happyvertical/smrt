@@ -20,7 +20,7 @@ const edges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
 
 <section
   class="smrt-shortcuts-overlay"
-  aria-label={t(M['ui.admin_shell.shell_shortcuts'])}
+  aria-label={t(M['ui.admin_shell.shell_shortcuts'])} data-smrt-component="ShortcutsOverlay"
 >
   <header>
     <h2>{t(M['ui.admin_shell.shell_shortcuts'])}</h2>

@@ -189,7 +189,7 @@ useWebMcpTool(
 );
 </script>
 
-<div class="smrt-form-scope" data-smrt-form-scope={formId} bind:this={scope}>
+<div class="smrt-form-scope" data-smrt-form-scope={formId} bind:this={scope} data-smrt-component="FormScope">
   {@render children()}
   <StagedControlReview {registry} {formId} {formElement} summary={stagedReview} />
 </div>

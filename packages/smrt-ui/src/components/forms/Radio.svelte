@@ -20,7 +20,7 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
   onchange?.(event);
 }
 </script>
-<label class="radio" class:disabled={disabled || group.disabled} data-smrt-hit-target>
+<label class="radio" class:disabled={disabled || group.disabled} data-smrt-hit-target data-smrt-component="Radio">
   <input id={resolvedId} type="radio" name={group.name} {value} disabled={disabled || group.disabled} required={group.required}
     checked={group.value === value} onchange={handleChange} {...rest} />
   <span class="radio__mark" aria-hidden="true"></span><span class="radio__label">{label}</span>

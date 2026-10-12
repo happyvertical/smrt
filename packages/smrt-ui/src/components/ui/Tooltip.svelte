@@ -58,7 +58,7 @@ function onKeydown(event: KeyboardEvent) {
   onmouseleave={hide}
   onfocusin={show}
   onfocusout={hide}
-  onkeydown={onKeydown}
+  onkeydown={onKeydown} data-smrt-component="Tooltip"
 >
   <span class="tooltip-trigger" aria-describedby={tipId}>
     {@render children()}

@@ -233,7 +233,7 @@ function handleInput(e: Event) {
 }
 </script>
 
-<div class="smrt-number">
+<div class="smrt-number" data-smrt-component="NumberInput">
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}

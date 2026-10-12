@@ -56,7 +56,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
 }
 </script>
 
-<section class="smrt-settings-catalog">
+<section class="smrt-settings-catalog" data-smrt-component="SettingsCatalog">
   <aside class="smrt-settings-catalog__browser">
     <Form method="GET" action={baseUrl} preventDefault={false} class="smrt-settings-catalog__search" role="search">
       {#each Object.entries(preservedParams) as [name, value] (name)}

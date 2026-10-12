@@ -91,7 +91,7 @@ const trail = $derived<readonly PageHeaderCrumb[]>(
 $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
 </script>
 
-<header class="page-header" data-page-header>
+<header class="page-header" data-page-header data-smrt-component="PageHeader">
   {#if trail.length > 0}
     <nav class="page-crumbs" aria-label={crumbsLabel} data-shell-breadcrumbs>
       <ol>

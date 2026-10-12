@@ -21,7 +21,7 @@ export interface Props {
 const { label, children, class: className = '' }: Props = $props();
 </script>
 
-<div class="icon-toggle-group {className}" role="group" aria-label={label}>
+<div class="icon-toggle-group {className}" role="group" aria-label={label} data-smrt-component="IconToggleGroup">
   {@render children()}
 </div>
 

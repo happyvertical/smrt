@@ -241,10 +241,10 @@
 {/snippet}
 
 <!-- Polite live region announces tool transitions for screen readers. -->
-<div class="tools-dock__sr-only" role="status" aria-live="polite">{announcement}</div>
+<div class="tools-dock__sr-only" role="status" aria-live="polite" data-smrt-component="ToolsDock">{announcement}</div>
 
 {#if dock.layout === 'topbar'}
-  <div class="tools-dock tools-dock--topbar">
+  <div class="tools-dock tools-dock--topbar" data-smrt-component="ToolsDock">
     <nav class="tools-dock__topbar" aria-label={t(M['ui.tools_dock.workspace_tools'])}>
       {#each dock.availableTools as tool (tool.id)}
         {@render toolButton(tool, 'topbar')}
@@ -255,7 +255,7 @@
     {/if}
   </div>
 {:else}
-  <aside class="tools-dock tools-dock--rail" class:tools-dock--open={dock.isOpen}>
+  <aside class="tools-dock tools-dock--rail" class:tools-dock--open={dock.isOpen} data-smrt-component="ToolsDock">
     {#if dock.isOpen}
       <!-- raw-primitive-allow: click-catching overlay/backdrop that closes the dock; a structural full-bleed surface, not a styled action button -->
       <button

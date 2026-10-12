@@ -127,7 +127,7 @@ function onItemKeydown(event: KeyboardEvent, index: number, item: FlatNode) {
 }
 </script>
 
-<div role="tree" aria-label={ariaLabel} class="tree">
+<div role="tree" aria-label={ariaLabel} class="tree" data-smrt-component="Tree">
   {#each flat as item, i (item.node.id)}
     <div
       bind:this={itemEls[i]}

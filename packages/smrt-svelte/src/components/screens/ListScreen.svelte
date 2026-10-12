@@ -132,7 +132,7 @@ function matches(row: DisplayRow): boolean {
   </PageHeader>
 {/if}
 
-<section class="smrt-list-screen" aria-label={heading}>
+<section class="smrt-list-screen" aria-label={heading} data-smrt-component="ListScreen">
   {#if sourceError}
     <Alert variant="error">{sourceError}</Alert>
   {:else}

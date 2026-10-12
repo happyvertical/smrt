@@ -319,7 +319,7 @@ async function startExport() {
 }
 </script>
 
-<section class="smrt-import-export" aria-label={collectionLabel ? `${t(M['ui.importExport.label'])}: ${collectionLabel}` : t(M['ui.importExport.label'])}>
+<section class="smrt-import-export" aria-label={collectionLabel ? `${t(M['ui.importExport.label'])}: ${collectionLabel}` : t(M['ui.importExport.label'])} data-smrt-component="ImportExport">
   {#if canImport && canExport}
     <SegmentedControl
       label={t(M['ui.importExport.mode'])}

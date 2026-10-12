@@ -152,7 +152,7 @@ function handleChange(event: Event & { currentTarget: HTMLFormElement }) {
   {onclick}
   oninput={handleInput}
   onchange={handleChange}
-  {...rest}
+  {...rest} data-smrt-component="Form"
 >
 	{@render children()}
   <StagedControlReview

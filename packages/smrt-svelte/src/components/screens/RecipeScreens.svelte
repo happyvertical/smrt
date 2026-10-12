@@ -169,7 +169,7 @@ async function remove(): Promise<void> {
 }
 </script>
 
-<div class="smrt-recipe-screens">
+<div class="smrt-recipe-screens" data-smrt-component="RecipeScreens">
   {#if view === 'create' && allowCreate}
           <EditForm
         {definition}

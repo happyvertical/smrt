@@ -218,7 +218,7 @@ export function getElement(): HTMLInputElement | null {
 	data-smrt-form={controlInteraction?.formId}
 	data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
 	data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}
-	{...rest}
+	{...rest} data-smrt-component="Input"
 />
 
 <style>

@@ -39,7 +39,7 @@ const text = $derived.by(() => {
 </script>
 
 {#if show}
-  <div class="typing" role="status" aria-live="polite">
+  <div class="typing" role="status" aria-live="polite" data-smrt-component="TypingIndicator">
     <span class="typing__text">{text}</span>
     <span class="typing__dots" aria-hidden="true">
       <span class="typing__dot"></span>

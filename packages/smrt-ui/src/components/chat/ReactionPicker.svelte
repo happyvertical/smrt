@@ -61,7 +61,7 @@ function nameFor(emoji: string): string {
 </script>
 
 {#if isOpen}
-  <div class="reactions" role="group" aria-label={groupLabel}>
+  <div class="reactions" role="group" aria-label={groupLabel} data-smrt-component="ReactionPicker">
     {#each emojis as emoji (emoji)}
       <button
         type="button"

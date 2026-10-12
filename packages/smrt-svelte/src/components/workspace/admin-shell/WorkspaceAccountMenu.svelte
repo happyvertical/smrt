@@ -106,7 +106,7 @@ function handleSelect(id: string): void {
 }
 </script>
 
-<div data-density={density} data-compact={compact ? '' : undefined} class="smrt-workspace-account-menu" title={summaryTitle}>
+<div data-density={density} data-compact={compact ? '' : undefined} class="smrt-workspace-account-menu" title={summaryTitle} data-smrt-component="WorkspaceAccountMenu">
   <Dropdown
     {items}
     {placement}

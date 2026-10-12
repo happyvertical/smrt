@@ -113,7 +113,7 @@ $effect(() => {
   <div
     class="search-panel"
     role="search"
-    aria-label={t(M['chat.search_messages.search'])}
+    aria-label={t(M['chat.search_messages.search'])} data-smrt-component="SearchMessages"
   >
     <div class="search-panel__header">
       <h2 class="search-panel__title">{t(M['chat.search_messages.title'])}</h2>

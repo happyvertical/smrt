@@ -84,7 +84,7 @@ function handleChange(event: Event) {
 }
 </script>
 
-<div class={`list-sort-select ${className}`}>
+<div class={`list-sort-select ${className}`} data-smrt-component="ListSortSelect">
   <label class="list-sort-select__label" for={id}>{label}</label>
   <select
     {id}

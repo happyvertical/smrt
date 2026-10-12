@@ -252,7 +252,7 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
   class:lg={size === 'lg'}
   class:outline={variant === 'outline'}
   style:--badge-bg={colors.bg}
-  style:--badge-text={colors.text}
+  style:--badge-text={colors.text} data-smrt-component="StatusBadge"
 >
   {displayLabel}
 </span>

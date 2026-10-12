@@ -147,7 +147,7 @@ $effect(() => {
 });
 </script>
 
-<span class="dropdown" bind:this={wrapEl}>
+<span class="dropdown" bind:this={wrapEl} data-smrt-component="Dropdown">
   <button
     bind:this={triggerEl}
     type="button"

@@ -346,7 +346,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
   <div
     class="playground-shell"
     class:playground-shell--embedded={embedded}
-    data-hydrated={isHydrated ? 'true' : 'false'}
+    data-hydrated={isHydrated ? 'true' : 'false'} data-smrt-component="PlaygroundHost"
   >
     {#if !embedded}
     <aside class="catalog-nav">

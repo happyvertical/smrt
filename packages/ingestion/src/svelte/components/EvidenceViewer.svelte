@@ -10,7 +10,7 @@ export interface Props {
 let { evidence }: Props = $props();
 const { t } = useI18n();
 </script>
-<section data-testid="evidence-viewer" aria-label={t(M['ingestion.evidence'])}>
+<section data-testid="evidence-viewer" aria-label={t(M['ingestion.evidence'])} data-smrt-component="EvidenceViewer">
 <h2>{t(M['ingestion.evidence'])}</h2>
 {#each evidence as view (view.evidence.id)}
 {@const url = evidenceUrl(view.viewUrl)}

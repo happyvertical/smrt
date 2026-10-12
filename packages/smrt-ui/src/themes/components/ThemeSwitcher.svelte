@@ -43,7 +43,7 @@ const themeIcons: Record<ThemePreset, string> = {
 };
 </script>
 
-<div class="smrt-theme-switcher {variant} {className}">
+<div class="smrt-theme-switcher {variant} {className}" data-smrt-component="ThemeSwitcher">
   {#if label}
     <span class="smrt-theme-switcher__label">{label}</span>
   {/if}

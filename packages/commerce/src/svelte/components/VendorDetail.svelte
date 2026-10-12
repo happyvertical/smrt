@@ -80,7 +80,7 @@ function minimumOrder(amountMinor: number): string {
 }
 </script>
 
-<section class="party-detail">
+<section class="party-detail" data-smrt-component="VendorDetail">
   {#if backHref}<Button href={backHref} variant="ghost">{t(M['commerce.party.back_to'], { plural })}</Button>{/if}
   <PageHeader title={vendor.profile.name} subtitle={vendor.profile.description ?? t(M['commerce.vendor.details'])}>
     {#snippet actions()}

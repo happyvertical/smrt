@@ -43,7 +43,7 @@ const store = {
   {#if title}<title>{title}</title>{/if}
 </svelte:head>
 
-<main class="cookbook-section">
+<main class="cookbook-section" data-smrt-component="CookbookSectionPage">
   {#if section}
     <header>
       <span class="mark"><ShellSectionIcon name={icon} size={28} /></span>

@@ -124,7 +124,7 @@ const isOverdue = $derived.by(() => {
 });
 </script>
 
-<div class="invoice-header">
+<div class="invoice-header" data-smrt-component="InvoiceHeader">
   <div class="header-main">
     <div class="invoice-title">
       <h2 class="invoice-number">{invoiceNumber}</h2>

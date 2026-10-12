@@ -99,7 +99,7 @@ function creditLimit(amountMinor: number): string {
 }
 </script>
 
-<section class="party-detail">
+<section class="party-detail" data-smrt-component="CustomerDetail">
   {#if backHref}<Button href={backHref} variant="ghost">{t(M['commerce.party.back_to'], { plural })}</Button>{/if}
   <PageHeader title={customer.profile.name} subtitle={customer.profile.description ?? t(M['commerce.customer.details'])}>
     {#snippet actions()}

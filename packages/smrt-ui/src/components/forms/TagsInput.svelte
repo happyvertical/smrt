@@ -129,7 +129,7 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div class="tags-field {className}"><label for={inputId}>{label}</label><div bind:this={rootEl} class="tags" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+<div class="tags-field {className}" data-smrt-component="TagsInput"><label for={inputId}>{label}</label><div bind:this={rootEl} class="tags" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
   {#each values as tag, index}<span class="tag">{tag}<button type="button" disabled={disabled} aria-label={`Remove ${tag}`} onclick={() => remove(index)}>×</button><input type="hidden" name={name ? `${name}[]` : undefined} value={tag} /></span>{/each}

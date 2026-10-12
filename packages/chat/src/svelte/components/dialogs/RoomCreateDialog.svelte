@@ -105,7 +105,7 @@ $effect(() => {
     class="dialog__form"
     onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}
   >
-    <div class="field">
+    <div class="field" data-smrt-component="RoomCreateDialog">
       <label class="field__label" for="room-name">
         {t(M['chat.room_create_dialog.room_name'])} <span class="field__required" aria-label={t(M['chat.room_create_dialog.required'])}>*</span>
       </label>
@@ -119,7 +119,7 @@ $effect(() => {
       />
     </div>
 
-    <fieldset class="field">
+    <fieldset class="field" data-smrt-component="RoomCreateDialog">
       <legend class="field__label">{t(M['chat.room_create_dialog.room_type'])}</legend>
       <div class="type-options">
         {#each roomTypes as option (option.value)}
@@ -144,7 +144,7 @@ $effect(() => {
       </div>
     </fieldset>
 
-    <div class="field">
+    <div class="field" data-smrt-component="RoomCreateDialog">
       <label class="field__label" for="room-description">Description</label>
       <Textarea
         bind:value={description}
@@ -158,7 +158,7 @@ $effect(() => {
 
     <!-- Hidden submit keeps Enter-to-submit working inside the Modal body. -->
     <!-- raw-primitive-allow: off-screen aria-hidden type=submit element with tabindex=-1 used only to enable native Enter-to-submit inside the Modal body; intentionally non-interactive and not a visible action button -->
-    <button type="submit" class="visually-hidden" tabindex="-1" disabled={!canCreate} aria-hidden="true"></button>
+    <button type="submit" class="visually-hidden" tabindex="-1" disabled={!canCreate} aria-hidden="true" data-smrt-component="RoomCreateDialog"></button>
   </Form>
 
   {#snippet footer()}

@@ -236,7 +236,7 @@ useControlRegistration(() => {
 </script>
 <div bind:this={rootEl} data-density={density} class="segmented {className}" class:full-width={fullWidth} role="radiogroup" tabindex="-1" aria-label={label} aria-required={required} onkeydown={handleKeydown} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
-  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="SegmentedControl">
   {#each options as option, index (option.value)}
     <label class:selected={selectedOption === option} class:disabled={disabled || option.disabled}>
       <input type="radio" {name} value={option.value} disabled={disabled || option.disabled}

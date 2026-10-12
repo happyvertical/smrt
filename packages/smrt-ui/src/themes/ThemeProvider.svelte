@@ -348,7 +348,7 @@ $effect(() => {
   class:smrt-theme-glass={config.preset === 'glass'}
   style={styleString || undefined}
   data-theme={config.preset}
-  data-color-scheme={resolvedScheme}
+  data-color-scheme={resolvedScheme} data-smrt-component="ThemeProvider"
 >
   {@render children()}
 </div>

@@ -59,7 +59,7 @@ async function submit(event: SubmitEvent) {
   <FormGroup label="Kind"><Input bind:value={kind} required disabled={disabled || pending} /></FormGroup>
   <FormGroup label="Place ID"><Input bind:value={placeId} disabled={disabled || pending} /></FormGroup>
   <Checkbox label="Active" bind:checked={active} disabled={disabled || pending} />
-  {#if error}<p role="alert">{error}</p>{/if}
-  {#if saved}<p role="status">Location saved</p>{/if}
+  {#if error}<p role="alert" data-smrt-component="LocationForm">{error}</p>{/if}
+  {#if saved}<p role="status" data-smrt-component="LocationForm">Location saved</p>{/if}
   <Button type="submit" disabled={disabled || pending}>{pending ? 'Saving…' : 'Save location'}</Button>
 </Form>

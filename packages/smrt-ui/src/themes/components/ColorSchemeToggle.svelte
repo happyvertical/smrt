@@ -44,7 +44,7 @@ const labels = {
 };
 </script>
 
-<div class="smrt-color-scheme-toggle {variant} {className}">
+<div class="smrt-color-scheme-toggle {variant} {className}" data-smrt-component="ColorSchemeToggle">
   {#if variant === 'switch'}
     <button
       class="smrt-color-scheme-toggle__switch"

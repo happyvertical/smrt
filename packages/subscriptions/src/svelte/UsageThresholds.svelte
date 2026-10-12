@@ -9,7 +9,7 @@ let {
 } = $props();
 </script>
 
-<div class="smrt-usage-thresholds">
+<div class="smrt-usage-thresholds" data-smrt-component="UsageThresholds">
   {#each evaluations as evaluation (`${evaluation.threshold.metricKey}:${evaluation.usage.windowStart.toISOString()}`)}
     <article
       class:warn={evaluation.state === 'warn'}

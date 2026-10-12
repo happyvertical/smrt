@@ -378,7 +378,7 @@ const headingTag = $derived(`h${headingLevel}`);
   </article>
 {/snippet}
 
-<div class="smrt-overview" bind:this={rootEl} data-editing={editing ? '' : undefined} data-presentation={presentation}>
+<div class="smrt-overview" bind:this={rootEl} data-editing={editing ? '' : undefined} data-presentation={presentation} data-smrt-component="OverviewGrid">
   {#if editing}
     <div class="smrt-overview__toolbar" role="toolbar" aria-label={t(M['ui.overview.toolbar'])}>
       <ShellIconButton
@@ -497,9 +497,9 @@ const headingTag = $derived(`h${headingLevel}`);
 {#if editing}
   <Modal bind:open={() => addOpen, (v) => (addOpen = v)} title={t(M['ui.overview.add_title'])} size="sm">
     {#if controller.addable.length === 0 || controller.full}
-      <p>{t(M['ui.overview.add_none'])}</p>
+      <p data-smrt-component="OverviewGrid">{t(M['ui.overview.add_none'])}</p>
     {:else}
-      <ul class="smrt-overview__choices">
+      <ul class="smrt-overview__choices" data-smrt-component="OverviewGrid">
         {#each controller.addable as def (def.type)}
           <li>
             <Button type="button" variant="ghost" fullWidth onclick={() => chooseType(def.type)}>

@@ -1444,7 +1444,7 @@ $effect(() => {
 });
 </script>
 
-{#if toolbar}<div class="data-table-toolbar">{@render toolbar()}</div>{/if}
+{#if toolbar}<div class="data-table-toolbar" data-smrt-component="DataTable">{@render toolbar()}</div>{/if}
 <!-- svelte-ignore a11y_no_noninteractive_tabindex: the region provides horizontal or virtual keyboard scrolling. -->
 <div
   bind:this={tableContainer}
@@ -1473,7 +1473,7 @@ $effect(() => {
   onkeydown={(event) => {
     handleVirtualizationKeydown(event);
     if (!event.defaultPrevented) handleOverflowKeydown(event);
-  }}
+  }} data-smrt-component="DataTable"
 >
   <table role={cardsRole('table')}
     class="data-table {sizeClasses[size]}"
@@ -1913,7 +1913,7 @@ $effect(() => {
   {/if}
 </div>
 {#if hasHorizontalOverflow}
-  <div class="data-table__overflow-cue" aria-hidden="true">
+  <div class="data-table__overflow-cue" aria-hidden="true" data-smrt-component="DataTable">
     {#if canScrollLeft}<span>← {t(M['ui.data_table.more_columns'])}</span>{/if}
     {#if canScrollRight}<span>{t(M['ui.data_table.more_columns'])} →</span>{/if}
   </div>

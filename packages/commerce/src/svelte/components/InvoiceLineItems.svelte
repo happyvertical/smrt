@@ -87,7 +87,7 @@ const sourceLabels: Record<string, string> = {
 const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
 </script>
 
-<div class="line-items-container">
+<div class="line-items-container" data-smrt-component="InvoiceLineItems">
   {#if retained}
     {#if retained.lines.length === 0}
       <div class="empty-state"><p>{emptyMessage}</p></div>

@@ -106,7 +106,7 @@ const isLastPage = $derived(currentPage === totalPages);
 </script>
 
 {#if totalPages > 1}
-  <nav class="pagination" aria-label={ariaLabel}>
+  <nav class="pagination" aria-label={ariaLabel} data-smrt-component="Pagination">
     <!-- First page -->
     {#if showFirstLast}
       {#if onPageChange}

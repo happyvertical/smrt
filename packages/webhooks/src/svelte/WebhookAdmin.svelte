@@ -64,7 +64,7 @@ async function submit() {
 }
 </script>
 <Card>
-  <section aria-labelledby={`${uid}-title`} aria-busy={busy}>
+  <section aria-labelledby={`${uid}-title`} aria-busy={busy} data-smrt-component="WebhookAdmin">
     <h2 id={`${uid}-title`}>Outbound webhooks</h2>
     <form onsubmit={(event) => { event.preventDefault(); void submit(); }}>
       <label for={`${uid}-url`}>Endpoint</label>

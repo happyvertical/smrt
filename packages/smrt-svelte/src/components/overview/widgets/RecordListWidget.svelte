@@ -49,9 +49,9 @@ const viewAll = $derived(
 </script>
 
 {#if rows.length === 0}
-  <p class="smrt-records__empty">{t(M['ui.overview.records.empty'])}</p>
+  <p class="smrt-records__empty" data-smrt-component="RecordListWidget">{t(M['ui.overview.records.empty'])}</p>
 {:else}
-  <ul class="smrt-records">
+  <ul class="smrt-records" data-smrt-component="RecordListWidget">
     {#each rows as row (row.id)}
       <li class="smrt-records__row">
         <span class="smrt-records__main">
@@ -68,7 +68,7 @@ const viewAll = $derived(
   </ul>
 {/if}
 {#if total !== null || viewAll}
-  <p class="smrt-records__foot">
+  <p class="smrt-records__foot" data-smrt-component="RecordListWidget">
     {#if total !== null}
       <span>{t(M['ui.overview.records.total'], { count: new Intl.NumberFormat(locale).format(total) })}</span>
     {/if}

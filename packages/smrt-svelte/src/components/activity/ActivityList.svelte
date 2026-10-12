@@ -32,4 +32,4 @@ $effect(() => {
   };
 });
 </script>
-{#if shell}<WorkspaceActivityList filter={{ kind: prefix }} {emptyLabel} />{:else}<p>{emptyLabel}</p>{/if}
+{#if shell}<WorkspaceActivityList filter={{ kind: prefix }} {emptyLabel} />{:else}<p data-smrt-component="ActivityList">{emptyLabel}</p>{/if}

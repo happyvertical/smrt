@@ -89,7 +89,7 @@ function formatDuration(ms: number | undefined): string {
 }
 </script>
 
-<div class="tool-call tool-call--{effectiveStatus}" aria-label={t(M['chat.tool_call_display.tool_call'], { toolName: toolCall.toolName })}>
+<div class="tool-call tool-call--{effectiveStatus}" aria-label={t(M['chat.tool_call_display.tool_call'], { toolName: toolCall.toolName })} data-smrt-component="ToolCallDisplay">
   <!-- raw-primitive-allow: full-width disclosure trigger with aria-expanded and aria-controls toggling an externally-rendered collapsible panel, wrapping rich content (status dot, name, duration, status label, rotating chevron); structural accordion header no Button primitive owns -->
   <button
     class="tool-call__header"

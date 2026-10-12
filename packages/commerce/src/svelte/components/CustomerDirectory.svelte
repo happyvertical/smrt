@@ -131,7 +131,7 @@ function customerTypeLabel(value: string | undefined): string {
 }
 </script>
 
-<section class="party-directory">
+<section class="party-directory" data-smrt-component="CustomerDirectory">
   <PageHeader title={plural} subtitle={labels.plural ? t(M['commerce.party.manage_named'], { plural }) : t(M['commerce.customer.manage'])}>
     {#snippet actions()}
       {#if canCreate && addHref}<Button href={addHref}>{labels.add ?? (labels.singular ? t(M['commerce.party.add_named'], { singular }) : t(M['commerce.customer.add']))}</Button>{/if}

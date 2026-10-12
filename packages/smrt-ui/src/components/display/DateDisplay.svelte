@@ -163,11 +163,11 @@ const isoString = $derived(
 </script>
 
 {#if parsedDate}
-  <time class="date-display {className}" datetime={isoString}>
+  <time class="date-display {className}" datetime={isoString} data-smrt-component="DateDisplay">
     {formatted}
   </time>
 {:else}
-  <span class="date-display date-fallback {className}">
+  <span class="date-display date-fallback {className}" data-smrt-component="DateDisplay">
     {fallback}
   </span>
 {/if}

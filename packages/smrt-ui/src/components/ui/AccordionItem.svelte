@@ -20,7 +20,7 @@ const context = getAccordionContext();
 const open = $derived(context.isOpen(value));
 </script>
 
-<section class="item">
+<section class="item" data-smrt-component="AccordionItem">
   <h3>
     <button id={triggerId} type="button" aria-expanded={open} aria-controls={panelId} {disabled} onclick={() => context.toggle(value)}>
       <span>{title}</span><span class="chevron" aria-hidden="true">⌄</span>

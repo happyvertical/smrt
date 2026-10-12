@@ -79,7 +79,7 @@ let {
 } = $props();
 </script>
 
-<div class="smrt-plan-picker">
+<div class="smrt-plan-picker" data-smrt-component="PlanPicker">
   {#each plans as plan (plan.planKey)}
     <!-- raw-primitive-allow: pressable selection card (aria-pressed toggle with multi-line plan summary), not a standard action button -->
     <button

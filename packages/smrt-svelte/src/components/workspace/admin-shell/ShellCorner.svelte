@@ -10,7 +10,7 @@ interface Props {
 let { side, children }: Props = $props();
 </script>
 
-<div class="smrt-shell-corner" data-side={side}>
+<div class="smrt-shell-corner" data-side={side} data-smrt-component="ShellCorner">
   {@render children()}
 </div>
 

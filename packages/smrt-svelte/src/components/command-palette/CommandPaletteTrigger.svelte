@@ -61,10 +61,10 @@ const hint = $derived(hotkeys[0] ? formatPaletteHotkey(hotkeys[0], apple) : '');
   aria-keyshortcuts={ariaKeyShortcuts(hotkeys)}
   onclick={() => palette.open()}
 >
-  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" data-smrt-component="CommandPaletteTrigger"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
   {#if !compact}
-    <span class="smrt-command-palette-trigger__label">{text}</span>
-    {#if hint}<kbd class="smrt-command-palette-trigger__hint">{hint}</kbd>{/if}
+    <span class="smrt-command-palette-trigger__label" data-smrt-component="CommandPaletteTrigger">{text}</span>
+    {#if hint}<kbd class="smrt-command-palette-trigger__hint" data-smrt-component="CommandPaletteTrigger">{hint}</kbd>{/if}
   {/if}
 </Button>
 

@@ -101,7 +101,7 @@ function getTypeLabel(type: string): string {
 }
 </script>
 
-<div class="day-view">
+<div class="day-view" data-smrt-component="DayView">
   <header class="day-header">
     <a href={calendarUrl} class="back-link">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">

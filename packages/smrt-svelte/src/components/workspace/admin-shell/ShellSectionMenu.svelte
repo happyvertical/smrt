@@ -130,7 +130,7 @@ function onmove(move: SortableItemMove<SortableItem>): void {
   class="smrt-section-menu"
   class:smrt-section-menu--cards={layoutMode === 'cards'}
   bind:this={rootEl}
-  data-editing={editing ? '' : undefined}
+  data-editing={editing ? '' : undefined} data-smrt-component="ShellSectionMenu"
 >
   {#if editing}
     <Sortable

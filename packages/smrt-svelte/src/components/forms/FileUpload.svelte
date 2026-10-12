@@ -249,7 +249,7 @@ function formatFileSize(bytes: number): string {
 }
 </script>
 
-<div class="file-upload" class:disabled>
+<div class="file-upload" class:disabled data-smrt-component="FileUpload">
   <div
     class="drop-zone"
     class:dragging={isDragging}

@@ -57,7 +57,7 @@ const statusLabels: Record<AvatarStatus, string> = {
 };
 </script>
 
-<span class="avatar {size} {className}" {...rest}>
+<span class="avatar {size} {className}" {...rest} data-smrt-component="Avatar">
   {#if src && !imgFailed}
     <img
       class="avatar__img"

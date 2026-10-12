@@ -129,12 +129,12 @@ function handleClick(event: MouseEvent) {
     aria-disabled={isDisabled}
     aria-busy={loading}
     onclick={handleClick as HTMLAnchorAttributes['onclick']}
-    {...linkProps()}
+    {...linkProps()} data-smrt-component="Button"
   >
     {#if loading}
-      <span class="spinner" aria-hidden="true"></span>
+      <span class="spinner" aria-hidden="true" data-smrt-part="spinner"></span>
     {/if}
-    <span class="content" class:loading>
+    <span class="content" class:loading data-smrt-part="label">
       {@render children?.()}
     </span>
   </a>
@@ -147,12 +147,12 @@ function handleClick(event: MouseEvent) {
     class:full-width={fullWidth}
     class:loading
     onclick={handleClick}
-    {...rest}
+    {...rest} data-smrt-component="Button"
   >
     {#if loading}
-      <span class="spinner" aria-hidden="true"></span>
+      <span class="spinner" aria-hidden="true" data-smrt-part="spinner"></span>
     {/if}
-    <span class="content" class:loading>
+    <span class="content" class:loading data-smrt-part="label">
       {@render children?.()}
     </span>
   </button>

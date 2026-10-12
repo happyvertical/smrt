@@ -86,7 +86,7 @@ function formatMoney(amount: number): string {
 }
 </script>
 
-<div class="invoice-totals" class:sm={size === 'sm'} class:lg={size === 'lg'}>
+<div class="invoice-totals" class:sm={size === 'sm'} class:lg={size === 'lg'} data-smrt-component="InvoiceTotals">
   {#if retained}
     <div class="totals-row"><span class="totals-label">Subtotal</span><span class="totals-value">{formatInvoiceMinorUnits(retained.subtotalMinor, retained.currency)}</span></div>
     {#if retained.discountMinor !== undefined}<div class="totals-row"><span class="totals-label">Discount</span><span class="totals-value">{formatInvoiceMinorUnits(retained.discountMinor, retained.currency)}</span></div>{/if}

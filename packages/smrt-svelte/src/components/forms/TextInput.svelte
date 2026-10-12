@@ -265,7 +265,7 @@ function handleInput(e: Event) {
   class:invalid={showInvalid}
   class:disabled
   class:has-value={!!value}
-  class:listening={isHolding}
+  class:listening={isHolding} data-smrt-component="TextInput"
 >
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />

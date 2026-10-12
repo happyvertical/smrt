@@ -36,7 +36,7 @@ const {
 }: Props = $props();
 </script>
 
-<div class="masthead">
+<div class="masthead" data-smrt-component="Masthead">
   <Container>
     <!-- Desktop layout -->
     <div class="subheader desktop">

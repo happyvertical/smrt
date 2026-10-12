@@ -28,7 +28,7 @@ let {
 const summary = $derived(summarizeMarketingDashboard(campaigns));
 </script>
 
-<section class="marketing-dashboard">
+<section class="marketing-dashboard" data-smrt-component="MarketingDashboard">
   <div class="tiles">
     <Card padding="sm">
       <dl class="tile">

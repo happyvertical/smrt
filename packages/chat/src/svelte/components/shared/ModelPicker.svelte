@@ -79,6 +79,6 @@ function handleChange(event: Event) {
   aria-label={ariaLabel ?? t(M['chat.model_picker.label'])}
 >
   {#each availableModels as model (model.id)}
-    <option value={model.id}>{model.label}</option>
+    <option value={model.id} data-smrt-component="ModelPicker">{model.label}</option>
   {/each}
 </Select>

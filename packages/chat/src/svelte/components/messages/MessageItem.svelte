@@ -110,7 +110,7 @@ function handleEscape(event: KeyboardEvent) {
 />
 
 {#if message.messageType === 'system' || message.messageType === 'action'}
-  <div class="message-item message-item--system">
+  <div class="message-item message-item--system" data-smrt-component="MessageItem">
     <MessageBubble content={message.content} own={false} variant="system" />
   </div>
 {:else}
@@ -121,7 +121,7 @@ function handleEscape(event: KeyboardEvent) {
     aria-label={t(M['chat.message_item.message_from'], { name: message.senderName })}
     onmouseenter={() => showActions = true}
     onmouseleave={() => { showActions = false; showReactionPicker = false; }}
-    onfocusout={handleFocusOut}
+    onfocusout={handleFocusOut} data-smrt-component="MessageItem"
   >
     {#if !isOwn}
       <div class="message-item__avatar">

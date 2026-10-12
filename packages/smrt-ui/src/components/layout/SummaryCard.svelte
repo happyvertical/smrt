@@ -76,7 +76,7 @@ const valueColorClass = $derived.by(() => {
     class:highlight 
     class:clickable={true}
     {href}
-    use:ripple
+    use:ripple data-smrt-component="SummaryCard"
   >
     {@render cardIcon()}
     <div class="card-content">
@@ -93,7 +93,7 @@ const valueColorClass = $derived.by(() => {
     </div>
   </a>
 {:else}
-  <div class="summary-card" class:highlight>
+  <div class="summary-card" class:highlight data-smrt-component="SummaryCard">
     {@render cardIcon()}
     <div class="card-content">
       <span class="card-label">

@@ -252,7 +252,7 @@ const formError = $derived(
   <PageHeader title={heading} />
 {/if}
 
-<section class="smrt-edit-form" aria-label={heading}>
+<section class="smrt-edit-form" aria-label={heading} data-smrt-component="EditForm">
   {#if sourceError}
     <Alert variant="error">{sourceError}</Alert>
   {:else}

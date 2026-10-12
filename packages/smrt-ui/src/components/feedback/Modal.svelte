@@ -125,24 +125,24 @@ const placementClass = $derived(`modal--${placement}`);
   onkeydown={handleKeydown}
   oncancel={handleCancel}
   aria-label={ariaLabel ?? title}
-  aria-describedby={ariaDescribedBy}
+  aria-describedby={ariaDescribedBy} data-smrt-component="Modal"
 >
   <div class="modal__container">
     {#if header}
-      <header class="modal__header modal__header--custom">
+      <header class="modal__header modal__header--custom" data-smrt-part="header">
         {@render header()}
       </header>
     {:else if title || showClose}
-      <header class="modal__header">
+      <header class="modal__header" data-smrt-part="header">
         {#if title}
-          <h2 class="modal__title">{title}</h2>
+          <h2 class="modal__title" data-smrt-part="title">{title}</h2>
         {:else}
           <span></span>
         {/if}
         {#if showClose}
           <button
             type="button"
-            class="modal__close"
+            class="modal__close" data-smrt-part="close"
             onclick={handleClose}
             aria-label={t(M['ui.modal.close'])}
           >
@@ -166,14 +166,14 @@ const placementClass = $derived(`modal--${placement}`);
       </header>
     {/if}
 
-    <div class="modal__body">
+    <div class="modal__body" data-smrt-part="body">
       {#if children}
         {@render children()}
       {/if}
     </div>
 
     {#if footer}
-      <footer class="modal__footer">
+      <footer class="modal__footer" data-smrt-part="footer">
         {@render footer()}
       </footer>
     {/if}

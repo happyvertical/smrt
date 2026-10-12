@@ -9,7 +9,7 @@ export interface Props {
 }
 let { label = 'Loading', size = 'md', class: className = '' }: Props = $props();
 </script>
-<span class="spinner spinner--{size} {className}" role="status"><span class="spinner__ring" aria-hidden="true"></span><span class="visually-hidden">{label}</span></span>
+<span class="spinner spinner--{size} {className}" role="status" data-smrt-component="Spinner"><span class="spinner__ring" aria-hidden="true"></span><span class="visually-hidden">{label}</span></span>
 <style>
   .spinner { display: inline-flex; }
   .spinner__ring { width: 1.5rem; height: 1.5rem; border: 2px solid var(--smrt-color-surface-container-highest); border-top-color: var(--smrt-color-primary); border-radius: 50%; animation: spin .75s linear infinite; }

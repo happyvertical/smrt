@@ -68,7 +68,7 @@ function handleScroll(event: Event) {
   bind:this={scrollContainer}
   onscroll={handleScroll}
   role="log"
-  aria-label={t(M['chat.message_list.messages_label'])}
+  aria-label={t(M['chat.message_list.messages_label'])} data-smrt-component="MessageList"
 >
   {#if messages.length === 0}
     <div class="message-list__empty">

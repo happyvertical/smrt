@@ -71,7 +71,7 @@ function handleSubmit(event: Event) {
 }
 </script>
 
-<div class="product-form-shell">
+<div class="product-form-shell" data-smrt-component="ProductForm">
   <Form onsubmit={handleSubmit} class="product-form">
     <div class="form-group">
       <label for="name">{t(M['products.product_form.name_label'])}</label>

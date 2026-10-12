@@ -441,7 +441,7 @@ function handleUnitChange(e: Event) {
 }
 </script>
 
-<div class="smrt-measurement" data-smrt-field-owner={fieldOwnerToken}>
+<div class="smrt-measurement" data-smrt-field-owner={fieldOwnerToken} data-smrt-component="MeasurementInput">
   {#if label}
     <FieldLabel for={name} {label} {required} />
   {/if}

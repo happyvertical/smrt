@@ -39,13 +39,13 @@ const displayValue = $derived(
 </script>
 {#if variant === 'circular'}
   <div class="progress progress--circular progress--{size} {className}" class:indeterminate role="progressbar" aria-label={label}
-    aria-valuemin={indeterminate ? undefined : min} aria-valuemax={indeterminate ? undefined : max} aria-valuenow={value}>
+    aria-valuemin={indeterminate ? undefined : min} aria-valuemax={indeterminate ? undefined : max} aria-valuenow={value} data-smrt-component="Progress">
     <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="track" cx="22" cy="22" r="18"></circle><circle class="indicator" cx="22" cy="22" r="18" style={`--progress: ${normalized}`}></circle></svg>
     {#if showValue && !indeterminate}<span>{displayValue}</span>{/if}
   </div>
 {:else}
   <div class="progress progress--linear progress--{size} {className}" class:indeterminate role="progressbar" aria-label={label}
-    aria-valuemin={indeterminate ? undefined : min} aria-valuemax={indeterminate ? undefined : max} aria-valuenow={value}>
+    aria-valuemin={indeterminate ? undefined : min} aria-valuemax={indeterminate ? undefined : max} aria-valuenow={value} data-smrt-component="Progress">
     <span class="track"><span class="indicator" style:width={indeterminate ? undefined : `${normalized}%`}></span></span>
     {#if showValue && !indeterminate}<span class="value">{displayValue}</span>{/if}
   </div>

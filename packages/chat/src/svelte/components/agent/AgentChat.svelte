@@ -92,7 +92,7 @@ $effect(() => {
 });
 </script>
 
-<div class="agent-chat" aria-label={t(M['chat.agent_chat.conversation'])}>
+<div class="agent-chat" aria-label={t(M['chat.agent_chat.conversation'])} data-smrt-component="AgentChat">
   <Form class="agent-chat__input-bar" onsubmit={(e) => handleSubmit(e)}>
     {#if !isActive}
       <div class="agent-chat__inactive-notice">
@@ -200,7 +200,7 @@ $effect(() => {
 </div>
 
 <!-- Diff Modal -->
-<dialog bind:this={diffDialog} class="diff-dialog">
+<dialog bind:this={diffDialog} class="diff-dialog" data-smrt-component="AgentChat">
   <div class="diff-dialog__header">
     <h4>{t(M['chat.agent_chat.field_changes'])}</h4>
     <Button variant="ghost" size="sm" class="diff-dialog__close" type="button" onclick={closeDiff}>✕</Button>

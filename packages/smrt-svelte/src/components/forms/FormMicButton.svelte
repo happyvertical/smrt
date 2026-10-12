@@ -65,7 +65,7 @@ function handleKeydown(e: KeyboardEvent) {
     onkeydown={handleKeydown}
     role="button"
     tabindex="0"
-    aria-label={isListening ? 'Stop listening' : 'Click to speak'}
+    aria-label={isListening ? 'Stop listening' : 'Click to speak'} data-smrt-component="FormMicButton"
   >
     {#if isExtracting}
       <svg

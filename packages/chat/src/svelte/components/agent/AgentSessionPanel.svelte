@@ -46,7 +46,7 @@ const statusLabel: Record<string, string> = {
 };
 </script>
 
-<aside class="session-panel" aria-label={t(M['chat.agent_session_panel.sessions'])}>
+<aside class="session-panel" aria-label={t(M['chat.agent_session_panel.sessions'])} data-smrt-component="AgentSessionPanel">
   <div class="session-panel__header">
     <h2 class="session-panel__title">Sessions</h2>
     {#if onnewsession}

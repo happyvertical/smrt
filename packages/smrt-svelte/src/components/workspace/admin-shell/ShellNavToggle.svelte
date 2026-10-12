@@ -41,7 +41,7 @@ const name = $derived(label ?? t(M['ui.shell_nav_toggle.navigation']));
   aria-expanded={expanded}
   aria-controls={controls}
   data-testid="shell-nav-toggle"
-  {onclick}
+  {onclick} data-smrt-component="ShellNavToggle"
 >
   <svg
     viewBox="0 0 24 24"

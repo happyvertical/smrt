@@ -115,11 +115,11 @@ const modelValues = $derived(
     <Alert variant="error">{t(M['ui.overview.options_failed'])}</Alert>
   {/if}
   {#if fields.length === 0}
-    <p class="smrt-widget-form__none">{t(M['ui.overview.options_none'])}</p>
+    <p class="smrt-widget-form__none" data-smrt-component="WidgetOptionsForm">{t(M['ui.overview.options_none'])}</p>
   {/if}
   {#each fields as field (field.key)}
     {#if field.type === 'boolean'}
-      <div class="smrt-widget-form__check">
+      <div class="smrt-widget-form__check" data-smrt-component="WidgetOptionsForm">
         <Checkbox
           name={field.key}
           label={label(field)}
@@ -142,10 +142,10 @@ const modelValues = $derived(
             bind:value={() => text[field.key] ?? '', (v) => (text[field.key] = v)}
           >
             {#if optionalChoice(field)}
-              <option value="">{t(M['ui.overview.options_choose'])}</option>
+              <option value="" data-smrt-component="WidgetOptionsForm">{t(M['ui.overview.options_choose'])}</option>
             {/if}
             {#each field.choices ?? [] as choice (choice.value)}
-              <option value={choice.value}>{t(choice.label)}</option>
+              <option value={choice.value} data-smrt-component="WidgetOptionsForm">{t(choice.label)}</option>
             {/each}
           </Select>
         {:else if field.type === 'model' && models && models.length > 0}
@@ -153,12 +153,12 @@ const modelValues = $derived(
             name={field.key}
             bind:value={() => text[field.key] ?? '', (v) => (text[field.key] = v)}
           >
-            <option value="">{t(M['ui.overview.options_choose'])}</option>
+            <option value="" data-smrt-component="WidgetOptionsForm">{t(M['ui.overview.options_choose'])}</option>
             {#if text[field.key] && !modelValues.has(text[field.key])}
-              <option value={text[field.key]}>{text[field.key]}</option>
+              <option value={text[field.key]} data-smrt-component="WidgetOptionsForm">{text[field.key]}</option>
             {/if}
             {#each models as model (model.value)}
-              <option value={model.value}>{model.label}</option>
+              <option value={model.value} data-smrt-component="WidgetOptionsForm">{model.label}</option>
             {/each}
           </Select>
         {:else}

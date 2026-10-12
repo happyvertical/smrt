@@ -60,7 +60,7 @@ const sizeClasses = {
 };
 </script>
 
-<label class="toggle {sizeClasses[size]}" class:toggle--disabled={disabled}>
+<label class="toggle {sizeClasses[size]}" class:toggle--disabled={disabled} data-smrt-component="Toggle">
   {#if label && labelPosition === 'left'}
     <span class="toggle__label toggle__label--left">{label}</span>
   {/if}

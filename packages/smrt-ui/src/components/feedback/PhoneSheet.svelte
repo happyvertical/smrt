@@ -89,7 +89,7 @@ function onkeydown(event: KeyboardEvent): void {
   tabindex="-1"
   data-escape-scope
   data-testid="phone-sheet"
-  {onkeydown}
+  {onkeydown} data-smrt-component="PhoneSheet"
 >
   <header
     class="phone-sheet__header"

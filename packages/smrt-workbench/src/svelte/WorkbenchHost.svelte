@@ -637,7 +637,7 @@ function apiTabCount(
 <ThemeProvider colorScheme="dark" persist={true} storageKey="smrt-workbench-theme">
   <div
     class="workbench-shell-root"
-    data-hydrated={isHydrated ? 'true' : 'false'}
+    data-hydrated={isHydrated ? 'true' : 'false'} data-smrt-component="WorkbenchHost"
   >
     <AdminShell
       edgeToggles

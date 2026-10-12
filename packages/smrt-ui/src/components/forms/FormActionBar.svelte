@@ -33,7 +33,7 @@ const { t } = useI18n();
   role="group"
   aria-label={label ?? t(M['ui.form_action_bar.label'])}
   data-form-action-bar
-  data-testid="form-action-bar"
+  data-testid="form-action-bar" data-smrt-component="FormActionBar"
 >
   {@render children()}
 </div>

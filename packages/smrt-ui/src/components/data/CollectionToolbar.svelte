@@ -259,7 +259,7 @@ onDestroy(() => surfaceRegistration?.cleanup());
   class="toolbar {className}"
   class:toolbar--highlighted={surfaceHighlighted}
   role="search"
-  tabindex="-1"
+  tabindex="-1" data-smrt-component="CollectionToolbar"
 >
   <div class="search">
     <Input type="search" name="collection-search" aria-label={searchLabel} placeholder={searchPlaceholder} value={controllerState?.search ?? search} oninput={(event) => changeSearch(event.currentTarget.value)} />

@@ -20,7 +20,7 @@ const labelText: Record<string, string> = {
 };
 </script>
 
-<span class="presence" aria-label={labelText[status]}>
+<span class="presence" aria-label={labelText[status]} data-smrt-component="UserPresence">
   <span class="presence__dot {status}"></span>
   {#if showLabel}
     <span class="presence__label">{labelText[status]}</span>

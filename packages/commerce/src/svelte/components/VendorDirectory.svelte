@@ -132,7 +132,7 @@ function vendorMeta(vendor: VendorDisplayData): string {
 }
 </script>
 
-<section class="party-directory">
+<section class="party-directory" data-smrt-component="VendorDirectory">
   <PageHeader title={plural} subtitle={labels.plural ? t(M['commerce.party.manage_named'], { plural }) : t(M['commerce.vendor.manage'])}>
     {#snippet actions()}
       {#if canCreate && addHref}<Button href={addHref}>{labels.add ?? (labels.singular ? t(M['commerce.party.add_named'], { singular }) : t(M['commerce.vendor.add']))}</Button>{/if}

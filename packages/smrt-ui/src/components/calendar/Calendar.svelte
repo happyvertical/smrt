@@ -219,7 +219,7 @@ const yearOptions = $derived(() => {
 });
 </script>
 
-<div class="calendar">
+<div class="calendar" data-smrt-component="Calendar">
   <header class="calendar-header">
     <div class="nav-buttons">
       <button class="nav-btn" onclick={prevMonth} aria-label={t(M['ui.calendar.previous_month'])}>

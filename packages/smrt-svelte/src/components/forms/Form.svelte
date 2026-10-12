@@ -1529,7 +1529,7 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   onsubmit={handleSubmit}
   {method}
   {action}
-  use:applyEnhance={enhance}
+  use:applyEnhance={enhance} data-smrt-component="Form"
 >
   <!--
     Screen-reader status region (L1 #1420): announces async STT / field-
@@ -1642,7 +1642,7 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
 </form>
 
 {#if isFormListening && spokenText}
-  <div class="spoken-toaster">
+  <div class="spoken-toaster" data-smrt-component="Form">
     <strong>{t(M['ui.form.you_said'])}</strong> {spokenText}
   </div>
 {/if}

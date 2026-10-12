@@ -114,7 +114,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 }
 </script>
 
-<section class="smrt-shell-layout-editor" aria-labelledby={headingId} bind:this={rootEl}>
+<section class="smrt-shell-layout-editor" aria-labelledby={headingId} bind:this={rootEl} data-smrt-component="ShellLayoutEditor">
   <header>
     <div>
       <h2 id={headingId}>{t(M['ui.shell_layout_editor.heading'])}</h2>

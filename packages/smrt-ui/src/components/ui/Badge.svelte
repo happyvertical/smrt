@@ -15,7 +15,7 @@ interface Props extends Omit<HTMLAttributes<HTMLSpanElement>, 'class'> {
 const { variant = 'default', size = 'md', children, ...rest }: Props = $props();
 </script>
 
-<span class="badge {variant} {size}" {...rest}>
+<span class="badge {variant} {size}" {...rest} data-smrt-component="Badge">
   {@render children?.()}
 </span>
 

@@ -156,7 +156,7 @@ useControlRegistration(() => {
 </script>
 <div bind:this={rootEl} class="listbox {className}" role="listbox" aria-label={label} aria-disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
-  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="Listbox">
   {#if name}<input type="hidden" {name} value={value ?? ''} disabled={disabled || matchingOption(options, value)?.disabled} />{/if}
   {#each options as option, index (option.value)}<button bind:this={optionEls[index]} type="button" role="option" aria-selected={value === option.value}
     disabled={disabled || option.disabled} tabindex={value === option.value || (value === undefined && index === 0) ? 0 : -1}

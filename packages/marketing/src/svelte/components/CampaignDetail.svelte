@@ -35,9 +35,9 @@ let {
 </script>
 
 {#if !campaign}
-  <p class="empty">Select a campaign to see its details.</p>
+  <p class="empty" data-smrt-component="CampaignDetail">Select a campaign to see its details.</p>
 {:else}
-  <article class="campaign-detail">
+  <article class="campaign-detail" data-smrt-component="CampaignDetail">
     <Card variant="outlined">
       <header class="header">
         <div>

@@ -42,7 +42,7 @@ const {
 </script>
 
 {#if tab.isExpanded}
-  <div class="chat-tab chat-tab--expanded" aria-label={t(M['chat.chat_tab.chat_with'], { name: tab.room.name })}>
+  <div class="chat-tab chat-tab--expanded" aria-label={t(M['chat.chat_tab.chat_with'], { name: tab.room.name })} data-smrt-component="ChatTab">
     <div class="chat-tab__header">
       <!-- raw-primitive-allow: pressable header title wrapping rich content (room avatar component and name) that collapses the chat window on click; no Button primitive owns this structural avatar-header pattern -->
       <button
@@ -104,7 +104,7 @@ const {
     class="chat-tab chat-tab--collapsed"
     type="button"
     onclick={onexpand}
-    aria-label={t(M['chat.chat_tab.open_chat_with'], { name: tab.room.name })}
+    aria-label={t(M['chat.chat_tab.open_chat_with'], { name: tab.room.name })} data-smrt-component="ChatTab"
   >
     <Avatar
       name={tab.room.name}

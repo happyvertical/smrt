@@ -44,7 +44,7 @@ let {
   class="smrt-shell-icon-button {className}"
   aria-label={label}
   title={tooltip ?? label}
-  aria-pressed={pressed}
+  aria-pressed={pressed} data-smrt-component="ShellIconButton"
 >
   {#if children}
     {@render children()}

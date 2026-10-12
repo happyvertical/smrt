@@ -18,7 +18,7 @@ export interface Props {
 let { campaigns = [], selectedCampaignId, locale, onSelect }: Props = $props();
 </script>
 
-<div class="campaign-list">
+<div class="campaign-list" data-smrt-component="CampaignList">
   {#if campaigns.length === 0}
     <p class="empty">No campaigns yet.</p>
   {:else}

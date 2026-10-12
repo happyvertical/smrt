@@ -80,7 +80,7 @@ function apply() {
 }
 </script>
 
-<section aria-label={t(M['ui.audit.list'])}>
+<section aria-label={t(M['ui.audit.list'])} data-smrt-component="AuditList">
   {#if showFilters}
     <Form onsubmit={apply} class="smrt-audit-filters">
       <FormGroup label={t(M['ui.audit.person'])}><Input bind:value={profileId} /></FormGroup>

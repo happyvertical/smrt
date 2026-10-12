@@ -70,7 +70,7 @@ function handleKeydown(e: KeyboardEvent) {
 		aria-modal="true"
 		aria-labelledby="loading-title"
 		aria-describedby={items.length > 0 ? 'loading-items' : undefined}
-		aria-busy={!error}
+		aria-busy={!error} data-smrt-component="LoadingOverlay"
 	>
 		<div class="overlay-backdrop"></div>
 

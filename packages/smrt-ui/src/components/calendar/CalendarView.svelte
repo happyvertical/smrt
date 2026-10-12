@@ -531,7 +531,7 @@ $effect(() => {
   bind:this={root}
   class="cv {className}"
   class:cv--agenda={view === 'agenda'}
-  data-view={view}
+  data-view={view} data-smrt-component="CalendarView"
 >
   <header class="cv-header">
     <svelte:element

@@ -228,7 +228,7 @@ function handleInput(e: Event) {
   class:focused={isFocused} 
   class:disabled
   class:has-value={!!value}
-  class:listening={isHolding}
+  class:listening={isHolding} data-smrt-component="TextareaInput"
 >
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />

@@ -43,7 +43,7 @@ function formatDate(date: Date | string | null | undefined): string {
 }
 </script>
 
-<div class="membership-card">
+<div class="membership-card" data-smrt-component="MembershipCard">
   <div class="main">
     <div class="tenant-info">
       <span class="tenant-name">{tenant.name}</span>

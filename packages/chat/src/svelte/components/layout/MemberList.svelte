@@ -71,7 +71,7 @@ function getRoleBadgeLabel(role: string): string {
 }
 </script>
 
-<aside class="member-list" aria-label={t(M['chat.member_list.room_members'])}>
+<aside class="member-list" aria-label={t(M['chat.member_list.room_members'])} data-smrt-component="MemberList">
   <div class="member-list__header">
     <h2 class="member-list__title">Members</h2>
     <span class="member-list__count">{participants.length}</span>

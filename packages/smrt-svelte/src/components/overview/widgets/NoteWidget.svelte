@@ -24,9 +24,9 @@ const blocks = $derived(
 {/snippet}
 
 {#if blocks.length === 0}
-  <p class="smrt-note__empty">{t(M['ui.overview.no_data'])}</p>
+  <p class="smrt-note__empty" data-smrt-component="NoteWidget">{t(M['ui.overview.no_data'])}</p>
 {:else}
-  <div class="smrt-note">
+  <div class="smrt-note" data-smrt-component="NoteWidget">
     {#each blocks as block, index (index)}
       {#if block.type === 'heading'}
         <p class="smrt-note__heading" data-level={block.level}><strong>{@render inline(block.children)}</strong></p>

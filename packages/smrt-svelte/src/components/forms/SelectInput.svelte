@@ -136,7 +136,7 @@ function handleChange(e: Event) {
   class:smrt-mode={isSmrt} 
   class:focused={isFocused} 
   class:disabled
-  class:has-value={!!value}
+  class:has-value={!!value} data-smrt-component="SelectInput"
 >
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />

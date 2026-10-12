@@ -122,7 +122,7 @@ $effect(() => {
 });
 </script>
 
-<div class="role-selector" class:disabled bind:this={wrapEl}>
+<div class="role-selector" class:disabled bind:this={wrapEl} data-smrt-component="RoleSelector">
   <button
     bind:this={triggerEl}
     type="button"

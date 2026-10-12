@@ -37,7 +37,7 @@ const {
 }: Props = $props();
 </script>
 
-<div class="membership-list">
+<div class="membership-list" data-smrt-component="MembershipList">
   {#if loading}
     <div class="loading">
       <div class="spinner"></div>

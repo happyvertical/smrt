@@ -1007,7 +1007,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   data-phone-top={showPhoneTop ? '' : undefined}
   data-chrome-hidden={chromeHidden ? '' : undefined}
   data-resizing={resizing ?? undefined}
-  style={`${layoutStyle}; ${chromeStyle}; ${reserveStyle}`}
+  style={`${layoutStyle}; ${chromeStyle}; ${reserveStyle}`} data-smrt-component="AdminShell"
 >
   {#if showHeader}
     <div

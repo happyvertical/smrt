@@ -203,7 +203,7 @@ const colorClass = $derived.by(() => {
   class:lg={size === 'lg'}
   class:negative={colorClass === 'negative'}
   class:positive={colorClass === 'positive'}
-  class:invalid={formatted.invalidCode !== null}
+  class:invalid={formatted.invalidCode !== null} data-smrt-component="CurrencyDisplay"
 >
   {formatted.text}
 </span>

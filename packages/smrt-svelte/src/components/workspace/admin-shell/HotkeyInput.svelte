@@ -45,7 +45,7 @@ function handleKeydown(event: KeyboardEvent): void {
 }
 </script>
 
-<div class="smrt-hotkey-input">
+<div class="smrt-hotkey-input" data-smrt-component="HotkeyInput">
   <Button
     variant="secondary"
     size="sm"

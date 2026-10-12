@@ -334,7 +334,7 @@ useControlRegistration(() => {
 </script>
 <div bind:this={rootEl} class="combobox {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
-  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="Combobox">
   <FieldLabel for={inputId} {label} {required} />
   <!-- The form posts the committed value (an option id), never the label the person sees. -->
   {#if name}<input type="hidden" {name} {value} {disabled} />{/if}

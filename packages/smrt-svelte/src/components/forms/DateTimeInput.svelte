@@ -349,7 +349,7 @@ function handleNativeChange(e: Event) {
 }
 </script>
 
-<div class="smrt-datetime" class:listening={isHolding} class:parsing={isParsing}>
+<div class="smrt-datetime" class:listening={isHolding} class:parsing={isParsing} data-smrt-component="DateTimeInput">
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}

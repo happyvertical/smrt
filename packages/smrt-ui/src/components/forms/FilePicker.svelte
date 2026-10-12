@@ -111,7 +111,7 @@ useControlRegistration(() => {
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}
   ondragenter={(event) => { event.preventDefault(); dragging = true; }}
-  ondragover={(event) => event.preventDefault()} ondragleave={() => dragging = false} ondrop={handleDrop}>
+  ondragover={(event) => event.preventDefault()} ondragleave={() => dragging = false} ondrop={handleDrop} data-smrt-component="FilePicker">
   <input bind:this={inputEl} id={resolvedId} type="file" {name} {accept} {multiple} {disabled} {required} onchange={handleChange} {...rest} />
   <span class="label">{label}</span><span class="description">{files.length ? `${files.length} file${files.length === 1 ? '' : 's'} selected` : description}</span>
 </label>

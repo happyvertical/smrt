@@ -57,7 +57,7 @@ function handleClick(value: string) {
 }
 </script>
 
-<div data-density={density} class="filter-chips" class:sm={size === 'sm'} role="radiogroup">
+<div data-density={density} class="filter-chips" class:sm={size === 'sm'} role="radiogroup" data-smrt-component="FilterChips">
   {#each allOptions as option (option.value)}
     {@const isActive = option.value === selected}
     <button

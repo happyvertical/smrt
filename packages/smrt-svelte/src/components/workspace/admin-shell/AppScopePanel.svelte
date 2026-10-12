@@ -36,7 +36,7 @@ const { t } = useI18n();
 
 <section
   class="smrt-app-scope-panel"
-  aria-label={t(M['ui.app_scope_panel.app_scope'])}
+  aria-label={t(M['ui.app_scope_panel.app_scope'])} data-smrt-component="AppScopePanel"
 >
   <header>
     <div>

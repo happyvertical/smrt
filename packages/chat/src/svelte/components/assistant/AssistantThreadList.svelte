@@ -25,7 +25,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
 
 <nav
   class="assistant-thread-list"
-  aria-label={t(M['chat.assistant_thread_list.conversations_label'])}
+  aria-label={t(M['chat.assistant_thread_list.conversations_label'])} data-smrt-component="AssistantThreadList"
 >
   {#if oncreate}
     <Button

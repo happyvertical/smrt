@@ -308,7 +308,7 @@ function handleBlur() {
 }
 </script>
 
-<div class="smrt-money">
+<div class="smrt-money" data-smrt-component="MoneyInput">
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}

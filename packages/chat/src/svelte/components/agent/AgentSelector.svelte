@@ -21,7 +21,7 @@ const { agents, onselect }: Props = $props();
 const { t } = useI18n();
 </script>
 
-<div class="agent-selector" aria-label={t(M['chat.agent_selector.select_an_agent'])}>
+<div class="agent-selector" aria-label={t(M['chat.agent_selector.select_an_agent'])} data-smrt-component="AgentSelector">
   <h3 class="agent-selector__title">{t(M['chat.agent_selector.title'])}</h3>
 
   <div class="agent-selector__grid" role="listbox" aria-label={t(M['chat.agent_selector.available_agents'])}>

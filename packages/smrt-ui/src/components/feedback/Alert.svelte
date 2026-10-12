@@ -32,7 +32,7 @@ const role = $derived(
 );
 </script>
 
-<div class="alert alert--{variant} {className}" {role}>
+<div class="alert alert--{variant} {className}" {role} data-smrt-component="Alert">
   <span class="marker" aria-hidden="true"></span>
   <div class="content">
     {#if title}<strong>{title}</strong>{/if}

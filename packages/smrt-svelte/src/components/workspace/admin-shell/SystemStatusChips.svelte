@@ -15,7 +15,7 @@ const { t } = useI18n();
 
 <div
   class="smrt-system-status-chips"
-  aria-label={t(M['ui.system_status_chips.system_status'])}
+  aria-label={t(M['ui.system_status_chips.system_status'])} data-smrt-component="SystemStatusChips"
 >
   {#each chips as chip (chip.id)}
     {#if chip.href}

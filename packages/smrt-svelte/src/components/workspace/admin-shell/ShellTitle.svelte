@@ -10,7 +10,7 @@ interface Props {
 let { title, href }: Props = $props();
 </script>
 
-<a class="smrt-shell-title" {href} data-testid="shell-title">{title}</a>
+<a class="smrt-shell-title" {href} data-testid="shell-title" data-smrt-component="ShellTitle">{title}</a>
 
 <style>
   .smrt-shell-title {

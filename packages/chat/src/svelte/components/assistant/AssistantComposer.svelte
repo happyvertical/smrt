@@ -392,7 +392,7 @@ function removeAttachment(id: string) {
 <div
   class="assistant-composer"
   ondrop={onupload ? handleDrop : undefined}
-  ondragover={onupload ? (event) => event.preventDefault() : undefined}
+  ondragover={onupload ? (event) => event.preventDefault() : undefined} data-smrt-component="AssistantComposer"
 >
   {#if sendError}
     <p class="assistant-composer-error" role="alert">

@@ -154,6 +154,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 {#snippet linkTab(tab: Tab)}
   <a
     class="tab-link"
+    data-smrt-part="tab"
     class:active={tab.id === active}
     href={tab.disabled ? undefined : tab.href}
     aria-current={tab.id === active ? 'page' : undefined}
@@ -167,20 +168,20 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
       handleClick(tab.id);
     }}
   >
-    <span class="tab-label">{tab.label}</span>
+    <span class="tab-label" data-smrt-part="label">{tab.label}</span>
     {#if tab.count !== undefined}
-      <span class="tab-count">{tab.count}</span>
+      <span class="tab-count" data-smrt-part="count">{tab.count}</span>
     {/if}
     {#if hasBadge(tab)}
-      <span class="tab-badge">{tab.badge}</span>
+      <span class="tab-badge" data-smrt-part="badge">{tab.badge}</span>
     {/if}
   </a>
 {/snippet}
 
 {#if linkMode}
-<div class="tabs-container">
+<div class="tabs-container" data-smrt-component="Tabs">
   <nav
-    class="tabs-links"
+    class="tabs-links" data-smrt-part="list"
     class:sm={size === 'sm'}
     class:lg={size === 'lg'}
     aria-label={ariaLabel}
@@ -193,14 +194,14 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     </div>
     {#if split.overflow.length > 0}
       <details class="tabs-more" bind:this={moreMenu}>
-        <summary class="tab-link">
-          <span class="tab-label">{moreLabel}</span>
+        <summary class="tab-link" data-smrt-part="trigger">
+          <span class="tab-label" data-smrt-part="label">{moreLabel}</span>
           {#if overflowHasBadge}
             <span class="tab-dot" aria-hidden="true"></span>
             <span class="visually-hidden">({moreBadgeLabel})</span>
           {/if}
         </summary>
-        <div class="tabs-more-menu">
+        <div class="tabs-more-menu" data-smrt-part="menu">
           {#each split.overflow as tab (tab.id)}
             {@render linkTab(tab)}
           {/each}
@@ -209,15 +210,15 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     {/if}
   </nav>
   {#if children}
-    <div class="tab-panel">
+    <div class="tab-panel" data-smrt-part="panel">
       {@render children()}
     </div>
   {/if}
 </div>
 {:else}
-<div class="tabs-container">
+<div class="tabs-container" data-smrt-component="Tabs">
   <div
-    class="tabs-nav"
+    class="tabs-nav" data-smrt-part="list"
     class:sm={size === 'sm'}
     class:lg={size === 'lg'}
     class:secondary={variant === 'secondary'}
@@ -228,7 +229,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     {#each tabs as tab (tab.id)}
       <button
         type="button"
-        class="tab-button"
+        class="tab-button" data-smrt-part="tab"
         class:active={tab.id === active}
         disabled={tab.disabled}
         role="tab"
@@ -242,12 +243,12 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
         use:ripple
       >
         <span class="tab-content-wrapper">
-          <span class="tab-label">{tab.label}</span>
+          <span class="tab-label" data-smrt-part="label">{tab.label}</span>
           {#if tab.count !== undefined}
-            <span class="tab-count">{tab.count}</span>
+            <span class="tab-count" data-smrt-part="count">{tab.count}</span>
           {/if}
           {#if hasBadge(tab)}
-            <span class="tab-badge">{tab.badge}</span>
+            <span class="tab-badge" data-smrt-part="badge">{tab.badge}</span>
           {/if}
         </span>
         <div class="active-indicator"></div>
@@ -257,7 +258,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 
   {#if children}
     <div 
-      class="tab-panel" 
+      class="tab-panel" data-smrt-part="panel" 
       role="tabpanel" 
       id="tab-panel-{instanceId}"
       aria-labelledby="tab-{instanceId}-{active}"

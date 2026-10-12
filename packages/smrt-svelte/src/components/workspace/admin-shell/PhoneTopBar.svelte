@@ -23,7 +23,7 @@ let { model, homeHref }: Props = $props();
 const { t } = useI18n();
 </script>
 
-<div class="smrt-phone-top-bar" data-testid="phone-top-bar" data-kind={model.kind}>
+<div class="smrt-phone-top-bar" data-testid="phone-top-bar" data-kind={model.kind} data-smrt-component="PhoneTopBar">
   {#if model.kind === 'detail'}
     <a
       class="smrt-phone-top-bar__back"

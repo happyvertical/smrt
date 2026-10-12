@@ -12,7 +12,7 @@ export interface Props {
 }
 let { prefix, suffix, children, class: className = '' }: Props = $props();
 </script>
-<div class="input-group {className}">{#if prefix}<span class="adornment">{@render prefix()}</span>{/if}<div class="control">{@render children()}</div>{#if suffix}<span class="adornment">{@render suffix()}</span>{/if}</div>
+<div class="input-group {className}" data-smrt-component="InputGroup">{#if prefix}<span class="adornment">{@render prefix()}</span>{/if}<div class="control">{@render children()}</div>{#if suffix}<span class="adornment">{@render suffix()}</span>{/if}</div>
 <style>
   .input-group { display: flex; align-items: stretch; width: 100%; border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); overflow: hidden; }
   .adornment { display: inline-flex; align-items: center; padding: 0 var(--smrt-spacing-3); background: var(--smrt-color-surface-container-low); color: var(--smrt-color-on-surface-variant); }

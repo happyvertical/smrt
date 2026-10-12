@@ -60,7 +60,7 @@ onDestroy(() => {
 </script>
 
 {#if toasts.length > 0}
-  <div class="smrt-activity-toasts" aria-live="polite">
+  <div class="smrt-activity-toasts" aria-live="polite" data-smrt-component="ActivityToasts">
     {#each toasts as toast (toast.id)}
       <article class="smrt-activity-toast" data-status={toast.activity.status}>
         <div>

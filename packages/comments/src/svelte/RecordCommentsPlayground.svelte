@@ -16,5 +16,5 @@ function addComment(body: string) {
 }
 </script>
 
-<p>Sample record discussion. Comments stay in this preview and do not send notifications.</p>
+<p data-smrt-component="RecordCommentsPlayground">Sample record discussion. Comments stay in this preview and do not send notifications.</p>
 <RecordComments contextKey="playground:sample-record" {comments} onsubmit={addComment} />

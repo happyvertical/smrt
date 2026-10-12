@@ -80,7 +80,7 @@ function highlightMatch(
   <div
     class="mention-autocomplete"
     role="listbox"
-    aria-label={t(M['chat.mention_autocomplete.suggestions'])}
+    aria-label={t(M['chat.mention_autocomplete.suggestions'])} data-smrt-component="MentionAutocomplete"
   >
     {#each suggestions as suggestion, i (suggestion.id)}
       {@const parts = highlightMatch(suggestion.name, query)}

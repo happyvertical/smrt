@@ -338,7 +338,7 @@ async function customSaved(offering: HelperOffering) {
 }
 </script>
 
-<section class="helper-panel" aria-busy={loading || saving} aria-labelledby="helper-panel-title">
+<section class="helper-panel" aria-busy={loading || saving} aria-labelledby="helper-panel-title" data-smrt-component="HelperControlPanel">
   <h2 id="helper-panel-title">{t(M['chat.helper.title'])}</h2>
   {#if message}<p class="message" role={messageIsError ? 'alert' : 'status'} aria-live={messageIsError ? 'assertive' : 'polite'}>{message}</p>{/if}
   {#if snapshot?.recovery}<p class="message" role="status">{snapshot.recovery.message}</p>{/if}

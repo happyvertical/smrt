@@ -212,7 +212,7 @@ function toggleColumn(columnId: string): void {
 }
 </script>
 
-<section bind:this={root} class="smrt-board" aria-label={label ?? t(M['ui.board.label'])} aria-roledescription="board">
+<section bind:this={root} class="smrt-board" aria-label={label ?? t(M['ui.board.label'])} aria-roledescription="board" data-smrt-component="Board">
   <div class="smrt-board__lanes">
     {#each columns as column, columnIndex (column.id)}
       {@const items = cardsInColumn(column.id)}

@@ -34,7 +34,7 @@ function conflictFor(edge: PanelEdge): string | null {
 
 <section
   class="smrt-shell-settings-panel"
-  aria-label={t(M['ui.shell_settings_panel.shell_settings'])}
+  aria-label={t(M['ui.shell_settings_panel.shell_settings'])} data-smrt-component="ShellSettingsPanel"
 >
   <header>
     <div>

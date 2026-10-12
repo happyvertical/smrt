@@ -12,7 +12,7 @@ export interface Props {
 const { logo, nav }: Props = $props();
 </script>
 
-<header class="site-header">
+<header class="site-header" data-smrt-component="Header">
   <Container>
     <div class="header-content">
       {#if logo}

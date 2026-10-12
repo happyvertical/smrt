@@ -39,7 +39,7 @@ function enhanceForm(form: HTMLFormElement) {
 }
 </script>
 
-<main class="smrt-owner-setup">
+<main class="smrt-owner-setup" data-smrt-component="OwnerSetupForm">
   <h1>{t(M['ui.owner_setup.heading'])}</h1>
   {#if !data.available}
     <p data-owner-setup="unavailable">{t(M['ui.owner_setup.unavailable'])}</p>

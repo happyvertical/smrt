@@ -107,7 +107,7 @@ function getFileIcon(type: string): string {
 }
 </script>
 
-<div class="file-upload" class:file-upload--disabled={disabled}>
+<div class="file-upload" class:file-upload--disabled={disabled} data-smrt-component="FileUpload">
   {#if pendingFiles.length > 0}
     <div class="file-upload__preview" aria-label={t(M['chat.file_upload.preview'])}>
       {#each pendingFiles as file, i (file.name + i)}

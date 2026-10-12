@@ -97,7 +97,7 @@ const timeText = $derived(
   class="bubble bubble--{effectiveVariant}"
   class:bubble--own={effectiveOwn}
   role={hasHeader ? 'group' : undefined}
-  aria-label={hasHeader ? groupLabel : undefined}
+  aria-label={hasHeader ? groupLabel : undefined} data-smrt-component="MessageBubble"
 >
   {#if hasHeader}
     <div class="bubble__header">

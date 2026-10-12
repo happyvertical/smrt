@@ -25,7 +25,7 @@ function getInitial(name: string): string {
 }
 </script>
 
-<span class="read-receipts" aria-label={t(M['chat.read_receipts.read_status'], { readCount: readBy.length, total: totalParticipants })}>
+<span class="read-receipts" aria-label={t(M['chat.read_receipts.read_status'], { readCount: readBy.length, total: totalParticipants })} data-smrt-component="ReadReceipts">
   {#if readBy.length === 0}
     <!-- Single check: sent -->
     <svg class="read-receipts__icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">

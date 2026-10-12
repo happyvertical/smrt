@@ -134,7 +134,7 @@ function handleKeydown(e: KeyboardEvent) {
     tabindex="-1"
     onclick={handleBackdropClick}
     onkeydown={handleKeydown}
-    oncancel={handleCancel}
+    oncancel={handleCancel} data-smrt-component="ConfirmDialog"
   >
     <div class="dialog-content">
       <h2 id={`${instanceId}-title`} class="dialog-title">{title}</h2>

@@ -604,7 +604,7 @@ async function handleConfirmAction(requestId: string) {
 }
 </script>
 
-<div class="assistant-dock">
+<div class="assistant-dock" data-smrt-component="AssistantDock">
   <div
     class="assistant-dock-layout"
     data-threads-open={threadsOpen || undefined}

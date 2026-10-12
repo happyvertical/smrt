@@ -96,7 +96,7 @@ async function expand() {
 }
 </script>
 
-<section aria-labelledby={headingId} class="smrt-mcp-apps-bridge">
+<section aria-labelledby={headingId} class="smrt-mcp-apps-bridge" data-smrt-component="McpAppsBridge">
   <h1 id={headingId}>{title}</h1>
   {#if description}<p>{description}</p>{/if}
   {#if inlineOnly}

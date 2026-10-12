@@ -79,7 +79,7 @@ $effect(() => {
 });
 </script>
 
-<span bind:this={rootEl} class="popover {className}">
+<span bind:this={rootEl} class="popover {className}" data-smrt-component="Popover">
   <button
     bind:this={triggerEl}
     type="button"

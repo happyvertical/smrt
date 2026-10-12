@@ -44,7 +44,7 @@ $effect(() => {
 });
 </script>
 
-<div class="smrt-overview-assistant-undo {className}" data-active={batch ? '' : undefined}>
+<div class="smrt-overview-assistant-undo {className}" data-active={batch ? '' : undefined} data-smrt-component="OverviewAssistantUndo">
   <!-- The live region stays mounted so each new message is announced. -->
   <span class="smrt-overview-assistant-undo__message" role="status" aria-live="polite">
     {#if batch}

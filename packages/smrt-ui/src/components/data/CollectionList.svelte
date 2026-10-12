@@ -81,11 +81,11 @@ function toggle(key: string | number) {
 </script>
 
 {#if loading}
-  <div class="loading" role="status"><span class="spinner" aria-hidden="true"></span>Loading…</div>
+  <div class="loading" role="status" data-smrt-component="CollectionList"><span class="spinner" aria-hidden="true"></span>Loading…</div>
 {:else if items.length === 0}
-  <div class="empty">{#if empty}{@render empty()}{:else}No items available{/if}</div>
+  <div class="empty" data-smrt-component="CollectionList">{#if empty}{@render empty()}{:else}No items available{/if}</div>
 {:else}
-  <ul class="collection collection--{layout} {className}">
+  <ul class="collection collection--{layout} {className}" data-smrt-component="CollectionList">
     {#each items as entry, index (keyOf(entry, index))}
       {@const key = keyOf(entry, index)}
       {@const isSelected = selected.has(key)}

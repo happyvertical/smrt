@@ -65,7 +65,7 @@ const text = $derived({
 });
 </script>
 
-<section class="contacts" aria-labelledby={headingId}>
+<section class="contacts" aria-labelledby={headingId} data-smrt-component="PartyContactFields">
   <div class="contacts-heading">
     <h2 id={headingId}>{text.heading}</h2>
     {#if !readOnly && canAdd}

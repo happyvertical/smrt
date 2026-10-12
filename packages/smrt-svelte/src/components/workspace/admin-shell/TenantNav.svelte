@@ -213,7 +213,7 @@ function fallbackIcon(label: string): string {
   class="smrt-tenant-nav"
   data-density={density}
   class:smrt-tenant-nav--collapsed={collapsed}
-  aria-label={ariaLabel || t(M['ui.tenant_nav.tenant_navigation'])}
+  aria-label={ariaLabel || t(M['ui.tenant_nav.tenant_navigation'])} data-smrt-component="TenantNav"
 >
 
   {@render navItems(items)}

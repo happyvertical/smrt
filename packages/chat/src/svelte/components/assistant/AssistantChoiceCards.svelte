@@ -75,7 +75,7 @@ const { t } = useI18n();
     role="group"
     aria-label={set.title}
     aria-busy={making ? 'true' : undefined}
-    onkeydown={(event) => onkeydown(event, set)}
+    onkeydown={(event) => onkeydown(event, set)} data-smrt-component="AssistantChoiceCards"
   >
     <p class="assistant-dock-choices-title">{set.title}</p>
     {#if making}
