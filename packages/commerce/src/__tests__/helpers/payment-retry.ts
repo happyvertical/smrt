@@ -208,6 +208,9 @@ export function paymentRetryContract(postgres = false, enabled = true): void {
         const released = new Promise<void>((resolve) => {
           releaseSnapshot = resolve;
         });
+        if (!isolated.baseDb.transaction) {
+          throw new Error('PostgreSQL retry regression requires transactions');
+        }
         const stale = isolated.baseDb.transaction(async (tx) => {
           await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
           const collection = await PaymentCollection.create({ db: tx });
