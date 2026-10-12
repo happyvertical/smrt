@@ -39,8 +39,16 @@ function getWorkspaceShellStyle(selector: string) {
   style.textContent = css?.code ?? '';
   document.head.appendChild(style);
 
+  // Component CSS sits inside `@layer smrt.*` blocks; walk grouping rules.
+  // Style rules also carry an (empty) `cssRules` for nesting, so keep the rule itself.
+  const flatten = (list: CSSRuleList | undefined): CSSRule[] =>
+    Array.from(list ?? []).flatMap((rule) => [
+      rule,
+      ...flatten((rule as Partial<CSSGroupingRule>).cssRules),
+    ]);
+
   try {
-    const rules = Array.from(style.sheet?.cssRules ?? []);
+    const rules = flatten(style.sheet?.cssRules);
     const rule = rules.find(
       (candidate): candidate is CSSStyleRule =>
         'selectorText' in candidate &&
