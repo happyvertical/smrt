@@ -39,7 +39,7 @@ let {
 }: Props = $props();
 const { t } = useI18n();
 </script>
-<div class="purchase-source">
+<div class="purchase-source" data-smrt-component="PurchaseSourceSelector">
  <Form {action} {onsubmit} method="get" preventDefault={false}>
   {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} />{/each}
   <FormGroup label={label ?? t(P['commerce.purchase.source'])} {error} required>

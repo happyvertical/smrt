@@ -63,7 +63,7 @@ const stats = $derived.by(() => {
 });
 </script>
 
-<div class="agent-dashboard" class:loading>
+<div class="agent-dashboard" class:loading data-smrt-component="AgentDashboard">
   <!-- Stats Overview -->
   <section class="agent-dashboard__stats">
     <div class="stats-grid">

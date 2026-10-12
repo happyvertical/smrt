@@ -17,7 +17,7 @@ const format = (value: Date | string) =>
   }).format(new Date(value));
 </script>
 
-<ol class="delivery" aria-label={t(M['projects.delivery_status.aria'])}>
+<ol class="delivery" aria-label={t(M['projects.delivery_status.aria'])} data-smrt-component="DeliveryStatus">
   {#each [...events].sort((a, b) => a.sequence - b.sequence) as event (event.id)}
     <li>
       <span class="marker" aria-hidden="true"></span>

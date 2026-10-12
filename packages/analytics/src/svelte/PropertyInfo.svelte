@@ -47,7 +47,7 @@ const lastSyncFormatted = $derived.by(() => {
 });
 </script>
 
-<div class="property-info">
+<div class="property-info" data-smrt-component="PropertyInfo">
 	<div class="property-header">
 		<h3>{t(M['analytics.property_info.title'])}</h3>
 		<PropertyStatusBadge {status} />

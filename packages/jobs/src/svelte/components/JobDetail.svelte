@@ -46,7 +46,7 @@ const duration = $derived.by(() => {
 const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
 </script>
 
-<div class="job-detail">
+<div class="job-detail" data-smrt-component="JobDetail">
   <Card>
     {#snippet header()}
       <div class="job-detail__header">

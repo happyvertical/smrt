@@ -171,7 +171,7 @@ async function restoreVersion(versionNumber: number) {
 }
 </script>
 
-<div class="governance-tool">
+<div class="governance-tool" data-smrt-component="ContentVersionsTool">
   <div class="tool-toolbar">
     <Button
       variant="secondary"

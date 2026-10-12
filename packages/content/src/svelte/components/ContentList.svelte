@@ -2702,7 +2702,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 <div
   class="content-list-wrapper"
   class:data-surface-highlighted={surfaceHighlighted}
-  bind:this={surfaceRoot}
+  bind:this={surfaceRoot} data-smrt-component="ContentList"
 >
 
   <div class="content-controls">

@@ -42,12 +42,12 @@ const _formattedSize = $derived.by(() => {
     onclick={() => onclick?.(attachment)}
     title={`${attachment.filename} (${_formattedSize})`}
   >
-    <span class="icon">{_icon}</span>
-    <span class="name">{attachment.filename}</span>
-    <span class="size">{_formattedSize}</span>
+    <span class="icon" data-smrt-component="AttachmentChip">{_icon}</span>
+    <span class="name" data-smrt-component="AttachmentChip">{attachment.filename}</span>
+    <span class="size" data-smrt-component="AttachmentChip">{_formattedSize}</span>
   </Button>
 {:else}
-  <span class="chip" title={`${attachment.filename} (${_formattedSize})`}>
+  <span class="chip" title={`${attachment.filename} (${_formattedSize})`} data-smrt-component="AttachmentChip">
     <span class="icon">{_icon}</span>
     <span class="name">{attachment.filename}</span>
     <span class="size">{_formattedSize}</span>

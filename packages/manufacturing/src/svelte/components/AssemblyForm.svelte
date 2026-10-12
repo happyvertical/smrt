@@ -270,7 +270,7 @@ function handleSubmit(event?: Event) {
 }
 </script>
 
-<div class="assembly-form-shell">
+<div class="assembly-form-shell" data-smrt-component="AssemblyForm">
   <Form class="assembly-form" onsubmit={handleSubmit}>
     {#if shown('name')}
       <div class="field">

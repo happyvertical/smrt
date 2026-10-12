@@ -313,7 +313,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
 }
 </script>
 
-<div class:page={true} class:page--embedded={embedded}>
+<div class:page={true} class:page--embedded={embedded} data-smrt-component="ContentContributionsRoute">
   <header class="page-header">
     <div class="container">
       <div class="page-header__copy">

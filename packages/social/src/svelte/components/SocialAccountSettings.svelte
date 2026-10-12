@@ -40,7 +40,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
 }
 </script>
 
-<section class="social-settings">
+<section class="social-settings" data-smrt-component="SocialAccountSettings">
   <header class="toolbar">
     <div>
       <h2>{t(M['social.account_settings.heading'])}</h2>

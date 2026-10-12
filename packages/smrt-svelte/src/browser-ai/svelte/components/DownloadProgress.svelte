@@ -28,7 +28,7 @@ function formatBytes(bytes: number): string {
 }
 </script>
 
-<div class="download-progress">
+<div class="download-progress" data-smrt-component="DownloadProgress">
   <div class="label">
     <span>{label}</span>
     {#if showPercent && progress}

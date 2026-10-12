@@ -45,9 +45,9 @@ function formatUpdated(iso: string | null): string {
 </script>
 
 {#if cases.length === 0}
-  <p class="case-queue-empty">{emptyMessage}</p>
+  <p class="case-queue-empty" data-smrt-component="CaseQueue">{emptyMessage}</p>
 {:else}
-  <ul class="case-queue">
+  <ul class="case-queue" data-smrt-component="CaseQueue">
     {#each cases as item (item.id)}
       <li class="case-queue-row">
         <Button

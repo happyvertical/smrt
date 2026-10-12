@@ -89,7 +89,7 @@ function getColor(name: string): string {
   tabindex={onclick ? 0 : undefined}
   onclick={onclick}
   onkeydown={(event: KeyboardEvent) => event.key === 'Enter' && onclick?.()}
-  use:ripple
+  use:ripple data-smrt-component="TenantCard"
 >
   <div class="avatar" style:background-color={getColor(tenant.name ?? '')}>
     {getInitials(tenant.name ?? 'T')}

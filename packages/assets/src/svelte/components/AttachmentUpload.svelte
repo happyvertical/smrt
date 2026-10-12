@@ -54,7 +54,7 @@ const fileHelp = $derived(
 
 {#if canUpload}
   <Form id={formId} {action} method="post" enctype="multipart/form-data" preventDefault={false} {onsubmit} aria-busy={busy}>
-    <div class="upload-fields">
+    <div class="upload-fields" data-smrt-component="AttachmentUpload">
       {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} interaction={false} />{/each}
       {#if message}<p role="alert">{message}</p>{/if}
       {#if retryStatus === 'transport-error'}<p role="status">{t(M['assets.attachments.uncertain'])}</p>{/if}
@@ -72,7 +72,7 @@ const fileHelp = $derived(
     </div>
   </Form>
 {:else}
-  <p>{t(M['assets.attachments.readonly'])}</p>
+  <p data-smrt-component="AttachmentUpload">{t(M['assets.attachments.readonly'])}</p>
 {/if}
 
 <style>

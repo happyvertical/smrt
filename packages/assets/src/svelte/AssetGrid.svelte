@@ -79,7 +79,7 @@ function getAltText(asset: PersistedAsset): string {
 }
 </script>
 
-<div class="asset-grid" class:asset-grid--loading={loading}>
+<div class="asset-grid" class:asset-grid--loading={loading} data-smrt-component="AssetGrid">
   {#if loading}
     <div class="asset-grid__loading">
       <span class="spinner"></span>

@@ -45,7 +45,7 @@ const tiles = $derived.by((): Tile[] => {
 });
 </script>
 
-<div class="sales-earnings-summary">
+<div class="sales-earnings-summary" data-smrt-component="ReferrerEarningsSummary">
   {#if !balance}
     <p class="empty">No earnings yet.</p>
   {:else}

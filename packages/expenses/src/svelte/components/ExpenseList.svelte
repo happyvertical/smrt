@@ -16,7 +16,7 @@ const rows = $derived(
   ),
 );
 </script>
-<section class="expense-list" aria-label={title ?? t(M['expenses.list.title'])}>
+<section class="expense-list" aria-label={title ?? t(M['expenses.list.title'])} data-smrt-component="ExpenseList">
   <h2>{title ?? t(M['expenses.list.title'])}</h2>
   {#if message}<p role="alert">{message}</p>{/if}
   {#if rows.length === 0}<p>{t(M['expenses.list.empty'])}</p>{/if}

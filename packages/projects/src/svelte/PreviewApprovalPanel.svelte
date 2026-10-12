@@ -17,7 +17,7 @@ let { preview, busy = false, ondecide }: Props = $props();
 const { t } = useI18n();
 </script>
 
-<section class="preview">
+<section class="preview" data-smrt-component="PreviewApprovalPanel">
   <div>
     <span>{t(M['projects.preview.label'], { id: preview.previewId })}</span>
     <strong>{preview.status}</strong>

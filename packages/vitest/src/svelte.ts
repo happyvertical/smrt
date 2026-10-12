@@ -68,6 +68,18 @@ function findByPart(
   container: ParentNode,
 ): HTMLElement[] {
   const quote = (value: string) => value.replace(/["\\]/g, '\\$&');
-  const selector = `[data-smrt-component="${quote(component)}"] [data-smrt-part="${quote(part)}"]`;
-  return Array.from(container.querySelectorAll<HTMLElement>(selector));
+  const roots = container.querySelectorAll<HTMLElement>(
+    `[data-smrt-component="${quote(component)}"]`,
+  );
+  const found = new Set<HTMLElement>();
+  for (const root of Array.from(roots)) {
+    // Only parts whose nearest component root is this root: a nested component's
+    // part with the same name belongs to that component, not to this one.
+    for (const el of Array.from(
+      root.querySelectorAll<HTMLElement>(`[data-smrt-part="${quote(part)}"]`),
+    )) {
+      if (el.closest('[data-smrt-component]') === root) found.add(el);
+    }
+  }
+  return [...found];
 }

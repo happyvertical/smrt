@@ -42,7 +42,7 @@ const _variant = $derived.by(() => {
 </script>
 
 <Badge variant={_variant} {size}>
-  <span class="type-badge">
+  <span class="type-badge" data-smrt-component="MessageTypeBadge">
     <span class="type-icon">{type === 'email' ? '✉' : type === 'tweet' ? '𝕏' : type === 'slack' ? '#' : '✉'}</span>
     {_label}
   </span>

@@ -119,7 +119,7 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
 }
 </script>
 
-<section class="feature-settings" data-testid="feature-settings-panel">
+<section class="feature-settings" data-testid="feature-settings-panel" data-smrt-component="FeatureSettingsPanel">
   {#if message}
     <p class="fs-flash" role="status">{message}</p>
   {/if}

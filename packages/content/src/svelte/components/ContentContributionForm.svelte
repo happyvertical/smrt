@@ -127,7 +127,7 @@ function handleSubmit(event: SubmitEvent) {
 }
 </script>
 
-<div class="contribution-form-shell">
+<div class="contribution-form-shell" data-smrt-component="ContentContributionForm">
   <Form
     class="contribution-form"
     method="post"

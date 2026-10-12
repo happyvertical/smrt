@@ -29,7 +29,7 @@ const successRateFormatted = $derived(
 );
 </script>
 
-<div class="job-stats" class:compact class:loading>
+<div class="job-stats" class:compact class:loading data-smrt-component="JobStats">
   <div class="job-stats__grid">
     <!-- Total Jobs -->
     <Card padding="sm">

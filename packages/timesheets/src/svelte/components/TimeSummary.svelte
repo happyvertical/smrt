@@ -59,7 +59,7 @@ let {
 const { t } = useI18n();
 </script>
 
-<div class="time-summary" class:horizontal={layout === 'horizontal'}>
+<div class="time-summary" class:horizontal={layout === 'horizontal'} data-smrt-component="TimeSummary">
   <div class="summary-card">
     <span class="label">{t(M['projects.time_summary.total_hours'])}</span>
     <span class="value">{hoursFormatter(totalHours)}</span>

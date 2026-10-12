@@ -90,7 +90,7 @@ const _displayBody = $derived.by(() => {
 });
 </script>
 
-<article class="message-detail">
+<article class="message-detail" data-smrt-component="MessageDetail">
   <Card padding="lg">
     <header class="detail-header">
       <div class="header-top">

@@ -141,7 +141,7 @@ function cancelEditing() {
 }
 </script>
 
-<div class="governance-manager">
+<div class="governance-manager" data-smrt-component="ContentGovernanceManager">
   <div class="governance-manager__header">
     <div>
       <h3>{t(M['content.governance_manager.content_governance'])}</h3>

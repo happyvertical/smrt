@@ -49,7 +49,7 @@ let {
 }: Props = $props();
 </script>
 
-<div class="job-dashboard" class:loading>
+<div class="job-dashboard" class:loading data-smrt-component="JobDashboard">
   <!-- Stats Overview -->
   <section class="job-dashboard__section">
     <JobStatsSummary {stats} {queues} {loading} />

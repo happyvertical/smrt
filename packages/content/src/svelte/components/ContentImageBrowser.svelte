@@ -76,7 +76,7 @@ function handleSelect(selected: ImageLike | File | string) {
 }
 </script>
 
-<div class="content-image-browser">
+<div class="content-image-browser" data-smrt-component="ContentImageBrowser">
   {#if assets.length}
     <div class="asset-grid">
       {#each assets as asset, index (asset.id || `${getAssetLabel(asset)}-${index}`)}

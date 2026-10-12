@@ -37,6 +37,17 @@ describe('getByPart / queryByPart (#3824)', () => {
     expect(() => queryByPart('Tabs', 'label', container)).not.toThrow();
   });
 
+  it('ignores same-named parts that belong to a nested component', () => {
+    const container = render(`
+      <div data-smrt-component="Card">
+        <span data-smrt-part="label">card</span>
+        <div data-smrt-component="Button"><span data-smrt-part="label">button</span></div>
+      </div>
+    `);
+    expect(getByPart('Card', 'label', container).textContent).toBe('card');
+    expect(getByPart('Button', 'label', container).textContent).toBe('button');
+  });
+
   it('escapes quotes in names rather than breaking the selector', () => {
     const container = render(`
       <div data-smrt-component='Odd"Name'><span data-smrt-part="p">ok</span></div>

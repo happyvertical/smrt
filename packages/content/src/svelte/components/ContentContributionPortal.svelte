@@ -40,7 +40,7 @@ function canWithdraw(contribution: ContentContributionData) {
 }
 </script>
 
-<section class="portal">
+<section class="portal" data-smrt-component="ContentContributionPortal">
   <header class="portal__header">
     <div>
       <h3>{t(M['content.contribution_portal.heading'])}</h3>

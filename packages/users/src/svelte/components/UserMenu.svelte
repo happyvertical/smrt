@@ -170,7 +170,7 @@ function getInitials(name: string): string {
 
 <svelte:window onclick={handleClickOutside} onkeydown={handleKeydown} />
 
-<div class="user-menu" id={menuId}>
+<div class="user-menu" id={menuId} data-smrt-component="UserMenu">
   <!-- raw-primitive-allow: WAI-ARIA menu-button trigger with bind:this focus management, aria-haspopup/aria-expanded/aria-controls and roving-tabindex keyboard nav; structural menu button no primitive owns -->
   <button
     bind:this={triggerButton}

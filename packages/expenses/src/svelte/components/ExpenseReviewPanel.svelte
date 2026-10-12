@@ -25,7 +25,7 @@ let {
 }: Props = $props();
 const { t } = useI18n();
 </script>
-<section class="expense-review" aria-label={t(M['expenses.review.title'])}>
+<section class="expense-review" aria-label={t(M['expenses.review.title'])} data-smrt-component="ExpenseReviewPanel">
   <h3>{expense.description}</h3>
   <p><CurrencyDisplay amount={expense.amount} currency={expense.currency} unit="cents" /> · {expense.incurredOn}</p>
   <p aria-live="polite">{expense.statusLabel}</p>

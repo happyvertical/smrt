@@ -34,7 +34,7 @@ const workspaceHref = $derived(
 const { t } = useI18n();
 </script>
 
-<div class:page={true} class:page--embedded={embedded}>
+<div class:page={true} class:page--embedded={embedded} data-smrt-component="ContentGovernanceRoute">
   <header class="page-header">
     <div class="container">
       <div class="page-header__copy">

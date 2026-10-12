@@ -15,7 +15,7 @@ const { stats }: Props = $props();
 </script>
 
 {#if stats}
-	<div class="analytics-summary">
+	<div class="analytics-summary" data-smrt-component="AnalyticsSummary">
 		<StatCard
 			label="Pageviews Today"
 			value={stats.todayPageviews.toLocaleString()}
@@ -38,7 +38,7 @@ const { stats }: Props = $props();
 		/>
 	</div>
 {:else}
-	<div class="analytics-empty">
+	<div class="analytics-empty" data-smrt-component="AnalyticsSummary">
 		<p>{t(M['analytics.analytics_summary.empty'])}</p>
 	</div>
 {/if}

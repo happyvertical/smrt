@@ -105,7 +105,7 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
 }
 </script>
 
-<div class="governance-tool">
+<div class="governance-tool" data-smrt-component="ContentTransparencyTool">
   {#if error}
     <p class="tool-error">{error}</p>
   {/if}

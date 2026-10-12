@@ -55,7 +55,7 @@ const canEdit = $derived(
 const canDelete = $derived(status === 'draft' && ondelete);
 </script>
 
-<div class="approval-actions" class:vertical={layout === 'vertical'}>
+<div class="approval-actions" class:vertical={layout === 'vertical'} data-smrt-component="ApprovalActions">
   {#if canSubmit}
     <Button variant="primary" onclick={onsubmit} disabled={disabled || loading}>
       {loading ? 'Submitting...' : 'Submit for Approval'}

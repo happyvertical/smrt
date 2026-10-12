@@ -61,7 +61,7 @@ function updateField(key: string, value: unknown) {
 }
 </script>
 
-<div class="content-status-fields" class:simple>
+<div class="content-status-fields" class:simple data-smrt-component="ContentStatusFields">
   {#if shown.has('type')}
     <FormGroup label={t(M['content.content_fields.type'])} id="{idPrefix}-type">
       <Select name="type" value={data.type || 'article'} onchange={(event) => updateField('type', event.currentTarget.value)}>

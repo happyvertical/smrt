@@ -57,7 +57,7 @@ export interface Props {
   }
 </script>
 
-<div class="attachment-upload">
+<div class="attachment-upload" data-smrt-component="AttachmentUpload">
   {#if attachments.length > 0}
     <div class="attachment-list">
       {#each attachments as attachment, i}

@@ -93,7 +93,7 @@ onMount(() => {
 });
 </script>
 
-<div class:page={true} class:page--embedded={embedded}>
+<div class:page={true} class:page--embedded={embedded} data-smrt-component="ContentFactsRoute">
   <header class="page-header">
     <div class="container">
       <div class="page-header__copy">

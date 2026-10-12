@@ -89,7 +89,7 @@ const _hasActiveFilters = $derived(
 );
 </script>
 
-<div class="message-filters" role="search" aria-label={t(M['messages.message_filters.filters_label'])}>
+<div class="message-filters" role="search" aria-label={t(M['messages.message_filters.filters_label'])} data-smrt-component="MessageFilters">
   <div class="search-row">
     <Input
       type="search"

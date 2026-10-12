@@ -21,7 +21,7 @@ export interface Props {
 let { referrals = [], locale }: Props = $props();
 </script>
 
-<div class="sales-referral-status">
+<div class="sales-referral-status" data-smrt-component="ReferralStatusList">
   {#if referrals.length === 0}
     <p class="empty">No referrals yet.</p>
   {:else}

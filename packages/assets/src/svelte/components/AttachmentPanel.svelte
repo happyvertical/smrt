@@ -6,7 +6,7 @@ import AttachmentUpload from './AttachmentUpload.svelte';
 export interface Props extends AttachmentPanelProps {}
 let { upload, ...list }: Props = $props();
 </script>
-<div class="attachment-panel">
+<div class="attachment-panel" data-smrt-component="AttachmentPanel">
   <AttachmentList {...list} />
   {#if upload}<AttachmentUpload {...upload} />{/if}
 </div>

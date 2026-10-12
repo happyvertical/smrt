@@ -62,7 +62,7 @@ export interface Props {
   }
 </script>
 
-<div class="recipient-input">
+<div class="recipient-input" data-smrt-component="RecipientInput">
   <label class="label" for={inputId}>{label}</label>
   <div class="chips-container">
     {#each recipients as recipient, i}

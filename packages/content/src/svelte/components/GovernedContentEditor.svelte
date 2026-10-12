@@ -314,7 +314,7 @@ function handleSave(data: ContentData) {
 }
 </script>
 
-<div class="governed-editor">
+<div class="governed-editor" data-smrt-component="GovernedContentEditor">
   {#if publishReadinessState}
     <div class={`publish-readiness-card publish-readiness-card--${publishReadinessState.level}`}>
       <div class="publish-readiness-card__header">

@@ -45,7 +45,7 @@ const _icon = $derived.by(() => {
   class:avatar--slack={providerType === 'slack'}
   class:avatar--twitter={providerType === 'twitter'}
   title={name}
-  aria-label={`${name} (${providerType})`}
+  aria-label={`${name} (${providerType})`} data-smrt-component="AccountAvatar"
 >
   {#if _icon}
     <span class="icon">{_icon}</span>

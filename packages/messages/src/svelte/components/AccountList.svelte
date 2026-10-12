@@ -56,7 +56,7 @@ function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
 }
 </script>
 
-<div class="account-list" role="list" aria-label={t(M['messages.account_list.accounts'])}>
+<div class="account-list" role="list" aria-label={t(M['messages.account_list.accounts'])} data-smrt-component="AccountList">
   {#if loading}
     <div class="loading" role="status" aria-live="polite">
       <p>{t(M['messages.account_list.loading'])}</p>

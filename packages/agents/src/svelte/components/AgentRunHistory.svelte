@@ -43,7 +43,7 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
 }
 </script>
 
-<div class="run-history-container">
+<div class="run-history-container" data-smrt-component="AgentRunHistory">
   <table class="run-history" class:loading>
     <thead class="run-history__head">
       <tr>

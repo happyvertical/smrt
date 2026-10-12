@@ -48,7 +48,7 @@ const cardLabel = (card: DevelopmentBoardCard) =>
 {#if requests.length === 0}
   <section
     class="empty"
-    aria-label={t(M['projects.development_board.aria'])}
+    aria-label={t(M['projects.development_board.aria'])} data-smrt-component="DevelopmentBoard"
   >
     <p>{t(M['projects.development_board.empty'])}</p>
   </section>

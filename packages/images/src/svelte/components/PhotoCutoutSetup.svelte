@@ -370,7 +370,7 @@ async function playSpeech() {
 }
 </script>
 
-<section class="setup" aria-busy={busy !== null} aria-labelledby="cutout-title">
+<section class="setup" aria-busy={busy !== null} aria-labelledby="cutout-title" data-smrt-component="PhotoCutoutSetup">
   <h2 id="cutout-title">{t(M['images.photo_cutout_setup.title'])}</h2>
   <ol class="steps" aria-label={t(M['images.photo_cutout_setup.steps_label'])}>
     <li class:current={!source && !ready} class:complete={source !== null || ready} aria-current={!source && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_choose'])}</li>

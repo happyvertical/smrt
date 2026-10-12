@@ -32,7 +32,7 @@ export interface Props {
 
 <span
   class="send-status-badge {size}"
-  style="--badge-color: {statusConfig.color}"
+  style="--badge-color: {statusConfig.color}" data-smrt-component="SendStatusBadge"
 >
   <span class="icon">{statusConfig.icon}</span>
   <span class="label">{statusConfig.label}</span>

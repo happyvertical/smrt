@@ -22,7 +22,7 @@ let { content, class: className = '' }: Props = $props();
 const rendered = $derived(renderMarkdownToHtml(content));
 </script>
 
-<div class="markdown-content {className}">
+<div class="markdown-content {className}" data-smrt-component="Markdown">
   {@html rendered}
 </div>
 

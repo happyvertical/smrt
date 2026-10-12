@@ -87,11 +87,11 @@ function labour(minutes: number): string {
 </script>
 
 {#if assemblies.length === 0}
-  <p class="assembly-list-empty">
+  <p class="assembly-list-empty" data-smrt-component="AssemblyList">
     {emptyMessage ?? t(M['manufacturing.assembly_list.empty'])}
   </p>
 {:else}
-  <div class="assembly-list-scroll">
+  <div class="assembly-list-scroll" data-smrt-component="AssemblyList">
     <table class="assembly-list">
       <caption class="assembly-list-caption">{t(M['manufacturing.assembly_list.caption'])}</caption>
       <thead>

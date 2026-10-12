@@ -137,7 +137,7 @@ function displayMoney(value: QuoteMoneyMinor): string {
 const money = (amountMinor: number | null) =>
   displayMoney({ currency, minorUnitDigits, amountMinor });
 </script>
-<section class="purchase-editor" aria-label={title}>
+<section class="purchase-editor" aria-label={title} data-smrt-component="PurchaseOrderEditor">
  <h2>{title}</h2>
  <p>{t(P['commerce.purchase.boundary'])}</p>
  <p>{source.vendor} — {source.label} · {currency}</p>

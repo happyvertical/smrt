@@ -35,9 +35,9 @@ function factorChips(
 </script>
 
 {#if ranking.length === 0}
-  <p class="routing-rationale-empty">{emptyMessage}</p>
+  <p class="routing-rationale-empty" data-smrt-component="RoutingRationale">{emptyMessage}</p>
 {:else}
-  <ul class="routing-rationale">
+  <ul class="routing-rationale" data-smrt-component="RoutingRationale">
     {#each ranking as entry (entry.specialistId)}
       <li class="routing-rationale-row">
         <span class="routing-rationale-main">

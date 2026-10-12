@@ -15,7 +15,7 @@ const label = $derived(
 );
 </script>
 
-<span class="status-badge" class:connected={status === 'active'} class:pending={status === 'pending'} class:disconnected={status === 'inactive'}>
+<span class="status-badge" class:connected={status === 'active'} class:pending={status === 'pending'} class:disconnected={status === 'inactive'} data-smrt-component="PropertyStatusBadge">
 	<span class="status-dot" aria-hidden="true"></span>
 	{label}
 </span>

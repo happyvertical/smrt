@@ -28,7 +28,7 @@ function amount(money: QuoteMoneyMinor): string {
   }
 }
 </script>
-<section class="quote-history" aria-label={title ?? t(Q['commerce.quote.history'])}>
+<section class="quote-history" aria-label={title ?? t(Q['commerce.quote.history'])} data-smrt-component="QuoteRevisionHistory">
   <h2>{title ?? t(Q['commerce.quote.history'])}</h2>
   <ol>
     {#each revisions as revision (revision.id)}

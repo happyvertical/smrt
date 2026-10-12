@@ -84,7 +84,7 @@ function submit() {
 }
 </script>
 
-<section class="sales-lead-create" aria-label="Create lead">
+<section class="sales-lead-create" aria-label="Create lead" data-smrt-component="LeadCreateForm">
   <Form class="sales-lead-create__form" onsubmit={submit}>
     <FormGroup label="Lead name" required>
       <Input value={name} required disabled={busy} oninput={(event) => (name = event.currentTarget.value)} />

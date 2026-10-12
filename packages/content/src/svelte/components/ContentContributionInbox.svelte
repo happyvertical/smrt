@@ -127,7 +127,7 @@ $effect(() => {
 });
 </script>
 
-<section class="inbox">
+<section class="inbox" data-smrt-component="ContentContributionInbox">
   <header class="inbox__header">
     <div>
       <h3>{t(M['content.contribution_inbox.heading'])}</h3>

@@ -41,7 +41,7 @@ function stageNameOf(stageId: string | null): string {
 }
 </script>
 
-<div class="sales-opportunity-board">
+<div class="sales-opportunity-board" data-smrt-component="OpportunityBoard">
   {#if columns.length === 0}
     <p class="sales-opportunity-board__empty">No pipeline stages configured.</p>
   {:else}

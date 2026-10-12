@@ -251,7 +251,7 @@ function handleManagerDrop(event: DragEvent) {
   onpaste={handlePaste}
   ondragover={handleManagerDragOver}
   ondragleave={handleManagerDragLeave}
-  ondrop={handleManagerDrop}
+  ondrop={handleManagerDrop} data-smrt-component="AssetManager"
 >
   {#if actionError}
     <p class="asset-manager__error" role="alert" aria-live="assertive">

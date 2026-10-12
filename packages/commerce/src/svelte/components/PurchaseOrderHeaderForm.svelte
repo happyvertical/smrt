@@ -71,7 +71,7 @@ const textFields = [
 ] as const;
 </script>
 
-<section aria-label={title}>
+<section aria-label={title} data-smrt-component="PurchaseOrderHeaderForm">
   <h2>{title}</h2>
   {#if message}<p role="alert">{message}</p>{/if}
   <Form {...formAttributes} {action} method="post" {onsubmit} preventDefault={false}>

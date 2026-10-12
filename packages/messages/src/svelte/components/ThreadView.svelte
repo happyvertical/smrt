@@ -98,7 +98,7 @@ const _sortedMessages = $derived(
 );
 </script>
 
-<div class="thread-view" role="list" aria-label={t(M['messages.thread_view.conversation_thread'])}>
+<div class="thread-view" role="list" aria-label={t(M['messages.thread_view.conversation_thread'])} data-smrt-component="ThreadView">
   {#each _sortedMessages as message, i (message.id)}
     <div
       class="thread-message"

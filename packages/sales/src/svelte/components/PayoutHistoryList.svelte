@@ -26,7 +26,7 @@ function methodLabel(method: string): string {
 }
 </script>
 
-<div class="sales-payout-history">
+<div class="sales-payout-history" data-smrt-component="PayoutHistoryList">
   {#if payouts.length === 0}
     <p class="empty">No payouts yet.</p>
   {:else}

@@ -172,7 +172,7 @@ function getProviderLabel(type: string): string {
 }
 </script>
 
-<div class="email-account-manager">
+<div class="email-account-manager" data-smrt-component="EmailAccountManager">
   <div class="section-header-row">
     <div class="section-description">
       {t(M['messages.email_account_manager.section_description'])}

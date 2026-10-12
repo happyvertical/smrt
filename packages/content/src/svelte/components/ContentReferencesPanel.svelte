@@ -90,7 +90,7 @@ function removeReference(id: string) {
 }
 </script>
 
-<div class="content-references-panel">
+<div class="content-references-panel" data-smrt-component="ContentReferencesPanel">
   {#if visibleReferences.length}
     <div class="reference-list">
       {#each visibleReferences as reference, index (reference.id || getSafeReferenceUrl(reference) || `${getReferenceLabel(reference)}-${index}`)}

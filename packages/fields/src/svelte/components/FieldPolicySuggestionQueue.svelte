@@ -97,7 +97,7 @@ function description(suggestion: FieldPolicySuggestion): string {
 }
 </script>
 
-<section class="field-policy-suggestion-queue" aria-label={heading}>
+<section class="field-policy-suggestion-queue" aria-label={heading} data-smrt-component="FieldPolicySuggestionQueue">
   <header>
     <h2>{heading}</h2>
     {#if !loading}<span class="field-policy-suggestion-queue__count">{total}</span>{/if}

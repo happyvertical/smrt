@@ -26,7 +26,7 @@ let { rows = [], periodLabel, locale }: Props = $props();
 const totals = $derived(sumExpenseRowsByCurrency(rows));
 </script>
 
-<div class="sales-expense-summary">
+<div class="sales-expense-summary" data-smrt-component="CommissionExpenseSummary">
   <header class="head">
     <h3>Commission expense{periodLabel ? ` — ${periodLabel}` : ''}</h3>
     <p class="note">

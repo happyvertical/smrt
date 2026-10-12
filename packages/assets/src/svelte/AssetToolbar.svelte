@@ -99,7 +99,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
 ];
 </script>
 
-<div class="asset-toolbar">
+<div class="asset-toolbar" data-smrt-component="AssetToolbar">
   <div class="asset-toolbar__left">
     <!-- Search -->
     <div class="asset-toolbar__search">

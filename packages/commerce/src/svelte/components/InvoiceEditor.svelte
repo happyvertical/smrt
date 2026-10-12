@@ -86,7 +86,7 @@ function lineErrors(key: string) {
   ) as Partial<Record<keyof InvoiceLineFieldNames, string>>;
 }
 </script>
-<section class="invoice-editor" aria-labelledby={`${formId}-title`}>
+<section class="invoice-editor" aria-labelledby={`${formId}-title`} data-smrt-component="InvoiceEditor">
   <h2 id={`${formId}-title`}>{title ?? t(M['commerce.preparation.title'])}</h2>
   {#if review}<InvoiceReview {review} />{/if}
   {#if !canEdit}<p>{t(M['commerce.preparation.readonly'])}</p>{/if}

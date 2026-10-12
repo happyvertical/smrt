@@ -40,11 +40,11 @@ const showActions = $derived(Boolean(onretire || onreinstate));
 </script>
 
 {#if operations.length === 0}
-  <p class="operation-list-empty">
+  <p class="operation-list-empty" data-smrt-component="OperationList">
     {emptyMessage ?? t(M['manufacturing.operation_list.empty'])}
   </p>
 {:else}
-  <div class="operation-list-scroll">
+  <div class="operation-list-scroll" data-smrt-component="OperationList">
     <table class="operation-list">
       <caption class="operation-list-caption">{t(M['manufacturing.operation_list.caption'])}</caption>
       <thead>

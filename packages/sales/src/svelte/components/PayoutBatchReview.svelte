@@ -86,7 +86,7 @@ function methodLabel(method: string): string {
 }
 </script>
 
-<section class="sales-payout-review">
+<section class="sales-payout-review" data-smrt-component="PayoutBatchReview">
   {#if payouts.length === 0}
     <p class="empty">No payout batches to review.</p>
   {:else}

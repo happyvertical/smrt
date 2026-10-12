@@ -32,7 +32,7 @@ const _lastSyncFormatted = $derived.by(() => {
 </script>
 
 <Card>
-  <div class="account-card">
+  <div class="account-card" data-smrt-component="AccountCard">
     <div class="account-info">
       <AccountAvatar providerType={account.providerType} name={account.name} size="lg" />
       <div class="details">

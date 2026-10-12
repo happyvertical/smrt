@@ -84,7 +84,7 @@ $effect(() => {
 </script>
 
 {#if open}
-  <div class="dialog-backdrop">
+  <div class="dialog-backdrop" data-smrt-component="RejectDialog">
     <!-- raw-primitive-allow: click-catching modal backdrop; structural overlay, not a primitive -->
     <button
       type="button"

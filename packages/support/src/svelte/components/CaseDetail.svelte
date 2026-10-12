@@ -40,7 +40,7 @@ function formatWhen(iso: string): string {
 }
 </script>
 
-<article class="case-detail">
+<article class="case-detail" data-smrt-component="CaseDetail">
   <header class="case-detail-header">
     <p class="case-detail-number">{caseView.caseNumber}</p>
     <h2 class="case-detail-subject">{caseView.subject}</h2>

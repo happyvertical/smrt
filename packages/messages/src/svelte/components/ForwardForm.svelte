@@ -63,7 +63,7 @@ export interface Props {
   }
 </script>
 
-<div class="forward-form">
+<div class="forward-form" data-smrt-component="ForwardForm">
   <div class="forward-header">{t(M['messages.forward_form.header'])}</div>
 
   <RecipientInput

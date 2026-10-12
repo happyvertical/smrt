@@ -38,7 +38,7 @@ function detailsId(id: string): string {
 }
 </script>
 
-<div class="sales-commission-breakdown">
+<div class="sales-commission-breakdown" data-smrt-component="CommissionBreakdown">
   {#if commissions.length === 0}
     <p class="empty">No commissions yet.</p>
   {:else}

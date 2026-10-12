@@ -50,7 +50,7 @@ function getFolderIcon(specialUse?: string): string {
 }
 </script>
 
-<nav class="folder-nav" aria-label={t(M['messages.folder_nav.folders'])}>
+<nav class="folder-nav" aria-label={t(M['messages.folder_nav.folders'])} data-smrt-component="FolderNav">
   {#if _systemFolders.length > 0}
     <ul class="folder-list" role="list">
       {#each _systemFolders as folder (folder.id)}

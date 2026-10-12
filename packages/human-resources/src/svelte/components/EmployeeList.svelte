@@ -31,11 +31,11 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
 </script>
 
 {#if employees.length === 0}
-  <p class="employee-list-empty">
+  <p class="employee-list-empty" data-smrt-component="EmployeeList">
     {emptyMessage ?? t(M['human_resources.employee_list.empty'])}
   </p>
 {:else}
-  <div class="employee-list-scroll">
+  <div class="employee-list-scroll" data-smrt-component="EmployeeList">
     <table class="employee-list">
       <caption class="employee-list-caption">{t(M['human_resources.employee_list.caption'])}</caption>
       <thead>

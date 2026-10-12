@@ -223,7 +223,7 @@ async function suggestionChanged(): Promise<void> {
 </script>
 
 {#if canManage}
-  <section class="field-policy-control-panel" aria-label={heading}>
+  <section class="field-policy-control-panel" aria-label={heading} data-smrt-component="FieldPolicyControlPanel">
     <header>
       <h1>{heading}</h1>
       <p>Manage inherited defaults, visibility, help, labels, order, and locks for every registered field.</p>

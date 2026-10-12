@@ -15,7 +15,7 @@ const arrow = $derived(
 const display = $derived(percent === null ? 'new' : `${Math.abs(percent)}%`);
 </script>
 
-<span class="trend-badge" class:up={trend === 'up'} class:down={trend === 'down'} class:flat={trend === 'flat'}>
+<span class="trend-badge" class:up={trend === 'up'} class:down={trend === 'down'} class:flat={trend === 'flat'} data-smrt-component="TrendBadge">
 	<span class="trend-arrow" aria-hidden="true">{arrow}</span>
 	<span class="trend-percent">{display}</span>
 </span>

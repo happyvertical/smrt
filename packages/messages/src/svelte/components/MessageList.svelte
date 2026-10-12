@@ -60,7 +60,7 @@ function getAccount(accountId: string): AccountData | undefined {
 }
 </script>
 
-<div class="message-list" role="grid" aria-label={t(M['messages.message_list.messages_label'])}>
+<div class="message-list" role="grid" aria-label={t(M['messages.message_list.messages_label'])} data-smrt-component="MessageList">
   {#if loading}
     <div class="loading" role="status" aria-live="polite">
       <p>{t(M['messages.message_list.loading'])}</p>

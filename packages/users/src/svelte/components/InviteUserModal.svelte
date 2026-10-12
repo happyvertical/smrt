@@ -91,7 +91,7 @@ function handleClose() {
   closeOnBackdrop={!loading}
   closeOnEscape={!loading}
 >
-  <div class="invite-form-shell">
+  <div class="invite-form-shell" data-smrt-component="InviteUserModal">
     <Form id={formId} class="invite-form" onsubmit={handleSubmit}>
       {#if error}
         <div class="error">{error}</div>

@@ -72,7 +72,7 @@ function handleSubmit() {
 }
 </script>
 
-<div class="user-form-shell">
+<div class="user-form-shell" data-smrt-component="UserForm">
   <Form class="user-form" onsubmit={handleSubmit}>
     <div class="field">
       <label for="name">Name</label>
