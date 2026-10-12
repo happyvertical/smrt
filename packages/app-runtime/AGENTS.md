@@ -128,6 +128,13 @@ Application infrastructure composition for the validated runtime profiles in
   immediately after the claim commits (before cookie serialization or hooks);
   `onOwnerClaimed` is for additional cleanup and
   `removeOnboardingHandoff: false` is the explicit opt-out.
+- `createSessionLayoutLoad()` adds `session.user` (`{ id, email, name? }`
+  copied from `locals.user`, else `null`). `createSignOutHandler(runtime)` is
+  the `POST` handler for `src/routes/sign-out/+server.ts`: 405 for other
+  methods, 403 unless `Sec-Fetch-Site: same-origin` or `Origin` equals the
+  request origin, then `destroySessionCookie` with the runtime's cookie
+  name/path/domain (cookie cleared even if the session row is gone); 204, or
+  303 to `/` when the request accepts HTML.
 - Owner setup re-checks loopback peer and loopback URL host per request and
   returns only fixed `{ code, message }` failures.
 - `verifyLocalMcpToken` (local only) and `resolveMcpPrincipal` (hosted only:

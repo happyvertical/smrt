@@ -199,6 +199,30 @@ export interface SessionLayoutData {
     readonly activeTenantId: string | null;
     /** URL-selected tenant candidate; display only, never authorization. */
     readonly selectedTenantSlug: string | null;
+    /** Display identity of the signed-in user (id, email, name only). */
+    readonly user: SessionLayoutUser | null;
+  };
+}
+
+/**
+ * The only user fields the layout data ever carries. `name` appears only when
+ * `locals.user` carries one (the `User` model itself has no name; it lives on
+ * the linked profile), so consumers fall back to `email`.
+ */
+export interface SessionLayoutUser {
+  readonly id: string;
+  readonly email: string;
+  readonly name?: string;
+}
+
+function layoutUser(user: unknown): SessionLayoutUser | null {
+  if (!user || typeof user !== 'object') return null;
+  const { id, email, name } = user as Record<string, unknown>;
+  if (typeof id !== 'string' || typeof email !== 'string') return null;
+  return {
+    id,
+    email,
+    ...(typeof name === 'string' && name ? { name } : {}),
   };
 }
 
@@ -220,6 +244,7 @@ export function createSessionLayoutLoad(): (event: {
         authenticated: Boolean(value.user),
         activeTenantId: value.tenantId ?? null,
         selectedTenantSlug: value.selectedTenantSlug ?? null,
+        user: layoutUser(value.user),
       },
     };
   };
