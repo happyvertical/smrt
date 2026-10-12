@@ -1,6 +1,7 @@
 import type { FormRetryStatus } from '@happyvertical/smrt-ui/form-retry';
 import type { Snippet } from 'svelte';
 import type { HTMLFormAttributes } from 'svelte/elements';
+import type { InvoiceDraftCalculationOptions } from './calculations.js';
 
 /** Authorized source projection supplied by the application, not fetched by UI. */
 export interface InvoicePreparationSource {
@@ -126,7 +127,7 @@ export interface InvoiceFieldNames {
 }
 
 /** General invoice line fields; never renders a nested form. */
-export interface InvoiceLineEditorProps {
+export interface InvoiceLineEditorProps extends InvoiceDraftCalculationOptions {
   /** Lossless caller-owned line values. */
   line: InvoiceLineDraft;
   /** Current currency code for shared calculation. */
@@ -154,7 +155,7 @@ export interface InvoiceLineEditorProps {
 }
 
 /** General native invoice editor with optional domain extensions. */
-export interface InvoiceEditorProps {
+export interface InvoiceEditorProps extends InvoiceDraftCalculationOptions {
   /** Caller native endpoint. */
   action: string;
   /** Native method, default POST. */

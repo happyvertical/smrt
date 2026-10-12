@@ -8,3 +8,8 @@ export function retainedValues(data: URLSearchParams | FormData): InvoiceDraftVa
   const row = (name: string,index: number) => String(data.getAll(name)[index] ?? '');
   return { customerId: field('customerId'), issuedOn: field('issuedOn'), dueOn: field('dueOn'), currency: field('currency'), paymentTerms: field('paymentTerms'), taxRate: field('invoiceTaxRate'), lines: data.getAll('lineKey').map((key,index) => ({ key: String(key), description: row('lineDescription',index), sku: row('lineSku',index), quantity: row('lineQuantity',index), unitPrice: row('lineUnitPrice',index), discountType: row('lineDiscountType',index), discountValue: row('lineDiscountValue',index), taxMode: row('lineTaxMode',index), taxRate: row('lineTaxRate',index) })) };
 }
+
+export const invoiceRoundingValues: InvoiceDraftValues = {
+  ...values,
+  lines: ['small-a', 'small-b'].map(key => ({ ...values.lines[0], key, quantity: '1', unitPrice: '0.10', discountType: 'flat', discountValue: '0' })),
+};

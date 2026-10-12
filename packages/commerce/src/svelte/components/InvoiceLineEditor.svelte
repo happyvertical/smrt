@@ -13,6 +13,7 @@ let {
   line,
   currency,
   inheritedTaxRate,
+  roundingScope = 'line',
   number = 1,
   id,
   fields = {},
@@ -71,9 +72,12 @@ function refresh(event: Event) {
   {#if calculation.valid}
     <dl class="totals">
       <div><dt>{t(M['commerce.invoice.subtotal'])}</dt><dd><CurrencyDisplay amount={calculation.subtotalMinor} {currency} unit="cents" /></dd></div>
+      {#if roundingScope === 'line'}
       <div><dt>{t(M['commerce.invoice.tax'])}</dt><dd><CurrencyDisplay amount={calculation.taxMinor} {currency} unit="cents" /></dd></div>
       <div><dt>{t(M['commerce.invoice.total'])}</dt><dd><CurrencyDisplay amount={calculation.totalMinor} {currency} unit="cents" /></dd></div>
+      {/if}
     </dl>
+    {#if roundingScope === 'invoice'}<p>{t(M['commerce.invoice.invoiceRounding'])}</p>{/if}
   {:else}<p role="status">{t(M['commerce.invoice.invalid'])}</p>{/if}
   {#if canEdit}<Button type="submit" name={intentField} value={`${removePrefix}${draft.key}`} formnovalidate disabled={pending} variant="secondary">{t(M['commerce.invoice.remove'])}</Button>{/if}
 </fieldset>

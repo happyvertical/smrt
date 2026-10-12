@@ -30,6 +30,7 @@ let {
   id,
   title,
   values,
+  roundingScope = 'line',
   customers = [],
   errors = {},
   fields = {},
@@ -57,7 +58,7 @@ const busy = $derived(
   pending || retryStatus === 'submitting' || retryStatus === 'busy',
 );
 let draft = $derived(values);
-const calculation = $derived(calculateInvoiceDraft(draft));
+const calculation = $derived(calculateInvoiceDraft(draft, { roundingScope }));
 function refresh(event: Event) {
   const data = new FormData(event.currentTarget as HTMLFormElement);
   const text = (name: string) => String(data.get(name) ?? '');
@@ -111,7 +112,7 @@ function lineErrors(key: string) {
       </fieldset>
       {#if draft.lines.length === 0}<p>{t(M['commerce.invoice.empty'])}</p>{/if}
       {#each draft.lines as line, index (line.key)}
-        <InvoiceLineEditor {line} currency={draft.currency} inheritedTaxRate={draft.taxRate} number={index + 1} id={`${formId}-line-${index}`} fields={rowNames} errors={lineErrors(line.key)} {canEdit} pending={busy} intentField={names.intent} {removePrefix} />
+        <InvoiceLineEditor {line} {roundingScope} currency={draft.currency} inheritedTaxRate={draft.taxRate} number={index + 1} id={`${formId}-line-${index}`} fields={rowNames} errors={lineErrors(line.key)} {canEdit} pending={busy} intentField={names.intent} {removePrefix} />
       {/each}
       {#if canEdit}<Button type="submit" name={names.intent} value={addIntent} formnovalidate disabled={busy} variant="secondary">{t(M['commerce.invoice.add'])}</Button>{/if}
       <div aria-live="polite" class="summary">
