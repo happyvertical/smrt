@@ -530,7 +530,7 @@ describe('local SvelteKit runtime', () => {
     // load: loopback shows the form and echoes the URL token.
     await expect(
       page.load(testEvent(`${SETUP_URL}?token=${token}`)),
-    ).resolves.toEqual({ available: true, token });
+    ).resolves.toEqual({ available: true, token, link: 'ready' });
     // load: a remote peer, a non-loopback host, or a throwing address lookup
     // never sees the form or the token.
     for (const event of [
@@ -545,6 +545,7 @@ describe('local SvelteKit runtime', () => {
       await expect(page.load(event)).resolves.toEqual({
         available: false,
         token: '',
+        link: 'unavailable',
       });
     }
 
@@ -648,7 +649,11 @@ describe('local SvelteKit runtime', () => {
     // After the claim: load reports unavailable and a signed-in user is redirected.
     await expect(
       page.load(testEvent(`${SETUP_URL}?token=${token}`)),
-    ).resolves.toEqual({ available: false, token: '' });
+    ).resolves.toEqual({
+      available: false,
+      token: '',
+      link: 'unavailable',
+    });
     const signedIn = testEvent(SETUP_URL);
     signedIn.locals.user = { id: 'someone' };
     await expect(page.load(signedIn)).rejects.toSatisfy(isRedirect);
@@ -769,6 +774,17 @@ describe('local SvelteKit runtime', () => {
     });
   });
 
+  it('reports a missing setup token from load without echoing anything', async () => {
+    const { runtime } = await localRuntime('missing-token');
+    await runtime.init();
+    const page = createOwnerSetupPage(runtime);
+    await expect(page.load(testEvent(SETUP_URL))).resolves.toEqual({
+      available: true,
+      token: '',
+      link: 'missing',
+    });
+  });
+
   it('rejects an expired bootstrap token', async () => {
     let now = new Date('2026-10-02T12:00:00.000Z');
     const { runtime } = await localRuntime('expired', {
@@ -779,6 +795,10 @@ describe('local SvelteKit runtime', () => {
     const page = createOwnerSetupPage(runtime);
     const token = await bootstrapToken(runtime);
     now = new Date(now.getTime() + 61_000);
+    // load reports the lapsed link instead of echoing the dead token.
+    await expect(
+      page.load(testEvent(`${SETUP_URL}?token=${token}`)),
+    ).resolves.toEqual({ available: true, token: '', link: 'expired' });
     const { failure } = await runAction(
       page,
       testEvent(SETUP_URL, {
@@ -1307,6 +1327,7 @@ describe('deployed SvelteKit runtime', () => {
     await expect(page.load(testEvent(SETUP_URL))).resolves.toEqual({
       available: false,
       token: '',
+      link: 'unavailable',
     });
     const { failure } = await runAction(
       page,

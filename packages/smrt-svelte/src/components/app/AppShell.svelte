@@ -216,6 +216,12 @@ interface Props {
    * Read once at mount.
    */
   phoneDock?: 'sheet' | 'drawer';
+  /**
+   * Render the shell chrome (default). `false` mounts only the Provider and
+   * ThemeProvider around `children`: no navigation, sidebars, header, or
+   * footer, so a host can show the first-run setup route chrome-free.
+   */
+  chrome?: boolean;
   children: Snippet;
 }
 
@@ -255,6 +261,7 @@ let {
   hotkeys,
   phoneTabBar = false,
   phoneDock,
+  chrome = true,
   children,
 }: Props = $props();
 /** Stable id of the built-in brand item (title, subtitle). */
@@ -766,6 +773,9 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 <Provider {webmcp} {user} {permissions}>
   <RuntimeDiagnosticsWebMcp enabled={runtimeDiagnostics} />
   <ThemeProvider {preset} {colorScheme} persist={true}>
+    {#if !chrome}
+      {@render children()}
+    {:else}
     <AdminShell
       {title}
       {subtitle}
@@ -848,6 +858,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       {/if}
       {@render children()}
     </AdminShell>
+    {/if}
   </ThemeProvider>
 </Provider>
 

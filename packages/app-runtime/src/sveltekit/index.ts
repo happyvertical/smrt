@@ -34,6 +34,7 @@ export {
   type OwnerSetupErrorCode,
   type OwnerSetupEvent,
   type OwnerSetupFailure,
+  type OwnerSetupLinkState,
   type OwnerSetupPage,
   type OwnerSetupPageData,
   type OwnerSetupPageOptions,
