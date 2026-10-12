@@ -46,6 +46,7 @@ function describeSubmission(
 </div>
 
 <style>
+@layer smrt.theme {
   .workbench { display: grid; gap: var(--smrt-spacing-5); color: var(--smrt-color-on-surface); }
   header { display: grid; gap: var(--smrt-spacing-2); }
   h4, p { margin: 0; } h4 { font: var(--smrt-typography-headline-small-font); }
@@ -53,4 +54,5 @@ function describeSubmission(
   .eyebrow { color: var(--smrt-color-primary); font: var(--smrt-typography-label-small-font); letter-spacing: .1em; text-transform: uppercase; }
   form { display: grid; gap: var(--smrt-spacing-6); }
   section { display: grid; gap: var(--smrt-spacing-3); min-width: 0; }
+}
 </style>

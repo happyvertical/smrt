@@ -266,6 +266,7 @@ function closeForms() {
 </div>
 
 <style>
+@layer smrt.theme {
   :global(body:has(.workspace-shell:not(.workspace-shell--embedded))) {
     margin: 0;
     font-family:
@@ -445,4 +446,5 @@ function closeForms() {
   .workspace-nav a:hover {
     text-decoration: underline;
   }
+}
 </style>

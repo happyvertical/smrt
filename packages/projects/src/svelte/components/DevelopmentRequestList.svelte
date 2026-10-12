@@ -111,6 +111,7 @@ function formatWhen(value?: Date | string): string {
 {/if}
 
 <style>
+@layer smrt.theme {
   .empty-state {
     padding: 2rem 1rem;
     text-align: center;
@@ -218,4 +219,5 @@ function formatWhen(value?: Date | string): string {
       flex-direction: column;
     }
   }
+}
 </style>

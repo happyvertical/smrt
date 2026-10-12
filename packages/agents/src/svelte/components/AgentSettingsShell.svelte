@@ -190,6 +190,7 @@ async function handleSave(slotId: string, config: unknown) {
 </div>
 
 <style>
+@layer smrt.theme {
 	.agent-settings-shell {
 		display: grid;
 		grid-template-columns: 220px 1fr;
@@ -320,4 +321,5 @@ async function handleSave(slotId: string, config: unknown) {
 		color: var(--smrt-color-on-surface-variant, #94a3b8);
 		max-width: 400px;
 	}
+}
 </style>

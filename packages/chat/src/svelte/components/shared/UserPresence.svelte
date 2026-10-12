@@ -28,6 +28,7 @@ const labelText: Record<string, string> = {
 </span>
 
 <style>
+@layer smrt.theme {
   .presence {
     display: inline-flex;
     align-items: center;
@@ -62,4 +63,5 @@ const labelText: Record<string, string> = {
     color: var(--smrt-color-on-surface-variant, #43474e);
     line-height: 1;
   }
+}
 </style>

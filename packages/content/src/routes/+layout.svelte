@@ -58,6 +58,7 @@ const navItems = [
 </ThemeProvider>
 
 <style>
+@layer smrt.theme {
   :global(body) {
     margin: 0;
     font-family: var(--smrt-font-family, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
@@ -163,4 +164,5 @@ const navItems = [
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     opacity: 0.7;
   }
+}
 </style>

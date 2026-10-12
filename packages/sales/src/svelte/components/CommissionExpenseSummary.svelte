@@ -96,6 +96,7 @@ const totals = $derived(sumExpenseRowsByCurrency(rows));
 </div>
 
 <style>
+@layer smrt.theme {
   .sales-expense-summary {
     display: flex;
     flex-direction: column;
@@ -183,4 +184,5 @@ const totals = $derived(sumExpenseRowsByCurrency(rows));
   .net {
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
+}
 </style>

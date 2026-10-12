@@ -20,6 +20,7 @@ const { variant = 'default', size = 'md', children, ...rest }: Props = $props();
 </span>
 
 <style>
+@layer smrt.theme {
   .badge {
     display: inline-flex;
     align-items: center;
@@ -70,4 +71,5 @@ const { variant = 'default', size = 'md', children, ...rest }: Props = $props();
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
+}
 </style>

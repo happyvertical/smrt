@@ -10,4 +10,8 @@ let { upload, ...list }: Props = $props();
   <AttachmentList {...list} />
   {#if upload}<AttachmentUpload {...upload} />{/if}
 </div>
-<style>.attachment-panel { display: grid; gap: var(--smrt-spacing-4); min-width: 0; }</style>
+<style>
+@layer smrt.theme {
+.attachment-panel { display: grid; gap: var(--smrt-spacing-4); min-width: 0; }
+}
+</style>

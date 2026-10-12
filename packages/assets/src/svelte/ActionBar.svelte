@@ -116,6 +116,7 @@ const count = $derived(selectedAssets.length);
 {/if}
 
 <style>
+@layer smrt.theme {
   .action-bar {
     display: flex;
     align-items: center;
@@ -155,4 +156,5 @@ const count = $derived(selectedAssets.length);
       animation: none;
     }
   }
+}
 </style>

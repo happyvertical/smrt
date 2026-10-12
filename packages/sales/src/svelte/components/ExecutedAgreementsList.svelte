@@ -105,6 +105,7 @@ let { agreements = [], locale, artifactHref }: Props = $props();
 </div>
 
 <style>
+@layer smrt.theme {
   .sales-agreements {
     width: 100%;
     overflow-x: auto;
@@ -159,4 +160,5 @@ let { agreements = [], locale, artifactHref }: Props = $props();
   a {
     color: var(--smrt-color-primary, #2563eb);
   }
+}
 </style>

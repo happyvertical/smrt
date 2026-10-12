@@ -274,6 +274,7 @@ function handleCronPreset(preset: string) {
 </Card>
 
 <style>
+@layer smrt.theme {
   .schedule-form-shell :global(.schedule-form) {
     padding: var(--smrt-spacing-sm, 0.5rem) 0;
   }
@@ -326,4 +327,5 @@ function handleCronPreset(preset: string) {
     padding-top: var(--smrt-spacing-md, 1rem);
     border-top: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
   }
+}
 </style>

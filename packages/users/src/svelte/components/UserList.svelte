@@ -66,6 +66,7 @@ const {
 </div>
 
 <style>
+@layer smrt.theme {
   .user-list {
     display: flex;
     flex-direction: column;
@@ -110,4 +111,5 @@ const {
       animation: none;
     }
   }
+}
 </style>

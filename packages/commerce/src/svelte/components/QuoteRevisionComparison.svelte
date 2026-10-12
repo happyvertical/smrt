@@ -39,6 +39,8 @@ const delta = $derived.by(() => {
   {:else}<p>{t(Q['commerce.quote.incomparable'])}</p>{/if}
 </section>
 <style>
+@layer smrt.theme {
 .quote-comparison { min-width: 0; color: var(--smrt-color-on-surface); overflow-wrap: anywhere; }
 .versions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: var(--smrt-spacing-4, 1rem); }
+}
 </style>

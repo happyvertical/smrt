@@ -68,4 +68,8 @@ async function submit() {
   {/if}
 </section>
 
-<style>.record-comments { display: grid; gap: var(--smrt-spacing-3, 0.75rem); } ol { display: grid; gap: var(--smrt-spacing-3, 0.75rem); list-style: none; margin: 0; padding: 0; } li { border-block-end: 1px solid var(--smrt-color-on-surface-variant); } textarea { display: block; min-height: 5rem; width: 100%; }</style>
+<style>
+@layer smrt.theme {
+.record-comments { display: grid; gap: var(--smrt-spacing-3, 0.75rem); } ol { display: grid; gap: var(--smrt-spacing-3, 0.75rem); list-style: none; margin: 0; padding: 0; } li { border-block-end: 1px solid var(--smrt-color-on-surface-variant); } textarea { display: block; min-height: 5rem; width: 100%; }
+}
+</style>

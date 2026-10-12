@@ -258,6 +258,7 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
 </span>
 
 <style>
+@layer smrt.theme {
   .status-badge {
     display: inline-flex;
     align-items: center;
@@ -286,4 +287,5 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
     background-color: transparent;
     border: 1px solid var(--badge-text);
   }
+}
 </style>

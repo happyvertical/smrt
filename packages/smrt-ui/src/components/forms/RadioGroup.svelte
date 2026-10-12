@@ -146,6 +146,7 @@ useControlRegistration(() => {
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 </fieldset>
 <style>
+@layer smrt.theme {
   .radio-group { margin: 0; padding: 0; border: 0; color: var(--smrt-color-on-surface); }
   legend { margin-bottom: var(--smrt-spacing-2); font: var(--smrt-typography-label-large-font); }
   .description, .error { margin: var(--smrt-spacing-1) 0 var(--smrt-spacing-2); font: var(--smrt-typography-body-small-font); color: var(--smrt-color-on-surface-variant); }
@@ -155,4 +156,5 @@ useControlRegistration(() => {
 
   .radio-group[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
   .radio-group[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+}
 </style>

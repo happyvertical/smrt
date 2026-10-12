@@ -139,6 +139,7 @@ function getColor(name: string): string {
 </div>
 
 <style>
+@layer smrt.theme {
   .tenant-card {
     display: flex;
     align-items: center;
@@ -274,4 +275,5 @@ function getColor(name: string): string {
   .actions :global(.action-btn--danger):hover {
     color: var(--smrt-color-error);
   }
+}
 </style>

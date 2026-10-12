@@ -209,6 +209,7 @@ const colorClass = $derived.by(() => {
 </span>
 
 <style>
+@layer smrt.theme {
   .currency-display {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -234,4 +235,5 @@ const colorClass = $derived.by(() => {
   .currency-display.invalid {
     color: var(--smrt-color-error, #dc2626);
   }
+}
 </style>

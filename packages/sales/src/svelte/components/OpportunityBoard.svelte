@@ -121,6 +121,7 @@ function stageNameOf(stageId: string | null): string {
 </div>
 
 <style>
+@layer smrt.theme {
   .sales-opportunity-board {
     width: 100%;
     overflow-x: auto;
@@ -227,4 +228,5 @@ function stageNameOf(stageId: string | null): string {
     display: inline-flex;
     gap: var(--smrt-spacing-1, 0.25rem);
   }
+}
 </style>

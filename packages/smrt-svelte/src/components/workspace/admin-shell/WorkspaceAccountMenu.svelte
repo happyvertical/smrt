@@ -131,6 +131,7 @@ function handleSelect(id: string): void {
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-workspace-account-menu {
     min-width: 0;
     width: 100%;
@@ -227,4 +228,5 @@ function handleSelect(id: string): void {
     white-space: nowrap;
     border: 0;
   }
+}
 </style>

@@ -110,6 +110,7 @@ const labels = {
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-color-scheme-toggle {
     display: inline-flex;
     align-items: center;
@@ -202,4 +203,5 @@ const labels = {
   .smrt-color-scheme-toggle__label {
     font-size: inherit;
   }
+}
 </style>

@@ -233,6 +233,7 @@ function resolve(exception: AttributionExceptionView) {
 </section>
 
 <style>
+@layer smrt.theme {
   .sales-attribution-queue {
     display: flex;
     flex-direction: column;
@@ -358,4 +359,5 @@ function resolve(exception: AttributionExceptionView) {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+}
 </style>

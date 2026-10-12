@@ -78,6 +78,7 @@ const replyCount = $derived(
 </aside>
 
 <style>
+@layer smrt.theme {
   .thread-panel {
     display: flex;
     flex-direction: column;
@@ -153,4 +154,5 @@ const replyCount = $derived(
   .thread-panel__input {
     flex-shrink: 0;
   }
+}
 </style>

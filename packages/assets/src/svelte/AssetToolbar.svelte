@@ -195,6 +195,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
 </div>
 
 <style>
+@layer smrt.theme {
   .asset-toolbar {
     display: flex;
     align-items: center;
@@ -369,4 +370,5 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
       justify-content: space-between;
     }
   }
+}
 </style>

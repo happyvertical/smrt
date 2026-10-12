@@ -21,6 +21,7 @@ const label = $derived(
 </span>
 
 <style>
+@layer smrt.theme {
 	.status-badge {
 		display: inline-flex;
 		align-items: center;
@@ -63,4 +64,5 @@ const label = $derived(
 	.disconnected .status-dot {
 		background: var(--smrt-color-outline);
 	}
+}
 </style>

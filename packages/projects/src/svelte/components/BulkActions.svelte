@@ -88,6 +88,7 @@ const visible = $derived(selectedCount > 0);
 {/if}
 
 <style>
+@layer smrt.theme {
   .bulk-actions {
     display: flex;
     justify-content: space-between;
@@ -146,4 +147,5 @@ const visible = $derived(selectedCount > 0);
       min-width: 100px;
     }
   }
+}
 </style>

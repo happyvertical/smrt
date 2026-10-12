@@ -165,6 +165,7 @@ function getAltText(asset: PersistedAsset): string {
 </div>
 
 <style>
+@layer smrt.theme {
   .asset-grid {
     padding: var(--smrt-spacing-4, 1rem);
   }
@@ -356,4 +357,5 @@ function getAltText(asset: PersistedAsset): string {
       height: 100px;
     }
   }
+}
 </style>

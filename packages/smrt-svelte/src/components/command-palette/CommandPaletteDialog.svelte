@@ -256,6 +256,7 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
 </Modal>
 
 <style>
+@layer smrt.theme {
   .smrt-command-palette {
     display: flex;
     flex-direction: column;
@@ -403,4 +404,5 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
     clip-path: inset(50%);
     white-space: nowrap;
   }
+}
 </style>

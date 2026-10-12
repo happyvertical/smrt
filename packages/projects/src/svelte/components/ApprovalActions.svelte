@@ -100,6 +100,7 @@ const canDelete = $derived(status === 'draft' && ondelete);
 </div>
 
 <style>
+@layer smrt.theme {
   .approval-actions {
     display: flex;
     flex-wrap: wrap;
@@ -128,4 +129,5 @@ const canDelete = $derived(status === 'draft' && ondelete);
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
   }
+}
 </style>

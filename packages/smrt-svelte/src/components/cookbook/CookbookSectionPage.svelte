@@ -82,6 +82,7 @@ const store = {
 </main>
 
 <style>
+@layer smrt.theme {
   .cookbook-section {
     display: grid;
     gap: var(--smrt-spacing-6);
@@ -130,4 +131,5 @@ const store = {
     margin: 0;
     font-size: var(--smrt-typography-title-medium-size, 1rem);
   }
+}
 </style>

@@ -67,6 +67,7 @@ const collapsedTabs = $derived(tabs.filter((t) => !t.isExpanded));
 </div>
 
 <style>
+@layer smrt.theme {
   .chat-tabs {
     position: fixed;
     bottom: 0;
@@ -85,4 +86,5 @@ const collapsedTabs = $derived(tabs.filter((t) => !t.isExpanded));
     gap: var(--smrt-spacing-2, 8px);
     pointer-events: auto;
   }
+}
 </style>

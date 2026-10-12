@@ -66,6 +66,7 @@ $effect(() => {
 </section>
 
 <style>
+@layer smrt.theme {
   .caption-overlay {
     position: fixed;
     z-index: var(--smrt-z-index-sticky, 1100);
@@ -102,4 +103,5 @@ $effect(() => {
     padding-block-start: var(--smrt-spacing-2, .5rem);
     background: var(--smrt-color-surface, Canvas);
   }
+}
 </style>

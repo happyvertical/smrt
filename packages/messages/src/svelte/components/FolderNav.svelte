@@ -100,6 +100,7 @@ function getFolderIcon(specialUse?: string): string {
 </nav>
 
 <style>
+@layer smrt.theme {
   .folder-nav {
     display: flex;
     flex-direction: column;
@@ -179,4 +180,5 @@ function getFolderIcon(specialUse?: string): string {
     border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     margin: 0.25rem 0.75rem;
   }
+}
 </style>

@@ -627,6 +627,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
 {/if}
 
 <style>
+@layer smrt.theme {
   .staged-review { margin-block-start: var(--smrt-spacing-5, 1.25rem); padding: var(--smrt-spacing-4, 1rem); color: var(--smrt-color-on-surface, #1f2937); background: var(--smrt-color-surface-container-low, #f8fafc); border: 1px solid var(--smrt-color-outline-variant, #cbd5e1); border-inline-start: 4px solid var(--smrt-color-tertiary, #7d5260); border-radius: var(--smrt-radius-medium, .5rem); }
   header, .proposal-heading, .batch-actions, .item-actions { display: flex; align-items: center; gap: var(--smrt-spacing-2, .5rem); }
   header { justify-content: space-between; align-items: flex-start; gap: var(--smrt-spacing-4, 1rem); }
@@ -650,4 +651,5 @@ async function discardAll(event: MouseEvent): Promise<void> {
   .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   :global([data-smrt-staged='true']) { outline: 3px solid var(--smrt-color-tertiary, #7d5260); outline-offset: 3px; }
   @media (max-width: 40rem) { header, .proposal-heading { align-items: stretch; flex-direction: column; } dl { grid-template-columns: 1fr; } }
+}
 </style>

@@ -279,6 +279,7 @@ function handleEscape(event: KeyboardEvent) {
 {/if}
 
 <style>
+@layer smrt.theme {
   .message-item {
     display: flex;
     align-items: flex-start;
@@ -551,4 +552,5 @@ function handleEscape(event: KeyboardEvent) {
       transition: none;
     }
   }
+}
 </style>

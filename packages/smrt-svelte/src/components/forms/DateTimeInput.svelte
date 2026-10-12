@@ -450,6 +450,7 @@ function handleNativeChange(e: Event) {
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-datetime {
     display: flex;
     flex-direction: column;
@@ -579,4 +580,5 @@ function handleNativeChange(e: Event) {
     color: var(--smrt-color-error, #ba1a1a);
     margin-top: var(--smrt-spacing-1, 4px);
   }
+}
 </style>

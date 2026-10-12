@@ -348,6 +348,7 @@ async function confirmAction() {
 {/if}
 
 <style>
+@layer smrt.theme {
   .run-list-scroll {
     overflow-x: auto;
   }
@@ -406,4 +407,5 @@ async function confirmAction() {
     margin: 0;
     color: var(--smrt-color-on-surface-variant, inherit);
   }
+}
 </style>

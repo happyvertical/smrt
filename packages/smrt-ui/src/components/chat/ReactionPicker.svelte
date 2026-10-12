@@ -76,6 +76,7 @@ function nameFor(emoji: string): string {
 {/if}
 
 <style>
+@layer smrt.theme {
   .reactions {
     display: inline-flex;
     flex-wrap: wrap;
@@ -118,4 +119,5 @@ function nameFor(emoji: string): string {
       transform: none;
     }
   }
+}
 </style>

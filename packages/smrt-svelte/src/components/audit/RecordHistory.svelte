@@ -180,6 +180,7 @@ function date(value: string): string {
 </section>
 
 <style>
+@layer smrt.theme {
   .smrt-record-history > ol {
     display: grid;
     margin: 0;
@@ -231,4 +232,5 @@ function date(value: string): string {
     background: var(--smrt-color-surface-container-low);
     list-style: none;
   }
+}
 </style>

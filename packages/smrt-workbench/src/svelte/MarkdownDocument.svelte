@@ -148,6 +148,7 @@ function headingTag(depth = 2) {
 </div>
 
 <style>
+@layer smrt.theme {
   .markdown-document {
     display: grid;
     gap: 0.85rem;
@@ -197,4 +198,5 @@ function headingTag(depth = 2) {
     font-size: 0.78rem;
     text-transform: uppercase;
   }
+}
 </style>

@@ -80,6 +80,7 @@ const statusLabels: Record<AvatarStatus, string> = {
 </span>
 
 <style>
+@layer smrt.theme {
   .avatar {
     position: relative;
     display: inline-flex;
@@ -164,4 +165,5 @@ const statusLabels: Record<AvatarStatus, string> = {
     white-space: nowrap;
     border: 0;
   }
+}
 </style>

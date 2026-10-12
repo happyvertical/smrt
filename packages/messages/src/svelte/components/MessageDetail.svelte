@@ -190,6 +190,7 @@ const _displayBody = $derived.by(() => {
 </article>
 
 <style>
+@layer smrt.theme {
   .message-detail {
     max-width: 100%;
   }
@@ -318,4 +319,5 @@ const _displayBody = $derived.by(() => {
   .actions :global(.action-btn--danger):hover {
     background: var(--smrt-color-error-container, #ffdad6);
   }
+}
 </style>

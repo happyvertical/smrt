@@ -70,6 +70,7 @@ function enhanceForm(form: HTMLFormElement) {
 </main>
 
 <style>
+@layer smrt.theme {
   .smrt-owner-setup {
     max-width: 36rem;
     margin: 4rem auto;
@@ -86,4 +87,5 @@ function enhanceForm(form: HTMLFormElement) {
   [role='alert'] {
     color: var(--smrt-color-error, #b3261e);
   }
+}
 </style>

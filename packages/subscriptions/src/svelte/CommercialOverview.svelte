@@ -56,6 +56,7 @@ function formatCharge(metric: CommercialMetricView): string {
 </section>
 
 <style>
+@layer smrt.theme {
 .commercial-overview { display:grid; gap:.75rem; }
 article { border:1px solid var(--smrt-color-outline-variant,#d8dde6); border-radius:var(--smrt-radius-md,8px); padding:1rem; }
 header, dl, dl div { display:flex; justify-content:space-between; gap:1rem; }
@@ -63,4 +64,5 @@ dl { flex-wrap:wrap; margin:.75rem 0 0; }
 dt { color:var(--smrt-color-on-surface-variant,#64748b); }
 dd { margin:0; }
 .blocked { color:var(--smrt-color-error,#dc2626); }
+}
 </style>

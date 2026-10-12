@@ -35,6 +35,7 @@ const _loading = $state(false);
 </div>
 
 <style>
+@layer smrt.theme {
   .category-manager {
     max-width: 800px;
     margin: 0 auto;
@@ -77,4 +78,5 @@ const _loading = $state(false);
     display: inline-block;
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
+}
 </style>

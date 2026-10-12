@@ -62,6 +62,7 @@ function getColor(name: string): string {
 </div>
 
 <style>
+@layer smrt.theme {
   .user-avatar {
     display: inline-flex;
     align-items: center;
@@ -105,4 +106,5 @@ function getColor(name: string): string {
   .xl .name {
     font: var(--smrt-typography-body-large-font, 1rem / 1.5 sans-serif);
   }
+}
 </style>

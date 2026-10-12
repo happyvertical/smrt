@@ -129,10 +129,12 @@ onDestroy(() => {
 </section>
 
 <style>
+@layer smrt.theme {
   .character-conversation-voice { display: grid; gap: .5rem; }
   .voice-actions { display: flex; align-items: center; gap: .5rem; }
   .character-conversation-voice :global(.typed-form) { display: flex; inline-size: 100%; flex-wrap: wrap; align-items: end; gap: .5rem; }
   label { display: grid; gap: .25rem; flex: 1 1 16rem; }
   .character-conversation-voice :global(.typed-input) { min-block-size: 2.5rem; padding-inline: .65rem; }
   .typed-fallback { margin: 0; }
+}
 </style>

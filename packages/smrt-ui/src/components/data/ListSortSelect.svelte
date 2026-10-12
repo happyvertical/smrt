@@ -99,6 +99,7 @@ function handleChange(event: Event) {
 </div>
 
 <style>
+@layer smrt.theme {
   .list-sort-select {
     display: inline-flex;
     align-items: center;
@@ -118,4 +119,5 @@ function handleChange(event: Event) {
     color: inherit;
     font: inherit;
   }
+}
 </style>

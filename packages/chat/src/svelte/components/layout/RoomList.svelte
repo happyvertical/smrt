@@ -245,6 +245,7 @@ function formatTimestamp(date?: string | Date | null): string {
 </nav>
 
 <style>
+@layer smrt.theme {
   .room-list {
     display: flex;
     flex-direction: column;
@@ -477,4 +478,5 @@ function formatTimestamp(date?: string | Date | null): string {
       transition: none;
     }
   }
+}
 </style>

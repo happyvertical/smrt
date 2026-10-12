@@ -254,6 +254,7 @@ async function issueCorrection() {
 </div>
 
 <style>
+@layer smrt.theme {
   /* The tool lays itself out by its own width, not the viewport, so it
      fits a full page, a side panel, the assistant dock or a phone. */
   .governance-tool {
@@ -362,4 +363,5 @@ async function issueCorrection() {
       flex-wrap: wrap;
     }
   }
+}
 </style>

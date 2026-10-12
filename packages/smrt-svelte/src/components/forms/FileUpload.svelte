@@ -323,6 +323,7 @@ function formatFileSize(bytes: number): string {
 </div>
 
 <style>
+@layer smrt.theme {
   .file-upload {
     position: relative;
     display: flex;
@@ -461,4 +462,5 @@ function formatFileSize(bytes: number): string {
     background: var(--smrt-color-error-container, #f9dedc);
     color: var(--smrt-color-error, #ba1a1a);
   }
+}
 </style>

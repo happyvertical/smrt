@@ -115,6 +115,9 @@
     "./styles/tokens.css": {
       "default": "./dist/styles/tokens.css"
     },
+    "./styles/layers.css": {
+      "default": "./dist/styles/layers.css"
+    },
     "./utils/*": {
       "default": "./dist/utils/*"
     },

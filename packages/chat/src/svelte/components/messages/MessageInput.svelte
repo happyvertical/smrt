@@ -115,6 +115,7 @@ function handleInput(event: Event) {
 </div>
 
 <style>
+@layer smrt.theme {
   .message-input {
     display: flex;
     flex-direction: column;
@@ -222,4 +223,5 @@ function handleInput(event: Event) {
     color: var(--smrt-color-outline, #74777f);
     cursor: default;
   }
+}
 </style>

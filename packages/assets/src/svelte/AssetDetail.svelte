@@ -309,6 +309,7 @@ function formatDate(date: Date | string | undefined): string {
 {/if}
 
 <style>
+@layer smrt.theme {
   /* Body — negative margin cancels Modal's .modal__body padding so the section
      dividers stay full-bleed (Modal owns the dialog shell + scroll container). */
   .detail__body {
@@ -499,4 +500,5 @@ function formatDate(date: Date | string | undefined): string {
     display: flex;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
+}
 </style>

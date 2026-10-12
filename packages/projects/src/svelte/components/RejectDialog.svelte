@@ -135,6 +135,7 @@ $effect(() => {
 {/if}
 
 <style>
+@layer smrt.theme {
   .dialog-backdrop {
     position: fixed;
     inset: 0;
@@ -216,4 +217,5 @@ $effect(() => {
     gap: 0.5rem;
     margin-top: 1.5rem;
   }
+}
 </style>

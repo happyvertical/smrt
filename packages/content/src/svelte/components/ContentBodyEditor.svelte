@@ -1929,6 +1929,7 @@ function handleEditorDragEnd() {
 </div>
 
 <style>
+@layer smrt.theme {
   .content-body-editor {
     position: relative;
     display: flex;
@@ -2332,4 +2333,5 @@ function handleEditorDragEnd() {
   .image-resize-handle:hover {
     color: var(--smrt-color-primary);
   }
+}
 </style>

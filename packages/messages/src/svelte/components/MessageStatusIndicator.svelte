@@ -50,6 +50,7 @@ const {
 </span>
 
 <style>
+@layer smrt.theme {
   .status-indicators {
     display: inline-flex;
     align-items: center;
@@ -84,4 +85,5 @@ const {
   .draft {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
+}
 </style>

@@ -69,6 +69,7 @@ const money = (amount = 0, currency = 'USD') => {
 </section>
 
 <style>
+@layer smrt.theme {
   .evidence {
     border-top: 1px solid var(--smrt-color-outline-variant);
   }
@@ -116,4 +117,5 @@ const money = (amount = 0, currency = 'USD') => {
       text-align: left;
     }
   }
+}
 </style>

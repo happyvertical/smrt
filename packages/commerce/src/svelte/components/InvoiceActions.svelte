@@ -114,9 +114,11 @@ const canDelete = $derived(status === 'draft');
 </div>
 
 <style>
+@layer smrt.theme {
   .invoice-actions {
     display: flex;
     gap: var(--smrt-spacing-2, 0.5rem);
     flex-wrap: wrap;
   }
+}
 </style>

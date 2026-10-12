@@ -73,6 +73,7 @@ function activityLabel(activity: ShellActivity): string {
 </div>
 
 <style>
+@layer smrt.theme {
 .smrt-activity-ticker-shell { display:flex; align-items:center; flex:1; min-width:0; gap:var(--smrt-spacing-2); }
 .smrt-activity-ticker { flex:1; min-width:0; overflow:hidden; color:var(--smrt-color-on-surface-variant); font-size:var(--smrt-typography-body-small-size); white-space:nowrap; }
 .smrt-activity-ticker__track { display:flex; width:max-content; }
@@ -88,5 +89,6 @@ function activityLabel(activity: ShellActivity): string {
   .smrt-activity-ticker { overflow-x:auto; }
   .multiple .smrt-activity-ticker__track { animation:none; }
   .smrt-activity-ticker__copy, .smrt-activity-ticker__control { display:none; }
+}
 }
 </style>

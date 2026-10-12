@@ -1432,6 +1432,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-admin-shell {
     --smrt-shell-floating-reserve-inline: 0px;
     --smrt-shell-floating-reserve-block: 0px;
@@ -2475,4 +2476,5 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       animation: none;
     }
   }
+}
 </style>

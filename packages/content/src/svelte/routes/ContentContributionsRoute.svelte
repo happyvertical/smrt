@@ -516,6 +516,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
 </div>
 
 <style>
+@layer smrt.theme {
   :global(body:has(.page:not(.page--embedded))) {
     margin: 0;
     font-family:
@@ -822,4 +823,5 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
       margin-bottom: 0.85rem;
     }
   }
+}
 </style>

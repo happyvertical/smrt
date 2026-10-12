@@ -15,6 +15,7 @@ let { side, children }: Props = $props();
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-shell-corner {
     inline-size: var(--smrt-admin-shell-left-track);
     min-inline-size: 0;
@@ -23,4 +24,5 @@ let { side, children }: Props = $props();
   .smrt-shell-corner[data-side='right'] {
     inline-size: var(--smrt-admin-shell-right-track);
   }
+}
 </style>

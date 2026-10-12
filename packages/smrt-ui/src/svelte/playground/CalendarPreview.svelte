@@ -109,6 +109,7 @@ const items: CalendarItem[] = [
 </div>
 
 <style>
+@layer smrt.theme {
   .workbench {
     display: grid;
     gap: var(--smrt-spacing-4, 1rem);
@@ -138,4 +139,5 @@ const items: CalendarItem[] = [
     min-height: 1.5rem;
     color: var(--smrt-color-on-surface-variant, #44474e);
   }
+}
 </style>

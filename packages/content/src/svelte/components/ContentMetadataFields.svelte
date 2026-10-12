@@ -171,6 +171,7 @@ function updateTags(value: string) {
 {/if}
 
 <style>
+@layer smrt.theme {
   .content-metadata-fields {
     display: grid;
     gap: 1rem;
@@ -190,4 +191,5 @@ function updateTags(value: string) {
   .content-metadata-details[open] > summary {
     margin-bottom: 0.75rem;
   }
+}
 </style>

@@ -200,8 +200,10 @@ $effect(() => {
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-theme-root {
     /* Ensure theme variables cascade to all children */
     display: contents;
   }
+}
 </style>

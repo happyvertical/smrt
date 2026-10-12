@@ -86,6 +86,7 @@ const sizeClasses = {
 </label>
 
 <style>
+@layer smrt.theme {
   .toggle {
     display: inline-flex;
     align-items: center;
@@ -221,4 +222,5 @@ const sizeClasses = {
       transition: none;
     }
   }
+}
 </style>

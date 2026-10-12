@@ -42,8 +42,10 @@ const docks = [250, 285, 800].map((width) => ({
 </ThemeProvider>
 
 <style>
+@layer smrt.theme {
   .dock-box {
     height: 420px;
     margin: var(--smrt-spacing-2, 8px);
   }
+}
 </style>

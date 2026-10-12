@@ -389,6 +389,7 @@ async function saveRoute() {
 </div>
 
 <style>
+@layer smrt.theme {
   .messaging-settings { display: grid; gap: 1.5rem; }
   section { display: grid; gap: 0.75rem; }
   header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
@@ -404,4 +405,5 @@ async function saveRoute() {
   .checkbox { display: flex; align-items: center; gap: 0.5rem; }
   .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
   .error { color: var(--smrt-color-error, #b91c1c); }
+}
 </style>

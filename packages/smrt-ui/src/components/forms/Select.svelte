@@ -154,6 +154,7 @@ export function getElement(): HTMLSelectElement | null {
 </select>
 
 <style>
+@layer smrt.theme {
 	.select {
 		box-sizing: border-box;
 		display: block;
@@ -211,4 +212,5 @@ export function getElement(): HTMLSelectElement | null {
   .select[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
   .select[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .select { min-height: var(--smrt-control-target-min, 0px); }
+}
 </style>

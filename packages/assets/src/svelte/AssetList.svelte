@@ -221,6 +221,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 </div>
 
 <style>
+@layer smrt.theme {
   .asset-list {
     overflow-x: auto;
   }
@@ -432,4 +433,5 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
       animation: none;
     }
   }
+}
 </style>

@@ -108,6 +108,7 @@ const valueColorClass = $derived.by(() => {
 {/if}
 
 <style>
+@layer smrt.theme {
   .summary-card {
     display: flex;
     align-items: center;
@@ -202,4 +203,5 @@ const valueColorClass = $derived.by(() => {
     opacity: 1;
     color: var(--smrt-color-primary);
   }
+}
 </style>

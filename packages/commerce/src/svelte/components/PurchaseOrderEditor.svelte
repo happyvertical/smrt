@@ -202,9 +202,11 @@ const money = (amountMinor: number | null) =>
   {/if}
 </section>
 <style>
+@layer smrt.theme {
 .editor-attachments { min-width: 0; margin: 0; padding: 0; border: 0; }
 .purchase-editor{max-width:48rem;min-width:0;overflow-wrap:anywhere;color:var(--smrt-color-on-surface)}
 fieldset{min-width:0;margin-block:var(--smrt-spacing-4,1rem);padding:var(--smrt-spacing-4,1rem);border:1px solid var(--smrt-color-outline-variant);border-radius:var(--smrt-radius-md,0.5rem)}
 .allocation{margin-block:var(--smrt-spacing-4,1rem)}
 .actions{display:flex;flex-wrap:wrap;gap:var(--smrt-spacing-3,0.75rem);margin-block:var(--smrt-spacing-4,1rem)}
+}
 </style>

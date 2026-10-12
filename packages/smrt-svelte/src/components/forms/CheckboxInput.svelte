@@ -140,6 +140,7 @@ function handleChange(e: Event) {
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-checkbox-field {
     display: inline-flex;
     min-width: 0;
@@ -235,4 +236,5 @@ function handleChange(e: Event) {
     background-color: var(--smrt-color-on-surface);
     opacity: 0.08;
   }
+}
 </style>

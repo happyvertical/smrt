@@ -995,6 +995,7 @@ async function handleConfirmAction(requestId: string) {
 </div>
 
 <style>
+@layer smrt.theme {
   /* #3000: the dock sizes itself against its own container (a shell dock
    * edge can be ~250px wide) rather than the viewport. A container cannot
    * query itself, so the flex layout lives on an inner wrapper. */
@@ -1360,4 +1361,5 @@ async function handleConfirmAction(requestId: string) {
     padding: 0 var(--smrt-spacing-2, 8px);
     padding-top: var(--smrt-spacing-2, 8px);
   }
+}
 </style>

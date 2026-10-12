@@ -50,6 +50,7 @@ const text = $derived.by(() => {
 {/if}
 
 <style>
+@layer smrt.theme {
   .typing {
     display: inline-flex;
     align-items: center;
@@ -104,4 +105,5 @@ const text = $derived.by(() => {
       animation: none;
     }
   }
+}
 </style>

@@ -33,6 +33,7 @@ let {
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-usage-thresholds {
     display: grid;
     gap: 0.75rem;
@@ -65,5 +66,5 @@ let {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     margin: 0;
   }
-
+}
 </style>

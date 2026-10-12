@@ -56,6 +56,7 @@ let {
 </button>
 
 <style>
+@layer smrt.theme {
   .smrt-shell-icon-button {
     flex: 0 0 auto;
     display: inline-grid;
@@ -74,4 +75,5 @@ let {
   .smrt-shell-icon-button[aria-pressed='true'] { color: var(--smrt-color-on-surface); }
   .smrt-shell-icon-button:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   .smrt-shell-icon-button:disabled { opacity: 0.5; cursor: not-allowed; }
+}
 </style>

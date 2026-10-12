@@ -159,6 +159,7 @@ async function addProduct() {
 </section>
 
 <style>
+@layer smrt.theme {
   .live-products {
     max-width: 640px;
     margin: 0 auto;
@@ -238,4 +239,5 @@ async function addProduct() {
     color: var(--smrt-color-on-surface-variant, #6b7280);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
+}
 </style>

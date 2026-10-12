@@ -24,6 +24,8 @@ let submitted = $state('');
   <output aria-label="Submitted codes">{submitted}</output>
 </div>
 <style>
+@layer smrt.theme {
 .selectors { display: grid; gap: 1rem; max-width: 40rem; color: var(--smrt-color-on-surface); }
 output { overflow-wrap: anywhere; }
+}
 </style>

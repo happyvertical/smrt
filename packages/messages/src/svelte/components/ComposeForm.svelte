@@ -285,6 +285,7 @@ export interface Props {
 </div>
 
 <style>
+@layer smrt.theme {
   /*
    * The form now renders through smrt-ui's <Form> (Provider-free base `<form>`).
    * `class="compose-form"` lands on the real `<form>` inside the Form child, so
@@ -406,4 +407,5 @@ export interface Props {
   .actions :global(.btn-text) {
     color: var(--smrt-color-on-surface-variant, #49454f);
   }
+}
 </style>

@@ -56,6 +56,7 @@ const edges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
 </section>
 
 <style>
+@layer smrt.theme {
   .smrt-shortcuts-overlay {
     display: grid;
     gap: var(--smrt-spacing-4);
@@ -79,4 +80,5 @@ const edges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
     display: grid;
     gap: var(--smrt-spacing-3);
   }
+}
 </style>

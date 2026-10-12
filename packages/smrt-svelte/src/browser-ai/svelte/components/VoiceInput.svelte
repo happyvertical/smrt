@@ -84,6 +84,7 @@ async function handleToggle() {
 </div>
 
 <style>
+@layer smrt.theme {
   .voice-input {
     display: flex;
     flex-direction: column;
@@ -198,4 +199,5 @@ async function handleToggle() {
       animation: none;
     }
   }
+}
 </style>

@@ -63,6 +63,7 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.theme {
   .agent-selector {
     display: flex;
     flex-direction: column;
@@ -173,4 +174,5 @@ const { t } = useI18n();
       transition: none;
     }
   }
+}
 </style>

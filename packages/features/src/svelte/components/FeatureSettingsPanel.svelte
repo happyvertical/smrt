@@ -227,6 +227,7 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
 </section>
 
 <style>
+@layer smrt.theme {
   .feature-settings {
     display: flex;
     flex-direction: column;
@@ -335,4 +336,5 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
       align-items: stretch;
     }
   }
+}
 </style>

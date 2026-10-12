@@ -79,6 +79,7 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.theme {
   :global(body:has(.page:not(.page--embedded))) {
     margin: 0;
     font-family:
@@ -222,4 +223,5 @@ const { t } = useI18n();
   .callout a {
     color: var(--smrt-color-primary);
   }
+}
 </style>

@@ -44,6 +44,7 @@ const { stats }: Props = $props();
 {/if}
 
 <style>
+@layer smrt.theme {
 	.analytics-summary {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -61,4 +62,5 @@ const { stats }: Props = $props();
 	.analytics-empty p {
 		margin: 0;
 	}
+}
 </style>

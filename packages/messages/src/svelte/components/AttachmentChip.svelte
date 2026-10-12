@@ -55,6 +55,7 @@ const _formattedSize = $derived.by(() => {
 {/if}
 
 <style>
+@layer smrt.theme {
   .chip {
     display: inline-flex;
     align-items: center;
@@ -117,4 +118,5 @@ const _formattedSize = $derived.by(() => {
     opacity: 0.7;
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
+}
 </style>

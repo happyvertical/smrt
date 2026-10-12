@@ -130,6 +130,7 @@ useControlRegistration(() => {
 </label>
 
 <style>
+@layer smrt.theme {
   .switch { display: inline-flex; align-items: center; gap: var(--smrt-spacing-2, .5rem); cursor: pointer; color: var(--smrt-color-on-surface); }
   .switch--disabled { opacity: .5; cursor: not-allowed; }
   /* Phones: the whole row (track and label) is at least a 44px touch target. */
@@ -153,4 +154,5 @@ useControlRegistration(() => {
   .switch[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
   .switch[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .switch { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+}
 </style>

@@ -520,6 +520,7 @@ function closeTry() {
 </div>
 
 <style>
+@layer smrt.theme {
   .page {
     display: flex;
     flex-direction: column;
@@ -751,4 +752,5 @@ function closeTry() {
       white-space: nowrap;
     }
   }
+}
 </style>

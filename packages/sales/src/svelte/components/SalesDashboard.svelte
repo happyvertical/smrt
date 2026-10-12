@@ -113,6 +113,7 @@ const rate = $derived(winRate(opportunities));
 </div>
 
 <style>
+@layer smrt.theme {
   .sales-dashboard {
     display: flex;
     flex-direction: column;
@@ -189,4 +190,5 @@ const rate = $derived(winRate(opportunities));
   .stages__value {
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
+}
 </style>

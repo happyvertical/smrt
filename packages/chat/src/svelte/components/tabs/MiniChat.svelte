@@ -111,6 +111,7 @@ $effect(() => {
 </div>
 
 <style>
+@layer smrt.theme {
   .mini-chat {
     display: flex;
     flex-direction: column;
@@ -234,4 +235,5 @@ $effect(() => {
       transition: none;
     }
   }
+}
 </style>

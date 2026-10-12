@@ -249,6 +249,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-assets-gallery {
     display: flex;
     flex-direction: column;
@@ -418,4 +419,5 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
   .load-more :global(.load-more-btn--pill:hover:not(:disabled)) {
     background: var(--smrt-color-surface-container-highest, #333);
   }
+}
 </style>

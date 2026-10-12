@@ -169,6 +169,7 @@ const _sortedMessages = $derived(
 </div>
 
 <style>
+@layer smrt.theme {
   .thread-view {
     display: flex;
     flex-direction: column;
@@ -256,4 +257,5 @@ const _sortedMessages = $derived(
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
+}
 </style>

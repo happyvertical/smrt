@@ -1349,6 +1349,7 @@ function apiTabCount(
 </ThemeProvider>
 
 <style>
+@layer smrt.theme {
   :global(body) {
     margin: 0;
     min-height: 100svh;
@@ -2066,4 +2067,5 @@ function apiTabCount(
       grid-template-columns: 1fr;
     }
   }
+}
 </style>

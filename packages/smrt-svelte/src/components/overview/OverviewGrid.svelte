@@ -537,6 +537,7 @@ const headingTag = $derived(`h${headingLevel}`);
 {/if}
 
 <style>
+@layer smrt.theme {
   .smrt-overview { container-type: inline-size; min-inline-size: 0; }
   .smrt-overview__toolbar { display: flex; gap: var(--smrt-spacing-1); margin-block-end: var(--smrt-spacing-2); }
   .smrt-overview__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
@@ -579,4 +580,5 @@ const headingTag = $derived(`h${headingLevel}`);
     .smrt-overview__list { grid-template-columns: minmax(0, 1fr); }
     .smrt-overview__list .smrt-overview__item[data-span] { grid-column: span 1; }
   }
+}
 </style>

@@ -70,6 +70,7 @@ function distance(daysUntilExpiry: number): string {
 {/if}
 
 <style>
+@layer smrt.theme {
   .expiring-qualifications {
     list-style: none;
     margin: 0;
@@ -123,4 +124,5 @@ function distance(daysUntilExpiry: number): string {
     color: var(--smrt-color-on-surface-variant, inherit);
     padding: 1rem 0;
   }
+}
 </style>

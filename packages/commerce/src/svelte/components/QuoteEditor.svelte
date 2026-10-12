@@ -170,8 +170,10 @@ const title = $derived(
 </section>
 
 <style>
+@layer smrt.theme {
 .editor-attachments { min-width: 0; margin: 0; padding: 0; border: 0; }
 .quote-editor { max-width: 48rem; min-width: 0; color: var(--smrt-color-on-surface); overflow-wrap: anywhere; }
 fieldset { min-width: 0; margin-block: var(--smrt-spacing-4, 1rem); padding: var(--smrt-spacing-4, 1rem); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md, 0.5rem); }
 .actions { margin-top: var(--smrt-spacing-4, 1rem); }
+}
 </style>

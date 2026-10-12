@@ -117,6 +117,7 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
 </div>
 
 <style>
+@layer smrt.theme {
   .run-history-container {
     width: 100%;
     overflow-x: auto;
@@ -232,4 +233,5 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
   .run-history__empty {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
+}
 </style>

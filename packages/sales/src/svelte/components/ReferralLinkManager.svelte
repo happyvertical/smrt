@@ -139,6 +139,7 @@ function submitCreate() {
 </div>
 
 <style>
+@layer smrt.theme {
   .sales-referral-links {
     display: flex;
     flex-direction: column;
@@ -213,4 +214,5 @@ function submitCreate() {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+}
 </style>

@@ -49,6 +49,7 @@ const { t } = useI18n();
 </AppLayout>
 
 <style>
+@layer smrt.theme {
   .products-page {
     max-width: 1200px;
     margin: 0 auto;
@@ -112,4 +113,5 @@ const { t } = useI18n();
     color: var(--smrt-color-on-surface-variant, #6b7280);
     line-height: var(--smrt-typography-body-medium-line-height, 1.5);
   }
+}
 </style>

@@ -193,6 +193,7 @@ $effect(() => {
 </span>
 
 <style>
+@layer smrt.theme {
   .dropdown {
     position: relative;
     display: inline-flex;
@@ -307,4 +308,5 @@ $effect(() => {
     opacity: 0.5;
     cursor: not-allowed;
   }
+}
 </style>

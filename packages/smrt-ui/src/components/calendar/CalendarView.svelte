@@ -819,6 +819,7 @@ $effect(() => {
 </div>
 
 <style>
+@layer smrt.theme {
   .cv {
     --cv-border: var(--smrt-color-outline-variant, #c4c6d0);
     --cv-surface: var(--smrt-color-surface, #ffffff);
@@ -1300,4 +1301,5 @@ $effect(() => {
       scroll-behavior: auto;
     }
   }
+}
 </style>

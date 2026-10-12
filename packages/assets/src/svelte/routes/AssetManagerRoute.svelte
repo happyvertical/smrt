@@ -90,6 +90,7 @@ const customActions = [
 </div>
 
 <style>
+@layer smrt.theme {
   .assets-route {
     max-width: 1440px;
     margin: 0 auto;
@@ -206,4 +207,5 @@ const customActions = [
       min-height: 640px;
     }
   }
+}
 </style>

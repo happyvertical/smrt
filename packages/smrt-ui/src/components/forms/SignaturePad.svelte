@@ -358,6 +358,7 @@ useControlRegistration(() => {
 </div>
 
 <style>
+@layer smrt.theme {
   .signature-pad {
     display: grid;
     gap: var(--smrt-spacing-3);
@@ -433,4 +434,5 @@ useControlRegistration(() => {
     outline: 3px solid var(--smrt-color-tertiary);
     outline-offset: 4px;
   }
+}
 </style>

@@ -102,6 +102,7 @@ const glossary = $derived.by(() => {
 </details>
 
 <style>
+@layer smrt.theme {
   .form-help {
     display: inline-block;
   }
@@ -169,4 +170,5 @@ const glossary = $derived.by(() => {
     font: var(--smrt-typography-body-small-font, inherit);
     color: var(--smrt-color-on-surface-variant, currentColor);
   }
+}
 </style>

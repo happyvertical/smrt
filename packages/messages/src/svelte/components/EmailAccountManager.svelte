@@ -367,6 +367,7 @@ function getProviderLabel(type: string): string {
 </div>
 
 <style>
+@layer smrt.theme {
   .email-account-manager {
     display: flex;
     flex-direction: column;
@@ -681,4 +682,5 @@ function getProviderLabel(type: string): string {
     background: var(--smrt-color-surface-container, #f0f1f9);
     border-radius: var(--smrt-radius-md, 8px);
   }
+}
 </style>

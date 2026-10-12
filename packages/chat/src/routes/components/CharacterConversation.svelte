@@ -545,6 +545,7 @@ onMount(() => {
 </section>
 
 <style>
+@layer smrt.theme {
   /* The dock is a fixed bottom-corner surface. Keep the listening composer
      above its launcher/closed bar so a pointer can reach Submit. */
   .character-conversation { position: relative; min-block-size: 18rem; padding-block-end: 10rem; }
@@ -572,4 +573,5 @@ onMount(() => {
        lane above it for the voice composer rather than letting it be covered. */
     .character-conversation { padding-block-end: min(42rem, calc(100dvh - 4rem)); }
   }
+}
 </style>

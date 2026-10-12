@@ -92,6 +92,7 @@ function handlePointerUp() {
 </div>
 
 <style>
+@layer smrt.theme {
   .chat-layout {
     display: flex;
     height: 100%;
@@ -161,4 +162,5 @@ function handlePointerUp() {
       display: none;
     }
   }
+}
 </style>

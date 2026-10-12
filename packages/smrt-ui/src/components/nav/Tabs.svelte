@@ -269,6 +269,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 {/if}
 
 <style>
+@layer smrt.theme {
   .tabs-container {
     display: flex;
     flex-direction: column;
@@ -490,4 +491,5 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+}
 </style>

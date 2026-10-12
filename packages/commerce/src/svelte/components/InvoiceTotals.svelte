@@ -137,6 +137,7 @@ function formatMoney(amount: number): string {
 </div>
 
 <style>
+@layer smrt.theme {
   .invoice-totals {
     display: flex;
     flex-direction: column;
@@ -222,4 +223,5 @@ function formatMoney(amount: number): string {
   .totals-row.balance.credit .totals-value {
     color: var(--smrt-color-tertiary, #006c4c);
   }
+}
 </style>

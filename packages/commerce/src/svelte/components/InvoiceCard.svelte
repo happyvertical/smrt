@@ -177,6 +177,7 @@ const isOverdue = $derived.by(() => {
 {/if}
 
 <style>
+@layer smrt.theme {
   .invoice-card {
     display: flex;
     flex-direction: column;
@@ -282,4 +283,5 @@ const isOverdue = $derived.by(() => {
     color: var(--smrt-color-error);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
+}
 </style>

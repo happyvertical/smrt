@@ -131,6 +131,7 @@ function handleSelect(selected: ImageLike | File | string) {
 </div>
 
 <style>
+@layer smrt.theme {
   .content-image-browser {
     display: grid;
     gap: 1rem;
@@ -251,4 +252,5 @@ function handleSelect(selected: ImageLike | File | string) {
     border-radius: 0.5rem;
     overflow: hidden;
   }
+}
 </style>

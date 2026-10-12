@@ -55,6 +55,7 @@ const _icon = $derived.by(() => {
 </span>
 
 <style>
+@layer smrt.theme {
   .avatar {
     display: inline-flex;
     align-items: center;
@@ -107,4 +108,5 @@ const _icon = $derived.by(() => {
     text-transform: uppercase;
     letter-spacing: 0.02em;
   }
+}
 </style>

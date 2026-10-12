@@ -71,6 +71,7 @@ function statusClass(status: string): string {
 </div>
 
 <style>
+@layer smrt.theme {
 	.events-table-wrapper {
 		overflow-x: auto;
 	}
@@ -174,4 +175,5 @@ function statusClass(status: string): string {
 		color: var(--smrt-color-on-surface-variant);
 		font-size: var(--smrt-typography-body-small-size, 0.75rem);
 	}
+}
 </style>

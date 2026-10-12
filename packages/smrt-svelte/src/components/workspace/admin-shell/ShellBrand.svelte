@@ -54,6 +54,7 @@ const { t } = useI18n();
 {/if}
 
 <style>
+@layer smrt.theme {
   .smrt-admin-shell__brand {
     display: flex;
     align-items: center;
@@ -83,4 +84,5 @@ const { t } = useI18n();
   .smrt-admin-shell__brand-text.wordmark strong {
     font: var(--smrt-typography-headline-small-font, 500 1.5rem/2rem sans-serif);
   }
+}
 </style>

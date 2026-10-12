@@ -200,6 +200,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
 </div>
 
 <style>
+@layer smrt.theme {
   .schedule-list-container {
     width: 100%;
     overflow-x: auto;
@@ -377,4 +378,5 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
   .schedule-list__empty {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
+}
 </style>

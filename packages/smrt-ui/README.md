@@ -1104,6 +1104,71 @@ classes. Unset, each keeps its stock look.
 `IconToggle` takes a `tone` prop (a CSS colour such as `var(--status-draft)`) for
 a toggle that is neutral until pressed and then wears its colour.
 
+## Restyling smrt components
+
+Components depend on three public things only: **token names** (`--smrt-*`),
+**cascade-layer names** (`smrt.reset`, `smrt.structure`, `smrt.theme`), and
+**`data-smrt-*` hooks**. Everything else inside a component's stylesheet can
+change without notice.
+
+Every component `<style>` block is wrapped in `@layer smrt.theme { … }`, and the
+layer order is declared once in `@happyvertical/smrt-ui/styles/layers.css`.
+`ThemeProvider` injects the same declaration into `<head>`, so most apps need
+nothing extra. If an app does not use `ThemeProvider`, import the stylesheet
+before any other smrt stylesheet:
+
+```ts
+import '@happyvertical/smrt-ui/styles/layers.css';
+```
+
+Layers are ordered lowest to highest: `smrt.reset` < `smrt.structure` <
+`smrt.theme`. **Unlayered app CSS beats every smrt layer**, regardless of
+selector specificity. Restyle with plain selectors. Do not use `:global()` or
+`!important`.
+
+### Token override
+
+Set tokens on a wrapper or `:root` in your own theme layer:
+
+```css
+:root {
+  --smrt-color-surface-variant: #f4f1ea;
+}
+```
+
+### Unlayered override
+
+Target a component by the element or wrapper you control. Component class names
+are hashed by Svelte and are not a contract:
+
+```css
+.checkout-actions button {
+  border-radius: 0;
+}
+```
+
+`data-smrt-component` roots and `data-smrt-part` hooks are the intended way to
+target internal parts. They are rolling out component by component (tracked
+in #3824). Until a component exposes them, target it through its rendered
+element or your own wrapper.
+
+### Consumer check when upgrading
+
+Layered component CSS now loses to any unlayered app rule. An app rule that
+previously lost on specificity can now win. Before upgrading smrt-ui, search your
+app for `:global(` and for unlayered rules that target smrt components, then
+confirm each still renders as intended. Remove overrides that only existed to
+win a specificity fight.
+
+### Adding or changing a component stylesheet
+
+Component `<style>` blocks must be inside `@layer smrt.*`. The lint gate
+`node scripts/check-smrt-cascade-layers.mjs` (part of `pnpm lint`) fails
+otherwise. To wrap an unlayered block, run `node scripts/codemod-smrt-layers.mjs`
+from the repository root. The codemod is idempotent and refuses blocks it cannot
+wrap safely (top-level `@import` or `@charset`, or a mix of layered and
+unlayered rules).
+
 ## Development
 
 ```bash

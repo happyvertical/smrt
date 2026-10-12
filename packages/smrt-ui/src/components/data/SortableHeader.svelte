@@ -119,6 +119,7 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
 </svelte:element>
 
 <style>
+@layer smrt.theme {
   .sortable-header {
     padding: 0;
     font-weight: inherit;
@@ -166,4 +167,5 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
   .sortable-header__icon.is-active {
     opacity: 1;
   }
+}
 </style>

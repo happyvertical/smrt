@@ -57,6 +57,7 @@ const lineIndexes = $derived(
 </span>
 
 <style>
+@layer smrt.theme {
   .skeleton-wrap {
     display: inline-flex;
     flex-direction: column;
@@ -110,4 +111,5 @@ const lineIndexes = $derived(
       animation: none;
     }
   }
+}
 </style>

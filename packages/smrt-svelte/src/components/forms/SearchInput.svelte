@@ -213,6 +213,7 @@ const sizeClasses = {
 </div>
 
 <style>
+@layer smrt.theme {
   .search-input {
     position: relative;
     display: flex;
@@ -355,4 +356,5 @@ const sizeClasses = {
     height: 32px;
     margin-right: var(--smrt-spacing-3, 0.75rem);
   }
+}
 </style>

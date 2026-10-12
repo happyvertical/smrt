@@ -101,6 +101,7 @@ const themeIcons: Record<ThemePreset, string> = {
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-theme-switcher {
     display: flex;
     align-items: center;
@@ -187,4 +188,5 @@ const themeIcons: Record<ThemePreset, string> = {
   .smrt-theme-switcher__icon {
     font-size: var(--smrt-typography-body-large-size, 1rem);
   }
+}
 </style>

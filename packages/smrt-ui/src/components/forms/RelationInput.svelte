@@ -343,6 +343,7 @@ $effect(() => () => clearTimeout(timer));
 </div>
 
 <style>
+@layer smrt.theme {
   .relation-input {
     display: grid;
     gap: var(--smrt-spacing-1, 4px);
@@ -375,4 +376,5 @@ $effect(() => () => clearTimeout(timer));
   .error {
     color: var(--smrt-color-error);
   }
+}
 </style>

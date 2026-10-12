@@ -30,6 +30,7 @@ const {
 </div>
 
 <style>
+@layer smrt.theme {
   .action-group {
     display: flex;
     flex-wrap: wrap;
@@ -52,4 +53,5 @@ const {
   .justify-end {
     justify-content: flex-end;
   }
+}
 </style>

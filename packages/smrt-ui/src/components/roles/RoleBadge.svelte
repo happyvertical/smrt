@@ -37,6 +37,7 @@ const variantClass = $derived.by(() => {
 </span>
 
 <style>
+@layer smrt.theme {
   .role-badge {
     display: inline-flex;
     align-items: center;
@@ -83,4 +84,5 @@ const variantClass = $derived.by(() => {
     background-color: var(--smrt-color-surface-variant);
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

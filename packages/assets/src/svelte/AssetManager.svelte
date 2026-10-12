@@ -349,6 +349,7 @@ function handleManagerDrop(event: DragEvent) {
 </div>
 
 <style>
+@layer smrt.theme {
   .asset-manager__error {
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
@@ -407,4 +408,5 @@ function handleManagerDrop(event: DragEvent) {
     margin: 0;
     font-size: var(--smrt-typography-body-large-size, 1.1rem);
   }
+}
 </style>

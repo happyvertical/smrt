@@ -129,8 +129,10 @@ function name(field: keyof ExpenseDraftValues) {
   </Form>
 </section>
 <style>
+@layer smrt.theme {
   .expense-form, .fields { display: grid; gap: var(--smrt-spacing-4); min-width: 0; }
   .expense-form { max-width: 48rem; overflow-wrap: anywhere; }
   fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
   h2, p { margin: 0; }
+}
 </style>

@@ -105,6 +105,7 @@ function handleInput(event: Event & { currentTarget: HTMLTextAreaElement }) {
 </span>
 
 <style>
+@layer smrt.theme {
   .content-title-field-shell {
     display: block;
   }
@@ -156,4 +157,5 @@ function handleInput(event: Event & { currentTarget: HTMLTextAreaElement }) {
     outline: 2px solid var(--smrt-color-error, #b3261e);
     outline-offset: 2px;
   }
+}
 </style>

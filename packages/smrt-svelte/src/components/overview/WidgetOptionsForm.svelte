@@ -186,8 +186,10 @@ const modelValues = $derived(
 </Form>
 
 <style>
+@layer smrt.theme {
   .smrt-widget-form__check { display: flex; flex-direction: column; gap: var(--smrt-spacing-1); }
   .smrt-widget-form__hint { color: var(--smrt-color-on-surface-variant); }
   .smrt-widget-form__error { color: var(--smrt-color-error); }
   .smrt-widget-form__none { margin: 0; color: var(--smrt-color-on-surface-variant); }
+}
 </style>

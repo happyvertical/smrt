@@ -63,6 +63,7 @@ const tiles = $derived.by((): Tile[] => {
 </div>
 
 <style>
+@layer smrt.theme {
   .empty {
     margin: 0;
     color: var(--smrt-color-on-surface-variant, #64748b);
@@ -103,4 +104,5 @@ const tiles = $derived.by((): Tile[] => {
   .tile dd.negative {
     color: var(--smrt-color-error, #dc2626);
   }
+}
 </style>

@@ -221,6 +221,7 @@ $effect(() => {
 {/if}
 
 <style>
+@layer smrt.theme {
   .search-panel {
     display: flex;
     flex-direction: column;
@@ -469,4 +470,5 @@ $effect(() => {
       transition: none;
     }
   }
+}
 </style>

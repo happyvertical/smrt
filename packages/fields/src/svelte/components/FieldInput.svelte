@@ -156,4 +156,8 @@ function setDateTime(event: Event): void {
   />
 {/if}
 
-<style>.field-input__error { color: var(--smrt-color-error, #b42318); margin: 0; }</style>
+<style>
+@layer smrt.theme {
+.field-input__error { color: var(--smrt-color-error, #b42318); margin: 0; }
+}
+</style>

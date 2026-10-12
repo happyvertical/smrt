@@ -1215,6 +1215,7 @@ onMount(() => {
 </ThemeProvider>
 
 <style>
+@layer smrt.theme {
   :global(body) {
     margin: 0;
     min-height: 100vh;
@@ -1472,4 +1473,5 @@ onMount(() => {
       min-height: 28rem;
     }
   }
+}
 </style>

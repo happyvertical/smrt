@@ -41,6 +41,7 @@ const { t } = useI18n();
 </article>
 
 <style>
+@layer smrt.theme {
   .smrt-activity-item {
     display: flex;
     align-items: flex-start;
@@ -83,4 +84,5 @@ const { t } = useI18n();
     gap: var(--smrt-spacing-2);
     justify-content: flex-end;
   }
+}
 </style>

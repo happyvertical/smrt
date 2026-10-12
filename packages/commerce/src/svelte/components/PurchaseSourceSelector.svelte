@@ -53,4 +53,8 @@ const { t } = useI18n();
   <Button type="submit" disabled={disabled || sources.every(source=>source.disabled)} density="touch">{t(P['commerce.purchase.use'])}</Button>
  </Form>
 </div>
-<style>.purchase-source{max-width:48rem;min-width:0;overflow-wrap:anywhere;color:var(--smrt-color-on-surface)}</style>
+<style>
+@layer smrt.theme {
+.purchase-source{max-width:48rem;min-width:0;overflow-wrap:anywhere;color:var(--smrt-color-on-surface)}
+}
+</style>

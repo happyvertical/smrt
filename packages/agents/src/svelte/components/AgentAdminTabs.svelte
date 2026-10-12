@@ -169,6 +169,7 @@ async function handleSave(config: unknown) {
 </div>
 
 <style>
+@layer smrt.theme {
 	.agent-admin-tabs {
 		display: flex;
 		flex-direction: column;
@@ -275,4 +276,5 @@ async function handleSave(config: unknown) {
 	.no-slots p {
 		margin: 0;
 	}
+}
 </style>

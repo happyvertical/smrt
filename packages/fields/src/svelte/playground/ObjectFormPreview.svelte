@@ -123,7 +123,9 @@ let record = $state<Record<string, unknown>>({});
 </section>
 
 <style>
+@layer smrt.theme {
   .object-form-preview { display: grid; gap: var(--smrt-spacing-3, 0.75rem); max-width: 40rem; }
   h2, p { margin: 0; }
   .record-preview { font: var(--smrt-typography-body-small-font, monospace); color: var(--smrt-color-on-surface-variant, currentColor); overflow-wrap: anywhere; }
+}
 </style>

@@ -111,6 +111,7 @@ $effect(() => {
 </span>
 
 <style>
+@layer smrt.theme {
   .popover { position: relative; display: inline-flex; }
   .popover__trigger { appearance: none; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); font: inherit; cursor: pointer; }
   .popover__trigger:focus-visible, .popover__panel:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
@@ -124,4 +125,5 @@ $effect(() => {
   .popover__panel--bottom-end { top: calc(100% + var(--smrt-spacing-1)); right: 0; }
   .popover__panel--top-start { bottom: calc(100% + var(--smrt-spacing-1)); left: 0; }
   .popover__panel--top-end { right: 0; bottom: calc(100% + var(--smrt-spacing-1)); }
+}
 </style>

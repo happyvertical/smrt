@@ -25,4 +25,8 @@ async function signIn(providerId: string) {
   }
 }
 </script>
-<section aria-label={t('users.auth.single_sign_on')}><h2>{t('users.auth.or_continue_with')}</h2>{#if error}<p class="error" role="alert">{t(error)}</p>{/if}<div class="providers">{#each providers as provider (provider.id)}<Button variant="secondary" fullWidth onclick={()=>signIn(provider.id)} disabled={provider.disabled||!adapter.signInWithOidc} loading={pending===provider.id}>{provider.label}</Button>{/each}</div></section><style>section{display:grid;gap:var(--smrt-spacing-sm,.5rem)}h2{margin:0;font:var(--smrt-typography-title-small-font)}.providers{display:grid;gap:var(--smrt-spacing-sm,.5rem)}.error{margin:0;color:var(--smrt-color-error)}</style>
+<section aria-label={t('users.auth.single_sign_on')}><h2>{t('users.auth.or_continue_with')}</h2>{#if error}<p class="error" role="alert">{t(error)}</p>{/if}<div class="providers">{#each providers as provider (provider.id)}<Button variant="secondary" fullWidth onclick={()=>signIn(provider.id)} disabled={provider.disabled||!adapter.signInWithOidc} loading={pending===provider.id}>{provider.label}</Button>{/each}</div></section><style>
+@layer smrt.theme {
+section{display:grid;gap:var(--smrt-spacing-sm,.5rem)}h2{margin:0;font:var(--smrt-typography-title-small-font)}.providers{display:grid;gap:var(--smrt-spacing-sm,.5rem)}.error{margin:0;color:var(--smrt-color-error)}
+}
+</style>

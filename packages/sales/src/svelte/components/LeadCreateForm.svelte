@@ -139,8 +139,10 @@ function submit() {
 </section>
 
 <style>
+@layer smrt.theme {
   :global(.sales-lead-create__form) { display: grid; gap: var(--smrt-spacing-3, 0.75rem); }
   .sales-lead-create__actions { display: flex; justify-content: flex-end; gap: var(--smrt-spacing-2, 0.5rem); }
   .sales-lead-create__error { color: var(--smrt-color-error, #dc2626); margin: 0; }
   .sales-lead-create__duplicate { color: var(--smrt-color-warning, #a16207); margin: 0; }
+}
 </style>

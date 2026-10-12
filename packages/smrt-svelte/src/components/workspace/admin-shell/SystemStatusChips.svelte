@@ -41,6 +41,7 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-system-status-chips {
     display: flex;
     flex-wrap: nowrap;
@@ -91,4 +92,5 @@ const { t } = useI18n();
   .smrt-system-status-chips [data-tone='error']::before {
     background: var(--smrt-color-error);
   }
+}
 </style>

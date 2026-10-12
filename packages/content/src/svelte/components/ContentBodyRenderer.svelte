@@ -39,6 +39,7 @@ const safeHtml = $derived(
 </div>
 
 <style>
+@layer smrt.theme {
   .content-body-renderer {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: var(--smrt-typography-body-large-line-height, 1.5);
@@ -177,4 +178,5 @@ const safeHtml = $derived(
       margin: var(--spacing-md, 0.75rem) 0;
     }
   }
+}
 </style>

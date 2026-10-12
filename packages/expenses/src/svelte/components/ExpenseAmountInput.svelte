@@ -62,7 +62,9 @@ async function press(key: string) {
   {/if}
 </div>
 <style>
+@layer smrt.theme {
   .amount-entry { display: grid; gap: var(--smrt-spacing-2); }
   .keypad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--smrt-spacing-2); }
   .keypad :global(button) { min-height: var(--smrt-touch-target-min, 48px); }
+}
 </style>

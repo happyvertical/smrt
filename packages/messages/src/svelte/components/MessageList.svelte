@@ -91,6 +91,7 @@ function getAccount(accountId: string): AccountData | undefined {
 </div>
 
 <style>
+@layer smrt.theme {
   .message-list {
     display: flex;
     flex-direction: column;
@@ -111,4 +112,5 @@ function getAccount(accountId: string): AccountData | undefined {
   .empty p {
     font: var(--smrt-typography-body-large-font, 1.125rem / 1.5 sans-serif);
   }
+}
 </style>

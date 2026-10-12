@@ -240,6 +240,7 @@ onMount(() => {
 </div>
 
 <style>
+@layer smrt.theme {
   :global(body:has(.page:not(.page--embedded))) {
     margin: 0;
     font-family:
@@ -621,4 +622,5 @@ onMount(() => {
       grid-template-columns: 1fr;
     }
   }
+}
 </style>

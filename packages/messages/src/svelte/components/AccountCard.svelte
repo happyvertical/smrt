@@ -80,6 +80,7 @@ const _lastSyncFormatted = $derived.by(() => {
 </Card>
 
 <style>
+@layer smrt.theme {
   .account-card {
     display: flex;
     flex-direction: column;
@@ -184,4 +185,5 @@ const _lastSyncFormatted = $derived.by(() => {
     color: var(--smrt-color-error, #ba1a1a);
     border-color: var(--smrt-color-error, #ba1a1a);
   }
+}
 </style>

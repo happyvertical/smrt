@@ -26,4 +26,8 @@ const instanceId = $props.id();
 const resolvedId = $derived(id ?? `smrt-date-${instanceId}`);
 </script>
 <label class="picker {className}" for={resolvedId}><span>{label}</span><Input id={resolvedId} {name} type="date" aria-label={label} {interaction} bind:value {...rest} /></label>
-<style>.picker { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); font: var(--smrt-typography-label-large-font); }</style>
+<style>
+@layer smrt.theme {
+.picker { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); font: var(--smrt-typography-label-large-font); }
+}
+</style>

@@ -70,6 +70,7 @@ async function submit(event: SubmitEvent) {
 </section>
 
 <style>
+@layer smrt.theme {
   .assistance {
     max-width: 42rem;
   }
@@ -98,4 +99,5 @@ async function submit(event: SubmitEvent) {
     display: flex;
     justify-content: flex-end;
   }
+}
 </style>

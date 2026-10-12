@@ -156,6 +156,7 @@ const gridClasses = $derived.by(() => {
 </div>
 
 <style>
+@layer smrt.theme {
   .grid {
     display: grid;
     min-width: 0;
@@ -239,4 +240,5 @@ const gridClasses = $derived.by(() => {
   .col-gap-xl {
     column-gap: var(--smrt-spacing-12);
   }
+}
 </style>

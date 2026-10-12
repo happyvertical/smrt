@@ -145,6 +145,7 @@ function removeReference(id: string) {
 </div>
 
 <style>
+@layer smrt.theme {
   .content-references-panel {
     display: grid;
     gap: 0.875rem;
@@ -234,4 +235,5 @@ function removeReference(id: string) {
     min-height: 2.5rem;
     border-radius: 0.5rem;
   }
+}
 </style>

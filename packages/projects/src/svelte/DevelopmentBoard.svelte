@@ -75,6 +75,7 @@ const cardLabel = (card: DevelopmentBoardCard) =>
 {/if}
 
 <style>
+@layer smrt.theme {
   .empty {
     color: var(--smrt-color-on-surface-variant);
     margin: 0;
@@ -83,4 +84,5 @@ const cardLabel = (card: DevelopmentBoardCard) =>
   small {
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

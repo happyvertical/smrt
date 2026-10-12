@@ -229,6 +229,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
 </Modal>
 
 <style>
+@layer smrt.theme {
   .create-error {
     margin: var(--smrt-spacing-2, 0.5rem) 0 0;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
@@ -378,5 +379,5 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     color: var(--smrt-color-error, #dc2626);
     margin-left: var(--smrt-spacing-1, 4px);
   }
-
+}
 </style>

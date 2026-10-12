@@ -52,6 +52,7 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-phone-top-bar {
     display: flex;
     align-items: center;
@@ -91,4 +92,5 @@ const { t } = useI18n();
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
 </style>

@@ -180,6 +180,7 @@ function labour(minutes: number): string {
 {/if}
 
 <style>
+@layer smrt.theme {
   .assembly-list-scroll {
     overflow-x: auto;
   }
@@ -232,4 +233,5 @@ function labour(minutes: number): string {
   .assembly-list-empty {
     padding: 1rem 0;
   }
+}
 </style>

@@ -173,6 +173,7 @@ const isoString = $derived(
 {/if}
 
 <style>
+@layer smrt.theme {
   .date-display {
     white-space: nowrap;
   }
@@ -181,4 +182,5 @@ const isoString = $derived(
     color: var(--smrt-color-on-surface-variant, #9ca3af);
     font-style: italic;
   }
+}
 </style>

@@ -45,6 +45,7 @@ const role = $derived(
 </div>
 
 <style>
+@layer smrt.theme {
   .alert { --alert-color: var(--smrt-color-primary); display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: start; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3) var(--smrt-spacing-4); border: 1px solid color-mix(in srgb, var(--alert-color) 35%, var(--smrt-color-outline-variant)); border-radius: var(--smrt-radius-medium); background: color-mix(in srgb, var(--alert-color) 8%, var(--smrt-color-surface)); color: var(--smrt-color-on-surface); }
   .alert--success { --alert-color: var(--smrt-color-success, #2e7d32); }
   .alert--warning { --alert-color: var(--smrt-color-warning, #a45b00); }
@@ -57,4 +58,5 @@ const role = $derived(
   .dismiss { width: 2rem; height: 2rem; margin: -.35rem; border: 0; border-radius: var(--smrt-radius-full); background: transparent; color: inherit; font-size: 1.25rem; cursor: pointer; }
   .dismiss:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
   .dismiss:focus-visible { outline: 2px solid var(--smrt-color-primary); }
+}
 </style>

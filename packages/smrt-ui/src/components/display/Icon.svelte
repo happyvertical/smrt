@@ -56,9 +56,11 @@ const pxSize = $derived(typeof size === 'number' ? `${size}px` : size);
 </svg>
 
 <style>
+@layer smrt.theme {
   svg {
     display: inline-block;
     flex-shrink: 0;
     vertical-align: middle;
   }
+}
 </style>

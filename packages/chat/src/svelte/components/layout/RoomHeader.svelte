@@ -118,6 +118,7 @@ const roomTypeLabel = $derived.by(() => {
 </header>
 
 <style>
+@layer smrt.theme {
   .room-header {
     display: flex;
     align-items: center;
@@ -235,4 +236,5 @@ const roomTypeLabel = $derived.by(() => {
       transition: none;
     }
   }
+}
 </style>

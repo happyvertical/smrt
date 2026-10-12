@@ -188,6 +188,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
 {/snippet}
 
 <style>
+@layer smrt.theme {
   .empty-state {
     padding: 3rem 1rem;
     text-align: center;
@@ -367,4 +368,5 @@ function getEntryHref(entry: TimeEntry): string | undefined {
       flex: none;
     }
   }
+}
 </style>

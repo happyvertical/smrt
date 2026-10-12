@@ -91,6 +91,7 @@ function componentText(name: string, skuCode: string): string {
 {/if}
 
 <style>
+@layer smrt.theme {
   .requirements-empty {
     margin: 0;
     color: var(--smrt-color-on-surface-variant, inherit);
@@ -122,4 +123,5 @@ function componentText(name: string, skuCode: string): string {
   .requirements-number {
     font-variant-numeric: tabular-nums;
   }
+}
 </style>

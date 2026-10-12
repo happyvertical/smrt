@@ -168,6 +168,8 @@ $effect(() => {
 {/if}
 
 <style>
+@layer smrt.theme {
   .field-policy-gear__error { color: var(--smrt-color-error, #b42318); }
   .field-policy-gear__loading { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+}
 </style>

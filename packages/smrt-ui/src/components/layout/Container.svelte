@@ -19,6 +19,7 @@ const { maxWidth = 'lg', children, ...rest }: Props = $props();
 </div>
 
 <style>
+@layer smrt.theme {
   .container {
     box-sizing: border-box;
     width: 100%;
@@ -53,4 +54,5 @@ const { maxWidth = 'lg', children, ...rest }: Props = $props();
       padding-right: var(--smrt-spacing-6);
     }
   }
+}
 </style>

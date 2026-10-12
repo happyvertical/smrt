@@ -104,6 +104,7 @@ function updateField(key: string, value: unknown) {
 </div>
 
 <style>
+@layer smrt.theme {
   .content-status-fields {
     display: flex;
     align-items: end;
@@ -128,4 +129,5 @@ function updateField(key: string, value: unknown) {
   .content-status-fields.simple :global(.form-label) {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
+}
 </style>

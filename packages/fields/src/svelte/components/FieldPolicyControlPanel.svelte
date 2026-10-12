@@ -281,6 +281,7 @@ async function suggestionChanged(): Promise<void> {
 {/if}
 
 <style>
+@layer smrt.theme {
   .field-policy-control-panel { display: grid; gap: var(--smrt-spacing-4); }
   .field-policy-control-panel header p, .field-policy-control-panel__detail > p { color: var(--smrt-color-on-surface-variant); }
   .field-policy-control-panel__error { color: var(--smrt-color-error, #b42318); }
@@ -290,4 +291,5 @@ async function suggestionChanged(): Promise<void> {
   .field-policy-control-panel__layers dd { margin: 0; }
   .field-policy-control-panel__actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); }
   .field-policy-control-panel__drift ul { display: grid; gap: var(--smrt-spacing-2); padding-inline-start: var(--smrt-spacing-5); }
+}
 </style>

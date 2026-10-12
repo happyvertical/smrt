@@ -195,8 +195,10 @@ useWebMcpTool(
 </div>
 
 <style>
+@layer smrt.theme {
   /* Layout-neutral: the wrapped content lays out exactly as before. */
   .smrt-form-scope {
     display: contents;
   }
+}
 </style>

@@ -173,6 +173,7 @@ function handleSubmit(event: Event) {
 </div>
 
 <style>
+@layer smrt.theme {
   .product-form-shell :global(.product-form) {
     max-width: 500px;
     padding: 1.5rem;
@@ -238,4 +239,5 @@ function handleSubmit(event: Event) {
     padding-top: 1rem;
     border-top: 1px solid var(--smrt-color-outline-variant, #f3f4f6);
   }
+}
 </style>

@@ -74,6 +74,7 @@ function formatTimestamp(value: string | null | undefined) {
 </div>
 
 <style>
+@layer smrt.theme {
   :global(body) {
     margin: 0;
     font-family:
@@ -194,4 +195,5 @@ function formatTimestamp(value: string | null | undefined) {
       top: 1.5rem;
     }
   }
+}
 </style>

@@ -40,4 +40,8 @@ async function submit() {
 }
 </script>
 <Form class="auth-form" onsubmit={submit} aria-busy={loading||pending}><h2>{token ? t('users.auth.confirm_sign_in_link') : t('users.auth.email_sign_in_link')}</h2>{#if error}<p class="error" role="alert">{t(error)}</p>{/if}{#if notice}<p class="notice" role="status">{t(notice)}</p>{/if}{#if !token}<label for="magic-link-email">{t('users.auth.email_address')}</label><Input id="magic-link-email" type="email" bind:value={email} autocomplete="email" required disabled={loading||pending}/>{/if}<Button type="submit" fullWidth disabled={loading || (token ? !adapter.confirmMagicLink : !adapter.requestMagicLink)} loading={pending}>{token ? t('users.auth.confirm_sign_in') : t('users.auth.send_sign_in_link')}</Button></Form>
-<style>:global(.auth-form){display:grid;gap:var(--smrt-spacing-sm,.5rem);color:var(--smrt-color-on-surface)}h2{margin:0;font:var(--smrt-typography-title-large-font)}label{font:var(--smrt-typography-label-large-font)}.error,.notice{margin:0;padding:var(--smrt-spacing-sm,.5rem);border-radius:var(--smrt-radius-sm,.25rem)}.error{background:var(--smrt-color-error-container);color:var(--smrt-color-on-error-container)}.notice{background:var(--smrt-color-primary-container);color:var(--smrt-color-on-primary-container)}</style>
+<style>
+@layer smrt.theme {
+:global(.auth-form){display:grid;gap:var(--smrt-spacing-sm,.5rem);color:var(--smrt-color-on-surface)}h2{margin:0;font:var(--smrt-typography-title-large-font)}label{font:var(--smrt-typography-label-large-font)}.error,.notice{margin:0;padding:var(--smrt-spacing-sm,.5rem);border-radius:var(--smrt-radius-sm,.25rem)}.error{background:var(--smrt-color-error-container);color:var(--smrt-color-on-error-container)}.notice{background:var(--smrt-color-primary-container);color:var(--smrt-color-on-primary-container)}
+}
+</style>

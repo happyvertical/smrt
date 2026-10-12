@@ -254,6 +254,7 @@ function methodLabel(method: string): string {
 </section>
 
 <style>
+@layer smrt.theme {
   .sales-payout-review {
     display: flex;
     flex-direction: column;
@@ -329,4 +330,5 @@ function methodLabel(method: string): string {
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
+}
 </style>

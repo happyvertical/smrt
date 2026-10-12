@@ -298,6 +298,7 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
 </article>
 
 <style>
+@layer smrt.theme {
   .sales-opportunity-detail {
     display: flex;
     flex-direction: column;
@@ -469,4 +470,5 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
+}
 </style>

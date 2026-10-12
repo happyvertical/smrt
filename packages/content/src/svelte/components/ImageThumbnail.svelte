@@ -123,6 +123,7 @@ $effect(() => {
 {/if}
 
 <style>
+@layer smrt.theme {
   .smrt-thumbnail-img {
     width: 100%;
     height: 100%;
@@ -156,4 +157,5 @@ $effect(() => {
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.04em);
     text-transform: uppercase;
   }
+}
 </style>

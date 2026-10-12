@@ -243,6 +243,7 @@ function handleKeydown(event: KeyboardEvent) {
 {/if}
 
 <style>
+@layer smrt.theme {
   .working-strip__live,
   .working-strip__sr {
     position: absolute;
@@ -423,4 +424,5 @@ function handleKeydown(event: KeyboardEvent) {
       border-inline-start-color: currentColor;
     }
   }
+}
 </style>

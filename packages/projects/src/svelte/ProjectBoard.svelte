@@ -151,7 +151,9 @@ function cardLabel(card: ProjectBoardCard): string {
 </Board>
 
 <style>
+@layer smrt.theme {
   small {
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

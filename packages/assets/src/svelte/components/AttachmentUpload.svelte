@@ -76,6 +76,8 @@ const fileHelp = $derived(
 {/if}
 
 <style>
+@layer smrt.theme {
   .upload-fields { display: grid; gap: var(--smrt-spacing-3); min-width: 0; overflow-wrap: anywhere; }
   p { margin: 0; }
+}
 </style>

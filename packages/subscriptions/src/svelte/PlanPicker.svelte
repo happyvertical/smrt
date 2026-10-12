@@ -105,6 +105,7 @@ let {
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-plan-picker {
     display: grid;
     gap: 0.75rem;
@@ -144,4 +145,5 @@ let {
     color: var(--smrt-color-on-surface-variant, #64748b);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
+}
 </style>

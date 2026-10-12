@@ -126,6 +126,7 @@ async function toggle(line: BomEditorLine) {
 </ul>
 
 <style>
+@layer smrt.theme {
   .bom-tree {
     list-style: none;
     margin: 0;
@@ -161,4 +162,5 @@ async function toggle(line: BomEditorLine) {
     padding-left: 0.75rem;
     border-left: 2px solid var(--smrt-color-outline-variant, transparent);
   }
+}
 </style>

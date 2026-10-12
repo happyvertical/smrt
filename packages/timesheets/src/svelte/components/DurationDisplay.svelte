@@ -48,6 +48,7 @@ const unit = $derived(format === 'hhmm' ? '' : 'h');
 </span>
 
 <style>
+@layer smrt.theme {
   .duration {
     display: inline-flex;
     align-items: baseline;
@@ -78,4 +79,5 @@ const unit = $derived(format === 'hhmm' ? '' : 'h');
   .duration.lg {
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
   }
+}
 </style>

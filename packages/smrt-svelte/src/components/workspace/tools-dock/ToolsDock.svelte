@@ -275,6 +275,7 @@
 {/if}
 
 <style>
+@layer smrt.theme {
   .tools-dock {
     --tools-dock-rail-width: 3.25rem;
     --tools-dock-panel-width: 420px;
@@ -568,4 +569,5 @@
       padding: 0.85rem;
     }
   }
+}
 </style>

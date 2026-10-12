@@ -90,6 +90,7 @@ function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
 </div>
 
 <style>
+@layer smrt.theme {
   .loading,
   .empty {
     text-align: center;
@@ -101,4 +102,5 @@ function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
   .empty p {
     font: var(--smrt-typography-body-large-font, 1.125rem / 1.5 sans-serif);
   }
+}
 </style>

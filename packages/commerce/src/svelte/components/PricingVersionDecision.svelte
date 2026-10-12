@@ -82,7 +82,9 @@ const id = $props.id();
 </section>
 
 <style>
+@layer smrt.theme {
 .pricing-decision { min-width: 0; overflow-wrap: anywhere; }
 .decisions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); margin-top: var(--smrt-spacing-3); }
 .decisions :global(button) { max-width: 100%; white-space: normal; }
+}
 </style>

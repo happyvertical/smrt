@@ -39,6 +39,7 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.theme {
   .form-action-bar {
     display: flex;
     flex-wrap: wrap;
@@ -81,4 +82,5 @@ const { t } = useI18n();
       display: none;
     }
   }
+}
 </style>

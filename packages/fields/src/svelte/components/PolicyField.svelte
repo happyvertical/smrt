@@ -314,6 +314,7 @@ $effect(() => {
 {/if}
 
 <style>
+@layer smrt.theme {
   .policy-field {
     display: flex;
     flex-direction: column;
@@ -335,4 +336,5 @@ $effect(() => {
     color: var(--smrt-color-on-surface-variant, currentColor);
     margin: 0;
   }
+}
 </style>

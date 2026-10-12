@@ -188,6 +188,7 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
 </section>
 
 <style>
+@layer smrt.theme {
   .permission-picker { display: grid; gap: var(--smrt-spacing-4); min-inline-size: 0; }
   .heading { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: var(--smrt-spacing-4); }
   h2, p { margin: 0; }
@@ -210,4 +211,5 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
   .no-results { padding: var(--smrt-spacing-4); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface-container-low); }
   .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   [hidden] { display: none; }
+}
 </style>

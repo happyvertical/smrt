@@ -84,6 +84,7 @@ function handleClick(value: string) {
 </div>
 
 <style>
+@layer smrt.theme {
   .filter-chips {
     display: flex;
     gap: var(--smrt-spacing-2, 8px);
@@ -156,4 +157,5 @@ function handleClick(value: string) {
   .filter-chips[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
   .filter-chips[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .filter-chip { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+}
 </style>

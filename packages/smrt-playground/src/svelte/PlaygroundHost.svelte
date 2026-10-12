@@ -533,6 +533,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
 {/if}
 
 <style>
+@layer smrt.theme {
   :global(body) {
     margin: 0;
     min-height: 100vh;
@@ -1079,4 +1080,5 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
       animation: none;
     }
   }
+}
 </style>

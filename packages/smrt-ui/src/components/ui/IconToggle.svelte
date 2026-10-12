@@ -68,6 +68,7 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
 </Tooltip>
 
 <style>
+@layer smrt.theme {
   .icon-toggle {
     position: relative;
     display: inline-flex;
@@ -136,4 +137,5 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     text-align: center;
     font-variant-numeric: tabular-nums;
   }
+}
 </style>

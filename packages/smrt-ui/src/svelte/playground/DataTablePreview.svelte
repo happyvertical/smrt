@@ -494,6 +494,7 @@ function selectAllMatching() {
 </div>
 
 <style>
+@layer smrt.theme {
   .workbench {
     display: grid;
     gap: var(--smrt-spacing-5);
@@ -634,4 +635,5 @@ function selectAllMatching() {
       margin-left: 0;
     }
   }
+}
 </style>

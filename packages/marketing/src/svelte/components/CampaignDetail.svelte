@@ -106,6 +106,7 @@ let {
 {/if}
 
 <style>
+@layer smrt.theme {
   .campaign-detail {
     display: flex;
     flex-direction: column;
@@ -210,4 +211,5 @@ let {
   .channel-ref {
     font: var(--smrt-typography-body-small-font);
   }
+}
 </style>

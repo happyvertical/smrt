@@ -33,6 +33,7 @@ const format = (value: Date | string) =>
 </ol>
 
 <style>
+@layer smrt.theme {
   .delivery {
     list-style: none;
     margin: 0;
@@ -69,4 +70,5 @@ const format = (value: Date | string) =>
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-small-size);
   }
+}
 </style>

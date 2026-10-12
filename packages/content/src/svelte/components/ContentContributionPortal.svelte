@@ -109,6 +109,7 @@ function canWithdraw(contribution: ContentContributionData) {
 </section>
 
 <style>
+@layer smrt.theme {
   .portal {
     display: grid;
     gap: 1rem;
@@ -186,4 +187,5 @@ function canWithdraw(contribution: ContentContributionData) {
       grid-template-columns: 1fr;
     }
   }
+}
 </style>

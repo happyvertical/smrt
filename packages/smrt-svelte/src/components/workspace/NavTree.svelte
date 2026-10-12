@@ -206,6 +206,7 @@ function navChildrenId(href: string): string {
 </nav>
 
 <style>
+@layer smrt.theme {
   .smrt-nav-tree {
     display: flex;
     flex-direction: column;
@@ -351,4 +352,5 @@ function navChildrenId(href: string): string {
   .smrt-nav-tree.collapsed .children {
     display: none;
   }
+}
 </style>

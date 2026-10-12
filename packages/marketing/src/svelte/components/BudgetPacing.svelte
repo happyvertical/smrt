@@ -73,6 +73,7 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
 {/if}
 
 <style>
+@layer smrt.theme {
   .budget-pacing {
     display: flex;
     flex-direction: column;
@@ -129,4 +130,5 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
   .facts dd.negative {
     color: var(--smrt-color-error);
   }
+}
 </style>

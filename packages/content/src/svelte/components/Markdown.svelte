@@ -27,6 +27,7 @@ const rendered = $derived(renderMarkdownToHtml(content));
 </div>
 
 <style>
+@layer smrt.theme {
   .markdown-content {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: var(--smrt-typography-body-large-line-height, 1.5);
@@ -122,4 +123,5 @@ const rendered = $derived(renderMarkdownToHtml(content));
     margin: var(--spacing-lg, 1rem) 0;
     border-radius: var(--smrt-radius-medium, 8px);
   }
+}
 </style>

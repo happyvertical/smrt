@@ -108,6 +108,7 @@ function highlightMatch(
 {/if}
 
 <style>
+@layer smrt.theme {
   .mention-autocomplete {
     position: absolute;
     bottom: 100%;
@@ -170,4 +171,5 @@ function highlightMatch(
       transition: none;
     }
   }
+}
 </style>

@@ -150,6 +150,7 @@ function formatWhen(iso: string): string {
 </article>
 
 <style>
+@layer smrt.theme {
   .case-detail {
     display: flex;
     flex-direction: column;
@@ -277,4 +278,5 @@ function formatWhen(iso: string): string {
   .case-detail-empty {
     color: var(--smrt-color-on-surface-variant, inherit);
   }
+}
 </style>

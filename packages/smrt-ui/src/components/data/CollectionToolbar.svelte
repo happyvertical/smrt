@@ -275,6 +275,7 @@ onDestroy(() => surfaceRegistration?.cleanup());
 </div>
 
 <style>
+@layer smrt.theme {
   .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-2) 0; color: var(--smrt-color-on-surface); }
   .toolbar--highlighted { outline: 2px solid var(--smrt-color-primary, #2563eb); outline-offset: 3px; }
   .search { flex: 1 1 14rem; max-width: 24rem; }
@@ -282,4 +283,5 @@ onDestroy(() => surfaceRegistration?.cleanup());
   .bulk { padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border-radius: var(--smrt-radius-small); background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); }
   .count { color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-medium-font); }
   .spacer { flex: 1; }
+}
 </style>

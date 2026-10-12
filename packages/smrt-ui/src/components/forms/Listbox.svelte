@@ -163,8 +163,10 @@ useControlRegistration(() => {
     onkeydown={(event) => move(event, index)} onclick={() => select(option.value, true)}>{option.label}</button>{/each}
 </div>
 <style>
+@layer smrt.theme {
   .listbox { display: grid; padding: var(--smrt-spacing-1); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); }
   button { padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 0; border-radius: var(--smrt-radius-extra-small); background: transparent; color: var(--smrt-color-on-surface); text-align: left; cursor: pointer; }
   button[aria-selected='true'] { background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); } button:focus-visible { outline: 2px solid var(--smrt-color-primary); }
   button:disabled { opacity: .5; cursor: not-allowed; } :global(.listbox[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
+}
 </style>

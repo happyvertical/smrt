@@ -56,10 +56,12 @@ async function send(content: string) {
 </ThemeProvider>
 
 <style>
+@layer smrt.theme {
   main {
     max-inline-size: 42rem;
     margin: 3rem auto;
     padding: 1rem;
     font-family: var(--smrt-font-family, system-ui, sans-serif);
   }
+}
 </style>

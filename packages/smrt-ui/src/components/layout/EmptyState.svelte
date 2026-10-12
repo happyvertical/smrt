@@ -90,6 +90,7 @@ const icons = {
 </div>
 
 <style>
+@layer smrt.theme {
   .empty-state {
     display: flex;
     flex-direction: column;
@@ -184,4 +185,5 @@ const icons = {
     background-color: var(--smrt-color-primary);
     box-shadow: var(--smrt-elevation-2);
   }
+}
 </style>

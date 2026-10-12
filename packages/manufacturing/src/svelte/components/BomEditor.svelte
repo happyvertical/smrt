@@ -474,6 +474,7 @@ const ancestors = $derived(bomId ? [bomId] : []);
 </div>
 
 <style>
+@layer smrt.theme {
   .bom-editor {
     display: flex;
     flex-direction: column;
@@ -572,4 +573,5 @@ const ancestors = $derived(bomId ? [bomId] : []);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, inherit);
   }
+}
 </style>

@@ -181,6 +181,7 @@ $effect(() => {
 </Modal>
 
 <style>
+@layer smrt.theme {
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
   :global(.dialog__form) {
     display: flex;
@@ -278,4 +279,5 @@ $effect(() => {
       transition: none;
     }
   }
+}
 </style>

@@ -66,7 +66,9 @@ const names = $derived({
 {#if canEdit}<Button type="submit" name={names.intent} value={addIntent} formnovalidate disabled={pending} variant="secondary">{t(M['commerce.preparation.add'])}</Button>{/if}
 </div>
 <style>
+@layer smrt.theme {
 .allocations { display: grid; gap: var(--smrt-spacing-4); min-width: 0; }
 fieldset { min-width: 0; margin: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); }
 p { margin: 0; }
+}
 </style>

@@ -113,4 +113,8 @@ function submit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
     {/snippet}
   </InvoiceEditor>
 </div>
-<style>.preview { display: grid; gap: var(--smrt-spacing-4); }</style>
+<style>
+@layer smrt.theme {
+.preview { display: grid; gap: var(--smrt-spacing-4); }
+}
+</style>

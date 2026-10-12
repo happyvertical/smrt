@@ -637,6 +637,7 @@ async function startExport() {
 </section>
 
 <style>
+@layer smrt.theme {
   .smrt-import-export {
     display: flex;
     flex-direction: column;
@@ -675,4 +676,5 @@ async function startExport() {
     padding: 0;
     margin: 0;
   }
+}
 </style>

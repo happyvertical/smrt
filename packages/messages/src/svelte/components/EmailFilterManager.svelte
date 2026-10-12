@@ -408,6 +408,7 @@ function getPatternPlaceholder(type: string): string {
 </div>
 
 <style>
+@layer smrt.theme {
   .email-filter-manager {
     display: flex;
     flex-direction: column;
@@ -706,4 +707,5 @@ function getPatternPlaceholder(type: string): string {
     color: inherit;
     padding: 0 0.25rem;
   }
+}
 </style>

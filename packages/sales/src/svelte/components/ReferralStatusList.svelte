@@ -69,6 +69,7 @@ let { referrals = [], locale }: Props = $props();
 </div>
 
 <style>
+@layer smrt.theme {
   .sales-referral-status {
     width: 100%;
     overflow-x: auto;
@@ -115,4 +116,5 @@ let { referrals = [], locale }: Props = $props();
   .credit {
     white-space: nowrap;
   }
+}
 </style>

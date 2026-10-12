@@ -337,6 +337,7 @@ function handleInput(e: Event) {
 </div>
 
 <style>
+@layer smrt.theme {
   .smrt-text-field {
     --field-color: var(--smrt-color-on-surface-variant);
     --field-bg: var(--smrt-color-surface-container-highest);
@@ -441,4 +442,5 @@ function handleInput(e: Event) {
     opacity: 0.38;
     pointer-events: none;
   }
+}
 </style>

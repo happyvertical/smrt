@@ -62,6 +62,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
 </nav>
 
 <style>
+@layer smrt.theme {
   .assistant-thread-list {
     display: flex;
     flex-direction: column;
@@ -145,4 +146,5 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
+}
 </style>

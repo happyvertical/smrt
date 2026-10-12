@@ -96,6 +96,7 @@ export interface Props {
 </div>
 
 <style>
+@layer smrt.theme {
   .reply-form {
     display: flex;
     flex-direction: column;
@@ -152,4 +153,5 @@ export interface Props {
   .actions :global(.btn-text) {
     color: var(--smrt-color-on-surface-variant, #49454f);
   }
+}
 </style>

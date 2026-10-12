@@ -169,6 +169,7 @@ async function handleSubmit() {
 </Form>
 
 <style>
+@layer smrt.theme {
   :global(.agent-settings-form) {
     display: grid;
     gap: var(--smrt-spacing-5, 1.25rem);
@@ -205,4 +206,5 @@ async function handleSubmit() {
     display: flex;
     justify-content: flex-end;
   }
+}
 </style>
