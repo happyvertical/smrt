@@ -479,10 +479,12 @@
  *
  * A 2px amber outline, offset off the control. Defined by the preset so every
  * focusable element — including plain markup a consumer app renders itself —
- * carries the brand focus indicator. Component-scoped `:focus-visible` rules
- * are more specific and still win where a primitive tunes its own offset.
+ * carries the brand focus indicator. This rule and component-scoped
+ * `:focus-visible` rules both sit in `smrt.theme`, so specificity still decides:
+ * a primitive that tunes its own offset wins over this default.
  * ========================================================================== */
 
+@layer smrt.theme {
 [data-theme="happyvertical"] :focus-visible {
   outline: 2px solid var(--smrt-color-primary);
   outline-offset: 2px;
@@ -562,4 +564,5 @@
   .hv-quiet-link {
     transition: none;
   }
+}
 }

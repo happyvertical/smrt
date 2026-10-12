@@ -12,7 +12,7 @@
  * unlayered rules, unsupported <style> attributes). Those need a hand fix.
  */
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   classifyStyleBody,
@@ -20,8 +20,31 @@ import {
   hasLayerIncompatibleItem,
   wrapInThemeLayer,
 } from './cascade-layers-lib.mjs';
+import { wrapCssInLayer } from './cascade-layers-css.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
+
+/**
+ * Global preset and base stylesheets shipped from smrt-ui. Rules in them
+ * compete with component styles, so they need an smrt layer too.
+ *
+ * @param {string} packagesDir
+ * @returns {string[]}
+ */
+export function listCssStylesheets(packagesDir) {
+  const out = [];
+  for (const pkg of readdirSync(packagesDir)) {
+    const dir = join(packagesDir, pkg, 'src', 'themes', 'styles');
+    try {
+      for (const entry of readdirSync(dir)) {
+        if (entry.endsWith('.css')) out.push(join(dir, entry));
+      }
+    } catch {
+      // package without a themes/styles directory
+    }
+  }
+  return out.sort();
+}
 
 /** @param {string} dir @returns {string[]} */
 export function listSvelteSources(dir) {
@@ -90,6 +113,15 @@ function main() {
 
   let rewritten = 0;
   let failures = 0;
+  for (const file of listCssStylesheets(packagesDir)) {
+    const original = readFileSync(file, 'utf8');
+    const layer = basename(file) === 'base.css' ? 'reset' : 'theme';
+    const next = wrapCssInLayer(original, layer);
+    if (next !== original) {
+      rewritten++;
+      if (!checkOnly) writeFileSync(file, next);
+    }
+  }
   for (const file of files) {
     const original = readFileSync(file, 'utf8');
     let result;

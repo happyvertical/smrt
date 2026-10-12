@@ -5,6 +5,7 @@
  * theme stylesheet. Components remain independently usable without it.
  */
 
+@layer smrt.reset {
 *,
 *::before,
 *::after {
@@ -28,4 +29,5 @@ input,
 select,
 textarea {
   font: inherit;
+}
 }

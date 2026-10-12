@@ -10,12 +10,13 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { unlayeredCssItems } from './cascade-layers-css.mjs';
 import {
   SMRT_CASCADE_LAYERS_DECLARATION,
   classifyStyleBody,
   extractStyleBlocks,
 } from './cascade-layers-lib.mjs';
-import { listSvelteSources } from './codemod-smrt-layers.mjs';
+import { listCssStylesheets, listSvelteSources } from './codemod-smrt-layers.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const LAYERS_CSS = join(ROOT, 'packages/smrt-ui/src/styles/layers.css');
@@ -27,6 +28,16 @@ const LAYERS_CSS = join(ROOT, 'packages/smrt-ui/src/styles/layers.css');
 export function findViolations(files) {
   const violations = [];
   for (const [rel, source] of Object.entries(files)) {
+    if (rel.endsWith('.css')) {
+      try {
+        if (unlayeredCssItems(source).length > 0) {
+          violations.push(`${rel}: stylesheet rules are not inside @layer smrt.*; run node scripts/codemod-smrt-layers.mjs`);
+        }
+      } catch (error) {
+        violations.push(`${rel}: ${error.message}`);
+      }
+      continue;
+    }
     let blocks;
     try {
       blocks = extractStyleBlocks(source);
@@ -65,6 +76,10 @@ function main() {
     for (const file of listSvelteSources(src)) {
       files[relative(ROOT, file)] = readFileSync(file, 'utf8');
     }
+  }
+
+  for (const file of listCssStylesheets(packagesDir)) {
+    files[relative(ROOT, file)] = readFileSync(file, 'utf8');
   }
 
   const violations = findViolations(files);

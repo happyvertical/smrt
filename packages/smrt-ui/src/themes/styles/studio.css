@@ -462,6 +462,7 @@
 }
 
 /* Studio utility classes for flat design */
+@layer smrt.theme {
 .smrt-flat {
   box-shadow: none;
   border: 1px solid var(--smrt-color-outline);
@@ -481,6 +482,7 @@
 .smrt-focus-flat:focus-visible {
   outline: 2px solid var(--smrt-color-primary);
   outline-offset: 2px;
+}
 }
 
 /*

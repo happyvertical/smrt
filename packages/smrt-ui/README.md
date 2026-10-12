@@ -1111,8 +1111,11 @@ Components depend on three public things only: **token names** (`--smrt-*`),
 **`data-smrt-*` hooks**. Everything else inside a component's stylesheet can
 change without notice.
 
-Every component `<style>` block is wrapped in `@layer smrt.theme { … }`, and the
-layer order is declared once in `@happyvertical/smrt-ui/styles/layers.css`.
+Every component `<style>` block is wrapped in `@layer smrt.theme { … }`. The
+global stylesheets follow the same rule: `themes/styles/base.css` sits in
+`smrt.reset`, and the rule-bearing parts of each preset sit in `smrt.theme`.
+Custom-property token blocks stay unlayered. The layer order is declared once in
+`@happyvertical/smrt-ui/styles/layers.css`.
 `ThemeProvider` injects the same declaration into `<head>`, so most apps need
 nothing extra. If an app does not use `ThemeProvider`, import the stylesheet
 before any other smrt stylesheet:
