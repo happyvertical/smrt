@@ -596,6 +596,7 @@ describe('smrt app recover / open / install', () => {
       schemaVersion: 1,
       status: 'opened',
       url: 'http://127.0.0.1:5173/',
+      serverRunning: false,
     });
     expect(readFileSync(stub, 'utf8').trim()).toBe(
       pathToFileURL(join(fixture.stateRoot(), 'onboarding-launch.html')).href,
@@ -618,6 +619,69 @@ describe('smrt app recover / open / install', () => {
     expect(
       existsSync(join(fixture.stateRoot(), 'onboarding-launch.html')),
     ).toBe(false);
+  });
+
+  it('prints help instead of opening the browser for app open --help', async () => {
+    const fixture = makeFixture();
+    const openBrowser = vi.fn();
+    for (const flag of ['--help', '-h']) {
+      expect(await fixture.run(['open', flag], { openBrowser })).toBe(0);
+      expect(fixture.output.stdout.join('')).toContain('Usage: smrt app');
+    }
+    expect(openBrowser).not.toHaveBeenCalled();
+  });
+
+  it('follows the live server to the port it really bound', async () => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    const openBrowser = vi.fn();
+    const probed: string[] = [];
+    const fetchLive = (async (input: URL | string) => {
+      const url = new URL(String(input));
+      probed.push(url.port);
+      if (url.port === '5174') {
+        return new Response(JSON.stringify({ application: 'ops-app' }), {
+          status: 200,
+        });
+      }
+      // 5173 is held by a different application.
+      if (url.port === '5173') {
+        return new Response(JSON.stringify({ application: 'other-app' }), {
+          status: 200,
+        });
+      }
+      throw new Error('ECONNREFUSED');
+    }) as typeof fetch;
+    expect(await fixture.run(['open'], { openBrowser, fetch: fetchLive })).toBe(
+      0,
+    );
+    expect(probed.slice(0, 2)).toEqual(['5173', '5174']);
+    expect(fixture.stdoutJson()).toEqual({
+      schemaVersion: 1,
+      status: 'opened',
+      url: 'http://127.0.0.1:5174/',
+      serverRunning: true,
+    });
+    const launch = readFileSync(
+      join(fixture.stateRoot(), 'onboarding-launch.html'),
+      'utf8',
+    );
+    expect(launch).toContain('127.0.0.1:5174/setup');
+    expect(allOutput(fixture)).not.toContain(TOKEN);
+  });
+
+  it('keeps the configured port and reports the server as not running', async () => {
+    const fixture = makeFixture();
+    const refused = (async () => {
+      throw new Error('ECONNREFUSED');
+    }) as typeof fetch;
+    expect(await fixture.run(['open'], { fetch: refused })).toBe(0);
+    expect(fixture.stdoutJson()).toEqual({
+      schemaVersion: 1,
+      status: 'opened',
+      url: 'http://127.0.0.1:5173/',
+      serverRunning: false,
+    });
   });
 
   it('refuses install and start on a deployed profile before taking the lock', async () => {
