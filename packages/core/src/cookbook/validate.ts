@@ -288,6 +288,17 @@ function checkTheme(value: unknown, diagnostics: CookbookDiagnostic[]) {
       'theme.preset must be a string',
     );
   }
+  if (
+    value.fontFamily !== undefined &&
+    (typeof value.fontFamily !== 'string' || !value.fontFamily)
+  ) {
+    error(
+      diagnostics,
+      'invalid_value',
+      'theme.fontFamily',
+      'theme.fontFamily must be a non-empty string',
+    );
+  }
   if (value.customCss !== undefined) {
     if (typeof value.customCss !== 'string') {
       error(

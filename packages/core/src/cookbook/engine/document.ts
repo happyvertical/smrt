@@ -422,6 +422,7 @@ export function compactTheme(
   const out: CookbookTheme = {};
   if (theme.preset) out.preset = theme.preset;
   if (theme.colorScheme) out.colorScheme = theme.colorScheme;
+  if (theme.fontFamily) out.fontFamily = theme.fontFamily;
   if (theme.custom) out.custom = { ...theme.custom };
   if (theme.customCss) out.customCss = theme.customCss;
   return Object.keys(out).length ? out : undefined;
@@ -442,6 +443,7 @@ export function withThemePatch(
     preset?: string;
     primary?: string;
     colorScheme?: CookbookTheme['colorScheme'];
+    fontFamily?: string | null;
   },
 ): Cookbook {
   const next: CookbookTheme = { ...(doc.theme ?? {}) };
@@ -458,6 +460,8 @@ export function withThemePatch(
     };
   }
   if (patch.colorScheme) next.colorScheme = patch.colorScheme;
+  if (patch.fontFamily === null) delete next.fontFamily;
+  else if (patch.fontFamily !== undefined) next.fontFamily = patch.fontFamily;
   const theme = compactTheme(next);
   const out = { ...doc };
   if (theme) out.theme = theme;

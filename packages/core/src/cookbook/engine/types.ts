@@ -110,6 +110,7 @@ export interface CommandInputs {
     preset?: string;
     primary?: string;
     colorScheme?: 'light' | 'dark' | 'system';
+    fontFamily?: string | null;
   };
   reset_theme: Record<string, never>;
   /** Name (and describe) the app; null clears. */

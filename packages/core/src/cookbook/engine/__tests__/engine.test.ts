@@ -258,6 +258,30 @@ describe('commands', () => {
     expect(restored.cookbook().theme).toBeUndefined();
   });
 
+  it('edits a font without replacing the preset and preserves it through export', () => {
+    const e = engine();
+    ok(
+      e.run({
+        name: 'set_theme',
+        input: { preset: 'glass', fontFamily: 'Georgia' },
+      }),
+    );
+    expect(e.cookbook().theme).toEqual({
+      preset: 'glass',
+      fontFamily: 'Georgia',
+    });
+    ok(e.run({ name: 'set_theme', input: { colorScheme: 'dark' } }));
+    expect(e.cookbook().theme?.fontFamily).toBe('Georgia');
+    const exported = ok(e.run({ name: 'export_cookbook', input: {} })).data as {
+      text: string;
+    };
+    expect(JSON.parse(exported.text).theme.fontFamily).toBe('Georgia');
+    const restored = createCookbookEngine({ catalog, state: e.state() });
+    expect(restored.cookbook().theme?.fontFamily).toBe('Georgia');
+    ok(restored.run({ name: 'set_theme', input: { fontFamily: null } }));
+    expect(restored.cookbook().theme?.fontFamily).toBeUndefined();
+  });
+
   it('layout: rename, hide and show touch only the layout and stay sparse', () => {
     const e = engine();
     ok(e.run({ name: 'add_recipes', input: { ids: ['commerce.sales'] } }));

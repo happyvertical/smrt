@@ -66,6 +66,9 @@ sample data source are not part of it.
   `validateCookbook` is where it is rejected). A brand colour becomes the preset
   id `cookbook-brand-<hex>[-<font>]`; the colour/font pair is encoded in the id
   because `ThemeProvider` looks a registered theme up once per id.
+  A top-level `fontFamily` keeps the built-in preset's palette, spacing and
+  shape while replacing its typography. It takes precedence over the legacy
+  `custom.fontFamily` when both are present.
 - **Recipe surfaces**: `shell-widget` surfaces are returned with their slot (a
   smrt-svelte `ShellSlot`; the equality with `RecipeShellSlot` is a typechecked
   assertion), `route` and `settings-panel` as data, `widget` surfaces grouped by

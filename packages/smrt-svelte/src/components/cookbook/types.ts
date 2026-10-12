@@ -117,6 +117,8 @@ export interface ResolvedCookbookTheme {
   /** Preset id: a built-in smrt-ui preset, or the brand theme's id. */
   preset: string;
   colorScheme: 'light' | 'dark' | 'system';
+  /** Known font key applied without changing a built-in preset's palette. */
+  fontFamily?: string;
   /** Present when the cookbook names a brand colour (it wins over `preset`). */
   brand?: { primary: string; fontFamily?: string };
 }

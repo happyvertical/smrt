@@ -82,6 +82,23 @@ describe('cookbook v1', () => {
     }
   });
 
+  it('keeps an independent font key and rejects malformed font values', () => {
+    const doc = {
+      version: 1,
+      recipes: [],
+      policies: [],
+      theme: { preset: 'glass', fontFamily: 'Georgia' },
+    };
+    expect(matches(doc)).toBe(true);
+    const parsed = validateCookbook(doc);
+    expect(parsed.ok && parsed.cookbook.theme).toEqual(doc.theme);
+    for (const fontFamily of ['', 42, null]) {
+      const invalid = { ...doc, theme: { ...doc.theme, fontFamily } };
+      expect(matches(invalid)).toBe(false);
+      expect(validateCookbook(invalid).ok).toBe(false);
+    }
+  });
+
   it('reports every problem with its path', () => {
     const doc = {
       version: 1,
