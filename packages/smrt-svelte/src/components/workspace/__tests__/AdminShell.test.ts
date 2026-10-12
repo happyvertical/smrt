@@ -378,7 +378,7 @@ describe('AdminShell', () => {
     }
   });
 
-  it('links full and compact branding home with an accessible title', async () => {
+  it('keeps a single linked brand in the header when the sidebar is collapsed', async () => {
     const state = createShellState({
       config: { left: { initial: 'collapsed' } },
     });
@@ -397,15 +397,19 @@ describe('AdminShell', () => {
       const links = container.querySelectorAll<HTMLAnchorElement>(
         '.smrt-admin-shell__brand-link',
       );
-      expect(links).toHaveLength(2);
+      expect(links).toHaveLength(1);
       expect([...links].map((link) => link.getAttribute('href'))).toEqual([
-        '/home',
         '/home',
       ]);
       expect([...links].map((link) => link.getAttribute('aria-label'))).toEqual(
-        ['Shop', 'Shop'],
+        ['Shop'],
       );
-      expect(links[1].textContent?.trim()).toBe('S');
+      expect(
+        container.querySelector('header .smrt-admin-shell__brand-link'),
+      ).toBe(links[0]);
+      expect(
+        container.querySelector('aside .smrt-admin-shell__brand-link'),
+      ).toBeNull();
     } finally {
       unmount(component);
     }
@@ -438,7 +442,7 @@ describe('AdminShell', () => {
     }
   });
 
-  it('passes full and compact context to custom brand snippets', async () => {
+  it('keeps a custom header brand out of the collapsed sidebar', async () => {
     const brand = createRawSnippet<[{ compact: boolean }]>((context) => ({
       render: () =>
         `<span>${context().compact ? 'Compact mark' : 'Full mark'}</span>`,
@@ -456,7 +460,7 @@ describe('AdminShell', () => {
     try {
       await tick();
       expect(container.textContent).toContain('Full mark');
-      expect(container.textContent).toContain('Compact mark');
+      expect(container.textContent).not.toContain('Compact mark');
     } finally {
       unmount(component);
     }

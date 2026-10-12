@@ -1118,7 +1118,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {@render resizer('left')}
       <div class="smrt-admin-shell__rail">
         {@render regionEdit('leftSidebar')}
-        {#if (panelState('top') === 'hidden' || !edgeExpanded('left')) && (homeHref || logoSrc || brand)}{@render shellBrand(!edgeExpanded('left'))}{/if}
+        {#if panelState('top') === 'hidden' && (homeHref || logoSrc || brand)}{@render shellBrand(!edgeExpanded('left'))}{/if}
         {#if showToggle('left') || isPhone}{@render edgeToggle('left')}{/if}
         {#if shownOpen('left') || (tenantPanel && keepsContent('left'))}
           <div

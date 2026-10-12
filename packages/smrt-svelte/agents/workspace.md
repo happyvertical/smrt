@@ -53,6 +53,8 @@ to shrink; use safe alignment if aligning its contents to the end.
 
 Sidebar-only shells may set `top: false`. In that mode the configured brand is
 shown at the top of the expanded tenant panel as well as in the compact rail.
+When the top header is visible, its brand is the only copy; collapsing the
+left sidebar does not add a second logo to the rail.
 Use `tenantRailFooter` for a control pinned below collapsed navigation; it sits
 outside the rail's scroll clip so menus can open over the workspace. Pair it
 with `WorkspaceAccountMenu compact` for an avatar-only trigger that retains the
