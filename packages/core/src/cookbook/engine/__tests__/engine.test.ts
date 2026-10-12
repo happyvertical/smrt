@@ -282,6 +282,24 @@ describe('commands', () => {
     expect(restored.cookbook().theme?.fontFamily).toBeUndefined();
   });
 
+  it('clearing the font also clears a legacy brand font, keeping the colour', () => {
+    const e = engine();
+    ok(
+      e.run({
+        name: 'import_cookbook',
+        input: {
+          document: {
+            ...IMPORTED,
+            theme: { custom: { primary: '#c2410c', fontFamily: 'Georgia' } },
+          },
+        },
+      }),
+    );
+    ok(e.run({ name: 'set_theme', input: { fontFamily: 'Inter' } }));
+    ok(e.run({ name: 'set_theme', input: { fontFamily: null } }));
+    expect(e.cookbook().theme).toEqual({ custom: { primary: '#c2410c' } });
+  });
+
   it('layout: rename, hide and show touch only the layout and stay sparse', () => {
     const e = engine();
     ok(e.run({ name: 'add_recipes', input: { ids: ['commerce.sales'] } }));

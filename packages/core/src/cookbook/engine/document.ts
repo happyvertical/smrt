@@ -460,8 +460,11 @@ export function withThemePatch(
     };
   }
   if (patch.colorScheme) next.colorScheme = patch.colorScheme;
-  if (patch.fontFamily === null) delete next.fontFamily;
-  else if (patch.fontFamily !== undefined) next.fontFamily = patch.fontFamily;
+  if (patch.fontFamily === null) {
+    // Null restores the preset font, so a legacy brand font goes too.
+    delete next.fontFamily;
+    if (next.custom?.fontFamily) next.custom = { primary: next.custom.primary };
+  } else if (patch.fontFamily !== undefined) next.fontFamily = patch.fontFamily;
   const theme = compactTheme(next);
   const out = { ...doc };
   if (theme) out.theme = theme;
