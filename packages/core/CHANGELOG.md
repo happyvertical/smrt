@@ -1,5 +1,25 @@
 # @happyvertical/smrt-core
 
+## 0.55.15
+
+### Patch Changes
+
+- ### Features
+  
+  - add native purchase order header form (#3804) (commerce)
+  
+  ### Bug Fixes
+  
+  - make payment posting atomic and retry-safe (#3809) (commerce)
+  - enforce atomic payment allocation integrity (#3806) (commerce)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.103.4 (#3789) (deps)
+- @happyvertical/smrt-config@0.55.15
+  - @happyvertical/smrt-scanner@0.55.15
+  - @happyvertical/smrt-types@0.55.15
+
 ## 0.55.14
 
 ### Patch Changes
