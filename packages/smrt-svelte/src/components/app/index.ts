@@ -36,3 +36,10 @@ export type {
   AppShellCommandPalette,
   ShellSlotItem,
 } from './slot-item.js';
+export {
+  createOnNavigateViewTransition,
+  type RunViewTransitionOptions,
+  runViewTransition,
+  VIEW_TRANSITION_ATTRIBUTE,
+  type ViewTransitionNavigation,
+} from './view-transition.js';

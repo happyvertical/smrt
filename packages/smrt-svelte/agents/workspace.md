@@ -405,6 +405,45 @@ enforce permissions.
 
 `ActivityTicker` accepts optional `statuses` restricted to queued/running; running-only remains the default. Opting into queued work adds an explicit localized Queued label without progress. Terminal outcomes belong in expanded `ActivityList`, with retention controlled by the app-owned data source.
 
+### Motion (#3858)
+
+All durations and easings are theme tokens, never literals. The CSS motion sits
+in `@media (prefers-reduced-motion: no-preference)` (or is zeroed by the reduced
+block), and `tokenDuration()` returns 0 under reduced motion. `data-motion` is
+set on the shell root after hydration and two frames, so first paint, SSR and a
+persisted layout restoring never animate; phone drawers keep their own
+`onEdgeAnimationEnd` / `waitForPanelAnimations` handshake (no track transition
+on phone, and the tracks are on the shell root, not the panel, so `inert` is
+never held by a transition).
+
+| Motion | Token | Reduced motion |
+| --- | --- | --- |
+| Left sidebar / right dock track (`grid-template-columns`, desktop push), `--smrt-easing-emphasized`; stays immediate while `data-resizing` | `--smrt-duration-short4` | none |
+| Revealed sidebar / dock content fade-in | `--smrt-duration-short2` | none |
+| Edit mode: drop zones, strips, region controls, item grips fade and scale in | `--smrt-duration-short2` | none |
+| List reorder/filter `animate:flipRow` on TenantNav rows, section-menu cards/rows, overview tiles, `Sortable` items (`ShellNavEditor` rows go through `Sortable`) | `--smrt-duration-short4` via `tokenDuration()` | duration 0 |
+| Colour-scheme crossfade of shell background/colour, while `data-smrt-theme-changing` is set for one transition | `--smrt-duration-medium1` | not set |
+| View transitions: brand, nav, dock persist while the page crossfades | browser default | `runViewTransition` skips |
+
+Host-facing helpers, exported from `@happyvertical/smrt-svelte/app` and free of
+`$app/*` (a hash router or non-SvelteKit host can use them):
+
+- `runViewTransition(update, { skip? }): Promise<void>` calls
+  `document.startViewTransition(update)` when present and reduced motion is off,
+  else awaits `update()`. Resolves when the DOM update is applied; an aborted or
+  skipped transition never throws, an error from `update` does. `AppShell`
+  wraps the edit-mode toggle in it.
+- `createOnNavigateViewTransition(options?)` returns a function for SvelteKit's
+  `onNavigate(createOnNavigateViewTransition())`. It takes the navigation
+  structurally (`{ complete, type?, willUnload? }`).
+
+While a transition runs `<html data-smrt-view-transition>` is set and only then
+does the shell assign `view-transition-name: smrt-shell-brand`, `smrt-shell-nav`
+and `smrt-shell-dock` (so they never become containing blocks otherwise).
+Names must be unique per document: hosts must not reuse them.
+`tokenDuration(name, element?)` and `flipRow` live in
+`workspace/admin-shell/motion.ts` for in-package lists.
+
 ## Shell layout customization
 
 Users can show/hide the edge panels and reorder, hide, and move navigation

@@ -26,6 +26,7 @@ import {
   type SortableAnnouncement,
 } from '../sortable/controller.svelte.js';
 import { tryUseShellLayout } from '../workspace/admin-shell/layout-context.js';
+import { flipRow } from '../workspace/admin-shell/motion.js';
 import ShellIconButton from '../workspace/admin-shell/ShellIconButton.svelte';
 import ShellSectionIcon from '../workspace/admin-shell/ShellSectionIcon.svelte';
 import type { OverviewOpResult } from './controller.svelte.js';
@@ -415,6 +416,7 @@ const headingTag = $derived(`h${headingLevel}`);
       <div
         role="listitem"
         class="smrt-overview__item"
+        animate:flipRow
         data-span={spanOf(row)}
         data-smrt-overview-item={row.widget.id}
         data-dragging={dragged === row.widget.id ? '' : undefined}

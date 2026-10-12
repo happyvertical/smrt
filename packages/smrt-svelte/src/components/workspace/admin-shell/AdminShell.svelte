@@ -65,6 +65,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     installShellViewport,
     watchFormActionBar,
   } from './mobile-shell-dom.js';
+  import { tokenDuration } from './motion.js';
   import { clampPanelSize, resolveHotkey } from './settings.js';
   import { createShellState, type ShellState } from './state.svelte.js';
   import {
@@ -265,6 +266,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   let formActions = $state(false);
   let chromeHidden = $state(false);
   let resizing = $state<SideEdge | null>(null);
+  /** Set after hydration and two frames, so first paint never animates. */
+  let motionReady = $state(false);
   const sideElements = $state<Partial<Record<SideEdge, HTMLElement>>>({});
   let scrollChrome: ReturnType<typeof installScrollChrome> | null = null;
 
@@ -496,7 +499,45 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   onMount(() => {
     const offViewport = installShellViewport(shell);
     const offOverlayMedia = installShellOverlayMedia(shell);
-    void shell.hydrate().then(() => shell.closeOverlaidEdges());
+    const hydrated = shell
+      .hydrate()
+      .then(() => shell.closeOverlaidEdges());
+    let disposed = false;
+    let frame = 0;
+    let themeObserver: MutationObserver | null = null;
+    let themeTimer: ReturnType<typeof setTimeout> | null = null;
+    // Colour-scheme crossfade: flag the root for one transition when the
+    // theme root's scheme changes. The flag is set from the observer
+    // microtask, i.e. before the style recalc that applies the new tokens.
+    function watchColorScheme(): void {
+      const root = rootElement;
+      if (!root || typeof MutationObserver === 'undefined') return;
+      const host =
+        root.closest<HTMLElement>('[data-color-scheme]') ??
+        document.documentElement;
+      themeObserver = new MutationObserver(() => {
+        if (prefersReducedMotion()) return;
+        root.setAttribute('data-smrt-theme-changing', '');
+        if (themeTimer) clearTimeout(themeTimer);
+        themeTimer = setTimeout(
+          () => root.removeAttribute('data-smrt-theme-changing'),
+          tokenDuration('--smrt-duration-medium1', root) + 100,
+        );
+      });
+      themeObserver.observe(host, {
+        attributes: true,
+        attributeFilter: ['data-color-scheme', 'class'],
+      });
+    }
+    void hydrated.then(() => {
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
+          if (disposed) return;
+          motionReady = true;
+          watchColorScheme();
+        });
+      });
+    });
     const offKeyboard = phoneBottomBar
       ? installKeyboardWatcher((open) => (keyboardOpen = open))
       : () => {};
@@ -547,6 +588,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     window.addEventListener('keydown', handleKeydown);
     return () => {
       window.removeEventListener('keydown', handleKeydown);
+      disposed = true;
+      cancelAnimationFrame(frame);
+      themeObserver?.disconnect();
+      if (themeTimer) clearTimeout(themeTimer);
       offViewport();
       offOverlayMedia();
       if (closingTimer) clearTimeout(closingTimer);
@@ -1170,6 +1215,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   data-phone-top={showPhoneTop ? '' : undefined}
   data-chrome-hidden={chromeHidden ? '' : undefined}
   data-resizing={resizing ?? undefined}
+  data-motion={motionReady ? '' : undefined}
   style={`${layoutStyle}; ${chromeStyle}; ${reserveStyle}`} data-smrt-component="AdminShell"
 >
   {#if showHeader}
@@ -2742,9 +2788,86 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     }
   }
 
+  /* ---- Motion --------------------------------------------------------- */
+  /* `data-motion` is set after hydration and two frames, so first paint,
+     SSR and a persisted layout restoring never animate. The pointer-drag
+     resize stays immediate (`data-resizing`). Phone drawers keep their own
+     animation handshake (onEdgeAnimationEnd / waitForPanelAnimations).
+     Every rule below sits in `no-preference`, so reduced motion is off by
+     construction, matching the reduced-motion block at the end. */
+
+  @media (prefers-reduced-motion: no-preference) {
+    .smrt-admin-shell[data-motion]:not([data-viewport='phone']) {
+      transition: grid-template-columns var(--smrt-duration-short4)
+        var(--smrt-easing-emphasized);
+    }
+
+    .smrt-admin-shell[data-motion][data-resizing]:not([data-viewport='phone']) {
+      transition: none;
+    }
+
+    /* One colour-scheme crossfade, flagged by the scheme observer. */
+    .smrt-admin-shell[data-smrt-theme-changing]:not([data-viewport='phone']) {
+      transition:
+        grid-template-columns var(--smrt-duration-short4)
+          var(--smrt-easing-emphasized),
+        background-color var(--smrt-duration-medium1) var(--smrt-easing-standard),
+        color var(--smrt-duration-medium1) var(--smrt-easing-standard);
+    }
+
+    .smrt-admin-shell[data-smrt-theme-changing]:not([data-viewport='phone']) .smrt-admin-shell__edge,
+    .smrt-admin-shell[data-smrt-theme-changing]:not([data-viewport='phone']) .smrt-admin-shell__header,
+    .smrt-admin-shell[data-smrt-theme-changing]:not([data-viewport='phone']) .smrt-admin-shell__main {
+      transition:
+        background-color var(--smrt-duration-medium1) var(--smrt-easing-standard),
+        border-color var(--smrt-duration-medium1) var(--smrt-easing-standard),
+        color var(--smrt-duration-medium1) var(--smrt-easing-standard);
+    }
+
+    /* Newly revealed sidebar / dock content fades in. */
+    .smrt-admin-shell[data-motion]:not([data-viewport='phone']) .smrt-admin-shell__edge[data-presentation='push'] .smrt-admin-shell__tenant-stack:not([hidden]),
+    .smrt-admin-shell[data-motion]:not([data-viewport='phone']) .smrt-admin-shell__edge[data-presentation='push'] .smrt-admin-shell__panel--right:not([hidden]) {
+      animation: smrt-admin-shell-content-in var(--smrt-duration-short2)
+        var(--smrt-easing-standard) backwards;
+    }
+
+    /* Layout edit mode: zones, strips and region controls fade / scale in. */
+    .smrt-admin-shell__slot--editing,
+    .smrt-admin-shell__strip,
+    .smrt-admin-shell__region-edit {
+      animation: smrt-admin-shell-edit-in var(--smrt-duration-short2)
+        var(--smrt-easing-standard) backwards;
+    }
+  }
+
+  @keyframes smrt-admin-shell-content-in {
+    from { opacity: 0; }
+  }
+
+  @keyframes smrt-admin-shell-edit-in {
+    from { opacity: 0; transform: scale(0.96); }
+  }
+
+  /* View transitions: the names exist only while runViewTransition runs
+     (html[data-smrt-view-transition]); they must be unique per document, so
+     hosts must not reuse them. */
+  :global([data-smrt-view-transition]) .smrt-admin-shell:not([data-viewport='phone']) :global(.smrt-admin-shell__brand) {
+    view-transition-name: smrt-shell-brand;
+  }
+
+  :global([data-smrt-view-transition]) .smrt-admin-shell:not([data-viewport='phone']) .smrt-admin-shell__tenant-content,
+  :global([data-smrt-view-transition]) .smrt-admin-shell:not([data-viewport='phone']) .smrt-admin-shell__tenant-rail-content {
+    view-transition-name: smrt-shell-nav;
+  }
+
+  :global([data-smrt-view-transition]) .smrt-admin-shell:not([data-viewport='phone']) .smrt-admin-shell__edge--right {
+    view-transition-name: smrt-shell-dock;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .smrt-admin-shell {
       --smrt-admin-shell-chrome-duration: 0ms;
+
     }
 
     .smrt-admin-shell__edge--left,

@@ -19,6 +19,7 @@ import Sortable from '../../sortable/Sortable.svelte';
 import type { SortableItem, SortableItemMove } from '../../sortable/types.js';
 import { useShellLayout } from './layout-context.js';
 import type { ShellLayoutController } from './layout-controller.svelte.js';
+import { flipRow } from './motion.js';
 import ShellIconButton from './ShellIconButton.svelte';
 import ShellSectionIcon from './ShellSectionIcon.svelte';
 import { SHELL_DEFAULT_SECTION_ICON, SHELL_ICON_PATHS } from './shell-icons.js';
@@ -203,7 +204,7 @@ function onmove(move: SortableItemMove<SortableItem>): void {
   {:else if layoutMode === 'cards'}
     <ul class="smrt-section-menu__cards" aria-label={listLabel}>
       {#each entries as entry (entry.id)}
-        <li class="smrt-section-menu__card">
+        <li class="smrt-section-menu__card" animate:flipRow>
           <a class="smrt-section-menu__card-link" href={entry.href} onclick={onNavigate}>
             <span class="smrt-section-menu__card-heading">
               <span class="smrt-section-menu__card-icon">
@@ -227,7 +228,7 @@ function onmove(move: SortableItemMove<SortableItem>): void {
   {:else}
     <ul class="smrt-section-menu__list" aria-label={listLabel}>
       {#each entries as entry (entry.id)}
-        <li class="smrt-section-menu__item">
+        <li class="smrt-section-menu__item" animate:flipRow>
           <a class="smrt-section-menu__link" href={entry.href} onclick={onNavigate}>
             {#if entry.icon}
               <ShellSectionIcon name={entry.icon} iconComponent={IconComponent} />

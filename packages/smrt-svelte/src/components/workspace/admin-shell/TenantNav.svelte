@@ -3,6 +3,7 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { type Component, onMount } from 'svelte';
 import { fly } from 'svelte/transition';
 import { M } from '../../../i18n/strings.workspace.js';
+import { flipRow } from './motion.js';
 import ShellSectionIcon from './ShellSectionIcon.svelte';
 import {
   SHELL_DEFAULT_SECTION_ICON,
@@ -150,7 +151,7 @@ function fallbackIcon(label: string): string {
     {@const action = showAction(item, groupCurrent ?? isItemCurrent(item))
       ? item.action
       : undefined}
-    <div class="smrt-tenant-nav__section" in:fly={reveal()}>
+    <div class="smrt-tenant-nav__section" in:fly={reveal()} animate:flipRow>
       <div class="smrt-tenant-nav__row">
       <a
         href={item.href}

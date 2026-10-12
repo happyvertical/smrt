@@ -148,3 +148,5 @@ Verification: the jsdom contract test
 targets. Computed-value reversal is asserted in Chromium by
 `e2e/styleless.spec.ts`. The playground entry `styleless-mode` toggles the
 stylesheet across the catalogue.
+
+Shell motion (track transitions, list flips, view transitions, theme crossfade) and its reduced-motion behaviour: see the Motion section of `packages/smrt-svelte/agents/workspace.md`.

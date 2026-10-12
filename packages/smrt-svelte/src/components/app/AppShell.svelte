@@ -75,6 +75,7 @@ import type {
   AppShellCommandPalette,
   ShellSlotItem,
 } from './slot-item.js';
+import { runViewTransition } from './view-transition.js';
 
 interface Props {
   /** Application name shown in the shell brand and app panel. */
@@ -746,8 +747,11 @@ $effect(() => {
 });
 
 async function toggleEditing(): Promise<void> {
-  layoutApi.setEditing(!layoutApi.editing);
-  await tick();
+  // The drop zones morph in/out under a view transition (when supported).
+  await runViewTransition(async () => {
+    layoutApi.setEditing(!layoutApi.editing);
+    await tick();
+  });
 }
 const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   header: 'top',
@@ -1055,6 +1059,10 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   .smrt-edit-zone__label { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-small-font); white-space: nowrap; }
   .smrt-edit-item { display: inline-flex; align-items: center; min-inline-size: 0; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); }
   .smrt-edit-item--dragging { opacity: 0.55; }
+  @media (prefers-reduced-motion: no-preference) {
+    .smrt-edit-item { animation: smrt-edit-item-in var(--smrt-duration-short2) var(--smrt-easing-standard) backwards; }
+  }
+  @keyframes smrt-edit-item-in { from { opacity: 0; transform: scale(0.96); } }
   .smrt-edit-item__body { display: inline-flex; align-items: center; min-inline-size: 0; pointer-events: none; }
   .smrt-edit-item__grip { display: inline-grid; place-items: center; flex: 0 0 auto; inline-size: 1.5rem; block-size: 2rem; padding: 0; border: 0; border-radius: var(--smrt-radius-sm); background: transparent; color: var(--smrt-color-on-surface-variant); cursor: grab; touch-action: none; }
   .smrt-edit-item__grip:hover { background: var(--smrt-color-surface-container-high); }
