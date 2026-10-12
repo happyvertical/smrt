@@ -556,30 +556,19 @@ function accountPlacement(
 ): 'top-start' | 'top-end' | 'bottom-start' | 'bottom-end' | 'inline-end' {
   if (rail) return 'inline-end';
   if (!slot) return 'bottom-end';
-  // On phones the item may still sit in a stored footer slot: open the menu
-  // upward from a footer and align it to the trigger's own edge so it never
-  // leaves the viewport.
-  if (shell.viewport === 'phone') {
-    const region = slotRegion(slot);
-    if (region === 'footer')
-      return slot === 'footer.start' ? 'top-start' : 'top-end';
-    return slot === 'header.start' ? 'bottom-start' : 'bottom-end';
-  }
-  switch (slot) {
-    case 'leftSidebar.footer':
-      return 'top-start';
-    case 'leftSidebar.header':
-      return 'bottom-start';
-    case 'rightSidebar.header':
-      return 'bottom-end';
-    case 'rightSidebar.footer':
-    case 'footer.start':
-    case 'footer.center':
-    case 'footer.end':
-      return 'top-end';
-    default:
-      return 'bottom-end';
-  }
+  // Place the menu from the slot the item actually renders in: a hidden
+  // region sends it down the fallback chain, and a stored placement may put
+  // it in any slot on any viewport. Footers and sidebar footers open upward;
+  // everything else opens downward. The menu aligns to the trigger's own
+  // edge (start slots and the left sidebar to the start) so it stays inside
+  // the viewport on a phone.
+  const rendered =
+    resolveSlot(slot, (region) => shell.isRegionVisible(region)) ?? slot;
+  const region = slotRegion(rendered);
+  const opensUp = region === 'footer' || rendered.endsWith('.footer');
+  const alignStart = rendered.endsWith('.start') || region === 'leftSidebar';
+  if (opensUp) return alignStart ? 'top-start' : 'top-end';
+  return alignStart ? 'bottom-start' : 'bottom-end';
 }
 const accountIdentity = $derived.by(() => {
   const record = (user ?? {}) as { name?: unknown; email?: unknown };

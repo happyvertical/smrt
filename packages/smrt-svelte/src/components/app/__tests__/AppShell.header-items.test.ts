@@ -134,6 +134,46 @@ describe('item:account', () => {
     expect(document.activeElement).toBe(button);
   });
 
+  it('opens upward from a sidebar footer on phones', async () => {
+    phone = true;
+    await render({
+      onSignOut: vi.fn(),
+      accountMenu: { slot: 'leftSidebar.footer' },
+    });
+    (trigger() as HTMLButtonElement).click();
+    for (let i = 0; i < 3; i++) await tick();
+    expect(
+      container.querySelector(
+        '.smrt-workspace-account-menu__popover--top-start',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('places the menu from the rendered slot when its region is hidden', async () => {
+    phone = true;
+    await render({
+      onSignOut: vi.fn(),
+      layout: {
+        version: 1,
+        placements: { 'item:account': 'footer.start' },
+        panels: { bottom: { visible: false } },
+      } satisfies ShellLayout,
+    });
+    // footer.start falls back to leftSidebar.footer first (slotFallbackChain),
+    // and a sidebar footer opens upward.
+    expect(slot('footer.start')).toBeNull();
+    expect(
+      slot('leftSidebar.footer')?.querySelector('.smrt-workspace-account-menu'),
+    ).toBeTruthy();
+    (trigger() as HTMLButtonElement).click();
+    for (let i = 0; i < 3; i++) await tick();
+    expect(
+      container.querySelector(
+        '.smrt-workspace-account-menu__popover--top-start',
+      ),
+    ).toBeTruthy();
+  });
+
   it('is the compact avatar at the end of the header band on phones', async () => {
     phone = true;
     await render({ onSignOut: vi.fn() });
