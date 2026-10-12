@@ -51,6 +51,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   import { M } from '../../../i18n/strings.workspace.js';
   import ActivityBadge from './ActivityBadge.svelte';
   import ShellBrand from './ShellBrand.svelte';
+  import { SHELL_ICON_PATHS } from './shell-icons.js';
   import { setAdminShell } from './context.js';
   import {
     formatHotkeyBinding,
@@ -900,26 +901,48 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 </script>
 
 {#snippet edgeToggle(edge: PanelEdge)}
-  <Button
-    variant="ghost"
-    size="sm"
-    class="smrt-admin-shell__edge-toggle {edge === 'left' ? 'smrt-admin-shell__edge-toggle--left' : ''}"
-    aria-label={edge === 'left' ? leftToggleLabel() : undefined}
-    title={edge === 'left' ? leftToggleLabel() : undefined}
-    aria-expanded={edgeExpanded(edge)}
-    aria-controls={`smrt-admin-shell-${edge}-panel`}
-    onclick={() => shell.togglePanel(edge)}
-  >
-    {#if edge === 'left'}
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-        {#if edgeExpanded('left')}<path d="m15 18-6-6 6-6" />{:else}<path d="m9 18 6-6-6-6" />{/if}
-      </svg>
-    {:else}<span>{labelFor(edge)}</span>{/if}
-    {#if edge !== 'left' && showsHotkeyFor(edge)}
-      <kbd class="smrt-admin-shell__edge-toggle-kbd">{hotkeyFor(edge)}</kbd>
-    {/if}
-    <ActivityBadge {edge} />
-  </Button>
+  {#if edge === 'left'}
+    <!-- The left toggle is an icon-only chevron: it points the way the panel
+         will move (left to collapse, right to expand). Its accessible name
+         carries the action and the hotkey rides in the tooltip. -->
+    {@const name = t(M[edgeExpanded('left') ? 'ui.admin_shell.collapse_panel' : 'ui.admin_shell.expand_panel'], { panel: labelFor('left') })}
+    <Button
+      variant="ghost"
+      size="sm"
+      class="smrt-admin-shell__edge-toggle smrt-admin-shell__edge-toggle--left"
+      aria-label={name}
+      title={showsHotkeyFor('left') ? `${name} (${hotkeyFor('left')})` : name}
+      aria-expanded={edgeExpanded('left')}
+      aria-controls="smrt-admin-shell-left-panel"
+      onclick={() => shell.togglePanel('left')}
+    >
+      <svg
+        class="smrt-admin-shell__edge-toggle-chevron"
+        viewBox="0 0 24 24"
+        width="18"
+        height="18"
+        fill="currentColor"
+        aria-hidden="true"
+        focusable="false"
+      ><path d={SHELL_ICON_PATHS.chevronRight} /></svg>
+      <ActivityBadge edge="left" />
+    </Button>
+  {:else}
+    <Button
+      variant="ghost"
+      size="sm"
+      class="smrt-admin-shell__edge-toggle"
+      aria-expanded={edgeExpanded(edge)}
+      aria-controls={`smrt-admin-shell-${edge}-panel`}
+      onclick={() => shell.togglePanel(edge)}
+    >
+      <span>{labelFor(edge)}</span>
+      {#if showsHotkeyFor(edge)}
+        <kbd class="smrt-admin-shell__edge-toggle-kbd">{hotkeyFor(edge)}</kbd>
+      {/if}
+      <ActivityBadge {edge} />
+    </Button>
+  {/if}
 {/snippet}
 
 {#snippet resizer(edge: SideEdge)}
@@ -1118,8 +1141,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {@render resizer('left')}
       <div class="smrt-admin-shell__rail">
         {@render regionEdit('leftSidebar')}
-        {#if panelState('top') === 'hidden' && (homeHref || logoSrc || brand)}{@render shellBrand(!edgeExpanded('left'))}{/if}
-        {#if showToggle('left') || isPhone}{@render edgeToggle('left')}{/if}
+        {#if (panelState('top') === 'hidden' || !edgeExpanded('left')) && (homeHref || logoSrc || brand)}{@render shellBrand(!edgeExpanded('left'))}{/if}
+        {#if isPhone}{@render edgeToggle('left')}{/if}
         {#if shownOpen('left') || (tenantPanel && keepsContent('left'))}
           <div
             class="smrt-admin-shell__tenant-stack"
@@ -1155,6 +1178,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
             {/if}
           </div>
         {/if}
+        {#if showToggle('left') && !isPhone}{@render edgeToggle('left')}{/if}
       </div>
     </aside>
   {/if}
@@ -1927,6 +1951,30 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-column: 1;
     grid-row: 1;
     padding-block-start: var(--smrt-shell-floating-reserve-block);
+  }
+
+  /* The left chevron sits at the bottom of the rail, after the navigation
+     and the sidebar footer slot; `margin-block-start: auto` pins it there
+     even when nothing above it grows. Expanded it hugs the inner edge and
+     points left; collapsed it is centred in the narrow rail and points right. */
+  .smrt-admin-shell__edge--left :global(.smrt-admin-shell__edge-toggle--left) {
+    flex: 0 0 auto;
+    margin-block-start: auto;
+    align-self: flex-end;
+    inline-size: max(2rem, var(--smrt-control-target-min, 0px));
+    block-size: max(2rem, var(--smrt-control-target-min, 0px));
+    padding: 0;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-admin-shell__edge--left[data-state='collapsed'] :global(.smrt-admin-shell__edge-toggle--left) {
+    align-self: center;
+  }
+  .smrt-admin-shell__edge--left[data-state='expanded'] :global(.smrt-admin-shell__edge-toggle-chevron) {
+    transform: scaleX(-1);
+  }
+  /* The phone drawer keeps its close control at the top, before the nav. */
+  .smrt-admin-shell[data-viewport='phone'] .smrt-admin-shell__edge--left :global(.smrt-admin-shell__edge-toggle--left) {
+    margin-block-start: 0;
   }
 
   .smrt-admin-shell__edge-toggle-kbd {

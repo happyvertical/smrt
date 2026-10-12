@@ -193,3 +193,52 @@ describe('hiding a visible region from edit mode', () => {
     expect(hide.getAttribute('title')).toContain('at least one region');
   });
 });
+
+describe('the left edge toggle is an icon-only chevron at the bottom of the rail', () => {
+  const leftToggle = () =>
+    document.querySelector<HTMLButtonElement>(
+      '.smrt-admin-shell__edge--left .smrt-admin-shell__edge-toggle',
+    );
+
+  it('renders no visible label, names the action, and is the last thing in the rail', async () => {
+    const user = userEvent.setup();
+    render(Harness, {
+      edgeToggles: { left: true },
+      config: { left: { initial: 'expanded' } },
+    });
+    const toggle = leftToggle();
+    expect(toggle).toBeTruthy();
+    expect(toggle?.textContent?.trim()).toBe('');
+    expect(toggle?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+    expect(toggle?.getAttribute('aria-label')).toBe('Collapse Left sidebar');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      toggle?.querySelector('.smrt-admin-shell__edge-toggle-kbd'),
+    ).toBeNull();
+    const rail = document.querySelector(
+      '.smrt-admin-shell__edge--left .smrt-admin-shell__rail',
+    );
+    expect(rail?.lastElementChild).toBe(toggle);
+    // Navigation comes before it, not after.
+    const nav = document.querySelector('a[href="/posts"]');
+    expect(
+      nav && toggle
+        ? nav.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING
+        : 0,
+    ).toBeTruthy();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Collapse Left sidebar' }),
+    );
+    await vi.waitFor(() =>
+      expect(
+        document
+          .querySelector('.smrt-admin-shell__edge--left')
+          ?.getAttribute('data-state'),
+      ).toBe('collapsed'),
+    );
+    const collapsed = leftToggle();
+    expect(collapsed?.getAttribute('aria-label')).toBe('Expand Left sidebar');
+    expect(collapsed?.textContent?.trim()).toBe('');
+  });
+});
