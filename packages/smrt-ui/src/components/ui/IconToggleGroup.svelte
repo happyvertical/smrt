@@ -43,12 +43,12 @@ const { label, children, class: className = '' }: Props = $props();
     margin-inline-start: -1px;
   }
   .icon-toggle-group > :global(:first-child .icon-toggle) {
-    border-start-start-radius: var(--smrt-radius-full, 999px);
-    border-end-start-radius: var(--smrt-radius-full, 999px);
+    border-start-start-radius: var(--smrt-radius-full);
+    border-end-start-radius: var(--smrt-radius-full);
   }
   .icon-toggle-group > :global(:last-child .icon-toggle) {
-    border-start-end-radius: var(--smrt-radius-full, 999px);
-    border-end-end-radius: var(--smrt-radius-full, 999px);
+    border-start-end-radius: var(--smrt-radius-full);
+    border-end-end-radius: var(--smrt-radius-full);
   }
   /* The pressed one sits above its neighbours so its tint is not clipped by them. */
   .icon-toggle-group :global(.icon-toggle.pressed),

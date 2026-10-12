@@ -241,6 +241,6 @@ onMount(() => {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-section{overflow-wrap:anywhere;max-width:90rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface,#222)}header{display:flex;align-items:center;justify-content:space-between;gap:1rem}.review-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem}.details,article{min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto}article{padding-block:1rem;border-block-end:1px solid var(--smrt-color-outline-variant,#ccc)}@media(max-width:48rem){.review-grid{grid-template-columns:minmax(0,1fr)}header{flex-wrap:wrap}}
+section{overflow-wrap:anywhere;max-width:90rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface)}header{display:flex;align-items:center;justify-content:space-between;gap:1rem}.review-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem}.details,article{min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto}article{padding-block:1rem;border-block-end:1px solid var(--smrt-color-outline-variant)}@media(max-width:48rem){.review-grid{grid-template-columns:minmax(0,1fr)}header{flex-wrap:wrap}}
 }
 </style>

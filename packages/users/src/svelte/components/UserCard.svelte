@@ -82,10 +82,10 @@ const statusClass = $derived.by(() => {
   .user-card {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-4, 16px);
-    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
+    gap: var(--smrt-spacing-4);
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
     background-color: var(--smrt-color-surface-container-low);
-    border-radius: var(--smrt-radius-lg, 12px);
+    border-radius: var(--smrt-radius-lg);
     width: 100%;
     text-align: left;
     cursor: default;
@@ -140,29 +140,29 @@ const statusClass = $derived.by(() => {
   .meta {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     flex-shrink: 0;
   }
 
   .role {
     font: var(--smrt-typography-label-small-font);
-    padding: 0 var(--smrt-spacing-2, 8px);
+    padding: 0 var(--smrt-spacing-2);
     height: 20px;
     display: inline-flex;
     align-items: center;
     background-color: var(--smrt-color-surface-container-highest);
     color: var(--smrt-color-on-surface-variant);
-    border-radius: var(--smrt-radius-lg, 12px);
+    border-radius: var(--smrt-radius-lg);
     text-transform: capitalize;
   }
 
   .status {
     font: var(--smrt-typography-label-small-font);
-    padding: 0 var(--smrt-spacing-2, 8px);
+    padding: 0 var(--smrt-spacing-2);
     height: 20px;
     display: inline-flex;
     align-items: center;
-    border-radius: var(--smrt-radius-lg, 12px);
+    border-radius: var(--smrt-radius-lg);
     text-transform: capitalize;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }

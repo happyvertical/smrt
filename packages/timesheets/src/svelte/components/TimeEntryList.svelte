@@ -198,7 +198,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
 
   .time-entry-list {
     background: var(--smrt-color-surface);
-    border-radius: var(--smrt-radius-large, 16px);
+    border-radius: var(--smrt-radius-large);
     overflow: hidden;
     border: 1px solid var(--smrt-color-outline-variant);
   }
@@ -335,11 +335,11 @@ function getEntryHref(entry: TimeEntry): string | undefined {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     font-weight: var(--smrt-typography-label-small-weight, 500);
     padding: 0.25rem 0.5rem;
-    border-radius: var(--smrt-radius-small, 8px);
+    border-radius: var(--smrt-radius-small);
     background: var(--smrt-time-entry-list-status-color);
     color: var(--smrt-color-on-primary);
     text-transform: uppercase;
-    letter-spacing: var(--smrt-typography-label-small-tracking, 0.5px);
+    letter-spacing: var(--smrt-typography-label-small-tracking);
   }
 
   .amount-cell {

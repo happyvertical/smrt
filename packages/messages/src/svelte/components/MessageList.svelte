@@ -96,17 +96,17 @@ function getAccount(accountId: string): AccountData | undefined {
   .message-list {
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
-    background: var(--smrt-color-surface, #fefbff);
+    background: var(--smrt-color-surface);
   }
 
   .loading,
   .empty {
     text-align: center;
     padding: var(--smrt-spacing-3xl, 3rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .loading p,

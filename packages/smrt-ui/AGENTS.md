@@ -104,6 +104,14 @@ other text pairing clears WCAG AA in both schemes.
   `data-smrt-component="<Name>"` (enforced by `pnpm check:component-roots`, run
   from `pnpm lint`). Internal elements use role-named `data-smrt-part` values;
   never encode state in a part name. See [agents/styling.md](agents/styling.md).
+- **Every consumed token is theme-required.** `pnpm lint` checks that
+  `src/themes/required-tokens.generated.json` is current (regenerate with
+  `node scripts/generate-smrt-required-tokens.mjs` after adding a token
+  consumer); `src/themes/__tests__/required-tokens.test.ts` requires every preset
+  and `createTheme()` output to define each one. Do not add `var(--smrt-*, <literal>)`
+  fallbacks for theme tokens. Component-private `--smrt-<component>-*` names are
+  excluded. Style literals (`#hex`, `px`) in `.svelte` style blocks are ratcheted by
+  `scripts/smrt-style-literal-allowlist.json` via `check-smrt-token-vocabulary.mjs`.
 - **No smrt domain imports.** A `@happyvertical/smrt-*` import other than
   `smrt-types` reintroduces the cycle. Components consume `var(--smrt-*)` CSS
   tokens directly and accept identity data via `smrt-types` contracts.

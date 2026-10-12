@@ -212,7 +212,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
     border-collapse: collapse;
     border-spacing: 0;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    background: var(--smrt-color-surface, #ffffff);
+    background: var(--smrt-color-surface);
   }
 
   .schedule-list.loading {
@@ -221,7 +221,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
   }
 
   .schedule-list__head {
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
   }
 
   .schedule-list__head th {
@@ -229,16 +229,16 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-align: left;
     white-space: nowrap;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .schedule-list__body tr {
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .schedule-list__body tr:hover:not(.schedule-list__row--loading):not(.schedule-list__row--empty) {
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
     cursor: pointer;
   }
 
@@ -267,14 +267,14 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
 
   .agent-id {
     margin-left: var(--smrt-spacing-xs, 0.25rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
   }
 
   .agent-method {
     margin-left: var(--smrt-spacing-xs, 0.25rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
   }
@@ -292,20 +292,20 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
     display: block;
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .schedule-list__cell--date {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
   }
 
   .last-run.success {
-    color: var(--smrt-color-tertiary, #006c4f);
+    color: var(--smrt-color-tertiary);
   }
 
   .last-run.failed {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .schedule-list__cell--rate {
@@ -317,15 +317,15 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
   }
 
   .success-rate.good {
-    color: var(--smrt-color-tertiary, #006c4f);
+    color: var(--smrt-color-tertiary);
   }
 
   .success-rate.warning {
-    color: var(--smrt-color-secondary, #00639b);
+    color: var(--smrt-color-secondary);
   }
 
   .success-rate.bad {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .schedule-list__cell--runs {
@@ -334,7 +334,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
   }
 
   .running-indicator {
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
 
@@ -358,15 +358,15 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
     align-items: center;
     justify-content: center;
     gap: var(--smrt-spacing-sm, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .schedule-list__spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-top-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.8s linear infinite;
   }
 
@@ -377,7 +377,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
   }
 
   .schedule-list__empty {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 }
 </style>

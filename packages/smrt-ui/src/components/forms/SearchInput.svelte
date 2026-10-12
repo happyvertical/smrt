@@ -187,7 +187,7 @@ onDestroy(cancel);
     block-size: 2.75rem;
     padding: 0;
     border: none;
-    border-radius: var(--smrt-radius-full, 999px);
+    border-radius: var(--smrt-radius-full);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
     cursor: pointer;

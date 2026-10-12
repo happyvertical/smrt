@@ -88,7 +88,7 @@ const statusLabels: Record<AvatarStatus, string> = {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface-variant);
     font-weight: var(--smrt-typography-weight-medium, 500);
@@ -138,21 +138,21 @@ const statusLabels: Record<AvatarStatus, string> = {
     height: 28%;
     min-width: 8px;
     min-height: 8px;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     border: 2px solid var(--smrt-color-surface);
     box-sizing: border-box;
   }
   .avatar__status.online {
-    background: var(--smrt-color-success, #2e7d32);
+    background: var(--smrt-color-success);
   }
   .avatar__status.offline {
-    background: var(--smrt-color-outline, #79747e);
+    background: var(--smrt-color-outline);
   }
   .avatar__status.away {
-    background: var(--smrt-color-warning, #ed6c02);
+    background: var(--smrt-color-warning);
   }
   .avatar__status.busy {
-    background: var(--smrt-color-error, #ba1a1a);
+    background: var(--smrt-color-error);
   }
 
   .avatar__sr-only {

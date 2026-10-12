@@ -85,7 +85,7 @@ const {
     height: 1.25rem;
     border: 2px solid var(--smrt-color-outline-variant);
     border-top-color: var(--smrt-color-primary);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.6s linear infinite;
   }
 

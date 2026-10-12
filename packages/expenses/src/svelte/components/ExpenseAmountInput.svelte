@@ -66,6 +66,6 @@ async function press(key: string) {
 @layer smrt.theme {
   .amount-entry { display: grid; gap: var(--smrt-spacing-2); }
   .keypad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--smrt-spacing-2); }
-  .keypad :global(button) { min-height: var(--smrt-touch-target-min, 48px); }
+  .keypad :global(button) { min-height: var(--smrt-touch-target-min); }
 }
 </style>

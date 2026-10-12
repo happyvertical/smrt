@@ -180,7 +180,7 @@ async function handleSave(config: unknown) {
 	.tabs-nav {
 		display: flex;
 		gap: 0.25rem;
-		border-bottom: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+		border-bottom: 1px solid var(--smrt-color-outline-variant);
 		padding-bottom: 0;
 	}
 
@@ -191,7 +191,7 @@ async function handleSave(config: unknown) {
 		padding: 0.75rem 1rem;
 		border: none;
 		background: transparent;
-		color: var(--smrt-color-on-surface-variant, #64748b);
+		color: var(--smrt-color-on-surface-variant);
 		font-size: var(--smrt-typography-label-large-size, 0.875rem);
 		font-weight: var(--smrt-typography-weight-medium, 500);
 		cursor: pointer;
@@ -203,12 +203,12 @@ async function handleSave(config: unknown) {
 	}
 
 	.tab-button:hover:not(:disabled) {
-		color: var(--smrt-color-on-surface, #334155);
+		color: var(--smrt-color-on-surface);
 	}
 
 	.tab-button.active {
-		color: var(--smrt-color-primary, #3b82f6);
-		border-bottom-color: var(--smrt-color-primary, #3b82f6);
+		color: var(--smrt-color-primary);
+		border-bottom-color: var(--smrt-color-primary);
 	}
 
 	.tab-button:disabled {
@@ -217,7 +217,7 @@ async function handleSave(config: unknown) {
 	}
 
 	.tab-button:focus-visible {
-		outline: 2px solid var(--smrt-color-primary, #3b82f6);
+		outline: 2px solid var(--smrt-color-primary);
 		outline-offset: 2px;
 	}
 
@@ -258,11 +258,11 @@ async function handleSave(config: unknown) {
 	.slot-description {
 		margin: 0 0 1rem 0;
 		padding: 0.75rem 1rem;
-		background: var(--smrt-color-primary-container, #f0f9ff);
-		border-left: 3px solid var(--smrt-color-primary, #3b82f6);
-		border-radius: 0 var(--smrt-radius-md, 8px) var(--smrt-radius-md, 8px) 0;
+		background: var(--smrt-color-primary-container);
+		border-left: 3px solid var(--smrt-color-primary);
+		border-radius: 0 var(--smrt-radius-md) var(--smrt-radius-md) 0;
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-		color: var(--smrt-color-on-primary-container, #1e40af);
+		color: var(--smrt-color-on-primary-container);
 	}
 
 	.no-slots {
@@ -270,7 +270,7 @@ async function handleSave(config: unknown) {
 		align-items: center;
 		justify-content: center;
 		min-height: 200px;
-		color: var(--smrt-color-on-surface-variant, #64748b);
+		color: var(--smrt-color-on-surface-variant);
 		font-size: var(--smrt-typography-body-medium-size, 0.9375rem);
 	}
 

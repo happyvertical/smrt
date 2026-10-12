@@ -264,7 +264,7 @@ function methodLabel(method: string): string {
 
   .empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -288,7 +288,7 @@ function methodLabel(method: string): string {
   }
 
   .facts__item dt {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -303,7 +303,7 @@ function methodLabel(method: string): string {
   }
 
   .negative {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 
   .settled {
@@ -312,7 +312,7 @@ function methodLabel(method: string): string {
 
   .failed-note {
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 
   .actions {

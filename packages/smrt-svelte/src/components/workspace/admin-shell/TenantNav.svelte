@@ -325,7 +325,7 @@ function fallbackIcon(label: string): string {
   }
   .smrt-tenant-nav--collapsed .smrt-tenant-nav__heading::-webkit-details-marker { display: none; }
 
-  .smrt-tenant-nav[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .smrt-tenant-nav[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .smrt-tenant-nav[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .smrt-tenant-nav a {
     box-sizing: border-box;

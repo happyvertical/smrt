@@ -70,7 +70,7 @@ const { tabs, onselect, onclose }: Props = $props();
   .tab-list {
     display: flex;
     align-items: flex-end;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     pointer-events: auto;
   }
 
@@ -86,10 +86,10 @@ const { tabs, onselect, onclose }: Props = $props();
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2);
     border: none;
-    background: var(--smrt-color-surface-container, #f0f0f4);
-    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-full);
     cursor: pointer;
     transition: background var(--smrt-duration-short2, 150ms),
       box-shadow var(--smrt-duration-short2, 150ms);
@@ -97,12 +97,12 @@ const { tabs, onselect, onclose }: Props = $props();
   }
 
   .tab-list__btn:hover {
-    background: var(--smrt-color-surface-container-high, #e6e6ea);
+    background: var(--smrt-color-surface-container-high);
     box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.15));
   }
 
   .tab-list__btn:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 
@@ -115,14 +115,14 @@ const { tabs, onselect, onclose }: Props = $props();
     justify-content: center;
     min-width: 16px;
     height: 16px;
-    padding: 0 var(--smrt-spacing-1, 4px);
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-error, #ba1a1a);
-    color: var(--smrt-color-on-error, #ffffff);
+    padding: 0 var(--smrt-spacing-1);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     line-height: 1;
-    border: 2px solid var(--smrt-color-surface, #fefbff);
+    border: 2px solid var(--smrt-color-surface);
   }
 
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
@@ -133,9 +133,9 @@ const { tabs, onselect, onclose }: Props = $props();
     right: -4px;
     width: 18px;
     height: 18px;
-    background: var(--smrt-color-surface-variant, #e1e2ec);
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
+    border-radius: var(--smrt-radius-full);
     padding: 0;
     font-size: 0;
   }
@@ -151,8 +151,8 @@ const { tabs, onselect, onclose }: Props = $props();
   }
 
   .tab-list__item :global(.tab-list__close:hover) {
-    background: var(--smrt-color-error-container, #ffdad6);
-    color: var(--smrt-color-on-error-container, #410002);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -99,8 +99,8 @@ function handlePointerUp() {
     height: 100%;
     width: 100%;
     overflow: hidden;
-    background: var(--smrt-color-surface, #fefbff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
   }
 
   .chat-layout--resizing {
@@ -112,8 +112,8 @@ function handlePointerUp() {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    background: var(--smrt-color-surface-container, #f0f0f4);
-    border-right: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-surface-container);
+    border-right: 1px solid var(--smrt-color-outline-variant);
     overflow-y: auto;
     overflow-x: hidden;
   }
@@ -130,12 +130,12 @@ function handlePointerUp() {
 
   .chat-layout__resize-handle:hover,
   .chat-layout__resize-handle:active {
-    background: var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-primary);
     opacity: 0.4;
   }
 
   .chat-layout__resize-handle:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
@@ -156,7 +156,7 @@ function handlePointerUp() {
       width: 100% !important;
       max-height: 14rem;
       border-right: 0;
-      border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+      border-bottom: 1px solid var(--smrt-color-outline-variant);
     }
 
     .chat-layout__resize-handle {

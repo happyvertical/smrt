@@ -290,7 +290,7 @@ onDestroy(() => {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-  main { max-inline-size: 60rem; font-family: var(--smrt-font-family, system-ui, sans-serif); color: var(--smrt-color-on-surface, #172033); margin: 2rem auto; padding: 1rem 1rem 6rem; }
+  main { max-inline-size: 60rem; font-family: var(--smrt-font-family, system-ui, sans-serif); color: var(--smrt-color-on-surface); margin: 2rem auto; padding: 1rem 1rem 6rem; }
   .controls { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; margin-block: 1rem; }
   .app { display: grid; gap: .75rem; border: 1px solid var(--smrt-color-outline, currentColor); padding: 1rem; border-radius: var(--smrt-radius-medium, .5rem); }
   h1 { font-size: clamp(1.5rem, 4vw, 2.5rem); }

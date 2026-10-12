@@ -97,7 +97,7 @@ const visible = $derived(selectedCount > 0);
     padding: 0.75rem 1rem;
     background: var(--smrt-color-secondary-container);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-medium, 12px);
+    border-radius: var(--smrt-radius-medium);
     margin-bottom: 1rem;
   }
 

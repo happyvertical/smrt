@@ -328,7 +328,7 @@ $effect(() => {
   }
 
   .policy-field__required {
-    color: var(--smrt-color-error, #b3261e);
+    color: var(--smrt-color-error);
     margin-left: 0.25em;
   }
 

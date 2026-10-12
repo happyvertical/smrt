@@ -155,7 +155,7 @@ useControlRegistration(() => {
   .options { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); }
   :global(.radio-group[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-small); }
 
-  .radio-group[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .radio-group[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .radio-group[data-density='comfortable'] { --smrt-control-target-min: 0px; }
 }
 </style>

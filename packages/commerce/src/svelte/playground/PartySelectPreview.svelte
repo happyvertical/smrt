@@ -100,7 +100,7 @@ const match = <T extends { profile: { name: string } }>(
 @layer smrt.theme {
   .preview {
     display: grid;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     max-width: 28rem;
     color: var(--smrt-color-on-surface);
   }

@@ -137,7 +137,7 @@ function errorText(kind: DictationErrorKind | null): string {
     align-items: center;
     gap: 0.4rem;
     padding: 0.25rem 0;
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   /* Kept mounted while empty (live regions must exist before they speak),
@@ -156,15 +156,15 @@ function errorText(kind: DictationErrorKind | null): string {
     inline-size: 8px;
     block-size: 8px;
     border-radius: 50%;
-    background: var(--smrt-color-error, #ba1a1a);
+    background: var(--smrt-color-error);
   }
 
   .smrt-dictation-status-spinner {
     inline-size: 12px;
     block-size: 12px;
     border-radius: 50%;
-    border: 2px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-block-start-color: var(--smrt-color-primary, #2f5ea8);
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-block-start-color: var(--smrt-color-primary);
     animation: smrt-dictation-spin 0.9s linear infinite;
   }
 
@@ -181,15 +181,15 @@ function errorText(kind: DictationErrorKind | null): string {
   }
 
   .smrt-dictation-status-interim {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
   .smrt-dictation-status-error {
     padding: 0.4rem 0.6rem;
-    border-radius: var(--smrt-radius-medium, 8px);
-    background: var(--smrt-color-error-container, #ffdad6);
-    color: var(--smrt-color-on-error-container, #410002);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 }
 </style>

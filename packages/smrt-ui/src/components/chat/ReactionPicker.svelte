@@ -81,11 +81,11 @@ function nameFor(emoji: string): string {
   .reactions {
     display: inline-flex;
     flex-wrap: wrap;
-    gap: var(--smrt-spacing-1, 4px);
-    padding: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-1);
     max-width: 16rem;
-    border-radius: var(--smrt-radius-large, 12px);
-    background: var(--smrt-color-surface-container, #f3edf7);
+    border-radius: var(--smrt-radius-large);
+    background: var(--smrt-color-surface-container);
   }
 
   .reactions__btn {
@@ -96,7 +96,7 @@ function nameFor(emoji: string): string {
     width: 2rem;
     height: 2rem;
     border: none;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: none;
     font-size: var(--smrt-typography-title-medium-size, 1.1rem);
     line-height: 1;
@@ -104,7 +104,7 @@ function nameFor(emoji: string): string {
     transition: transform 0.1s ease, background 0.1s ease;
   }
   .reactions__btn:hover {
-    background: var(--smrt-color-surface-container-highest, #e6e0e9);
+    background: var(--smrt-color-surface-container-highest);
     transform: scale(1.15);
   }
   .reactions__btn:focus-visible {

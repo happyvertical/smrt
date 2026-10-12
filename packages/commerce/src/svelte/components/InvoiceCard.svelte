@@ -182,10 +182,10 @@ const isOverdue = $derived.by(() => {
   .invoice-card {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-3, 12px);
-    padding: var(--smrt-spacing-4, 16px);
+    gap: var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-4);
     background-color: var(--smrt-color-surface-container-low);
-    border-radius: var(--smrt-radius-large, 12px);
+    border-radius: var(--smrt-radius-large);
     text-decoration: none;
     color: var(--smrt-color-on-surface);
     cursor: pointer;
@@ -225,12 +225,12 @@ const isOverdue = $derived.by(() => {
 
   .status-badge {
     display: inline-flex;
-    padding: 0 var(--smrt-spacing-2, 8px);
+    padding: 0 var(--smrt-spacing-2);
     height: 20px;
     align-items: center;
     font: var(--smrt-typography-label-small-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    border-radius: var(--smrt-radius-full, 10px);
+    border-radius: var(--smrt-radius-full);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -256,7 +256,7 @@ const isOverdue = $derived.by(() => {
   .card-body {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .customer-name {

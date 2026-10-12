@@ -116,7 +116,7 @@ function formatWhen(value?: Date | string): string {
   .empty-state {
     padding: 2rem 1rem;
     text-align: center;
-    color: var(--smrt-color-on-surface-variant, #5f6472);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .request-list {
@@ -126,12 +126,12 @@ function formatWhen(value?: Date | string): string {
 
   .request-card {
     padding: 1rem;
-    border: 1px solid var(--smrt-color-outline-variant, #d5d8e1);
-    border-radius: var(--smrt-radius-large, 16px);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-large);
     background: linear-gradient(
       180deg,
-      var(--smrt-color-surface, #fff),
-      var(--smrt-color-surface-container-lowest, #f8f9fc)
+      var(--smrt-color-surface),
+      var(--smrt-color-surface-container-lowest)
     );
   }
 
@@ -152,7 +152,7 @@ function formatWhen(value?: Date | string): string {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant, #5f6472);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .status {
@@ -194,7 +194,7 @@ function formatWhen(value?: Date | string): string {
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--smrt-color-on-surface-variant, #5f6472);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   dd {
@@ -203,7 +203,7 @@ function formatWhen(value?: Date | string): string {
 
   .discussion {
     margin: 1rem 0 0;
-    color: var(--smrt-color-on-surface-variant, #3d4454);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .evidence-list {
@@ -212,7 +212,7 @@ function formatWhen(value?: Date | string): string {
   }
 
   a {
-    color: var(--smrt-color-primary, #1f6feb);
+    color: var(--smrt-color-primary);
   }
 
   @media (max-width: 700px) {

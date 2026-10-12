@@ -168,7 +168,7 @@ useControlRegistration(() => {
   .checkbox::before { content: ''; position: absolute; z-index: 0; inset-block-start: 50%; inset-inline-start: calc(var(--smrt-checkbox-box) / 2); inline-size: var(--smrt-checkbox-hit); block-size: var(--smrt-checkbox-hit); margin-block-start: calc(var(--smrt-checkbox-hit) / -2); margin-inline-start: calc(var(--smrt-checkbox-hit) / -2); }
   .checkbox--disabled { opacity: .5; cursor: not-allowed; }
   input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-  .checkbox__box { position: relative; z-index: 1; width: 1.125rem; height: 1.125rem; display: grid; place-items: center; border: 2px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-extra-small, 3px); background: var(--smrt-color-surface); transition: background var(--smrt-duration-short2), border-color var(--smrt-duration-short2); }
+  .checkbox__box { position: relative; z-index: 1; width: 1.125rem; height: 1.125rem; display: grid; place-items: center; border: 2px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-extra-small); background: var(--smrt-color-surface); transition: background var(--smrt-duration-short2), border-color var(--smrt-duration-short2); }
   .checkbox__label { position: relative; z-index: 1; }
   input:checked + .checkbox__box, input:indeterminate + .checkbox__box { background: var(--smrt-color-primary); border-color: var(--smrt-color-primary); color: var(--smrt-color-on-primary); }
   input:focus-visible + .checkbox__box { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
@@ -190,7 +190,7 @@ useControlRegistration(() => {
 
   @media (prefers-reduced-motion: reduce) { .checkbox__box { transition: none; } }
 
-  .checkbox[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .checkbox[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .checkbox[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .checkbox { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
 }

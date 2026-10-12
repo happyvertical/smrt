@@ -96,21 +96,21 @@ onMount(async () => {
     margin: 0 0 0.5rem 0;
     font-size: var(--smrt-typography-display-small-size, 2.25rem);
     font-weight: var(--smrt-typography-weight-bold, 800);
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
   }
 
   .page-description {
     max-width: 640px;
     margin: 0 auto;
     font-size: var(--smrt-typography-body-large-size, 1.125rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     line-height: var(--smrt-typography-body-large-line-height, 1.6);
   }
 
   .page-status {
     text-align: center;
     padding: 2rem 1rem;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 }
 </style>

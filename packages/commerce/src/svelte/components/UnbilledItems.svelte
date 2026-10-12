@@ -171,7 +171,7 @@ const someSelected = $derived(
   .unbilled-items {
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
   }
@@ -181,7 +181,7 @@ const someSelected = $derived(
     align-items: center;
     justify-content: center;
     padding: var(--smrt-spacing-8, 2rem) var(--smrt-spacing-4, 1rem);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .empty-state p {
@@ -193,8 +193,8 @@ const someSelected = $derived(
     justify-content: space-between;
     align-items: center;
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
-    background: var(--smrt-color-surface-container-low, #f7f2fa);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-surface-container-low);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .select-all {
@@ -203,13 +203,13 @@ const someSelected = $derived(
     gap: var(--smrt-spacing-2, 0.5rem);
     font: var(--smrt-typography-body-medium-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface);
     cursor: pointer;
   }
 
   .selected-count {
     font: var(--smrt-typography-label-small-font);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .items-list {
@@ -217,7 +217,7 @@ const someSelected = $derived(
     flex-direction: column;
     max-height: 400px;
     overflow-y: auto;
-    background: var(--smrt-color-surface, #ffffff);
+    background: var(--smrt-color-surface);
   }
 
   .item-row {
@@ -225,7 +225,7 @@ const someSelected = $derived(
     align-items: center;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
-    border-bottom: 1px solid var(--smrt-color-surface-variant, #e7e0ec);
+    border-bottom: 1px solid var(--smrt-color-surface-variant);
     cursor: pointer;
     transition: background var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
@@ -237,11 +237,11 @@ const someSelected = $derived(
   }
 
   .item-row:hover {
-    background: var(--smrt-color-surface-container-low, #f7f2fa);
+    background: var(--smrt-color-surface-container-low);
   }
 
   .item-row.selected {
-    background: var(--smrt-color-primary-container, #d3e3fd);
+    background: var(--smrt-color-primary-container);
   }
 
   .item-row:last-child {
@@ -269,22 +269,22 @@ const someSelected = $derived(
     font-weight: var(--smrt-typography-weight-medium, 500);
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
   }
 
   .type-expense {
-    background: var(--smrt-color-tertiary-container, #ddf5e5);
-    color: var(--smrt-color-on-tertiary-container, #0c1f15);
+    background: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
   }
 
   .type-time {
-    background: var(--smrt-color-primary-container, #d3e3fd);
-    color: var(--smrt-color-on-primary-container, #041e49);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .item-description {
     font: var(--smrt-typography-body-medium-font);
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -294,17 +294,17 @@ const someSelected = $derived(
     display: flex;
     gap: var(--smrt-spacing-3, 0.75rem);
     font: var(--smrt-typography-body-small-font);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .item-category {
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .item-amount {
     font: var(--smrt-typography-body-medium-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface);
     font-variant-numeric: tabular-nums;
   }
 
@@ -313,8 +313,8 @@ const someSelected = $derived(
     justify-content: space-between;
     align-items: center;
     padding: var(--smrt-spacing-4, 1rem);
-    background: var(--smrt-color-surface-container-low, #f7f2fa);
-    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-surface-container-low);
+    border-top: 1px solid var(--smrt-color-outline-variant);
   }
 
   .selected-summary {
@@ -325,13 +325,13 @@ const someSelected = $derived(
 
   .summary-label {
     font: var(--smrt-typography-body-medium-font);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .summary-value {
     font: var(--smrt-typography-title-large-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface);
   }
 }
 </style>

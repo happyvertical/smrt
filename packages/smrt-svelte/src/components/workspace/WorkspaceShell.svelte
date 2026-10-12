@@ -448,8 +448,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     grid-template-columns: var(--smrt-ws-sidebar-width) 1fr;
     min-height: 100vh;
     min-height: 100dvh;
-    background: var(--smrt-color-surface-container-low, #f8fafc);
-    color: var(--smrt-color-on-surface, #1f2937);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
     isolation: isolate;
   }
 
@@ -481,8 +481,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     height: 100vh;
     height: 100dvh;
     box-sizing: border-box;
-    background: var(--smrt-color-surface, #ffffff);
-    border-right: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background: var(--smrt-color-surface);
+    border-right: 1px solid var(--smrt-color-outline-variant);
     min-width: 0;
     overflow: hidden;
     overscroll-behavior: contain;
@@ -507,13 +507,13 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     margin: 0;
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     line-height: var(--smrt-typography-title-large-line-height, 1.1);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .brand .subtitle {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     line-height: var(--smrt-typography-body-medium-line-height, 1.4);
     font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
@@ -523,7 +523,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     font-weight: var(--smrt-typography-weight-bold, 700);
     letter-spacing: var(--smrt-typography-label-small-tracking, 0.12em);
     text-transform: uppercase;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /* These shell-chrome controls now render through smrt-ui <Button>; pierce
@@ -531,9 +531,9 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
      :global(.class)` (#1589). Button owns focus-visible, so those rules are
      dropped. The responsive `display` toggles below are preserved. */
   .smrt-workspace-shell :global(.shell-toggle) {
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    color: var(--smrt-color-on-surface, #111827);
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
     border-radius: var(--smrt-radius-medium, 0.65rem);
     width: 2rem;
     height: 2rem;
@@ -547,7 +547,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   }
 
   .smrt-workspace-shell :global(.shell-toggle):hover {
-    background: var(--smrt-color-surface-container-high, #e5e7eb);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .shell-toggle-glyph {
@@ -572,8 +572,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     display: grid;
     gap: 0.75rem;
     padding-top: 0.75rem;
-    background: var(--smrt-color-surface, #ffffff);
-    border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background: var(--smrt-color-surface);
+    border-top: 1px solid var(--smrt-color-outline-variant);
     z-index: 1;
   }
 
@@ -596,8 +596,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     gap: 0.85rem;
     padding: 0.75rem var(--smrt-ws-page-pad);
     min-height: var(--smrt-ws-topbar-height);
-    background: var(--smrt-color-surface, #ffffff);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background: var(--smrt-color-surface);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     box-shadow: var(--smrt-elevation-1, 0 1px 2px rgb(0 0 0 / 0.05));
   }
 
@@ -628,7 +628,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   }
 
   .topbar-eyebrow {
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .mode-title,
@@ -639,11 +639,11 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   .mode-title {
     font-size: var(--smrt-typography-title-small-size, 0.9rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
   }
 
   .mode-detail {
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     max-width: 18rem;
     text-align: right;
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
@@ -654,10 +654,10 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     align-items: center;
     gap: 0.4rem;
     padding: 0.25rem 0.65rem;
-    border-radius: var(--smrt-radius-full, 999px);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    color: var(--smrt-color-on-surface, #111827);
+    border-radius: var(--smrt-radius-full);
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-label-medium-size, 0.78rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     line-height: 1;
@@ -667,29 +667,29 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   .mode-dot {
     width: 0.55rem;
     height: 0.55rem;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-on-surface-variant, #9ca3af);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-on-surface-variant);
     flex-shrink: 0;
   }
 
   .mode-badge[data-status='active'] .mode-dot {
-    background: var(--smrt-color-success, #16a34a);
+    background: var(--smrt-color-success);
   }
   .mode-badge[data-status='offline'] .mode-dot {
-    background: var(--smrt-color-on-surface-variant, #9ca3af);
+    background: var(--smrt-color-on-surface-variant);
   }
   .mode-badge[data-status='local-only'] .mode-dot {
-    background: var(--smrt-color-primary, #2563eb);
+    background: var(--smrt-color-primary);
   }
   .mode-badge[data-status='attention'] .mode-dot {
-    background: var(--smrt-color-warning, #f59e0b);
+    background: var(--smrt-color-warning);
   }
 
   .smrt-workspace-shell :global(.mobile-menu) {
     display: none;
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    background: var(--smrt-color-surface, #ffffff);
-    color: var(--smrt-color-on-surface, #111827);
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
     border-radius: var(--smrt-radius-medium, 0.65rem);
     width: 2.35rem;
     height: 2.35rem;
@@ -720,8 +720,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     width: var(--smrt-ws-inspector-width);
     display: flex;
     flex-direction: column;
-    background: var(--smrt-color-surface, #ffffff);
-    border-left: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background: var(--smrt-color-surface);
+    border-left: 1px solid var(--smrt-color-outline-variant);
     box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgb(0 0 0 / 0.1));
     z-index: 22;
   }
@@ -731,19 +731,19 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     align-items: center;
     justify-content: space-between;
     padding: 0.85rem 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .inspector-title {
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-title-medium-size, 0.95rem);
   }
 
   .smrt-workspace-shell :global(.inspector-close) {
     border: 1px solid transparent;
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     width: 2rem;
     height: 2rem;
@@ -758,8 +758,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   }
 
   .smrt-workspace-shell :global(.inspector-close):hover {
-    background: var(--smrt-color-surface-container-high, #e5e7eb);
-    color: var(--smrt-color-on-surface, #111827);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
   }
 
   .inspector-body {
@@ -780,8 +780,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     align-items: center;
     gap: 0.4rem;
     padding: 0.75rem 0.25rem;
-    background: var(--smrt-color-surface, #ffffff);
-    border-left: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background: var(--smrt-color-surface);
+    border-left: 1px solid var(--smrt-color-outline-variant);
     z-index: 18;
   }
 

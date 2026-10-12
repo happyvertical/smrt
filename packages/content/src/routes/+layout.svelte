@@ -63,8 +63,8 @@ const navItems = [
   :global(body) {
     margin: 0;
     font-family: var(--smrt-font-family, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
-    background: var(--smrt-color-background, #f0f2f5);
-    color: var(--smrt-color-on-background, #1a1c1e);
+    background: var(--smrt-color-background);
+    color: var(--smrt-color-on-background);
     min-height: 100vh;
   }
 
@@ -75,8 +75,8 @@ const navItems = [
   }
 
   .app-header {
-    background: var(--smrt-color-surface, #fff);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-surface);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     position: sticky;
     top: 0;
     z-index: var(--smrt-z-index-sticky, 1100);
@@ -96,7 +96,7 @@ const navItems = [
   .brand {
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     text-decoration: none;
     display: flex;
     align-items: center;
@@ -118,7 +118,7 @@ const navItems = [
     padding: 0.5rem 1rem;
     border-radius: 0.5rem;
     text-decoration: none;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: all 0.15s ease;
@@ -126,13 +126,13 @@ const navItems = [
   }
 
   .nav-tab:hover {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface);
   }
 
   .nav-tab.active {
-    background: var(--smrt-color-primary-container, #d8e2ff);
-    color: var(--smrt-color-on-primary-container, #001a41);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
@@ -141,7 +141,7 @@ const navItems = [
   }
 
   .header-status {
-    background: var(--smrt-color-success, #10b981);
+    background: var(--smrt-color-success);
     color: white;
     padding: 0.2rem 0.6rem;
     border-radius: 1rem;
@@ -161,7 +161,7 @@ const navItems = [
   .app-footer {
     text-align: center;
     padding: 1.25rem 0;
-    color: var(--smrt-color-on-surface-variant, #74777f);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     opacity: 0.7;
   }

@@ -79,7 +79,7 @@ const { t } = useI18n();
     flex: none;
     inline-size: 0.5rem;
     block-size: 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
   }
 
   .smrt-system-status-chips [data-tone='success']::before {

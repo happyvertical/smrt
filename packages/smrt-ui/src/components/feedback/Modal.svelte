@@ -214,7 +214,7 @@ const placementClass = $derived(`modal--${placement}`);
     flex-direction: column;
     max-height: calc(100vh - var(--smrt-spacing-8, 2rem));
     max-width: calc(100vw - var(--smrt-spacing-8, 2rem));
-    background: var(--smrt-color-surface, #ffffff);
+    background: var(--smrt-color-surface);
     border-radius: var(--smrt-radius-large, 0.75rem);
     box-shadow: var(--smrt-elevation-3, 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05));
     overflow: hidden;
@@ -312,7 +312,7 @@ const placementClass = $derived(`modal--${placement}`);
     justify-content: space-between;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     flex-shrink: 0;
   }
 
@@ -325,7 +325,7 @@ const placementClass = $derived(`modal--${placement}`);
     margin: 0;
     font-size: var(--smrt-typography-headline-small-size, 1.125rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #1b1b1f);
+    color: var(--smrt-color-on-surface);
     line-height: var(--smrt-typography-headline-small-line-height, 1.4);
   }
 
@@ -338,20 +338,20 @@ const placementClass = $derived(`modal--${placement}`);
     padding: 0;
     border: none;
     background: transparent;
-    border-radius: var(--smrt-radius-full, 9999px);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    border-radius: var(--smrt-radius-full);
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     transition: all var(--smrt-duration-short3, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     flex-shrink: 0;
   }
 
   .modal__close:hover {
-    background: var(--smrt-color-surface-container-highest, #e0e2ec);
-    color: var(--smrt-color-on-surface, #1b1b1f);
+    background: var(--smrt-color-surface-container-highest);
+    color: var(--smrt-color-on-surface);
   }
 
   .modal__close:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 
@@ -360,7 +360,7 @@ const placementClass = $derived(`modal--${placement}`);
     flex: 1;
     padding: var(--smrt-spacing-5, 1.25rem);
     overflow-y: auto;
-    color: var(--smrt-color-on-surface, #1b1b1f);
+    color: var(--smrt-color-on-surface);
   }
 
   /* Footer */
@@ -370,7 +370,7 @@ const placementClass = $derived(`modal--${placement}`);
     justify-content: flex-end;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
-    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-top: 1px solid var(--smrt-color-outline-variant);
     flex-shrink: 0;
   }
 

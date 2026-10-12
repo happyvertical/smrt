@@ -75,8 +75,8 @@ const collapsedTabs = $derived(tabs.filter((t) => !t.isExpanded));
     right: 0;
     display: flex;
     align-items: flex-end;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: 0 var(--smrt-spacing-4, 16px);
+    gap: var(--smrt-spacing-2);
+    padding: 0 var(--smrt-spacing-4);
     z-index: var(--smrt-z-index-sticky, 1100);
     pointer-events: none;
   }
@@ -84,7 +84,7 @@ const collapsedTabs = $derived(tabs.filter((t) => !t.isExpanded));
   .chat-tabs__expanded {
     display: flex;
     align-items: flex-end;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     pointer-events: auto;
   }
 }

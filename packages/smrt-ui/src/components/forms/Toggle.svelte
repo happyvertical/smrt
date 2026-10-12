@@ -103,7 +103,7 @@ const sizeClasses = {
 
   .toggle__label {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
     line-height: 1.5;
   }
 
@@ -128,38 +128,38 @@ const sizeClasses = {
 
   .toggle__thumb {
     position: relative;
-    background: var(--smrt-color-surface-container-highest, #e5e7eb);
-    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-surface-container-highest);
+    border-radius: var(--smrt-radius-full);
     transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .toggle__thumb::after {
     content: '';
     position: absolute;
-    background: var(--smrt-color-surface, #ffffff);
-    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-radius-full);
     box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 20%, transparent));
     transition: transform var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   /* Checked state */
   .toggle__input:checked + .toggle__thumb {
-    background: var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-primary);
   }
 
   /* Focus state */
   .toggle__input:focus-visible + .toggle__thumb {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 
   /* Hover state */
   .toggle:not(.toggle--disabled):hover .toggle__thumb {
-    background: var(--smrt-color-surface-container-high, #d1d5db);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .toggle:not(.toggle--disabled):hover .toggle__input:checked + .toggle__thumb {
-    background: var(--smrt-color-primary, #2563eb);
+    background: var(--smrt-color-primary);
   }
 
   /* Size: Small */

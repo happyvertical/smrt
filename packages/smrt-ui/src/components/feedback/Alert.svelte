@@ -48,8 +48,8 @@ const role = $derived(
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .alert { --smrt-alert-color: var(--smrt-color-primary); display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: start; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3) var(--smrt-spacing-4); border: 1px solid color-mix(in srgb, var(--smrt-alert-color) 35%, var(--smrt-color-outline-variant)); border-radius: var(--smrt-radius-medium); background: color-mix(in srgb, var(--smrt-alert-color) 8%, var(--smrt-color-surface)); color: var(--smrt-color-on-surface); }
-  .alert--success { --smrt-alert-color: var(--smrt-color-success, #2e7d32); }
-  .alert--warning { --smrt-alert-color: var(--smrt-color-warning, #a45b00); }
+  .alert--success { --smrt-alert-color: var(--smrt-color-success); }
+  .alert--warning { --smrt-alert-color: var(--smrt-color-warning); }
   .alert--error { --smrt-alert-color: var(--smrt-color-error); }
   .marker { width: .65rem; height: .65rem; margin-top: .4rem; border-radius: 50%; background: var(--smrt-alert-color); }
   .content { min-width: 0; }

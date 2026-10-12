@@ -491,10 +491,10 @@ onDestroy(() => {
   .smrt-image-uploader {
     display: flex;
     flex-direction: column;
-    background: var(--smrt-color-surface-container, #1a1a1a);
-    color: var(--smrt-color-on-surface, #fff);
-    border-radius: var(--smrt-radius-lg, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #333);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+    border-radius: var(--smrt-radius-lg);
+    border: 1px solid var(--smrt-color-outline-variant);
     overflow: hidden;
     height: 100%;
     min-height: 500px;
@@ -505,7 +505,7 @@ onDestroy(() => {
     justify-content: space-between;
     align-items: center;
     padding: 1rem 1.5rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #333);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
   
   .header h3 {
@@ -517,19 +517,19 @@ onDestroy(() => {
      is custom. :global() pierces into the Button child's rendered <button>
      (see #1589 scoping rule). */
   .header :global(.close-btn--x) {
-    color: var(--smrt-color-outline, #888);
+    color: var(--smrt-color-outline);
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     line-height: 1;
   }
 
   .header :global(.close-btn--x:hover) {
-    color: var(--smrt-color-on-surface, #fff);
+    color: var(--smrt-color-on-surface);
   }
 
   .tabs {
     display: flex;
-    background: var(--smrt-color-surface-container-high, #242424);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #333);
+    background: var(--smrt-color-surface-container-high);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   /* The tab strip is migrated to ghost Buttons; the active state is the bottom
@@ -538,25 +538,25 @@ onDestroy(() => {
   .tabs :global(.uploader-tab) {
     flex: 1;
     border: none;
-    border-bottom: 2px solid var(--smrt-color-outline-variant, #333);
+    border-bottom: 2px solid var(--smrt-color-outline-variant);
     padding: 1rem;
-    color: var(--smrt-color-outline, #888);
+    color: var(--smrt-color-outline);
     font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: 0;
     transition: all 0.2s;
     text-transform: uppercase;
     font-size: var(--smrt-typography-label-large-size, 0.85rem);
-    letter-spacing: var(--smrt-typography-label-large-tracking, 0.5px);
+    letter-spacing: var(--smrt-typography-label-large-tracking);
   }
 
   .tabs :global(.uploader-tab:hover) {
-    color: var(--smrt-color-on-surface-variant, #ccc);
-    background: color-mix(in srgb, var(--smrt-color-on-surface, #fff) 2%, transparent);
+    color: var(--smrt-color-on-surface-variant);
+    background: color-mix(in srgb, var(--smrt-color-on-surface) 2%, transparent);
   }
 
   .tabs :global(.uploader-tab--active) {
-    color: var(--smrt-color-primary, #3b82f6);
-    border-bottom: 2px solid var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-primary);
+    border-bottom: 2px solid var(--smrt-color-primary);
     background: transparent;
   }
 
@@ -586,27 +586,27 @@ onDestroy(() => {
     justify-content: center;
     padding: 3rem;
     margin: 1.5rem;
-    border: 2px dashed var(--smrt-color-outline-variant, #444);
-    border-radius: var(--smrt-radius-lg, 8px);
-    background: var(--smrt-color-surface-container-high, #242424);
+    border: 2px dashed var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-lg);
+    background: var(--smrt-color-surface-container-high);
     cursor: pointer;
     transition: all 0.2s;
   }
 
   .upload-area:hover, .upload-area:focus {
-    border-color: var(--smrt-color-outline, #666);
-    background: var(--smrt-color-surface-container-highest, #2a2a2a);
+    border-color: var(--smrt-color-outline);
+    background: var(--smrt-color-surface-container-highest);
     outline: none;
   }
 
   .upload-area.dragging {
-    border-color: var(--smrt-color-primary, #3b82f6);
+    border-color: var(--smrt-color-primary);
     background: color-mix(in srgb, var(--smrt-color-primary) 5%, transparent);
     transform: scale(1.02);
   }
 
   .upload-icon {
-    color: var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-primary);
     margin-bottom: 1rem;
   }
 
@@ -617,7 +617,7 @@ onDestroy(() => {
 
   .divider {
     font-size: var(--smrt-typography-label-large-size, 0.85rem);
-    color: var(--smrt-color-outline, #666);
+    color: var(--smrt-color-outline);
     margin-bottom: 1rem;
   }
 
@@ -626,14 +626,14 @@ onDestroy(() => {
      Button child's rendered <button> (see #1589 scoping rule). */
   .upload-area :global(.browse-btn--decorative) {
     padding: 0.5rem 1.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
     pointer-events: none; /* Let parent handle clicks */
   }
 
   .error {
     margin-top: 1rem;
-    color: var(--smrt-color-error, #ef4444);
+    color: var(--smrt-color-error);
     font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
 
@@ -646,7 +646,7 @@ onDestroy(() => {
     gap: 1.5rem;
     align-items: center;
     justify-content: center;
-    background: var(--smrt-color-surface-dim, #000);
+    background: var(--smrt-color-surface-dim);
   }
 
   .video-container {
@@ -654,8 +654,8 @@ onDestroy(() => {
     width: 100%;
     max-width: 600px;
     aspect-ratio: 4/3;
-    background: var(--smrt-color-surface-container-lowest, #111);
-    border-radius: var(--smrt-radius-md, 6px);
+    background: var(--smrt-color-surface-container-lowest);
+    border-radius: var(--smrt-radius-md);
     overflow: hidden;
   }
 
@@ -679,36 +679,36 @@ onDestroy(() => {
      primary variant. :global() pierces into the Button child (see #1589). */
   .camera-area :global(.capture-btn--pill) {
     padding: 1rem 3rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     font-size: var(--smrt-typography-body-large-size, 1.1rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .camera-area :global(.capture-btn--pill:disabled) {
-    background: var(--smrt-color-outline-variant, #444);
-    color: var(--smrt-color-outline, #888);
+    background: var(--smrt-color-outline-variant);
+    color: var(--smrt-color-outline);
   }
 
   .error-panel {
     text-align: center;
     padding: 2rem;
-    background: var(--smrt-color-surface-container, #1a1a1a);
-    border-radius: var(--smrt-radius-md, 6px);
+    background: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-md);
   }
 
   .error-panel p {
-    color: var(--smrt-color-error, #ef4444);
+    color: var(--smrt-color-error);
     margin-bottom: 1rem;
   }
 
   /* Migrated "try again" Button keeps its surface-tinted look over the
      secondary variant. :global() pierces into the Button child (see #1589). */
   .error-panel :global(.try-again-btn) {
-    background: var(--smrt-color-surface-container-high, #242424);
+    background: var(--smrt-color-surface-container-high);
     color: white;
-    border: 1px solid var(--smrt-color-outline-variant, #444);
+    border: 1px solid var(--smrt-color-outline-variant);
     padding: 0.5rem 1rem;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
   }
 
   /* External Tab */
@@ -721,7 +721,7 @@ onDestroy(() => {
   }
 
   .hint {
-    color: var(--smrt-color-outline, #888);
+    color: var(--smrt-color-outline);
     margin-bottom: 2rem;
     text-align: center;
   }
@@ -745,13 +745,13 @@ onDestroy(() => {
      (see #1589 scoping rule). */
   .input-group :global(.submit-btn--inline) {
     padding: 0 1.5rem;
-    border-radius: var(--smrt-radius-md, 6px);
+    border-radius: var(--smrt-radius-md);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .input-group :global(.submit-btn--inline:disabled) {
-    background: var(--smrt-color-surface-container-highest, #333);
-    color: var(--smrt-color-outline, #666);
+    background: var(--smrt-color-surface-container-highest);
+    color: var(--smrt-color-outline);
   }
 
   /* --- Back Button --- */
@@ -761,10 +761,10 @@ onDestroy(() => {
     display: flex;
     align-items: center;
     gap: 0.35rem;
-    color: var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-medium, 500);
     padding: 0.25rem 0.5rem;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     transition: background 0.15s;
   }
 
@@ -795,9 +795,9 @@ onDestroy(() => {
     max-width: 100%;
     max-height: 400px;
     object-fit: contain;
-    border-radius: var(--smrt-radius-md, 6px);
-    border: 1px solid var(--smrt-color-outline-variant, #333);
-    background-color: var(--smrt-color-surface-container-high, #242424);
+    border-radius: var(--smrt-radius-md);
+    border: 1px solid var(--smrt-color-outline-variant);
+    background-color: var(--smrt-color-surface-container-high);
   }
 
   .confirm-info {
@@ -814,7 +814,7 @@ onDestroy(() => {
 
   .confirm-meta {
     font-size: var(--smrt-typography-label-large-size, 0.85rem);
-    color: var(--smrt-color-outline, #888);
+    color: var(--smrt-color-outline);
   }
 
   .confirm-actions {
@@ -822,7 +822,7 @@ onDestroy(() => {
     display: flex;
     gap: 0.75rem;
     flex-wrap: wrap;
-    border-top: 1px solid var(--smrt-color-outline-variant, #333);
+    border-top: 1px solid var(--smrt-color-outline-variant);
     margin-top: 0.5rem;
   }
 
@@ -830,7 +830,7 @@ onDestroy(() => {
      pierces into each Button's rendered <button> (see #1589 scoping rule). */
   .confirm-actions :global(.primary-btn--pill) {
     padding: 0.65rem 1.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: filter 0.15s;
   }
@@ -843,22 +843,22 @@ onDestroy(() => {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    background: var(--smrt-color-surface-container-highest, #333);
-    color: var(--smrt-color-on-surface-variant, #ccc);
-    border: 1px solid var(--smrt-color-outline-variant, #444);
+    background: var(--smrt-color-surface-container-highest);
+    color: var(--smrt-color-on-surface-variant);
+    border: 1px solid var(--smrt-color-outline-variant);
     padding: 0.65rem 1.25rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: all 0.2s;
   }
 
   .confirm-actions :global(.variation-toggle--chip:hover) {
-    background: var(--smrt-color-surface-container-high, #3f3f3f);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .confirm-actions :global(.variation-toggle--active) {
-    color: var(--smrt-color-primary, #3b82f6);
-    border-color: var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
     background: color-mix(in srgb, var(--smrt-color-primary) 8%, transparent);
   }
 
@@ -869,22 +869,22 @@ onDestroy(() => {
     gap: 0.75rem;
     padding: 1.25rem;
     margin: 0 1.5rem 1.5rem;
-    background: var(--smrt-color-surface-container-high, #242424);
-    border-radius: var(--smrt-radius-md, 6px);
-    border: 1px solid var(--smrt-color-outline-variant, #333);
+    background: var(--smrt-color-surface-container-high);
+    border-radius: var(--smrt-radius-md);
+    border: 1px solid var(--smrt-color-outline-variant);
   }
 
   .variation-hint {
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
-    color: var(--smrt-color-outline, #888);
+    color: var(--smrt-color-outline);
     margin: 0;
   }
 
   .variation-error {
-    color: var(--smrt-color-error, #ef4444);
+    color: var(--smrt-color-error);
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
     padding: 0.5rem 0.75rem;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
@@ -893,7 +893,7 @@ onDestroy(() => {
   .variation-form :global(.generate-btn--pill) {
     align-self: flex-start;
     padding: 0.65rem 1.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: filter 0.15s, opacity 0.15s;
   }
@@ -912,7 +912,7 @@ onDestroy(() => {
     height: 14px;
     border: 2px solid color-mix(in srgb, var(--smrt-color-on-primary) 30%, transparent);
     border-top-color: white;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.6s linear infinite;
   }
 }

@@ -123,9 +123,9 @@ const glossary = $derived.by(() => {
   }
 
   .form-help__toggle:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #6750a4);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm);
   }
 
   .form-help__icon {

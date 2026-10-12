@@ -822,29 +822,29 @@ $effect(() => {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .cv {
-    --smrt-calendar-view-border: var(--smrt-color-outline-variant, #c4c6d0);
-    --smrt-calendar-view-surface: var(--smrt-color-surface, #ffffff);
-    --smrt-calendar-view-muted: var(--smrt-color-on-surface-variant, #44474e);
-    --smrt-calendar-view-text: var(--smrt-color-on-surface, #1b1b1f);
+    --smrt-calendar-view-border: var(--smrt-color-outline-variant);
+    --smrt-calendar-view-surface: var(--smrt-color-surface);
+    --smrt-calendar-view-muted: var(--smrt-color-on-surface-variant);
+    --smrt-calendar-view-text: var(--smrt-color-on-surface);
     --smrt-calendar-view-daynum-h: 2.75rem;
     --smrt-calendar-view-band-row: 1.625rem;
     --smrt-calendar-view-target: 2.75rem;
     color: var(--smrt-calendar-view-text);
     background: var(--smrt-calendar-view-surface);
     border: 1px solid var(--smrt-calendar-view-border);
-    border-radius: var(--smrt-radius-large, 12px);
+    border-radius: var(--smrt-radius-large);
     overflow: hidden;
     min-width: 0;
     container-type: inline-size;
   }
 
-  [data-tone='primary'] { --smrt-calendar-view-tone: var(--smrt-color-primary, #005ac1); --smrt-calendar-view-fill: var(--smrt-color-primary-container, #d8e2ff); --smrt-calendar-view-ink: var(--smrt-color-on-primary-container, #001a41); }
-  [data-tone='secondary'] { --smrt-calendar-view-tone: var(--smrt-color-secondary, #575e71); --smrt-calendar-view-fill: var(--smrt-color-secondary-container, #dbe2f9); --smrt-calendar-view-ink: var(--smrt-color-on-secondary-container, #141b2c); }
-  [data-tone='tertiary'] { --smrt-calendar-view-tone: var(--smrt-color-tertiary, #715573); --smrt-calendar-view-fill: var(--smrt-color-tertiary-container, #fbd7fc); --smrt-calendar-view-ink: var(--smrt-color-on-tertiary-container, #29132d); }
-  [data-tone='success'] { --smrt-calendar-view-tone: var(--smrt-color-success, #1b6d2f); --smrt-calendar-view-fill: var(--smrt-color-success-container, #a4f5a9); --smrt-calendar-view-ink: var(--smrt-color-on-success-container, #002108); }
-  [data-tone='warning'] { --smrt-calendar-view-tone: var(--smrt-color-warning, #7a5900); --smrt-calendar-view-fill: var(--smrt-color-warning-container, #ffdea3); --smrt-calendar-view-ink: var(--smrt-color-on-warning-container, #261900); }
-  [data-tone='error'] { --smrt-calendar-view-tone: var(--smrt-color-error, #ba1a1a); --smrt-calendar-view-fill: var(--smrt-color-error-container, #ffdad6); --smrt-calendar-view-ink: var(--smrt-color-on-error-container, #410002); }
-  [data-tone='neutral'] { --smrt-calendar-view-tone: var(--smrt-color-outline, #74777f); --smrt-calendar-view-fill: var(--smrt-color-surface-container-high, #e8e7ec); --smrt-calendar-view-ink: var(--smrt-color-on-surface, #1b1b1f); }
+  [data-tone='primary'] { --smrt-calendar-view-tone: var(--smrt-color-primary); --smrt-calendar-view-fill: var(--smrt-color-primary-container); --smrt-calendar-view-ink: var(--smrt-color-on-primary-container); }
+  [data-tone='secondary'] { --smrt-calendar-view-tone: var(--smrt-color-secondary); --smrt-calendar-view-fill: var(--smrt-color-secondary-container); --smrt-calendar-view-ink: var(--smrt-color-on-secondary-container); }
+  [data-tone='tertiary'] { --smrt-calendar-view-tone: var(--smrt-color-tertiary); --smrt-calendar-view-fill: var(--smrt-color-tertiary-container); --smrt-calendar-view-ink: var(--smrt-color-on-tertiary-container); }
+  [data-tone='success'] { --smrt-calendar-view-tone: var(--smrt-color-success); --smrt-calendar-view-fill: var(--smrt-color-success-container); --smrt-calendar-view-ink: var(--smrt-color-on-success-container); }
+  [data-tone='warning'] { --smrt-calendar-view-tone: var(--smrt-color-warning); --smrt-calendar-view-fill: var(--smrt-color-warning-container); --smrt-calendar-view-ink: var(--smrt-color-on-warning-container); }
+  [data-tone='error'] { --smrt-calendar-view-tone: var(--smrt-color-error); --smrt-calendar-view-fill: var(--smrt-color-error-container); --smrt-calendar-view-ink: var(--smrt-color-on-error-container); }
+  [data-tone='neutral'] { --smrt-calendar-view-tone: var(--smrt-color-outline); --smrt-calendar-view-fill: var(--smrt-color-surface-container-high); --smrt-calendar-view-ink: var(--smrt-color-on-surface); }
 
   /* An explicit item color wins over the tone. */
   [style*='--smrt-calendar-view-item'] { --smrt-calendar-view-tone: var(--smrt-calendar-view-item); --smrt-calendar-view-fill: color-mix(in srgb, var(--smrt-calendar-view-item) 22%, var(--smrt-calendar-view-surface)); --smrt-calendar-view-ink: var(--smrt-calendar-view-text); }
@@ -855,7 +855,7 @@ $effect(() => {
     justify-content: space-between;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    background: var(--smrt-color-surface-container-low, #f5f3f7);
+    background: var(--smrt-color-surface-container-low);
     border-bottom: 1px solid var(--smrt-calendar-view-border);
   }
 
@@ -883,7 +883,7 @@ $effect(() => {
     min-width: var(--smrt-calendar-view-target);
     min-height: var(--smrt-calendar-view-target);
     border: 1px solid transparent;
-    border-radius: var(--smrt-radius-medium, 8px);
+    border-radius: var(--smrt-radius-medium);
     background: transparent;
     color: var(--smrt-calendar-view-muted);
     font: inherit;
@@ -893,13 +893,13 @@ $effect(() => {
   .cv-today-btn {
     padding: 0 var(--smrt-spacing-3, 0.75rem);
     border-color: var(--smrt-calendar-view-border);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     font-weight: 500;
   }
 
   .cv-icon-btn:hover,
   .cv-today-btn:hover {
-    background: var(--smrt-color-surface-container-high, #e8e7ec);
+    background: var(--smrt-color-surface-container-high);
     color: var(--smrt-calendar-view-text);
   }
 
@@ -917,7 +917,7 @@ $effect(() => {
 
   button:focus-visible,
   a:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 
@@ -970,8 +970,8 @@ $effect(() => {
   }
 
   .cv-day--selected {
-    background: var(--smrt-color-surface-container, #efedf1);
-    box-shadow: inset 0 0 0 2px var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-surface-container);
+    box-shadow: inset 0 0 0 2px var(--smrt-color-primary);
   }
 
   .cv-daynum {
@@ -993,7 +993,7 @@ $effect(() => {
 
   .cv-day--today .cv-daynum {
     font-weight: 700;
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .cv-day-body {
@@ -1012,7 +1012,7 @@ $effect(() => {
     min-width: 0;
     padding: 1px var(--smrt-spacing-1, 0.25rem);
     border: 0;
-    border-radius: var(--smrt-radius-small, 4px);
+    border-radius: var(--smrt-radius-small);
     background: transparent;
     color: inherit;
     font: inherit;
@@ -1036,7 +1036,7 @@ $effect(() => {
 
   .cv-chip:hover,
   .cv-more:hover {
-    background: var(--smrt-color-surface-container-high, #e8e7ec);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .cv-chip,
@@ -1075,7 +1075,7 @@ $effect(() => {
   }
 
   .cv-more {
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     font-weight: 500;
   }
 
@@ -1086,7 +1086,7 @@ $effect(() => {
     height: calc(var(--smrt-calendar-view-band-row) - 4px);
     padding: 0 var(--smrt-spacing-2, 0.5rem);
     border: 0;
-    border-radius: var(--smrt-radius-small, 4px);
+    border-radius: var(--smrt-radius-small);
     background: var(--smrt-calendar-view-fill);
     color: var(--smrt-calendar-view-ink);
     box-shadow: inset 3px 0 0 var(--smrt-calendar-view-tone);
@@ -1159,7 +1159,7 @@ $effect(() => {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     border: 1px solid var(--smrt-calendar-view-border);
     border-inline-start: 4px solid var(--smrt-calendar-view-tone);
-    border-radius: var(--smrt-radius-medium, 8px);
+    border-radius: var(--smrt-radius-medium);
     background: var(--smrt-calendar-view-surface);
     color: inherit;
     font: inherit;
@@ -1169,7 +1169,7 @@ $effect(() => {
   }
 
   .cv-row:hover {
-    background: var(--smrt-color-surface-container-low, #f5f3f7);
+    background: var(--smrt-color-surface-container-low);
   }
 
   .cv-row-time {
@@ -1200,7 +1200,7 @@ $effect(() => {
   /* Tone is a fill with its own ink, never a text color (brand rule). */
   .cv-row-label {
     padding: 0 0.375rem;
-    border-radius: var(--smrt-radius-small, 4px);
+    border-radius: var(--smrt-radius-small);
     background: var(--smrt-calendar-view-fill);
     color: var(--smrt-calendar-view-ink);
     font-weight: 500;
@@ -1233,7 +1233,7 @@ $effect(() => {
     min-height: 3.5rem;
     padding: var(--smrt-spacing-1, 0.25rem) 0;
     border: 1px solid transparent;
-    border-radius: var(--smrt-radius-medium, 8px);
+    border-radius: var(--smrt-radius-medium);
     background: transparent;
     color: inherit;
     font: inherit;
@@ -1242,12 +1242,12 @@ $effect(() => {
   }
 
   .cv-strip-day[aria-pressed='true'] {
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
   }
 
   .cv-strip-day--today:not([aria-pressed='true']) {
-    border-color: var(--smrt-color-primary, #005ac1);
+    border-color: var(--smrt-color-primary);
   }
 
   .cv-strip-weekday {
@@ -1286,7 +1286,7 @@ $effect(() => {
   }
 
   .cv-agenda-day--today .cv-agenda-date {
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .cv--agenda .cv-empty {

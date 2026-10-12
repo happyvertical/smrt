@@ -435,8 +435,8 @@ function formatAttachmentSize(bytes: number): string {
     padding: var(--smrt-spacing-4, 1rem);
     box-sizing: border-box;
     font-family: var(--smrt-font-family, system-ui, sans-serif);
-    background: var(--smrt-color-surface, #ffffff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
   }
   .workspace {
     display: flex;
@@ -455,8 +455,8 @@ function formatAttachmentSize(bytes: number): string {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    border-radius: var(--smrt-radius-medium, 8px);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-medium);
   }
   .dock-panel > :global(*:first-child) {
     flex-shrink: 0;
@@ -492,10 +492,10 @@ function formatAttachmentSize(bytes: number): string {
   td {
     text-align: left;
     padding: var(--smrt-spacing-2, 0.35rem) var(--smrt-spacing-3, 0.5rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
   .status-shipped {
-    color: var(--smrt-color-success, #1a7a3a);
+    color: var(--smrt-color-success);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
   .dock-scroll {

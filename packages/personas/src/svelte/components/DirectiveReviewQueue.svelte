@@ -124,7 +124,7 @@ function approve(proposal: DirectiveProposalView): void {
   }
 
   .dq-empty {
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -166,7 +166,7 @@ function approve(proposal: DirectiveProposalView): void {
     font-size: 0.8125rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .dq-pre {
@@ -174,7 +174,7 @@ function approve(proposal: DirectiveProposalView): void {
     padding: 0.5rem;
     white-space: pre-wrap;
     word-break: break-word;
-    background: var(--smrt-color-surface-variant, #f3f4f6);
+    background: var(--smrt-color-surface-variant);
     border-radius: 0.375rem;
     font-size: 0.875rem;
   }

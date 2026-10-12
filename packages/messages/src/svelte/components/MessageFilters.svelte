@@ -169,8 +169,8 @@ const _hasActiveFilters = $derived(
     flex-direction: column;
     gap: 0.5rem;
     padding: 0.75rem;
-    background: var(--smrt-color-surface, #fefbff);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
   }
 
@@ -225,7 +225,7 @@ const _hasActiveFilters = $derived(
     align-items: center;
     gap: 0.25rem;
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     cursor: pointer;
   }
 
@@ -240,7 +240,7 @@ const _hasActiveFilters = $derived(
     border: none;
     background: none;
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     text-decoration: underline;
   }
 }

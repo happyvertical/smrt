@@ -1499,7 +1499,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     background-color: var(--smrt-admin-shell-scrollbar-thumb, color-mix(in srgb, var(--smrt-color-on-surface) 26%, transparent));
     background-clip: padding-box;
     border: 2px solid transparent;
-    border-radius: var(--smrt-radius-full, 999px);
+    border-radius: var(--smrt-radius-full);
   }
 
   .smrt-admin-shell :global(*)::-webkit-scrollbar-thumb:hover {
@@ -1657,7 +1657,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     width: 2.35rem;
     height: 2.35rem;
     border: 1px solid transparent;
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
@@ -1685,8 +1685,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-2, 0.5rem);
     border: 1px solid var(--smrt-color-outline-variant);
     border-inline-end: 0;
-    border-start-start-radius: var(--smrt-radius-md, 8px);
-    border-end-start-radius: var(--smrt-radius-md, 8px);
+    border-start-start-radius: var(--smrt-radius-md);
+    border-end-start-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface-variant);
     font: inherit;
@@ -1709,7 +1709,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     inset-block-start: -0.25rem;
     inset-inline-end: -0.25rem;
     min-width: 1rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-error);
     color: var(--smrt-color-on-error);
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
@@ -2142,7 +2142,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     z-index: 25;
     box-shadow: var(
       --smrt-elevation-3,
-      0 0.5rem 1.5rem color-mix(in srgb, var(--smrt-color-shadow, #000) 24%, transparent)
+      0 0.5rem 1.5rem color-mix(in srgb, var(--smrt-color-shadow) 24%, transparent)
     );
     outline: none;
   }

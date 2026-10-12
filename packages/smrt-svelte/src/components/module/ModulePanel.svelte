@@ -94,15 +94,15 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
     justify-content: center;
     padding: 2rem;
     text-align: center;
-    background: var(--smrt-color-surface-container-low, #f8fafc);
-    border: 1px dashed var(--smrt-color-outline-variant, #e2e8f0);
-    border-radius: var(--smrt-radius-medium, 8px);
+    background: var(--smrt-color-surface-container-low);
+    border: 1px dashed var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-medium);
     min-height: 150px;
     gap: 0.75rem;
   }
 
   .module-panel-placeholder__icon {
-    color: var(--smrt-color-on-surface-variant, #94a3b8);
+    color: var(--smrt-color-on-surface-variant);
     opacity: 0.6;
   }
 
@@ -110,28 +110,28 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
     margin: 0;
     font-size: var(--smrt-typography-title-medium-size, 1rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #1e293b);
+    color: var(--smrt-color-on-surface);
   }
 
   .module-panel-placeholder__code {
     font-family: var(--smrt-font-family-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
-    background: var(--smrt-color-surface-container-high, #e2e8f0);
-    border-radius: var(--smrt-radius-small, 4px);
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    background: var(--smrt-color-surface-container-high);
+    border-radius: var(--smrt-radius-small);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .module-panel-placeholder__hint {
     margin: 0;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .module-panel-placeholder__meta {
     margin: 0;
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #94a3b8);
+    color: var(--smrt-color-on-surface-variant);
   }
 }
 </style>

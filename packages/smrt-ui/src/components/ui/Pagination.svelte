@@ -231,25 +231,25 @@ const isLastPage = $derived(currentPage === totalPages);
   }
 
   .page-link:not(.current):not(.disabled) {
-    background: var(--smrt-color-surface-container-high, #f3f4f6);
-    color: var(--smrt-color-on-surface, #374151);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
   }
 
   .page-link:not(.current):not(.disabled):hover {
-    background: var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary, white);
   }
 
   .page-link.current {
-    background: var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary, white);
     cursor: default;
   }
 
   .page-link.disabled,
   .page-link:disabled {
-    background: var(--smrt-color-surface-container-high, #f3f4f6);
-    color: var(--smrt-color-on-surface-variant, #9ca3af);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface-variant);
     cursor: not-allowed;
   }
 
@@ -281,7 +281,7 @@ const isLastPage = $derived(currentPage === totalPages);
     justify-content: center;
     min-width: 2.25rem;
     height: 2.25rem;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   @media (max-width: 480px) {

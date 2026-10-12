@@ -280,7 +280,7 @@
   .tools-dock {
     --smrt-tools-dock-rail-width: 3.25rem;
     --smrt-tools-dock-panel-width: 420px;
-    color: var(--smrt-color-on-surface, #f8fafc);
+    color: var(--smrt-color-on-surface);
     box-sizing: border-box;
   }
 
@@ -307,8 +307,8 @@
     align-items: center;
     gap: 0.35rem;
     padding: 0.6rem 0.45rem;
-    background: var(--smrt-color-surface-container-low, #11161b);
-    border-left: 1px solid var(--smrt-color-outline-variant, #30343a);
+    background: var(--smrt-color-surface-container-low);
+    border-left: 1px solid var(--smrt-color-outline-variant);
   }
 
   .tools-dock__rail-button {
@@ -321,19 +321,19 @@
     border: 1px solid transparent;
     border-radius: 0.45rem;
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #aab2bd);
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
   }
 
   .tools-dock__rail-button:hover,
   .tools-dock__rail-button.active {
-    background: var(--smrt-color-surface-container-high, #1d2228);
-    color: var(--smrt-color-on-surface, #f8fafc);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
   }
 
   .tools-dock__rail-button:focus-visible,
   .tools-dock__topbar-button:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #7dd3fc);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 
@@ -353,9 +353,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-primary, #7dd3fc);
-    color: var(--smrt-color-on-primary, #061014);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     font-size: var(--smrt-typography-label-small-size, 0.58rem);
     font-weight: var(--smrt-typography-weight-bold, 750);
     line-height: 1;
@@ -373,11 +373,11 @@
     flex-direction: column;
     gap: 0.85rem;
     padding: 1rem;
-    background: var(--smrt-color-surface, #101214);
-    color: var(--smrt-color-on-surface, #f8fafc);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
     overflow: hidden;
-    border-left: 1px solid var(--smrt-color-outline-variant, #30343a);
-    border-right: 1px solid var(--smrt-color-outline-variant, #30343a);
+    border-left: 1px solid var(--smrt-color-outline-variant);
+    border-right: 1px solid var(--smrt-color-outline-variant);
     box-shadow: -24px 0 40px
       color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
     transform: translateX(calc(100% + var(--smrt-tools-dock-rail-width)));
@@ -423,9 +423,9 @@
     height: 2rem;
     display: inline-grid;
     place-items: center;
-    border: 1px solid var(--smrt-color-outline-variant, #30343a);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.5rem;
-    background: var(--smrt-color-surface-container-high, #1d2228);
+    background: var(--smrt-color-surface-container-high);
     color: inherit;
     font-size: var(--smrt-typography-title-large-size, 1.2rem);
     line-height: 1;
@@ -437,12 +437,12 @@
     gap: 0.45rem;
     min-height: 12rem;
     padding: 1rem;
-    color: var(--smrt-color-on-surface-variant, #aab2bd);
+    color: var(--smrt-color-on-surface-variant);
     text-align: center;
   }
 
   .tools-dock__empty strong {
-    color: var(--smrt-color-on-surface, #f8fafc);
+    color: var(--smrt-color-on-surface);
   }
 
   .tools-dock__empty p {
@@ -471,9 +471,9 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    border: 1px solid var(--smrt-color-outline-variant, #30343a);
-    background: var(--smrt-color-surface-container-low, #11161b);
-    color: var(--smrt-color-on-surface-variant, #aab2bd);
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
     border-radius: 0.6rem;
     padding: 0.45rem 0.7rem;
     cursor: pointer;
@@ -483,8 +483,8 @@
 
   .tools-dock__topbar-button.active,
   .tools-dock__topbar-button:hover {
-    background: var(--smrt-color-surface-container-high, #1d2228);
-    color: var(--smrt-color-on-surface, #f8fafc);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
   }
 
   /* Leading glyph in the topbar layout. Sized to match the surrounding

@@ -178,10 +178,10 @@ function getTypeLabel(type: string): string {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .day-view {
-    --smrt-day-view-bg: var(--smrt-color-surface, #ffffff);
-    --smrt-day-view-border: var(--smrt-color-outline-variant, #e5e7eb);
-    --smrt-day-view-header-bg: var(--smrt-color-surface-container-low, #f5f5f5);
-    --smrt-day-view-card-hover: var(--smrt-color-surface-container-low, #f5f5f5);
+    --smrt-day-view-bg: var(--smrt-color-surface);
+    --smrt-day-view-border: var(--smrt-color-outline-variant);
+    --smrt-day-view-header-bg: var(--smrt-color-surface-container-low);
+    --smrt-day-view-card-hover: var(--smrt-color-surface-container-low);
 
     background: var(--smrt-day-view-bg);
   }
@@ -192,18 +192,18 @@ function getTypeLabel(type: string): string {
    * `--smrt-color-*-dark` tokens were never emitted).
    */
   :global([data-theme="dark"]) .day-view {
-    --smrt-day-view-bg: var(--smrt-color-surface, #242424);
-    --smrt-day-view-border: var(--smrt-color-outline-variant, #3a3a3a);
-    --smrt-day-view-header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
-    --smrt-day-view-card-hover: var(--smrt-color-surface-container-high, #3a3a3a);
+    --smrt-day-view-bg: var(--smrt-color-surface);
+    --smrt-day-view-border: var(--smrt-color-outline-variant);
+    --smrt-day-view-header-bg: var(--smrt-color-surface-container-low);
+    --smrt-day-view-card-hover: var(--smrt-color-surface-container-high);
   }
 
   @media (prefers-color-scheme: dark) {
     :global(:root:not([data-theme="light"])) .day-view {
-      --smrt-day-view-bg: var(--smrt-color-surface, #242424);
-      --smrt-day-view-border: var(--smrt-color-outline-variant, #3a3a3a);
-      --smrt-day-view-header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
-      --smrt-day-view-card-hover: var(--smrt-color-surface-container-high, #3a3a3a);
+      --smrt-day-view-bg: var(--smrt-color-surface);
+      --smrt-day-view-border: var(--smrt-color-outline-variant);
+      --smrt-day-view-header-bg: var(--smrt-color-surface-container-low);
+      --smrt-day-view-card-hover: var(--smrt-color-surface-container-high);
     }
   }
 
@@ -217,7 +217,7 @@ function getTypeLabel(type: string): string {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     text-decoration: none;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     margin-bottom: var(--smrt-spacing-4, 1rem);
@@ -225,14 +225,14 @@ function getTypeLabel(type: string): string {
   }
 
   .back-link:hover {
-    color: var(--smrt-color-on-primary-container, #1b1b1f);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .date-title {
     margin: 0;
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     font-weight: var(--smrt-typography-headline-small-weight, 600);
-    color: var(--smrt-color-on-surface, #333);
+    color: var(--smrt-color-on-surface);
   }
 
   .weather-summary {
@@ -243,7 +243,7 @@ function getTypeLabel(type: string): string {
   }
 
   .weather-icon {
-    font-size: var(--smrt-typography-headline-small-size, 24px);
+    font-size: var(--smrt-typography-headline-small-size);
   }
 
   .weather-temps {
@@ -257,7 +257,7 @@ function getTypeLabel(type: string): string {
   }
 
   .low {
-    color: var(--smrt-color-on-surface-variant, #666);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .day-content {
@@ -267,11 +267,11 @@ function getTypeLabel(type: string): string {
   .empty-state {
     text-align: center;
     padding: var(--smrt-spacing-12, 3rem) var(--smrt-spacing-6, 1.5rem);
-    color: var(--smrt-color-on-surface-variant, #666);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .empty-icon {
-    font-size: var(--smrt-typography-display-medium-size, 48px);
+    font-size: var(--smrt-typography-display-medium-size);
     display: block;
     margin-bottom: var(--smrt-spacing-4, 1rem);
     opacity: 0.5;
@@ -297,16 +297,16 @@ function getTypeLabel(type: string): string {
     margin: 0 0 var(--smrt-spacing-4, 1rem) 0;
     font-size: var(--smrt-typography-title-medium-size, 1.125rem);
     font-weight: var(--smrt-typography-title-medium-weight, 600);
-    color: var(--smrt-color-on-surface, #333);
+    color: var(--smrt-color-on-surface);
   }
 
   .group-icon {
-    font-size: var(--smrt-typography-title-large-size, 20px);
+    font-size: var(--smrt-typography-title-large-size);
   }
 
   .group-count {
     font-weight: var(--smrt-typography-body-medium-weight, 400);
-    color: var(--smrt-color-on-surface-variant, #666);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .event-list {
@@ -322,15 +322,15 @@ function getTypeLabel(type: string): string {
     padding: var(--smrt-spacing-4, 1rem);
     background: var(--smrt-day-view-bg);
     border: 1px solid var(--smrt-day-view-border);
-    border-radius: var(--smrt-radius-medium, 8px);
+    border-radius: var(--smrt-radius-medium);
     text-decoration: none;
-    color: var(--smrt-color-on-surface, #333);
+    color: var(--smrt-color-on-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .event-card--link:hover {
     background: var(--smrt-day-view-card-hover);
-    border-color: var(--smrt-color-outline, #79747e);
+    border-color: var(--smrt-color-outline);
   }
 
   .event-card--link:hover .event-arrow {
@@ -343,7 +343,7 @@ function getTypeLabel(type: string): string {
     width: 80px;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-body-medium-weight, 500);
-    color: var(--smrt-color-on-surface-variant, #666);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .event-details {
@@ -362,13 +362,13 @@ function getTypeLabel(type: string): string {
   .event-venue {
     display: block;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #666);
-    margin-top: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-on-surface-variant);
+    margin-top: var(--smrt-spacing-1);
   }
 
   .event-arrow {
     flex-shrink: 0;
-    color: var(--smrt-color-on-surface-variant, #666);
+    color: var(--smrt-color-on-surface-variant);
     transition: transform var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 

@@ -231,9 +231,9 @@ export function getElement(): HTMLInputElement | null {
 		padding: 0.5rem 0.75rem;
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 		line-height: var(--smrt-typography-body-medium-line-height, 1.5);
-		color: var(--smrt-color-on-surface, #1f2937);
-		background-color: var(--smrt-color-surface, #fff);
-		border: 1px solid var(--smrt-color-outline, #6b7280);
+		color: var(--smrt-color-on-surface);
+		background-color: var(--smrt-color-surface);
+		border: 1px solid var(--smrt-color-outline);
 		border-radius: var(--smrt-radius-small, 0.375rem);
 		transition:
 			border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease-in-out),
@@ -242,24 +242,24 @@ export function getElement(): HTMLInputElement | null {
 
 	.input:focus {
 		outline: none;
-		border-color: var(--smrt-color-primary, #005ac1);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #005ac1) 10%, transparent);
+		border-color: var(--smrt-color-primary);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
 	}
 
 	.input[data-smrt-highlighted='true'] {
-		outline: 3px solid var(--smrt-color-tertiary, #7d5260);
+		outline: 3px solid var(--smrt-color-tertiary);
 		outline-offset: 3px;
-		box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-tertiary, #7d5260) 20%, transparent);
+		box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-tertiary) 20%, transparent);
 	}
 
 	.input:disabled {
-		background-color: var(--smrt-color-surface-container-high, #f3f4f6);
+		background-color: var(--smrt-color-surface-container-high);
 		cursor: not-allowed;
 		opacity: 0.7;
 	}
 
 	.input::placeholder {
-		color: var(--smrt-color-on-surface-variant, #9ca3af);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	/* Phones: 16px text so iOS Safari doesn't zoom the page when the field
@@ -277,7 +277,7 @@ export function getElement(): HTMLInputElement | null {
 		}
 	}
 
-  .input[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .input[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .input[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .input { min-height: var(--smrt-control-target-min, 0px); }
 }

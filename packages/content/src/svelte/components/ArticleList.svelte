@@ -68,7 +68,7 @@ const {
   .empty-state {
     text-align: center;
     padding: var(--smrt-spacing-3xl, 3rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .empty-state p {

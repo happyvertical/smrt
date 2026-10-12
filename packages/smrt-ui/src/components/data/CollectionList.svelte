@@ -130,7 +130,7 @@ function toggle(key: string | number) {
   .collection--gallery { grid-template-columns: repeat(auto-fill, minmax(min(11rem, 100%), 1fr)); }
   .collection--gallery li { display: block; padding: 0; }
   .collection--gallery .main { gap: 0; }
-  .collection--gallery .select, .collection--gallery .actions { position: absolute; top: var(--smrt-spacing-1); z-index: 2; min-width: 2.75rem; min-height: 2.75rem; align-items: center; justify-content: center; border-radius: var(--smrt-radius-full, 999px); background: color-mix(in srgb, var(--smrt-color-surface) 82%, transparent); }
+  .collection--gallery .select, .collection--gallery .actions { position: absolute; top: var(--smrt-spacing-1); z-index: 2; min-width: 2.75rem; min-height: 2.75rem; align-items: center; justify-content: center; border-radius: var(--smrt-radius-full); background: color-mix(in srgb, var(--smrt-color-surface) 82%, transparent); }
   .collection--gallery .select { left: var(--smrt-spacing-1); }
   .collection--gallery .actions { right: var(--smrt-spacing-1); }
   .loading, .empty { display: flex; min-height: 8rem; align-items: center; justify-content: center; gap: var(--smrt-spacing-2); color: var(--smrt-color-on-surface-variant); }

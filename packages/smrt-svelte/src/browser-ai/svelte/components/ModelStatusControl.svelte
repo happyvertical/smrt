@@ -143,51 +143,51 @@ async function run(
   .model-status {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-sm, 8px);
-    padding: var(--smrt-spacing-md, 12px);
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-    border-radius: var(--smrt-radius-medium, 8px);
+    gap: var(--smrt-spacing-sm);
+    padding: var(--smrt-spacing-md);
+    background: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-medium);
   }
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    gap: var(--smrt-spacing-sm, 8px);
+    gap: var(--smrt-spacing-sm);
   }
 
   .label {
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   .state {
     font: var(--smrt-typography-body-small-font, 0.8125rem / 1.2 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #44474f);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .model-status[data-status='ready'] .state {
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .model-status[data-status='error'] .state {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .hint,
   .error {
     margin: 0;
     font: var(--smrt-typography-body-small-font, 0.8125rem / 1.2 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #44474f);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .error {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .actions {
     display: flex;
-    gap: var(--smrt-spacing-sm, 8px);
+    gap: var(--smrt-spacing-sm);
   }
 }
 </style>

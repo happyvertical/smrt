@@ -111,7 +111,7 @@ function cycle(delta: number) {
     border: 1px solid var(--smrt-color-outline-variant);
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     cursor: pointer;
   }
 
@@ -140,7 +140,7 @@ function cycle(delta: number) {
   .content-image-chooser :global(.chooser-preview img) {
     width: 2rem;
     height: 2rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     object-fit: cover;
     background: var(--smrt-color-surface-container-high);
   }

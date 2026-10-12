@@ -110,7 +110,7 @@ const valueText = $derived(
     padding: 0.25rem 0.5rem;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     background-color: var(--smrt-badge-bg);
     color: var(--smrt-badge-text);
     position: relative;

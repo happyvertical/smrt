@@ -165,17 +165,17 @@ let {
   }
 
   .panel-header--error h2 {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .empty-message {
     padding: var(--smrt-spacing-md, 1rem);
     text-align: center;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .empty-message--success {
-    color: var(--smrt-color-tertiary, #006c4f);
+    color: var(--smrt-color-tertiary);
   }
 }
 </style>

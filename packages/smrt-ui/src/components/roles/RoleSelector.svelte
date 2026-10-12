@@ -207,7 +207,7 @@ $effect(() => {
     width: 100%;
     padding: 0.5rem 0.75rem;
     background: var(--smrt-color-surface, white);
-    border: 1px solid var(--smrt-color-outline, #6b7280);
+    border: 1px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-small, 0.375rem);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
@@ -216,16 +216,16 @@ $effect(() => {
 
   .trigger:focus-visible {
     outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #005ac1) 10%, transparent);
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
 
   .trigger.open {
-    border-color: var(--smrt-color-primary, #005ac1);
+    border-color: var(--smrt-color-primary);
   }
 
   .trigger:disabled {
-    background: var(--smrt-color-surface-container-high, #f3f4f6);
+    background: var(--smrt-color-surface-container-high);
     cursor: not-allowed;
   }
 
@@ -236,13 +236,13 @@ $effect(() => {
   }
 
   .placeholder {
-    color: var(--smrt-color-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .chevron {
     width: 1.25rem;
     height: 1.25rem;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     transition: transform var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
@@ -257,7 +257,7 @@ $effect(() => {
     right: 0;
     margin-top: 0.25rem;
     background: var(--smrt-color-surface, white);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-small, 0.375rem);
     box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
     z-index: var(--smrt-z-index-dropdown, 1000);
@@ -279,20 +279,20 @@ $effect(() => {
   }
 
   .option:hover {
-    background: var(--smrt-color-surface-container-high, #f3f4f6);
+    background: var(--smrt-color-surface-container-high);
   }
   /* Keyboard focus needs its own indicator: the hover background alone is a
      ~1.1:1 change against the list surface in every preset, which is invisible
      and fails WCAG 2.4.11. Inset so it is not clipped by the list's overflow
      (#2322). */
   .option:focus-visible {
-    background: var(--smrt-color-surface-container-high, #f3f4f6);
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-surface-container-high);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
   .option.selected {
-    background: var(--smrt-color-primary-container, #eff6ff);
+    background: var(--smrt-color-primary-container);
   }
 
   .option-content {
@@ -303,23 +303,23 @@ $effect(() => {
 
   .role-name {
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
     text-transform: capitalize;
   }
 
   .system-badge {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     padding: 0.125rem 0.375rem;
-    background: var(--smrt-color-primary-container, #dbeafe);
-    color: var(--smrt-color-on-primary-container, #1e40af);
-    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    border-radius: var(--smrt-radius-full);
     text-transform: uppercase;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .description {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 }
 </style>

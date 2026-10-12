@@ -180,7 +180,7 @@ const isoString = $derived(
   }
 
   .date-fallback {
-    color: var(--smrt-color-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 }

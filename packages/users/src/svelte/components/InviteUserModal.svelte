@@ -162,10 +162,10 @@ function handleClose() {
 
   .error {
     padding: var(--smrt-spacing-sm, 0.75rem);
-    background: var(--smrt-color-error-container, #ffdad6);
-    border: 1px solid var(--smrt-color-error, #ba1a1a);
+    background: var(--smrt-color-error-container);
+    border: 1px solid var(--smrt-color-error);
     border-radius: var(--smrt-radius-medium, 0.5rem);
-    color: var(--smrt-color-on-error-container, #410002);
+    color: var(--smrt-color-on-error-container);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
 
@@ -177,7 +177,7 @@ function handleClose() {
 
   label {
     font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .checkbox-field {
@@ -189,7 +189,7 @@ function handleClose() {
   .checkbox-field input {
     width: 1rem;
     height: 1rem;
-    accent-color: var(--smrt-color-primary, #005ac1);
+    accent-color: var(--smrt-color-primary);
   }
 
   .checkbox-field label {
@@ -198,9 +198,9 @@ function handleClose() {
 
   .hint {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     padding: var(--smrt-spacing-sm, 0.5rem);
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
     border-radius: var(--smrt-radius-small, 0.25rem);
   }
 }

@@ -296,22 +296,22 @@ export interface Props {
   .compose-form-shell :global(.compose-form) {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-4, 16px);
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-4);
     font-family: var(--smrt-font-family, system-ui);
   }
 
   .field {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-1, 4px) 0;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #cac4d0);
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-1) 0;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .field-label {
-    font-size: var(--smrt-typography-label-large-size, 14px);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    font-size: var(--smrt-typography-label-large-size);
+    color: var(--smrt-color-on-surface-variant);
     min-width: 56px;
   }
 
@@ -332,10 +332,10 @@ export interface Props {
     outline: none;
     box-shadow: none;
     font-family: inherit;
-    font-size: var(--smrt-typography-body-medium-size, 14px);
-    padding: var(--smrt-spacing-2, 8px) 0;
+    font-size: var(--smrt-typography-body-medium-size);
+    padding: var(--smrt-spacing-2) 0;
     background: transparent;
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface);
   }
 
   .field :global(.select) {
@@ -351,7 +351,7 @@ export interface Props {
 
   .cc-toggles {
     display: flex;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     justify-content: flex-end;
   }
 
@@ -364,8 +364,8 @@ export interface Props {
   .cc-toggles :global(.link-btn) {
     background: none;
     border: none;
-    color: var(--smrt-color-primary, #6750a4);
-    font-size: var(--smrt-typography-label-large-size, 13px);
+    color: var(--smrt-color-primary);
+    font-size: var(--smrt-typography-label-large-size);
     text-decoration: underline;
   }
 
@@ -375,28 +375,28 @@ export interface Props {
 
   .char-count {
     text-align: right;
-    font-size: var(--smrt-typography-label-medium-size, 12px);
-    color: var(--smrt-color-outline, #79747e);
-    padding-top: var(--smrt-spacing-1, 4px);
+    font-size: var(--smrt-typography-label-medium-size);
+    color: var(--smrt-color-outline);
+    padding-top: var(--smrt-spacing-1);
   }
 
   .char-count.over-limit {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .send-error {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border-radius: var(--smrt-radius-sm, 8px);
-    background: var(--smrt-color-error-container, #ffdad6);
-    color: var(--smrt-color-on-error-container, #410002);
-    font-size: var(--smrt-typography-body-small-size, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+    font-size: var(--smrt-typography-body-small-size);
   }
 
   .actions {
     display: flex;
-    gap: var(--smrt-spacing-2, 8px);
-    padding-top: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
+    padding-top: var(--smrt-spacing-2);
   }
 
   /*
@@ -406,7 +406,7 @@ export interface Props {
    * ghost uses the primary color) — issue #1589.
    */
   .actions :global(.btn-text) {
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
   }
 }
 </style>

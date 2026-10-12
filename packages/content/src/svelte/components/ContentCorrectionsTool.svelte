@@ -314,7 +314,7 @@ async function issueCorrection() {
   }
 
   .pill {
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     padding: 0.2rem 0.55rem;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-bold, 700);

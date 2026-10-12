@@ -135,7 +135,7 @@ let {
     bottom: 0.35rem;
     width: 0.45rem;
     height: 0.45rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-outline);
   }
 
@@ -144,7 +144,7 @@ let {
   }
 
   .content-review-status-tray :global(.tray-button--warning .tray-button__indicator) {
-    background: var(--smrt-color-tertiary, #d97706);
+    background: var(--smrt-color-tertiary);
   }
 
   .content-review-status-tray :global(.tray-button--success .tray-button__indicator) {

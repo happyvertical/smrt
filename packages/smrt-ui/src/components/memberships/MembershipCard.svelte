@@ -102,7 +102,7 @@ function formatDate(date: Date | string | null | undefined): string {
   .status {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     padding: 0.125rem 0.375rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     text-transform: uppercase;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }

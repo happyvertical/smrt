@@ -67,7 +67,7 @@ const tiles = $derived.by((): Tile[] => {
 @layer smrt.theme {
   .empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -79,18 +79,18 @@ const tiles = $derived.by((): Tile[] => {
   }
 
   .tile {
-    background: var(--smrt-color-surface, #fff);
-    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
     padding: var(--smrt-spacing-3, 0.75rem);
   }
 
   .tile--emphasis {
-    border-color: var(--smrt-color-primary, #2563eb);
+    border-color: var(--smrt-color-primary);
   }
 
   .tile dt {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -103,7 +103,7 @@ const tiles = $derived.by((): Tile[] => {
   }
 
   .tile dd.negative {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 }
 </style>

@@ -144,10 +144,10 @@ function getColor(name: string): string {
   .tenant-card {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-4, 16px);
-    padding: var(--smrt-spacing-4, 16px);
+    gap: var(--smrt-spacing-4);
+    padding: var(--smrt-spacing-4);
     background-color: var(--smrt-color-surface-container-low);
-    border-radius: var(--smrt-radius-lg, 12px);
+    border-radius: var(--smrt-radius-lg);
     color: var(--smrt-color-on-surface);
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     position: relative;
@@ -175,7 +175,7 @@ function getColor(name: string): string {
     justify-content: center;
     width: 48px;
     height: 48px;
-    border-radius: var(--smrt-radius-lg, 12px);
+    border-radius: var(--smrt-radius-lg);
     color: white;
     font: var(--smrt-typography-title-medium-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
@@ -190,7 +190,7 @@ function getColor(name: string): string {
   .header {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   .name {
@@ -203,11 +203,11 @@ function getColor(name: string): string {
 
   .status {
     font: var(--smrt-typography-label-small-font);
-    padding: 0 var(--smrt-spacing-2, 8px);
+    padding: 0 var(--smrt-spacing-2);
     height: 18px;
     display: inline-flex;
     align-items: center;
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     text-transform: uppercase;
     font-weight: var(--smrt-typography-weight-semibold, 600);
     flex-shrink: 0;
@@ -231,7 +231,7 @@ function getColor(name: string): string {
   .slug {
     font: var(--smrt-typography-body-small-font);
     color: var(--smrt-color-on-surface-variant);
-    margin-top: var(--smrt-spacing-1, 4px);
+    margin-top: var(--smrt-spacing-1);
   }
 
   .selected .slug {
@@ -240,7 +240,7 @@ function getColor(name: string): string {
   }
 
   .meta {
-    margin-top: var(--smrt-spacing-1, 4px);
+    margin-top: var(--smrt-spacing-1);
   }
 
   .members {
@@ -250,7 +250,7 @@ function getColor(name: string): string {
 
   .actions {
     display: flex;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     flex-shrink: 0;
   }
 
@@ -269,7 +269,7 @@ function getColor(name: string): string {
     width: 32px;
     height: 32px;
     padding: 0;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     color: var(--smrt-color-on-surface-variant);
   }
 

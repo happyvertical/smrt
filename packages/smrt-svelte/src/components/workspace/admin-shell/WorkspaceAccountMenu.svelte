@@ -139,7 +139,7 @@ function handleSelect(id: string): void {
   }
 
   .smrt-workspace-account-menu[data-density='touch'] {
-    --smrt-control-target-min: var(--smrt-touch-target-min, 48px);
+    --smrt-control-target-min: var(--smrt-touch-target-min);
   }
   .smrt-workspace-account-menu[data-density='comfortable'] {
     --smrt-control-target-min: 0px;

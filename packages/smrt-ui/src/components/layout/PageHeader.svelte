@@ -147,7 +147,7 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
   }
 
   .page-crumbs {
-    margin-bottom: var(--smrt-spacing-1, 4px);
+    margin-bottom: var(--smrt-spacing-1);
     color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-body-small-font);
     font-size: 0.84rem;
@@ -189,7 +189,7 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
   .page-crumbs a:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
   }
 
   .header-main {
@@ -203,7 +203,7 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
   .header-content {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     flex: 1;
     min-width: min(100%, 200px);
   }
@@ -211,13 +211,13 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
   .back-link {
     display: inline-flex;
     align-items: center;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     color: var(--smrt-color-primary);
     font: var(--smrt-typography-label-large-font);
     text-decoration: none;
     margin-bottom: 0.75rem;
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px) var(--smrt-spacing-1, 4px) var(--smrt-spacing-1, 4px);
-    border-radius: var(--smrt-radius-md, 8px);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2) var(--smrt-spacing-1) var(--smrt-spacing-1);
+    border-radius: var(--smrt-radius-md);
     margin-left: -4px; /* Align icon with text below */
     transition: background-color 200ms;
   }

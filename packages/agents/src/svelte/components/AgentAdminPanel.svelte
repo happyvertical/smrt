@@ -87,9 +87,9 @@ async function handleSave(newConfig: unknown) {
 		justify-content: center;
 		padding: 3rem 2rem;
 		text-align: center;
-		background: var(--smrt-color-surface-container-low, #f8fafc);
-		border: 1px dashed var(--smrt-color-outline-variant, #e2e8f0);
-		border-radius: var(--smrt-radius-medium, 8px);
+		background: var(--smrt-color-surface-container-low);
+		border: 1px dashed var(--smrt-color-outline-variant);
+		border-radius: var(--smrt-radius-medium);
 		min-height: 200px;
 	}
 
@@ -102,13 +102,13 @@ async function handleSave(newConfig: unknown) {
 	.no-panel-message {
 		margin: 0 0 0.5rem 0;
 		font-size: var(--smrt-typography-body-large-size, 0.9375rem);
-		color: var(--smrt-color-on-surface-variant, #64748b);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	.no-panel-message code {
-		background: var(--smrt-color-surface-container-high, #e2e8f0);
+		background: var(--smrt-color-surface-container-high);
 		padding: var(--smrt-spacing-1, 0.125rem) var(--smrt-spacing-2, 0.375rem);
-		border-radius: var(--smrt-radius-small, 4px);
+		border-radius: var(--smrt-radius-small);
 		font-family: var(--smrt-font-family-mono, 'SF Mono', Monaco, Consolas, monospace);
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 	}
@@ -116,7 +116,7 @@ async function handleSave(newConfig: unknown) {
 	.no-panel-hint {
 		margin: 0;
 		font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-		color: var(--smrt-color-on-surface-variant, #94a3b8);
+		color: var(--smrt-color-on-surface-variant);
 	}
 }
 </style>

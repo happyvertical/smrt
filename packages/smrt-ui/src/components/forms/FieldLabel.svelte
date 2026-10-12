@@ -29,19 +29,19 @@ let { label, for: forId, id, required = false }: Props = $props();
 @layer smrt.theme {
   .smrt-field-label {
     display: block;
-    margin-bottom: var(--smrt-spacing-1, 4px);
+    margin-bottom: var(--smrt-spacing-1);
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     line-height: var(--smrt-typography-label-large-line-height, 1.4);
     letter-spacing: normal;
     text-transform: none;
     font-family: inherit;
-    color: var(--smrt-color-on-surface, #374151);
+    color: var(--smrt-color-on-surface);
   }
 
   .required {
-    color: var(--smrt-color-error, #ba1a1a);
-    margin-left: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-error);
+    margin-left: var(--smrt-spacing-1);
   }
 }
 </style>

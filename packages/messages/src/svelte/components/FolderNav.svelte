@@ -130,23 +130,23 @@ function getFolderIcon(specialUse?: string): string {
     border: none;
     background: none;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     border-radius: var(--smrt-radius-small, 0.25rem);
     transition: background var(--smrt-duration-short2, 150ms);
     text-align: left;
   }
 
   .folder-list :global(.folder-item):hover {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
   }
 
   .folder-list :global(.folder-item--active) {
-    background: var(--smrt-color-secondary-container, #d7e3f7);
+    background: var(--smrt-color-secondary-container);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .folder-list :global(.folder-item):focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
@@ -169,16 +169,16 @@ function getFolderIcon(specialUse?: string): string {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #fff);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
     padding: 0 0.25rem;
   }
 
   .divider {
     border: none;
-    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-top: 1px solid var(--smrt-color-outline-variant);
     margin: 0.25rem 0.75rem;
   }
 }

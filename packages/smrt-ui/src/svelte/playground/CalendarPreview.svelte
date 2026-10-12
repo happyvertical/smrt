@@ -125,7 +125,7 @@ const items: CalendarItem[] = [
 
   .eyebrow {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #44474e);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
   }
@@ -138,7 +138,7 @@ const items: CalendarItem[] = [
   .picked {
     margin: 0;
     min-height: 1.5rem;
-    color: var(--smrt-color-on-surface-variant, #44474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 }
 </style>

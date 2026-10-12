@@ -131,7 +131,7 @@ const styleString = $derived.by(() => {
 
   if (density !== undefined) {
     declarations.push(
-      `--smrt-control-target-min: ${density === 'touch' ? 'var(--smrt-touch-target-min, 48px)' : '0px'}`,
+      `--smrt-control-target-min: ${density === 'touch' ? 'var(--smrt-touch-target-min)' : '0px'}`,
     );
   }
 
