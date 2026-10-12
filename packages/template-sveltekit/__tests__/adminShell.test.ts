@@ -29,6 +29,14 @@ describe('application shell', () => {
     expect(layout).not.toMatch(/<(Provider|ThemeProvider|AdminShell)\b/);
   });
 
+  it('drops dead AppShell props and gives nav items icons', () => {
+    expect(layout).not.toContain('subtitle=');
+    expect(layout).not.toContain('tenantLabel');
+    expect(layout).not.toContain('appPanelDocs');
+    expect(layout).toContain("icon: 'book'");
+    expect(layout).toContain("icon: 'settings'");
+  });
+
   it('registers diagnostics only for a signed-in session and generated tools read-only', () => {
     expect(layout).toContain(
       'runtimeDiagnostics={data.session.authenticated}',
@@ -48,5 +56,18 @@ describe('application shell', () => {
 
   it('mounts the shipped settings page inside the shell', () => {
     expect(read('settings/+page.svelte')).toContain('<ShellSettingsPage />');
+  });
+});
+
+describe('document head', () => {
+  const html = read('../app.html');
+
+  it('declares safe-area, color scheme, theme colors and an SVG icon', () => {
+    expect(html).toContain('viewport-fit=cover');
+    expect(html).toContain('name="color-scheme" content="light dark"');
+    expect(html).toContain('(prefers-color-scheme: light)');
+    expect(html).toContain('(prefers-color-scheme: dark)');
+    expect(html).toContain('rel="icon" type="image/svg+xml"');
+    expect(read('../../static/favicon.svg')).toContain('currentColor');
   });
 });

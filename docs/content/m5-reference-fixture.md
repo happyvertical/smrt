@@ -99,7 +99,7 @@ authenticated REST, namespace, exposure and consent semantics).
   as well. The uploaded artifact remains summary-only.
 - **Not a performance or load result.** The gate is about determinism.
 - **Not full permission coverage.** The onboarded owner's role does not grant
-  the template's authored `items.read` page permission, so the example page
+  the template's authored `notes.read` page permission, so the example page
   renders its access notice. The generated REST surface and the WebMCP read
   tools are exercised instead.
 - **Generated list tools are not exercised end to end.** The generated REST

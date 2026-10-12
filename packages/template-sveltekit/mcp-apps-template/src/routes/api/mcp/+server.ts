@@ -2,17 +2,17 @@ import type { McpWorkflowToolDefinition } from '@happyvertical/smrt-app-mcp';
 import { mountMcpAppRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
 import { openAiDisplayMetadata, withOpenAiEntrypoints } from '@happyvertical/smrt-mcp-openai';
 
-import { Item } from '$lib/objects/Item';
+import { Note } from '$lib/objects/Note';
 import { runtime } from '$lib/server/smrt';
 
-const ITEM_RESOURCE_URI = 'ui://smrt-app/v1/items.html';
-const itemResourceHtml = `<!doctype html><html lang="en"><head><title>Items</title></head><body><main tabindex="-1"><h1>Items</h1><p>Use the host controls to review your authorized items.</p></main></body></html>`;
+const NOTE_RESOURCE_URI = 'ui://smrt-app/v1/notes.html';
+const noteResourceHtml = `<!doctype html><html lang="en"><head><title>Notes</title></head><body><main tabindex="-1"><h1>Notes</h1><p>Use the host controls to review your authorized notes.</p></main></body></html>`;
 
-const itemsOverview: McpWorkflowToolDefinition = withOpenAiEntrypoints(
+const notesOverview: McpWorkflowToolDefinition = withOpenAiEntrypoints(
   {
-    name: 'items_overview',
+    name: 'notes_overview',
     description: 'Open the authorized item overview.',
-    title: 'Items',
+    title: 'Notes',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     outputSchema: {
       type: 'object',
@@ -23,10 +23,10 @@ const itemsOverview: McpWorkflowToolDefinition = withOpenAiEntrypoints(
     effect: 'read',
     idempotent: true,
     openWorld: false,
-    ui: { resourceUri: ITEM_RESOURCE_URI },
+    ui: { resourceUri: NOTE_RESOURCE_URI },
     async execute() {
       return {
-        content: [{ type: 'text', text: 'Item overview is ready.' }],
+        content: [{ type: 'text', text: 'Note overview is ready.' }],
         structuredContent: { state: 'ready' },
       };
     },
@@ -35,7 +35,7 @@ const itemsOverview: McpWorkflowToolDefinition = withOpenAiEntrypoints(
 );
 
 /**
- * Stateless SDK-v2 Streamable HTTP MCP endpoint for this app's own `Item`.
+ * Stateless SDK-v2 Streamable HTTP MCP endpoint for this app's own `Note`.
  * `runtime` supplies the request database, the bearer adapter for the profile
  * it resolves per request, and the principal binding. Locally the principal
  * is the signed session (user, authorized tenant, and permission slugs), or
@@ -46,22 +46,22 @@ const itemsOverview: McpWorkflowToolDefinition = withOpenAiEntrypoints(
  * `createHostedMcpResourceAuth({ ..., resolvePrincipal })` to override it).
  * A bearer principal is bound into the request permission
  * context (under `database-rls`, its own RLS transaction) with its scopes
- * capped to live permissions. Every principal needs `items.read`, so only
+ * capped to live permissions. Every principal needs `notes.read`, so only
  * read-only tools are published until per-operation authorization exists;
  * browser requests from a foreign `Origin` are refused.
  */
 export const POST = mountMcpAppRoute({
   runtime,
-  models: [Item],
-  requiredScopes: ['items.read'],
+  models: [Note],
+  requiredScopes: ['notes.read'],
   effects: ['read'],
-  workflowTools: [itemsOverview],
+  workflowTools: [notesOverview],
   resources: [
     {
-      uri: ITEM_RESOURCE_URI,
+      uri: NOTE_RESOURCE_URI,
       version: 'v1',
-      name: 'Items',
-      html: itemResourceHtml,
+      name: 'Notes',
+      html: noteResourceHtml,
       csp: {},
       metadata: openAiDisplayMetadata({ availableDisplayModes: ['inline'] }),
     },

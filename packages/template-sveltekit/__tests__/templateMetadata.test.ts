@@ -18,7 +18,7 @@ const publishedPackageJson = JSON.parse(
   readFileSync(join(__dirname, '..', 'package.json'), 'utf8'),
 ) as { files: string[] };
 const itemSource = readFileSync(
-  join(__dirname, '..', 'template', 'src', 'lib', 'objects', 'Item.ts'),
+  join(__dirname, '..', 'template', 'src', 'lib', 'objects', 'Note.ts'),
   'utf8',
 );
 
@@ -77,12 +77,12 @@ describe('generated project metadata', () => {
     expect(itemSource).not.toContain('...CRUD_ACTIONS');
   });
 
-  it('registers an explicit Item collection for generated CLI commands', () => {
+  it('registers an explicit Note collection for generated CLI commands', () => {
     expect(itemSource).toContain(
-      'export class ItemCollection extends SmrtCollection<Item>',
+      'export class NoteCollection extends SmrtCollection<Note>',
     );
     expect(itemSource).toContain(
-      "ObjectRegistry.registerCollection('Item', ItemCollection)",
+      "ObjectRegistry.registerCollection('Note', NoteCollection)",
     );
   });
 });

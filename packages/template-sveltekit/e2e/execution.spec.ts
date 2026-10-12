@@ -12,7 +12,7 @@ import { expect, test } from './fixtures.js';
 test.describe.configure({ mode: 'serial' });
 
 /** The generated read tool that fetches one of the template's example rows. */
-const ITEM_GET_TOOL = 'item_get';
+const NOTE_GET_TOOL = 'note_get';
 
 test('executes a permitted read as the page user and sees persisted state', async ({
   ownerPage,
@@ -21,13 +21,13 @@ test('executes a permitted read as the page user and sees persisted state', asyn
   await ownerPage.goto('/', { waitUntil: 'networkidle' });
 
   const live = await ownerPage.evaluate(() => window.__m5ModelContext!.live());
-  expect(live.map((entry) => entry.name)).toContain(ITEM_GET_TOOL);
+  expect(live.map((entry) => entry.name)).toContain(NOTE_GET_TOOL);
 
   const title = `M5 browser gate ${Date.now()}`;
   // Write through the ordinary generated REST route, as the page user. This
   // is the application's own path, not a harness shortcut.
   const created = await ownerPage.request.post(
-    `${referenceApp.baseURL}/api/items`,
+    `${referenceApp.baseURL}/api/notes`,
     { data: { title } },
   );
   expect(created.status()).toBe(201);
@@ -38,7 +38,7 @@ test('executes a permitted read as the page user and sees persisted state', asyn
   // session cookie — no service credential, no server-side principal.
   const raw = await ownerPage.evaluate(
     ([tool, rowId]) => window.__m5ModelContext!.execute(tool!, { id: rowId! }),
-    [ITEM_GET_TOOL, id],
+    [NOTE_GET_TOOL, id],
   );
   const row = JSON.parse(raw) as Record<string, unknown>;
   expect(row.id).toBe(id);
@@ -46,7 +46,7 @@ test('executes a permitted read as the page user and sees persisted state', asyn
 
   // ...and the same row is visible through the normal REST list path, so the
   // WebMCP read observed persisted state rather than a client-side cache.
-  const list = await ownerPage.request.get(`${referenceApp.baseURL}/api/items`);
+  const list = await ownerPage.request.get(`${referenceApp.baseURL}/api/notes`);
   expect(list.status()).toBe(200);
   expect(await list.text()).toContain(title);
 });
