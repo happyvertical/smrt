@@ -989,7 +989,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       {/snippet}
 
       {#snippet tenantRail()}
-        {#if navMode !== 'items' && !editing && hasNav}
+        {#if !editing && hasNav}
           <TenantNav
             collapsed
             items={applied.nav}

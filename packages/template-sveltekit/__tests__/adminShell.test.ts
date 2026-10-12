@@ -63,7 +63,7 @@ describe('application shell', () => {
 
   it('mounts the shipped owner setup form over the runtime action', () => {
     expect(read('setup/+page.svelte')).toContain(
-      '<OwnerSetupForm {data} {form} {enhance} />',
+      '<OwnerSetupForm {data} {form} {enhance} title="s-m-r-t app" />',
     );
     expect(read('setup/+page.server.ts')).toContain(
       'createOwnerSetupPage(runtime',

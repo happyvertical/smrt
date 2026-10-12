@@ -30,6 +30,8 @@
   currentHref={page.url.pathname}
   runtimeDiagnostics={data.session.authenticated}
   settingsHref="/settings"
+  edgeToggles={{ left: true }}
+  config={{ left: { initial: 'expanded' } }}
   user={data.session.user}
   onSignOut={signOut}
   phoneTabBar

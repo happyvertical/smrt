@@ -115,7 +115,7 @@ export const M = defineMessages({
   'ui.hotkey_input.conflicts_with': 'Conflicts with',
   'ui.shell_settings_panel.shell_settings': 'Shell settings',
   'ui.shell_settings_panel.description':
-    'Panel preferences and physical-key shortcuts.',
+    'Show or hide the workspace areas and reset the layout.',
   'ui.shell_settings_panel.disable_hotkeys': 'Disable hotkeys',
   'ui.shell_settings_panel.enable_hotkeys': 'Enable hotkeys',
   'ui.shell_settings_panel.collapse': 'Collapse',

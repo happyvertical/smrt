@@ -86,7 +86,7 @@
         description={data.canCreate
           ? 'Notes you add show up here for everyone in this workspace.'
           : 'Notes will show up here once someone adds them.'}
-        actionLabel={data.canCreate && !composing ? 'Start your first note' : undefined}
+        actionLabel={data.canCreate && !composing ? 'New note' : undefined}
         onaction={() => {
           composing = true;
         }}
