@@ -1,4 +1,5 @@
 <script lang="ts">
+import '@happyvertical/smrt-ui/themes/styles/all.css';
 import '@happyvertical/smrt-ui/themes/styles/fonts.css';
 import { page } from '$app/state';
 import { PlaygroundHost } from '@happyvertical/smrt-playground/svelte';
