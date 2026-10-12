@@ -241,6 +241,38 @@ export function paymentRetryContract(postgres = false, enabled = true): void {
       );
     });
 
+    it('allows the owning tenant to post a payment and read its journal', async () => {
+      enableTenancy();
+      const tenantId = '11111111-1111-4111-8111-111111111111';
+      await withTenant({ tenantId }, async () => {
+        const accounts = await AccountCollection.create({ db: payments.db });
+        const cash = await accounts.create({
+          number: '1000-owned',
+          name: 'Owned cash',
+          type: 'asset',
+        });
+        const receivables = await accounts.create({
+          number: '1200-owned',
+          name: 'Owned receivables',
+          type: 'asset',
+        });
+        const payment = await pending();
+        const journal = await payment.recordPayment({
+          ledgerId: '',
+          cashAccountId: cash.id!,
+          receivablesAccountId: receivables.id!,
+        });
+        expect(payment.tenantId).toBe(tenantId);
+        expect(journal.tenantId).toBe(tenantId);
+        expect(payment.status).toBe(PaymentStatus.COMPLETED);
+        expect(await journal.isBalanced()).toBe(true);
+        expect(await journal.getEntries()).toHaveLength(2);
+        expect(await journals.count({ where: { sourceRef: payment.id } })).toBe(
+          1,
+        );
+      });
+    });
+
     it('denies a foreign tenant before creating a journal', async () => {
       enableTenancy();
       const payment = await withTenant(
