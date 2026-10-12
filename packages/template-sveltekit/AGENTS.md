@@ -84,17 +84,24 @@ It is the ground-up alternative to `smrt-saas-starter`.
   establishes tenant context. Never turn an untrusted header into authority.
 - App code uses `runtime.getCollection()`/`runtime.classOptions()`, which are
   request-scoped (RLS transaction) and must never be retained.
-- `Item` is the single example object and demonstrates optional tenant scope,
-  a REST writable allowlist, shared CRUD action metadata, and the explicit
+- `Note` is the single example object (the canonical Notes starter, matching
+  `smrt-start`) and demonstrates required tenant scope, a REST writable allowlist, shared CRUD action metadata, and the explicit
   collection registration required by generated CLI/MCP runtime commands.
 - Initial data comes from `+page.server.ts`; loads declare
-  `depends('smrt:items')`, mutations call `invalidate('smrt:items')`, and
+  `depends('smrt:notes')`, mutations call `invalidate('smrt:notes')`, and
   hand-written writes call `assertOperationPermission()` with the session's
   exact permission snapshot.
 - The root layout is `AppShell` from `@happyvertical/smrt-svelte/app` with a
   small explicit `nav`; `/setup` and `/settings` mount that package's
   `OwnerSetupForm` and `ShellSettingsPage`. Generated REST routes do not imply
   page routes.
+- The Notes page is built from smrt-ui primitives only (`Button`, `Card`,
+  `Form`, `FormGroup`, `Input`, `Textarea`, `EmptyState`): no raw `<form>`,
+  `<input>`, or `<button>`, token spacing, and a "Start your first note" empty
+  state. The root layout passes only live AppShell props (no `subtitle`,
+  `tenantLabel`, or `appPanelDocs`) and gives each nav item a shell icon name.
+  `app.html` carries `viewport-fit=cover`, `color-scheme`, light and dark
+  `theme-color`, and `static/favicon.svg`.
 - AppShell's Provider registers generated WebMCP read tools with the
   authenticated page session. Write/destructive effects require an explicit
   page-owned policy.

@@ -185,7 +185,7 @@ test('runtime route failures return no server detail', async ({
         { failOnStatusCode: false },
       ),
     () =>
-      ownerPage.request.get(`${referenceApp.baseURL}/api/items/not-a-row`, {
+      ownerPage.request.get(`${referenceApp.baseURL}/api/notes/not-a-row`, {
         failOnStatusCode: false,
       }),
   ]) {

@@ -32,8 +32,8 @@ describe('opt-in MCP Apps runtime', () => {
   it('mounts the app route with an explicit model and scope over session authority', () => {
     const route = source('src/routes/api/mcp/+server.ts');
     expect(route).toContain('export const POST = mountMcpAppRoute({');
-    expect(route).toContain('models: [Item]');
-    expect(route).toContain("requiredScopes: ['items.read']");
+    expect(route).toContain('models: [Note]');
+    expect(route).toContain("requiredScopes: ['notes.read']");
     // The runtime supplies the request database, the bearer adapter and the
     // principal binding (#3491); the overlay wires none of them by hand.
     expect(route).toContain('  runtime,\n');
@@ -49,7 +49,7 @@ describe('opt-in MCP Apps runtime', () => {
 
   it('exposes only read-only tools until per-operation authorization exists', () => {
     const route = source('src/routes/api/mcp/+server.ts');
-    // `items.read` gates every published tool, so the catalog itself must be
+    // `notes.read` gates every published tool, so the catalog itself must be
     // limited to read effects; create/update/delete are never enumerable.
     expect(route).toContain("effects: ['read']");
   });
