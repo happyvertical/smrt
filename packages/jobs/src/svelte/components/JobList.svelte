@@ -340,7 +340,7 @@ const sortColumns = $derived([
 
   .job-list__head :global(th.sortable-header) {
     padding: 0;
-    --sortable-header-padding: var(--smrt-spacing-sm, 0.5rem)
+    --smrt-sortable-header-padding: var(--smrt-spacing-sm, 0.5rem)
       var(--smrt-spacing-md, 1rem);
   }
 

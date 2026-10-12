@@ -1486,7 +1486,7 @@ $effect(() => {
     aria-rowcount={virtualizationWindow.enabled
       ? virtualRowCount + headerRowCount + structuralRowCount
       : undefined}
-    style={`--data-table-caption-height: ${virtualCaptionHeight}px`}
+    style={`--smrt-data-table-caption-height: ${virtualCaptionHeight}px`}
   >
     {#if caption}
       <caption bind:this={tableCaption} class="data-table__caption">{caption}</caption>
@@ -1971,7 +1971,7 @@ $effect(() => {
 
   .data-table-container--sticky.data-table-container--virtualized .data-table__head {
     position: sticky;
-    top: var(--data-table-caption-height, 0px);
+    top: var(--smrt-data-table-caption-height, 0px);
     z-index: 1;
   }
 

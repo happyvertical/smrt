@@ -13,8 +13,8 @@
   Use `as="div"` with `role="columnheader"` semantics for grid layouts that
   are not a `<table>`.
 
-  Style hooks (set on the header or an ancestor): `--sortable-header-padding`
-  (the control's padding) and `--sortable-header-font-weight` (default 600;
+  Style hooks (set on the header or an ancestor): `--smrt-sortable-header-padding`
+  (the control's padding) and `--smrt-sortable-header-font-weight` (default 600;
   `inherit` takes the surrounding head row's weight).
 -->
 <script lang="ts">
@@ -136,12 +136,12 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
     gap: 0.25rem;
     min-height: 2.75rem;
     width: 100%;
-    padding: var(--sortable-header-padding, 0.5rem 0.75rem);
+    padding: var(--smrt-sortable-header-padding, 0.5rem 0.75rem);
     border: 0;
     background: transparent;
     color: inherit;
     font: inherit;
-    font-weight: var(--sortable-header-font-weight, 600);
+    font-weight: var(--smrt-sortable-header-font-weight, 600);
     text-align: inherit;
     text-decoration: none;
     cursor: pointer;
@@ -156,7 +156,7 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
     text-decoration: underline;
   }
   .sortable-header__control:focus-visible {
-    outline: 2px solid var(--color-focus, var(--color-primary, currentColor));
+    outline: 2px solid var(--smrt-color-primary, var(--smrt-color-primary, currentColor));
     outline-offset: -2px;
   }
   .sortable-header__icon {

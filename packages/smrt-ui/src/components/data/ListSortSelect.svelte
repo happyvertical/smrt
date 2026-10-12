@@ -106,15 +106,15 @@ function handleChange(event: Event) {
   }
   .list-sort-select__label {
     font-size: 0.875rem;
-    color: var(--color-text-secondary, inherit);
+    color: var(--smrt-color-on-surface-variant, inherit);
     white-space: nowrap;
   }
   .list-sort-select__control {
     min-height: 2.75rem;
     padding: 0.25rem 0.5rem;
-    border: 1px solid var(--color-border, currentColor);
-    border-radius: var(--radius-md, 0.375rem);
-    background: var(--color-surface, transparent);
+    border: 1px solid var(--smrt-color-outline-variant, currentColor);
+    border-radius: var(--smrt-radius-md, 0.375rem);
+    background: var(--smrt-color-surface, transparent);
     color: inherit;
     font: inherit;
   }

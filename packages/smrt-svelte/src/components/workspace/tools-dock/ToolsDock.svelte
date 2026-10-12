@@ -276,8 +276,8 @@
 
 <style>
   .tools-dock {
-    --tools-dock-rail-width: 3.25rem;
-    --tools-dock-panel-width: 420px;
+    --smrt-tools-dock-rail-width: 3.25rem;
+    --smrt-tools-dock-panel-width: 420px;
     color: var(--smrt-color-on-surface, #f8fafc);
     box-sizing: border-box;
   }
@@ -290,15 +290,15 @@
     align-self: flex-start;
     z-index: 20;
     height: 100vh;
-    width: var(--tools-dock-rail-width);
-    flex: 0 0 var(--tools-dock-rail-width);
+    width: var(--smrt-tools-dock-rail-width);
+    flex: 0 0 var(--smrt-tools-dock-rail-width);
     display: block;
   }
 
   .tools-dock__rail {
     position: relative;
     z-index: 2;
-    width: var(--tools-dock-rail-width);
+    width: var(--smrt-tools-dock-rail-width);
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -363,10 +363,10 @@
 
   .tools-dock__panel {
     position: absolute;
-    inset: 0 var(--tools-dock-rail-width) 0 auto;
+    inset: 0 var(--smrt-tools-dock-rail-width) 0 auto;
     height: 100%;
-    width: var(--tools-dock-panel-width);
-    min-width: var(--tools-dock-panel-width);
+    width: var(--smrt-tools-dock-panel-width);
+    min-width: var(--smrt-tools-dock-panel-width);
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
@@ -378,7 +378,7 @@
     border-right: 1px solid var(--smrt-color-outline-variant, #30343a);
     box-shadow: -24px 0 40px
       color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
-    transform: translateX(calc(100% + var(--tools-dock-rail-width)));
+    transform: translateX(calc(100% + var(--smrt-tools-dock-rail-width)));
     opacity: 0;
     pointer-events: none;
     transition:
@@ -539,11 +539,11 @@
       top: 0;
       right: 0;
       bottom: 0;
-      width: var(--tools-dock-rail-width);
+      width: var(--smrt-tools-dock-rail-width);
       height: 100vh;
       height: 100dvh;
       z-index: var(--smrt-z-index-modal, 1300);
-      --tools-dock-panel-width: min(420px, calc(100vw - var(--tools-dock-rail-width)));
+      --smrt-tools-dock-panel-width: min(420px, calc(100vw - var(--smrt-tools-dock-rail-width)));
     }
 
     /* Mobile: keep panel and rail above the close overlay so taps reach the
@@ -561,7 +561,7 @@
 
   @media (max-width: 640px) {
     .tools-dock--rail {
-      --tools-dock-panel-width: calc(100vw - var(--tools-dock-rail-width));
+      --smrt-tools-dock-panel-width: calc(100vw - var(--smrt-tools-dock-rail-width));
     }
 
     .tools-dock__panel {

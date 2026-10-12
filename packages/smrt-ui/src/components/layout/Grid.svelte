@@ -84,10 +84,10 @@ const responsiveStyles = $derived.by(() => {
   if (!isResponsive) return '';
   const cols = columns as ResponsiveColumns;
   const vars: string[] = [];
-  if (cols.sm !== undefined) vars.push(`--grid-columns-sm: ${cols.sm}`);
-  if (cols.md !== undefined) vars.push(`--grid-columns-md: ${cols.md}`);
-  if (cols.lg !== undefined) vars.push(`--grid-columns-lg: ${cols.lg}`);
-  if (cols.xl !== undefined) vars.push(`--grid-columns-xl: ${cols.xl}`);
+  if (cols.sm !== undefined) vars.push(`--smrt-grid-columns-sm: ${cols.sm}`);
+  if (cols.md !== undefined) vars.push(`--smrt-grid-columns-md: ${cols.md}`);
+  if (cols.lg !== undefined) vars.push(`--smrt-grid-columns-lg: ${cols.lg}`);
+  if (cols.xl !== undefined) vars.push(`--smrt-grid-columns-xl: ${cols.xl}`);
   return vars.join('; ');
 });
 
@@ -168,24 +168,24 @@ const gridClasses = $derived.by(() => {
 
   /* Responsive grid - uses CSS variables set via inline styles */
   .grid-responsive {
-    grid-template-columns: repeat(var(--grid-columns-sm, 1), 1fr);
+    grid-template-columns: repeat(var(--smrt-grid-columns-sm, 1), 1fr);
   }
 
   @media (min-width: 640px) {
     .grid-responsive {
-      grid-template-columns: repeat(var(--grid-columns-md, var(--grid-columns-sm, 2)), 1fr);
+      grid-template-columns: repeat(var(--smrt-grid-columns-md, var(--smrt-grid-columns-sm, 2)), 1fr);
     }
   }
 
   @media (min-width: 1024px) {
     .grid-responsive {
-      grid-template-columns: repeat(var(--grid-columns-lg, var(--grid-columns-md, var(--grid-columns-sm, 3))), 1fr);
+      grid-template-columns: repeat(var(--smrt-grid-columns-lg, var(--smrt-grid-columns-md, var(--smrt-grid-columns-sm, 3))), 1fr);
     }
   }
 
   @media (min-width: 1280px) {
     .grid-responsive {
-      grid-template-columns: repeat(var(--grid-columns-xl, var(--grid-columns-lg, var(--grid-columns-md, var(--grid-columns-sm, 4)))), 1fr);
+      grid-template-columns: repeat(var(--smrt-grid-columns-xl, var(--smrt-grid-columns-lg, var(--smrt-grid-columns-md, var(--smrt-grid-columns-sm, 4)))), 1fr);
     }
   }
 

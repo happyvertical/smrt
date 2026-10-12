@@ -53,10 +53,10 @@ describe('Grid', () => {
     const el = gridEl(container);
     expect(el).toHaveClass('grid-responsive');
     const style = el.getAttribute('style') ?? '';
-    expect(style).toContain('--grid-columns-md: 2');
-    expect(style).toContain('--grid-columns-xl: 4');
+    expect(style).toContain('--smrt-grid-columns-md: 2');
+    expect(style).toContain('--smrt-grid-columns-xl: 4');
     // Unspecified breakpoints are not emitted (CSS cascade handles inheritance).
-    expect(style).not.toContain('--grid-columns-sm');
+    expect(style).not.toContain('--smrt-grid-columns-sm');
   });
 
   it('applies a uniform gap class when row and column gaps match (default md)', () => {

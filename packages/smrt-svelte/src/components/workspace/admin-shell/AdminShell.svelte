@@ -1026,7 +1026,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       class="smrt-admin-shell__edge smrt-admin-shell__edge--top"
       data-state={panelState('top')}
       data-presentation={shell.config.panels.top.presentation}
-      style:--edge-columns={topEdgeColumns}
+      style:--smrt-admin-shell-edge-columns={topEdgeColumns}
     >
       {#if topLeftCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--top-left">
@@ -1035,7 +1035,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {/if}
       <div
         class="smrt-admin-shell__band smrt-admin-shell__band--top"
-        style:--band-column={2}
+        style:--smrt-admin-shell-band-column={2}
       >
         {#if appBar}
           {@render appBar()}
@@ -1336,7 +1336,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       class="smrt-admin-shell__edge smrt-admin-shell__edge--bottom"
       data-state={panelState('bottom')}
       data-presentation={shell.config.panels.bottom.presentation}
-      style:--edge-columns={bottomEdgeColumns}
+      style:--smrt-admin-shell-edge-columns={bottomEdgeColumns}
     >
       {#if bottomLeftCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--bottom-left">
@@ -1345,7 +1345,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {/if}
       <div
         class="smrt-admin-shell__band smrt-admin-shell__band--bottom"
-        style:--band-column={2}
+        style:--smrt-admin-shell-band-column={2}
       >
         {@render slotGroup('footer.start')}
         {@render slotGroup('footer.center')}
@@ -1542,7 +1542,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-row: 2;
     display: grid;
     grid-template-columns: var(
-      --edge-columns,
+      --smrt-admin-shell-edge-columns,
       var(--smrt-admin-shell-left-collapsed) minmax(0, 1fr)
         var(--smrt-admin-shell-right-collapsed)
     );
@@ -1578,7 +1578,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-row: 4;
     display: grid;
     grid-template-columns: var(
-      --edge-columns,
+      --smrt-admin-shell-edge-columns,
       var(--smrt-admin-shell-left-collapsed) minmax(0, 1fr)
         var(--smrt-admin-shell-right-collapsed)
     );
@@ -1608,7 +1608,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   .smrt-admin-shell__band--top,
   .smrt-admin-shell__band--bottom {
-    grid-column: var(--band-column, 2);
+    grid-column: var(--smrt-admin-shell-band-column, 2);
   }
 
   /* The header's slots can render in the top band too: keep the floating

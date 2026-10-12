@@ -106,6 +106,25 @@ function collectDefinedInCss(text, into) {
 }
 
 /**
+ * Tokens a component SETS from script or markup rather than declaring in CSS:
+ * `style:--smrt-x={value}` directives, `'--smrt-x': value` object keys, and
+ * `setProperty('--smrt-x', …)`. The component owns these, so they count as inline
+ * definitions for consumers within the same package (issue #3822: component-private
+ * knobs such as `--smrt-toast-viewport-inset` are set this way).
+ */
+const SET_FROM_CODE_RE = [
+  /style:(--smrt-[a-z0-9-]+)/g,
+  /['"`](--smrt-[a-z0-9-]+)['"`]\s*:/g,
+  /setProperty\(\s*['"`](--smrt-[a-z0-9-]+)['"`]/g,
+];
+
+function collectSetFromCode(text, into) {
+  for (const re of SET_FROM_CODE_RE) {
+    for (const m of text.matchAll(re)) into.add(m[1]);
+  }
+}
+
+/**
  * The theme scale KEYS the generator iterates over. Mirrors
  * src/themes/types.ts (SpacingScale / TypographyScale / etc.) and
  * src/themes/shared.ts. Kept here so the check stays a pure string diff with
@@ -315,6 +334,11 @@ function collectInlineByPackage() {
     for (const file of listFiles(dir, ['.svelte', '.css'])) {
       collectDefinedInCss(readFileSync(file, 'utf8'), defined);
     }
+    for (const file of listFiles(dir, ['.svelte', '.ts'])) {
+      // Tests may set tokens to exercise components; they must not satisfy consumers.
+      if (/__tests__|\.(test|spec)\./.test(file)) continue;
+      collectSetFromCode(readFileSync(file, 'utf8'), defined);
+    }
     byPkg.set(pkg, defined);
   }
   return byPkg;
@@ -341,6 +365,9 @@ const OVERRIDE_HOOKS = new Set([
   '--smrt-control-hit-size',
   '--smrt-popover-panel-padding',
   '--smrt-popover-panel-width',
+  // SortableHeader knobs: set by a parent (JobList in another package) or by the app.
+  '--smrt-sortable-header-padding',
+  '--smrt-sortable-header-font-weight',
 ]);
 
 const { consumed, byPackage } = collectConsumed();

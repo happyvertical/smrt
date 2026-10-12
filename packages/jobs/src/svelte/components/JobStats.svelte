@@ -206,7 +206,7 @@ const successRateFormatted = $derived(
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: var(--spacing-sm, 0.5rem);
+    margin-bottom: var(--smrt-spacing-sm, 0.5rem);
   }
 
   .queue-card__name {

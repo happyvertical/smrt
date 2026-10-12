@@ -338,9 +338,9 @@ function handleInput(e: Event) {
 
 <style>
   .smrt-text-field {
-    --field-color: var(--smrt-color-on-surface-variant);
-    --field-bg: var(--smrt-color-surface-container-highest);
-    --field-active: var(--smrt-color-primary);
+    --smrt-text-input-field-color: var(--smrt-color-on-surface-variant);
+    --smrt-text-input-field-bg: var(--smrt-color-surface-container-highest);
+    --smrt-text-input-field-active: var(--smrt-color-primary);
     
     display: flex;
     flex-direction: column;
@@ -393,8 +393,8 @@ function handleInput(e: Event) {
   .active-indicator { display: none; }
 
   .focused .container {
-    border-color: var(--field-active);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--field-active) 10%, transparent);
+    border-color: var(--smrt-text-input-field-active);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-text-input-field-active) 10%, transparent);
   }
 
   .mic-btn {
@@ -405,7 +405,7 @@ function handleInput(e: Event) {
     justify-content: center;
     border: none;
     background: transparent;
-    color: var(--field-color);
+    color: var(--smrt-text-input-field-color);
     border-radius: var(--smrt-radius-full, 9999px);
     cursor: pointer;
     margin-right: -8px;
@@ -429,8 +429,8 @@ function handleInput(e: Event) {
 
   /* States */
   .invalid {
-    --field-active: var(--smrt-color-error);
-    --field-color: var(--smrt-color-error);
+    --smrt-text-input-field-active: var(--smrt-color-error);
+    --smrt-text-input-field-color: var(--smrt-color-error);
   }
 
   .listening {

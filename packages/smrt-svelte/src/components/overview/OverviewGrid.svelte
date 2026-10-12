@@ -419,7 +419,7 @@ const headingTag = $derived(`h${headingLevel}`);
         data-smrt-overview-item={row.widget.id}
         data-dragging={dragged === row.widget.id ? '' : undefined}
         data-drop={mark}
-        style:--span={spanOf(row)}
+        style:--smrt-overview-grid-span={spanOf(row)}
         ondragover={(event) => event.preventDefault()}
         ondrop={(event) => {
           if (!sortable.drag) return;
@@ -542,10 +542,10 @@ const headingTag = $derived(`h${headingLevel}`);
   .smrt-overview__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
   /* Gaps are tile padding, not grid gap, so a pointer never crosses a dead
      zone between tiles while dragging. */
-  .smrt-overview__list { --_pad: var(--smrt-spacing-2); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: calc(-1 * var(--_pad)); }
-  .smrt-overview__item { position: relative; grid-column: span var(--span, 1); min-inline-size: 0; padding: var(--_pad); }
+  .smrt-overview__list { --smrt-overview-grid-pad: var(--smrt-spacing-2); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: calc(-1 * var(--smrt-overview-grid-pad)); }
+  .smrt-overview__item { position: relative; grid-column: span var(--smrt-overview-grid-span, 1); min-inline-size: 0; padding: var(--smrt-overview-grid-pad); }
   .smrt-overview__item[data-dragging] { opacity: 0.5; }
-  .smrt-overview__item[data-drop]::before { content: ''; position: absolute; inset-block: var(--_pad); inline-size: 0.1875rem; border-radius: var(--smrt-radius-full, 9999px); background: var(--smrt-color-primary); }
+  .smrt-overview__item[data-drop]::before { content: ''; position: absolute; inset-block: var(--smrt-overview-grid-pad); inline-size: 0.1875rem; border-radius: var(--smrt-radius-full, 9999px); background: var(--smrt-color-primary); }
   .smrt-overview__item[data-drop='before']::before { inset-inline-start: 0; }
   .smrt-overview__item[data-drop='after']::before { inset-inline-end: 0; }
   .smrt-overview__tile { position: relative; block-size: 100%; box-sizing: border-box; padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }

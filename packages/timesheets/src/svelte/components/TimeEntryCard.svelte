@@ -133,7 +133,7 @@ function handleKeydown(event: KeyboardEvent) {
 {#snippet cardBody()}
   <div class="entry-header">
     <span class="date">{formatDate(entry.date)}</span>
-    <span class="status-badge" style="--status-color: {statusColors[entry.status]}">
+    <span class="status-badge" style="--smrt-time-entry-card-status-color: {statusColors[entry.status]}">
       {entry.status.toUpperCase()}
     </span>
   </div>
@@ -247,7 +247,7 @@ function handleKeydown(event: KeyboardEvent) {
     font-weight: var(--smrt-typography-label-small-weight, 500);
     padding: 0.25rem 0.5rem;
     border-radius: var(--smrt-radius-small, 8px);
-    background: var(--status-color);
+    background: var(--smrt-time-entry-card-status-color);
     color: var(--smrt-color-on-primary);
     letter-spacing: var(--smrt-typography-label-small-tracking, 0.5px);
   }
