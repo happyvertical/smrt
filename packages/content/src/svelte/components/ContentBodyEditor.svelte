@@ -1929,6 +1929,7 @@ function handleEditorDragEnd() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .content-body-editor {
     position: relative;

@@ -180,6 +180,7 @@ function matches(row: DisplayRow): boolean {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-list-screen {
     display: flex;

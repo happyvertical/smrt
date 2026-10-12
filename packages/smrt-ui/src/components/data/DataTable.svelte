@@ -1921,6 +1921,7 @@ $effect(() => {
 {#if tableState.pageSize && totalPages && totalPages > 1}<Pagination currentPage={tableState.page} {totalPages} onPageChange={handlePageChange} aria-label={t(M['ui.data_table.pagination'])} />{/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .data-table-container {
     position: relative;

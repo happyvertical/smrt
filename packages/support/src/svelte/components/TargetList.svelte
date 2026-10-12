@@ -69,6 +69,7 @@ function formatDue(iso: string | null): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .target-list {
     list-style: none;

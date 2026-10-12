@@ -84,6 +84,7 @@ function handleClick(value: string) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .filter-chips {
     display: flex;

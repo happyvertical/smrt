@@ -80,6 +80,7 @@ const _lastSyncFormatted = $derived.by(() => {
 </Card>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .account-card {
     display: flex;

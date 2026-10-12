@@ -15,6 +15,7 @@ import {
   SMRT_CASCADE_LAYERS_DECLARATION,
   classifyStyleBody,
   extractStyleBlocks,
+  hasOrderDeclaration,
 } from './cascade-layers-lib.mjs';
 import { listCssStylesheets, listSvelteSources } from './codemod-smrt-layers.mjs';
 
@@ -32,6 +33,8 @@ export function findViolations(files) {
       try {
         if (unlayeredCssItems(source).length > 0) {
           violations.push(`${rel}: stylesheet rules are not inside @layer smrt.*; run node scripts/codemod-smrt-layers.mjs`);
+        } else if (/@layer smrt\./.test(source) && !hasOrderDeclaration(source)) {
+          violations.push(`${rel}: stylesheet lacks the layer order declaration`);
         }
       } catch (error) {
         violations.push(`${rel}: ${error.message}`);
@@ -57,6 +60,8 @@ export function findViolations(files) {
         violations.push(`${rel}: <style> body is not inside @layer smrt.*; run node scripts/codemod-smrt-layers.mjs`);
       } else if (status === 'mixed') {
         violations.push(`${rel}: <style> mixes top-level smrt layer and unlayered rules`);
+      } else if (status === 'layered' && !hasOrderDeclaration(block.body)) {
+        violations.push(`${rel}: <style> lacks the layer order declaration (first-appearance order would be wrong)`);
       }
     }
   }

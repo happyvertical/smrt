@@ -129,6 +129,7 @@ onDestroy(() => {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .character-conversation-voice { display: grid; gap: .5rem; }
   .voice-actions { display: flex; align-items: center; gap: .5rem; }

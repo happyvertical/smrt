@@ -90,6 +90,7 @@ const icons = {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .empty-state {
     display: flex;

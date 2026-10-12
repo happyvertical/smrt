@@ -190,6 +190,7 @@ const _displayBody = $derived.by(() => {
 </article>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .message-detail {
     max-width: 100%;

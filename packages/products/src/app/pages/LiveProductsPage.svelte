@@ -80,6 +80,7 @@ onMount(async () => {
 </Provider>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .live-products-page {
     max-width: 1200px;

@@ -162,6 +162,7 @@ const _hasActiveFilters = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .message-filters {
     display: flex;

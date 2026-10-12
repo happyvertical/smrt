@@ -32,6 +32,7 @@ const open = $derived(context.isOpen(value));
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .item { border-bottom: 1px solid var(--smrt-color-outline-variant); }
   .item:last-child { border-bottom: 0; }

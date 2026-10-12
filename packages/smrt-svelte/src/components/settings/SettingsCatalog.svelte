@@ -149,6 +149,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-settings-catalog {
     display: grid;

@@ -100,6 +100,7 @@ function getFolderIcon(specialUse?: string): string {
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .folder-nav {
     display: flex;

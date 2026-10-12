@@ -65,6 +65,7 @@ const { t } = useI18n();
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-system-scope-panel {
     display: grid;

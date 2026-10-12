@@ -474,6 +474,7 @@ const ancestors = $derived(bomId ? [bomId] : []);
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .bom-editor {
     display: flex;

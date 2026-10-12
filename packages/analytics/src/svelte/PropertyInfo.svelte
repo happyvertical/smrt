@@ -82,6 +82,7 @@ const lastSyncFormatted = $derived.by(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 	.property-info {
 		padding: 1rem;

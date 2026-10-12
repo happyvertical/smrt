@@ -348,6 +348,7 @@ async function confirmAction() {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .run-list-scroll {
     overflow-x: auto;

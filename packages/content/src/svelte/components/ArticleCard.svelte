@@ -97,6 +97,7 @@ const _tags = $derived.by(() => {
 </a>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .article-link {
     text-decoration: none;

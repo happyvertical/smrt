@@ -489,6 +489,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-nav-editor { display: grid; gap: var(--smrt-spacing-2); min-inline-size: 0; }
   /* Make the generic Sortable read as the real navigation. */

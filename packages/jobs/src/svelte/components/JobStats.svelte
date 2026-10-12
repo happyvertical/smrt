@@ -128,6 +128,7 @@ const successRateFormatted = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .job-stats {
     width: 100%;

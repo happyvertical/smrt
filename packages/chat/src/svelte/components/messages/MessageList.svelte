@@ -92,6 +92,7 @@ function handleScroll(event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .message-list {
     display: flex;

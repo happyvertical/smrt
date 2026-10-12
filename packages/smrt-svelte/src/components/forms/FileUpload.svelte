@@ -323,6 +323,7 @@ function formatFileSize(bytes: number): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .file-upload {
     position: relative;

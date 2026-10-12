@@ -533,6 +533,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   :global(body) {
     margin: 0;

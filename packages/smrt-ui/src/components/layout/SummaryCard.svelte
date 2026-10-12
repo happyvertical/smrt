@@ -108,6 +108,7 @@ const valueColorClass = $derived.by(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .summary-card {
     display: flex;

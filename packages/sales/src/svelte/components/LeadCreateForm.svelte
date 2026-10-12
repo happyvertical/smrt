@@ -139,6 +139,7 @@ function submit() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   :global(.sales-lead-create__form) { display: grid; gap: var(--smrt-spacing-3, 0.75rem); }
   .sales-lead-create__actions { display: flex; justify-content: flex-end; gap: var(--smrt-spacing-2, 0.5rem); }

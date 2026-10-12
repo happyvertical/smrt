@@ -70,6 +70,7 @@ function enhanceForm(form: HTMLFormElement) {
 </main>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-owner-setup {
     max-width: 36rem;

@@ -33,6 +33,7 @@ const {
 </Container>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .page-layout {
     display: grid;

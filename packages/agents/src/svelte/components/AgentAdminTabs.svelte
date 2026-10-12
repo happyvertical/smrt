@@ -169,6 +169,7 @@ async function handleSave(config: unknown) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 	.agent-admin-tabs {
 		display: flex;

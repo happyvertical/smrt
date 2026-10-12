@@ -48,6 +48,7 @@ const id = $props.id();
   {/each}
 </section>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .queue, article { display: grid; gap: var(--smrt-spacing-3); min-width: 0; overflow-wrap: anywhere; }
   .actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); }

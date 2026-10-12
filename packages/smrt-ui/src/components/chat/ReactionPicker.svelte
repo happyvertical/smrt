@@ -76,6 +76,7 @@ function nameFor(emoji: string): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .reactions {
     display: inline-flex;

@@ -130,6 +130,7 @@ const statusLabel: Record<string, string> = {
 </aside>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .session-panel {
     display: flex;

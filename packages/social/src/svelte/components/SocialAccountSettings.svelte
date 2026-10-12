@@ -109,6 +109,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .social-settings {
     display: grid;

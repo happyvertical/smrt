@@ -56,6 +56,7 @@ async function send(content: string) {
 </ThemeProvider>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   main {
     max-inline-size: 42rem;

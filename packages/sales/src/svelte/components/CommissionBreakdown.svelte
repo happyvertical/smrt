@@ -158,6 +158,7 @@ function detailsId(id: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .sales-commission-breakdown {
     width: 100%;

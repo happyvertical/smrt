@@ -84,6 +84,7 @@ function accessibleName(item: PhoneBottomBarItem): string {
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-phone-bottom-bar {
     display: grid;

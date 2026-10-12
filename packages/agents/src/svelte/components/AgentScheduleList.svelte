@@ -200,6 +200,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .schedule-list-container {
     width: 100%;

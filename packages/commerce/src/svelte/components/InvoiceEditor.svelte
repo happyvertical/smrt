@@ -127,6 +127,7 @@ function lineErrors(key: string) {
   </Form>
 </section>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 .invoice-editor, .fields, .header-fields { display: grid; grid-template-columns: minmax(0,1fr); gap: var(--smrt-spacing-4); min-width: 0; }
 .invoice-editor { max-width: 48rem; overflow-wrap: anywhere; }

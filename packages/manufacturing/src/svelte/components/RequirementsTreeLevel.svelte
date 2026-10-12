@@ -83,6 +83,7 @@ function componentText(line: RequirementLineView): string {
 </ul>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .requirements-tree {
     list-style: none;

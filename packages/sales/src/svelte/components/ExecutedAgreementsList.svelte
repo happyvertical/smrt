@@ -105,6 +105,7 @@ let { agreements = [], locale, artifactHref }: Props = $props();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .sales-agreements {
     width: 100%;

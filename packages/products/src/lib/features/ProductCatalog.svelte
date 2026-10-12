@@ -183,6 +183,7 @@ function handleCancelForm() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .product-catalog {
     max-width: 1200px;

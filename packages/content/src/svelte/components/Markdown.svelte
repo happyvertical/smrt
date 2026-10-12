@@ -27,6 +27,7 @@ const rendered = $derived(renderMarkdownToHtml(content));
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .markdown-content {
     font-size: var(--smrt-typography-body-large-size, 1rem);

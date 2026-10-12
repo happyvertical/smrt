@@ -176,6 +176,7 @@ function formatAmount(amount: number, currency = 'USD'): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .time-approval-queue {
     list-style: none;

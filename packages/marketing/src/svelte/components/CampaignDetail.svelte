@@ -106,6 +106,7 @@ let {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .campaign-detail {
     display: flex;

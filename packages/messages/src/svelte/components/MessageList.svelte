@@ -91,6 +91,7 @@ function getAccount(accountId: string): AccountData | undefined {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .message-list {
     display: flex;

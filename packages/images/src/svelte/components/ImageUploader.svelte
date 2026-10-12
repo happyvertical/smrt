@@ -486,6 +486,7 @@ onDestroy(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-image-uploader {
     display: flex;

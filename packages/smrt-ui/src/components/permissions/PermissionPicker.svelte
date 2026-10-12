@@ -188,6 +188,7 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .permission-picker { display: grid; gap: var(--smrt-spacing-4); min-inline-size: 0; }
   .heading { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: var(--smrt-spacing-4); }

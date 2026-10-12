@@ -138,6 +138,7 @@ function handleEditorSave(image: StudioImage) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .images-route {
     max-width: 1440px;

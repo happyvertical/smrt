@@ -298,6 +298,7 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
 </article>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .sales-opportunity-detail {
     display: flex;

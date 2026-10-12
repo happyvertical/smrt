@@ -35,6 +35,7 @@ const _loading = $state(false);
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .category-manager {
     max-width: 800px;

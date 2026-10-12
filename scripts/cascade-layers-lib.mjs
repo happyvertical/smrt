@@ -143,6 +143,23 @@ export function hasLayerIncompatibleItem(items) {
  *
  * @param {string} css
  */
+export function hasOrderDeclaration(css) {
+  return topLevelItems(css).some((item) => item.text.trim() === SMRT_CASCADE_LAYERS_DECLARATION);
+}
+
+/**
+ * Layer order is fixed by the first appearance of each layer name, so every
+ * smrt stylesheet body repeats the full order declaration at its top. A
+ * component that loads first then cannot pin `smrt.theme` above `smrt.reset`.
+ * Idempotent: a body that already declares the order is returned unchanged.
+ *
+ * @param {string} css
+ */
+export function ensureOrderDeclaration(css) {
+  if (hasOrderDeclaration(css)) return css;
+  return `\n${SMRT_CASCADE_LAYERS_DECLARATION}${css}`;
+}
+
 export function wrapInThemeLayer(css) {
   const inner = css.replace(/^\s*\n/, '').replace(/\s+$/, '');
   return `\n@layer smrt.theme {\n${inner}\n}\n`;

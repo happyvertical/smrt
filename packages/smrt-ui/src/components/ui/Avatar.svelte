@@ -80,6 +80,7 @@ const statusLabels: Record<AvatarStatus, string> = {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .avatar {
     position: relative;

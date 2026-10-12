@@ -177,6 +177,7 @@ const isOverdue = $derived.by(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .invoice-card {
     display: flex;

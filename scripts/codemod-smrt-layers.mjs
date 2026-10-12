@@ -16,6 +16,7 @@ import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   classifyStyleBody,
+  ensureOrderDeclaration,
   extractStyleBlocks,
   hasLayerIncompatibleItem,
   wrapInThemeLayer,
@@ -78,14 +79,13 @@ export function codemodSource(source) {
     out += source.slice(cursor, block.bodyStart);
     cursor = block.bodyEnd;
 
-    if (status === 'unlayered') {
-      if (hasLayerIncompatibleItem(items)) {
-        problems.push('top-level @import/@charset cannot be wrapped; move it out of the <style> block by hand');
-        out += block.body;
-      } else {
-        out += wrapInThemeLayer(block.body);
-        changed = true;
-      }
+    if (status === 'unlayered' && hasLayerIncompatibleItem(items)) {
+      problems.push('top-level @import/@charset cannot be wrapped; move it out of the <style> block by hand');
+      out += block.body;
+    } else if (status === 'unlayered' || status === 'layered') {
+      const next = ensureOrderDeclaration(status === 'unlayered' ? wrapInThemeLayer(block.body) : block.body);
+      if (next !== block.body) changed = true;
+      out += next;
     } else if (status === 'mixed') {
       problems.push('mixed top-level smrt layer and unlayered rules; split by hand');
       out += block.body;
@@ -116,7 +116,8 @@ function main() {
   for (const file of listCssStylesheets(packagesDir)) {
     const original = readFileSync(file, 'utf8');
     const layer = basename(file) === 'base.css' ? 'reset' : 'theme';
-    const next = wrapCssInLayer(original, layer);
+    const wrapped = wrapCssInLayer(original, layer);
+    const next = /@layer smrt\./.test(wrapped) ? ensureOrderDeclaration(wrapped) : wrapped;
     if (next !== original) {
       rewritten++;
       if (!checkOnly) writeFileSync(file, next);

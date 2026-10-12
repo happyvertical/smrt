@@ -56,6 +56,7 @@ let {
 </button>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-shell-icon-button {
     flex: 0 0 auto;

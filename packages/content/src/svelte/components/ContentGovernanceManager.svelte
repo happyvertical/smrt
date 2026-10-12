@@ -299,6 +299,7 @@ function cancelEditing() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .governance-manager {
     display: grid;

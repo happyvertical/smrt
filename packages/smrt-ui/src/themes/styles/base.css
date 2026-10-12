@@ -1,4 +1,5 @@
-/**
+
+@layer smrt.reset, smrt.structure, smrt.theme;/**
  * Application baseline for SMRT interfaces.
  *
  * Import this once at an application entry point, alongside the selected

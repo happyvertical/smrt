@@ -56,6 +56,7 @@ function formatCharge(metric: CommercialMetricView): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 .commercial-overview { display:grid; gap:.75rem; }
 article { border:1px solid var(--smrt-color-outline-variant,#d8dde6); border-radius:var(--smrt-radius-md,8px); padding:1rem; }

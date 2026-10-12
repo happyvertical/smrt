@@ -19,6 +19,7 @@ const { maxWidth = 'lg', children, ...rest }: Props = $props();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .container {
     box-sizing: border-box;

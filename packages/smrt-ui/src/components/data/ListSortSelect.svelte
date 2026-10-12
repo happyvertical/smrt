@@ -99,6 +99,7 @@ function handleChange(event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .list-sort-select {
     display: inline-flex;

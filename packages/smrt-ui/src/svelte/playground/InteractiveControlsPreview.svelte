@@ -115,6 +115,7 @@ const identity = (controlId: string) => ({
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .workbench { display: grid; gap: var(--smrt-spacing-5); color: var(--smrt-color-on-surface); }
   header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--smrt-spacing-5); padding-bottom: var(--smrt-spacing-4); border-bottom: 1px solid var(--smrt-color-outline-variant); }

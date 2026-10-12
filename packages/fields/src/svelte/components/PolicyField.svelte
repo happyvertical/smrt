@@ -314,6 +314,7 @@ $effect(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .policy-field {
     display: flex;

@@ -39,6 +39,7 @@ export interface Props {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .send-status-badge {
     display: inline-flex;

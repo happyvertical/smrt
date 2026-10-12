@@ -351,6 +351,7 @@ function retryPreview() {
 </Modal>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .lifecycle,
   .actions {

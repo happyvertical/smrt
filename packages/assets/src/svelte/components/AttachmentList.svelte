@@ -137,6 +137,7 @@ async function confirmRemove() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .attachment-list { min-width: 0; overflow-wrap: anywhere; }
   ul { list-style: none; padding: 0; }

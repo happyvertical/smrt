@@ -337,6 +337,7 @@ function handleInput(e: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-text-field {
     --field-color: var(--smrt-color-on-surface-variant);

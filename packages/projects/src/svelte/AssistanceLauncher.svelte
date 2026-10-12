@@ -70,6 +70,7 @@ async function submit(event: SubmitEvent) {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .assistance {
     max-width: 42rem;

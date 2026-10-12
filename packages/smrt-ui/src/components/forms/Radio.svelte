@@ -26,6 +26,7 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
   <span class="radio__mark" aria-hidden="true"></span><span class="radio__label">{label}</span>
 </label>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   /* The visible mark stays 18px; a transparent 44x44 ::before hit area (see Checkbox) makes the
      touch target. Mark and label text sit above every hit area, so neighbours' hit areas never

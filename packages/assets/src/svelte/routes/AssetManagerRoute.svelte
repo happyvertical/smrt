@@ -90,6 +90,7 @@ const customActions = [
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .assets-route {
     max-width: 1440px;

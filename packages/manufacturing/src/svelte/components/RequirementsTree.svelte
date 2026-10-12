@@ -91,6 +91,7 @@ function componentText(name: string, skuCode: string): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .requirements-empty {
     margin: 0;

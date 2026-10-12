@@ -180,6 +180,7 @@ function labour(minutes: number): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .assembly-list-scroll {
     overflow-x: auto;

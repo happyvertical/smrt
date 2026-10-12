@@ -41,6 +41,7 @@ const { t } = useI18n();
 </article>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-activity-item {
     display: flex;

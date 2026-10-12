@@ -111,6 +111,7 @@ function formatWhen(value?: Date | string): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .empty-state {
     padding: 2rem 1rem;

@@ -437,6 +437,7 @@ function inputFor(field: ObjectFormField): FieldInputComponent {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   :global(.object-form) { display: grid; gap: var(--smrt-spacing-4, 1rem); }
   .object-form__mode, .object-form__gear { display: inline-flex; justify-content: flex-end; margin-bottom: var(--smrt-spacing-3, 0.75rem); }

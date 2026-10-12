@@ -69,6 +69,7 @@ const hint = $derived(hotkeys[0] ? formatPaletteHotkey(hotkeys[0], apple) : '');
 </Button>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   :global(.smrt-command-palette-trigger) {
     gap: 0.5rem;

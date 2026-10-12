@@ -44,6 +44,7 @@ const hostname = $derived.by(() => {
 </a>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .link-preview {
     display: flex;

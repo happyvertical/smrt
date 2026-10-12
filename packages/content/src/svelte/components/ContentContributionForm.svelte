@@ -207,6 +207,7 @@ function handleSubmit(event: SubmitEvent) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .contribution-form-shell :global(.contribution-form) {
     display: grid;

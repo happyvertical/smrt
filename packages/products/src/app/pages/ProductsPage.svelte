@@ -49,6 +49,7 @@ const { t } = useI18n();
 </AppLayout>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .products-page {
     max-width: 1200px;

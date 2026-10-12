@@ -229,6 +229,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
 </Modal>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .create-error {
     margin: var(--smrt-spacing-2, 0.5rem) 0 0;

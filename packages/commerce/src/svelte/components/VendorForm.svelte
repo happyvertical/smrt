@@ -213,6 +213,7 @@ const errorList = $derived(
 </Form>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   :global(.party-form) { display: grid; gap: var(--smrt-spacing-5); min-inline-size: 0; padding-block-end: var(--smrt-spacing-8); }
   .native-default-submit { position: absolute; inline-size: 1px; block-size: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

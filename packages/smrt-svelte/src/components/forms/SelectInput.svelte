@@ -180,6 +180,7 @@ function handleChange(e: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-select-field {
     --field-color: var(--smrt-color-on-surface-variant);

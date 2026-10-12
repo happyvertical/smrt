@@ -250,6 +250,7 @@ useControlRegistration(() => {
   {/each}
 </div>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .segmented { display: inline-flex; border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-full); overflow: hidden; }
   .segmented.full-width { display: flex; width: 100%; }

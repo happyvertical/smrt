@@ -63,6 +63,7 @@ const {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .empty-state {
     text-align: center;

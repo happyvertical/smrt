@@ -101,6 +101,7 @@ const themeIcons: Record<ThemePreset, string> = {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-theme-switcher {
     display: flex;

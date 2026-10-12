@@ -256,6 +256,7 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
 </Modal>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-command-palette {
     display: flex;

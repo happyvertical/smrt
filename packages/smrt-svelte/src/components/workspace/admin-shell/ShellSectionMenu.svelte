@@ -242,6 +242,7 @@ function onmove(move: SortableItemMove<SortableItem>): void {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-section-menu { min-inline-size: 0; }
   .smrt-section-menu__list { display: grid; gap: var(--smrt-spacing-1); margin: 0; padding: 0; list-style: none; }

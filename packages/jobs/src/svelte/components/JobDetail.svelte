@@ -162,6 +162,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .job-detail {
     width: 100%;

@@ -63,6 +63,7 @@ const {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .membership-list {
     display: flex;

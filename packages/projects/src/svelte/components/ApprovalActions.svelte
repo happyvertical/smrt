@@ -100,6 +100,7 @@ const canDelete = $derived(status === 'draft' && ondelete);
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .approval-actions {
     display: flex;

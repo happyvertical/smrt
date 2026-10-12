@@ -214,6 +214,7 @@ function handleSubmit() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .operation-form-shell :global(.operation-form) {
     display: flex;

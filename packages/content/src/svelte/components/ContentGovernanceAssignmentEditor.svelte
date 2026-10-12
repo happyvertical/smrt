@@ -180,6 +180,7 @@ function handleSubmit() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .governance-editor-shell :global(.governance-editor) {
     display: grid;

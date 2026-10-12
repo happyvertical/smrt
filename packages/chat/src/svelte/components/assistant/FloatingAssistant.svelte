@@ -212,6 +212,7 @@ function handleKeydown(event: KeyboardEvent) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .floating-assistant {
     position: fixed;

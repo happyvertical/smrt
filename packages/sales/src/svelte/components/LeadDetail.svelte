@@ -384,6 +384,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
 </article>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .sales-lead-detail {
     display: flex;

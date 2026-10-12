@@ -132,6 +132,7 @@ const text = $derived({
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .contacts { display: grid; gap: var(--smrt-spacing-4); min-inline-size: 0; }
   .contacts-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); flex-wrap: wrap; }

@@ -30,6 +30,7 @@ const rows = $derived(
   {/each}</ul>
 </section>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .expense-list, ul, li { display: grid; gap: var(--smrt-spacing-3); min-width: 0; overflow-wrap: anywhere; }
   ul { list-style: none; padding: 0; }

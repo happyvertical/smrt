@@ -320,6 +320,7 @@ async function recheckFactClaims(claimIds: string[]) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   /* The tool lays itself out by its own width, not the viewport, so it
      fits a full page, a side panel, the assistant dock or a phone. */

@@ -819,6 +819,7 @@ $effect(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .cv {
     --cv-border: var(--smrt-color-outline-variant, #c4c6d0);

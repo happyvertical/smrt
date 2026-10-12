@@ -103,6 +103,7 @@ export interface Props {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .forward-form {
     display: flex;

@@ -80,6 +80,7 @@ function handleCreate(data: {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .preview-shell {
     display: grid;

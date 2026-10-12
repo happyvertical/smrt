@@ -123,6 +123,7 @@ let record = $state<Record<string, unknown>>({});
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .object-form-preview { display: grid; gap: var(--smrt-spacing-3, 0.75rem); max-width: 40rem; }
   h2, p { margin: 0; }

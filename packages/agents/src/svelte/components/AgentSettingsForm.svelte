@@ -169,6 +169,7 @@ async function handleSubmit() {
 </Form>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   :global(.agent-settings-form) {
     display: grid;

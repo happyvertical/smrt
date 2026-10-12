@@ -49,7 +49,10 @@ describe('codemodSource', () => {
     const result = codemodSource(unlayered('.x { color: red; }'));
     assert.equal(result.changed, true);
     assert.deepEqual(result.problems, []);
-    assert.match(result.source, /<style>\n@layer smrt\.theme \{\n\.x \{ color: red; \}\n\}\n<\/style>/);
+    assert.match(
+      result.source,
+      /<style>\n@layer smrt\.reset, smrt\.structure, smrt\.theme;\n@layer smrt\.theme \{\n\.x \{ color: red; \}\n\}\n<\/style>/,
+    );
   });
 
   it('is idempotent: a second run leaves the output byte-identical', () => {
@@ -135,5 +138,15 @@ describe('svelte 5 compile of a wrapped component', () => {
     assert.match(out.css.code, /@layer smrt\.theme \{/);
     assert.match(out.css.code, /\.x\.svelte-[a-z0-9]+ \{ color: red; \}/);
     assert.match(out.css.code, /body \{ margin: 0; \}/);
+    assert.match(out.css.code, /@layer smrt\.reset, smrt\.structure, smrt\.theme;/);
+  });
+
+  it('a layered body without the order declaration is flagged; codemod adds it once', () => {
+    const bare = unlayered('@layer smrt.theme { .x { color: red; } }');
+    assert.equal(findViolations({ 'd.svelte': bare }).length, 1);
+    const fixed = codemodSource(bare).source;
+    assert.deepEqual(findViolations({ 'd.svelte': fixed }), []);
+    assert.equal(codemodSource(fixed).changed, false);
+    assert.equal((fixed.match(/@layer smrt\.reset, smrt\.structure, smrt\.theme;/g) ?? []).length, 1);
   });
 });

@@ -190,6 +190,7 @@ const isLastPage = $derived(currentPage === totalPages);
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .pagination {
     display: flex;

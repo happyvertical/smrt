@@ -77,6 +77,7 @@ const viewAll = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-records { display: grid; margin: 0; padding: 0; list-style: none; }
   .smrt-records__row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-2) 0; border-block-end: 1px solid var(--smrt-color-outline-variant); }

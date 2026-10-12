@@ -69,6 +69,7 @@ function onKeydown(event: KeyboardEvent) {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .tooltip-wrap {
     position: relative;

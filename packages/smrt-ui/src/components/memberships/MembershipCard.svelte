@@ -72,6 +72,7 @@ function formatDate(date: Date | string | null | undefined): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .membership-card {
     padding: 1rem;

@@ -1349,6 +1349,7 @@ function apiTabCount(
 </ThemeProvider>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   :global(body) {
     margin: 0;

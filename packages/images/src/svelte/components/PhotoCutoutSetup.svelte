@@ -406,6 +406,7 @@ async function playSpeech() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 .setup { max-width: 42rem; margin: var(--smrt-spacing-6, 1.5rem) auto; padding: var(--smrt-spacing-5, 1.25rem); border: 1px solid var(--smrt-color-outline-variant, #64748b); border-radius: var(--smrt-radius-xl, 12px); }
 .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--smrt-spacing-2, .5rem); padding: 0; margin: var(--smrt-spacing-4, 1rem) 0; list-style: none; color: var(--smrt-color-on-surface-variant, #475569); font-size: var(--smrt-typography-body-small-size, .875rem); }

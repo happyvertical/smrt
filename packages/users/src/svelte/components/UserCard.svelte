@@ -77,6 +77,7 @@ const statusClass = $derived.by(() => {
 </button>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .user-card {
     display: flex;

@@ -119,6 +119,7 @@ const {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .chat-tab--expanded {
     display: flex;

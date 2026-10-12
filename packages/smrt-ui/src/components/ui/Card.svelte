@@ -52,6 +52,7 @@ const {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   /*
    * Themeable look (app-level custom properties; defaults keep the stock look):

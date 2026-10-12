@@ -77,6 +77,7 @@ let { campaigns = [], selectedCampaignId, locale, onSelect }: Props = $props();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .campaign-list {
     width: 100%;

@@ -166,6 +166,7 @@ const someSelected = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .unbilled-items {
     display: flex;

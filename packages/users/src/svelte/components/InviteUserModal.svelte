@@ -149,6 +149,7 @@ function handleClose() {
 </Modal>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   /* The dialog chrome (backdrop, surface, header, footer bar, close button) is
      supplied by the smrt-ui Modal. Only the form-content + footer-button styles

@@ -66,6 +66,7 @@ function getInitial(name: string): string {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .read-receipts {
     display: inline-flex;

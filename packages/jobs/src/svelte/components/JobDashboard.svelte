@@ -117,6 +117,7 @@ let {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .job-dashboard {
     width: 100%;

@@ -79,6 +79,7 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   :global(body:has(.page:not(.page--embedded))) {
     margin: 0;

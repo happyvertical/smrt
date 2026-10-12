@@ -995,6 +995,7 @@ async function handleConfirmAction(requestId: string) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   /* #3000: the dock sizes itself against its own container (a shell dock
    * edge can be ~250px wide) rather than the viewport. A container cannot

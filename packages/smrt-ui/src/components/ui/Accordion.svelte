@@ -45,6 +45,7 @@ setAccordionContext({ isOpen, toggle });
 <div class="accordion {className}">{#if children}{@render children()}{/if}</div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .accordion { overflow: hidden; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large); background: var(--smrt-color-surface); }
 }

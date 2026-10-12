@@ -136,6 +136,7 @@ useControlRegistration(() => {
   <input bind:this={inputEl} id={inputId} {placeholder} {disabled} bind:value={draft} onkeydown={handleKeydown} onblur={() => commit(draft)} />
 </div></div>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .tags-field { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); } label { font: var(--smrt-typography-label-large-font); }
   .tags { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-1); min-height: 2.5rem; padding: var(--smrt-spacing-1); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); }

@@ -183,6 +183,7 @@ function handleCustomSubmit(data: ProductData) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .demo-page {
     min-height: 100vh;

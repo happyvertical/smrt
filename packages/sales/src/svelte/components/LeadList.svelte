@@ -256,6 +256,7 @@ function handleAssign(leadId: string, event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .sales-lead-list {
     width: 100%;

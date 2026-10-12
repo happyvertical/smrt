@@ -68,6 +68,7 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
 </Tooltip>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .icon-toggle {
     position: relative;

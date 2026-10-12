@@ -283,6 +283,7 @@ function handleNavigate(): void {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   /*
    * Display: contents lets the WorkspaceShell drive the grid/layout while

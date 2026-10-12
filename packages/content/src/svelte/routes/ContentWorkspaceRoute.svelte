@@ -266,6 +266,7 @@ function closeForms() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   :global(body:has(.workspace-shell:not(.workspace-shell--embedded))) {
     margin: 0;

@@ -116,6 +116,7 @@ const count = $derived(selectedAssets.length);
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .action-bar {
     display: flex;

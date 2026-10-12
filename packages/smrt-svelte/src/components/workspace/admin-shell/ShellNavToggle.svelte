@@ -63,6 +63,7 @@ const name = $derived(label ?? t(M['ui.shell_nav_toggle.navigation']));
 </button>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-shell-nav-toggle {
     display: inline-grid;

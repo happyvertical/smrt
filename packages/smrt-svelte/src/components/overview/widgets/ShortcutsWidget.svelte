@@ -67,6 +67,7 @@ const cards = $derived.by((): Card[] => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-shortcuts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(12rem, 100%), 1fr)); gap: var(--smrt-spacing-3); margin: 0; padding: 0; list-style: none; }
   .smrt-shortcuts__card { position: relative; display: flex; min-inline-size: 0; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-color-surface); transition: background-color 120ms, border-color 120ms; }

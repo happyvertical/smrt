@@ -93,6 +93,7 @@ function formatUpdated(iso: string | null): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .case-queue {
     list-style: none;

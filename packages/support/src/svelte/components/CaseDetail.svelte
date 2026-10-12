@@ -150,6 +150,7 @@ function formatWhen(iso: string): string {
 </article>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .case-detail {
     display: flex;

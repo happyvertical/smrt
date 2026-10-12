@@ -104,6 +104,7 @@ function updateField(key: string, value: unknown) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .content-status-fields {
     display: flex;

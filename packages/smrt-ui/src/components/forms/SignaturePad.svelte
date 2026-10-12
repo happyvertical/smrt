@@ -358,6 +358,7 @@ useControlRegistration(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .signature-pad {
     display: grid;

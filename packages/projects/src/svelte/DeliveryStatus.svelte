@@ -33,6 +33,7 @@ const format = (value: Date | string) =>
 </ol>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .delivery {
     list-style: none;

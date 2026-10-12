@@ -101,6 +101,7 @@ const valueText = $derived(
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .confidence-badge {
     display: inline-flex;

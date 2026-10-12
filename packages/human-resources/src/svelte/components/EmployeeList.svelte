@@ -101,6 +101,7 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .employee-list-scroll {
     overflow-x: auto;

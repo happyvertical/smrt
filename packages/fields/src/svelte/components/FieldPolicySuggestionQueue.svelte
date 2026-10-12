@@ -128,6 +128,7 @@ function description(suggestion: FieldPolicySuggestion): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .field-policy-suggestion-queue { display: grid; gap: var(--smrt-spacing-3, 0.75rem); }
   .field-policy-suggestion-queue header { align-items: center; display: flex; gap: var(--smrt-spacing-2, 0.5rem); }

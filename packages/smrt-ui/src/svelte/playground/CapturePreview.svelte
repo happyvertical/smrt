@@ -46,6 +46,7 @@ function describeSubmission(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .workbench { display: grid; gap: var(--smrt-spacing-5); color: var(--smrt-color-on-surface); }
   header { display: grid; gap: var(--smrt-spacing-2); }

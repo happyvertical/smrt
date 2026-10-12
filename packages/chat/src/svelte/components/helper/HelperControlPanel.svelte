@@ -387,6 +387,7 @@ async function customSaved(offering: HelperOffering) {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .helper-panel { display: grid; gap: var(--smrt-spacing-4); max-width: 42rem; padding: var(--smrt-spacing-4); color: var(--smrt-color-on-surface); }
   fieldset { display: grid; gap: var(--smrt-spacing-3); border: 0; margin: 0; padding: 0; }

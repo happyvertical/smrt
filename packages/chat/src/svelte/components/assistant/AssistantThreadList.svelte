@@ -62,6 +62,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .assistant-thread-list {
     display: flex;

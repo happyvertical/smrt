@@ -173,6 +173,7 @@ const isoString = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .date-display {
     white-space: nowrap;

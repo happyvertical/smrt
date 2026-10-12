@@ -139,6 +139,7 @@ function submitCreate() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .sales-referral-links {
     display: flex;

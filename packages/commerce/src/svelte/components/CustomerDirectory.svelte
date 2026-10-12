@@ -198,6 +198,7 @@ function customerTypeLabel(value: string | undefined): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .party-directory { display: grid; gap: var(--smrt-spacing-5); max-inline-size: 64rem; min-inline-size: 0; }
   :global(.directory-search) { display: grid; grid-template-columns: minmax(12rem, 2fr) minmax(10rem, 1fr) auto; align-items: end; gap: var(--smrt-spacing-3); }

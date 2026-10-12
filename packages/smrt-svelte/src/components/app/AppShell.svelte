@@ -790,6 +790,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 </Provider>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   a {
     color: var(--smrt-color-primary);

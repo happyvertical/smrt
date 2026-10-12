@@ -15,6 +15,7 @@ let { side, children }: Props = $props();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-shell-corner {
     inline-size: var(--smrt-admin-shell-left-track);

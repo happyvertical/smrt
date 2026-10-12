@@ -31,6 +31,7 @@ const currentYear = new Date().getFullYear();
 </footer>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .site-footer {
     background: var(--smrt-color-surface-container-low);

@@ -298,6 +298,7 @@ const yearOptions = $derived(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .calendar {
     --calendar-bg: var(--smrt-color-surface, #ffffff);

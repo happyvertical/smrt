@@ -74,6 +74,7 @@ setFormGroupContext(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 	.form-group {
 		margin-bottom: 1rem;

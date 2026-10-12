@@ -288,6 +288,7 @@ onDestroy(() => {
 </ThemeProvider>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   main { max-inline-size: 60rem; font-family: var(--smrt-font-family, system-ui, sans-serif); color: var(--smrt-color-on-surface, #172033); margin: 2rem auto; padding: 1rem 1rem 6rem; }
   .controls { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; margin-block: 1rem; }

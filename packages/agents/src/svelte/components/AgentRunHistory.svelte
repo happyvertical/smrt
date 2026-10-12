@@ -117,6 +117,7 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .run-history-container {
     width: 100%;

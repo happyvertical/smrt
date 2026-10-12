@@ -105,6 +105,7 @@ function handleInput(event: Event & { currentTarget: HTMLTextAreaElement }) {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .content-title-field-shell {
     display: block;

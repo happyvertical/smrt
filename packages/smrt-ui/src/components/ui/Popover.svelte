@@ -111,6 +111,7 @@ $effect(() => {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .popover { position: relative; display: inline-flex; }
   .popover__trigger { appearance: none; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); font: inherit; cursor: pointer; }

@@ -97,6 +97,7 @@ const summary = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-chart { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-primary); }
   .smrt-chart__line { inline-size: 100%; block-size: 7rem; overflow: visible; }

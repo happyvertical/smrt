@@ -25,6 +25,7 @@ let { label, for: forId, id, required = false }: Props = $props();
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-field-label {
     display: block;

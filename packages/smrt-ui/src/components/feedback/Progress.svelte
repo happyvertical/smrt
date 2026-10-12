@@ -51,6 +51,7 @@ const displayValue = $derived(
   </div>
 {/if}
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .progress--linear { display: flex; align-items: center; gap: var(--smrt-spacing-2); width: 100%; }
   .progress--linear .track { position: relative; display: block; flex: 1; height: 4px; overflow: hidden; border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-highest); }

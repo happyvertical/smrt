@@ -74,6 +74,7 @@ const periodLabel = $derived(
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-subscription-summary {
     align-items: center;

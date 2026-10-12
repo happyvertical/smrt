@@ -637,6 +637,7 @@ async function startExport() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-import-export {
     display: flex;

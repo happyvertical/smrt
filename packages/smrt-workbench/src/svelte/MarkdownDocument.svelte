@@ -148,6 +148,7 @@ function headingTag(depth = 2) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .markdown-document {
     display: grid;

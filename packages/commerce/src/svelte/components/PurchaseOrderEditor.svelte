@@ -202,6 +202,7 @@ const money = (amountMinor: number | null) =>
   {/if}
 </section>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 .editor-attachments { min-width: 0; margin: 0; padding: 0; border: 0; }
 .purchase-editor{max-width:48rem;min-width:0;overflow-wrap:anywhere;color:var(--smrt-color-on-surface)}

@@ -119,6 +119,7 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
 </svelte:element>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .sortable-header {
     padding: 0;

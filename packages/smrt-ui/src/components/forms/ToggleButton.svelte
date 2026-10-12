@@ -92,6 +92,7 @@ useControlRegistration(() => {
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}
   onclick={handleClick} {...rest}>{@render children?.()}</button>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .toggle-button { display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; padding: 0 var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
   .toggle-button.pressed { background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); border-color: var(--smrt-color-secondary); }

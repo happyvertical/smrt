@@ -188,6 +188,7 @@ const _slackMeta = $derived.by(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .message-card {
     display: flex;

@@ -254,6 +254,7 @@ function methodLabel(method: string): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .sales-payout-review {
     display: flex;

@@ -44,6 +44,7 @@ const { stats }: Props = $props();
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 	.analytics-summary {
 		display: grid;

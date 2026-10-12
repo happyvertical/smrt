@@ -171,6 +171,7 @@ function updateTags(value: string) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .content-metadata-fields {
     display: grid;

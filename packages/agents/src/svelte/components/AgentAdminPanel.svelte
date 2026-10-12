@@ -78,6 +78,7 @@ async function handleSave(newConfig: unknown) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 	.no-panel {
 		display: flex;

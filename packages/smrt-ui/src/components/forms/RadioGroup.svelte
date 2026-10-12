@@ -146,6 +146,7 @@ useControlRegistration(() => {
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 </fieldset>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .radio-group { margin: 0; padding: 0; border: 0; color: var(--smrt-color-on-surface); }
   legend { margin-bottom: var(--smrt-spacing-2); font: var(--smrt-typography-label-large-font); }

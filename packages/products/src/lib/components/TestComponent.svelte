@@ -16,6 +16,7 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .test-component {
     padding: 1rem;

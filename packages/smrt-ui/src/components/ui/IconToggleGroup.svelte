@@ -26,6 +26,7 @@ const { label, children, class: className = '' }: Props = $props();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .icon-toggle-group {
     display: inline-flex;

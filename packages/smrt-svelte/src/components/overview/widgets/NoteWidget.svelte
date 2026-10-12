@@ -48,6 +48,7 @@ const blocks = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-note { display: grid; gap: var(--smrt-spacing-2); color: var(--smrt-color-on-surface); font-size: var(--smrt-typography-body-medium-size, 0.875rem); overflow-wrap: anywhere; }
   .smrt-note p, .smrt-note ul, .smrt-note ol, .smrt-note blockquote, .smrt-note pre { margin: 0; }

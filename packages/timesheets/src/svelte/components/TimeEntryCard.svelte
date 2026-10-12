@@ -167,6 +167,7 @@ function handleKeydown(event: KeyboardEvent) {
 {/snippet}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .time-entry-card {
     display: flex;

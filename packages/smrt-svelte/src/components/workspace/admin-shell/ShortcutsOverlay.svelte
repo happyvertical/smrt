@@ -56,6 +56,7 @@ const edges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-shortcuts-overlay {
     display: grid;

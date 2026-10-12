@@ -122,6 +122,7 @@ function minimumOrder(amountMinor: number): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .party-detail { display: grid; gap: var(--smrt-spacing-5); max-inline-size: 64rem; min-inline-size: 0; overflow-wrap: anywhere; }
   .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-4); }

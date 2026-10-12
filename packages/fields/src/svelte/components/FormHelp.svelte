@@ -102,6 +102,7 @@ const glossary = $derived.by(() => {
 </details>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .form-help {
     display: inline-block;

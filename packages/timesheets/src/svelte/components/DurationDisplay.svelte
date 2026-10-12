@@ -48,6 +48,7 @@ const unit = $derived(format === 'hhmm' ? '' : 'h');
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .duration {
     display: inline-flex;

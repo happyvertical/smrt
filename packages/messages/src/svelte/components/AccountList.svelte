@@ -90,6 +90,7 @@ function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .loading,
   .empty {

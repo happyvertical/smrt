@@ -20,6 +20,7 @@ function submit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
     upload={{ action: '', canUpload, description, message, help: 'Preview accepts a local file but never sends it.', hiddenFields: [{ name: 'requestId', value: 'preview-request-retained' }], onsubmit: submit }} />
 </div>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 .preview { display: grid; gap: var(--smrt-spacing-4); }
 }

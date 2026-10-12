@@ -13,6 +13,7 @@ let { title, href }: Props = $props();
 <a class="smrt-shell-title" {href} data-testid="shell-title">{title}</a>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-shell-title {
     display: inline-flex;

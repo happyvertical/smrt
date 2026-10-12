@@ -132,6 +132,7 @@ const hasDocuments = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .meeting-view {
     --view-bg: var(--color-neutral-white, #ffffff);

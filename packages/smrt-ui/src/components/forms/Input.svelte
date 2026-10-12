@@ -222,6 +222,7 @@ export function getElement(): HTMLInputElement | null {
 />
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 	.input {
 		box-sizing: border-box;

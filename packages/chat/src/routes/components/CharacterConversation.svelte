@@ -545,6 +545,7 @@ onMount(() => {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   /* The dock is a fixed bottom-corner surface. Keep the listening composer
      above its launcher/closed bar so a pointer can reach Submit. */

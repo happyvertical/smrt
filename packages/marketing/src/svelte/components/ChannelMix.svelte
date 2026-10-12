@@ -62,6 +62,7 @@ const mix = $derived(calculateChannelMix(channels));
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .channel-mix,
   .rows {

@@ -246,6 +246,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-shell-layout-editor { display: grid; gap: var(--smrt-spacing-4); min-inline-size: 0; overflow-wrap: anywhere; }
   .smrt-shell-layout-editor header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--smrt-spacing-3); }

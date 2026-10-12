@@ -154,6 +154,7 @@ useControlRegistration(() => {
 </label>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   /* The visible box stays 18px. A transparent 44x44 hit area (WCAG 2.5.8 / M3 touch target) is
      centred on it with ::before, so clicks nearby still land on the wrapping <label>. It adds no

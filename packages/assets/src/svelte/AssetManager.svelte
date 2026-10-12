@@ -349,6 +349,7 @@ function handleManagerDrop(event: DragEvent) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .asset-manager__error {
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);

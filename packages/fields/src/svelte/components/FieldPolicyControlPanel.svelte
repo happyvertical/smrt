@@ -281,6 +281,7 @@ async function suggestionChanged(): Promise<void> {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .field-policy-control-panel { display: grid; gap: var(--smrt-spacing-4); }
   .field-policy-control-panel header p, .field-policy-control-panel__detail > p { color: var(--smrt-color-on-surface-variant); }

@@ -51,6 +51,7 @@ const { t } = useI18n();
   {#if receipts}<AttachmentPanel {...receipts} />{/if}
 </section>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .expense-review { display: grid; gap: var(--smrt-spacing-4); min-width: 0; overflow-wrap: anywhere; }
   .actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); }

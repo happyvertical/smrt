@@ -90,6 +90,7 @@ let {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .content-review-status-tray {
     display: inline-flex;

@@ -20,6 +20,7 @@ const gear = getFieldPolicyGearContext();
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .field-policy-gear-button__badge { border-radius: 999px; background: var(--smrt-color-secondary-container, #e8def8); min-inline-size: 1.25rem; padding-inline: 0.25rem; text-align: center; }
 }

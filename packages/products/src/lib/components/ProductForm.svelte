@@ -173,6 +173,7 @@ function handleSubmit(event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .product-form-shell :global(.product-form) {
     max-width: 500px;

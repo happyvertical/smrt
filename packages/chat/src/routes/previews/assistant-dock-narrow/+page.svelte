@@ -42,6 +42,7 @@ const docks = [250, 285, 800].map((width) => ({
 </ThemeProvider>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .dock-box {
     height: 420px;

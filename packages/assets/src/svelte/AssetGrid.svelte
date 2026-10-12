@@ -165,6 +165,7 @@ function getAltText(asset: PersistedAsset): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .asset-grid {
     padding: var(--smrt-spacing-4, 1rem);

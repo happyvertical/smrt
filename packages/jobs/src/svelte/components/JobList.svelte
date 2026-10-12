@@ -306,6 +306,7 @@ const sortColumns = $derived([
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .job-list-container {
     width: 100%;

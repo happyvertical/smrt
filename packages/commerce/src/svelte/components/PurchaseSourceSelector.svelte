@@ -54,6 +54,7 @@ const { t } = useI18n();
  </Form>
 </div>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 .purchase-source{max-width:48rem;min-width:0;overflow-wrap:anywhere;color:var(--smrt-color-on-surface)}
 }

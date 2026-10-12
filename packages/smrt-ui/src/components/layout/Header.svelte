@@ -31,6 +31,7 @@ const { logo, nav }: Props = $props();
 </header>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .site-header {
     background: var(--smrt-color-primary);

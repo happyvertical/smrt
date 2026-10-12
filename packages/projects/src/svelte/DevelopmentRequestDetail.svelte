@@ -55,6 +55,7 @@ const { t } = useI18n();
 </article>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .detail {
     display: grid;

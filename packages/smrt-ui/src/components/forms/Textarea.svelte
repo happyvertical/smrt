@@ -145,6 +145,7 @@ export function getElement(): HTMLTextAreaElement | null {
 ></textarea>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 	.textarea {
 		box-sizing: border-box;

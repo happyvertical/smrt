@@ -347,6 +347,7 @@ useControlRegistration(() => {
   {#if status !== undefined}<div class="sr-status" role="status" aria-live="polite">{open ? status : ''}</div>{/if}
 </div>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .combobox { position: relative; display: grid; gap: 0; color: var(--smrt-color-on-surface); }
   input { box-sizing: border-box; width: 100%; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: inherit; }

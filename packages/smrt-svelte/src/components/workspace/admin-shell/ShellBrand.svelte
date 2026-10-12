@@ -54,6 +54,7 @@ const { t } = useI18n();
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-admin-shell__brand {
     display: flex;

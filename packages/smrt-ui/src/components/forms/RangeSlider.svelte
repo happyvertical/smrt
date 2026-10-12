@@ -189,6 +189,7 @@ useControlRegistration(() => {
   </div>
 </div>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .range-slider { display: grid; gap: var(--smrt-spacing-3); color: var(--smrt-color-on-surface); }
   .range-slider.disabled { opacity: .5; }

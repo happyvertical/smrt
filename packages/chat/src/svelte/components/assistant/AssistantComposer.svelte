@@ -500,6 +500,7 @@ function removeAttachment(id: string) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .assistant-composer {
     border-top: 1px solid var(--smrt-color-outline-variant, #c4c6cf);

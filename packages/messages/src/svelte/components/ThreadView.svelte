@@ -169,6 +169,7 @@ const _sortedMessages = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .thread-view {
     display: flex;

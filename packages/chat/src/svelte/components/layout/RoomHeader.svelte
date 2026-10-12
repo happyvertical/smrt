@@ -118,6 +118,7 @@ const roomTypeLabel = $derived.by(() => {
 </header>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .room-header {
     display: flex;

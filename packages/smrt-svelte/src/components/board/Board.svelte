@@ -291,6 +291,7 @@ function toggleColumn(columnId: string): void {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-board { min-width: 0; }
   .smrt-board__lanes { display: flex; gap: var(--smrt-spacing-4); overflow-x: auto; overscroll-behavior-x: contain; padding-block-end: var(--smrt-spacing-2); }

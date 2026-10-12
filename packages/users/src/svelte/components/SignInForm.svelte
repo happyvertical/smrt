@@ -41,6 +41,7 @@ async function submit() {
   <Button type="submit" fullWidth disabled={!adapter.signInWithPassword || loading} loading={pending}>{t('users.auth.sign_in')}</Button>
 </Form>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 :global(.auth-form){display:grid;gap:var(--smrt-spacing-sm,.5rem);color:var(--smrt-color-on-surface)}h2{margin:0;font:var(--smrt-typography-title-large-font)}label{font:var(--smrt-typography-label-large-font)}.error{margin:0;padding:var(--smrt-spacing-sm,.5rem);border-radius:var(--smrt-radius-sm,.25rem);background:var(--smrt-color-error-container);color:var(--smrt-color-on-error-container)}
 }

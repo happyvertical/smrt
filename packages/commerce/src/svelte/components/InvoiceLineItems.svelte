@@ -199,6 +199,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .line-items-container {
     width: 100%;

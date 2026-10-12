@@ -121,6 +121,7 @@ function stageNameOf(stageId: string | null): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .sales-opportunity-board {
     width: 100%;

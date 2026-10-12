@@ -389,6 +389,7 @@ async function saveRoute() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .messaging-settings { display: grid; gap: 1.5rem; }
   section { display: grid; gap: 0.75rem; }

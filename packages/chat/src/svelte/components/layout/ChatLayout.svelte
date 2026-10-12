@@ -92,6 +92,7 @@ function handlePointerUp() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .chat-layout {
     display: flex;

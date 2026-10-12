@@ -37,6 +37,7 @@ const variantClass = $derived.by(() => {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .role-badge {
     display: inline-flex;

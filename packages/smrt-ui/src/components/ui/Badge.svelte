@@ -20,6 +20,7 @@ const { variant = 'default', size = 'md', children, ...rest }: Props = $props();
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .badge {
     display: inline-flex;

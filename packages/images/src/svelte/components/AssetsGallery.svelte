@@ -249,6 +249,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-assets-gallery {
     display: flex;

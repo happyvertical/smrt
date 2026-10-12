@@ -115,6 +115,7 @@ function approve(proposal: DirectiveProposalView): void {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .directive-review-queue {
     display: flex;

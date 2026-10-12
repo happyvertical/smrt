@@ -138,6 +138,7 @@ async function run(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .model-status {
     display: flex;

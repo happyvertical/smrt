@@ -67,6 +67,7 @@ const collapsedTabs = $derived(tabs.filter((t) => !t.isExpanded));
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .chat-tabs {
     position: fixed;

@@ -283,6 +283,7 @@ async function handleAIEdit() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-image-editor {
     display: flex;

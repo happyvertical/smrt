@@ -97,6 +97,7 @@ function cycle(delta: number) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .content-image-chooser {
     display: inline-flex;

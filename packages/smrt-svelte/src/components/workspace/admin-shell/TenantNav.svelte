@@ -268,6 +268,7 @@ function fallbackIcon(label: string): string {
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-tenant-nav,
   .smrt-tenant-nav__section,

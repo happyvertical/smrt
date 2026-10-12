@@ -39,6 +39,7 @@ const safeHtml = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .content-body-renderer {
     font-size: var(--smrt-typography-body-large-size, 1rem);

@@ -3424,6 +3424,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 />
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .content-list-wrapper {
     display: flex;

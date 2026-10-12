@@ -311,6 +311,7 @@ function containerRank(id: string): number {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-sortable { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-3); min-width: 0; position: relative; }
   .smrt-sortable__containers { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-3); min-width: 0; }

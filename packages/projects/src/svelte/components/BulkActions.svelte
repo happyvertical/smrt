@@ -88,6 +88,7 @@ const visible = $derived(selectedCount > 0);
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .bulk-actions {
     display: flex;

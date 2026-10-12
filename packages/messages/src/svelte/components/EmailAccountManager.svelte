@@ -367,6 +367,7 @@ function getProviderLabel(type: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .email-account-manager {
     display: flex;

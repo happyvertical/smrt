@@ -285,6 +285,7 @@ export interface Props {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   /*
    * The form now renders through smrt-ui's <Form> (Provider-free base `<form>`).

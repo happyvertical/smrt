@@ -154,6 +154,7 @@ export function getElement(): HTMLSelectElement | null {
 </select>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 	.select {
 		box-sizing: border-box;

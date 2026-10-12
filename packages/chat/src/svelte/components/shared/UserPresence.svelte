@@ -28,6 +28,7 @@ const labelText: Record<string, string> = {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .presence {
     display: inline-flex;

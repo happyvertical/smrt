@@ -168,6 +168,7 @@ const { t } = useI18n();
 {/each}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .assistant-dock-choices {
     display: grid;

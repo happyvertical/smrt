@@ -269,6 +269,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .tabs-container {
     display: flex;

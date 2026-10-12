@@ -38,6 +38,7 @@ const menu = [
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .workbench { display: grid; gap: var(--smrt-spacing-6); color: var(--smrt-color-on-surface); }
   header, .actions, .interaction-row { display: flex; align-items: center; gap: var(--smrt-spacing-3); } header { justify-content: space-between; padding-bottom: var(--smrt-spacing-4); border-bottom: 1px solid var(--smrt-color-outline-variant); }

@@ -63,6 +63,7 @@ const tiles = $derived.by((): Tile[] => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .empty {
     margin: 0;

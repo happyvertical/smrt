@@ -108,6 +108,7 @@ function toggle(key: string | number) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .collection { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: 0; list-style: none; }
   .collection--grid { grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr)); }

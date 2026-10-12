@@ -530,6 +530,7 @@ async function handleSendMessage(content: string) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .content-agent-chat-container {
     display: flex;

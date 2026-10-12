@@ -537,6 +537,7 @@ const headingTag = $derived(`h${headingLevel}`);
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-overview { container-type: inline-size; min-inline-size: 0; }
   .smrt-overview__toolbar { display: flex; gap: var(--smrt-spacing-1); margin-block-end: var(--smrt-spacing-2); }

@@ -275,6 +275,7 @@ onDestroy(() => surfaceRegistration?.cleanup());
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-2) 0; color: var(--smrt-color-on-surface); }
   .toolbar--highlighted { outline: 2px solid var(--smrt-color-primary, #2563eb); outline-offset: 3px; }

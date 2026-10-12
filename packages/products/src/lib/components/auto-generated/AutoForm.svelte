@@ -152,6 +152,7 @@ function _getFieldType(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .auto-form {
     max-width: 600px;

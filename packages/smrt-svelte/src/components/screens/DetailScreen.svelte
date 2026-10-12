@@ -186,6 +186,7 @@ async function confirmDelete(): Promise<void> {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-detail-screen {
     display: flex;

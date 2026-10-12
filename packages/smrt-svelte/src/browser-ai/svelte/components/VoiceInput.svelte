@@ -84,6 +84,7 @@ async function handleToggle() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .voice-input {
     display: flex;

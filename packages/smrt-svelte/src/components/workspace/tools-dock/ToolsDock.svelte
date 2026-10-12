@@ -275,6 +275,7 @@
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .tools-dock {
     --tools-dock-rail-width: 3.25rem;

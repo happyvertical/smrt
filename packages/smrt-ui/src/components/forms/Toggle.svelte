@@ -86,6 +86,7 @@ const sizeClasses = {
 </label>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .toggle {
     display: inline-flex;

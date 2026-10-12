@@ -77,6 +77,7 @@ const href = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-metric { display: grid; gap: var(--smrt-spacing-1); }
   .smrt-metric__value { margin: 0; color: var(--smrt-color-on-surface); font-size: var(--smrt-typography-display-small-size, 2rem); font-weight: var(--smrt-typography-weight-medium, 500); line-height: 1.1; text-decoration: none; font-variant-numeric: tabular-nums; }

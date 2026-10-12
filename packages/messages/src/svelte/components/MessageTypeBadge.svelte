@@ -49,6 +49,7 @@ const _variant = $derived.by(() => {
 </Badge>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .type-badge {
     display: inline-flex;

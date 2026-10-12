@@ -415,6 +415,7 @@ async function reset(fieldName: string): Promise<void> {
 </Modal>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .field-policy-editor { background: var(--smrt-color-surface, white); color: var(--smrt-color-on-surface, #1f2937); display: grid; gap: var(--smrt-spacing-4, 1rem); max-block-size: min(90vh, 56rem); overflow: auto; padding: var(--smrt-spacing-5, 1.25rem); }
   .field-policy-editor__actions, .field-policy-editor__tabs { align-items: center; display: flex; gap: var(--smrt-spacing-2, .5rem); justify-content: space-between; }

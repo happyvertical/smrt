@@ -209,6 +209,7 @@ function getRoleBadgeLabel(role: string): string {
 </aside>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .member-list {
     display: flex;

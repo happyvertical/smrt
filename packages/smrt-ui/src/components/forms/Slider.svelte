@@ -150,6 +150,7 @@ useControlRegistration(() => {
   </div>
 </div>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .slider { display: grid; gap: var(--smrt-spacing-2); color: var(--smrt-color-on-surface); }
   .slider__header, .slider__controls { display: flex; align-items: center; gap: var(--smrt-spacing-3); }

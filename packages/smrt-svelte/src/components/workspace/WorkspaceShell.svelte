@@ -433,6 +433,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-workspace-shell {
     --smrt-ws-sidebar-width: 280px;

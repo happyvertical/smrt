@@ -122,6 +122,7 @@ function handleClick() {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   :global(.smrt-dictation-button) {
     position: relative;

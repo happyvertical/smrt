@@ -73,6 +73,7 @@ function activityLabel(activity: ShellActivity): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 .smrt-activity-ticker-shell { display:flex; align-items:center; flex:1; min-width:0; gap:var(--smrt-spacing-2); }
 .smrt-activity-ticker { flex:1; min-width:0; overflow:hidden; color:var(--smrt-color-on-surface-variant); font-size:var(--smrt-typography-body-small-size); white-space:nowrap; }

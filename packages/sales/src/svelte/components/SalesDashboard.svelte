@@ -113,6 +113,7 @@ const rate = $derived(winRate(opportunities));
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .sales-dashboard {
     display: flex;

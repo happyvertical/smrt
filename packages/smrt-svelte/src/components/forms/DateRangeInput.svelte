@@ -567,6 +567,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-daterange {
     display: flex;

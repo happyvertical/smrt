@@ -82,6 +82,7 @@ const store = {
 </main>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .cookbook-section {
     display: grid;

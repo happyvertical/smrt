@@ -52,6 +52,7 @@ const filtered = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .workbench { display: grid; gap: var(--smrt-spacing-4); color: var(--smrt-color-on-surface); }
   header { padding-bottom: var(--smrt-spacing-4); border-bottom: 1px solid var(--smrt-color-outline-variant); } h4, p { margin: 0; } h4 { font: var(--smrt-typography-headline-small-font); } header > p:last-child { max-width: 48rem; margin-top: var(--smrt-spacing-1); color: var(--smrt-color-on-surface-variant); }
