@@ -377,7 +377,10 @@ function collectMissingRelativeRuntimeImports(packageRoot, runtimeEntryFiles) {
       const specifier = entry.specifier;
       // Vite asset queries (`?inline`, `?raw`, `?url`) are not part of the
       // file name; resolve the file they decorate.
-      const basePath = resolve(dirname(filePath), specifier.replace(/[?#].*$/, ''));
+      const basePath = resolve(
+        dirname(filePath),
+        specifier.replace(/[?#].*$/, ''),
+      );
       if (!isWithinPackageRoot(packageRoot, basePath)) {
         missing.push(
           `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
