@@ -31,6 +31,7 @@ export async function startKitchenPreview(
     const match = /^\/plans\/(plan-[a-f0-9-]{8,36})(\/commands)?$/.exec(path);
     if (
       !match ||
+      !session.previewPlans.has(match[1]) ||
       !(
         (request.method === 'GET' && !match[2]) ||
         (request.method === 'POST' && match[2])
@@ -56,19 +57,21 @@ export async function startKitchenPreview(
             .end(JSON.stringify({ ok: false, error: 'JSON required.' }));
           return;
         }
-        let body = '';
+        const chunks: Buffer[] = [];
         let bytes = 0;
         for await (const chunk of request) {
           bytes += chunk.length;
-          body += chunk;
           if (bytes > 2_097_152) {
             response
               .writeHead(413)
               .end(JSON.stringify({ ok: false, error: 'Request too large.' }));
             return;
           }
+          chunks.push(chunk);
         }
-        const input: unknown = JSON.parse(body);
+        const input: unknown = JSON.parse(
+          Buffer.concat(chunks).toString('utf8'),
+        );
         if (!input || typeof input !== 'object' || Array.isArray(input)) {
           response.writeHead(400).end(
             JSON.stringify({

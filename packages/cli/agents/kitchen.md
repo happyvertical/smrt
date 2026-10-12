@@ -112,7 +112,7 @@ client), `__tests__/kitchen-plugin.test.ts` (plugin files against the Agent Plug
 | `start_plan` | not read-only, not destructive | empty, or from a library cookbook; returns `planId` |
 | `run_commands` | idempotent | one atomic `engine.batch` (`id`, `expectedRevision` pass through); a lone `undo` runs as a command |
 | `get_plan`, `validate_plan`, `export_plan` | read-only | `validate_plan` = engine `validate` + `validateCookbookText` against the catalog's manifests |
-| `open_preview` | read-only | URL for the same plan in the local development app shell when the preview bridge is enabled |
+| `open_preview` | read-only | URL for the same plan in the local development app shell when the preview bridge is enabled; binds the plan so the bridge will serve it |
 | `apply_plan` | destructive, idempotent, open-world | `createCookbookApplier` (= `cookbook apply`); absolute `dir`; **writes only with `confirm: true` + the preview's `confirmCode`** (sha256 of dir, server template and exported plan, so a changed plan or dir needs a new preview), otherwise (or with `dryRun`) a preview + `confirmation_required`; template is the server's `--template` only; `install` defaults to false and its output goes to stderr; templates containing symlinks are refused |
 
 - **Plans** are stored in `--plans-dir` as private engine-state JSON files when set. This

@@ -492,6 +492,8 @@ export class KitchenSession {
   private readonly plans = new Map<string, Plan>();
   private readonly updates = new Map<string, Promise<void>>();
   previewUrl?: string;
+  /** Plans `open_preview` handed to the browser; the preview bridge serves only these. */
+  readonly previewPlans = new Set<string>();
 
   constructor(private readonly options: KitchenToolsOptions) {}
 
@@ -702,6 +704,7 @@ export class KitchenSession {
           );
         }
         const port = new URL(this.previewUrl).port;
+        this.previewPlans.add(args.planId as string);
         const url = `${this.options.previewOrigin}/?kitchenPlan=${encodeURIComponent(args.planId as string)}&kitchenPort=${port}`;
         return {
           data: { ok: true, planId: args.planId, url },

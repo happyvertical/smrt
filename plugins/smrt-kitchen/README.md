@@ -67,8 +67,9 @@ Options: `--manifests <file|dir>` (repeatable), `--no-registry`, `--packages <na
 `--library <dir>`, `--template <path|github:owner/repo[#ref]|url>`,
 `--plans-dir <local-directory>`, `--preview-port <port>` and
 `--preview-origin http://127.0.0.1:<port>`. The preview bridge listens on
-`127.0.0.1`, accepts only that exact browser origin, and exposes the same
-`get_plan` and `run_commands` session to the development app shell. The
+`127.0.0.1`, accepts only that exact browser origin, serves only plans this
+process has handed out through `open_preview`, and exposes the same `get_plan`
+and `run_commands` session to the development app shell. The
 `render_plan` resource also advertises a ChatGPT thread side panel entrypoint.
 The generated local launcher enables durable plans and the preview bridge by
 default, with a random loopback port and `http://127.0.0.1:5173` as its allowed

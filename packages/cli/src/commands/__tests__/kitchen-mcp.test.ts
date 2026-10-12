@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -326,16 +327,34 @@ describe('durable Kitchen plan and local preview', () => {
   });
 
   it('only accepts the configured browser origin and submits through the same session', async () => {
+    const origin = 'http://127.0.0.1:5173';
     const session = new KitchenSession({
       dir: work,
       manifests: [manifests],
       registry: false,
+      previewOrigin: origin,
     });
     const planId = (await session.call('start_plan', {})).data.planId as string;
-    const origin = 'http://127.0.0.1:5173';
+    const unbound = (await session.call('start_plan', {})).data
+      .planId as string;
     const preview = await startKitchenPreview(session, 0, origin);
+    session.previewUrl = preview.url;
     const path = `${preview.url}/plans/${planId}`;
     try {
+      // Only plans handed out by open_preview are served.
+      expect((await fetch(path, { headers: { Origin: origin } })).status).toBe(
+        404,
+      );
+      expect((await session.call('open_preview', { planId })).data.ok).toBe(
+        true,
+      );
+      expect(
+        (
+          await fetch(`${preview.url}/plans/${unbound}`, {
+            headers: { Origin: origin },
+          })
+        ).status,
+      ).toBe(404);
       const refused = await fetch(path, {
         headers: { Origin: 'http://evil.invalid' },
       });
@@ -410,6 +429,45 @@ describe('durable Kitchen plan and local preview', () => {
           }
         ).app.name,
       ).toBe('From browser');
+      // A multibyte character split across request chunks survives intact.
+      const revision = (
+        (await session.call('get_plan', { planId })).data.snapshot as {
+          revision: number;
+        }
+      ).revision;
+      const body = Buffer.from(
+        JSON.stringify({
+          expectedRevision: revision,
+          commands: [{ name: 'set_name', input: { name: 'Café 🍰' } }],
+        }),
+      );
+      const split = body.indexOf(Buffer.from('🍰')) + 2;
+      const status = await new Promise<number>(
+        (resolveStatus, rejectStatus) => {
+          const req = request(
+            `${path}/commands`,
+            {
+              method: 'POST',
+              headers: { Origin: origin, 'Content-Type': 'application/json' },
+            },
+            (res) => {
+              res.resume();
+              resolveStatus(res.statusCode ?? 0);
+            },
+          );
+          req.on('error', rejectStatus);
+          req.write(body.subarray(0, split));
+          setTimeout(() => req.end(body.subarray(split)), 50);
+        },
+      );
+      expect(status).toBe(200);
+      expect(
+        (
+          (await session.call('get_plan', { planId })).data.snapshot as {
+            app: { name: string };
+          }
+        ).app.name,
+      ).toBe('Café 🍰');
     } finally {
       await new Promise<void>((resolve, reject) =>
         preview.server.close((error) => (error ? reject(error) : resolve())),
@@ -914,6 +972,56 @@ describe('smrt kitchen mcp over stdio', () => {
     // Every stdout line is a JSON-RPC message; the CLI's own notices go to stderr.
     for (const line of lines) expect(JSON.parse(line).jsonrpc).toBe('2.0');
   });
+
+  it('exits when the host closes stdin while the preview bridge is listening', async () => {
+    const child = spawn(
+      tsx,
+      [
+        join(cliRoot, 'src/index.ts'),
+        'kitchen',
+        'mcp',
+        '--no-registry',
+        '--preview-port',
+        '0',
+        '--preview-origin',
+        'http://127.0.0.1:5173',
+      ],
+      {
+        cwd: work,
+        env: { PATH: process.env.PATH ?? '', HOME: work },
+        stdio: ['pipe', 'ignore', 'pipe'],
+      },
+    );
+    try {
+      await new Promise<void>((resolveReady, rejectReady) => {
+        const timer = setTimeout(
+          () => rejectReady(new Error('preview never started')),
+          20_000,
+        );
+        let stderr = '';
+        child.stderr.on('data', (chunk: Buffer) => {
+          stderr += chunk.toString();
+          if (stderr.includes('Live preview bridge')) {
+            clearTimeout(timer);
+            resolveReady();
+          }
+        });
+      });
+      const exited = new Promise<number | null>((resolveExit) =>
+        child.once('exit', (code) => resolveExit(code)),
+      );
+      child.stdin.end();
+      const code = await Promise.race([
+        exited,
+        new Promise<'alive'>((resolveAlive) =>
+          setTimeout(() => resolveAlive('alive'), 5_000),
+        ),
+      ]);
+      expect(code).not.toBe('alive');
+    } finally {
+      if (child.exitCode === null) child.kill('SIGKILL');
+    }
+  }, 30_000);
 
   it('refuses unknown plans, tools and bad input without crashing', async () => {
     expect(
