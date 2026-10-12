@@ -177,7 +177,7 @@ interface Props {
    * mode the sidebar edits sections (grip, rename, hide, icon); entries are
    * edited on the section page.
    */
-  navMode?: 'items' | 'sections';
+  navMode?: 'items' | 'sections' | 'sections-with-items';
   /** Section page for groups without an `href` (e.g. user-created ones). */
   sectionHref?: (sectionId: string) => string | undefined;
   /** Renders host icon names for sections and entries. */
@@ -739,7 +739,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       {/snippet}
 
       {#snippet tenantRail()}
-        {#if navMode === 'sections' && !editing && hasNav}
+        {#if navMode !== 'items' && !editing && hasNav}
           <TenantNav
             collapsed
             items={applied.nav}

@@ -165,7 +165,7 @@ export interface BuildCookbookShellOptions {
 /** Everything `AppShell` and the section pages need, derived from a cookbook. */
 export interface CookbookShell {
   title: string;
-  navMode: 'sections';
+  navMode: 'sections-with-items';
   /** Sections as the shell takes them (layout is applied by the shell). */
   navGroups: ShellNavGroup[];
   /** The cookbook's layout, or `null` when it has none. */
@@ -225,6 +225,8 @@ export interface CookbookAppProps
     > {
   cookbook: Cookbook;
   catalog: CookbookCatalog;
+  /** Expanded section entries are the default; use `sections` for headings only. */
+  navMode?: 'sections' | 'sections-with-items';
   /**
    * Data loaders for the `metric`, `records` and `chart` widgets. With
    * `metric` and `records`, section pages also show a record count and the

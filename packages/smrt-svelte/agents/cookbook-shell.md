@@ -29,7 +29,7 @@ sample data source are not part of it.
   the selected recipes and the models they or the cookbook's `features` name, so
   a load serializes a few KB instead of the whole workspace.
 - **`buildCookbookShell({ cookbook, catalog, ... })`** returns a `CookbookShell`:
-  `navGroups` for `AppShell` (`navMode: 'sections'`, one group per suggested
+  `navGroups` for `AppShell` (one group per suggested
   section, icon and section-page `href`), `layout` (the cookbook's, passed to
   the shell, which applies order/hidden/labels itself), `sections` and `entries`
   (every entry by stable id), `theme`, `overviews`, recipe surfaces
@@ -37,6 +37,9 @@ sample data source are not part of it.
   `issues`. It never throws for cookbook content: an unknown recipe, a nav model
   the catalog lacks or a feature that is not exposed becomes an `issues` entry
   and is left out.
+- `CookbookApp` uses `navMode: 'sections-with-items'` by default: the open
+  drawer shows section pages and their entries, while the rail keeps section
+  icons. Hosts can choose `navMode: 'sections'` for headings only.
 - **Ids are the contract.** Section layout ids are `section:<id>` (a recipe's
   `section`, else its `group`, else the recipe) or `custom:<slug>` (the layout's
   own); entries are `item:<package>:<Model>[:<key>]`. They never name labels or

@@ -41,6 +41,7 @@ let {
   sectionPath,
   href,
   title,
+  navMode = 'sections-with-items',
   slotItems = [],
   children,
   ...shellProps
@@ -220,7 +221,7 @@ setCookbookContext({
 <AppShell
   {...shellProps}
   title={shell.title}
-  navMode="sections"
+  {navMode}
   navGroups={shell.navGroups}
   {layout}
   onlayoutchange={(next) => {

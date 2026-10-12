@@ -389,11 +389,13 @@ control panel), wired by `app/AppShell.svelte`.
   "Rename <label>" button opening an inline field (Enter saves, Escape cancels,
   blur saves) and, once renamed, "Reset <label> to <original>"; the original shows
   as the row tooltip. Presets ("cookbooks") ship it in the stored layout.
-- **Sections-only navigation (`navMode: 'sections'`).** `AppShell` (and
-  `TenantNav` / `ShellNavEditor` directly) take `navMode?: 'items' | 'sections'`
-  (default `'items'`, unchanged). In `'sections'` the left sidebar shows one
-  link per section (icon + label), no entries; a collapsed rail (`tenantRail`)
-  shows the icons with tooltips. The link goes to `ShellNavGroup.href`, else
+- **Section navigation (`navMode: 'sections' | 'sections-with-items'`).** `AppShell`
+  (and `TenantNav` / `ShellNavEditor` directly) also support `'items'` (the
+  default). `'sections'` keeps one link per section with no entries.
+  `'sections-with-items'` adds indented entry links in the expanded drawer;
+  its collapsed rail still shows section icons with tooltips. In edit mode,
+  this variant exposes both section icons and entry editing. The section link
+  goes to `ShellNavGroup.href`, else
   `AppShell` `sectionHref(sectionId)` (user-created sections), else the first
   entry; it is `aria-current="page"` on that page and `"true"` on any of the
   section's entry pages. `AppShell` also takes `iconComponent` for host icon
@@ -403,12 +405,15 @@ control panel), wired by `app/AppShell.svelte`.
   `setSectionIcon(id, icon | null)`; `resolveShellNavModel` sections carry
   `icon` / `defaultIcon` and `applyShellLayout` emits the effective `icon`.
   Icons are shell icon names (`SHELL_SECTION_ICONS` is the picker set, drawn
-  from Material icons like the rest of `SHELL_ICON_PATHS`; `SHELL_DEFAULT_SECTION_ICON`
-  is `folder`) or host names rendered by `iconComponent` (`ShellSectionIcon`
-  tries the built-in set first). Edit mode in this mode: sections keep grip,
+  from Material icons like the rest of `SHELL_ICON_PATHS`;
+  `SHELL_DEFAULT_SECTION_ICON` is `folder`) or host names rendered by
+  `iconComponent`. Entry and action icons use built-in SVGs when no host
+  renderer is supplied, falling back to the default section glyph for unknown
+  names. Edit mode in `sections` mode: sections keep grip,
   rename, hide, delete; the title toggle is replaced by an "Icon of <label>"
   popover grid ("Use <icon> icon", `aria-pressed` on the current one; Escape
-  closes the grid before the toolbar). Entries are not in the sidebar.
+  closes the grid before the toolbar). Entries are not in the sidebar in
+  `sections` mode; `sections-with-items` shows them under their section.
 - **`ShellSectionMenu`** (`sectionId`, `controller?`, `meta(entry)`,
   `actions(entry)`, `iconComponent`, `aria-label`, `layout`): the section's page body.
   `layout="cards"` renders an auto-fill grid (min 16rem) of cards: 32px icon in a
