@@ -124,6 +124,12 @@ describe('core widget components', () => {
       'href',
       '/events',
     );
+    const heading = container.querySelector('.smrt-shortcuts__heading');
+    expect(heading?.querySelector('.smrt-shortcuts__icon')).toBeInTheDocument();
+    expect(heading?.querySelector('.smrt-shortcuts__title')).toHaveTextContent(
+      'Events',
+    );
+    expect(heading?.nextElementSibling).toHaveTextContent('All events');
     await expectNoA11yViolations(container);
   });
 });

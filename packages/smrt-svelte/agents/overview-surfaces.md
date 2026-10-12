@@ -158,6 +158,11 @@ Call `destroy()` when the owner unmounts.
 
 ## Grid and edit mode (`OverviewGrid.svelte`)
 
+The core shortcuts widget draws each shortcut with an inline icon/title heading.
+The icon uses `--smrt-color-primary` from the active theme, matching the
+`ShellSectionMenu` card layout; descriptions remain below the heading. Hosts
+may still provide an icon component for their own glyphs.
+
 Props in `grid-types.ts`. `editing` defaults to the shell's layout editor
 (`tryUseShellLayout()?.editing`), so the same pencil edits the grid under an
 `AppShell` with `layoutEditing`; pass `editing` to drive it without a shell. It is
