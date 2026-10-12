@@ -126,7 +126,9 @@ comes from `ShellLayout.panels.visible` and edit mode. The right edge is the
 dock: dock toggles and focus tools still open it, it just loses its button.
 `hotkeys` (default: follows the toggles) forces shortcuts on (`true`, panels
 behave as drop-downs without buttons) or off. Phones keep the Menu opener and
-the left drawer's close toggle. `showTenantToggle` is a deprecated alias for
+the left drawer's close toggle. The left edge toggle is an icon above the
+sidebar header content in both expanded and collapsed states, with a tooltip
+and accessible expand/collapse name. `showTenantToggle` is a deprecated alias for
 `edgeToggles.left`. Migration: pass `edgeToggles` (true) to keep the previous
 behaviour.
 

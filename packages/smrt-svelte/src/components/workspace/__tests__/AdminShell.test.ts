@@ -35,6 +35,49 @@ afterEach(() => {
 });
 
 describe('AdminShell', () => {
+  it('uses an icon above navigation to open and close the left sidebar', async () => {
+    const state = createShellState({
+      config: { top: false, left: { initial: 'expanded' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        edgeToggles: { left: true },
+        tenantPanel: textSnippet('navigation'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      const toggle = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Collapse Left sidebar"]',
+      );
+      const navigation = container.querySelector(
+        '.smrt-admin-shell__tenant-content',
+      );
+      expect(toggle).not.toBeNull();
+      expect(navigation).not.toBeNull();
+      expect(toggle?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+      expect(toggle?.textContent).not.toContain('Left sidebar');
+      expect(toggle).toHaveAttribute('title', 'Collapse Left sidebar');
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(toggle?.compareDocumentPosition(navigation as Node)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      toggle?.click();
+      await tick();
+      const opener = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Expand Left sidebar"]',
+      );
+      expect(opener?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+      expect(opener).toHaveAttribute('title', 'Expand Left sidebar');
+      expect(opener).toHaveAttribute('aria-expanded', 'false');
+    } finally {
+      await unmount(component);
+    }
+  });
+
   it('keeps a consumer header and default phone menu opener when the top edge is unavailable', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: query.includes('max-width'),
