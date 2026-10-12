@@ -92,11 +92,11 @@ function getEntryHref(entry: TimeEntry): string | undefined {
 </script>
 
 {#if entries.length === 0}
-  <div class="empty-state">
+  <div class="empty-state" data-smrt-component="TimeEntryList">
     <p>{emptyMessage}</p>
   </div>
 {:else}
-  <div class="time-entry-list">
+  <div class="time-entry-list" data-smrt-component="TimeEntryList">
     {#if selectable && selectableEntries.length > 0}
       <div class="list-header">
         <label class="select-all">

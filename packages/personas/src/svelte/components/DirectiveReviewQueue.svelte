@@ -46,7 +46,7 @@ function approve(proposal: DirectiveProposalView): void {
 }
 </script>
 
-<section class="directive-review-queue">
+<section class="directive-review-queue" data-smrt-component="DirectiveReviewQueue">
   {#if proposals.length === 0}
     <p class="dq-empty">No directive proposals awaiting review.</p>
   {:else}

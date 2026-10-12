@@ -62,7 +62,7 @@ function name(field: keyof ExpenseDraftValues) {
   return fields[field] ?? field;
 }
 </script>
-<section class="expense-form" aria-labelledby={`${formId}-title`}>
+<section class="expense-form" aria-labelledby={`${formId}-title`} data-smrt-component="ExpenseForm">
   <h2 id={`${formId}-title`}>{title ?? t(M['expenses.form.title'])}</h2>
   {#if !canEdit}<p>{t(M['expenses.form.readonly'])}</p>{/if}
   <Form id={formId} {action} method="post" preventDefault={false} {onsubmit} aria-busy={busy}>

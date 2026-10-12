@@ -170,7 +170,7 @@ function handleSubmit() {
 }
 </script>
 
-<div class="employee-form-shell">
+<div class="employee-form-shell" data-smrt-component="EmployeeForm">
   <Form class="employee-form" onsubmit={handleSubmit}>
     <div class="field">
       <label for="{uid}-employee-number">

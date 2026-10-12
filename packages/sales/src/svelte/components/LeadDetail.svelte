@@ -138,7 +138,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
 }
 </script>
 
-<article class="sales-lead-detail">
+<article class="sales-lead-detail" data-smrt-component="LeadDetail">
   <header class="head">
     <div>
       <h2 class="head__name">{lead.name}</h2>

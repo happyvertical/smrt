@@ -48,7 +48,7 @@ const byStage = $derived(pipelineValueByStage(stages, opportunities));
 const rate = $derived(winRate(opportunities));
 </script>
 
-<div class="sales-dashboard">
+<div class="sales-dashboard" data-smrt-component="SalesDashboard">
   <dl class="tiles">
     <div class="tile">
       <dt>Open opportunities</dt>

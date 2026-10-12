@@ -33,7 +33,7 @@ const safeHtml = $derived(
 </script>
 
 <div
-  class="content-body-renderer {resolvedFormat === 'markdown' ? 'markdown-content' : ''} {className}"
+  class="content-body-renderer {resolvedFormat === 'markdown' ? 'markdown-content' : ''} {className}" data-smrt-component="ContentBodyRenderer"
 >
   {@html safeHtml}
 </div>

@@ -104,7 +104,7 @@ const _slackMeta = $derived.by(() => {
   class:message-card--unread={!message.isRead}
   class:message-card--compact={compact}
   role="row"
-  aria-selected={selected}
+  aria-selected={selected} data-smrt-component="MessageCard"
 >
   {#if onselect}
     <div class="select-col">

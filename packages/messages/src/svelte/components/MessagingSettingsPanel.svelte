@@ -239,7 +239,7 @@ async function saveRoute() {
 }
 </script>
 
-<div class="messaging-settings">
+<div class="messaging-settings" data-smrt-component="MessagingSettingsPanel">
   <section>
     <header>
       <div><h3>{t(M['messages.messaging_settings.accounts_title'])}</h3><p>{t(M['messages.messaging_settings.accounts_description'])}</p></div>

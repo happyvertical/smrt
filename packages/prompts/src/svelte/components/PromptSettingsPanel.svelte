@@ -125,7 +125,7 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
 }
 </script>
 
-<section class="prompt-settings" data-testid="prompt-settings-panel">
+<section class="prompt-settings" data-testid="prompt-settings-panel" data-smrt-component="PromptSettingsPanel">
   {#if message}
     <p class="ps-flash" role="status">{message}</p>
   {/if}

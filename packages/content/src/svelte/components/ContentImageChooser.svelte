@@ -51,7 +51,7 @@ function cycle(delta: number) {
 </script>
 
 {#if activeImage}
-  <div class="content-image-chooser" aria-label={t(M['content.content_image_chooser.body_images'])}>
+  <div class="content-image-chooser" aria-label={t(M['content.content_image_chooser.body_images'])} data-smrt-component="ContentImageChooser">
     {#if hasMultiple}
       <Button
         variant="ghost"

@@ -49,7 +49,7 @@ async function handleToggle() {
 }
 </script>
 
-<div class="voice-input" class:sm={size === 'sm'} class:lg={size === 'lg'}>
+<div class="voice-input" class:sm={size === 'sm'} class:lg={size === 'lg'} data-smrt-component="VoiceInput">
   {#if stt.isInitializing}
     <DownloadProgress
       progress={stt.downloadProgress ? {

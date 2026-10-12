@@ -69,7 +69,7 @@ let {
 {/snippet}
 
 {#if items.length > 0}
-  <div class="content-review-status-tray" role="group" aria-label={label}>
+  <div class="content-review-status-tray" role="group" aria-label={label} data-smrt-component="ContentReviewStatusTray">
     {#each items as item (item.id)}
       <Button
         variant="ghost"

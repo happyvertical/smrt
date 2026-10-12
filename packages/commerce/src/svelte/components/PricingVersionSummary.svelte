@@ -23,7 +23,7 @@ function amount(value: number | null): string {
 }
 </script>
 
-<section class="pricing-summary" aria-label={version.label}>
+<section class="pricing-summary" aria-label={version.label} data-smrt-component="PricingVersionSummary">
   <h3>{version.label}</h3>
   <p>{version.counterparty} · {version.status}</p>
   <p><strong>{t(M['commerce.pricing.total'])}: {amount(version.total.amountMinor)} {version.total.currency}</strong></p>

@@ -40,7 +40,7 @@ const formattedValue = $derived(
 const unit = $derived(format === 'hhmm' ? '' : 'h');
 </script>
 
-<span class="duration" class:sm={size === 'sm'} class:lg={size === 'lg'}>
+<span class="duration" class:sm={size === 'sm'} class:lg={size === 'lg'} data-smrt-component="DurationDisplay">
   <span class="value">{formattedValue}</span>
   {#if showLabel && unit}
     <span class="unit">{unit}</span>

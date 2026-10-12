@@ -116,7 +116,7 @@ async function handleSave(slotId: string, config: unknown) {
 }
 </script>
 
-<div class="agent-settings-shell" class:single-agent={agents.length === 1}>
+<div class="agent-settings-shell" class:single-agent={agents.length === 1} data-smrt-component="AgentSettingsShell">
 	{#if agents.length > 1}
 		<aside class="agents-sidebar">
 			<h3 class="sidebar-title" id="{idBase}-agents-title">Agents</h3>

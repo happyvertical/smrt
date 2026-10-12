@@ -46,7 +46,7 @@ function componentText(name: string, skuCode: string): string {
 </script>
 
 {#if lines.length === 0}
-  <p class="requirements-empty">{t(M['manufacturing.requirements.empty'])}</p>
+  <p class="requirements-empty" data-smrt-component="RequirementsTree">{t(M['manufacturing.requirements.empty'])}</p>
 {:else}
   <RequirementsTreeLevel
     {lines}
@@ -55,7 +55,7 @@ function componentText(name: string, skuCode: string): string {
 {/if}
 
 {#if totals && totals.length > 0}
-  <div class="requirements-scroll">
+  <div class="requirements-scroll" data-smrt-component="RequirementsTree">
     <table class="requirements-totals">
       <caption>{t(M['manufacturing.requirements.totals_caption'])}</caption>
       <thead>

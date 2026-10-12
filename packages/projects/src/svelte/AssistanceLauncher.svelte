@@ -47,7 +47,7 @@ async function submit(event: SubmitEvent) {
 }
 </script>
 
-<section class="assistance">
+<section class="assistance" data-smrt-component="AssistanceLauncher">
   <Form onsubmit={submit}>
     <header>
       <h2>{t(M['projects.assistance.title'])}</h2>

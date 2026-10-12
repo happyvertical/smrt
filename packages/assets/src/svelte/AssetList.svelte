@@ -106,7 +106,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 }
 </script>
 
-<div class="asset-list" class:asset-list--loading={loading}>
+<div class="asset-list" class:asset-list--loading={loading} data-smrt-component="AssetList">
   <table class="list-table">
     <thead class="list-table__head">
       <tr>

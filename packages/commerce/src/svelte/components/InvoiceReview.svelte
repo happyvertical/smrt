@@ -12,7 +12,7 @@ let { review }: Props = $props();
 const { t } = useI18n();
 </script>
 
-<section aria-label={t(M['commerce.preparation.review'])} class="invoice-review" aria-live="polite">
+<section aria-label={t(M['commerce.preparation.review'])} class="invoice-review" aria-live="polite" data-smrt-component="InvoiceReview">
   <strong>{review.label}</strong>
   {#if review.message}<p>{review.message}</p>{/if}
 </section>

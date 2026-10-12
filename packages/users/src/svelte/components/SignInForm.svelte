@@ -33,10 +33,10 @@ async function submit() {
 }
 </script>
 <Form class="auth-form" onsubmit={submit} aria-busy={loading || pending}>
-  <h2>{t('users.auth.sign_in')}</h2>
-  {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
-  <label for="sign-in-email">{t('users.auth.email_address')}</label><Input id="sign-in-email" type="email" bind:value={email} autocomplete="email" required disabled={loading || pending} />
-  <label for="sign-in-password">{t('users.auth.password')}</label><Input id="sign-in-password" type="password" bind:value={password} autocomplete="current-password" required disabled={loading || pending} />
+  <h2 data-smrt-component="SignInForm">{t('users.auth.sign_in')}</h2>
+  {#if error}<p class="error" role="alert" data-smrt-component="SignInForm">{t(error)}</p>{/if}
+  <label for="sign-in-email" data-smrt-component="SignInForm">{t('users.auth.email_address')}</label><Input id="sign-in-email" type="email" bind:value={email} autocomplete="email" required disabled={loading || pending} />
+  <label for="sign-in-password" data-smrt-component="SignInForm">{t('users.auth.password')}</label><Input id="sign-in-password" type="password" bind:value={password} autocomplete="current-password" required disabled={loading || pending} />
   {#if forgotPasswordHref}<Button href={forgotPasswordHref} variant="ghost">{t('users.auth.forgot_password')}</Button>{/if}
   <Button type="submit" fullWidth disabled={!adapter.signInWithPassword || loading} loading={pending}>{t('users.auth.sign_in')}</Button>
 </Form>

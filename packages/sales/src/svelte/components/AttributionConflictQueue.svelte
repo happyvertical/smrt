@@ -98,7 +98,7 @@ function resolve(exception: AttributionExceptionView) {
 }
 </script>
 
-<section class="sales-attribution-queue">
+<section class="sales-attribution-queue" data-smrt-component="AttributionConflictQueue">
   {#if exceptions.length === 0}
     <p class="empty">No attribution exceptions to review.</p>
   {:else}

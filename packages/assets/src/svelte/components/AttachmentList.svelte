@@ -93,7 +93,7 @@ async function confirmRemove() {
   </div>
 {/snippet}
 
-<section class="attachment-list" aria-label={title ?? t(M['assets.attachments.title'])} aria-busy={loading}>
+<section class="attachment-list" aria-label={title ?? t(M['assets.attachments.title'])} aria-busy={loading} data-smrt-component="AttachmentList">
   <h3>{title ?? t(M['assets.attachments.title'])}</h3>
   {#if message}<p role="alert">{message}</p>{/if}
   {#if loading}<p role="status">{t(M['assets.attachments.loading'])}</p>{/if}

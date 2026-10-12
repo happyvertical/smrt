@@ -43,13 +43,13 @@ const {
 </script>
 
 {#if articles.length === 0}
-  <div class="empty-state" role="status" aria-live="polite">
+  <div class="empty-state" role="status" aria-live="polite" data-smrt-component="ArticleList">
     <p>{emptyMessage}</p>
   </div>
 {:else}
   <Grid {columns} role="list" aria-label={t(M['content.article_list.aria_label'])}>
     {#each articles as article (article.id)}
-      <div role="listitem">
+      <div role="listitem" data-smrt-component="ArticleList">
         <ArticleCard
           {article}
           {showExcerpt}

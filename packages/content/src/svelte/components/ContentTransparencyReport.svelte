@@ -44,7 +44,7 @@ function getFactLabel(fact: {
 }
 </script>
 
-<section class="transparency-report">
+<section class="transparency-report" data-smrt-component="ContentTransparencyReport">
   <div class="transparency-report__header">
     <div>
       <h3>{title}</h3>

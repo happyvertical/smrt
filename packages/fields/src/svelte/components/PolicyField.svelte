@@ -289,7 +289,7 @@ $effect(() => {
 {#if renderSnippet}
   {@render renderSnippet(snippetProps)}
 {:else if visible}
-  <div class="policy-field {className}" bind:this={rootEl}>
+  <div class="policy-field {className}" bind:this={rootEl} data-smrt-component="PolicyField">
     {#if label !== null}
       <!-- `for` tracks the repaired label↔control association: the `name`
            convention before the first effect pass (SSR / first paint), the

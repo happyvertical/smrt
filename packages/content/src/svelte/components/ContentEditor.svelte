@@ -1016,7 +1016,7 @@ function removeAsset(id: string) {
 }
 </script>
 
-<div class="form-container">
+<div class="form-container" data-smrt-component="ContentEditor">
   <div class="editor-grid" class:editor-grid--with-sidebar={showChatSidebar}>
     <!-- LEFT COLUMN (Document Canvas) -->
     <Form

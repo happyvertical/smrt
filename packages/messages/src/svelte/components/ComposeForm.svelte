@@ -145,7 +145,7 @@ export interface Props {
   }
 </script>
 
-<div class="compose-form-shell">
+<div class="compose-form-shell" data-smrt-component="ComposeForm">
 <Form class="compose-form" onsubmit={handleSend}>
   {#if accounts.length > 1}
     <div class="field">

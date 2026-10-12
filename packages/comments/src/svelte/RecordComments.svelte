@@ -51,7 +51,7 @@ async function submit() {
 }
 </script>
 
-<section aria-label={heading} class="record-comments">
+<section aria-label={heading} class="record-comments" data-smrt-component="RecordComments">
   <h2>{heading}</h2>
   <ol aria-live="polite">
     {#each comments as comment (comment.id)}

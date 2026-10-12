@@ -52,7 +52,7 @@ function getColor(name: string): string {
 }
 </script>
 
-<div class="user-avatar" class:sm={size === 'sm'} class:lg={size === 'lg'} class:xl={size === 'xl'}>
+<div class="user-avatar" class:sm={size === 'sm'} class:lg={size === 'lg'} class:xl={size === 'xl'} data-smrt-component="UserAvatar">
   <span class="avatar" style:background-color={getColor(profile.name ?? '')}>
     {getInitials(profile.name ?? 'U')}
   </span>

@@ -115,7 +115,7 @@ const title = $derived(
 );
 </script>
 
-<section class="quote-editor" aria-label={title}>
+<section class="quote-editor" aria-label={title} data-smrt-component="QuoteEditor">
   <h2>{title}</h2>
   <p>{t(Q[kind === 'vendor-quotation' ? 'commerce.quote.vendor_hint' : 'commerce.quote.estimate_hint'])}</p>
   {#if readonly}<p>{t(Q['commerce.quote.readonly'])}</p>{/if}

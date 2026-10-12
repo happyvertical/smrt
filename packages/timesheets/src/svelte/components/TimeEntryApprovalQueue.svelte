@@ -93,11 +93,11 @@ function formatAmount(amount: number, currency = 'USD'): string {
 </script>
 
 {#if entries.length === 0}
-  <p class="time-approval-empty">
+  <p class="time-approval-empty" data-smrt-component="TimeEntryApprovalQueue">
     {emptyMessage ?? t(M['timesheets.approval_queue.empty'])}
   </p>
 {:else}
-  <ul class="time-approval-queue">
+  <ul class="time-approval-queue" data-smrt-component="TimeEntryApprovalQueue">
     {#each entries as entry (entry.id)}
       <li class="time-approval-row">
         <div class="time-approval-line">

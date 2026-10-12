@@ -37,9 +37,9 @@ function formatDue(iso: string | null): string {
 </script>
 
 {#if targets.length === 0}
-  <p class="target-list-empty">{emptyMessage}</p>
+  <p class="target-list-empty" data-smrt-component="TargetList">{emptyMessage}</p>
 {:else}
-  <ul class="target-list">
+  <ul class="target-list" data-smrt-component="TargetList">
     {#each targets as target (target.id)}
       <li class="target-list-row">
         <span class="target-list-main">

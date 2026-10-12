@@ -35,7 +35,7 @@ function formatTimestamp(value: string | null | undefined) {
 }
 </script>
 
-<div class="article-page">
+<div class="article-page" data-smrt-component="PublishedArticleRoute">
   <header class="article-hero">
     <div class="article-hero__inner">
       <a href={backHref} class="back-link">{backLabel}</a>

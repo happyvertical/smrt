@@ -28,7 +28,7 @@ const delta = $derived.by(() => {
   }
 });
 </script>
-<section class="quote-comparison" aria-label={title ?? t(Q['commerce.quote.compare'])}>
+<section class="quote-comparison" aria-label={title ?? t(Q['commerce.quote.compare'])} data-smrt-component="QuoteRevisionComparison">
   <h2>{title ?? t(Q['commerce.quote.compare'])}</h2>
   <div class="versions">
     <QuoteRevisionHistory revisions={[previous]} title={t(Q['commerce.quote.before'])} />

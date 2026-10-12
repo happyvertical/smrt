@@ -59,7 +59,7 @@ const { t } = useI18n();
 const id = $props.id();
 </script>
 
-<section class="pricing-decision">
+<section class="pricing-decision" data-smrt-component="PricingVersionDecision">
   <PricingVersionSummary {version} />
   {#if error}<p role="alert">{error}</p>{/if}
   {#if readOnly}

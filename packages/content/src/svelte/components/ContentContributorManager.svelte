@@ -44,7 +44,7 @@ function handleSubmit() {
 }
 </script>
 
-<section class="manager">
+<section class="manager" data-smrt-component="ContentContributorManager">
   <header>
     <div>
       <h3>Contributors</h3>

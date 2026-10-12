@@ -158,13 +158,13 @@ $effect(() => {
 
 {@render children?.()}
 {#if error && !open}
-  <p class="field-policy-gear__error" role="alert">{error}</p>
+  <p class="field-policy-gear__error" role="alert" data-smrt-component="FieldPolicyGearProvider">{error}</p>
 {/if}
 {#if open && editorState}
   <FieldPolicyEditor state={editorState} {adapter} {fields} {inputRegistry} {organizationScope} onclose={() => controller.hide()} onmutated={reload} />
 {/if}
 {#if loading}
-  <span class="field-policy-gear__loading" aria-live="polite">Loading field settings…</span>
+  <span class="field-policy-gear__loading" aria-live="polite" data-smrt-component="FieldPolicyGearProvider">Loading field settings…</span>
 {/if}
 
 <style>

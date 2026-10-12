@@ -54,7 +54,7 @@ function submitCreate() {
 }
 </script>
 
-<div class="sales-referral-links">
+<div class="sales-referral-links" data-smrt-component="ReferralLinkManager">
   {#if onCreate}
     <Form class="sales-referral-links-create" onsubmit={submitCreate}>
       <FormGroup

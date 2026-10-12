@@ -22,7 +22,7 @@ function handleChange(event: Event) {
 }
 </script>
 
-<div class="tenant-switcher">
+<div class="tenant-switcher" data-smrt-component="TenantSwitcher">
   {#if memberships.length <= 1}
     <span class="tenant-name">{currentTenant?.name ?? 'Unknown'}</span>
   {:else}

@@ -85,7 +85,7 @@ function handleInput(event: Event & { currentTarget: HTMLTextAreaElement }) {
 
 <svelte:window onresize={fitHeight} />
 
-<span class="content-title-field-shell">
+<span class="content-title-field-shell" data-smrt-component="ContentTitleField">
   <Textarea
     bind:this={field}
     class="content-title-field"

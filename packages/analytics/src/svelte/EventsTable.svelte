@@ -37,7 +37,7 @@ function statusClass(status: string): string {
 }
 </script>
 
-<div class="events-table-wrapper">
+<div class="events-table-wrapper" data-smrt-component="EventsTable">
 	{#if displayEvents.length === 0}
 		<p class="events-empty">{t(M['analytics.events_table.empty'])}</p>
 	{:else}

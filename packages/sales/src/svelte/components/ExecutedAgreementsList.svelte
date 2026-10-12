@@ -26,7 +26,7 @@ export interface Props {
 let { agreements = [], locale, artifactHref }: Props = $props();
 </script>
 
-<div class="sales-agreements">
+<div class="sales-agreements" data-smrt-component="ExecutedAgreementsList">
   {#if agreements.length === 0}
     <p class="empty">No agreements yet.</p>
   {:else}

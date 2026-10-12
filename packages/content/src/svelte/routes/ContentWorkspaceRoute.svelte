@@ -163,7 +163,7 @@ function closeForms() {
 }
 </script>
 
-<div class:workspace-shell={true} class:workspace-shell--embedded={embedded}>
+<div class:workspace-shell={true} class:workspace-shell--embedded={embedded} data-smrt-component="ContentWorkspaceRoute">
   <header class="workspace-header">
     <div class="workspace-header__copy">
       <div class="eyebrow">{t(M['content.workspace.eyebrow'])}</div>

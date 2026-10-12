@@ -54,11 +54,11 @@ function formatWhen(value?: Date | string): string {
 </script>
 
 {#if visibleRequests.length === 0}
-  <div class="empty-state">
+  <div class="empty-state" data-smrt-component="DevelopmentRequestList">
     <p>{emptyMessage}</p>
   </div>
 {:else}
-  <div class="request-list">
+  <div class="request-list" data-smrt-component="DevelopmentRequestList">
     {#each visibleRequests as request (request.id)}
       <article class="request-card">
         <header>

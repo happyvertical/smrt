@@ -97,7 +97,7 @@ async function run(
 }
 </script>
 
-<div class="model-status {className}" data-status={snapshot.status}>
+<div class="model-status {className}" data-status={snapshot.status} data-smrt-component="ModelStatusControl">
   <div class="header">
     <span class="label">{label}</span>
     <span class="state" role="status">{STATUS_LABEL[snapshot.status]}</span>

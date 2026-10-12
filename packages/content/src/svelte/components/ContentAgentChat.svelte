@@ -449,7 +449,7 @@ async function handleSendMessage(content: string) {
 }
 </script>
 
-<div class="content-agent-chat-container">
+<div class="content-agent-chat-container" data-smrt-component="ContentAgentChat">
   {#if loadingSession && !threads.length}
     <div class="loading-state">{t(M['content.content_agent_chat.loading_ai_assistant'])}</div>
   {:else if error && !session}

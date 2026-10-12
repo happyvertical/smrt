@@ -32,7 +32,7 @@ const money = (amount = 0, currency = 'USD') => {
 
 <section
   class="evidence"
-  aria-label={t(M['projects.service_evidence.aria'])}
+  aria-label={t(M['projects.service_evidence.aria'])} data-smrt-component="ServiceEvidenceList"
 >
   {#each entries as entry (entry.id)}
     <article>

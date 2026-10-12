@@ -85,7 +85,7 @@ function handleKeydown(event: KeyboardEvent) {
   class="time-entry-card"
   class:selectable
   class:selected
-  class:clickable={!!href || !!onclick}
+  class:clickable={!!href || !!onclick} data-smrt-component="TimeEntryCard"
 >
   {#if selectable}
     <div class="checkbox-wrapper">

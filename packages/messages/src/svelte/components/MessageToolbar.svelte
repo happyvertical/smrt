@@ -35,7 +35,7 @@ const {
 }: Props = $props();
 </script>
 
-<div class="toolbar" role="toolbar" aria-label={t(M['messages.message_toolbar.actions_label'])}>
+<div class="toolbar" role="toolbar" aria-label={t(M['messages.message_toolbar.actions_label'])} data-smrt-component="MessageToolbar">
   <div class="selection-info">
     {#if selectedCount > 0}
       <span class="count">{t(M['messages.message_toolbar.count_selected'], { selectedCount, totalCount })}</span>

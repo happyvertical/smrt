@@ -165,7 +165,7 @@ function getPatternPlaceholder(type: string): string {
 }
 </script>
 
-<div class="email-filter-manager">
+<div class="email-filter-manager" data-smrt-component="EmailFilterManager">
   <div class="section-toggle">
     <Button
       variant={activeSection === 'whitelist' ? 'primary' : 'ghost'}

@@ -54,7 +54,7 @@ const count = $derived(selectedAssets.length);
 </script>
 
 {#if count > 0}
-  <div class="action-bar">
+  <div class="action-bar" data-smrt-component="ActionBar">
     <div class="action-bar__left">
       <span class="action-bar__count">{count} selected</span>
       <Button

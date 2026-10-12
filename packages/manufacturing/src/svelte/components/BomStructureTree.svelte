@@ -64,7 +64,7 @@ async function toggle(line: BomEditorLine) {
 }
 </script>
 
-<ul class="bom-tree" aria-label={label}>
+<ul class="bom-tree" aria-label={label} data-smrt-component="BomStructureTree">
   {#each lines as line (line.id)}
     {@const canOpen =
       line.kind === 'assembly' &&

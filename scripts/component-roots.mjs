@@ -54,6 +54,16 @@ export const NO_ROOT_ELEMENT = {
   'packages/commerce/src/svelte/components/VendorSelect.svelte': CHILD,
   'packages/chat/src/svelte/components/shared/Avatar.svelte': CHILD,
   'packages/chat/src/svelte/components/shared/ReactionPicker.svelte': CHILD,
+  'packages/smrt-svelte/src/browser-ai/svelte/components/AILoadingOverlay.svelte': CHILD,
+  'packages/smrt-svelte/src/browser-ai/svelte/components/CapabilityGate.svelte': SLOT,
+  'packages/projects/src/svelte/ProjectBoard.svelte': CHILD,
+  'packages/jobs/src/svelte/components/JobStatusBadge.svelte': CHILD,
+  'packages/fields/src/svelte/components/AdvancedFields.svelte': CHILD,
+  'packages/fields/src/svelte/components/FieldPolicyProvider.svelte': SLOT,
+  'packages/fields/src/svelte/components/ModeSwitch.svelte': CHILD,
+  'packages/fields/src/svelte/components/ObjectFormSourceProvider.svelte': SLOT,
+  'packages/content/src/svelte/components/ContentGovernanceTool.svelte': CHILD,
+  'packages/agents/src/svelte/components/ScheduleStatusBadge.svelte': CHILD,
 };
 
 const requireFromUi = createRequire(join(ROOT, 'packages/smrt-ui/package.json'));
@@ -118,8 +128,30 @@ export function exportedComponents() {
       if (hit.kind === 'svelte') found.set(hit.path, basename(hit.path, '.svelte'));
       else queue.push(hit.path);
     }
+    // Import-then-export: `import X from './X.svelte'; export { X };`
+    const reexported = localExportNames(text);
+    for (const m of text.matchAll(SVELTE_DEFAULT_IMPORT)) {
+      if (!reexported.has(m[1])) continue;
+      const hit = resolveSpecifier(file, m[2]);
+      if (hit?.kind === 'svelte') found.set(hit.path, basename(hit.path, '.svelte'));
+    }
   }
   return found;
+}
+
+const SVELTE_DEFAULT_IMPORT = /import\s+([A-Za-z_$][\w$]*)\s+from\s*['"]([^'"]+\.svelte)['"]/g;
+const LOCAL_EXPORT_LIST = /export\s*\{([^}]*)\}(?!\s*from)/g;
+
+/** Local names listed in `export { a, b as c }` (no `from`); `a` and `b` are the local names. */
+function localExportNames(text) {
+  const names = new Set();
+  for (const m of text.matchAll(LOCAL_EXPORT_LIST)) {
+    for (const part of m[1].split(',')) {
+      const local = part.trim().split(/\s+as\s+/)[0].trim();
+      if (local) names.add(local);
+    }
+  }
+  return names;
 }
 
 /**

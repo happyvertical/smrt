@@ -65,7 +65,7 @@ const _tags = $derived.by(() => {
 
 <a 
   href="/articles/{article.slug}" 
-  class="article-link"
+  class="article-link" data-smrt-component="ArticleCard"
 >
   <Card hoverable>
     <article>

@@ -115,7 +115,7 @@ function handleSubmit() {
 }
 </script>
 
-<section class="manager">
+<section class="manager" data-smrt-component="ContentContributionTypeManager">
   <header>
     <div>
       <h3>{t(M['content.contribution_type_manager.heading'])}</h3>

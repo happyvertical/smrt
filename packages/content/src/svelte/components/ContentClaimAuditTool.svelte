@@ -186,7 +186,7 @@ async function recheckFactClaims(claimIds: string[]) {
 }
 </script>
 
-<div class="governance-tool">
+<div class="governance-tool" data-smrt-component="ContentClaimAuditTool">
   {#if error}
     <p class="tool-error" role="alert" aria-live="assertive">{error}</p>
   {/if}

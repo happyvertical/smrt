@@ -46,11 +46,11 @@ function distance(daysUntilExpiry: number): string {
 </script>
 
 {#if qualifications.length === 0}
-  <p class="person-qualifications-empty">
+  <p class="person-qualifications-empty" data-smrt-component="PersonQualifications">
     {emptyMessage ?? t(M['human_resources.person_qualifications.empty'])}
   </p>
 {:else}
-  <ul class="person-qualifications">
+  <ul class="person-qualifications" data-smrt-component="PersonQualifications">
     {#each qualifications as qualification (qualification.id)}
       {@const state = qualificationExpiryState(qualification, expiringSoonDays)}
       <li class="person-qualification" data-state={state}>

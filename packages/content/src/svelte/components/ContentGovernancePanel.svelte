@@ -1088,7 +1088,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 }
 </script>
 
-<div class="factual-workflow">
+<div class="factual-workflow" data-smrt-component="ContentGovernancePanel">
   {#if isSectionVisible('factAudit')}
     <details class="editor-drawer" open={(factAudit?.counts.total ?? 0) > 0}>
     <summary class="editor-drawer-header">

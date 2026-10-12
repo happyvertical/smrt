@@ -33,7 +33,7 @@ const names = $derived({
   ...fields,
 });
 </script>
-<div class="allocations">
+<div class="allocations" data-smrt-component="InvoiceAllocationFields">
   {#if !mayReadSources}<p>{t(M['commerce.preparation.restricted'])}</p>
   {:else if sources.length === 0}<p>{t(M['commerce.preparation.empty'])}</p>{/if}
       {#if allocations.length === 0}<p>{t(M['commerce.preparation.no_rows'])}</p>{/if}

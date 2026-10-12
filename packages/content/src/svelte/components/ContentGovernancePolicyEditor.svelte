@@ -46,7 +46,7 @@ function handleSubmit() {
 }
 </script>
 
-<div class="governance-editor-shell">
+<div class="governance-editor-shell" data-smrt-component="ContentGovernancePolicyEditor">
   <Form class="governance-editor" onsubmit={(event) => {
     event.preventDefault();
     handleSubmit();

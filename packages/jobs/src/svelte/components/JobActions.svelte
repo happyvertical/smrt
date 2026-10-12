@@ -56,7 +56,7 @@ function handleDelete() {
 }
 </script>
 
-<div class="job-actions" class:compact>
+<div class="job-actions" class:compact data-smrt-component="JobActions">
   {#if showRetry && canRetry}
     <Button
       variant="secondary"

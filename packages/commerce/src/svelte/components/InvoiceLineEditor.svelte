@@ -47,7 +47,7 @@ function refresh(event: Event) {
   onchange?.(draft);
 }
 </script>
-<fieldset oninput={refresh} onchange={refresh} disabled={!canEdit} class="invoice-line">
+<fieldset oninput={refresh} onchange={refresh} disabled={!canEdit} class="invoice-line" data-smrt-component="InvoiceLineEditor">
   <legend>{t(M['commerce.invoice.line'], { number })}</legend>
   <Input type="hidden" name={names.key} value={draft.key} interaction={false} />
   {#each ['description', 'sku', 'quantity', 'unitPrice'] as field}

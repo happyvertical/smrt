@@ -105,7 +105,7 @@ function handleAssign(leadId: string, event: Event) {
 }
 </script>
 
-<div class="sales-lead-list">
+<div class="sales-lead-list" data-smrt-component="LeadList">
   <nav class="inbox-controls" aria-label="Lead inbox filters">
     <div class="filters" role="group" aria-label="Filter leads">
       {#each filters as filter (filter.value)}

@@ -57,7 +57,7 @@ const statusClass = $derived.by(() => {
   class:clickable={!!onclick}
   onclick={onclick}
   disabled={!onclick}
-  use:ripple
+  use:ripple data-smrt-component="UserCard"
 >
   <UserAvatar {profile} size="md" />
 

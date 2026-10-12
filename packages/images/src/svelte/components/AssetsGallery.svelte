@@ -153,7 +153,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
 }
 </script>
 
-<div class="smrt-assets-gallery">
+<div class="smrt-assets-gallery" data-smrt-component="AssetsGallery">
   <div class="gallery-header">
     <h3>{t(M['images.assets_gallery.title'])}</h3>
     

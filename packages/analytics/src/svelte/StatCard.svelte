@@ -17,7 +17,7 @@ interface Props {
 const { label, value, trend, trendPercent, subtitle }: Props = $props();
 </script>
 
-<div class="stat-card">
+<div class="stat-card" data-smrt-component="StatCard">
 	<div class="stat-label">{label}</div>
 	<div class="stat-row">
 		<div class="stat-value">{value}</div>

@@ -106,7 +106,7 @@ function clearLogs() {
 }
 </script>
 
-<div class="stt-test">
+<div class="stt-test" data-smrt-component="STTTest">
   <h3>{t(M['ui.stt_test.heading'])}</h3>
 
   <div class="controls">

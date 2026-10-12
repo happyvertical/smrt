@@ -107,7 +107,7 @@ function handleSubmit() {
 }
 </script>
 
-<div class="operation-form-shell">
+<div class="operation-form-shell" data-smrt-component="OperationForm">
   <Form class="operation-form" onsubmit={handleSubmit}>
     <div class="field">
       <label for="{uid}-code">

@@ -20,7 +20,7 @@ let {
 const { t } = useI18n();
 const id = $props.id();
 </script>
-<section class="queue" aria-label={t(M['expenses.queue.title'])}>
+<section class="queue" aria-label={t(M['expenses.queue.title'])} data-smrt-component="ExpenseReviewQueue">
   <h2>{t(M['expenses.queue.title'])}</h2>
   {#if message}<p role="alert">{message}</p>{/if}
   {#if !expenses.length}<p>{t(M['expenses.queue.empty'])}</p>{/if}

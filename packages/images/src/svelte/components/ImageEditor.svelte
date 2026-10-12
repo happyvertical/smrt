@@ -178,7 +178,7 @@ async function handleAIEdit() {
 }
 </script>
 
-<div class="smrt-image-editor">
+<div class="smrt-image-editor" data-smrt-component="ImageEditor">
   <div class="header">
     <h3>{t(M['images.image_editor.title'])}</h3>
     {#if onCancel}

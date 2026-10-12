@@ -66,7 +66,7 @@ async function handleSave(newConfig: unknown) {
 		readonly={readonly || !onSave}
 	/>
 {:else}
-	<div class="no-panel">
+	<div class="no-panel" data-smrt-component="AgentAdminPanel">
 		<div class="no-panel-icon">⚙️</div>
 		<p class="no-panel-message">
 			{t(M['ui.agent_admin_panel.no_panel_message'])} <code>{agentClass}.{slotId}</code>

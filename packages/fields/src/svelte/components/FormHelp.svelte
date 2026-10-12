@@ -79,7 +79,7 @@ const glossary = $derived.by(() => {
 });
 </script>
 
-<details class="form-help {className}">
+<details class="form-help {className}" data-smrt-component="FormHelp">
   <summary class="form-help__toggle">
     <span class="form-help__icon" aria-hidden="true">?</span>
     <span class="form-help__label">{label}</span>

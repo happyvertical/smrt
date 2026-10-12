@@ -276,7 +276,7 @@ onDestroy(() => {
 });
 </script>
 
-<div class="smrt-image-uploader">
+<div class="smrt-image-uploader" data-smrt-component="ImageUploader">
   {#if selectedImage}
     <!-- Gallery Confirmation Step -->
     <div class="header">

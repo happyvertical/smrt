@@ -97,7 +97,7 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
 }
 </script>
 
-<article class="sales-opportunity-detail">
+<article class="sales-opportunity-detail" data-smrt-component="OpportunityDetail">
   <header class="head">
     <h2 class="head__name">{opportunity.name}</h2>
     <Badge variant={opportunityStatusBadgeVariant(opportunity.status)} size="sm">

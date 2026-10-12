@@ -182,7 +182,7 @@ const sortColumns = $derived([
 ]);
 </script>
 
-<div class="job-list-container">
+<div class="job-list-container" data-smrt-component="JobList">
   <table class="job-list" class:loading>
     <thead class="job-list__head">
       <tr>

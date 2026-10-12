@@ -38,7 +38,7 @@ function submit(event: SubmitEvent) {
 </script>
 
 <!-- raw-primitive-allow: provider-free embeddable request form boundary -->
-<form onsubmit={submit} class="request-form">
+<form onsubmit={submit} class="request-form" data-smrt-component="DevelopmentRequestForm">
   <label>{t(M['projects.development_request.type'])}
     <!-- raw-primitive-allow: package has no provider-free select primitive -->
     <select bind:value={type} disabled={disabled}>

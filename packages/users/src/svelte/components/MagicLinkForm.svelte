@@ -39,7 +39,7 @@ async function submit() {
   }
 }
 </script>
-<Form class="auth-form" onsubmit={submit} aria-busy={loading||pending}><h2>{token ? t('users.auth.confirm_sign_in_link') : t('users.auth.email_sign_in_link')}</h2>{#if error}<p class="error" role="alert">{t(error)}</p>{/if}{#if notice}<p class="notice" role="status">{t(notice)}</p>{/if}{#if !token}<label for="magic-link-email">{t('users.auth.email_address')}</label><Input id="magic-link-email" type="email" bind:value={email} autocomplete="email" required disabled={loading||pending}/>{/if}<Button type="submit" fullWidth disabled={loading || (token ? !adapter.confirmMagicLink : !adapter.requestMagicLink)} loading={pending}>{token ? t('users.auth.confirm_sign_in') : t('users.auth.send_sign_in_link')}</Button></Form>
+<Form class="auth-form" onsubmit={submit} aria-busy={loading||pending}><h2 data-smrt-component="MagicLinkForm">{token ? t('users.auth.confirm_sign_in_link') : t('users.auth.email_sign_in_link')}</h2>{#if error}<p class="error" role="alert" data-smrt-component="MagicLinkForm">{t(error)}</p>{/if}{#if notice}<p class="notice" role="status" data-smrt-component="MagicLinkForm">{t(notice)}</p>{/if}{#if !token}<label for="magic-link-email" data-smrt-component="MagicLinkForm">{t('users.auth.email_address')}</label><Input id="magic-link-email" type="email" bind:value={email} autocomplete="email" required disabled={loading||pending}/>{/if}<Button type="submit" fullWidth disabled={loading || (token ? !adapter.confirmMagicLink : !adapter.requestMagicLink)} loading={pending}>{token ? t('users.auth.confirm_sign_in') : t('users.auth.send_sign_in_link')}</Button></Form>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {

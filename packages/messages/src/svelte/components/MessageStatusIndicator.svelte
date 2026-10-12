@@ -29,7 +29,7 @@ const {
 }: Props = $props();
 </script>
 
-<span class="status-indicators" role="group" aria-label={t(M['messages.message_status_indicator.status'])}>
+<span class="status-indicators" role="group" aria-label={t(M['messages.message_status_indicator.status'])} data-smrt-component="MessageStatusIndicator">
   {#if !isRead}
     <span class="indicator unread" title={t(M['messages.message_status_indicator.unread'])} aria-label={t(M['messages.message_status_indicator.unread'])}>
       <span class="dot"></span>

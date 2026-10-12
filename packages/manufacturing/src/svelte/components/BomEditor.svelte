@@ -219,7 +219,7 @@ const showActions = $derived(Boolean(onupdate || onremove));
 const ancestors = $derived(bomId ? [bomId] : []);
 </script>
 
-<div class="bom-editor">
+<div class="bom-editor" data-smrt-component="BomEditor">
   {#if error}
     <Alert variant="error">{error}</Alert>
   {/if}

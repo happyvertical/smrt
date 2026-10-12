@@ -20,7 +20,7 @@ const { t } = useI18n();
 
 <article
   class="detail"
-  aria-label={t(M['projects.development_request.detail_aria'])}
+  aria-label={t(M['projects.development_request.detail_aria'])} data-smrt-component="DevelopmentRequestDetail"
 >
   <header>
     <div>

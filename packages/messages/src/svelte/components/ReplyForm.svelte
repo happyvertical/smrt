@@ -60,7 +60,7 @@ export interface Props {
   }
 </script>
 
-<div class="reply-form">
+<div class="reply-form" data-smrt-component="ReplyForm">
   <div class="reply-header">
     {replyAll ? 'Reply All' : 'Reply'} to {originalMessage.senderName || originalMessage.senderAddress}
   </div>

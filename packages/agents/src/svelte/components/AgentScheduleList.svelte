@@ -75,7 +75,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
 }
 </script>
 
-<div class="schedule-list-container">
+<div class="schedule-list-container" data-smrt-component="AgentScheduleList">
   <table class="schedule-list" class:loading>
     <thead class="schedule-list__head">
       <tr>
