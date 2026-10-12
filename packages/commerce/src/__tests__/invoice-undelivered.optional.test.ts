@@ -5,10 +5,7 @@ import {
   enableTenancy,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
-import {
-  createIsolatedTestDbFromManifest,
-  isPostgresAvailable,
-} from '@happyvertical/smrt-vitest';
+import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
@@ -35,11 +32,48 @@ for (const engine of [
     let cleanup: () => Promise<void>;
     beforeEach(async () => {
       if (engine === 'postgres') {
-        const isolated = await createIsolatedTestDbFromManifest({
-          includeObjects: classes,
+        const baseUrl = process.env.DATABASE_URL;
+        if (!baseUrl) throw new Error('PostgreSQL tests require DATABASE_URL');
+        const admin = await getTestDatabase({
+          type: 'postgres',
+          url: baseUrl,
+          classes: [],
         });
-        db = isolated.baseDb;
-        cleanup = isolated.cleanup;
+        const schema = `invoice_undelivered_${randomUUID().replaceAll('-', '')}`;
+        let owned: DatabaseInterface | undefined;
+        cleanup = async () => {
+          try {
+            await owned?.close?.();
+          } finally {
+            try {
+              await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+            } finally {
+              await admin.close?.();
+            }
+          }
+        };
+        try {
+          await admin.query(`CREATE SCHEMA "${schema}"`);
+          const url = new URL(baseUrl);
+          const options = url.searchParams.get('options');
+          url.searchParams.set(
+            'options',
+            `${options ? `${options} ` : ''}-c search_path=${schema}`,
+          );
+          owned = await getTestDatabase({
+            type: 'postgres',
+            url: url.toString(),
+            classes,
+          });
+          db = owned;
+          expect(
+            (await db.query('SELECT current_schema() AS name')).rows[0].name,
+          ).toBe(schema);
+        } catch (error) {
+          await cleanup();
+          cleanup = async () => {};
+          throw error;
+        }
       } else {
         db = await getTestDatabase({
           type: 'sqlite',
