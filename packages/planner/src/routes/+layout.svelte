@@ -30,6 +30,11 @@ import {
   type KitchenFragment,
   readKitchenFragment,
 } from '$lib/kitchen/fragment.ts';
+import LiveKitchenBridge from '$lib/kitchen/LiveKitchenBridge.svelte';
+import {
+  type LiveKitchenBinding,
+  liveKitchenBinding,
+} from '$lib/kitchen/live.ts';
 import { kitchenState } from '$lib/kitchen/state.svelte.ts';
 import { libraryState } from '$lib/library/state.svelte.ts';
 import { appHref, appQuery, setBasePath } from '$lib/planner/app.svelte.ts';
@@ -214,6 +219,8 @@ const navGroups: ShellNavGroup[] = $derived([
 // prerendered, so both are only read in the browser, after navigation.
 let ready = false;
 let hydrated = false;
+let liveBinding = $state<LiveKitchenBinding | null>(null);
+let liveLocked = $state(false);
 let kitchenFragment: KitchenFragment = { present: false, hash: '' };
 
 const onPlanner = () => page.route.id === '/';
@@ -235,13 +242,21 @@ afterNavigate((navigation) => {
   // syncUrl below then drops those parameters, as appQuery no longer has them.
   if (!hydrated) {
     hydrated = true;
-    cookbookStore.hydrate(location.search);
+    liveBinding = import.meta.env.DEV
+      ? liveKitchenBinding(location.search)
+      : null;
+    if (liveBinding) {
+      cookbookStore.hostManaged = true;
+      cookbookStore.loaded = true;
+    } else cookbookStore.hydrate(location.search);
     // The AI state reads its saved choices and decides whether this is a first
     // visit (nothing set up, nothing built, "no AI" not chosen).
     // Where the model runs comes from `planner.config.json` next to the app;
     // the first-visit decision waits for it.
     aiState.awaitConfig();
-    aiState.hydrate(!!(recipeState.ids.length || recipeState.features.length));
+    aiState.hydrate(
+      !!(liveBinding || recipeState.ids.length || recipeState.features.length),
+    );
     // `smrt kitchen` opens the page with its one-time token in the fragment
     // (`#kitchen=<token>`), never in planner.config.json. Read it now, keep it
     // in memory, and remove it from the address in `sync` below.
@@ -313,16 +328,19 @@ $effect(() => {
 $effect(() => {
   // Reading it all (layout is deep) subscribes the effect to every part.
   void JSON.stringify(cookbookStore.snapshot());
-  cookbookStore.scheduleSave();
+  if (!liveBinding) cookbookStore.scheduleSave();
 });
 
 function flushOnHide() {
-  if (document.visibilityState === 'hidden') cookbookStore.flush();
+  if (document.visibilityState === 'hidden' && !liveBinding)
+    cookbookStore.flush();
 }
 </script>
 
-<svelte:window onpagehide={() => cookbookStore.flush()} />
+<svelte:window onpagehide={() => !liveBinding && cookbookStore.flush()} />
 <svelte:document onvisibilitychange={flushOnHide} />
+
+{#if liveBinding}<LiveKitchenBridge binding={liveBinding} onlock={(locked) => liveLocked = locked} />{/if}
 
 {#snippet aiStatus()}
   <AiStatusIcons />
@@ -332,6 +350,7 @@ function flushOnHide() {
   <PlannerPalette />
 {/snippet}
 
+<div class="shell-host" inert={liveLocked}>
 <AppShell
   storageKey={SHELL_STORAGE_KEY}
   title="Planner"
@@ -393,8 +412,10 @@ function flushOnHide() {
   <ThemeBridge />
   {@render children()}
 </AppShell>
+</div>
 
 <style>
+  .shell-host { display: contents; }
   .storage-notice {
     margin: 0;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-6);

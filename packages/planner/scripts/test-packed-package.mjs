@@ -196,15 +196,8 @@ async function browserContract(site) {
     if ((await leftPanel.count()) !== 1) {
       throw new Error('the packaged planner is not inside its AppShell');
     }
-    await page.getByRole('tab', { name: 'Layout' }).click();
-    const showLeftPanel = page.getByLabel('Show Left sidebar panel');
-    if (!(await showLeftPanel.isChecked())) {
-      throw new Error('the shell layout editor did not read the live AppShell');
-    }
-    await page.getByText('Show Left sidebar panel', { exact: true }).click();
-    if (await showLeftPanel.isChecked()) {
-      throw new Error('the shell layout editor did not accept the panel edit');
-    }
+    await page.getByRole('button', { name: 'Edit layout' }).click();
+    await page.getByRole('button', { name: 'Hide Left sidebar' }).click();
     await page.waitForFunction(
       () => document.querySelector('#smrt-admin-shell-left-panel') === null,
     );
@@ -247,6 +240,16 @@ async function browserContract(site) {
       fetch('/ordinary-site-miss').then((response) => response.status),
     );
     if (siteMiss !== 404) throw new Error('ordinary site miss did not stay 404');
+    await page.goto(
+      `${origin}/plan/?kitchenPlan=plan-12345678&kitchenPort=1234`,
+      { waitUntil: 'networkidle' },
+    );
+    const liveBinding = await page.evaluate(() =>
+      sessionStorage.getItem('smrt-planner:live-kitchen:v1'),
+    );
+    if (liveBinding !== null || (await page.getByText('Kitchen live preview').count())) {
+      throw new Error('production app accepted a development Kitchen preview link');
+    }
   } finally {
     await browser.close();
     await new Promise((accept, reject) =>

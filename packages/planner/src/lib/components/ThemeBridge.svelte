@@ -3,6 +3,7 @@ import {
   getThemeContext,
   type ThemePreset,
 } from '@happyvertical/smrt-ui/themes';
+import { onMount } from 'svelte';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
 import { resolveTheme } from '../theme/runtime.ts';
 import type { ColorSchemeSetting } from '../theme/theme.ts';
@@ -12,6 +13,23 @@ import type { ColorSchemeSetting } from '../theme/theme.ts';
 // through the provider's own controls (ThemeSwitcher, ColorSchemeToggle) so
 // that it is saved with the document.
 const context = getThemeContext();
+let {
+  deferInitial = false,
+  presetOverride,
+}: { deferInitial?: boolean; presetOverride?: string } = $props();
+// A hosted shell's own provider reads browser-local preferences on mount;
+// deferring the first apply lets the plan's theme win over them.
+let ready = $state(false);
+onMount(() => {
+  if (!deferInitial) {
+    ready = true;
+    return;
+  }
+  const timer = setTimeout(() => {
+    ready = true;
+  }, 0);
+  return () => clearTimeout(timer);
+});
 
 // What this bridge last told the provider, to tell its own writes from a
 // person's. Null until the document has been applied once.
@@ -19,8 +37,9 @@ let applied: { preset: string; colorScheme: ColorSchemeSetting } | null = null;
 
 // Document -> provider.
 $effect(() => {
-  if (!cookbookStore.loaded) return;
+  if (!cookbookStore.loaded || !ready) return;
   const wanted = resolveTheme(cookbookStore.theme);
+  if (presetOverride) wanted.preset = presetOverride;
   if (
     applied?.preset === wanted.preset &&
     applied.colorScheme === wanted.colorScheme

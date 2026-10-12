@@ -1,204 +1,149 @@
 <script lang="ts">
-import { Provider, tryGetAppStateContext } from '@happyvertical/smrt-svelte';
 import {
-  ShellLayoutController,
-  ShellLayoutEditor,
-  useShellLayout,
+  applyCookbookTheme,
+  buildCookbookShell,
+  CookbookApp,
+  CookbookSectionPage,
+} from '@happyvertical/smrt-svelte/cookbook';
+import {
+  ShellSectionIcon,
+  WorkspaceAccountMenu,
 } from '@happyvertical/smrt-svelte/workspace';
-import { Tabs } from '@happyvertical/smrt-ui';
-import { onMount, untrack } from 'svelte';
-import CookbooksPanel from '../components/CookbooksPanel.svelte';
-import ExportPanel from '../components/ExportPanel.svelte';
-import FeaturesPanel from '../components/FeaturesPanel.svelte';
-import RecipeCards from '../components/RecipeCards.svelte';
-import SettingsPanel from '../components/SettingsPanel.svelte';
-import { browserStorage } from '../cookbook/storage.ts';
-import { cookbookStore } from '../cookbook/store.svelte.ts';
+import { type ComponentProps, onMount } from 'svelte';
+import smrtMark from '../assets/smrt-mark.svg';
+import { catalog, getModel } from '../catalog/index.ts';
+import ModelWorkspace from '../components/ModelWorkspace.svelte';
+import ThemeBridge from '../components/ThemeBridge.svelte';
+import { cookbookStore, SHELL_STORAGE_KEY } from '../cookbook/store.svelte.ts';
+import type { Cookbook } from '../cookbook/types.ts';
 import { provideDataSource, tryUseDataSource } from '../data/context.ts';
 import { createPlannerDataSource } from '../data/planner-source.ts';
-import { cookbookNavGroups } from '../library/menu.ts';
-import { libraryState } from '../library/state.svelte.ts';
+import { activeForms } from '../forms/active.ts';
+import { recipes } from '../recipes/index.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
-import { setBasePath } from './app.svelte.ts';
-import { createPlannerAssistant } from './assistant.ts';
-import { PLANNER_TAB_IDS, type PlannerTabId } from './commands/index.ts';
-import { plannerController, plannerRuntime } from './instance.ts';
-import { plannerTab } from './tab.svelte.ts';
+import PlannerControls from './PlannerControls.svelte';
+import PlannerLifecycle from './PlannerLifecycle.svelte';
+import { plannerShellProps } from './shell.ts';
 import type { PlannerProps } from './types.ts';
 
 let {
-  controller = plannerController,
+  controller,
   basePath,
   inference,
-  layout = 'own',
-  persistence = 'self',
-  themeControls = false,
-  tabs = PLANNER_TAB_IDS,
+  persistence,
+  themeControls = true,
+  tabs,
   onready,
 }: PlannerProps = $props();
 
-// Links to planner pages carry the base; set before anything renders them.
-$effect.pre(() => {
-  if (basePath !== undefined) setBasePath(basePath);
-});
-
-// Generated views and the Cookbooks tab read sample records from a data
-// source: use the host's, else make the planner's own.
-const dataSource =
-  tryUseDataSource() ?? provideDataSource(createPlannerDataSource());
-
-// smrt-svelte's inputs read the app state. Inside a host's own provider (or
-// the static app's AppShell) use that; otherwise the planner brings one.
-const hasAppState = tryGetAppStateContext() !== null;
-
-const labels: Record<PlannerTabId, string> = {
-  cookbooks: 'Cookbooks',
-  recipes: 'Recipes',
-  features: 'Features',
-  layout: 'Layout',
-  settings: 'Settings',
-  export: 'Export',
+const shellCatalog: ComponentProps<typeof CookbookApp>['catalog'] = {
+  recipes: recipes.map(({ id, label, nav, models, group, section }) => ({
+    id,
+    label,
+    nav,
+    models,
+    group,
+    section,
+  })),
+  models: catalog.packages.flatMap((pkg) =>
+    pkg.models.map((model) => ({
+      id: model.id,
+      name: model.name,
+      packageId: pkg.id,
+      description: model.description,
+      exposed: model.exposed,
+    })),
+  ),
 };
-const shown = $derived(tabs.filter((id) => PLANNER_TAB_IDS.includes(id)));
-const items = $derived(shown.map((id) => ({ id, label: labels[id] })));
-const active = $derived(
-  shown.includes(plannerTab.active)
-    ? plannerTab.active
-    : (shown[0] ?? 'recipes'),
+const cookbook = $derived(cookbookStore.snapshot());
+const shell = $derived(
+  buildCookbookShell({
+    cookbook: cookbook as ComponentProps<typeof CookbookApp>['cookbook'],
+    catalog: shellCatalog,
+  }),
 );
-
-// The headless layout controller: the menu the cookbook generates, edited
-// through the cookbook store, with no AppShell around.
-// Fixed at mount: the two editors are different objects.
-const layoutMode = untrack(() => layout);
-const ownLayout =
-  layoutMode === 'own'
-    ? new ShellLayoutController({
-        nav: () => [],
-        groups: () =>
-          cookbookNavGroups({
-            recipes: recipeState.ids,
-            features: recipeState.features,
-          }),
-        panels: () => undefined,
-        layout: () => cookbookStore.layout,
-        editable: () => true,
-        commit: (next) => cookbookStore.setLayout(next),
-      })
-    : null;
-const shellLayout = layoutMode === 'shell' ? useShellLayout() : null;
-
-const select = (id: string) => {
-  const tab = PLANNER_TAB_IDS.find((t) => t === id);
-  if (tab) plannerTab.active = tab;
-};
-
-// The controller's focus -> the tab on screen, and back, each only on a
-// difference, so a foreign controller and the app's own both stay in step.
-onMount(() => {
-  const stop = controller.subscribe((snapshot) => {
-    const tab = snapshot.focus.tab;
-    if (tab && tab !== plannerTab.active) plannerTab.active = tab;
-  });
-  return stop;
+const defaultRoute = $derived.by(() => {
+  const orderedId = cookbook.layout?.sectionOrder?.find(
+    (id) =>
+      !cookbook.layout?.hidden?.includes(id) &&
+      Object.hasOwn(shell.overviews, id),
+  );
+  const firstId = orderedId ?? shell.sections[0]?.id;
+  return firstId ? shell.sectionPath(firstId) : '/configure/';
 });
-$effect(() => {
-  const tab = plannerTab.active;
-  untrack(() => {
-    if (controller.snapshot().focus.tab !== tab) {
-      controller.run({ name: 'focus', input: { tab } });
-    }
-  });
-});
-
-// A library cookbook applied by a command regenerates the sample records.
+if (!tryUseDataSource()) provideDataSource(createPlannerDataSource());
+let route = $state('');
 onMount(() => {
-  const previous = plannerRuntime.onReplaced;
-  plannerRuntime.onReplaced = () => dataSource.reset?.();
+  const read = () => {
+    route = location.hash.slice(1);
+  };
+  read();
+  window.addEventListener('hashchange', read);
+  window.addEventListener('popstate', read);
   return () => {
-    plannerRuntime.onReplaced = previous;
+    window.removeEventListener('hashchange', read);
+    window.removeEventListener('popstate', read);
   };
 });
 
-// Saved in this browser, unless the host looks after it.
-onMount(() => {
-  if (persistence !== 'self') return;
-  if (!cookbookStore.loaded) {
-    libraryState.load();
-    cookbookStore.hydrate('', browserStorage());
-  }
-});
-$effect(() => {
-  if (persistence !== 'self') return;
-  // Reading it all (layout is deep) subscribes the effect to every part.
-  void JSON.stringify(cookbookStore.snapshot());
-  cookbookStore.scheduleSave();
-});
+const currentRoute = $derived(route || defaultRoute);
+const pathParts = $derived(currentRoute.split('/').filter(Boolean));
+const sectionSlug = $derived(pathParts[0] === 's' ? pathParts[1] : undefined);
+const model = $derived(
+  pathParts[0] === 'm' ? getModel(pathParts[1], pathParts[2]) : undefined,
+);
+const applied = $derived(model ? recipeState.apply(model) : undefined);
+const forms = $derived(
+  model ? activeForms(recipeState.ids, recipes, model.id) : [],
+);
 
-onMount(() => {
-  const assistant = inference
-    ? createPlannerAssistant(controller, inference)
-    : undefined;
-  onready?.({ controller, ...(assistant ? { assistant } : {}) });
-});
+function updateCookbook(next: ComponentProps<typeof CookbookApp>['cookbook']) {
+  cookbookStore.apply(next as Cookbook);
+}
 </script>
 
-<svelte:window onpagehide={() => persistence === 'self' && cookbookStore.flush()} />
-
-{#snippet view()}
-<div class="planner">
-  <Tabs tabs={items} {active} onchange={select} aria-label="Planner">
-    {#if shown.includes('cookbooks')}
-      <div hidden={active !== 'cookbooks'}><CookbooksPanel /></div>
-    {/if}
-    {#if shown.includes('recipes')}
-      <div hidden={active !== 'recipes'}><RecipeCards /></div>
-    {/if}
-    {#if shown.includes('features')}
-      <div hidden={active !== 'features'}><FeaturesPanel /></div>
-    {/if}
-    {#if shown.includes('layout')}
-      <div hidden={active !== 'layout'} class="pane">
-        <p class="meta">
-          Reorder, move or hide navigation entries and choose which panels show.
-          The layout is saved with the cookbook.
-        </p>
-        <ShellLayoutEditor controller={ownLayout ?? shellLayout ?? undefined} />
-      </div>
-    {/if}
-    {#if shown.includes('settings')}
-      <div hidden={active !== 'settings'}><SettingsPanel {themeControls} /></div>
-    {/if}
-    {#if shown.includes('export')}
-      <div hidden={active !== 'export'}><ExportPanel /></div>
-    {/if}
-  </Tabs>
-</div>
+{#snippet customize()}
+  <a class="customize" href="#/configure/" aria-label="Customize" title="Customize">
+    <ShellSectionIcon name="edit" />
+  </a>
 {/snippet}
 
-{#if hasAppState}
-  {@render view()}
-{:else}
-  <Provider>{@render view()}</Provider>
-{/if}
+{#snippet userMenu()}
+  <WorkspaceAccountMenu userName="User menu" disabled />
+{/snippet}
+
+<CookbookApp
+  cookbook={cookbook as ComponentProps<typeof CookbookApp>['cookbook']}
+  catalog={shellCatalog}
+  title={cookbook.name || 'Planner'}
+  href={(path) => `#${path}`}
+  currentHref={`#${currentRoute}`}
+  homeHref={`#${defaultRoute}`}
+  storageKey={SHELL_STORAGE_KEY}
+  logoSrc={smrtMark}
+  slotItems={[
+    { id: 'planner-customize', label: 'Customize', slot: 'header.end', render: customize },
+    { id: 'user-menu', label: 'User menu', slot: 'leftSidebar.footer', render: userMenu },
+  ]}
+  oncookbookchange={updateCookbook}
+  {...plannerShellProps()}
+>
+  <ThemeBridge deferInitial={persistence === 'host'} presetOverride={applyCookbookTheme(shell.theme)} />
+  <PlannerLifecycle {controller} {basePath} {inference} {persistence} {onready} />
+  <main class="content">
+    {#if sectionSlug}
+      <CookbookSectionPage slug={sectionSlug} />
+    {:else if applied && model}
+      <ModelWorkspace model={applied.model} fields={applied.fields} {forms} />
+    {:else}
+      <PlannerControls {controller} {basePath} {inference} {persistence} {themeControls} {tabs} managedByParent layout="shell" />
+    {/if}
+  </main>
+</CookbookApp>
 
 <style>
-  .planner :global(.tab-panel) {
-    padding-top: var(--smrt-spacing-4);
-  }
-
-  .pane {
-    display: grid;
-    gap: var(--smrt-spacing-3);
-  }
-
-  /* `display: grid` would otherwise override the inactive pane's `hidden`. */
-  .pane[hidden] {
-    display: none;
-  }
-
-  .meta {
-    margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-  }
+  .content { width: min(100%, 72rem); margin-inline: auto; padding: var(--smrt-spacing-6); }
+  .customize { display: inline-grid; place-items: center; inline-size: 2rem; block-size: 2rem; color: inherit; border-radius: var(--smrt-radius-medium, 0.5rem); }
+  .customize:hover { background: var(--smrt-color-surface-container-high); }
+  .customize:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
 </style>

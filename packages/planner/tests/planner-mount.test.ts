@@ -7,10 +7,12 @@ import {
 } from '../src/lib/planner/app.svelte.ts';
 import { PLANNER_TAB_IDS } from '../src/lib/planner/commands/index.ts';
 import Planner from '../src/lib/planner/Planner.svelte';
+import PlannerControls from '../src/lib/planner/PlannerControls.svelte';
 
 describe('Planner component', () => {
-  it('renders every tab with no AppShell, router or data source around it', () => {
+  it('renders the app shell and its customization controls without a host router', () => {
     const { body } = render(Planner, { props: { basePath: '/planner' } });
+    expect(body).toContain('smrt-admin-shell');
     for (const label of [
       'Cookbooks',
       'Recipes',
@@ -32,10 +34,11 @@ describe('Planner component', () => {
     expect(appHref('/ai/')).toBe('/ai/');
   });
 
-  it('shows only the tabs it is given', () => {
-    const { body } = render(Planner, {
+  it('offers the controls separately for hosts with their own shell', () => {
+    const { body } = render(PlannerControls, {
       props: { tabs: ['recipes', 'export'] },
     });
+    expect(body).not.toContain('smrt-admin-shell');
     expect(body).toContain('Recipes');
     expect(body).toContain('Export');
     expect(body).not.toContain('Cookbooks');

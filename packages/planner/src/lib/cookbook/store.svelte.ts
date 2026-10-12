@@ -56,6 +56,8 @@ export class CookbookStore {
   persist = $state<PersistState>('unknown');
   /** False until the saved cookbook has been read; nothing saves before. */
   loaded = $state(false);
+  /** Host-backed preview writes through Kitchen instead of browser storage. */
+  hostManaged = false;
   /** Why the saved cookbook was not used, if it was not. */
   loadNotice = $state('');
 
@@ -246,6 +248,7 @@ export class CookbookStore {
     clearTimeout(this.timer);
     this.timer = undefined;
     if (!this.loaded) return false;
+    if (this.hostManaged) return true;
     if (this.saveBlocked) {
       this.persist = 'memory';
       return false;
@@ -262,7 +265,7 @@ export class CookbookStore {
 
   /** Save soon; many quick edits make one write. */
   scheduleSave(): void {
-    if (!this.loaded) return;
+    if (!this.loaded || this.hostManaged) return;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => this.save(), SAVE_DELAY_MS);
   }

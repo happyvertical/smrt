@@ -1,5 +1,6 @@
 /**
- * smrt planner as a package: mount the `Planner` component in a host layout,
+ * smrt planner as a package: mount `Planner` for the full app shell, or
+ * `PlannerControls` inside a host-owned shell,
  * drive it with the typed command set (`./commands` has no UI in it), and read
  * its plan as a compact snapshot.
  *
@@ -41,8 +42,16 @@ export {
   type PlannerInference,
 } from './planner/assistant.ts';
 export * from './planner/commands/index.ts';
+export { default as HostPlanner } from './planner/host/HostPlanner.svelte';
+export {
+  type CallKitchenTool,
+  createHostSession,
+  type HostPlan,
+  type HostSession,
+} from './planner/host/session.svelte.ts';
 export { plannerController } from './planner/instance.ts';
 export { default as Planner } from './planner/Planner.svelte';
+export { default as PlannerControls } from './planner/PlannerControls.svelte';
 export {
   PLANNER_SHELL_EDGE_TOGGLES,
   PLANNER_SHELL_PANEL_DEFAULTS,

@@ -72,9 +72,9 @@ pnpm config set @happyvertical:registry https://npm.happyvertical.com/
 pnpm add @happyvertical/smrt-planner
 ```
 
-The same version is mirrored to npmjs on a best-effort basis. The planner is a
-Svelte package; a host page mounts it in its own layout and drives it with a
-typed command set:
+The same version is mirrored to npmjs on a best-effort basis. `Planner` mounts
+the cookbook-driven app shell and its customization controls. A host can drive
+it with the typed command set:
 
 ```svelte
 <script lang="ts">
@@ -86,17 +86,17 @@ const controller = createPlannerController();
 <Planner {controller} basePath="/planner" />
 ```
 
-When a host also owns an `AppShell`, use Planner's exported shell defaults to
-start its navigation closed while retaining the native Menu control. This keeps
-the Layout tab able to show and restore every available panel; do not replace
-these controls with CSS visibility overrides.
-
+Hosts that already own an `AppShell` can mount `PlannerControls` inside it.
+The controls are the reusable part; `Planner` remains the complete shell.
+Use the exported shell defaults to start navigation closed while retaining the
+native Menu control.
 ```svelte
 <script lang="ts">
   import { AppShell } from '@happyvertical/smrt-svelte/app';
   import {
     PLANNER_SHELL_EDGE_TOGGLES,
     PLANNER_SHELL_PANEL_DEFAULTS,
+    PlannerControls,
   } from '@happyvertical/smrt-planner';
 </script>
 
@@ -105,7 +105,7 @@ these controls with CSS visibility overrides.
   config={PLANNER_SHELL_PANEL_DEFAULTS}
   layoutEditing
 >
-  <Planner layout="shell" persistence="host" />
+  <PlannerControls layout="shell" persistence="host" />
 </AppShell>
 ```
 
@@ -123,7 +123,7 @@ controller.subscribe((snapshot) => render(snapshot));
 
 `commandTools` is every command as `{ name, description, inputSchema }`: pass it
 straight to an LLM or an MCP server as tool definitions. `controller.snapshot()`
-is a compact read-only plan (a few KB) fit for a model prompt. Commands: 
+is a compact read-only plan (a few KB) fit for a model prompt. Commands:
 `add_recipes`, `remove_recipes`, `add_features`, `remove_features`,
 `add_cookbook`, `remove_cookbook`, `apply_cookbook`, `import_cookbook`,
 `set_settings`, `set_policy`, `set_theme`, `reset_theme`, `rename_section`,

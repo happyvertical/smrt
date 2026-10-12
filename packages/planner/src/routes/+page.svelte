@@ -2,7 +2,7 @@
 import { Button } from '@happyvertical/smrt-ui';
 import { aiState } from '$lib/ai/instance.ts';
 import AiSetup from '$lib/components/AiSetup.svelte';
-import Planner from '$lib/planner/Planner.svelte';
+import PlannerControls from '$lib/planner/PlannerControls.svelte';
 </script>
 
 <svelte:head>
@@ -25,7 +25,7 @@ import Planner from '$lib/planner/Planner.svelte';
       </div>
     </section>
   {:else}
-  <Planner layout="shell" persistence="host" themeControls />
+  <PlannerControls layout="shell" persistence="host" themeControls />
   {/if}
 </main>
 

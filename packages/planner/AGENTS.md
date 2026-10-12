@@ -76,8 +76,10 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   custom?: { primary, fontFamily? } }` (absent = default `smrt`/`system`). `theme.ts` is the pure
   validation (known smrt-ui presets, hex colours, the `THEME_FONTS` allow-list), `runtime.ts` turns a
   brand colour into a registered theme (`createThemeFromColor` + `registerTheme`, one id per colour
-  because `ThemeProvider` looks a preset up once). `components/ThemeBridge.svelte` (in the layout)
-  applies the document theme to AppShell's `ThemeProvider` and reads its controls back; the Settings
+  because `ThemeProvider` looks a preset up once). `components/ThemeBridge.svelte` (in the layout,
+  and inside `Planner`'s `CookbookApp` so hosted controls reach the plan; `deferInitial` lets the
+  plan theme win over AppShell's browser-stored one) applies the document theme to AppShell's
+  `ThemeProvider` and reads its controls back; the Settings
   tab's `ThemeSection.svelte` uses `ThemeSwitcher`, `ColorSchemeToggle` and a brand colour picker.
   The assistant may return `theme` (`{preset}` or `{primary}` hex, optional `colorScheme`): applied
   live with an Undo (`assistant/theme-undo.svelte.ts`); tokens only, never CSS. Applying a library
@@ -298,5 +300,8 @@ pnpm package
 pnpm test:release-workflow
 # Then pack once and pass that tarball to: pnpm test:package -- <tarball>
 ```
+
+Hosted Planner or Kitchen bridge changes also run `pnpm test:mcp-browser` and
+`pnpm test:live-preview-browser` (both need a local Chrome or Chromium).
 
 `pnpm build` writes the static site to `build/`.

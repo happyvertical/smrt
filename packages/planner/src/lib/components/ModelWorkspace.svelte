@@ -1,7 +1,6 @@
 <script lang="ts">
 import { FieldLabel } from '@happyvertical/smrt-ui/forms';
 import { tick } from 'svelte';
-import { page } from '$app/state';
 import type { CatalogModel } from '../catalog/types.ts';
 import {
   blankRecord,
@@ -148,7 +147,8 @@ $effect(() => {
   loaded = false;
   void load().then(() => {
     // A section page's "New ..." arrives with the form already open.
-    if (takeCreate(page.url.pathname)) startCreate(mapForms[0]);
+    if (typeof location !== 'undefined' && takeCreate(location.pathname))
+      startCreate(mapForms[0]);
   });
 });
 

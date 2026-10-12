@@ -44,6 +44,8 @@
     "typecheck": "svelte-kit sync && tsc --noEmit -p tsconfig.json && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "test:package": "node scripts/test-packed-package.mjs",
+    "test:mcp-browser": "node scripts/build-mcp.ts && node scripts/test-mcp-browser.mjs",
+    "test:live-preview-browser": "node scripts/test-live-preview-browser.mjs",
     "test:release-workflow": "node scripts/test-release-workflow.mjs",
     "lint": "biome ci .",
     "package": "svelte-package -i src/lib -o dist --tsconfig tsconfig.package.json && node scripts/package-app.ts && publint"
