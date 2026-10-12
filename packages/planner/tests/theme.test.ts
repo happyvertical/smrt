@@ -85,6 +85,18 @@ describe('theme validation', () => {
     expect(parseTheme({})).toEqual({ ok: true, theme: undefined });
   });
 
+  it('keeps custom CSS as source text without changing the active preset', () => {
+    const css = '.invoice-form { gap: 1rem; }\n';
+    expect(parseTheme({ preset: 'glass', customCss: css })).toEqual({
+      ok: true,
+      theme: { preset: 'glass', customCss: css },
+    });
+    expect(resolveTheme({ customCss: css })).toEqual(resolveTheme(undefined));
+    expect(themeEquals(undefined, { customCss: css })).toBe(false);
+    expect(parseTheme({ customCss: 3 }).ok).toBe(false);
+    expect(parseTheme({ customCss: 'x'.repeat(65537) }).ok).toBe(false);
+  });
+
   it.each([
     [{ preset: 'neon' }],
     [{ colorScheme: 'sepia' }],
@@ -152,6 +164,24 @@ describe('theme in the document', () => {
     store.reset();
     expect(store.theme).toBeUndefined();
     expect(saveCookbook(storage, store.snapshot())).toBe(true);
+  });
+  it('round-trips custom CSS through save, import and reset', () => {
+    const css = 'form { max-width: 60ch; }\n';
+    const storage = memoryStorage();
+    const store = new CookbookStore();
+    store.hydrate('', storage);
+    store.setTheme({ customCss: css });
+    expect(store.snapshot().theme).toEqual({ customCss: css });
+    expect(store.save()).toBe(true);
+
+    const restored = new CookbookStore();
+    restored.hydrate('', storage);
+    expect(restored.snapshot().theme?.customCss).toBe(css);
+    const exported = JSON.stringify(restored.snapshot());
+    restored.reset();
+    expect(restored.snapshot().theme).toBeUndefined();
+    expect(restored.importText(exported).ok).toBe(true);
+    expect(restored.snapshot().theme?.customCss).toBe(css);
   });
 });
 

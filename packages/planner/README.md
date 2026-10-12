@@ -62,6 +62,8 @@ sidebar footer show **Think** (the language model), **Hear** (voice typing) and
 choose and download them. A first visit with nothing built starts there; "I don't
 need AI, let's just build" skips it for good. Live s-m-r-t objects are tracked in #4.
 
+Generated record forms use the Planner’s responsive, open form layout. Custom CSS notes are saved with the cookbook and included in export and import.
+
 ## Install the package
 
 The primary package registry is `npm.happyvertical.com`. Configure the scope

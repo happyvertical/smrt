@@ -18,6 +18,7 @@ import {
   skuCode,
 } from '../forms/variantGrid.ts';
 import type { VariantGridForm } from '../recipes/types.ts';
+import '../styles/planner-forms.css';
 import FieldInput from './FieldInput.svelte';
 
 interface VariantGridFormProps {
@@ -124,7 +125,7 @@ async function save(event: SubmitEvent) {
 {#if !loaded}
   <p>Loading...</p>
 {:else}
-  <form onsubmit={save}>
+  <form class="planner-form" onsubmit={save}>
     <h3>{id === undefined ? `New ${active.form.label.toLowerCase()}` : `Edit ${active.form.label.toLowerCase()}`}</h3>
     {#each productInputs as { field, catalogField } (field.id)}
       <FieldInput
@@ -219,14 +220,6 @@ async function save(event: SubmitEvent) {
 {/if}
 
 <style>
-  form {
-    display: grid;
-    gap: var(--smrt-spacing-3);
-    padding: var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-large);
-  }
-
   h3,
   h4,
   p {

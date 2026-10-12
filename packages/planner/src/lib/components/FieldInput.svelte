@@ -96,7 +96,7 @@ function jsonFrom(raw: string): unknown {
 const dateOf = (stored: string): string => stored.slice(0, 10);
 </script>
 
-<div class="field" data-invalid={error ? '' : undefined}>
+<div class="field" data-renderer={renderer} data-invalid={error ? '' : undefined}>
   {#if renderer === 'boolean'}
     <Switch
       checked={value === true}

@@ -114,6 +114,13 @@ function resetToPreset() {
   {#if invalid}
     <p class="meta" role="alert">Use a hex colour like #c2410c.</p>
   {/if}
+  <div class="field">
+    <FieldLabel for="theme-custom-css" label="Custom CSS notes" />
+    <textarea id="theme-custom-css" aria-label="Custom CSS notes" rows="8" spellcheck="false"
+      value={cookbookStore.theme?.customCss ?? ''}
+      oninput={(event) => cookbookStore.setTheme({ ...cookbookStore.theme, customCss: event.currentTarget.value || undefined })}></textarea>
+    <span class="hint">Saved with your cookbook as notes for your agent to refine. This CSS is not applied to the app.</span>
+  </div>
 </section>
 
 <style>
@@ -159,6 +166,8 @@ function resetToPreset() {
     background: var(--smrt-color-surface);
     cursor: pointer;
   }
+
+  textarea { inline-size: min(100%, 48rem); min-block-size: 10rem; padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-md, 0.5rem); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); font: 0.9rem ui-monospace, monospace; }
 
   .hint {
     color: var(--smrt-color-on-surface-variant);

@@ -17,6 +17,7 @@ import {
 import { catalogModels } from '../forms/shared.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
 import type { FieldMapForm } from '../recipes/types.ts';
+import '../styles/planner-forms.css';
 import FieldInput from './FieldInput.svelte';
 
 interface FieldMapFormProps {
@@ -106,7 +107,7 @@ async function save(event: SubmitEvent) {
 {#if !loaded}
   <p>Loading...</p>
 {:else}
-  <form onsubmit={save} novalidate>
+  <form class="planner-form" onsubmit={save} novalidate>
     <h3>{id === undefined ? 'New' : 'Edit'} {createNoun(active.form.label, noun, noun !== undefined)}</h3>
     {#each inputs as { field, catalogField, modelId } (field.id)}
       <FieldInput
@@ -133,14 +134,6 @@ async function save(event: SubmitEvent) {
 {/if}
 
 <style>
-  form {
-    display: grid;
-    gap: var(--smrt-spacing-3);
-    padding: var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-large);
-  }
-
   h3 {
     margin: 0;
   }

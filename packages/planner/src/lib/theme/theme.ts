@@ -3,7 +3,8 @@ import { availablePresets } from '@happyvertical/smrt-ui/themes/presets';
 /**
  * The app's look, kept in the app document (smrt#3604): a built-in smrt-ui
  * preset, a light/dark/system choice and optionally a brand colour that
- * `createThemeFromColor` expands into a full theme. Tokens only, never CSS.
+ * `createThemeFromColor` expands into a full theme. Custom CSS source is
+ * stored with the cookbook for a host to use.
  * Absent means the default (the `smrt` preset, following the system scheme).
  */
 export type ColorSchemeSetting = 'light' | 'dark' | 'system';
@@ -21,6 +22,8 @@ export interface ThemeSetting {
   colorScheme?: ColorSchemeSetting;
   /** A brand colour theme; wins over `preset` while present. */
   custom?: CustomTheme;
+  /** User-authored CSS source carried with the cookbook. */
+  customCss?: string;
 }
 
 /** smrt-ui's built-in presets (its Node-safe `themes/presets` subpath). */
@@ -118,6 +121,18 @@ export function parseTheme(value: unknown): ThemeParse {
     }
     theme.custom = custom;
   }
+  if (value.customCss !== undefined) {
+    if (typeof value.customCss !== 'string') {
+      return { ok: false, error: 'The theme customCss must be a string.' };
+    }
+    if (Array.from(value.customCss).length > 65536) {
+      return {
+        ok: false,
+        error: 'The theme customCss is too long (65,536 characters maximum).',
+      };
+    }
+    if (value.customCss) theme.customCss = value.customCss;
+  }
   return { ok: true, theme: Object.keys(theme).length ? theme : undefined };
 }
 
@@ -135,6 +150,7 @@ function canonical(theme: ThemeSetting | undefined) {
     colorScheme: theme?.colorScheme ?? DEFAULT_COLOR_SCHEME,
     primary: theme?.custom?.primary ?? null,
     font: theme?.custom ? (theme.custom.fontFamily ?? null) : null,
+    customCss: theme?.customCss ?? null,
   };
 }
 
@@ -147,6 +163,7 @@ export function compactTheme(
   if (theme.preset) out.preset = theme.preset;
   if (theme.colorScheme) out.colorScheme = theme.colorScheme;
   if (theme.custom) out.custom = { ...theme.custom };
+  if (theme.customCss) out.customCss = theme.customCss;
   return Object.keys(out).length ? out : undefined;
 }
 

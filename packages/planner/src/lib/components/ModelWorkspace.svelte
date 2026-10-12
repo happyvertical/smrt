@@ -34,6 +34,7 @@ import { takeCreate } from '../planner/create.ts';
 import type { ViewField } from '../recipes/policy.ts';
 import { inScope, type RowScope } from '../recipes/scope.ts';
 import type { FieldMapForm as FieldMapFormShape } from '../recipes/types.ts';
+import '../styles/planner-forms.css';
 import ChildRecords from './ChildRecords.svelte';
 import FieldInput from './FieldInput.svelte';
 import FieldMapForm from './FieldMapForm.svelte';
@@ -262,7 +263,7 @@ async function remove(row: ModelRecord) {
         oncancel={() => (editing = null)}
       />
     {:else}
-    <form onsubmit={save} novalidate>
+    <form class="planner-form" onsubmit={save} novalidate>
       <h3>{editing === 'new' ? `New ${newNoun}` : editTitle || model.name}</h3>
       {#each fields as field (field.name)}
         {#if totalFields.includes(field)}
@@ -404,14 +405,6 @@ async function remove(row: ModelRecord) {
     font-weight: 400;
   }
 
-  form {
-    display: grid;
-    gap: var(--smrt-spacing-3);
-    padding: var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-large);
-  }
-
   .actions,
   .row-actions {
     display: flex;
@@ -461,6 +454,7 @@ async function remove(row: ModelRecord) {
     text-align: left;
     white-space: nowrap;
   }
+
 
   button {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
