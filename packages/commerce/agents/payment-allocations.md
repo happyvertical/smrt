@@ -13,8 +13,10 @@ Use `PaymentAllocationCollection.allocatePayment({ paymentId, allocations,
 allocatedBy })` for a split. Each allocation is `{ id, invoiceId, amount }`, with
 a caller-generated stable UUID retained across retries. Exact replay
 reuses the existing rows without applying money again; an existing id with
-different parents or amount fails. The complete
-batch and invoice payment-status refresh share one transaction. Invoices must
+different parents or amount fails. Replay preserves an already-paid invoice's
+recorded payment date. Reversing
+payment clears that date; reaching full payment again records the new date.
+The complete batch and invoice payment-status refresh share one transaction. Invoices must
 already be in a status that permits payment (normally SENT); WRITTEN_OFF retains
 its terminal status. A failed leg rolls back every leg and parent revision.
 Direct allocation saves continue to leave status refresh to the caller. Allocation

@@ -304,6 +304,46 @@ for (const engine of [
         }),
       ).rejects.toThrow(/replay/);
     });
+    it('preserves the paid date on exact replay and resets it only after reversal', async () => {
+      const { payment, invoice } = await fixtures();
+      const input = {
+        paymentId: String(payment.id),
+        allocations: [
+          { id: randomUUID(), invoiceId: String(invoice.id), amount: 100 },
+        ],
+      };
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        const firstDate = new Date('2026-10-10T12:00:00Z');
+        const retryDate = new Date('2026-10-12T12:00:00Z');
+        vi.setSystemTime(firstDate);
+        await allocations.allocatePayment(input);
+        expect((await invoices.get(invoice.id))?.paidDate).toEqual(firstDate);
+        vi.setSystemTime(retryDate);
+        await allocations.allocatePayment(input);
+        const paid = (await invoices.get(invoice.id))!;
+        expect(paid.status).toBe(InvoiceStatus.PAID);
+        expect(paid.paidDate).toEqual(firstDate);
+        expect(paid.amountPaid).toBe(100);
+        expect(
+          await allocations.findByPayment(String(payment.id)),
+        ).toHaveLength(1);
+
+        // A legacy PAID row with no date still acquires one; a reversal clears it.
+        paid.paidDate = null;
+        paid.updatePaymentStatus(100);
+        expect(paid.paidDate).toEqual(retryDate);
+        paid.updatePaymentStatus(50);
+        expect(paid.status).toBe(InvoiceStatus.PARTIAL);
+        expect(paid.paidDate).toBeNull();
+        const repaymentDate = new Date('2026-10-14T12:00:00Z');
+        vi.setSystemTime(repaymentDate);
+        paid.updatePaymentStatus(100);
+        expect(paid.paidDate).toEqual(repaymentDate);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
     it('retries a committed batch when the result read fails without applying twice', async () => {
       const { payment, invoice } = await fixtures();
       const input = {

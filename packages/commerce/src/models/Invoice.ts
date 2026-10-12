@@ -900,8 +900,10 @@ export class Invoice extends SmrtObject {
     // exactly (e.g. 0.1×3 line items paid 0.3) is treated as PAID by both —
     // not PARTIAL here and then rejected on save (S5 audit #1390 follow-up).
     if (this.isFullyPaid()) {
+      if (this.status !== InvoiceStatus.PAID || !this.paidDate) {
+        this.paidDate = new Date();
+      }
       this.status = InvoiceStatus.PAID;
-      this.paidDate = new Date();
     } else if (amountPaid > 0) {
       this.status = InvoiceStatus.PARTIAL;
       this.paidDate = null; // Clear paidDate if no longer fully paid
