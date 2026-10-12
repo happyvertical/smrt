@@ -1,5 +1,6 @@
 import type { Component, Snippet } from 'svelte';
 import type { ShellLayout } from './layout.js';
+import type { PhoneBottomBarItem } from './mobile-shell.js';
 import type { ShellRegion, ShellSlot } from './slots.js';
 
 export type PanelEdge = 'top' | 'left' | 'right' | 'bottom';
@@ -461,3 +462,13 @@ export interface ShellSectionMenuEntry {
   hidden: boolean;
   item: ShellNavItem;
 }
+
+/**
+ * A phone bottom bar entry whose icon is either a component (`icon`) or a
+ * shell/host icon name (`iconName`, drawn like navigation icons; a missing
+ * name draws the placeholder glyph).
+ */
+export type PhoneBottomBarEntry = Omit<PhoneBottomBarItem, 'icon'> & {
+  icon?: PhoneBottomBarItem['icon'];
+  iconName?: string;
+};

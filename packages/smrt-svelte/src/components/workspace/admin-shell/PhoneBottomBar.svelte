@@ -7,21 +7,27 @@
  * while a form's action bar is on screen or the keyboard is open.
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import type { Component } from 'svelte';
 import { M } from '../../../i18n/strings.workspace.js';
 import type { PhoneBottomBarItem } from './mobile-shell.js';
+import ShellSectionIcon from './ShellSectionIcon.svelte';
+import { SHELL_PLACEHOLDER_ICON } from './shell-icons.js';
+import type { PhoneBottomBarEntry } from './types.js';
 
 interface Props {
   /** Bar entries, left to right. */
-  items: PhoneBottomBarItem[];
+  items: (PhoneBottomBarItem | PhoneBottomBarEntry)[];
+  /** Renders `iconName`s that are not built-in shell icons. */
+  iconComponent?: Component<{ name: string; size?: number }>;
   /** Accessible name of the nav landmark (default "Main"). */
   label?: string;
 }
 
-let { items, label }: Props = $props();
+let { items, label, iconComponent }: Props = $props();
 
 const { t } = useI18n();
 
-function accessibleName(item: PhoneBottomBarItem): string {
+function accessibleName(item: PhoneBottomBarEntry): string {
   const parts = [item.label];
   if (item.badge) {
     parts.push(
@@ -33,9 +39,13 @@ function accessibleName(item: PhoneBottomBarItem): string {
 }
 </script>
 
-{#snippet content(item: PhoneBottomBarItem)}
+{#snippet content(item: PhoneBottomBarEntry)}
   <span class="smrt-phone-bottom-bar__icon" aria-hidden="true">
-    <item.icon size={22} />
+    {#if item.icon}
+      <item.icon size={22} />
+    {:else}
+      <ShellSectionIcon name={item.iconName ?? SHELL_PLACEHOLDER_ICON} size={22} {iconComponent} />
+    {/if}
     {#if item.badge}
       <span class="smrt-phone-bottom-bar__badge">
         {item.badge > 9 ? '9+' : item.badge}
@@ -103,8 +113,8 @@ function accessibleName(item: PhoneBottomBarItem): string {
     place-items: center;
     align-content: center;
     gap: var(--smrt-spacing-1);
-    min-inline-size: 2.75rem;
-    min-block-size: 2.75rem;
+    min-inline-size: var(--smrt-touch-target-min);
+    min-block-size: var(--smrt-touch-target-min);
     padding: var(--smrt-spacing-1) 0;
     border: 0;
     border-radius: var(--smrt-radius-lg);

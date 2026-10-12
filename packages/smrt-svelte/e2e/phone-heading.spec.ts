@@ -39,6 +39,11 @@ for (const width of [320, 390, 768, 1024]) {
         ).toHaveAttribute('href', '/projects');
       }
       if (width <= 768 && kind === 'action') {
+        // Phone drawers start closed: the account menu lives in the drawer.
+        const drawer = width < 768;
+        if (drawer) {
+          await page.getByRole('button', { name: 'Menu', exact: true }).click();
+        }
         const accountMenu = page.getByRole('button', {
           name: /Open account menu Dana Welder/,
         });
