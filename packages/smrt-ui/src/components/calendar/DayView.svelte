@@ -176,12 +176,12 @@ function getTypeLabel(type: string): string {
 
 <style>
   .day-view {
-    --view-bg: var(--smrt-color-surface, #ffffff);
-    --view-border: var(--smrt-color-outline-variant, #e5e7eb);
-    --header-bg: var(--smrt-color-surface-container-low, #f5f5f5);
-    --card-hover: var(--smrt-color-surface-container-low, #f5f5f5);
+    --smrt-day-view-bg: var(--smrt-color-surface, #ffffff);
+    --smrt-day-view-border: var(--smrt-color-outline-variant, #e5e7eb);
+    --smrt-day-view-header-bg: var(--smrt-color-surface-container-low, #f5f5f5);
+    --smrt-day-view-card-hover: var(--smrt-color-surface-container-low, #f5f5f5);
 
-    background: var(--view-bg);
+    background: var(--smrt-day-view-bg);
   }
 
   /*
@@ -190,25 +190,25 @@ function getTypeLabel(type: string): string {
    * `--smrt-color-*-dark` tokens were never emitted).
    */
   :global([data-theme="dark"]) .day-view {
-    --view-bg: var(--smrt-color-surface, #242424);
-    --view-border: var(--smrt-color-outline-variant, #3a3a3a);
-    --header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
-    --card-hover: var(--smrt-color-surface-container-high, #3a3a3a);
+    --smrt-day-view-bg: var(--smrt-color-surface, #242424);
+    --smrt-day-view-border: var(--smrt-color-outline-variant, #3a3a3a);
+    --smrt-day-view-header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
+    --smrt-day-view-card-hover: var(--smrt-color-surface-container-high, #3a3a3a);
   }
 
   @media (prefers-color-scheme: dark) {
     :global(:root:not([data-theme="light"])) .day-view {
-      --view-bg: var(--smrt-color-surface, #242424);
-      --view-border: var(--smrt-color-outline-variant, #3a3a3a);
-      --header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
-      --card-hover: var(--smrt-color-surface-container-high, #3a3a3a);
+      --smrt-day-view-bg: var(--smrt-color-surface, #242424);
+      --smrt-day-view-border: var(--smrt-color-outline-variant, #3a3a3a);
+      --smrt-day-view-header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
+      --smrt-day-view-card-hover: var(--smrt-color-surface-container-high, #3a3a3a);
     }
   }
 
   .day-header {
     padding: var(--smrt-spacing-6, 1.5rem);
-    background: var(--header-bg);
-    border-bottom: 1px solid var(--view-border);
+    background: var(--smrt-day-view-header-bg);
+    border-bottom: 1px solid var(--smrt-day-view-border);
   }
 
   .back-link {
@@ -318,8 +318,8 @@ function getTypeLabel(type: string): string {
     align-items: center;
     gap: var(--smrt-spacing-4, 1rem);
     padding: var(--smrt-spacing-4, 1rem);
-    background: var(--view-bg);
-    border: 1px solid var(--view-border);
+    background: var(--smrt-day-view-bg);
+    border: 1px solid var(--smrt-day-view-border);
     border-radius: var(--smrt-radius-medium, 8px);
     text-decoration: none;
     color: var(--smrt-color-on-surface, #333);
@@ -327,7 +327,7 @@ function getTypeLabel(type: string): string {
   }
 
   .event-card--link:hover {
-    background: var(--card-hover);
+    background: var(--smrt-day-view-card-hover);
     border-color: var(--smrt-color-outline, #79747e);
   }
 

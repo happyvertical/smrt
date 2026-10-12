@@ -32,7 +32,7 @@ export interface Props {
 
 <span
   class="send-status-badge {size}"
-  style="--badge-color: {statusConfig.color}"
+  style="--smrt-send-status-badge-color: {statusConfig.color}"
 >
   <span class="icon">{statusConfig.icon}</span>
   <span class="label">{statusConfig.label}</span>
@@ -44,8 +44,8 @@ export interface Props {
     align-items: center;
     gap: var(--smrt-spacing-1, 4px);
     border-radius: var(--smrt-radius-sm, 8px);
-    border: 1px solid var(--badge-color);
-    color: var(--badge-color);
+    border: 1px solid var(--smrt-send-status-badge-color);
+    color: var(--smrt-send-status-badge-color);
     font-family: var(--smrt-font-family, system-ui);
     white-space: nowrap;
   }

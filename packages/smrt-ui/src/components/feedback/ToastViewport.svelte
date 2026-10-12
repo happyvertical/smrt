@@ -161,12 +161,12 @@ async function runAction(toast: Toast) {
 </script>
 
 <section use:followModal class="viewport viewport--{position} {className}" aria-label="Notifications" aria-live="polite"
-  style:--toast-inset={inset}
-  style:--toast-top={bounds ? `${bounds.top}px` : undefined}
-  style:--toast-right={bounds ? `${bounds.right}px` : undefined}
-  style:--toast-bottom={bounds ? `${bounds.bottom}px` : undefined}
-  style:--toast-left={bounds ? `${bounds.left}px` : undefined}
-  style:--toast-region-width={bounds ? `${bounds.width}px` : undefined} data-smrt-component="ToastViewport"
+  style:--smrt-toast-viewport-inset={inset}
+  style:--smrt-toast-viewport-top={bounds ? `${bounds.top}px` : undefined}
+  style:--smrt-toast-viewport-right={bounds ? `${bounds.right}px` : undefined}
+  style:--smrt-toast-viewport-bottom={bounds ? `${bounds.bottom}px` : undefined}
+  style:--smrt-toast-viewport-left={bounds ? `${bounds.left}px` : undefined}
+  style:--smrt-toast-viewport-region-width={bounds ? `${bounds.width}px` : undefined} data-smrt-component="ToastViewport"
 >
   {#each toasts as toast (toast.id)}
     <div role="group" aria-label={toast.title ?? 'Notification'}
@@ -186,14 +186,14 @@ async function runAction(toast: Toast) {
 </section>
 
 <style>
-  .viewport { position: fixed; z-index: var(--smrt-z-index-toast, 1200); display: grid; width: min(24rem, calc(var(--toast-region-width, 100vw) - 2 * var(--toast-inset))); gap: var(--smrt-spacing-2); pointer-events: none; }
+  .viewport { position: fixed; z-index: var(--smrt-z-index-toast, 1200); display: grid; width: min(24rem, calc(var(--smrt-toast-viewport-region-width, 100vw) - 2 * var(--smrt-toast-viewport-inset))); gap: var(--smrt-spacing-2); pointer-events: none; }
   .viewport :global(.alert) { pointer-events: auto; box-shadow: var(--smrt-elevation-3); }
-  .viewport--top-start { top: calc(var(--toast-top, 0px) + var(--toast-inset)); left: calc(var(--toast-left, 0px) + var(--toast-inset)); }
-  .viewport--top-end { top: calc(var(--toast-top, 0px) + var(--toast-inset)); right: calc(var(--toast-right, 0px) + var(--toast-inset)); }
-  .viewport--bottom-start { bottom: calc(var(--toast-bottom, 0px) + var(--toast-inset)); left: calc(var(--toast-left, 0px) + var(--toast-inset)); }
-  .viewport--bottom-end { right: calc(var(--toast-right, 0px) + var(--toast-inset)); bottom: calc(var(--toast-bottom, 0px) + var(--toast-inset)); }
-  .viewport--top-center, .viewport--bottom-center { left: calc(var(--toast-left, 0px) + var(--toast-region-width, 100vw) / 2); transform: translateX(-50%); }
-  .viewport--top-center { top: calc(var(--toast-top, 0px) + var(--toast-inset)); }
-  .viewport--bottom-center { bottom: calc(var(--toast-bottom, 0px) + var(--toast-inset)); }
+  .viewport--top-start { top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset)); left: calc(var(--smrt-toast-viewport-left, 0px) + var(--smrt-toast-viewport-inset)); }
+  .viewport--top-end { top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset)); right: calc(var(--smrt-toast-viewport-right, 0px) + var(--smrt-toast-viewport-inset)); }
+  .viewport--bottom-start { bottom: calc(var(--smrt-toast-viewport-bottom, 0px) + var(--smrt-toast-viewport-inset)); left: calc(var(--smrt-toast-viewport-left, 0px) + var(--smrt-toast-viewport-inset)); }
+  .viewport--bottom-end { right: calc(var(--smrt-toast-viewport-right, 0px) + var(--smrt-toast-viewport-inset)); bottom: calc(var(--smrt-toast-viewport-bottom, 0px) + var(--smrt-toast-viewport-inset)); }
+  .viewport--top-center, .viewport--bottom-center { left: calc(var(--smrt-toast-viewport-left, 0px) + var(--smrt-toast-viewport-region-width, 100vw) / 2); transform: translateX(-50%); }
+  .viewport--top-center { top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset)); }
+  .viewport--bottom-center { bottom: calc(var(--smrt-toast-viewport-bottom, 0px) + var(--smrt-toast-viewport-inset)); }
   button { padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border: 1px solid currentColor; border-radius: var(--smrt-radius-small); background: transparent; color: inherit; font: inherit; cursor: pointer; }
 </style>

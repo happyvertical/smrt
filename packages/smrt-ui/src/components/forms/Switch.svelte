@@ -136,8 +136,8 @@ useControlRegistration(() => {
   @media (max-width: 48rem) { .switch { min-block-size: 2.75rem; } }
   /* The 2.75rem-wide track gets a transparent 44px-tall ::before hit area (see Checkbox); the
      track and label sit above every hit area. --smrt-control-hit-size resizes it (0px = off). */
-  .switch__control { --_hit: max(var(--smrt-control-hit-size, 2.75rem), 1.5rem); position: relative; display: inline-flex; }
-  .switch__control::before { content: ''; position: absolute; z-index: 0; inset-block-start: 50%; inset-inline: calc((100% - var(--_hit)) / 2); block-size: var(--_hit); margin-block-start: calc(var(--_hit) / -2); }
+  .switch__control { --smrt-switch-hit: max(var(--smrt-control-hit-size, 2.75rem), 1.5rem); position: relative; display: inline-flex; }
+  .switch__control::before { content: ''; position: absolute; z-index: 0; inset-block-start: 50%; inset-inline: calc((100% - var(--smrt-switch-hit)) / 2); block-size: var(--smrt-switch-hit); margin-block-start: calc(var(--smrt-switch-hit) / -2); }
   .switch__label { position: relative; z-index: 1; }
   input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .switch__track { position: relative; z-index: 1; width: 2.75rem; height: 1.5rem; padding: 2px; border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-highest); border: 1px solid var(--smrt-color-outline); transition: background var(--smrt-duration-short2); }

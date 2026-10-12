@@ -34,10 +34,10 @@ export interface TimeEntry {
  * Status color mapping using M3 design tokens
  */
 export const statusColors: Record<TimeEntryStatus, string> = {
-  draft: 'var(--md-sys-color-outline)',
-  submitted: 'var(--md-sys-color-tertiary)',
-  approved: 'var(--md-sys-color-primary)',
-  rejected: 'var(--md-sys-color-error)',
+  draft: 'var(--smrt-color-outline)',
+  submitted: 'var(--smrt-color-tertiary)',
+  approved: 'var(--smrt-color-primary)',
+  rejected: 'var(--smrt-color-error)',
 };
 
 /**

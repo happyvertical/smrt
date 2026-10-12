@@ -121,10 +121,10 @@ function toggle(key: string | number) {
   .main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--smrt-typography-title-small-font); }
   .main span { color: var(--smrt-color-on-surface-variant); }
   .actions { position: relative; z-index: 1; display: flex; gap: var(--smrt-spacing-1); }
-  .collection--divided { --collection-divider: color-mix(in srgb, var(--smrt-color-outline-variant) 55%, transparent); gap: 0; }
+  .collection--divided { --smrt-collection-list-divider: color-mix(in srgb, var(--smrt-color-outline-variant) 55%, transparent); gap: 0; }
   .collection--divided li { padding-inline: 0; border: none; border-radius: 0; background: transparent; }
-  .collection--divided li + li { border-block-start: 1px solid var(--collection-divider); }
-  .collection--divided li.selected { border-color: var(--collection-divider); background: transparent; }
+  .collection--divided li + li { border-block-start: 1px solid var(--smrt-collection-list-divider); }
+  .collection--divided li.selected { border-color: var(--smrt-collection-list-divider); background: transparent; }
   .collection--gallery { grid-template-columns: repeat(auto-fill, minmax(min(11rem, 100%), 1fr)); }
   .collection--gallery li { display: block; padding: 0; }
   .collection--gallery .main { gap: 0; }

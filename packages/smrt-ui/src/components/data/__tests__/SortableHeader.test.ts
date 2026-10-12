@@ -102,7 +102,7 @@ describe('ListSortSelect', () => {
 });
 
 describe('SortableHeader style hooks', () => {
-  it('reads its control weight from --sortable-header-font-weight (default 600)', () => {
+  it('reads its control weight from --smrt-sortable-header-font-weight (default 600)', () => {
     const source = readFileSync(
       join(
         process.cwd().endsWith('packages/smrt-ui')
@@ -113,8 +113,8 @@ describe('SortableHeader style hooks', () => {
       'utf8',
     );
     expect(source).toMatch(
-      /font-weight:\s*var\(--sortable-header-font-weight,\s*600\)/,
+      /font-weight:\s*var\(--smrt-sortable-header-font-weight,\s*600\)/,
     );
-    expect(source).toMatch(/padding:\s*var\(--sortable-header-padding,/);
+    expect(source).toMatch(/padding:\s*var\(--smrt-sortable-header-padding,/);
   });
 });

@@ -181,9 +181,9 @@ function handleChange(e: Event) {
 
 <style>
   .smrt-select-field {
-    --field-color: var(--smrt-color-on-surface-variant);
-    --field-bg: var(--smrt-color-surface-container-highest);
-    --field-active: var(--smrt-color-primary);
+    --smrt-select-input-field-color: var(--smrt-color-on-surface-variant);
+    --smrt-select-input-field-bg: var(--smrt-color-surface-container-highest);
+    --smrt-select-input-field-active: var(--smrt-color-primary);
     
     display: flex;
     flex-direction: column;
@@ -239,7 +239,7 @@ function handleChange(e: Event) {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--field-color);
+    color: var(--smrt-select-input-field-color);
     pointer-events: none;
     margin-right: -4px;
   }
@@ -247,8 +247,8 @@ function handleChange(e: Event) {
   .active-indicator { display: none; }
 
   .focused .container {
-    border-color: var(--field-active);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--field-active) 10%, transparent);
+    border-color: var(--smrt-select-input-field-active);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-select-input-field-active) 10%, transparent);
   }
 
   .supporting-text {
@@ -265,6 +265,6 @@ function handleChange(e: Event) {
 
   /* Smrt mode overrides */
   .smrt-mode {
-    --field-active: var(--smrt-color-tertiary);
+    --smrt-select-input-field-active: var(--smrt-color-tertiary);
   }
 </style>

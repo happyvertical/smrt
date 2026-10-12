@@ -162,8 +162,8 @@ useControlRegistration(() => {
      checkbox stands alone in its parent. Beside anything else (a row title, a link, other text)
      it keeps to the box's own column and grows vertically only. Resize it with
      --smrt-control-hit-size (0px turns it off). */
-  .checkbox { --_box: 1.125rem; --_hit: max(var(--smrt-control-hit-size, 2.75rem), var(--_box)); position: relative; display: inline-flex; align-items: center; gap: var(--smrt-spacing-2, .5rem); cursor: pointer; color: var(--smrt-color-on-surface); }
-  .checkbox::before { content: ''; position: absolute; z-index: 0; inset-block-start: 50%; inset-inline-start: calc(var(--_box) / 2); inline-size: var(--_hit); block-size: var(--_hit); margin-block-start: calc(var(--_hit) / -2); margin-inline-start: calc(var(--_hit) / -2); }
+  .checkbox { --smrt-checkbox-box: 1.125rem; --smrt-checkbox-hit: max(var(--smrt-control-hit-size, 2.75rem), var(--smrt-checkbox-box)); position: relative; display: inline-flex; align-items: center; gap: var(--smrt-spacing-2, .5rem); cursor: pointer; color: var(--smrt-color-on-surface); }
+  .checkbox::before { content: ''; position: absolute; z-index: 0; inset-block-start: 50%; inset-inline-start: calc(var(--smrt-checkbox-box) / 2); inline-size: var(--smrt-checkbox-hit); block-size: var(--smrt-checkbox-hit); margin-block-start: calc(var(--smrt-checkbox-hit) / -2); margin-inline-start: calc(var(--smrt-checkbox-hit) / -2); }
   .checkbox--disabled { opacity: .5; cursor: not-allowed; }
   input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .checkbox__box { position: relative; z-index: 1; width: 1.125rem; height: 1.125rem; display: grid; place-items: center; border: 2px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-extra-small, 3px); background: var(--smrt-color-surface); transition: background var(--smrt-duration-short2), border-color var(--smrt-duration-short2); }
@@ -172,12 +172,12 @@ useControlRegistration(() => {
   input:focus-visible + .checkbox__box { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
   .checkbox__check { font-size: .8rem; font-weight: 800; line-height: 1; }
   .checkbox__dash { width: .6rem; height: 2px; background: currentColor; }
-  .checkbox:not(:only-child)::before { inline-size: var(--_box); margin-inline-start: calc(var(--_box) / -2); }
+  .checkbox:not(:only-child)::before { inline-size: var(--smrt-checkbox-box); margin-inline-start: calc(var(--smrt-checkbox-box) / -2); }
   .checkbox[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-small); }
 
   /* Table cells: neighbouring cells hold links and other controls, so the hit area never leaves
      the cell's column. It grows vertically only (box wide)... */
-  :global(:is(td, th)) .checkbox::before { inline-size: var(--_box); margin-inline-start: calc(var(--_box) / -2); }
+  :global(:is(td, th)) .checkbox::before { inline-size: var(--smrt-checkbox-box); margin-inline-start: calc(var(--smrt-checkbox-box) / -2); }
   /* ...unless the checkbox is the cell's only content: then the whole cell, clipped to its own
      edges, is the hit area (the 44px target the header and every row share). The cell only needs
      a containing block, so :where() keeps that rule at zero specificity: a sticky header or a

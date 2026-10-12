@@ -197,7 +197,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
   }
 
   .job-detail__section h3 {
-    margin: 0 0 var(--spacing-sm, 0.5rem) 0;
+    margin: 0 0 var(--smrt-spacing-sm, 0.5rem) 0;
     font-size: var(--smrt-typography-title-small-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface-variant, #6b7280);

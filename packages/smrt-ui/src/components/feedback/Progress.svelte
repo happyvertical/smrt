@@ -40,7 +40,7 @@ const displayValue = $derived(
 {#if variant === 'circular'}
   <div class="progress progress--circular progress--{size} {className}" class:indeterminate role="progressbar" aria-label={label}
     aria-valuemin={indeterminate ? undefined : min} aria-valuemax={indeterminate ? undefined : max} aria-valuenow={value} data-smrt-component="Progress">
-    <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="track" cx="22" cy="22" r="18"></circle><circle class="indicator" cx="22" cy="22" r="18" style={`--progress: ${normalized}`}></circle></svg>
+    <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="track" cx="22" cy="22" r="18"></circle><circle class="indicator" cx="22" cy="22" r="18" style={`--smrt-progress-value: ${normalized}`}></circle></svg>
     {#if showValue && !indeterminate}<span>{displayValue}</span>{/if}
   </div>
 {:else}
@@ -61,7 +61,7 @@ const displayValue = $derived(
   .progress--circular.progress--sm { width: 1.75rem; height: 1.75rem; } .progress--circular.progress--lg { width: 4rem; height: 4rem; }
   .progress--circular svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .progress--circular circle { fill: none; stroke-width: 4; } .progress--circular .track { stroke: var(--smrt-color-surface-container-highest); }
-  .progress--circular .indicator { stroke: var(--smrt-color-primary); stroke-linecap: round; stroke-dasharray: 113.1; stroke-dashoffset: calc(113.1 - (113.1 * var(--progress)) / 100); transition: stroke-dashoffset var(--smrt-duration-short4); }
+  .progress--circular .indicator { stroke: var(--smrt-color-primary); stroke-linecap: round; stroke-dasharray: 113.1; stroke-dashoffset: calc(113.1 - (113.1 * var(--smrt-progress-value)) / 100); transition: stroke-dashoffset var(--smrt-duration-short4); }
   .progress--circular.indeterminate svg { animation: spin 1s linear infinite; } .progress--circular.indeterminate .indicator { stroke-dasharray: 70 113.1; }
   .progress--circular > span { position: absolute; font: var(--smrt-typography-label-small-font); }
   @keyframes linear-progress { from { left: -40%; } to { left: 105%; } } @keyframes spin { to { transform: rotate(270deg); } }

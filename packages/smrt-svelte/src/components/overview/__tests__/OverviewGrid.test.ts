@@ -133,9 +133,11 @@ describe('OverviewGrid (view)', () => {
       '1',
       '2',
     ]);
-    expect((items[1] as HTMLElement).style.getPropertyValue('--span')).toBe(
-      '2',
-    );
+    expect(
+      (items[1] as HTMLElement).style.getPropertyValue(
+        '--smrt-overview-grid-span',
+      ),
+    ).toBe('2');
   });
 
   it('draws loading before data when a widget has none yet, and error with retry', async () => {

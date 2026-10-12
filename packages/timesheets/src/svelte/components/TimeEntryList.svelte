@@ -173,7 +173,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
   </div>
 
   <div class="status-cell">
-    <span class="status-badge" style="--status-color: {statusColors[entry.status]}">
+    <span class="status-badge" style="--smrt-time-entry-list-status-color: {statusColors[entry.status]}">
       {entry.status}
     </span>
   </div>
@@ -334,7 +334,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
     font-weight: var(--smrt-typography-label-small-weight, 500);
     padding: 0.25rem 0.5rem;
     border-radius: var(--smrt-radius-small, 8px);
-    background: var(--status-color);
+    background: var(--smrt-time-entry-list-status-color);
     color: var(--smrt-color-on-primary);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-small-tracking, 0.5px);

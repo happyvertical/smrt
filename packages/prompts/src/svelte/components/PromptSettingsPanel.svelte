@@ -241,17 +241,17 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
     margin: 0;
     padding: 0.625rem 0.75rem;
     border-radius: 0.375rem;
-    background: var(--color-surface-muted, #f3f4f6);
+    background: var(--smrt-color-surface-variant, #f3f4f6);
   }
 
   .ps-flash-error {
-    color: var(--color-error-text, #991b1b);
-    background: var(--color-error-surface, #fef2f2);
+    color: var(--smrt-color-error, #991b1b);
+    background: var(--smrt-color-error-container, #fef2f2);
   }
 
   .ps-empty {
     margin: 0;
-    color: var(--color-text-muted, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     font-style: italic;
   }
 
@@ -284,7 +284,7 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
 
   .ps-key {
     font-size: 0.8125rem;
-    color: var(--color-text-muted, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     overflow-wrap: anywhere;
   }
 
@@ -292,7 +292,7 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
     margin: 0;
     padding: 0.5rem;
     border-radius: 0.375rem;
-    background: var(--color-surface-muted, #f3f4f6);
+    background: var(--smrt-color-surface-variant, #f3f4f6);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     font-family: inherit;
@@ -314,7 +314,7 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
 
   .ps-field-label {
     font-size: 0.8125rem;
-    color: var(--color-text-muted, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   .ps-toggle {
@@ -322,15 +322,15 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
     align-items: center;
     gap: 0.375rem;
     font-size: 0.8125rem;
-    color: var(--color-text-muted, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   .ps-textarea {
     width: 100%;
     padding: 0.5rem;
-    border: 1px solid var(--color-border, #d1d5db);
+    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
     border-radius: 0.375rem;
-    background: var(--color-surface, #fff);
+    background: var(--smrt-color-surface, #fff);
     color: inherit;
     font: inherit;
     resize: vertical;
@@ -340,7 +340,7 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
   .ps-readonly {
     margin: 0;
     font-size: 0.8125rem;
-    color: var(--color-text-muted, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     line-height: 1.45;
     overflow-wrap: anywhere;
   }
