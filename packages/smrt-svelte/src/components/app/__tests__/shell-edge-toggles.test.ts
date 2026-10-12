@@ -194,13 +194,13 @@ describe('hiding a visible region from edit mode', () => {
   });
 });
 
-describe('the left edge toggle is an icon-only chevron at the bottom of the rail', () => {
+describe('the left edge toggle is an icon-only chevron closing the nav region', () => {
   const leftToggle = () =>
     document.querySelector<HTMLButtonElement>(
       '.smrt-admin-shell__edge--left .smrt-admin-shell__edge-toggle',
     );
 
-  it('renders no visible label, names the action, and is the last thing in the rail', async () => {
+  it('renders no visible label, names the action, and sits after the nav inside the sidebar body', async () => {
     const user = userEvent.setup();
     render(Harness, {
       edgeToggles: { left: true },
@@ -218,7 +218,12 @@ describe('the left edge toggle is an icon-only chevron at the bottom of the rail
     const rail = document.querySelector(
       '.smrt-admin-shell__edge--left .smrt-admin-shell__rail',
     );
-    expect(rail?.lastElementChild).toBe(toggle);
+    // It closes the nav region (inside the sidebar body), not the rail.
+    expect(rail?.contains(toggle)).toBe(true);
+    expect(rail?.lastElementChild).not.toBe(toggle);
+    expect(toggle?.parentElement?.classList).toContain(
+      'smrt-admin-shell__tenant-stack',
+    );
     // Navigation comes before it, not after.
     const nav = document.querySelector('a[href="/posts"]');
     expect(

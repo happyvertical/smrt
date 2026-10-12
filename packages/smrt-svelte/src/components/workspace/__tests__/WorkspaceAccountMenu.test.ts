@@ -99,6 +99,46 @@ describe('WorkspaceAccountMenu', () => {
     expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
   });
 
+  it('shows the email, links to Settings and signs out through a link', async () => {
+    const user = userEvent.setup();
+    render(WorkspaceAccountMenu, {
+      props: {
+        userName: 'Ada Lovelace',
+        email: 'ada@example.com',
+        settingsHref: '/settings',
+        signOutHref: '/logout',
+      },
+    });
+    await user.click(screen.getByRole('button', { name: /Open account menu/ }));
+    expect(screen.getByText('ada@example.com')).toBeVisible();
+    expect(screen.getByRole('menuitem', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
+    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toHaveAttribute(
+      'href',
+      '/logout',
+    );
+  });
+
+  it('moves focus into the menu, closes on Escape and refocuses the trigger', async () => {
+    const user = userEvent.setup();
+    render(WorkspaceAccountMenu, {
+      props: { userName: 'Ada', settingsHref: '/settings', onSignOut: vi.fn() },
+    });
+    const trigger = screen.getByRole('button', { name: /Open account menu/ });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('menuitem', { name: 'Settings' })).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(WorkspaceAccountMenu, {
       props: {
@@ -112,6 +152,20 @@ describe('WorkspaceAccountMenu', () => {
       },
     });
 
+    await expectNoA11yViolations(container);
+  });
+
+  it('is axe-clean while open', async () => {
+    const user = userEvent.setup();
+    const { container } = render(WorkspaceAccountMenu, {
+      props: {
+        userName: 'Ada Lovelace',
+        email: 'ada@example.com',
+        settingsHref: '/settings',
+        onSignOut: vi.fn(),
+      },
+    });
+    await user.click(screen.getByRole('button', { name: /Open account menu/ }));
     await expectNoA11yViolations(container);
   });
 });

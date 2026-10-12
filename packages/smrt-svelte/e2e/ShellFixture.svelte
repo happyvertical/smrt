@@ -57,7 +57,15 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
 {#snippet systemBar()}<SystemStatusChips {chips} />{/snippet}
 <svelte:window onhashchange={() => { tabCurrent = window.location.hash; }} />
 {#snippet assistantBody()}<input aria-label="Ask" />{/snippet}
-{#if query.has('tabs')}
+{#if query.has('account-menu')}
+<AppShell title="Account fixture" nav={tabNav} currentHref="#queue" storageKey="account-menu-fixture"
+  user={{ id: 'u1', email: 'ada@example.com', name: 'Ada Lovelace' } as never}
+  settingsHref="#settings" onSignOut={() => { signedOut = true; }}
+  config={{ left: { initial: 'expanded' } }}>
+  <p>Main content</p>
+  {#if signedOut}<p>Signed out callback</p>{/if}
+</AppShell>
+{:else if query.has('tabs')}
 <AppShell title="Tab fixture" nav={tabNav} currentHref={tabCurrent} phoneTabBar={tabBar}
   dockToggles={[{ tool: 'assistant', label: 'Assistant' }]} storageKey="phone-tabs-fixture">
   {#snippet dock()}<ShellDockTool id="assistant" label="Assistant" render={assistantBody} />{/snippet}

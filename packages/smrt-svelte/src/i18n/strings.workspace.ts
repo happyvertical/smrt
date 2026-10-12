@@ -243,4 +243,11 @@ export const M = defineMessages({
   // components/app/PhoneTabBar (issue #3852)
   'ui.phone_tab_bar.label': 'Main',
   'ui.phone_tab_bar.more': 'More',
+
+  // components/app/AppShell built-in header and account items (issue #3853)
+  'ui.app_shell.account_item': 'Account menu',
+  'ui.app_shell.color_scheme_item': 'Color scheme',
+  'ui.app_shell.color_scheme_toggle': 'Toggle color scheme',
+  'ui.app_shell.command_palette_item': 'Search',
+  'ui.app_shell.account_settings': 'Settings',
 });
