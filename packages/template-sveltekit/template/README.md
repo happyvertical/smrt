@@ -1,7 +1,7 @@
 # s-m-r-t SvelteKit starter
 
 This is the small, ground-up starting point for s-m-r-t 0.43.10. It contains
-one object and a profile-aware operational surface for local, self-hosted, and
+one Notes object and a profile-aware operational surface for local, self-hosted, and
 managed-cloud environments. It does not provision external providers.
 
 ## 1. Install and run
@@ -69,7 +69,7 @@ objects.
 
 ## 3. Define the first object
 
-`src/lib/objects/Item.ts` is the only example. It exposes the same CRUD action
+`src/lib/objects/Note.ts` is the only example. It exposes the same CRUD action
 set to REST, MCP, WebMCP definitions, and the CLI, while limiting writable REST
 fields and opting into tenant scoping:
 
@@ -85,26 +85,25 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 @smrt({
   api: {
     include: ['list', 'get', 'create', 'update', 'delete'],
-    writable: ['title', 'description', 'status'],
+    writable: ['title', 'body'],
   },
   cli: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
 })
-@TenantScoped({ mode: 'optional' })
-export class Item extends SmrtObject {
-  @tenantId({ nullable: true })
-  tenantId: string | null = null;
+@TenantScoped({ mode: 'required' })
+export class Note extends SmrtObject {
+  @tenantId()
+  tenantId: string = '';
 
   title: string = '';
-  description: string = '';
-  status: string = 'draft';
+  body: string = '';
 }
 
-export class ItemCollection extends SmrtCollection<Item> {
-  static readonly _itemClass = Item;
+export class NoteCollection extends SmrtCollection<Note> {
+  static readonly _itemClass = Note;
 }
 
-ObjectRegistry.registerCollection('Item', ItemCollection);
+ObjectRegistry.registerCollection('Note', NoteCollection);
 ```
 
 Add another class beside it and export the class from
@@ -182,8 +181,8 @@ These are separate records with separate responsibilities:
 - Session binds the authenticated user to an active tenant and publishes the
   resolved permission set for the request.
 
-CRUD permissions are manifest-derived: `items.read`, `items.create`,
-`items.update`, and `items.delete`. Provisioning code should sync the catalog
+CRUD permissions are manifest-derived: `notes.read`, `notes.create`,
+`notes.update`, and `notes.delete`. Provisioning code should sync the catalog
 and seed roles after the database migration:
 
 ```ts
@@ -219,17 +218,17 @@ session context directly. Return plain serializable rows:
 
 ```ts
 export const load: PageServerLoad = async ({ depends, locals }) => {
-  depends('smrt:items');
+  depends('smrt:notes');
 
-  if (!locals.permissions.includes('items.read')) {
-    return { items: [] };
+  if (!locals.permissions.includes('notes.read')) {
+    return { notes: [] };
   }
 
-  const items = await runtime.getCollection<Item>('Item');
-  const rows = await items.list({ limit: 50 });
+  const notes = await runtime.getCollection<Note>('Note');
+  const rows = await notes.list({ limit: 50 });
   return {
-    items: rows.flatMap((item) =>
-      item.id ? [{ id: item.id, title: item.title, status: item.status }] : [],
+    notes: rows.flatMap((note) =>
+      note.id ? [{ id: note.id, title: note.title, body: note.body }] : [],
     ),
   };
 };
@@ -237,8 +236,8 @@ export const load: PageServerLoad = async ({ depends, locals }) => {
 
 The page receives that data through `$props()`. Do not fetch initial page data
 from `onMount` or `$effect`; SvelteKit already serialized it into the response.
-After a mutation, call `invalidate('smrt:items')`. Only loads that declared
-`depends('smrt:items')` re-run.
+After a mutation, call `invalidate('smrt:notes')`. Only loads that declared
+`depends('smrt:notes')` re-run.
 
 ## 8. Use generated REST, MCP, WebMCP, and CLI interfaces
 
@@ -256,8 +255,8 @@ include malformed manifest content.
 
 The option stages `src/routes/api/mcp/+server.ts`, one
 `mountMcpAppRoute({ runtime, ... })` call from
-`@happyvertical/smrt-app-mcp/sveltekit` that publishes `Item` to
-principals holding `items.read` (the signed session's permissions locally),
+`@happyvertical/smrt-app-mcp/sveltekit` that publishes `Note` to
+principals holding `notes.read` (the signed session's permissions locally),
 refuses browser requests from a foreign `Origin`, and serves a bounded static
 resource with a restrictive CSP and the optional OpenAI display metadata. It
 also stages the protected-resource metadata route. For a view, mount
@@ -273,20 +272,20 @@ request nor grants tenant or workflow authority. Register `.app.json` only
 after the host creates an eligible server ID; do not copy runtime extension
 metadata into the portable manifest.
 
-The Item configuration generates:
+The Note configuration generates:
 
-- REST: `GET`/`POST /api/items` and
-  `GET`/`PUT`/`DELETE /api/items/[id]`.
-- MCP descriptors and tools for Item CRUD.
+- REST: `GET`/`POST /api/notes` and
+  `GET`/`PUT`/`DELETE /api/notes/[id]`.
+- MCP descriptors and tools for Note CRUD.
 - Web collection definitions in the virtual
   `@happyvertical/smrt-virt-web` module.
-- CLI commands for Item CRUD.
+- CLI commands for Note CRUD.
 
 Inspect the registered objects and use the example CLI:
 
 ```bash
 pnpm smrt objects
-pnpm smrt schema Item
+pnpm smrt schema Note
 ```
 
 The CLI's manifest-only `objects` and `schema` commands work directly in this
@@ -372,12 +371,12 @@ hydrated rows so the first render does not issue a duplicate request:
 
   let { data }: PageProps = $props();
 
-  const items = createSmrtCollection(getCollectionDefinition('items'), {
+  const notes = createSmrtCollection(getCollectionDefinition('notes'), {
     basePath: '/api',
-    initialData: data.items,
+    initialData: data.notes,
     staleTimeMs: 30_000,
   });
-  const view = liveCollection(items);
+  const view = liveCollection(notes);
 </script>
 
 {#each view.rows as item (item.id)}
@@ -441,7 +440,7 @@ the signed browser session. The other is an owner-minted bearer token for a
 local MCP client such as Claude Desktop through `smrt-mcp-bridge`:
 
 ```bash
-pnpm exec smrt app token --scopes items.read --label "Claude Desktop"
+pnpm exec smrt app token --scopes notes.read --label "Claude Desktop"
 pnpm exec smrt app token list
 pnpm exec smrt app token revoke <id>
 ```

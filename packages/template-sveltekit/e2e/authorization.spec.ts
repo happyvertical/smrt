@@ -20,7 +20,7 @@ test('an anonymous context cannot read diagnostics or protected domain data', as
   await page.goto('/', { waitUntil: 'networkidle' });
 
   // The generated REST surface fails closed for an anonymous caller.
-  const rest = await page.request.get(`${referenceApp.baseURL}/api/items`);
+  const rest = await page.request.get(`${referenceApp.baseURL}/api/notes`);
   expect(rest.status()).toBe(401);
 
   const diagnostics = await page.request.get(
@@ -52,7 +52,7 @@ test('a forged session fails closed at both boundaries and leaks nothing', async
   // would make the WebMCP assertion below true no matter what the server did.
   const title = `Forged-session probe ${Date.now()}`;
   const created = await ownerPage.request.post(
-    `${referenceApp.baseURL}/api/items`,
+    `${referenceApp.baseURL}/api/notes`,
     { data: { title } },
   );
   expect(created.status()).toBe(201);
@@ -83,7 +83,7 @@ test('a forged session fails closed at both boundaries and leaks nothing', async
   expect(body).not.toContain('profile');
   expect(body).not.toContain('capabilities');
 
-  const rest = await page.request.get(`${referenceApp.baseURL}/api/items`);
+  const rest = await page.request.get(`${referenceApp.baseURL}/api/notes`);
   expect([401, 403]).toContain(rest.status());
 
   // The WebMCP half fails closed too: the diagnostics component is gated on an
