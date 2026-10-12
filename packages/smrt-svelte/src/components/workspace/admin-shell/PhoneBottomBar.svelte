@@ -84,6 +84,8 @@ function accessibleName(item: PhoneBottomBarItem): string {
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-phone-bottom-bar {
     display: grid;
     grid-auto-columns: minmax(0, 1fr);
@@ -167,4 +169,5 @@ function accessibleName(item: PhoneBottomBarItem): string {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary);
   }
+}
 </style>

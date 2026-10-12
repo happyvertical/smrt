@@ -158,6 +158,8 @@ function detailsId(id: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sales-commission-breakdown {
     width: 100%;
     overflow-x: auto;
@@ -248,4 +250,5 @@ function detailsId(id: string): string {
   .adjustments th {
     background: transparent;
   }
+}
 </style>

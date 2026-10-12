@@ -353,6 +353,8 @@ function handleBlur() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-money {
     display: flex;
     flex-direction: column;
@@ -414,4 +416,5 @@ function handleBlur() {
     color: var(--smrt-color-error, #ba1a1a);
     margin-top: var(--smrt-spacing-1, 4px);
   }
+}
 </style>

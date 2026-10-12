@@ -87,6 +87,8 @@ const {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .masthead {
     border-bottom: 1px solid var(--smrt-color-outline-variant);
     background: var(--smrt-color-surface);
@@ -222,4 +224,5 @@ const {
       justify-self: unset;
     }
   }
+}
 </style>

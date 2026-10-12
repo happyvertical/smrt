@@ -166,6 +166,8 @@ const someSelected = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .unbilled-items {
     display: flex;
     flex-direction: column;
@@ -331,4 +333,5 @@ const someSelected = $derived(
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #1c1b1f);
   }
+}
 </style>

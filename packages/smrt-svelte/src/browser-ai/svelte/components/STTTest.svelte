@@ -203,6 +203,8 @@ function clearLogs() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .stt-test {
     padding: var(--smrt-spacing-md, 16px);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
@@ -344,4 +346,5 @@ function clearLogs() {
       animation: none;
     }
   }
+}
 </style>

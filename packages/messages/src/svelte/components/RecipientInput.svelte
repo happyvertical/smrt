@@ -89,6 +89,8 @@ export interface Props {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .recipient-input {
     display: flex;
     align-items: flex-start;
@@ -174,4 +176,5 @@ export interface Props {
     border: none;
     box-shadow: none;
   }
+}
 </style>

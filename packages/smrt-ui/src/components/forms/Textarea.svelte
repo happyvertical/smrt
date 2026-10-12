@@ -145,6 +145,8 @@ export function getElement(): HTMLTextAreaElement | null {
 ></textarea>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.textarea {
 		box-sizing: border-box;
 		display: block;
@@ -201,4 +203,5 @@ export function getElement(): HTMLTextAreaElement | null {
   .textarea[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
   .textarea[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .textarea { min-height: max(80px, var(--smrt-control-target-min, 0px)); }
+}
 </style>

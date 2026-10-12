@@ -137,6 +137,8 @@ onDestroy(cancel);
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .search-input {
     position: relative;
     display: flex;
@@ -204,4 +206,5 @@ onDestroy(cancel);
       max-inline-size: none;
     }
   }
+}
 </style>

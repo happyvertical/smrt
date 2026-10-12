@@ -53,6 +53,8 @@ onMount(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .app {
     width: 100%;
     min-height: 100vh;
@@ -76,4 +78,5 @@ onMount(() => {
     color: var(--smrt-color-on-surface-variant, #6b7280);
     font-size: var(--smrt-typography-body-large-size, 1.125rem);
   }
+}
 </style>

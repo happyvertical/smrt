@@ -122,6 +122,8 @@ function handleClick() {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   :global(.smrt-dictation-button) {
     position: relative;
     flex-shrink: 0;
@@ -232,4 +234,5 @@ function handleClick() {
       box-shadow: 0 0 0 4px var(--smrt-color-error, #ba1a1a);
     }
   }
+}
 </style>

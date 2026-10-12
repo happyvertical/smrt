@@ -69,6 +69,8 @@ function onKeydown(event: KeyboardEvent) {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .tooltip-wrap {
     position: relative;
     display: inline-flex;
@@ -117,4 +119,5 @@ function onKeydown(event: KeyboardEvent) {
     transform: translateY(-50%);
     margin-left: var(--smrt-spacing-1, 4px);
   }
+}
 </style>

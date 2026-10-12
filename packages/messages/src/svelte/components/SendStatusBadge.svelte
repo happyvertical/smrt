@@ -39,6 +39,8 @@ export interface Props {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .send-status-badge {
     display: inline-flex;
     align-items: center;
@@ -63,4 +65,5 @@ export interface Props {
   .icon {
     font-size: inherit;
   }
+}
 </style>

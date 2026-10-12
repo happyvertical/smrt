@@ -433,6 +433,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-workspace-shell {
     --smrt-ws-sidebar-width: 280px;
     --smrt-ws-sidebar-collapsed-width: 96px;
@@ -941,4 +943,5 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       text-align: left;
     }
   }
+}
 </style>

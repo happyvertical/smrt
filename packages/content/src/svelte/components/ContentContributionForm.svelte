@@ -207,6 +207,8 @@ function handleSubmit(event: SubmitEvent) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .contribution-form-shell :global(.contribution-form) {
     display: grid;
     gap: 0.85rem;
@@ -236,4 +238,5 @@ function handleSubmit(event: SubmitEvent) {
     gap: 0.75rem;
     flex-wrap: wrap;
   }
+}
 </style>

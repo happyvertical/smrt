@@ -218,6 +218,8 @@ $effect(() => {
 </dialog>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .agent-chat {
     display: flex;
     flex-direction: column;
@@ -530,4 +532,5 @@ $effect(() => {
       animation: none;
     }
   }
+}
 </style>

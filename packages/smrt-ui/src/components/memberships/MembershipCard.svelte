@@ -72,6 +72,8 @@ function formatDate(date: Date | string | null | undefined): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .membership-card {
     padding: 1rem;
     background: var(--smrt-color-surface);
@@ -165,4 +167,5 @@ function formatDate(date: Date | string | null | undefined): string {
   .action-btn.danger:hover {
     background: var(--smrt-color-error-container);
   }
+}
 </style>

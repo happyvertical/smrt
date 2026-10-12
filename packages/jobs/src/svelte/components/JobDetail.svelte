@@ -162,6 +162,8 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .job-detail {
     width: 100%;
   }
@@ -253,4 +255,5 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
     background: var(--smrt-color-error-container, #ffdad6);
     color: var(--smrt-color-on-error-container, #410002);
   }
+}
 </style>

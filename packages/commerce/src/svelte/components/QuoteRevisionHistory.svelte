@@ -48,8 +48,11 @@ function amount(money: QuoteMoneyMinor): string {
   </ol>
 </section>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 .quote-history { min-width: 0; color: var(--smrt-color-on-surface); overflow-wrap: anywhere; }
 ol { padding-inline-start: var(--smrt-spacing-6, 1.5rem); }
 li { margin-block: var(--smrt-spacing-4, 1rem); }
 article { padding: var(--smrt-spacing-4, 1rem); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md, 0.5rem); }
+}
 </style>

@@ -44,6 +44,8 @@ const hostname = $derived.by(() => {
 </a>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .link-preview {
     display: flex;
     border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
@@ -105,4 +107,5 @@ const hostname = $derived.by(() => {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     color: var(--smrt-color-outline, #74777f);
   }
+}
 </style>

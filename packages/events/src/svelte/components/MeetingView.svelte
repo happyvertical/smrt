@@ -132,6 +132,8 @@ const hasDocuments = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .meeting-view {
     --smrt-meeting-view-bg: var(--smrt-color-surface, #ffffff);
     --smrt-meeting-view-border: var(--smrt-color-surface-container-high, #e5e7eb);
@@ -320,4 +322,5 @@ const hasDocuments = $derived(
       grid-template-columns: 1fr;
     }
   }
+}
 </style>

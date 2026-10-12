@@ -1848,6 +1848,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 />
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .editor-drawer {
     margin: 0 0 2rem 0;
     padding: 0;
@@ -2279,4 +2281,5 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
     color: var(--smrt-color-on-primary-container);
   }
+}
 </style>

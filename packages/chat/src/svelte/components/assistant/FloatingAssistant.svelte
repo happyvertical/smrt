@@ -212,6 +212,8 @@ function handleKeydown(event: KeyboardEvent) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .floating-assistant {
     position: fixed;
     z-index: var(--smrt-z-index-overlay, 1200);
@@ -306,4 +308,5 @@ function handleKeydown(event: KeyboardEvent) {
       transition: none;
     }
   }
+}
 </style>

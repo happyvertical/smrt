@@ -77,6 +77,8 @@ let { campaigns = [], selectedCampaignId, locale, onSelect }: Props = $props();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .campaign-list {
     width: 100%;
     overflow-x: auto;
@@ -141,4 +143,5 @@ let { campaigns = [], selectedCampaignId, locale, onSelect }: Props = $props();
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+}
 </style>

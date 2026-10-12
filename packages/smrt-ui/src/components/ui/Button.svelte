@@ -159,6 +159,8 @@ function handleClick(event: MouseEvent) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .button {
     display: inline-flex;
     align-items: center;
@@ -315,4 +317,5 @@ function handleClick(event: MouseEvent) {
   .button[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
   .button[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .button { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+}
 </style>

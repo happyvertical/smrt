@@ -63,6 +63,8 @@ const {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .empty-state {
     text-align: center;
     padding: var(--smrt-spacing-3xl, 3rem);
@@ -72,4 +74,5 @@ const {
   .empty-state p {
     font: var(--smrt-typography-body-large-font, 1.125rem / 1.5 sans-serif);
   }
+}
 </style>

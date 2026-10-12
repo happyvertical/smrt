@@ -60,6 +60,8 @@ const { product, onEdit, onDelete }: Props = $props();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .product-card {
     border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
     border-radius: var(--smrt-radius-md, 8px);
@@ -144,4 +146,5 @@ const { product, onEdit, onDelete }: Props = $props();
     padding-top: 0.75rem;
     border-top: 1px solid var(--smrt-color-outline-variant, #f3f4f6);
   }
+}
 </style>

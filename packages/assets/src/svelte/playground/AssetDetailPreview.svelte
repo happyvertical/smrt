@@ -85,6 +85,8 @@ function handleEdit() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .preview-shell {
     display: grid;
     gap: 1rem;
@@ -128,4 +130,5 @@ function handleEdit() {
     color: var(--smrt-color-primary, #0f766e);
     font-size: var(--smrt-typography-body-large-size, 0.95rem);
   }
+}
 </style>

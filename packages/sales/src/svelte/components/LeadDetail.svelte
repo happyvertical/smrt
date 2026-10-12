@@ -384,6 +384,8 @@ function isOpenTask(activity: SalesActivityView): boolean {
 </article>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sales-lead-detail {
     display: flex;
     flex-direction: column;
@@ -537,4 +539,5 @@ function isOpenTask(activity: SalesActivityView): boolean {
       width: 100%;
     }
   }
+}
 </style>

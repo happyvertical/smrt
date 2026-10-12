@@ -190,6 +190,8 @@ const isLastPage = $derived(currentPage === totalPages);
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .pagination {
     display: flex;
     justify-content: center;
@@ -293,4 +295,5 @@ const isLastPage = $derived(currentPage === totalPages);
       padding: 0 var(--smrt-spacing-2, 0.5rem);
     }
   }
+}
 </style>

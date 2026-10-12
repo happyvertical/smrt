@@ -520,6 +520,8 @@ function closeTry() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .page {
     display: flex;
     flex-direction: column;
@@ -751,4 +753,5 @@ function closeTry() {
       white-space: nowrap;
     }
   }
+}
 </style>

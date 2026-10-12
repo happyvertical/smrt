@@ -53,5 +53,8 @@ $effect(() => {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-shell-section-icon { display: inline-grid; place-items: center; flex: 0 0 auto; }
+}
 </style>

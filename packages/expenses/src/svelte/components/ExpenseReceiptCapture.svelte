@@ -47,6 +47,9 @@ const id = $props.id();
   {/if}
 </section>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .receipt-capture { display: grid; gap: var(--smrt-spacing-3); min-width: 0; overflow-wrap: anywhere; }
   h3, p { margin: 0; }
+}
 </style>

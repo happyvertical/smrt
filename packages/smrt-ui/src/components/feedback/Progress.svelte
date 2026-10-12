@@ -51,6 +51,8 @@ const displayValue = $derived(
   </div>
 {/if}
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .progress--linear { display: flex; align-items: center; gap: var(--smrt-spacing-2); width: 100%; }
   .progress--linear .track { position: relative; display: block; flex: 1; height: 4px; overflow: hidden; border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-highest); }
   .progress--linear.progress--sm .track { height: 2px; } .progress--linear.progress--lg .track { height: 8px; }
@@ -66,4 +68,5 @@ const displayValue = $derived(
   .progress--circular > span { position: absolute; font: var(--smrt-typography-label-small-font); }
   @keyframes linear-progress { from { left: -40%; } to { left: 105%; } } @keyframes spin { to { transform: rotate(270deg); } }
   @media (prefers-reduced-motion: reduce) { .indicator { transition: none !important; animation-duration: 2.5s !important; } }
+}
 </style>

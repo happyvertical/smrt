@@ -275,6 +275,8 @@
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .tools-dock {
     --smrt-tools-dock-rail-width: 3.25rem;
     --smrt-tools-dock-panel-width: 420px;
@@ -568,4 +570,5 @@
       padding: 0.85rem;
     }
   }
+}
 </style>

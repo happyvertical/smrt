@@ -213,6 +213,8 @@ const errorList = $derived(
 </Form>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   :global(.party-form) { display: grid; gap: var(--smrt-spacing-5); min-inline-size: 0; padding-block-end: var(--smrt-spacing-8); }
   .native-default-submit { position: absolute; inline-size: 1px; block-size: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .form-error { margin: 0; padding: var(--smrt-spacing-4); border-inline-start: 4px solid var(--smrt-color-error); background: var(--smrt-color-error-container); color: var(--smrt-color-on-error-container); border-radius: var(--smrt-radius-small); }
@@ -221,4 +223,5 @@ const errorList = $derived(
   .locked-value { color: var(--smrt-color-on-surface-variant); }
   .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--smrt-spacing-4); }
   @media (max-width: 42rem) { .field-grid { grid-template-columns: minmax(0, 1fr); } }
+}
 </style>

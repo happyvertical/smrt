@@ -21,6 +21,8 @@ const display = $derived(percent === null ? 'new' : `${Math.abs(percent)}%`);
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.trend-badge {
 		display: inline-flex;
 		align-items: center;
@@ -50,4 +52,5 @@ const display = $derived(percent === null ? 'new' : `${Math.abs(percent)}%`);
 	.trend-arrow {
 		font-size: var(--smrt-typography-label-large-size, 0.875rem);
 	}
+}
 </style>

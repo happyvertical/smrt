@@ -82,6 +82,8 @@ const lastIndex = $derived(crumbs.length - 1);
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-breadcrumbs {
     width: 100%;
   }
@@ -138,4 +140,5 @@ const lastIndex = $derived(crumbs.length - 1);
       margin: 0 0.35rem;
     }
   }
+}
 </style>

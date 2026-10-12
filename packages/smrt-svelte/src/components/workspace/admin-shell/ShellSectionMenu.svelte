@@ -242,6 +242,8 @@ function onmove(move: SortableItemMove<SortableItem>): void {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-section-menu { min-inline-size: 0; }
   .smrt-section-menu__list { display: grid; gap: var(--smrt-spacing-1); margin: 0; padding: 0; list-style: none; }
   .smrt-section-menu__item { position: relative; display: flex; align-items: center; gap: var(--smrt-spacing-3); min-inline-size: 0; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
@@ -287,4 +289,5 @@ function onmove(move: SortableItemMove<SortableItem>): void {
   .smrt-section-menu__row--muted { opacity: 0.55; }
   .smrt-section-menu__row strong { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--smrt-typography-weight-medium, 500); }
   :global(.smrt-section-menu__name) { flex: 1 1 auto; min-inline-size: 0; }
+}
 </style>

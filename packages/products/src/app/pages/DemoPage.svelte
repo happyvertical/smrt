@@ -183,6 +183,8 @@ function handleCustomSubmit(data: ProductData) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .demo-page {
     min-height: 100vh;
     background: linear-gradient(
@@ -333,4 +335,5 @@ function handleCustomSubmit(data: ProductData) {
       font-size: var(--smrt-typography-headline-large-size, 2rem);
     }
   }
+}
 </style>

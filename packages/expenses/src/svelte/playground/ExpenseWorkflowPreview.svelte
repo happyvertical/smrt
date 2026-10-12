@@ -54,4 +54,9 @@ function submit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
   <ExpenseReviewQueue expenses={expenses} />
   <ExpenseReviewPanel expense={{ description: 'Supplier materials', amount: 12500, currency: 'CAD', incurredOn: '2026-10-03', statusLabel: 'Unreviewed' }} duplicates={[{ id: 'expense-other', label: 'Possible matching expense', reason: 'The server found matching receipt evidence. A reviewer must decide.' }]} history={[{ id: 'correction', label: 'Description corrected', detail: 'Caller-provided correction history' }]} receipts={{ attachments: [{ id: 'receipt', name: 'Receipt.pdf', mimeType: 'application/pdf' }] }} />
 </div>
-<style>.preview { display: grid; gap: var(--smrt-spacing-4); }</style>
+<style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
+.preview { display: grid; gap: var(--smrt-spacing-4); }
+}
+</style>

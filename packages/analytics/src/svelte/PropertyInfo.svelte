@@ -82,6 +82,8 @@ const lastSyncFormatted = $derived.by(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.property-info {
 		padding: 1rem;
 		background: var(--smrt-color-surface);
@@ -142,4 +144,5 @@ const lastSyncFormatted = $derived.by(() => {
 		color: var(--smrt-color-on-surface-variant);
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 	}
+}
 </style>

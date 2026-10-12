@@ -128,6 +128,8 @@ const successRateFormatted = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .job-stats {
     width: 100%;
   }
@@ -239,4 +241,5 @@ const successRateFormatted = $derived(
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
+}
 </style>

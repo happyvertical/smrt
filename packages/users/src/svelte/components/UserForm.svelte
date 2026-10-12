@@ -114,6 +114,8 @@ function handleSubmit() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .user-form-shell :global(.user-form) {
     display: flex;
     flex-direction: column;
@@ -142,4 +144,5 @@ function handleSubmit() {
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-top: var(--smrt-spacing-sm, 0.5rem);
   }
+}
 </style>

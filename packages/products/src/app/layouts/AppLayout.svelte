@@ -52,6 +52,8 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .app-layout {
     min-height: 100vh;
     display: flex;
@@ -199,4 +201,5 @@ const { t } = useI18n();
       justify-content: center;
     }
   }
+}
 </style>

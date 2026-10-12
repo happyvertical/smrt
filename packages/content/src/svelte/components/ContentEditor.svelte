@@ -1521,6 +1521,8 @@ function removeAsset(id: string) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .form-container {
     width: 100%;
     margin: 0 auto;
@@ -2302,4 +2304,5 @@ function removeAsset(id: string) {
     from { opacity: 0; transform: scale(0.96); }
     to { opacity: 1; transform: scale(1); }
   }
+}
 </style>

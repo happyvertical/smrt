@@ -65,6 +65,8 @@ const { tabs, onselect, onclose }: Props = $props();
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .tab-list {
     display: flex;
     align-items: flex-end;
@@ -158,4 +160,5 @@ const { tabs, onselect, onclose }: Props = $props();
       transition: none;
     }
   }
+}
 </style>

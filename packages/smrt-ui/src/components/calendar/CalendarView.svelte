@@ -819,6 +819,8 @@ $effect(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .cv {
     --smrt-calendar-view-border: var(--smrt-color-outline-variant, #c4c6d0);
     --smrt-calendar-view-surface: var(--smrt-color-surface, #ffffff);
@@ -1300,4 +1302,5 @@ $effect(() => {
       scroll-behavior: auto;
     }
   }
+}
 </style>

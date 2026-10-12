@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
 import { onMount, untrack } from 'svelte';
+import { SMRT_CASCADE_LAYERS_CSS } from '../styles/layers.js';
 import { setThemeContext, type ThemeContext } from './context.svelte.js';
 import { generateThemeVariables } from './css-generator.js';
 import { availablePresets, getTheme, isValidPreset } from './registry.js';
@@ -341,6 +342,11 @@ $effect(() => {
 });
 </script>
 
+<svelte:head>
+  <!-- Declares the smrt cascade layer order before any layered component rule (#3823). -->
+  <svelte:element this={'style'} id="smrt-cascade-layers">{SMRT_CASCADE_LAYERS_CSS}</svelte:element>
+</svelte:head>
+
 <div
   class="smrt-theme-root"
   class:dark={isDark}
@@ -354,6 +360,8 @@ $effect(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-theme-root {
     /* Ensure theme variables cascade properly */
     /* Note: Using block display instead of contents so styles apply correctly */
@@ -385,4 +393,5 @@ $effect(() => {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
+}
 </style>

@@ -158,6 +158,8 @@ function onItemKeydown(event: KeyboardEvent, index: number, item: FlatNode) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .tree {
     display: flex;
     flex-direction: column;
@@ -206,4 +208,5 @@ function onItemKeydown(event: KeyboardEvent, index: number, item: FlatNode) {
       transition: none;
     }
   }
+}
 </style>

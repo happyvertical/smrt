@@ -79,6 +79,8 @@ const {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .toolbar {
     display: flex;
     align-items: center;
@@ -142,4 +144,5 @@ const {
     color: var(--smrt-color-error, #ba1a1a);
     border-color: var(--smrt-color-error, #ba1a1a);
   }
+}
 </style>

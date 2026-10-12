@@ -102,6 +102,8 @@ const displayLabel = $derived.by(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .progress-container {
     width: 100%;
   }
@@ -159,4 +161,5 @@ const displayLabel = $derived.by(() => {
   .color-primary { background-color: var(--smrt-color-primary, #005ac1); }
   .color-tertiary { background-color: var(--smrt-color-tertiary, #6b5778); }
   .color-error { background-color: var(--smrt-color-error, #ba1a1a); }
+}
 </style>

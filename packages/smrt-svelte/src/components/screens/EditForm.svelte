@@ -284,6 +284,8 @@ const formError = $derived(
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-edit-form {
     max-width: 40rem;
   }
@@ -310,4 +312,5 @@ const formError = $derived(
   .smrt-edit-form__error {
     color: var(--smrt-color-error, #b42318);
   }
+}
 </style>

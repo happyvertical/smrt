@@ -181,6 +181,8 @@ const placementClass = $derived(`modal--${placement}`);
 </dialog>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .modal {
     position: fixed;
     inset: 0;
@@ -394,4 +396,5 @@ const placementClass = $derived(`modal--${placement}`);
       max-height: 100%;
     }
   }
+}
 </style>

@@ -530,6 +530,8 @@ async function handleSendMessage(content: string) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .content-agent-chat-container {
     display: flex;
     flex-direction: column;
@@ -669,4 +671,5 @@ async function handleSendMessage(content: string) {
   .new-topic-row :global(.new-topic-input:focus) {
     border-color: var(--smrt-color-primary, #005ac1);
   }
+}
 </style>

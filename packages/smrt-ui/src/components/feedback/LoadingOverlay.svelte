@@ -132,6 +132,8 @@ function handleKeydown(e: KeyboardEvent) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.loading-overlay {
 		position: fixed;
 		inset: 0;
@@ -283,4 +285,5 @@ function handleKeydown(e: KeyboardEvent) {
 			transition: none;
 		}
 	}
+}
 </style>

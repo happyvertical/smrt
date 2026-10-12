@@ -74,6 +74,8 @@ setFormGroupContext(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.form-group {
 		margin-bottom: 1rem;
 	}
@@ -91,4 +93,5 @@ setFormGroupContext(
 		font-size: var(--smrt-typography-body-small-size, 0.75rem);
 		color: var(--smrt-color-error, #ba1a1a);
 	}
+}
 </style>

@@ -183,6 +183,8 @@ function handleCancelForm() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .product-catalog {
     max-width: 1200px;
     margin: 0 auto;
@@ -288,4 +290,5 @@ function handleCancelForm() {
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
+}
 </style>

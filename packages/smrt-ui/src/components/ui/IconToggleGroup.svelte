@@ -26,6 +26,8 @@ const { label, children, class: className = '' }: Props = $props();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .icon-toggle-group {
     display: inline-flex;
     flex-wrap: wrap;
@@ -53,4 +55,5 @@ const { label, children, class: className = '' }: Props = $props();
   .icon-toggle-group :global(.icon-toggle:focus-visible) {
     z-index: 1;
   }
+}
 </style>

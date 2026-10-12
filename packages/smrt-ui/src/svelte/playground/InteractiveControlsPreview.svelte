@@ -115,6 +115,8 @@ const identity = (controlId: string) => ({
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .workbench { display: grid; gap: var(--smrt-spacing-5); color: var(--smrt-color-on-surface); }
   header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--smrt-spacing-5); padding-bottom: var(--smrt-spacing-4); border-bottom: 1px solid var(--smrt-color-outline-variant); }
   h4, h5, p { margin: 0; } h4 { font: var(--smrt-typography-headline-small-font); } h5 { margin-bottom: var(--smrt-spacing-3); font: var(--smrt-typography-title-medium-font); }
@@ -127,4 +129,5 @@ const identity = (controlId: string) => ({
   .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-5); align-items: start; }
   .grid.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   @media (max-width: 900px) { header { flex-direction: column; } .agent-actions { justify-content: flex-start; } .grid, .grid.compact { grid-template-columns: 1fr; } }
+}
 </style>

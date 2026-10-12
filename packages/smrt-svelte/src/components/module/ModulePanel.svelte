@@ -85,6 +85,8 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .module-panel-placeholder {
     display: flex;
     flex-direction: column;
@@ -131,4 +133,5 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #94a3b8);
   }
+}
 </style>

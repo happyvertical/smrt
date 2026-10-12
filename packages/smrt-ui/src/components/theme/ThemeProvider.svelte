@@ -61,6 +61,8 @@ const cssVariables = $derived.by(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-theme-provider {
     display: contents;
     /* Base typography and other global resets can go here later */
@@ -68,4 +70,5 @@ const cssVariables = $derived.by(() => {
     background-color: var(--smrt-color-background);
     font-family: var(--smrt-font-family, Roboto, sans-serif);
   }
+}
 </style>

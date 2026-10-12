@@ -259,6 +259,8 @@ $effect(() => {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .inbox,
   .inbox__header,
   .inbox__layout,
@@ -332,4 +334,5 @@ $effect(() => {
       grid-template-columns: 1fr;
     }
   }
+}
 </style>

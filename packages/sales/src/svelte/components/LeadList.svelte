@@ -256,6 +256,8 @@ function handleAssign(leadId: string, event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sales-lead-list {
     width: 100%;
     overflow-x: auto;
@@ -347,4 +349,5 @@ function handleAssign(leadId: string, event: Event) {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+}
 </style>

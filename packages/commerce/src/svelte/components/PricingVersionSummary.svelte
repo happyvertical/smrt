@@ -39,8 +39,11 @@ function amount(value: number | null): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 .pricing-summary { min-width: 0; overflow-wrap: anywhere; }
 .pricing-summary ul { display: grid; gap: var(--smrt-spacing-3); padding-inline-start: var(--smrt-spacing-5); }
 .pricing-summary li { min-width: 0; }
 .pricing-summary li strong { display: block; }
+}
 </style>

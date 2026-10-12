@@ -93,6 +93,8 @@ function formatUpdated(iso: string | null): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .case-queue {
     list-style: none;
     margin: 0;
@@ -148,4 +150,5 @@ function formatUpdated(iso: string | null): string {
     color: var(--smrt-color-on-surface-variant, inherit);
     padding: 1rem 0;
   }
+}
 </style>

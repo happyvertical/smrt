@@ -64,6 +64,8 @@ $effect(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-overview-assistant-undo {
     display: flex;
     flex-wrap: wrap;
@@ -74,4 +76,5 @@ $effect(() => {
   .smrt-overview-assistant-undo__message {
     flex: 1 1 12rem;
   }
+}
 </style>

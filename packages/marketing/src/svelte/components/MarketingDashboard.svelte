@@ -86,6 +86,8 @@ const summary = $derived(summarizeMarketingDashboard(campaigns));
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .marketing-dashboard {
     display: flex;
     flex-direction: column;
@@ -130,4 +132,5 @@ const summary = $derived(summarizeMarketingDashboard(campaigns));
   .surface {
     min-width: 0;
   }
+}
 </style>

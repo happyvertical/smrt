@@ -25,6 +25,8 @@ let { label, for: forId, id, required = false }: Props = $props();
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-field-label {
     display: block;
     margin-bottom: var(--smrt-spacing-1, 4px);
@@ -41,4 +43,5 @@ let { label, for: forId, id, required = false }: Props = $props();
     color: var(--smrt-color-error, #ba1a1a);
     margin-left: var(--smrt-spacing-1, 4px);
   }
+}
 </style>

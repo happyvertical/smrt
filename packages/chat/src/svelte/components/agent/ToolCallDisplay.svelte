@@ -189,6 +189,8 @@ function formatDuration(ms: number | undefined): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .tool-call {
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: var(--smrt-radius-medium, 8px);
@@ -414,4 +416,5 @@ function formatDuration(ms: number | undefined): string {
       animation: none;
     }
   }
+}
 </style>

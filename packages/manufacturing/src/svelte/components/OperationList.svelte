@@ -123,6 +123,8 @@ const showActions = $derived(Boolean(onretire || onreinstate));
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .operation-list-scroll {
     overflow-x: auto;
   }
@@ -167,4 +169,5 @@ const showActions = $derived(Boolean(onretire || onreinstate));
   .operation-list-empty {
     padding: 1rem 0;
   }
+}
 </style>

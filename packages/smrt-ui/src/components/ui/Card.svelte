@@ -52,6 +52,8 @@ const {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   /*
    * Themeable look (app-level custom properties; defaults keep the stock look):
    *   --smrt-card-border      edge of default and elevated cards
@@ -134,4 +136,5 @@ const {
   .padding-lg .card-footer {
     padding: var(--smrt-spacing-8);
   }
+}
 </style>

@@ -66,6 +66,8 @@ function getInitial(name: string): string {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .read-receipts {
     display: inline-flex;
     align-items: center;
@@ -124,4 +126,5 @@ function getInitial(name: string): string {
     font-size: var(--smrt-typography-label-small-size, 0.5rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
+}
 </style>

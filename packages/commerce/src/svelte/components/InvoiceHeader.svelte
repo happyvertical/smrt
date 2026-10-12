@@ -184,6 +184,8 @@ const isOverdue = $derived.by(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .invoice-header {
     display: flex;
     justify-content: space-between;
@@ -275,4 +277,5 @@ const isOverdue = $derived.by(() => {
   .meta-item.paid .meta-value {
     color: var(--smrt-color-tertiary, #006c4c);
   }
+}
 </style>

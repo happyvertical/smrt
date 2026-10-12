@@ -376,6 +376,8 @@ function handleSave(data: ContentData) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .governed-editor {
     display: flex;
     flex-direction: column;
@@ -432,4 +434,5 @@ function handleSave(data: ContentData) {
     padding-left: 1.25rem;
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

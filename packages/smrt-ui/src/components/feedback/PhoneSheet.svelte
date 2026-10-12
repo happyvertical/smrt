@@ -129,6 +129,8 @@ function onkeydown(event: KeyboardEvent): void {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .phone-sheet {
     position: absolute;
     inset: 0;
@@ -221,4 +223,5 @@ function onkeydown(event: KeyboardEvent): void {
       transition: none;
     }
   }
+}
 </style>

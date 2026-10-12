@@ -62,6 +62,8 @@ function press(event: MouseEvent, toggle: DockToggle): void {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-dock-toggles {
     display: flex;
     align-items: center;
@@ -99,4 +101,5 @@ function press(event: MouseEvent, toggle: DockToggle): void {
     opacity: 0.5;
     cursor: default;
   }
+}
 </style>

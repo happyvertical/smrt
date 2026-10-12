@@ -60,6 +60,8 @@ function formatBytes(bytes: number): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .download-progress {
     width: 100%;
     padding: var(--smrt-spacing-md, 12px);
@@ -138,4 +140,5 @@ function formatBytes(bytes: number): string {
       animation: none;
     }
   }
+}
 </style>

@@ -109,6 +109,8 @@ function methodLabel(method: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .empty {
     margin: 0;
     color: var(--smrt-color-on-surface-variant, #64748b);
@@ -242,4 +244,5 @@ function methodLabel(method: string): string {
     color: var(--smrt-color-on-surface-variant, #64748b);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
+}
 </style>

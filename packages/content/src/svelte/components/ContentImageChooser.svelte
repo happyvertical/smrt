@@ -97,6 +97,8 @@ function cycle(delta: number) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .content-image-chooser {
     display: inline-flex;
     align-items: center;
@@ -142,4 +144,5 @@ function cycle(delta: number) {
     object-fit: cover;
     background: var(--smrt-color-surface-container-high);
   }
+}
 </style>

@@ -168,6 +168,8 @@ const { t } = useI18n();
 {/each}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .assistant-dock-choices {
     display: grid;
     gap: 0.5rem;
@@ -305,5 +307,5 @@ const { t } = useI18n();
       animation: none;
     }
   }
-
+}
 </style>

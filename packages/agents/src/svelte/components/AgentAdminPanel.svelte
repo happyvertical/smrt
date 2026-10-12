@@ -78,6 +78,8 @@ async function handleSave(newConfig: unknown) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.no-panel {
 		display: flex;
 		flex-direction: column;
@@ -116,4 +118,5 @@ async function handleSave(newConfig: unknown) {
 		font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
 		color: var(--smrt-color-on-surface-variant, #94a3b8);
 	}
+}
 </style>

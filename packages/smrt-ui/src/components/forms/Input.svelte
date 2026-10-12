@@ -222,6 +222,8 @@ export function getElement(): HTMLInputElement | null {
 />
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.input {
 		box-sizing: border-box;
 		display: block;
@@ -278,4 +280,5 @@ export function getElement(): HTMLInputElement | null {
   .input[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
   .input[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .input { min-height: var(--smrt-control-target-min, 0px); }
+}
 </style>

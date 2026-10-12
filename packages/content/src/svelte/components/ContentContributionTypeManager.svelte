@@ -268,6 +268,8 @@ function handleSubmit() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .manager,
   .layout,
   .list,
@@ -308,4 +310,5 @@ function handleSubmit() {
       grid-template-columns: 1fr;
     }
   }
+}
 </style>

@@ -154,6 +154,8 @@ useControlRegistration(() => {
 </label>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   /* The visible box stays 18px. A transparent 44x44 hit area (WCAG 2.5.8 / M3 touch target) is
      centred on it with ::before, so clicks nearby still land on the wrapping <label>. It adds no
      layout. The box and the label text sit above every hit area (z-index 1 over 0), so one
@@ -191,4 +193,5 @@ useControlRegistration(() => {
   .checkbox[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
   .checkbox[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .checkbox { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+}
 </style>

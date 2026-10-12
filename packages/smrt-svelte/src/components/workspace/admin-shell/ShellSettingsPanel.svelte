@@ -92,6 +92,8 @@ function conflictFor(edge: PanelEdge): string | null {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-shell-settings-panel {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -146,4 +148,5 @@ function conflictFor(edge: PanelEdge): string | null {
       flex-direction: column;
     }
   }
+}
 </style>

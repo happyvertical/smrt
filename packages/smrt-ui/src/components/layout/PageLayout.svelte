@@ -33,6 +33,8 @@ const {
 </Container>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .page-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -58,4 +60,5 @@ const {
       padding-block: var(--smrt-spacing-6) var(--smrt-spacing-10);
     }
   }
+}
 </style>

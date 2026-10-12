@@ -80,6 +80,8 @@ onMount(async () => {
 </Provider>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .live-products-page {
     max-width: 1200px;
     margin: 0 auto;
@@ -110,4 +112,5 @@ onMount(async () => {
     padding: 2rem 1rem;
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
+}
 </style>

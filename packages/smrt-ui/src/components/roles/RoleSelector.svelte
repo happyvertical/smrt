@@ -189,6 +189,8 @@ $effect(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .role-selector {
     position: relative;
     width: 100%;
@@ -319,4 +321,5 @@ $effect(() => {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
+}
 </style>

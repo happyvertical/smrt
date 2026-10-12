@@ -116,6 +116,8 @@ useControlRegistration(() => {
   <span class="label">{label}</span><span class="description">{files.length ? `${files.length} file${files.length === 1 ? '' : 's'} selected` : description}</span>
 </label>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .file-picker { display: inline-flex; flex-direction: column; gap: var(--smrt-spacing-1); padding: var(--smrt-spacing-3) var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
   .file-picker.dropzone { width: 100%; min-height: 8rem; align-items: center; justify-content: center; border-style: dashed; text-align: center; }
   .file-picker.dragging { border-color: var(--smrt-color-primary); background: var(--smrt-color-primary-container); }
@@ -123,4 +125,5 @@ useControlRegistration(() => {
   input:focus-visible ~ .label { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
   .label { font: var(--smrt-typography-label-large-font); } .description { font: var(--smrt-typography-body-small-font); color: var(--smrt-color-on-surface-variant); }
   .file-picker[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
+}
 </style>

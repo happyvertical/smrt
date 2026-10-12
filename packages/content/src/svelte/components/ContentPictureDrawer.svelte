@@ -428,6 +428,8 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .content-picture-drawer {
     display: grid;
     gap: 0.75rem;
@@ -610,4 +612,5 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
   .drawer-actions :global(button) {
     min-height: 2.75rem;
   }
+}
 </style>

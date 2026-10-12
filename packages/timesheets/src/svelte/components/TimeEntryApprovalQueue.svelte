@@ -176,6 +176,8 @@ function formatAmount(amount: number, currency = 'USD'): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .time-approval-queue {
     list-style: none;
     margin: 0;
@@ -260,4 +262,5 @@ function formatAmount(amount: number, currency = 'USD'): string {
     color: var(--smrt-color-on-surface-variant, inherit);
     padding: 1rem 0;
   }
+}
 </style>

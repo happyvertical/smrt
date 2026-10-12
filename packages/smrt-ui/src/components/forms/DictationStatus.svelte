@@ -118,6 +118,8 @@ function errorText(kind: DictationErrorKind | null): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-dictation-status {
     display: contents;
   }
@@ -189,4 +191,5 @@ function errorText(kind: DictationErrorKind | null): string {
     background: var(--smrt-color-error-container, #ffdad6);
     color: var(--smrt-color-on-error-container, #410002);
   }
+}
 </style>

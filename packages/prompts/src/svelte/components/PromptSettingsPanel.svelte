@@ -231,6 +231,8 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .prompt-settings {
     display: flex;
     flex-direction: column;
@@ -350,4 +352,5 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
       grid-template-columns: 1fr;
     }
   }
+}
 </style>

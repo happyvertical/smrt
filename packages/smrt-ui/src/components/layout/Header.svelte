@@ -31,6 +31,8 @@ const { logo, nav }: Props = $props();
 </header>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .site-header {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
@@ -85,4 +87,5 @@ const { logo, nav }: Props = $props();
       font-size: var(--smrt-typography-headline-medium-size);
     }
   }
+}
 </style>

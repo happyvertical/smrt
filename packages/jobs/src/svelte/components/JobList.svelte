@@ -306,6 +306,8 @@ const sortColumns = $derived([
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .job-list-container {
     width: 100%;
     overflow-x: auto;
@@ -459,4 +461,5 @@ const sortColumns = $derived([
   .job-list__empty {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
+}
 </style>

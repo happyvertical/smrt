@@ -91,6 +91,8 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .time-summary {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -181,4 +183,5 @@ const { t } = useI18n();
       grid-template-columns: 1fr 1fr;
     }
   }
+}
 </style>

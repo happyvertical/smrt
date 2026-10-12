@@ -80,6 +80,8 @@ function handleCreate(data: {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .preview-shell {
     display: grid;
     gap: 1rem;
@@ -148,4 +150,5 @@ function handleCreate(data: {
   .summary dd {
     color: var(--smrt-color-on-surface, #172033);
   }
+}
 </style>

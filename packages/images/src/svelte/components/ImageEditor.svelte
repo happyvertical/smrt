@@ -283,6 +283,8 @@ async function handleAIEdit() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-image-editor {
     display: flex;
     flex-direction: column;
@@ -466,4 +468,5 @@ async function handleAIEdit() {
     border-radius: var(--smrt-radius-sm, 4px);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
+}
 </style>

@@ -102,6 +102,8 @@ function handleKeydown(e: KeyboardEvent) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .form-mic-icon {
     display: inline-flex;
     align-items: center;
@@ -179,4 +181,5 @@ function handleKeydown(e: KeyboardEvent) {
       animation: none;
     }
   }
+}
 </style>

@@ -250,6 +250,8 @@ useControlRegistration(() => {
   {/each}
 </div>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .segmented { display: inline-flex; border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-full); overflow: hidden; }
   .segmented.full-width { display: flex; width: 100%; }
   label { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 1; min-height: 2.5rem; padding: 0 var(--smrt-spacing-4); border: 0; border-right: 1px solid var(--smrt-color-outline); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
@@ -261,4 +263,5 @@ useControlRegistration(() => {
   .segmented[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   label { min-height: max(2.5rem, var(--smrt-control-target-min, 0px)); min-width: var(--smrt-control-target-min, 0px); }
   input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+}
 </style>

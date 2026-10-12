@@ -1648,6 +1648,8 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-form {
     display: flex;
     flex-direction: column;
@@ -1812,4 +1814,5 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
     flex-direction: column;
     gap: var(--smrt-spacing-4, 16px);
   }
+}
 </style>

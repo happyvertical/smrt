@@ -150,6 +150,8 @@ useControlRegistration(() => {
   </div>
 </div>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .slider { display: grid; gap: var(--smrt-spacing-2); color: var(--smrt-color-on-surface); }
   .slider__header, .slider__controls { display: flex; align-items: center; gap: var(--smrt-spacing-3); }
   .slider__header { justify-content: space-between; font: var(--smrt-typography-label-large-font); }
@@ -158,4 +160,5 @@ useControlRegistration(() => {
   .slider__number { width: 5.5rem; padding: var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
   input:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
   .slider[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-small); }
+}
 </style>

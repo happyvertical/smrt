@@ -147,6 +147,8 @@ function handleObjectInput(event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .field-renderer {
     display: flex;
     flex-direction: column;
@@ -174,4 +176,5 @@ function handleObjectInput(event: Event) {
     color: var(--smrt-color-on-surface-variant, #6b7280);
     font-style: italic;
   }
+}
 </style>

@@ -41,6 +41,8 @@ function handleChange(event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .tenant-switcher {
     display: inline-flex;
     align-items: center;
@@ -70,4 +72,5 @@ function handleChange(event: Event) {
       transition: none;
     }
   }
+}
 </style>

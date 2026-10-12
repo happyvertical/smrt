@@ -119,6 +119,8 @@ const {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .chat-tab--expanded {
     display: flex;
     flex-direction: column;
@@ -239,4 +241,5 @@ const {
       transition: none;
     }
   }
+}
 </style>

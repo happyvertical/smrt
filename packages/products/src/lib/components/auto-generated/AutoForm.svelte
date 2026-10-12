@@ -152,6 +152,8 @@ function _getFieldType(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .auto-form {
     max-width: 600px;
     margin: 0 auto;
@@ -214,4 +216,5 @@ function _getFieldType(
     white-space: pre-wrap;
     word-break: break-word;
   }
+}
 </style>

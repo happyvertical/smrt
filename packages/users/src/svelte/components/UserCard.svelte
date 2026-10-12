@@ -77,6 +77,8 @@ const statusClass = $derived.by(() => {
 </button>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .user-card {
     display: flex;
     align-items: center;
@@ -184,4 +186,5 @@ const statusClass = $derived.by(() => {
     background-color: var(--smrt-color-surface-variant);
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

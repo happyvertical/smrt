@@ -299,6 +299,8 @@ function cancelEditing() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .governance-manager {
     display: grid;
     gap: 1rem;
@@ -343,4 +345,5 @@ function cancelEditing() {
   .error {
     color: var(--smrt-color-error);
   }
+}
 </style>

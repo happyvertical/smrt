@@ -115,6 +115,8 @@ function approve(proposal: DirectiveProposalView): void {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .directive-review-queue {
     display: flex;
     flex-direction: column;
@@ -182,4 +184,5 @@ function approve(proposal: DirectiveProposalView): void {
     gap: 0.5rem;
     margin-top: 0.75rem;
   }
+}
 </style>

@@ -138,6 +138,8 @@ async function run(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .model-status {
     display: flex;
     flex-direction: column;
@@ -187,4 +189,5 @@ async function run(
     display: flex;
     gap: var(--smrt-spacing-sm, 8px);
   }
+}
 </style>

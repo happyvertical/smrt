@@ -89,6 +89,8 @@ function handleDelete() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .job-actions {
     display: flex;
     gap: var(--smrt-spacing-sm, 0.5rem);
@@ -98,4 +100,5 @@ function handleDelete() {
   .compact {
     gap: var(--smrt-spacing-xs, 0.25rem);
   }
+}
 </style>

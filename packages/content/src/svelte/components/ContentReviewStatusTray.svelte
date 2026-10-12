@@ -90,6 +90,8 @@ let {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .content-review-status-tray {
     display: inline-flex;
     align-items: center;
@@ -157,4 +159,5 @@ let {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
   }
+}
 </style>

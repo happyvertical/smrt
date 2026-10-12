@@ -101,6 +101,8 @@ const valueText = $derived(
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .confidence-badge {
     display: inline-flex;
     align-items: center;
@@ -143,4 +145,5 @@ const valueText = $derived(
     z-index: 1;
     font-variant-numeric: tabular-nums;
   }
+}
 </style>

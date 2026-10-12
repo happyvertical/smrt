@@ -103,5 +103,8 @@ function apply() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-audit-filters { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); align-items: end; }
+}
 </style>

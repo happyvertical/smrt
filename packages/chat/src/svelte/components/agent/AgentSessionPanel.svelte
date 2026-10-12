@@ -130,6 +130,8 @@ const statusLabel: Record<string, string> = {
 </aside>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .session-panel {
     display: flex;
     flex-direction: column;
@@ -318,4 +320,5 @@ const statusLabel: Record<string, string> = {
       transition: none;
     }
   }
+}
 </style>

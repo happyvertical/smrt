@@ -180,6 +180,8 @@ function handleChange(e: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-select-field {
     --smrt-select-input-field-color: var(--smrt-color-on-surface-variant);
     --smrt-select-input-field-bg: var(--smrt-color-surface-container-highest);
@@ -267,4 +269,5 @@ function handleChange(e: Event) {
   .smrt-mode {
     --smrt-select-input-field-active: var(--smrt-color-tertiary);
   }
+}
 </style>

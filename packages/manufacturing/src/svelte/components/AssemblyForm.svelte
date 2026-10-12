@@ -477,6 +477,8 @@ function handleSubmit(event?: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .assembly-form-shell :global(.assembly-form) {
     display: flex;
     flex-direction: column;
@@ -518,4 +520,5 @@ function handleSubmit(event?: Event) {
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-top: var(--smrt-spacing-sm, 0.5rem);
   }
+}
 </style>

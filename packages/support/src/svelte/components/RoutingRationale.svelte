@@ -72,6 +72,8 @@ function factorChips(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .routing-rationale {
     list-style: none;
     margin: 0;
@@ -130,4 +132,5 @@ function factorChips(
     color: var(--smrt-color-on-surface-variant, inherit);
     padding: 1rem 0;
   }
+}
 </style>

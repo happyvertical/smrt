@@ -167,6 +167,8 @@ function handleKeydown(event: KeyboardEvent) {
 {/snippet}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .time-entry-card {
     display: flex;
     align-items: stretch;
@@ -310,4 +312,5 @@ function handleKeydown(event: KeyboardEvent) {
     padding: 0.5rem;
     border-left: 1px solid var(--smrt-color-outline-variant);
   }
+}
 </style>

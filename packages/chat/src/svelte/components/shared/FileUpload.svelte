@@ -194,6 +194,8 @@ function getFileIcon(type: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .file-upload {
     display: flex;
     flex-direction: column;
@@ -348,4 +350,5 @@ function getFileIcon(type: string): string {
       transition: none;
     }
   }
+}
 </style>

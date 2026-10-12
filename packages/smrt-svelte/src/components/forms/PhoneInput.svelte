@@ -391,6 +391,8 @@ function handleInput(e: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-phone {
     display: flex;
     flex-direction: column;
@@ -577,4 +579,5 @@ function handleInput(e: Event) {
     color: var(--smrt-color-error, #ba1a1a);
     margin-top: var(--smrt-spacing-1, 4px);
   }
+}
 </style>

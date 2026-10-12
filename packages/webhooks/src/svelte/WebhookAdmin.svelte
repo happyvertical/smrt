@@ -104,10 +104,13 @@ async function submit() {
   </section>
 </Card>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   form { display: grid; gap: var(--smrt-spacing-2, 0.5rem); }
   li { display: flex; gap: var(--smrt-spacing-2, 0.5rem); align-items: center; flex-wrap: wrap; }
   code { overflow-wrap: anywhere; }
   .table-scroll { overflow-x: auto; }
   table { width: 100%; text-align: left; }
   th, td { padding: var(--smrt-spacing-2, 0.5rem); }
+}
 </style>

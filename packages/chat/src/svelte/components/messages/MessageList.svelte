@@ -92,6 +92,8 @@ function handleScroll(event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .message-list {
     display: flex;
     flex-direction: column;
@@ -126,4 +128,5 @@ function handleScroll(event: Event) {
     border-radius: var(--smrt-radius-full, 9999px);
     white-space: nowrap;
   }
+}
 </style>

@@ -174,6 +174,8 @@ const stats = $derived.by(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .agent-dashboard {
     width: 100%;
     display: flex;
@@ -253,4 +255,5 @@ const stats = $derived.by(() => {
   .empty-state p {
     margin: 0 0 var(--smrt-spacing-md, 1rem) 0;
   }
+}
 </style>

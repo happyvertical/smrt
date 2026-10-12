@@ -186,6 +186,8 @@ async function runAction(toast: Toast) {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .viewport { position: fixed; z-index: var(--smrt-z-index-toast, 1200); display: grid; width: min(24rem, calc(var(--smrt-toast-viewport-region-width, 100vw) - 2 * var(--smrt-toast-viewport-inset))); gap: var(--smrt-spacing-2); pointer-events: none; }
   .viewport :global(.alert) { pointer-events: auto; box-shadow: var(--smrt-elevation-3); }
   .viewport--top-start { top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset)); left: calc(var(--smrt-toast-viewport-left, 0px) + var(--smrt-toast-viewport-inset)); }
@@ -196,4 +198,5 @@ async function runAction(toast: Toast) {
   .viewport--top-center { top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset)); }
   .viewport--bottom-center { bottom: calc(var(--smrt-toast-viewport-bottom, 0px) + var(--smrt-toast-viewport-inset)); }
   button { padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border: 1px solid currentColor; border-radius: var(--smrt-radius-small); background: transparent; color: inherit; font: inherit; cursor: pointer; }
+}
 </style>

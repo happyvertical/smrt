@@ -97,6 +97,8 @@ export interface Props {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .attachment-upload {
     display: flex;
     flex-direction: column;
@@ -173,4 +175,5 @@ export interface Props {
     font-size: var(--smrt-typography-body-medium-size, 13px);
     font-family: var(--smrt-font-family, system-ui);
   }
+}
 </style>

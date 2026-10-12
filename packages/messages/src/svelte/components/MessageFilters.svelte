@@ -162,6 +162,8 @@ const _hasActiveFilters = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .message-filters {
     display: flex;
     flex-direction: column;
@@ -241,4 +243,5 @@ const _hasActiveFilters = $derived(
     color: var(--smrt-color-primary, #005ac1);
     text-decoration: underline;
   }
+}
 </style>

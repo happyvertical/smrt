@@ -126,6 +126,8 @@ const timeText = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .bubble {
     display: flex;
     flex-direction: column;
@@ -213,4 +215,5 @@ const timeText = $derived(
     flex-wrap: wrap;
     gap: var(--smrt-spacing-1, 4px);
   }
+}
 </style>

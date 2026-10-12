@@ -77,6 +77,8 @@ const viewAll = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-records { display: grid; margin: 0; padding: 0; list-style: none; }
   .smrt-records__row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-2) 0; border-block-end: 1px solid var(--smrt-color-outline-variant); }
   .smrt-records__row:last-child { border-block-end: 0; }
@@ -88,4 +90,5 @@ const viewAll = $derived(
   .smrt-records__foot { display: flex; justify-content: space-between; gap: var(--smrt-spacing-3); margin: var(--smrt-spacing-2) 0 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
   .smrt-records__foot a { color: var(--smrt-color-primary); }
   .smrt-records__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
+}
 </style>

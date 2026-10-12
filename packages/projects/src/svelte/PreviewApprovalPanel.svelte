@@ -44,6 +44,8 @@ const { t } = useI18n();
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .preview {
     border-block: 1px solid var(--smrt-color-outline-variant);
     display: grid;
@@ -63,4 +65,5 @@ const { t } = useI18n();
     gap: var(--smrt-spacing-3);
     justify-content: flex-end;
   }
+}
 </style>

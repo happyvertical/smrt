@@ -180,6 +180,8 @@ function matches(row: DisplayRow): boolean {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-list-screen {
     display: flex;
     flex-direction: column;
@@ -188,4 +190,5 @@ function matches(row: DisplayRow): boolean {
   .smrt-list-screen__search {
     max-width: 24rem;
   }
+}
 </style>

@@ -486,6 +486,8 @@ onDestroy(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-image-uploader {
     display: flex;
     flex-direction: column;
@@ -913,4 +915,5 @@ onDestroy(() => {
     border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.6s linear infinite;
   }
+}
 </style>

@@ -97,6 +97,8 @@ const summary = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-chart { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-primary); }
   .smrt-chart__line { inline-size: 100%; block-size: 7rem; overflow: visible; }
   .smrt-chart__axis { display: flex; justify-content: space-between; margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.75rem); }
@@ -108,4 +110,5 @@ const summary = $derived(
   .smrt-chart__value { font-variant-numeric: tabular-nums; color: var(--smrt-color-on-surface-variant); }
   .smrt-chart__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
   .smrt-chart__table { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+}
 </style>

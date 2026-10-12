@@ -140,6 +140,8 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
 </header>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .page-header {
     margin-bottom: 1.5rem;
   }
@@ -262,4 +264,5 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
   .header-extra {
     margin-top: 1rem;
   }
+}
 </style>

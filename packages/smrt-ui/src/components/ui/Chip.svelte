@@ -93,6 +93,8 @@ const {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .chip {
     display: inline-flex;
     align-items: center;
@@ -164,4 +166,5 @@ const {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 1px;
   }
+}
 </style>

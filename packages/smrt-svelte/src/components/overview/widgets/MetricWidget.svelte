@@ -77,10 +77,13 @@ const href = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-metric { display: grid; gap: var(--smrt-spacing-1); }
   .smrt-metric__value { margin: 0; color: var(--smrt-color-on-surface); font-size: var(--smrt-typography-display-small-size, 2rem); font-weight: var(--smrt-typography-weight-medium, 500); line-height: 1.1; text-decoration: none; font-variant-numeric: tabular-nums; }
   a.smrt-metric__value:hover { text-decoration: underline; }
   a.smrt-metric__value:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; border-radius: var(--smrt-radius-small, 0.25rem); }
   .smrt-metric__label { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
   .smrt-metric__change { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.875rem); }
+}
 </style>

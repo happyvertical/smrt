@@ -122,6 +122,8 @@ function minimumOrder(amountMinor: number): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .party-detail { display: grid; gap: var(--smrt-spacing-5); max-inline-size: 64rem; min-inline-size: 0; overflow-wrap: anywhere; }
   .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-4); }
   h2 { margin: 0 0 var(--smrt-spacing-4); font: var(--smrt-typography-title-medium-font); color: var(--smrt-color-on-surface); }
@@ -131,4 +133,5 @@ function minimumOrder(amountMinor: number): string {
   a { color: var(--smrt-color-primary); }
   .notes { margin: 0; white-space: pre-wrap; }
   @media (max-width: 42rem) { .summary-grid { grid-template-columns: minmax(0, 1fr); } dl { grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-1); } dd { margin-block-end: var(--smrt-spacing-2); } }
+}
 </style>

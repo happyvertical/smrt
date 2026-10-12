@@ -426,6 +426,8 @@ function formatAttachmentSize(bytes: number): string {
 </ThemeProvider>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .assistant-dock-demo {
     display: flex;
     flex-direction: column;
@@ -514,4 +516,5 @@ function formatAttachmentSize(bytes: number): string {
     flex-direction: column;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
+}
 </style>

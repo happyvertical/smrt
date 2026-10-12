@@ -81,6 +81,8 @@ onDestroy(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-activity-toasts {
     position: fixed;
     inset-block-start: var(--smrt-spacing-4);
@@ -138,4 +140,5 @@ onDestroy(() => {
       transform: translateY(0);
     }
   }
+}
 </style>

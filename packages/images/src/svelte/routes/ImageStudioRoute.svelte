@@ -138,6 +138,8 @@ function handleEditorSave(image: StudioImage) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .images-route {
     max-width: 1440px;
     margin: 0 auto;
@@ -231,4 +233,5 @@ function handleEditorSave(image: StudioImage) {
       min-height: 560px;
     }
   }
+}
 </style>

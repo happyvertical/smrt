@@ -97,6 +97,8 @@ const _tags = $derived.by(() => {
 </a>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .article-link {
     text-decoration: none;
     color: inherit;
@@ -156,4 +158,5 @@ const _tags = $derived.by(() => {
       transition: none;
     }
   }
+}
 </style>

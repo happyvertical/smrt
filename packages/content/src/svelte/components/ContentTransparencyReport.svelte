@@ -215,6 +215,8 @@ function getFactLabel(fact: {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .transparency-report {
     container-type: inline-size;
     container-name: transparency-report;
@@ -324,4 +326,5 @@ function getFactLabel(fact: {
   .empty-copy {
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

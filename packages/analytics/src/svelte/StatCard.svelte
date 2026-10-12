@@ -31,6 +31,8 @@ const { label, value, trend, trendPercent, subtitle }: Props = $props();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.stat-card {
 		padding: 1rem;
 		background: var(--smrt-color-surface);
@@ -65,4 +67,5 @@ const { label, value, trend, trendPercent, subtitle }: Props = $props();
 		color: var(--smrt-color-on-surface-variant);
 		margin-top: 0.25rem;
 	}
+}
 </style>

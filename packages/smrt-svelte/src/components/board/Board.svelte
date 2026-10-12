@@ -291,6 +291,8 @@ function toggleColumn(columnId: string): void {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-board { min-width: 0; }
   .smrt-board__lanes { display: flex; gap: var(--smrt-spacing-4); overflow-x: auto; overscroll-behavior-x: contain; padding-block-end: var(--smrt-spacing-2); }
   .smrt-board__lane { display: grid; grid-template-rows: auto minmax(0, 1fr); flex: 0 0 min(18rem, 82vw); min-block-size: 12rem; max-block-size: min(42rem, 70vh); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container); overflow: hidden; }
@@ -307,4 +309,5 @@ function toggleColumn(columnId: string): void {
   .smrt-board__empty { margin: 0; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-body-small-font); }
   .smrt-board__live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
   @media (prefers-reduced-motion: reduce) { .smrt-board__card { scroll-behavior: auto; } }
+}
 </style>

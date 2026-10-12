@@ -33,6 +33,8 @@ const activities = $derived(shell.listActivities(filter));
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-activity-list {
     display: grid;
   }
@@ -41,4 +43,5 @@ const activities = $derived(shell.listActivities(filter));
     margin: 0;
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

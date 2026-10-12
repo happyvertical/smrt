@@ -108,6 +108,8 @@ function toggle(key: string | number) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .collection { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: 0; list-style: none; }
   .collection--grid { grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr)); }
   li { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-3); min-width: 0; padding: var(--smrt-spacing-3); border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant)); border-radius: var(--smrt-radius-medium); background: var(--smrt-card-background, var(--smrt-color-surface)); color: var(--smrt-color-on-surface); }
@@ -135,4 +137,5 @@ function toggle(key: string | number) {
   .spinner { width: 1rem; height: 1rem; border: 2px solid var(--smrt-color-outline-variant); border-top-color: var(--smrt-color-primary); border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.6s; } }
+}
 </style>

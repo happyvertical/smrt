@@ -117,6 +117,8 @@ let {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .job-dashboard {
     width: 100%;
     display: flex;
@@ -175,5 +177,5 @@ let {
   .empty-message--success {
     color: var(--smrt-color-tertiary, #006c4f);
   }
-
+}
 </style>

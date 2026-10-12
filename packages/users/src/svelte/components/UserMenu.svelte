@@ -260,6 +260,8 @@ function getInitials(name: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .user-menu {
     position: relative;
     display: inline-block;
@@ -399,4 +401,5 @@ function getInitials(name: string): string {
       transform: none;
     }
   }
+}
 </style>

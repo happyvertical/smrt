@@ -74,6 +74,8 @@ const { t } = useI18n();
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-app-scope-panel {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -110,4 +112,5 @@ const { t } = useI18n();
   .smrt-app-scope-panel__section {
     min-width: 0;
   }
+}
 </style>

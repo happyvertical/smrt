@@ -63,6 +63,8 @@ const {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .membership-list {
     display: flex;
     flex-direction: column;
@@ -101,4 +103,5 @@ const {
     border: 1px dashed var(--smrt-color-outline);
     border-radius: 0.5rem;
   }
+}
 </style>

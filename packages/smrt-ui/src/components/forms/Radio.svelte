@@ -26,6 +26,8 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
   <span class="radio__mark" aria-hidden="true"></span><span class="radio__label">{label}</span>
 </label>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   /* The visible mark stays 18px; a transparent 44x44 ::before hit area (see Checkbox) makes the
      touch target. Mark and label text sit above every hit area, so neighbours' hit areas never
      steal their clicks. Beside other content (a group's other options, text, a link) it keeps to
@@ -46,4 +48,5 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
 
   /* Table cells: grow vertically only, never into a neighbouring cell. */
   :global(:is(td, th)) .radio::before { inline-size: var(--smrt-radio-box); margin-inline-start: calc(var(--smrt-radio-box) / -2); }
+}
 </style>

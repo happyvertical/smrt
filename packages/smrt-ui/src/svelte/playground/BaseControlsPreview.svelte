@@ -108,6 +108,8 @@ function handleSubmit() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .workbench {
     display: grid;
     gap: var(--smrt-spacing-6);
@@ -230,4 +232,5 @@ function handleSubmit() {
       text-align: left;
     }
   }
+}
 </style>

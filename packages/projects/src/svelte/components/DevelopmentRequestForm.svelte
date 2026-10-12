@@ -64,9 +64,12 @@ function submit(event: SubmitEvent) {
 </form>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .request-form { display: grid; gap: var(--smrt-spacing-4); }
   label { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }
   input, select, textarea { padding: var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
   textarea { min-height: 6rem; }
   button { padding: var(--smrt-spacing-2) var(--smrt-spacing-4); border: 0; border-radius: var(--smrt-radius-medium); background: var(--smrt-color-primary); color: var(--smrt-color-on-primary); }
+}
 </style>

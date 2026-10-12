@@ -175,6 +175,8 @@ function getTypeLabel(type: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .day-view {
     --smrt-day-view-bg: var(--smrt-color-surface, #ffffff);
     --smrt-day-view-border: var(--smrt-color-outline-variant, #e5e7eb);
@@ -395,4 +397,5 @@ function getTypeLabel(type: string): string {
       width: 100%;
     }
   }
+}
 </style>

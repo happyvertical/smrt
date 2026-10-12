@@ -55,6 +55,8 @@ const { t } = useI18n();
 </article>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .detail {
     display: grid;
     gap: var(--smrt-spacing-5);
@@ -91,4 +93,5 @@ const { t } = useI18n();
     display: grid;
     gap: var(--smrt-spacing-1);
   }
+}
 </style>

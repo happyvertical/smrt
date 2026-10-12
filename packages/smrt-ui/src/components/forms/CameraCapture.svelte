@@ -524,6 +524,8 @@ useControlRegistration(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .camera-capture {
     display: grid;
     gap: var(--smrt-spacing-3);
@@ -616,4 +618,5 @@ useControlRegistration(() => {
     outline: 3px solid var(--smrt-color-tertiary);
     outline-offset: 4px;
   }
+}
 </style>

@@ -32,6 +32,8 @@ const open = $derived(context.isOpen(value));
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .item { border-bottom: 1px solid var(--smrt-color-outline-variant); }
   .item:last-child { border-bottom: 0; }
   h3 { margin: 0; }
@@ -43,4 +45,5 @@ const open = $derived(context.isOpen(value));
   button[aria-expanded='true'] .chevron { transform: rotate(180deg); }
   .panel { padding: 0 var(--smrt-spacing-4) var(--smrt-spacing-4); color: var(--smrt-color-on-surface-variant); }
   @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
+}
 </style>
