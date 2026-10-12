@@ -3,6 +3,11 @@ import { page } from '$app/state';
 import type { CatalogModel } from '../catalog/types.ts';
 import { useDataSource } from '../data/context.ts';
 import { createNoun, formatMoney, recordCount } from '../data/format.ts';
+import {
+  type ListSort,
+  nextListSort,
+  sortListRows,
+} from '../data/list-sort.ts';
 import type { ModelRecord } from '../data/source.ts';
 import {
   type ActiveForm,
@@ -27,6 +32,7 @@ import {
   productImages,
 } from '../products/media.ts';
 import { inScope, type RowScope } from '../recipes/scope.ts';
+import '../styles/planner-lists.css';
 import FieldMapForm from './FieldMapForm.svelte';
 import ProductMedia from './ProductMedia.svelte';
 import VariantGridForm from './VariantGridForm.svelte';
@@ -57,6 +63,7 @@ const gridForm = $derived(forms.find(isVariantGrid));
 const mapForm = $derived(forms.find(isFieldMap));
 
 let rows = $state<ModelRecord[]>([]);
+let sort = $state<ListSort | null>(null);
 let withAxes = $state(new Set<string>());
 let stock = $state(new Map<string, number>());
 let images = $state(new Map<string, ProductImage[]>());
@@ -94,6 +101,7 @@ $effect(() => {
   model.id;
   forms;
   scope;
+  sort = null;
   editing = null;
   loaded = false;
   void load().then(() => {
@@ -113,6 +121,23 @@ const kindOf = (row: ModelRecord): ActiveForm | undefined =>
 
 const kindLabel = (row: ModelRecord): string =>
   kindOf(row)?.form.kindLabel ?? (withAxes.has(row.id) ? 'Clothing' : 'Simple');
+
+const sortedRows = $derived(
+  sortListRows(rows, sort, (row, key) => {
+    switch (key) {
+      case 'name':
+        return row.name;
+      case 'kind':
+        return kindLabel(row);
+      case 'price':
+        return row.price;
+      case 'stock':
+        return stock.get(row.id);
+      default:
+        return undefined;
+    }
+  }),
+);
 
 function open(form: ActiveForm, id?: string) {
   editing = { form, id };
@@ -196,18 +221,21 @@ async function addImage(row: ModelRecord, file: File) {
   {:else}
     <ProductMedia rows={rows} {images} onselect={addImage} />
     <div class="scroll">
-      <table>
+      <table class="planner-list">
         <thead>
           <tr>
-            <th scope="col">Name</th>
-            <th scope="col">Kind</th>
-            <th scope="col">Price</th>
-            {#if showStock}<th scope="col">Stock</th>{/if}
+            {#each [{ key: 'name', label: 'Name' }, { key: 'kind', label: 'Kind' }, { key: 'price', label: 'Price' }, ...(showStock ? [{ key: 'stock', label: 'Stock' }] : [])] as column (column.key)}
+              <th scope="col" aria-sort={sort?.key === column.key ? sort.direction : 'none'}>
+                <button type="button" class="sort-button" onclick={() => (sort = nextListSort(sort, column.key))}>
+                  {column.label}<span class="sort-icon" aria-hidden="true">{sort?.key === column.key ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}</span>
+                </button>
+              </th>
+            {/each}
             <th scope="col"><span class="visually-hidden">Actions</span></th>
           </tr>
         </thead>
         <tbody>
-          {#each rows as row (row.id)}
+          {#each sortedRows as row (row.id)}
             {@const kind = kindOf(row)}
             <tr>
               <td>{row.name}</td>

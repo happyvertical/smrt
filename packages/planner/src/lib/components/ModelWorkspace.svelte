@@ -28,6 +28,11 @@ import {
   recordCount,
 } from '../data/format.ts';
 import { relationLabels, shortId } from '../data/labels.ts';
+import {
+  type ListSort,
+  nextListSort,
+  sortListRows,
+} from '../data/list-sort.ts';
 import { focusFirstInvalid } from '../fields/invalid.ts';
 import { type ActiveForm, isFieldMap } from '../forms/active.ts';
 import { takeCreate } from '../planner/create.ts';
@@ -35,6 +40,7 @@ import type { ViewField } from '../recipes/policy.ts';
 import { inScope, type RowScope } from '../recipes/scope.ts';
 import type { FieldMapForm as FieldMapFormShape } from '../recipes/types.ts';
 import '../styles/planner-forms.css';
+import '../styles/planner-lists.css';
 import ChildRecords from './ChildRecords.svelte';
 import FieldInput from './FieldInput.svelte';
 import FieldMapForm from './FieldMapForm.svelte';
@@ -104,8 +110,19 @@ const newNoun = $derived(noun ?? humanize(model.name).toLowerCase());
 const heading = $derived(title ?? pluralize(humanize(model.name)));
 
 let rows = $state<ModelRecord[]>([]);
+let sort = $state<ListSort | null>(null);
 /** Labels of the records the rows point at, so a cell shows a name, not an id. */
 let labels = $state(new Map<string, string>());
+const sortedRows = $derived(
+  sortListRows(rows, sort, (row, key) => {
+    const column = columns.find((item) => item.name === key);
+    if (!column) return undefined;
+    const value = cellValue(column, row);
+    return column.type === 'foreignKey' || column.type === 'crossPackageRef'
+      ? formatValue(column, value, labels)
+      : value;
+  }),
+);
 let loaded = $state(false);
 /** `null` closed, `'new'` creating, otherwise the id being edited. */
 let editing = $state<string | 'new' | null>(null);
@@ -144,6 +161,7 @@ $effect(() => {
   // Reload (and close any open form) when the model changes.
   model.id;
   scope;
+  sort = null;
   editing = null;
   loaded = false;
   void load().then(() => {
@@ -341,17 +359,21 @@ async function remove(row: ModelRecord) {
     <p>No records yet. Create one above.</p>
   {:else}
     <div class="scroll">
-      <table>
+      <table class="planner-list">
         <thead>
           <tr>
             {#each columns as column (column.name)}
-              <th>{column.label}</th>
+              <th scope="col" aria-sort={sort?.key === column.name ? sort.direction : 'none'}>
+                <button type="button" class="sort-button" onclick={() => (sort = nextListSort(sort, column.name))}>
+                  {column.label}<span class="sort-icon" aria-hidden="true">{sort?.key === column.name ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}</span>
+                </button>
+              </th>
             {/each}
-            <th><span class="visually-hidden">Actions</span></th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
           </tr>
         </thead>
         <tbody>
-          {#each rows as row (row.id)}
+          {#each sortedRows as row (row.id)}
             <tr>
               {#each columns as column (column.name)}
                 <td>{formatValue(column, cellValue(column, row), labels)}</td>

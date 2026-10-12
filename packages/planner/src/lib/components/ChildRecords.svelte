@@ -23,8 +23,14 @@ import {
 import type { ModelRecord } from '../data/fakes.ts';
 import { formatValue } from '../data/format.ts';
 import { relationLabels, shortId } from '../data/labels.ts';
+import {
+  type ListSort,
+  nextListSort,
+  sortListRows,
+} from '../data/list-sort.ts';
 import { focusFirstInvalid } from '../fields/invalid.ts';
 import type { ViewField } from '../recipes/policy.ts';
+import '../styles/planner-lists.css';
 import FieldInput from './FieldInput.svelte';
 
 interface ChildRecordsProps {
@@ -66,6 +72,17 @@ const summary = $derived(errorSummary(fields, errors));
 
 let rows = $state<ModelRecord[]>([]);
 let labels = $state(new Map<string, string>());
+let sort = $state<ListSort | null>(null);
+const sortedRows = $derived(
+  sortListRows(rows, sort, (row, key) => {
+    const column = columns.find((item) => item.name === key);
+    if (!column) return undefined;
+    const value = cellValue(column, row);
+    return column.type === 'foreignKey' || column.type === 'crossPackageRef'
+      ? formatValue(column, value, labels)
+      : value;
+  }),
+);
 let loaded = $state(false);
 /** `null` closed, `'new'` adding, otherwise the id being edited. */
 let editing = $state<string | 'new' | null>(null);
@@ -83,6 +100,7 @@ $effect(() => {
   // Reload when the parent record (or the child model) changes.
   model.id;
   parentId;
+  sort = null;
   editing = null;
   loaded = false;
   void load();
@@ -194,17 +212,21 @@ async function remove(row: ModelRecord) {
     <p class="empty">None yet.</p>
   {:else}
     <div class="scroll">
-      <table>
+      <table class="planner-list">
         <thead>
           <tr>
             {#each columns as column (column.name)}
-              <th>{column.label}</th>
+              <th scope="col" aria-sort={sort?.key === column.name ? sort.direction : 'none'}>
+                <button type="button" class="sort-button" onclick={() => (sort = nextListSort(sort, column.name))}>
+                  {column.label}<span class="sort-icon" aria-hidden="true">{sort?.key === column.name ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}</span>
+                </button>
+              </th>
             {/each}
-            <th><span class="visually-hidden">Actions</span></th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
           </tr>
         </thead>
         <tbody>
-          {#each rows as row (row.id)}
+          {#each sortedRows as row (row.id)}
             <tr>
               {#each columns as column (column.name)}
                 <td>{formatValue(column, cellValue(column, row), labels)}</td>

@@ -1,0 +1,43 @@
+/* Planner app-level treatment for generated record tables. */
+.planner-list {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+}
+
+.planner-list th {
+  background: var(--smrt-color-surface-container-low);
+  color: var(--smrt-color-on-surface-variant);
+  font-weight: 600;
+}
+
+.planner-list tbody tr:hover {
+  background: var(--smrt-color-surface-container-low);
+}
+
+.planner-list .sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--smrt-spacing-2);
+  padding: var(--smrt-spacing-1) 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.planner-list .sort-button:focus-visible {
+  outline: 2px solid var(--smrt-color-primary);
+  outline-offset: 2px;
+}
+
+.planner-list .sort-icon {
+  color: var(--smrt-color-primary);
+  font-size: 1rem;
+  line-height: 1;
+}

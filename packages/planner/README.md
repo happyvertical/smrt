@@ -63,6 +63,7 @@ choose and download them. A first visit with nothing built starts there; "I don'
 need AI, let's just build" skips it for good. Live s-m-r-t objects are tracked in #4.
 
 Generated record forms use the Planner’s responsive, open form layout. Custom CSS notes are saved with the cookbook and included in export and import.
+Generated record lists let you sort any data column by selecting its heading; select it again to reverse the order. Sorting changes only the current view.
 
 ## Install the package
 
