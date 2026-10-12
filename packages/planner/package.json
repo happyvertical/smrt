@@ -52,6 +52,7 @@
   },
   "dependencies": {
     "@happyvertical/ai": "^0.103.1",
+    "@happyvertical/smrt-assets": "^0.55.12",
     "@happyvertical/smrt-chat": "^0.55.12",
     "@happyvertical/smrt-core": "^0.55.12",
     "@happyvertical/smrt-svelte": "^0.55.12",

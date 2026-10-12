@@ -5,6 +5,7 @@ import type {
   ModelRecord,
   RecordWrite,
 } from '../data/source.ts';
+import { planProductImageDelete } from '../products/media.ts';
 import type { ModelLookup } from './shared.ts';
 
 export const PRODUCT = '@happyvertical/smrt-products:Product';
@@ -115,8 +116,10 @@ export function planProductDelete(
   productId: string,
   skus: readonly ModelRecord[],
   models: ModelLookup,
+  productAssets: readonly ModelRecord[] = [],
 ): RecordWrite[] {
   return [
+    ...planProductImageDelete(productId, productAssets),
     ...skus.flatMap((sku): RecordWrite[] => [
       { op: 'delete', model: models(STOCK_LEVEL), match: { skuId: sku.id } },
       { op: 'delete', model: models(SKU), id: sku.id },

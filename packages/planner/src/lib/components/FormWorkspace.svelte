@@ -19,8 +19,16 @@ import {
   VARIANT,
 } from '../forms/stock.ts';
 import { takeCreate } from '../planner/create.ts';
+import {
+  ASSET,
+  PRODUCT_ASSET,
+  type ProductImage,
+  planProductImageSave,
+  productImages,
+} from '../products/media.ts';
 import { inScope, type RowScope } from '../recipes/scope.ts';
 import FieldMapForm from './FieldMapForm.svelte';
+import ProductMedia from './ProductMedia.svelte';
 import VariantGridForm from './VariantGridForm.svelte';
 
 interface FormWorkspaceProps {
@@ -51,6 +59,8 @@ const mapForm = $derived(forms.find(isFieldMap));
 let rows = $state<ModelRecord[]>([]);
 let withAxes = $state(new Set<string>());
 let stock = $state(new Map<string, number>());
+let images = $state(new Map<string, ProductImage[]>());
+let productAssets = $state<ModelRecord[]>([]);
 let loaded = $state(false);
 /** The form open, and the row it edits (none when creating). */
 let editing = $state<{ form: ActiveForm; id?: string } | null>(null);
@@ -68,6 +78,14 @@ async function load() {
         await source.list(catalogModels(STOCK_LEVEL)),
       )
     : new Map();
+  const [assets, associations] = await Promise.all([
+    source.list(catalogModels(ASSET)),
+    source.list(catalogModels(PRODUCT_ASSET)),
+  ]);
+  productAssets = associations;
+  images = new Map(
+    rows.map((row) => [row.id, productImages(row.id, assets, associations)]),
+  );
   loaded = true;
 }
 
@@ -110,7 +128,28 @@ async function remove(row: ModelRecord) {
   const skus = (await source.list(catalogModels(SKU))).filter(
     (sku) => sku.productId === row.id,
   );
-  await source.apply(planProductDelete(row.id, skus, catalogModels));
+  await source.apply(
+    planProductDelete(row.id, skus, catalogModels, productAssets),
+  );
+  await load();
+}
+
+async function addImage(row: ModelRecord, file: File) {
+  const sourceUri = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () =>
+      reject(reader.error ?? new Error('Could not read image.'));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(file);
+  });
+  await source.apply(
+    planProductImageSave(
+      row.id,
+      file,
+      sourceUri,
+      images.get(row.id)?.length ?? 0,
+    ),
+  );
   await load();
 }
 </script>
@@ -155,6 +194,7 @@ async function remove(row: ModelRecord) {
   {:else if rows.length === 0}
     <p>No records yet. Create one above.</p>
   {:else}
+    <ProductMedia rows={rows} {images} onselect={addImage} />
     <div class="scroll">
       <table>
         <thead>

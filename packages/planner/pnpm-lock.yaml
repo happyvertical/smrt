@@ -11,6 +11,9 @@ importers:
       '@happyvertical/ai':
         specifier: ^0.103.1
         version: 0.103.1(@mlc-ai/web-llm@0.2.85)(ws@8.22.0)(zod@3.25.76)
+      '@happyvertical/smrt-assets':
+        specifier: ^0.55.12
+        version: 0.55.12(@happyvertical/speech@0.103.1(@huggingface/transformers@4.3.1(@types/node@24.19.1)))(@huggingface/transformers@4.3.1(@types/node@24.19.1))(@mlc-ai/web-llm@0.2.85)(svelte@5.57.1)(ws@8.22.0)(zod@3.25.76)
       '@happyvertical/smrt-chat':
         specifier: ^0.55.12
         version: 0.55.12(@huggingface/transformers@4.3.1(@types/node@24.19.1))(@mlc-ai/web-llm@0.2.85)(@types/node@24.19.1)(debug@4.4.3)(jimp@1.6.1)(sharp@0.35.5(@types/node@24.19.1))(svelte@5.57.1)(ws@8.22.0)(zod@3.25.76)
