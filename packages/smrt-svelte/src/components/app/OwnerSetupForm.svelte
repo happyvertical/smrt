@@ -68,9 +68,9 @@ function enhanceForm(form: HTMLFormElement) {
         <p>{t(M['ui.owner_setup.link_missing_body'])}</p>
         <dl>
           <dt>{t(M['ui.owner_setup.recovery_open'])}</dt>
-          <dd><code>pnpm app:open</code></dd>
+          <dd><code>{'pnpm app:open'}</code></dd>
           <dt>{t(M['ui.owner_setup.recovery_recover'])}</dt>
-          <dd><code>pnpm app:recover</code></dd>
+          <dd><code>{'pnpm app:recover'}</code></dd>
         </dl>
       </div>
     {:else}
