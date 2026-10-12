@@ -46,6 +46,8 @@ const NON_PORTABLE_COLUMN_PATTERN =
 
 /** Column definition fields the import planner reads from the manifest. */
 export interface PortableColumnDefinition {
+  /** Manifest column type, e.g. `'JSON'`, `'TEXT'`, `'UUID'`. */
+  type?: string;
   primaryKey?: boolean;
   notNull?: boolean;
   foreignKey?: { table?: string };
@@ -399,11 +401,45 @@ export interface ImportExecutor {
 }
 
 /** Execute a prevalidated parent-first import against one database transaction. */
+/**
+ * The bind parameter for one exported value.
+ *
+ * A JSON column is exported as the driver read it: node-postgres parses
+ * json/jsonb into JavaScript values, SQLite returns the stored JSON text. A
+ * raw parameterized query carries no column type, so binding a parsed value
+ * unchanged lets node-postgres send a JavaScript array as a PostgreSQL array
+ * literal (`["x"]` becomes `{"x"}`, rejected with 22P02; `[]` becomes `{}`,
+ * silently an object) and a JSON string scalar as bare text (22P02). The
+ * manifest knows the column type, so JSON columns bind as JSON text:
+ * re-encoded when the bundle holds parsed values, passed through when it
+ * already holds text. NULL and every other column bind unchanged, so a real
+ * PostgreSQL array column still binds as an array.
+ */
+export function importParameter(
+  columnDefinition: PortableColumnDefinition | undefined,
+  value: unknown,
+  options: { jsonText?: boolean } = {},
+): unknown {
+  if (value === null || value === undefined) return value;
+  if (columnDefinition?.type !== 'JSON') return value;
+  if (options.jsonText && typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
+
 export async function executeImportPlan(
   tx: ImportExecutor,
   plan: PlannedImportTable[],
   exportedByName: Map<string, { rows: PortableRow[] }>,
+  options: {
+    /** The bundle holds JSON columns as JSON text (a `local`/SQLite export). */
+    jsonText?: boolean;
+  } = {},
 ): Promise<number> {
+  const parameter = (
+    table: PlannedImportTable,
+    column: string,
+    value: unknown,
+  ) => importParameter(table.columnDefinitions[column], value, options);
   const deferredUpdates: Array<{
     table: PlannedImportTable;
     column: string;
@@ -425,7 +461,9 @@ export async function executeImportPlan(
       await tx.query(
         `INSERT INTO ${quoteIdentifier(table.name)} (${columns.map(quoteIdentifier).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
         ...columns.map((column) =>
-          table.deferredColumns.has(column) ? null : row[column],
+          table.deferredColumns.has(column)
+            ? null
+            : parameter(table, column, row[column]),
         ),
       );
       for (const column of table.deferredColumns) {
@@ -445,7 +483,7 @@ export async function executeImportPlan(
   for (const update of deferredUpdates) {
     await tx.query(
       `UPDATE ${quoteIdentifier(update.table.name)} SET ${quoteIdentifier(update.column)} = ? WHERE ${quoteIdentifier(update.primaryKey)} = ?`,
-      update.value,
+      parameter(update.table, update.column, update.value),
       update.primaryValue,
     );
   }
@@ -648,6 +686,8 @@ export async function importApplication(
           tx as unknown as ImportExecutor,
           plan,
           exportedByName,
+          // A local-profile (SQLite) export holds JSON columns as JSON text.
+          { jsonText: bundle.profile === 'local' },
         );
         await context.onImportPhase?.('database-staged');
         verifyPublishedFilesystemAssets(staged);
