@@ -117,6 +117,27 @@ describe('findViolations (lint gate)', () => {
   it('ignores svelte files without a style block', () => {
     assert.deepEqual(findViolations({ 'c.svelte': '<p>plain</p>\n' }), []);
   });
+
+  it('fails !important inside a style block, but not inside comments', () => {
+    const violations = findViolations({
+      'e.svelte': codemodSource(unlayered('.x { color: red !important; }')).source,
+    });
+    assert.equal(violations.length, 1);
+    assert.match(violations[0], /1 !important in <style> \(allowed 0\)/);
+    assert.match(violations[0], /layered !important beats consumer unlayered CSS/);
+    assert.deepEqual(
+      findViolations({ 'f.svelte': codemodSource(unlayered('/* no !important here */ .x { color: red; }')).source }),
+      [],
+    );
+  });
+
+  it('holds exempted files to their recorded !important count', () => {
+    const exempt = 'packages/content/src/svelte/components/ContentBodyRenderer.svelte';
+    const body = '.a { width: 1px !important; }\n.b { width: 2px !important; }';
+    assert.deepEqual(findViolations({ [exempt]: codemodSource(unlayered(body)).source }), []);
+    const extra = `${body}\n.c { width: 3px !important; }`;
+    assert.equal(findViolations({ [exempt]: codemodSource(unlayered(extra)).source }).length, 1);
+  });
 });
 
 describe('layer declaration parity', () => {

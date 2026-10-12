@@ -67,6 +67,6 @@ const displayValue = $derived(
   .progress--circular.indeterminate svg { animation: spin 1s linear infinite; } .progress--circular.indeterminate .indicator { stroke-dasharray: 70 113.1; }
   .progress--circular > span { position: absolute; font: var(--smrt-typography-label-small-font); }
   @keyframes linear-progress { from { left: -40%; } to { left: 105%; } } @keyframes spin { to { transform: rotate(270deg); } }
-  @media (prefers-reduced-motion: reduce) { .indicator { transition: none !important; animation-duration: 2.5s !important; } }
+  @media (prefers-reduced-motion: reduce) { .progress--linear .indicator, .progress--circular .indicator { transition: none; } .progress--linear.indeterminate .indicator { animation-duration: 2.5s; } }
 }
 </style>

@@ -61,7 +61,7 @@ function handlePointerUp() {
 <div class="chat-layout" class:chat-layout--resizing={isResizing} data-smrt-component="ChatLayout">
   <aside
     class="chat-layout__sidebar"
-    style:width="{sidebarWidth}px"
+    style:--smrt-chat-layout-sidebar-width="{sidebarWidth}px"
     aria-label={t(M['chat.chat_layout.rooms_label'])}
   >
     <RoomList
@@ -110,6 +110,7 @@ function handlePointerUp() {
 
   .chat-layout__sidebar {
     flex-shrink: 0;
+    width: var(--smrt-chat-layout-sidebar-width);
     display: flex;
     flex-direction: column;
     background: var(--smrt-color-surface-container);
@@ -153,7 +154,7 @@ function handlePointerUp() {
     }
 
     .chat-layout__sidebar {
-      width: 100% !important;
+      width: 100%;
       max-height: 14rem;
       border-right: 0;
       border-bottom: 1px solid var(--smrt-color-outline-variant);

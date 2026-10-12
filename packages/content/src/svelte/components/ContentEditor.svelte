@@ -2246,10 +2246,10 @@ function removeAsset(id: string) {
     background: var(--smrt-color-surface);
   }
 
-  .media-item-overlay :global(.btn-remove-asset:hover) {
-    background: var(--smrt-color-error-container) !important;
-    color: var(--smrt-color-error) !important;
-    border-color: var(--smrt-color-error) !important;
+  .media-item-overlay :global(.btn-remove-asset:hover:not(:disabled):not(.disabled)) {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-error);
+    border-color: var(--smrt-color-error);
   }
 
   .thumbnail-badge {

@@ -2105,16 +2105,16 @@ $effect(() => {
     border: 0;
   }
 
-  .data-table--hoverable .data-table__row:hover:not(.data-table__row--loading):not(.data-table__row--empty) {
+  .data-table--hoverable .data-table__row:hover:not(.data-table__row--loading):not(.data-table__row--empty):not(.data-table__row--selected) {
     background: var(--smrt-color-surface-container-low);
   }
 
   .data-table__row--selected {
-    background: var(--smrt-color-primary-container) !important;
+    background: var(--smrt-color-primary-container);
   }
 
-  .data-table--striped:not(.data-table--virtualized) .data-table__row:nth-child(even),
-  .data-table__row--striped {
+  .data-table--striped:not(.data-table--virtualized) .data-table__row:nth-child(even):not(.data-table__row--selected),
+  .data-table__row--striped:not(.data-table__row--selected) {
     background: var(--smrt-color-surface-container-lowest);
   }
 

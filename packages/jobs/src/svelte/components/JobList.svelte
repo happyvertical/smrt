@@ -356,8 +356,9 @@ const sortColumns = $derived([
     cursor: pointer;
   }
 
-  .job-list__row--selected {
-    background: var(--smrt-color-primary-container) !important;
+  /* Mirrors the :hover rule's guards so selection wins the tie by source order. */
+  .job-list__body tr.job-list__row--selected:not(.job-list__row--loading):not(.job-list__row--empty) {
+    background: var(--smrt-color-primary-container);
   }
 
   @media (prefers-reduced-motion: reduce) {
