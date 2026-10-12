@@ -3,6 +3,14 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n/strings.workspace.js';
 import ShellSettingsPanel from '../workspace/admin-shell/ShellSettingsPanel.svelte';
 
+interface Props {
+  /** Where the Account section's sign-out control goes; shown only when given. */
+  signOutHref?: string;
+  /** Called by the sign-out control instead of following `signOutHref`. */
+  onSignOut?: () => void;
+}
+
+const { signOutHref, onSignOut }: Props = $props();
 const { t } = useI18n();
 </script>
 
@@ -11,7 +19,7 @@ const { t } = useI18n();
     <h1>{t(M['ui.shell_settings_page.heading'])}</h1>
     <p>{t(M['ui.shell_settings_page.description'])}</p>
   </header>
-  <ShellSettingsPanel />
+  <ShellSettingsPanel appearance account {signOutHref} {onSignOut} />
 </section>
 
 <style>

@@ -4,6 +4,11 @@ export interface OwnerSetupData {
   available: boolean;
   /** Single-use bootstrap token carried from the setup link. */
   token: string;
+  /**
+   * State of the setup link (`createOwnerSetupPage` sets it). Omitted by older
+   * loads: derived from `available` and `token`.
+   */
+  link?: 'ready' | 'missing' | 'expired' | 'unavailable';
 }
 
 /** Shape of the setup action's failure data (`fail(status, { code, message })`). */
