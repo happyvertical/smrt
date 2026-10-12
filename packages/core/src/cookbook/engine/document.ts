@@ -423,6 +423,7 @@ export function compactTheme(
   if (theme.preset) out.preset = theme.preset;
   if (theme.colorScheme) out.colorScheme = theme.colorScheme;
   if (theme.custom) out.custom = { ...theme.custom };
+  if (theme.customCss) out.customCss = theme.customCss;
   return Object.keys(out).length ? out : undefined;
 }
 

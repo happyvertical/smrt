@@ -288,6 +288,23 @@ function checkTheme(value: unknown, diagnostics: CookbookDiagnostic[]) {
       'theme.preset must be a string',
     );
   }
+  if (value.customCss !== undefined) {
+    if (typeof value.customCss !== 'string') {
+      error(
+        diagnostics,
+        'invalid_type',
+        'theme.customCss',
+        'theme.customCss must be a string',
+      );
+    } else if (Array.from(value.customCss).length > 65536) {
+      error(
+        diagnostics,
+        'invalid_value',
+        'theme.customCss',
+        'theme.customCss must be at most 65,536 characters',
+      );
+    }
+  }
   if (
     value.colorScheme !== undefined &&
     !(typeof value.colorScheme === 'string' && SCHEMES.has(value.colorScheme))

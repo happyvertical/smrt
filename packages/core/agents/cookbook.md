@@ -19,6 +19,11 @@ Fields: `$schema`, `version: 1`, optional `name`/`description`, `recipes`,
 the document; the planner's library wrapper (id, icon, keywords, settings) is
 planner-side.
 
+`theme.customCss` is optional source text (at most 65,536 characters). It is
+portable through validation and engine import/export, but no cookbook consumer
+injects it into a page automatically. An app may use it when generating its own
+stylesheet after review.
+
 ## Rules
 
 - Versioning: add optional fields within `version: 1`; readers keep and ignore

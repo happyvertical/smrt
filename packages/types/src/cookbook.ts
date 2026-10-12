@@ -108,6 +108,8 @@ export interface CookbookTheme {
   colorScheme?: 'light' | 'dark' | 'system';
   /** A brand colour theme; wins over `preset` while present. */
   custom?: { primary: string; fontFamily?: string };
+  /** Stored source text for host-defined styles; consumers do not execute it. */
+  customCss?: string;
 }
 
 export interface Cookbook {

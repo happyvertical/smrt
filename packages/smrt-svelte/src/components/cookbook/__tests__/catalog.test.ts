@@ -122,6 +122,16 @@ describe('resolveCookbookTheme', () => {
     });
   });
 
+  it('does not apply stored custom CSS while resolving the visible theme', () => {
+    expect(
+      resolveCookbookTheme({
+        preset: 'glass',
+        colorScheme: 'dark',
+        customCss: 'body { display: none; }',
+      }),
+    ).toEqual({ preset: 'glass', colorScheme: 'dark' });
+  });
+
   it('turns a brand colour into a stable brand theme id and ignores bad input', () => {
     expect(
       resolveCookbookTheme({

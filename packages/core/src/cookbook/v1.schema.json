@@ -116,6 +116,7 @@
       "properties": {
         "preset": { "type": "string" },
         "colorScheme": { "enum": ["light", "dark", "system"] },
+        "customCss": { "type": "string", "maxLength": 65536, "description": "Stored CSS source text; consumers do not execute it automatically." },
         "custom": {
           "type": "object",
           "required": ["primary"],

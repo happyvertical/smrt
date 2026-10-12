@@ -236,6 +236,28 @@ describe('commands', () => {
     expect(e.snapshot().theme.text).toBe('glass, dark');
   });
 
+  it('keeps custom CSS source through import, theme edits, state and export', () => {
+    const css = 'form { max-width: 60ch; }\n';
+    const e = engine();
+    ok(
+      e.run({
+        name: 'import_cookbook',
+        input: { document: { ...IMPORTED, theme: { customCss: css } } },
+      }),
+    );
+    expect(e.cookbook().theme?.customCss).toBe(css);
+    ok(e.run({ name: 'set_theme', input: { preset: 'glass' } }));
+    expect(e.cookbook().theme).toEqual({ preset: 'glass', customCss: css });
+    const exported = ok(e.run({ name: 'export_cookbook', input: {} })).data as {
+      text: string;
+    };
+    expect(JSON.parse(exported.text).theme.customCss).toBe(css);
+    const restored = createCookbookEngine({ catalog, state: e.state() });
+    expect(restored.cookbook().theme?.customCss).toBe(css);
+    ok(restored.run({ name: 'reset_theme', input: {} }));
+    expect(restored.cookbook().theme).toBeUndefined();
+  });
+
   it('layout: rename, hide and show touch only the layout and stay sparse', () => {
     const e = engine();
     ok(e.run({ name: 'add_recipes', input: { ids: ['commerce.sales'] } }));

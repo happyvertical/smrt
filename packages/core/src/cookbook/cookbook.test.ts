@@ -57,6 +57,31 @@ describe('cookbook v1', () => {
     );
   });
 
+  it('accepts bounded custom CSS text and rejects malformed values', () => {
+    const css = 'form { max-width: 60ch; }\n';
+    const doc = {
+      version: 1,
+      recipes: [],
+      policies: [],
+      theme: { customCss: css },
+    };
+    expect(matches(doc)).toBe(true);
+    const parsed = validateCookbook(doc);
+    expect(parsed.ok && parsed.cookbook.theme).toEqual({ customCss: css });
+    const unicode = { ...doc, theme: { customCss: '😀'.repeat(32769) } };
+    expect(matches(unicode)).toBe(true);
+    expect(validateCookbook(unicode).ok).toBe(true);
+    for (const value of [42, 'x'.repeat(65537)]) {
+      const invalid = { ...doc, theme: { customCss: value } };
+      expect(matches(invalid)).toBe(false);
+      const result = validateCookbook(invalid);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.errors.join(' ')).toContain('theme.customCss');
+      }
+    }
+  });
+
   it('reports every problem with its path', () => {
     const doc = {
       version: 1,
