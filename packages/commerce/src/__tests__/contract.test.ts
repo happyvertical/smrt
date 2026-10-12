@@ -51,8 +51,16 @@ describe('Contract', () => {
       );
       const fields =
         manifest.objects['@happyvertical/smrt-commerce:PurchaseOrder'].fields;
-      expect(fields.expectedDate).toMatchObject({ type: 'meta', default: '' });
-      expect(fields.shipTo).toMatchObject({ type: 'meta', default: '' });
+      expect(fields.expectedDate).toMatchObject({
+        type: 'meta',
+        default: '',
+        _meta: { description: expect.stringContaining('YYYY-MM-DD') },
+      });
+      expect(fields.shipTo).toMatchObject({
+        type: 'meta',
+        default: '',
+        _meta: { description: expect.stringContaining('delivered') },
+      });
       expect(
         manifest.objects['@happyvertical/smrt-commerce:Contract'].fields
           .expectedDate,
