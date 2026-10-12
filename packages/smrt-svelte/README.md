@@ -572,8 +572,8 @@ keys the shell renders exactly as before.
   on scroll (`phone.hideOnScroll`, pinned by `pinChrome` or an open drawer);
   `phoneBottomBar` is a bottom row that a form's `[data-form-action-bar]` (see
   smrt-ui `FormActionBar`) replaces and the on-screen keyboard hides
-  (`:root[data-keyboard-open]`). `phone.scrim` dims the page behind a drawer or
-  sheet, `phone.swipeToClose` closes drawers by swiping. A `path` change on a
+  (`:root[data-keyboard-open]`). `phone.scrim` (default on) dims the page behind a drawer or
+  sheet, `phone.swipeToClose` (default on) closes drawers by swiping. A `path` change on a
   phone closes open drawers. `overlays` is a layer above the edges (and above
   the bottom bar's row) for `PhoneSheet`s and status strips.
 - **Page contracts** on phones: `data-shell-breadcrumbs` is hidden only when

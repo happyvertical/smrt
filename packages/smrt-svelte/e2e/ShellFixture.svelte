@@ -21,6 +21,7 @@ const config = {
   bottom: { initial: panelInitial('bottom') },
 };
 const shell = createShellState({ config, storageKey: 'mobile-shell-fixture' });
+if (query.has('tool')) shell.registerFocusTool({ id: 'chat', label: 'Chat' });
 let signedOut = $state(false);
 const navGroups = [
   { heading: 'Floor', items: [{ href: '#orders', label: 'Orders' }] },

@@ -67,6 +67,25 @@ The root grid has five rows: `header` · top edge · body · bottom edge · phon
 bottom bar. The header and phone-bar tracks are `0rem` unless their snippets
 render, so hosts that pass none of the new props get the original layout; keep
 that invariant (`AdminShell.responsive.test.ts` "backward compatibility").
+
+**Empty regions render nothing.** The header band, footer band and right edge
+are skipped (and their tracks collapse to `0rem`, the grid keeps its five rows)
+when nothing would render in them: no slot content, `appBar`/`systemBar`, corners,
+toggles, focus tools, mounted drawer, or edit-mode controls. A default
+`AdminShell` still shows its brand, so its header stays; an app with no
+footer content and no dock tools has no footer and no right strip.
+
+**Phone defaults.** `phone.scrim` and `phone.swipeToClose` are on (pass `false`
+to turn one off). Opening the left or right surface collapses the other
+(`ShellState.closeExclusivePeers`, not persisted), and starting a layout edit
+closes any open surface. The Menu opener is an icon button (hamburger, name
+"Menu"); the left drawer's title is the app brand and its close control is an
+icon-only "Close menu". While the right edge has focus tools, phones get a
+"Tools" icon opener at the header end (`phoneDockOpener`, default true;
+`AppShell` turns it off when `dockToggles` already open the dock) and the edge
+presents as a drawer (or sheet) with an icon-only "Close tools". Chrome buttons,
+rail tool buttons and dock toggles use `--smrt-touch-target-min` on phones. A
+tool without an icon uses the generic tool icon, never its first letter.
 Phone drawers and the bottom drawer offset themselves by the header and phone
 bar tracks. `shell.viewport` comes from `ADMIN_SHELL_PHONE_QUERY` (48rem, the
 same boundary as the CSS media query — never make one configurable without the
@@ -136,12 +155,12 @@ behaviour.
 
 The left edge's toggle is an icon-only chevron, not a labelled button: it
 points the way the panel will move (left to collapse, right to expand), its
-accessible name is `Collapse <region>` / `Expand <region>` (the hotkey rides
+accessible name is `Collapse sidebar` / `Expand sidebar` (the hotkey rides
 in the tooltip, there is no visible `<kbd>`), and off phones it is the last
 child of the rail, pinned to the bottom below the navigation and the
 `leftSidebar.footer` slot (`margin-block-start: auto`; it hugs the inner edge
-while expanded and centres in the collapsed rail). Phones keep it at the top
-of the drawer so opening the drawer still focuses the close control. The
+while expanded and centres in the collapsed rail). Phones replace it with the drawer's
+icon-only "Close menu" at the top, so opening the drawer still focuses a close control. The
 header, footer and right toggles keep their region label and hotkey hint.
 
 ### Moving items between slots

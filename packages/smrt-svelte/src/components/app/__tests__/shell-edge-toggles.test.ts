@@ -210,7 +210,7 @@ describe('the left edge toggle is an icon-only chevron at the bottom of the rail
     expect(toggle).toBeTruthy();
     expect(toggle?.textContent?.trim()).toBe('');
     expect(toggle?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
-    expect(toggle?.getAttribute('aria-label')).toBe('Collapse Left sidebar');
+    expect(toggle?.getAttribute('aria-label')).toBe('Collapse sidebar');
     expect(toggle?.getAttribute('aria-expanded')).toBe('true');
     expect(
       toggle?.querySelector('.smrt-admin-shell__edge-toggle-kbd'),
@@ -227,9 +227,7 @@ describe('the left edge toggle is an icon-only chevron at the bottom of the rail
         : 0,
     ).toBeTruthy();
 
-    await user.click(
-      screen.getByRole('button', { name: 'Collapse Left sidebar' }),
-    );
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
     await vi.waitFor(() =>
       expect(
         document
@@ -238,7 +236,7 @@ describe('the left edge toggle is an icon-only chevron at the bottom of the rail
       ).toBe('collapsed'),
     );
     const collapsed = leftToggle();
-    expect(collapsed?.getAttribute('aria-label')).toBe('Expand Left sidebar');
+    expect(collapsed?.getAttribute('aria-label')).toBe('Expand sidebar');
     expect(collapsed?.textContent?.trim()).toBe('');
   });
 });

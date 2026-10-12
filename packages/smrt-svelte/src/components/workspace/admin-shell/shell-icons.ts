@@ -50,9 +50,15 @@ export const SHELL_ICON_PATHS = {
   archive:
     'M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z',
   chevronRight: 'M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z',
+  menu: 'M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z',
+  close:
+    'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z',
 } as const;
 
 export type ShellIconName = keyof typeof SHELL_ICON_PATHS;
+
+/** Icon used for a dock or focus tool that does not bring its own. */
+export const SHELL_DEFAULT_TOOL_ICON: ShellIconName = 'wrench';
 
 /** Section icon used when neither the host nor the user chose one. */
 export const SHELL_DEFAULT_SECTION_ICON: ShellIconName = 'folder';

@@ -51,7 +51,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   import { M } from '../../../i18n/strings.workspace.js';
   import ActivityBadge from './ActivityBadge.svelte';
   import ShellBrand from './ShellBrand.svelte';
-  import { SHELL_ICON_PATHS } from './shell-icons.js';
+  import { SHELL_DEFAULT_TOOL_ICON, SHELL_ICON_PATHS } from './shell-icons.js';
   import { setAdminShell } from './context.js';
   import {
     formatHotkeyBinding,
@@ -169,8 +169,14 @@ function buildLayoutStyle(shell: ModuleShellState): string {
      * children receive them.
      */
     overlays?: Snippet<[{ viewport: ShellViewport; bottomBar: BottomBarMode }]>;
-    /** Phone behavior switches (scrim, swipe to close, hide on scroll). */
+    /** Phone behavior switches (scrim and swipe to close default on; hide on scroll). */
     phone?: AdminShellPhoneOptions;
+    /**
+     * Show the built-in "Tools" opener on phones while the right edge has
+     * focus tools (default true). `AppShell` turns it off when dock toggles
+     * already open the dock from the header.
+     */
+    phoneDockOpener?: boolean;
     /** Keep the phone top bar shown (e.g. while a banner is visible). */
     pinChrome?: boolean;
     /**
@@ -222,6 +228,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     phoneBottomBar,
     overlays,
     phone,
+    phoneDockOpener = true,
     pinChrome = false,
     path,
     children,
@@ -281,15 +288,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     });
     return () => { cancelled = true; queueMicrotask(() => { if (opener?.isConnected) opener.focus(); }); };
   });
-  const showDefaultPhoneTenantOpener = $derived(
+  const phoneScrim = $derived(phone?.scrim !== false);
+  const phoneSwipeToClose = $derived(phone?.swipeToClose !== false);
+  /** The right edge has tools a phone user must be able to open. */
+  const rightOpenerShown = $derived(
     isPhone &&
-      !phoneTopBar &&
-      panelState('top') === 'hidden' &&
+      phoneDockOpener &&
+      shell.isEdgeShown('right') &&
+      (shell.focusTools.length > 0 || Boolean(focusRail)),
+  );
+  const leftOpenerShown = $derived(
+    isPhone &&
       shell.isEdgeShown('left') &&
       shell.phonePresentation('left') !== 'hidden',
-  );
-  const showPhoneTop = $derived(
-    isPhone && (Boolean(phoneTopBar) || showDefaultPhoneTenantOpener),
   );
   const showHeader = $derived(
     Boolean(header) && !(isPhone && Boolean(phoneTopBar)),
@@ -305,6 +316,18 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         (edge) => panelState(edge) === 'expanded' && shell.isEdgeShown(edge),
       ),
   );
+  // Starting to edit the layout on a phone puts any open drawer or sheet away,
+  // so the editor and a drawer never overlap.
+  let wasEditingLayout = false;
+  $effect(() => {
+    const now = Boolean(layoutEdit?.active);
+    untrack(() => {
+      if (now && !wasEditingLayout && shell.viewport === 'phone') {
+        collapsePhoneSurfaces();
+      }
+      wasEditingLayout = now;
+    });
+  });
   const reserveStyle = $derived(
     [
       `--smrt-shell-floating-reserve-inline: ${floatingReserve?.inline ?? '0px'}`,
@@ -710,9 +733,69 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   const stripRegions = $derived(
     layoutEdit?.active && layoutEdit.strip ? (layoutEdit.hiddenRegions ?? []) : [],
   );
+  function slotHas(...names: ShellSlot[]): boolean {
+    return names.some((name) => (slotContent[name]?.length ?? 0) > 0);
+  }
+  const layoutEditing = $derived(Boolean(layoutEdit?.active));
+  const menuOpenerCounts = $derived(
+    !(layoutEditing && !isPhone) &&
+      shell.config.panels.left.initial !== 'hidden' &&
+      shell.layoutPanels.left?.visible !== false &&
+      (!isPhone || shell.phonePresentation('left') !== 'hidden') &&
+      (isPhone || panelState('left') === 'hidden'),
+  );
+  // A band or edge with nothing to show is not rendered and its grid track
+  // collapses to 0 (the five-row grid itself never changes).
+  const topRendered = $derived(
+    panelState('top') !== 'hidden' &&
+      (layoutEditing ||
+        Boolean(appBar) ||
+        !brandInSlot ||
+        showToggle('top') ||
+        menuOpenerCounts ||
+        rightOpenerShown ||
+        Boolean(account) ||
+        footerInHeader ||
+        Boolean(topLeftCorner) ||
+        Boolean(topRightCorner) ||
+        slotHas('header.start', 'header.center', 'header.end') ||
+        panelMounted('top')),
+  );
+  const bottomRendered = $derived(
+    panelState('bottom') !== 'hidden' &&
+      (layoutEditing ||
+        Boolean(systemBar) ||
+        Boolean(bottomLeftCorner) ||
+        Boolean(bottomRightCorner) ||
+        (showToggle('bottom') && Boolean(systemPanel || !systemBar)) ||
+        slotHas('footer.start', 'footer.center', 'footer.end') ||
+        panelMounted('bottom')),
+  );
+  const rightRendered = $derived(
+    shell.isEdgeShown('right') &&
+      (layoutEditing ||
+        shell.focusTools.length > 0 ||
+        Boolean(focusRail) ||
+        Boolean(focusPanel) ||
+        showToggle('right') ||
+        slotHas('rightSidebar.header', 'rightSidebar.footer') ||
+        panelMounted('right')),
+  );
+  const showDefaultPhoneTenantOpener = $derived(
+    isPhone &&
+      !phoneTopBar &&
+      !topRendered &&
+      (leftOpenerShown || rightOpenerShown),
+  );
+  const showPhoneTop = $derived(
+    isPhone && (Boolean(phoneTopBar) || showDefaultPhoneTenantOpener),
+  );
   const layoutStyle = $derived(
     [
       buildLayoutStyle(shell),
+      ...(topRendered ? [] : ['--smrt-admin-shell-top-track: 0rem']),
+      ...(bottomRendered ? [] : ['--smrt-admin-shell-bottom-track: 0rem']),
+      ...(rightRendered ? [] : ['--smrt-admin-shell-right-track: 0rem']),
       ...stripRegions.map(
         (region) => `--smrt-admin-shell-${REGION_TRACK[region]}-track: ${STRIP_TRACK}`,
       ),
@@ -789,10 +872,18 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     return shell.config.panels[edge].label;
   }
 
-  function leftToggleLabel(): string {
-    return t(M[edgeExpanded('left') ? 'ui.admin_shell.collapse_panel' : 'ui.admin_shell.expand_panel'], {
-      panel: labelFor('left'),
-    });
+  function toggleMenu(): void {
+    shell.setPanelState('left', edgeExpanded('left') ? 'collapsed' : 'expanded');
+  }
+
+  function toggleTools(): void {
+    if (edgeExpanded('right')) {
+      shell.collapsePanel('right');
+      return;
+    }
+    const tool = resolveActiveFocusTool();
+    if (tool) shell.openFocusTool(tool.id);
+    else shell.expandPanel('right');
   }
 
   function hotkeyFor(edge: PanelEdge): string {
@@ -905,7 +996,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     <!-- The left toggle is an icon-only chevron: it points the way the panel
          will move (left to collapse, right to expand). Its accessible name
          carries the action and the hotkey rides in the tooltip. -->
-    {@const name = t(M[edgeExpanded('left') ? 'ui.admin_shell.collapse_panel' : 'ui.admin_shell.expand_panel'], { panel: labelFor('left') })}
+    {@const name = t(M[edgeExpanded('left') ? 'ui.admin_shell.collapse_sidebar' : 'ui.admin_shell.expand_sidebar'])}
     <Button
       variant="ghost"
       size="sm"
@@ -943,6 +1034,38 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       <ActivityBadge {edge} />
     </Button>
   {/if}
+{/snippet}
+
+{#snippet menuOpener()}
+  <!-- raw-primitive-allow: shell chrome control, not a content button -->
+  <button
+    type="button"
+    class="smrt-admin-shell__chrome-button"
+    data-smrt-part="trigger"
+    aria-label={t(M['ui.admin_shell.menu'])}
+    title={t(M['ui.admin_shell.menu'])}
+    aria-expanded={edgeExpanded('left')}
+    aria-controls="smrt-admin-shell-left-panel"
+    onclick={toggleMenu}
+  >
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false"><path d={SHELL_ICON_PATHS.menu} /></svg>
+  </button>
+{/snippet}
+
+{#snippet toolsOpener()}
+  <!-- raw-primitive-allow: shell chrome control, not a content button -->
+  <button
+    type="button"
+    class="smrt-admin-shell__chrome-button smrt-admin-shell__tools-opener"
+    data-smrt-part="trigger"
+    aria-label={t(M['ui.admin_shell.tools'])}
+    title={t(M['ui.admin_shell.tools'])}
+    aria-expanded={edgeExpanded('right')}
+    aria-controls="smrt-admin-shell-right-panel"
+    onclick={toggleTools}
+  >
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false"><path d={SHELL_ICON_PATHS[SHELL_DEFAULT_TOOL_ICON]} /></svg>
+  </button>
 {/snippet}
 
 {#snippet resizer(edge: SideEdge)}
@@ -1054,7 +1177,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {/if}
 
   {@render regionStrip('header')}
-  {#if panelState('top') !== 'hidden'}
+  {#if topRendered}
     <header
       id="smrt-admin-shell-top-panel"
       class="smrt-admin-shell__edge smrt-admin-shell__edge--top"
@@ -1079,7 +1202,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         {/if}
         {#if !(layoutEdit?.active && !isPhone) && shell.config.panels.left.initial !== 'hidden' && shell.layoutPanels.left?.visible !== false && (!isPhone || shell.phonePresentation('left') !== 'hidden')}
           <div class="smrt-admin-shell__tenant-opener" class:restore-hidden={panelState('left') === 'hidden'}>
-            <Button variant="ghost" size="sm" aria-label={t(M['ui.admin_shell.menu'])} aria-expanded={edgeExpanded('left')} aria-controls="smrt-admin-shell-left-panel" onclick={() => shell.setPanelState('left', edgeExpanded('left') ? 'collapsed' : 'expanded')}>{t(M['ui.admin_shell.menu'])}</Button>
+            {@render menuOpener()}
           </div>
         {/if}
         {@render slotGroup('header.start')}
@@ -1090,6 +1213,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           </div>
         {/if}
         {@render slotGroup('header.end')}
+        {#if rightOpenerShown}{@render toolsOpener()}{/if}
         {@render regionEdit('header')}
       </div>
       {#if topRightCorner}
@@ -1135,14 +1259,29 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       use:swipeDismiss={{
         direction: 'left',
         onDismiss: () => shell.collapsePanel('left'),
-        enabled: isPhone && Boolean(phone?.swipeToClose) && edgeExpanded('left'),
+        enabled: isPhone && phoneSwipeToClose && edgeExpanded('left'),
       }}
     >
       {@render resizer('left')}
       <div class="smrt-admin-shell__rail">
         {@render regionEdit('leftSidebar')}
-        {#if (panelState('top') === 'hidden' || !edgeExpanded('left')) && (homeHref || logoSrc || brand)}{@render shellBrand(!edgeExpanded('left'))}{/if}
-        {#if isPhone}{@render edgeToggle('left')}{/if}
+        {#if isPhone}
+          <!-- Phone drawer: the app title and an icon-only close control. -->
+          <div class="smrt-admin-shell__drawer-head" data-smrt-part="header">
+            <div class="smrt-admin-shell__drawer-title">{@render shellBrand()}</div>
+            <!-- raw-primitive-allow: shell chrome control, not a content button -->
+            <button
+              type="button"
+              class="smrt-admin-shell__chrome-button"
+              data-smrt-part="close"
+              aria-label={t(M['ui.admin_shell.close_menu'])}
+              title={t(M['ui.admin_shell.close_menu'])}
+              onclick={() => shell.collapsePanel('left')}
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false"><path d={SHELL_ICON_PATHS.close} /></svg>
+            </button>
+          </div>
+        {:else if !topRendered && (homeHref || logoSrc || brand)}{@render shellBrand(!edgeExpanded('left'))}{/if}
         {#if shownOpen('left') || (tenantPanel && keepsContent('left'))}
           <div
             class="smrt-admin-shell__tenant-stack"
@@ -1198,32 +1337,28 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         {@render phoneTopBar({ hidden: chromeHidden })}
       {:else if showDefaultPhoneTenantOpener}
         <div class="smrt-admin-shell__phone-default-top">
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={t(M['ui.admin_shell.menu'])}
-            aria-expanded={edgeExpanded('left')}
-            aria-controls="smrt-admin-shell-left-panel"
-            onclick={() =>
-              shell.setPanelState(
-                'left',
-                edgeExpanded('left') ? 'collapsed' : 'expanded',
-              )}
-          >{t(M['ui.admin_shell.menu'])}</Button>
+          {#if leftOpenerShown}{@render menuOpener()}{/if}
+          {#if rightOpenerShown}
+            <span class="smrt-admin-shell__phone-default-end">{@render toolsOpener()}</span>
+          {/if}
         </div>
       {/if}
     </div>
   {/if}
 
-  {#if isPhone && phone?.scrim && phoneSurfaceOpen}
+  {#if isPhone && phoneScrim && phoneSurfaceOpen}
     <!-- raw-primitive-allow: click-catching backdrop behind a phone drawer -->
     <button
       type="button"
       class="smrt-admin-shell__scrim"
       tabindex="-1"
-      aria-label={t(M['ui.admin_shell.close_panel'], {
-        label: labelFor(edgeExpanded('left') && shell.isEdgeShown('left') ? 'left' : 'right'),
-      })}
+      aria-label={t(
+        M[
+          edgeExpanded('left') && shell.isEdgeShown('left')
+            ? 'ui.admin_shell.close_menu'
+            : 'ui.admin_shell.close_tools'
+        ],
+      )}
       data-testid="admin-shell-scrim"
       onclick={collapsePhoneSurfaces}
     ></button>
@@ -1236,7 +1371,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       type="button"
       class="smrt-admin-shell__overlay-scrim"
       tabindex="-1"
-      aria-label={t(M['ui.admin_shell.close_panel'], { label: labelFor(scrimEdge) })}
+      aria-label={t(
+        M[
+          scrimEdge === 'left'
+            ? 'ui.admin_shell.close_sidebar'
+            : 'ui.admin_shell.close_tools'
+        ],
+      )}
       data-testid="admin-shell-overlay-scrim"
       data-closing={overlayEdge ? undefined : ''}
       onclick={() => {
@@ -1246,7 +1387,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {/if}
 
   {@render regionStrip('rightSidebar')}
-  {#if shell.isEdgeShown('right')}
+  {#if rightRendered}
     {@const rightPhone = isPhone ? shell.phonePresentation('right') : undefined}
     <!-- tabindex -1 only while overlaid, so the panel can take focus on open -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -1269,7 +1410,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         onDismiss: () => shell.collapsePanel('right'),
         enabled:
           rightPhone === 'drawer' &&
-          Boolean(phone?.swipeToClose) &&
+          phoneSwipeToClose &&
           edgeExpanded('right'),
       }}
     >
@@ -1289,6 +1430,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {/if}
       <div class="smrt-admin-shell__rail">
         {@render regionEdit('rightSidebar')}
+        {#if rightPhone === 'drawer'}
+          <!-- raw-primitive-allow: shell chrome control, not a content button -->
+          <button
+            type="button"
+            class="smrt-admin-shell__chrome-button smrt-admin-shell__rail-close"
+            data-smrt-part="close"
+            aria-label={t(M['ui.admin_shell.close_tools'])}
+            title={t(M['ui.admin_shell.close_tools'])}
+            onclick={() => shell.collapsePanel('right')}
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false"><path d={SHELL_ICON_PATHS.close} /></svg>
+          </button>
+        {/if}
         {#if shell.config.panels.right.rail === false}
           <!-- Railless: no tool buttons; the host's toggle opens and closes it. -->
         {:else if focusRail}
@@ -1311,7 +1465,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
                 {#if tool.icon}
                   <tool.icon />
                 {:else}
-                  <span aria-hidden="true">{tool.label.charAt(0)}</span>
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false"><path d={SHELL_ICON_PATHS[SHELL_DEFAULT_TOOL_ICON]} /></svg>
                 {/if}
                 {#if tool.badge != null}
                   <span class="smrt-admin-shell__focus-tool-badge">
@@ -1365,7 +1519,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {/if}
 
   {@render regionStrip('footer')}
-  {#if panelState('bottom') !== 'hidden'}
+  {#if bottomRendered}
     <footer
       id="smrt-admin-shell-bottom-panel"
       class="smrt-admin-shell__edge smrt-admin-shell__edge--bottom"
@@ -1768,6 +1922,43 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     max-inline-size: calc(100vw - 2 * var(--smrt-spacing-4));
   }
 
+  .smrt-admin-shell__chrome-button {
+    flex: 0 0 auto;
+    display: inline-grid;
+    place-items: center;
+    box-sizing: border-box;
+    inline-size: 2.5rem;
+    block-size: 2.5rem;
+    padding: 0;
+    border: 0;
+    border-radius: var(--smrt-radius-md);
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    cursor: pointer;
+  }
+  .smrt-admin-shell__chrome-button:hover {
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-admin-shell__chrome-button:focus-visible {
+    outline: 0.125rem solid var(--smrt-color-primary);
+    outline-offset: 0.125rem;
+  }
+
+  .smrt-admin-shell__drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-2);
+    min-inline-size: 0;
+  }
+  .smrt-admin-shell__drawer-title {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .smrt-admin-shell__rail-close { justify-self: center; }
+
   .smrt-admin-shell__tenant-opener { display: none; flex-shrink: 0; }
   .smrt-admin-shell__tenant-opener.restore-hidden { display: block; }
   .smrt-admin-shell__edge--left[data-state='collapsed'] .smrt-admin-shell__rail { padding-inline: var(--smrt-spacing-2); }
@@ -1972,11 +2163,6 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__edge--left[data-state='expanded'] :global(.smrt-admin-shell__edge-toggle-chevron) {
     transform: scaleX(-1);
   }
-  /* The phone drawer keeps its close control at the top, before the nav. */
-  .smrt-admin-shell[data-viewport='phone'] .smrt-admin-shell__edge--left :global(.smrt-admin-shell__edge-toggle--left) {
-    margin-block-start: 0;
-  }
-
   .smrt-admin-shell__edge-toggle-kbd {
     padding: 0 var(--smrt-spacing-1);
     border-radius: var(--smrt-radius-small);
@@ -2156,6 +2342,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     transition: transform var(--smrt-admin-shell-chrome-duration)
       var(--smrt-easing-standard, ease);
   }
+
+  .smrt-admin-shell__phone-default-end { margin-inline-start: auto; }
 
   .smrt-admin-shell__phone-default-top {
     display: flex;
@@ -2425,6 +2613,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     }
 
     .smrt-admin-shell__tenant-opener { display: block; }
+
+    /* Touch rows: every phone chrome control meets the touch target. */
+    .smrt-admin-shell__chrome-button,
+    .smrt-admin-shell__focus-tool {
+      min-inline-size: var(--smrt-touch-target-min);
+      min-block-size: var(--smrt-touch-target-min);
+    }
     .smrt-admin-shell__edge--left:not([data-state='expanded']),
     .smrt-admin-shell__edge--right:not([data-state='expanded']) { visibility: hidden; }
     .smrt-admin-shell__edge--left,
