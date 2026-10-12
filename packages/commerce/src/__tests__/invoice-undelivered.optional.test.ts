@@ -257,6 +257,27 @@ for (const engine of [
         expect(f.invoice.status).toBe(InvoiceStatus.SENT);
         expect(f.invoice.sentAt).not.toBeNull();
       }));
+    it.each([
+      40, 100,
+    ])('reverses viewed-only payment history (%s units)', (amount) =>
+      owned(async () => {
+        const f = await fixture();
+        await f.allocations.allocatePayment({
+          ...f.input,
+          allocations: [{ ...f.input.allocations[0], amount }],
+        });
+        await f.invoice.loadFromId();
+        f.invoice.markViewed();
+        await f.invoice.save();
+        const viewedAt = String(f.invoice.viewedAt);
+        expect(f.invoice.sentAt).toBeNull();
+        await f.reverse();
+        expect(f.invoice.status).toBe(InvoiceStatus.VIEWED);
+        expect(f.invoice.amountPaid).toBe(0);
+        expect(f.invoice.paidDate).toBeNull();
+        expect(f.invoice.sentAt).toBeNull();
+        expect(String(f.invoice.viewedAt)).toBe(viewedAt);
+      }));
     it('rolls back allocation/status writes then retries stable ids', () =>
       owned(async () => {
         const f = await fixture();

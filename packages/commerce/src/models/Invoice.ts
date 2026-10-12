@@ -940,8 +940,10 @@ export class Invoice extends SmrtObject {
     } else {
       // No payment remaining: revert to the appropriate pre-payment status
       this.paidDate = null;
-      if (this.sentAt) {
-        this.status = this.viewedAt ? InvoiceStatus.VIEWED : InvoiceStatus.SENT;
+      if (this.viewedAt) {
+        this.status = InvoiceStatus.VIEWED;
+      } else if (this.sentAt) {
+        this.status = InvoiceStatus.SENT;
       } else {
         this.status = InvoiceStatus.DRAFT;
       }
