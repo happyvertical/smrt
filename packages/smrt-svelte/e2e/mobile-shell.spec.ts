@@ -365,7 +365,7 @@ test('a footer-only collapsed rail pins its account control at the bottom', asyn
   await expect(
     footer.getByRole('button', { name: /Open account menu Dana/ }),
   ).toBeVisible();
-  await expect(footer).toHaveCSS('grid-row-start', '2');
+  await expect(footer).toHaveCSS('grid-row-start', '3');
   const railBox = await rail.boundingBox();
   const footerBox = await footer.boundingBox();
   expect(railBox).not.toBeNull();
@@ -565,3 +565,67 @@ test.describe('AppShell phone tab bar (375px)', () => {
     await expect(page.getByTestId('phone-bottom-bar')).toHaveCount(0);
   });
 });
+
+for (const viewport of [
+  { name: '375px', width: 375, height: 667, phone: true },
+  { name: '1280px', width: 1280, height: 800, phone: false },
+]) {
+  test.describe(`AppShell account menu (${viewport.name})`, () => {
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize({
+        width: viewport.width,
+        height: viewport.height,
+      });
+      await page.goto('/?account-menu=1');
+    });
+
+    test('opens, moves focus into the menu, and Escape returns focus', async ({
+      page,
+    }) => {
+      const trigger = page
+        .locator('.smrt-workspace-account-menu__trigger')
+        .first();
+      await expect(trigger).toBeVisible();
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      if (viewport.phone) {
+        // Compact avatar at the end of the header band.
+        await expect(
+          page.locator('[data-slot="header.end"] .smrt-workspace-account-menu'),
+        ).toHaveAttribute('data-compact', '');
+      } else {
+        await expect(
+          page.locator(
+            '[data-slot="leftSidebar.footer"] .smrt-workspace-account-menu',
+          ),
+        ).not.toHaveAttribute('data-compact', '');
+      }
+      await trigger.click();
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      const menu = page.getByRole('menu');
+      await expect(menu).toBeVisible();
+      await expect(
+        page.getByRole('menuitem', { name: 'Settings' }),
+      ).toBeFocused();
+      const box = await menu.boundingBox();
+      if (!box) throw new Error('Missing menu bounds');
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await expect(trigger).toBeFocused();
+    });
+
+    test('Sign out runs the callback and closes the menu', async ({ page }) => {
+      const trigger = page
+        .locator('.smrt-workspace-account-menu__trigger')
+        .first();
+      await trigger.click();
+      await page.getByRole('menuitem', { name: 'Sign out' }).click();
+      await expect(page.getByText('Signed out callback')).toBeVisible();
+      await expect(page.getByRole('menu')).toHaveCount(0);
+    });
+  });
+}

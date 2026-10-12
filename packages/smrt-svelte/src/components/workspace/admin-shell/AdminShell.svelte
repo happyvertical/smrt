@@ -1301,6 +1301,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
                 {@render tenantRail()}
               {/if}
             </div>
+            {#if showToggle('left') && !isPhone && shownOpen('left')}{@render edgeToggle('left')}{/if}
             {#if tenantFooter && !footerInHeader}
               <div class="smrt-admin-shell__tenant-footer">
                 {@render tenantFooter()}
@@ -1311,11 +1312,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         {/if}
         {#if !shownOpen('left') && (tenantRail || tenantRailFooter)}
           <div class="smrt-admin-shell__tenant-rail-stack">
-            {#if tenantRail}
-              <div class="smrt-admin-shell__tenant-rail-content">
-                {@render tenantRail()}
-              </div>
-            {/if}
+            <div class="smrt-admin-shell__tenant-rail-content">
+              {#if tenantRail}{@render tenantRail()}{/if}
+            </div>
+            {#if showToggle('left') && !isPhone}{@render edgeToggle('left')}{/if}
             {#if tenantRailFooter}
               <div class="smrt-admin-shell__tenant-rail-footer">
                 {@render tenantRailFooter()}
@@ -1323,7 +1323,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
             {/if}
           </div>
         {/if}
-        {#if showToggle('left') && !isPhone}{@render edgeToggle('left')}{/if}
+        <!-- The chevron closes the nav region, above the footer slot: inside
+             the expanded stack or the collapsed rail stack. Only when neither
+             is rendered does it stand alone at the bottom of the rail. -->
+        {#if showToggle('left') && !isPhone && !shownOpen('left') && !(tenantRail || tenantRailFooter)}{@render edgeToggle('left')}{/if}
       </div>
     </aside>
   {/if}
@@ -1922,7 +1925,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     max-inline-size: min(20rem, 45vw);
     flex: 1 1 12rem;
   }
-  .smrt-admin-shell__account :global(.smrt-workspace-account-menu .dropdown__menu) {
+  .smrt-admin-shell__account :global(.smrt-workspace-account-menu__popover) {
     top: 100%; bottom: auto; right: 0; left: auto;
     inline-size: max-content;
     max-inline-size: calc(100vw - 2 * var(--smrt-spacing-4));
@@ -2107,7 +2110,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   .smrt-admin-shell__tenant-rail-stack {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto auto;
     flex: 1;
     min-width: 0;
     min-height: 0;
@@ -2122,7 +2125,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__tenant-rail-footer {
     position: relative;
     z-index: 1;
-    grid-row: 2;
+    grid-row: 3;
     min-width: 0;
     padding-block-start: var(--smrt-spacing-2);
     border-block-start: 1px solid var(--smrt-color-outline-variant);
@@ -2150,10 +2153,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     padding-block-start: var(--smrt-shell-floating-reserve-block);
   }
 
-  /* The left chevron sits at the bottom of the rail, after the navigation
-     and the sidebar footer slot; `margin-block-start: auto` pins it there
-     even when nothing above it grows. Expanded it hugs the inner edge and
-     points left; collapsed it is centred in the narrow rail and points right. */
+  /* The left chevron closes the navigation region: after the navigation and
+     above the sidebar footer slot (the account menu), never below it.
+     `margin-block-start: auto` pins it to the end of the nav region even when
+     nothing above it grows. Expanded it hugs the inner edge and points left;
+     collapsed it is centred in the narrow rail and points right. */
   .smrt-admin-shell__edge--left :global(.smrt-admin-shell__edge-toggle--left) {
     flex: 0 0 auto;
     margin-block-start: auto;
@@ -2165,6 +2169,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
   .smrt-admin-shell__edge--left[data-state='collapsed'] :global(.smrt-admin-shell__edge-toggle--left) {
     align-self: center;
+    justify-self: center;
+  }
+  .smrt-admin-shell__tenant-rail-stack > :global(.smrt-admin-shell__edge-toggle--left) {
+    grid-row: 2;
   }
   .smrt-admin-shell__edge--left[data-state='expanded'] :global(.smrt-admin-shell__edge-toggle-chevron) {
     transform: scaleX(-1);

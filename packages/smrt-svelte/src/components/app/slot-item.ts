@@ -1,4 +1,5 @@
 import type { Snippet } from 'svelte';
+import type { PaletteProvider } from '../command-palette/types.js';
 import type { ShellSlot } from '../workspace/admin-shell/slots.js';
 
 /**
@@ -18,4 +19,19 @@ export interface ShellSlotItem {
   slot: ShellSlot;
   /** The content. */
   render: Snippet;
+}
+
+/**
+ * `AppShell` `accountMenu`: `false` opts out of the built-in `item:account`;
+ * `{ slot }` sets its default slot (default `leftSidebar.footer`, the end of
+ * the header band on phones).
+ */
+export type AppShellAccountMenu = boolean | { slot?: ShellSlot };
+
+/** `AppShell` `commandPalette`: the built-in `item:command-palette`. */
+export interface AppShellCommandPalette {
+  /** Providers for the palette (navigation, records, commands). */
+  providers: PaletteProvider[];
+  /** Search box placeholder in the palette dialog. */
+  placeholder?: string;
 }

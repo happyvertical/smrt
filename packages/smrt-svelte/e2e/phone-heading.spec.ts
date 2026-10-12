@@ -51,7 +51,13 @@ for (const width of [320, 390, 768, 1024]) {
         await expect(
           page.getByRole('menuitem', { name: 'Sign out' }),
         ).toBeVisible();
+        // Escape closes the menu only (the innermost layer) and keeps focus on
+        // its trigger; the drawer is then closed on its own.
         await page.keyboard.press('Escape');
+        await expect(accountMenu).toBeFocused();
+        if (drawer) {
+          await page.locator('[data-smrt-part="close"]').click();
+        }
         const assistant = page.getByRole('button', {
           name: 'Assistant',
           exact: true,

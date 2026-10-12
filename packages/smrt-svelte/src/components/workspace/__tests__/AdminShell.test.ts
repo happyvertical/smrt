@@ -258,9 +258,9 @@ describe('AdminShell', () => {
     }
   });
 
-  it('assigns a footer-only collapsed rail to the bottom grid row', () => {
+  it('assigns a footer-only collapsed rail to the bottom grid row, below the toggle row', () => {
     expect(adminShellSource).toMatch(
-      /\.smrt-admin-shell__tenant-rail-footer\s*\{[^}]*grid-row:\s*2;/s,
+      /\.smrt-admin-shell__tenant-rail-footer\s*\{[^}]*grid-row:\s*3;/s,
     );
   });
 

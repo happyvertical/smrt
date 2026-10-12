@@ -177,10 +177,14 @@ behaviour.
 The left edge's toggle is an icon-only chevron, not a labelled button: it
 points the way the panel will move (left to collapse, right to expand), its
 accessible name is `Collapse sidebar` / `Expand sidebar` (the hotkey rides
-in the tooltip, there is no visible `<kbd>`), and off phones it is the last
-child of the rail, pinned to the bottom below the navigation and the
-`leftSidebar.footer` slot (`margin-block-start: auto`; it hugs the inner edge
-while expanded and centres in the collapsed rail). Phones replace it with the drawer's
+in the tooltip, there is no visible `<kbd>`), and off phones it closes the
+navigation region: it sits at the end of the nav (`margin-block-start: auto`),
+above the `leftSidebar.footer` slot, never below it. Order top to bottom, expanded
+and collapsed: nav, chevron, footer (the account menu; the compact avatar last
+in the collapsed rail). Expanded it lives inside the sidebar body
+(`tenant-stack`) and hugs the inner edge; collapsed it is the middle row of the
+rail stack (content, chevron, `tenantRailFooter`) and is centred. Only a rail
+with neither nav nor footer content draws it alone at the bottom. Phones replace it with the drawer's
 icon-only "Close menu" at the top, so opening the drawer still focuses a close control. The
 header, footer and right toggles keep their region label and hotkey hint.
 
@@ -193,7 +197,34 @@ layouts). `AppShell` also supplies the built-in item `item:brand` (the shell
 `logoSrc`/`logoAlt`, title and subtitle, linked to `homeHref` when set, default slot `header.start`, movable, same fallback chain
 when the header is hidden); it sets `AdminShell` `brandInSlot` so the top band
 draws no brand of its own (standalone `AdminShell` still does). The menu
-opener and account content are not items yet (#3656 step 3).
+opener and the legacy `account`/`tenantFooter` snippets are not items.
+
+`AppShell` also supplies three more built-in items (ids are stored in layouts,
+keep them stable), all movable in the layout editor like `item:brand`:
+
+| Item | Default slot | Phone | Opt out |
+| --- | --- | --- | --- |
+| `item:account` | `leftSidebar.footer` | compact avatar, last in the header band (`header.end`) | `accountMenu={false}`; `accountMenu={{ slot }}` sets the default |
+| `item:color-scheme` | `header.end` | icon-only (no label), accessible name kept | `colorSchemeToggle={false}`; `{ slot }` sets the default |
+| `item:command-palette` | `header.center` | search glyph button | off unless `commandPalette` is passed |
+
+`item:account` renders `WorkspaceAccountMenu` only when `user` is set (nothing
+for `null`). Menu: name and email (when present on the user object), a Settings
+link when `settingsHref` is set, Sign out when `onSignOut` (callback, wins) or
+`signOutHref` (link) is given; plus tenant switching when used standalone. The
+trigger carries `aria-expanded`, focus moves into the menu on open, Escape
+closes only the menu and returns focus to the trigger. In an expanded sidebar
+it shows the full identity (menu opens upward); everywhere else, and in the
+collapsed rail, it is the compact avatar. In the collapsed rail `AppShell`
+passes it as `tenantRailFooter` (outside the rail's scroll clip; the menu opens
+to the inline end over the workspace) instead of letting the footer slot fall
+back to another region. `item:color-scheme` reuses `ColorSchemeToggle` from
+`@happyvertical/smrt-ui/themes` (no second switcher). `item:command-palette`
+mounts the existing `CommandPalette` (`commandPalette: { providers, placeholder? }`,
+types `AppShellCommandPalette`/`AppShellAccountMenu` from `./app`): it owns the
+dialog and the global shortcut, so it mounts once. Planner-style hosts that
+rendered their own `header.end` assistant toggle should pass `dockToggles`
+(`dock:assistant`) and `user` instead.
 
 `ShellLayout.placements?: Record<itemId, ShellSlot>` (additive, still version
 1) overrides default slots. Pure helpers in `layout.ts` (also `./workspace/layout`):
@@ -508,6 +539,10 @@ removing the item from `source`.
 lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
 `Provider` and its tests.
 
+- `AppShell` built-in items (`item:account`, `item:color-scheme`,
+  `item:command-palette`, with `user`, `onSignOut`, `signOutHref`, `accountMenu`,
+  `colorSchemeToggle`, `commandPalette`) are documented under "Moving items
+  between slots".
 - `AppShell` composes `Provider` (`webmcp`, `user`, `permissions` pass through
   unchanged), `ThemeProvider`, the theme CSS (`themes/styles/{all,fonts}.css`
   are imported by the component — forgetting them leaves `--smrt-*` unresolved),
