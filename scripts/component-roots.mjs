@@ -13,7 +13,8 @@
  *   - Root elements: elements in the component's template that are not nested
  *     inside another element. Elements inside `{#if}`, `{#each}`, `{#key}` and
  *     `{#await}` branches count; snippets and child-component slot content do not
- *     (slot content is never a root: the child's own element is the rendered root).
+ *     (a child's own element is its rendered root; only a transparent provider
+ *     that renders just its children passes slot content through).
  *   - Hook value: the component's file basename (no package prefix).
  *   - Placement: after the element's last attribute, so a `{...rest}` spread
  *     earlier in the tag cannot override the component's own value. A consumer
@@ -92,6 +93,18 @@ export const NO_ROOT_ELEMENT = {
   'packages/webhooks/src/svelte/WebhookAdmin.svelte': CHILD,
   'packages/agents/src/svelte/components/ScheduleStatusBadge.svelte': CHILD,
 };
+
+/**
+ * Names of exported components that render only their children (the `SLOT`
+ * entries above): they add no element, so the slot content authored in the
+ * caller is rendered directly at the caller's root and stays a root. Any other
+ * child component contributes its own element and never passes root-ness on.
+ */
+export const TRANSPARENT_COMPONENTS = new Set(
+  Object.entries(NO_ROOT_ELEMENT)
+    .filter(([, reason]) => reason === SLOT)
+    .map(([file]) => basename(file, '.svelte')),
+);
 
 const requireFromUi = createRequire(join(ROOT, 'packages/smrt-ui/package.json'));
 const { parse } = requireFromUi('svelte/compiler');
@@ -183,9 +196,11 @@ function localExportNames(text) {
 
 /**
  * Control-flow blocks pass root-ness through. A root-level child component's
- * slot/children content never does: its rendered root is the child's element,
- * which carries the child's hook, so the slot elements are not this component's
- * roots. Snippet bodies are not rendered at the root and do not either.
+ * slot/children content does not, except for a transparent component
+ * (TRANSPARENT_COMPONENTS: renders only its children and no element): any other
+ * child's rendered root is its own element, which carries the child's hook, so
+ * the slot elements are not this component's roots. Snippet bodies are not
+ * rendered at the root and do not either.
  */
 const BLOCK_FRAGMENTS = {
   IfBlock: ['consequent', 'alternate'],
@@ -195,7 +210,7 @@ const BLOCK_FRAGMENTS = {
 };
 
 /** Elements rendered at the component's root (not nested in another element). */
-export function rootElements(fragment) {
+export function rootElements(fragment, transparent = TRANSPARENT_COMPONENTS) {
   const out = [];
   // Local snippets: a root-level {@render name()} renders the snippet's body at the root.
   const snippets = new Map();
@@ -216,6 +231,10 @@ export function rootElements(fragment) {
           walk(snippets.get(name).nodes);
           rendering.delete(name);
         }
+        continue;
+      }
+      if (node.type === 'Component' && transparent.has(node.name)) {
+        walk(node.fragment?.nodes);
         continue;
       }
       for (const key of BLOCK_FRAGMENTS[node.type] ?? []) {

@@ -19,7 +19,10 @@ breaking change, so follow these rules rather than improvising names.
   root element. Their rendered root carries the child's hook. They are listed in
   `NO_ROOT_ELEMENT` in `scripts/component-roots.mjs` with a reason. Elements
   passed as slot or children content to a root-level child component are never
-  roots: they carry no hook of the wrapper's name.
+  roots: they carry no hook of the wrapper's name. The one exception is a
+  transparent provider that renders only its children and no element (the `SLOT`
+  entries in `NO_ROOT_ELEMENT`, for example `FieldPolicyProvider`): its slot
+  content is rendered directly at the caller's root and keeps the hook.
 
 The gate is `pnpm check:component-roots` (part of `pnpm lint`). It fails when an
 exported component's root lacks its hook. Add the hook when you add a component;

@@ -27,6 +27,11 @@ test('slot content of a root-level child component is never a root', () => {
   assert.deepEqual(tags('<svelte:component this={C}><p></p></svelte:component>'), []);
 });
 
+test('a transparent provider passes its slot content through as roots', () => {
+  assert.deepEqual(tags('<FieldPolicyProvider>{#if a}<div></div>{/if}<Form><p></p></Form></FieldPolicyProvider>'), ['div']);
+  assert.deepEqual(tags('<Provider><PermissionCheck><b></b></PermissionCheck></Provider>'), ['b']);
+});
+
 test('a real element root beside a child-component root is the only root', () => {
   assert.deepEqual(tags('<Wrap><button></button></Wrap><div></div>'), ['div']);
 });

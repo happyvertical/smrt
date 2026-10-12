@@ -418,10 +418,10 @@ function inputFor(field: ObjectFormField): FieldInputComponent {
 <FieldPolicyProvider policy={resolvedPolicy}>
   {#if showModeSwitch || (showPolicyGear && fieldPolicyGear)}
     {#if showModeSwitch}
-      <div class="object-form__mode"><ModeSwitch /></div>
+      <div class="object-form__mode" data-smrt-component="ObjectForm"><ModeSwitch /></div>
     {/if}
     {#if showPolicyGear && fieldPolicyGear}
-      <div class="object-form__gear"><FieldPolicyGearButton /></div>
+      <div class="object-form__gear" data-smrt-component="ObjectForm"><FieldPolicyGearButton /></div>
     {/if}
   {/if}
   <Form class="object-form {className}" onsubmit={handleSubmit}>
