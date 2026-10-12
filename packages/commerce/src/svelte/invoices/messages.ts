@@ -32,6 +32,8 @@ export const invoicePreparationMessages = defineMessages({
   'commerce.invoice.total': 'Total',
   'commerce.invoice.invalid':
     'Totals unavailable until quantity, price, discount, tax and currency are valid.',
+  'commerce.invoice.invoiceRounding':
+    'Tax is rounded across the invoice for each effective rate; see the invoice totals.',
   'commerce.invoice.preview':
     'Calculated preview; the server revalidates prices, tax and totals.',
   'commerce.invoice.retained': 'Retained reference: {reference}',

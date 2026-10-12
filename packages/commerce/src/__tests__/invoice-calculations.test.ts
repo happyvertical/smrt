@@ -429,3 +429,104 @@ describe('exact general invoice calculations', () => {
     expect(() => calculateInvoiceMinorLine(input)).toThrow(RangeError);
   });
 });
+
+describe('invoice tax rounding scope', () => {
+  const small = {
+    ...invoice,
+    taxRate: '5',
+    lines: ['first', 'second'].map((key) => ({
+      ...line,
+      key,
+      quantity: '1',
+      unitPrice: '0.10',
+      discountValue: '0',
+    })),
+  };
+  it('normalizes equivalent rates and keeps overrides and discounts exact', () => {
+    const draft = {
+      ...small,
+      lines: [
+        {
+          ...small.lines[0],
+          unitPrice: '0.20',
+          discountType: 'percent',
+          discountValue: '50',
+        },
+        { ...small.lines[1], taxMode: 'override', taxRate: '005.000000' },
+        { ...small.lines[0], key: 'zero', taxMode: 'override', taxRate: '0' },
+        { ...small.lines[0], key: 'other', taxMode: 'override', taxRate: '10' },
+      ],
+    };
+    expect(
+      calculateInvoiceDraft(draft, { roundingScope: 'invoice' }),
+    ).toMatchObject({
+      valid: true,
+      grossMinor: 50,
+      discountMinor: 10,
+      subtotalMinor: 40,
+      taxMinor: 2,
+      totalMinor: 42,
+    });
+  });
+  it.each([
+    { quantity: '-1' },
+    { unitPrice: '-0.10' },
+    { unitPrice: '0.001' },
+    { discountValue: '0.11' },
+    { taxMode: 'override', taxRate: '5.0000001' },
+    { taxMode: 'override', taxRate: '101' },
+    { taxMode: 'override', taxRate: '' },
+  ])('keeps invalid line input invalid under invoice rounding: %j', (patch) => {
+    const result = calculateInvoiceDraft(
+      { ...small, lines: [{ ...small.lines[0], ...patch }] },
+      { roundingScope: 'invoice' },
+    );
+    expect(result.valid).toBe(false);
+    expect(result).not.toHaveProperty('totalMinor');
+  });
+  it('rejects unsupported scope and unsafe aggregates without plausible totals', () => {
+    // Runtime callers can supply unsupported values even though TS restricts them.
+    const invalid = calculateInvoiceDraft(small, {
+      roundingScope: 'future' as 'invoice',
+    });
+    expect(invalid).toMatchObject({
+      valid: false,
+      errors: { roundingScope: 'invalid-mode' },
+    });
+    const overflow = calculateInvoiceDraft(
+      {
+        ...small,
+        taxRate: '0',
+        lines: small.lines.map((row) => ({
+          ...row,
+          unitPrice: '90071992547409.91',
+        })),
+      },
+      { roundingScope: 'invoice' },
+    );
+    expect(overflow).toMatchObject({
+      valid: false,
+      errors: { total: 'range' },
+    });
+    expect(overflow).not.toHaveProperty('totalMinor');
+  });
+  it('rounds a shared tax once across the invoice without changing the line default', () => {
+    expect(calculateInvoiceDraft(small)).toMatchObject({
+      valid: true,
+      subtotalMinor: 20,
+      taxMinor: 2,
+      totalMinor: 22,
+    });
+    expect(calculateInvoiceDraft(small, { roundingScope: 'line' })).toEqual(
+      calculateInvoiceDraft(small),
+    );
+    expect(
+      calculateInvoiceDraft(small, { roundingScope: 'invoice' }),
+    ).toMatchObject({
+      valid: true,
+      subtotalMinor: 20,
+      taxMinor: 1,
+      totalMinor: 21,
+    });
+  });
+});

@@ -138,3 +138,28 @@ test('standalone line primitive recalculates and reports drafts without mutating
   await expect(page.getByLabel('Unit price (CAD)', { exact: true })).toHaveValue('bad.price');
   expect(errors).toEqual([]);
 });
+
+
+for (const javaScriptEnabled of [false, true]) {
+  test(`invoice rounding agrees with native server totals (JavaScript ${javaScriptEnabled})`, async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled, viewport: { width: 390, height: 844 } });
+    const page = await context.newPage();
+    const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`http://127.0.0.1:5586/${javaScriptEnabled ? 'e2e/invoices/index.html?rounding=invoice' : 'native-invoice-rounding'}`);
+    await expect(page.locator('.summary')).toContainText('0.21');
+    await expect(page.locator('.invoice-line .totals dt')).toHaveText(['Subtotal', 'Subtotal']);
+    await expect(page.getByText('Tax is rounded across the invoice', { exact: false })).toHaveCount(2);
+    const form = await page.locator('form').evaluate(element => Array.from(new FormData(element as HTMLFormElement).entries()).map(([name, value]) => [name, String(value)]));
+    const response = await context.request.post('http://127.0.0.1:5586/save-invoice-rounding', { headers: { Accept: 'application/json' }, data: new URLSearchParams(form).toString() });
+    expect(await response.json()).toMatchObject({ valid: true, subtotalMinor: 20, taxMinor: 1, totalMinor: 21 });
+    await page.getByLabel('Unit price (CAD)', { exact: true }).first().fill('0.20');
+    if (javaScriptEnabled) await expect(page.locator('.summary')).toContainText('0.32');
+    await page.getByRole('button', { name: 'Save invoice draft' }).click();
+    await expect(page.locator('.summary')).toContainText('0.32');
+    await expect(page.getByLabel('Unit price (CAD)', { exact: true }).first()).toHaveValue('0.20');
+    await expect(page.getByText('Tax is rounded across the invoice', { exact: false })).toHaveCount(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(errors).toEqual([]);
+    await context.close();
+  });
+}

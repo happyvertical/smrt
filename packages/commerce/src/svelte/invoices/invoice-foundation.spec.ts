@@ -141,3 +141,26 @@ describe('General invoice foundation', () => {
     expect(body).toContain('name="operation"');
   });
 });
+
+it('renders invoice-rounded tax only at aggregate level, not as allocated line totals', () => {
+  const body = html({
+    roundingScope: 'invoice',
+    values: {
+      ...values,
+      lines: ['a', 'b'].map((key) => ({
+        ...values.lines[0],
+        key,
+        quantity: '1',
+        unitPrice: '0.10',
+        discountType: 'flat',
+        discountValue: '0',
+      })),
+    },
+  });
+  expect(body).toContain('0.21');
+  expect(body).not.toContain('0.22');
+  expect(body.match(/Tax is rounded across the invoice/g)).toHaveLength(2);
+  // Only the aggregate renders a Tax/Total term; each row renders its subtotal.
+  expect(body.match(/>Tax<\/dt>/g)).toHaveLength(1);
+  expect(body.match(/>Total<\/dt>/g)).toHaveLength(1);
+});

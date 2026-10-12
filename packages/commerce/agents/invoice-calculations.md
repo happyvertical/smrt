@@ -2,7 +2,7 @@
 
 `@happyvertical/smrt-commerce/invoices` is a Svelte-free entry usable by server handlers and browsers. `calculateInvoiceLine`, `calculateInvoiceDraft`, and `resolveInvoiceLineDraft` share exact decimal arithmetic. The UI consumes these helpers for previews; preview results confer no authority.
 
-Drafts retain unparsed text. Quantity accepts nonnegative decimals with at most six fractional digits and must round-trip through the model numeric representation. Prices and flat discounts accept only whole currency minor units expressed in major-unit text. Currency uses Commerce billing's explicit ISO exponent table (0/3/4 exceptions; other uppercase three-letter codes use 2); servers must authorize their supported currency set. No exchange conversion occurs. Rates are percentages from 0 through 100 with at most six fractional digits. `discountType` is `flat` or `percent`; `taxMode` is `inherit` or `override`. An override of `0` is zero tax; an empty override is invalid. Inherited lines ignore their dormant override string.
+Drafts retain unparsed text. Quantity accepts nonnegative decimals with at most six fractional digits and must round-trip through the model numeric representation. Prices and flat discounts accept only whole currency minor units expressed in major-unit text. Currency uses the shared explicit ISO minor-unit table; unknown codes and codes without a minor unit are rejected. Servers must authorize their supported currency set. No exchange conversion occurs. Rates are percentages from 0 through 100 with at most six fractional digits. `discountType` is `flat` or `percent`; `taxMode` is `inherit` or `override`. An override of `0` is zero tax; an empty override is invalid. Inherited lines ignore their dormant override string.
 
 Calculation order is quantity × price rounded half up to minor units, discount rounded half up and subtracted, then tax on the discounted subtotal rounded half up. Flat discounts cannot exceed gross. Numeric model quantities and rates use their canonical decimal representation (including supported exponent notation), never a `toFixed` expansion of binary approximation. No floating-point multiplication or epsilon comparison determines money. Unsafe individual or aggregate results are rejected; invalid lines produce errors without monetary totals. Header validation requires customer, real issue/due dates with due date not before issue date, valid currency shape/default rate, at least one line, and unique nonblank row keys.
 
@@ -15,3 +15,30 @@ Trailing zeroes do not make an exact amount invalid: `100.00` JPY is 100 minor u
 Parse native form values into the typed draft (never pass unvalidated arbitrary JSON as the typed object), enforce request/row limits, authorize customer and source references in the active tenant, and validate edits against invoice lifecycle state. Replace inherited rate/currency policy with server-authorized context, call the shared validator/resolver, and save resolved rows and invoice within the application's transaction/retry contract. Ignore any client-supplied calculated amount. Default tax remains externally determined; this module is not a tax determination service. Caller-owned extension allocations, budget availability and approval evidence require their own server validation and are not part of line pricing.
 
 Changing currency changes the precision and denomination of the entered values, not their numeric text. The UI must not silently convert entered amounts or rewrite invalid drafts. Reopening or changing authorized tax context requires fresh server validation.
+
+
+## Explicit tax rounding scope
+
+`calculateInvoiceDraft(values, { roundingScope: 'invoice' })` and the shared
+`InvoiceEditor` / `InvoiceLineEditor` `roundingScope` prop accept `line` or
+`invoice`. Omission preserves per-line rounding. The server chooses this option
+from its authorized policy, and supplies it again when rendering rejected forms
+or reopening retained drafts; it is not a client authority field.
+
+Invoice scope groups numerically equal effective percentages, including textual
+variants such as `5` and `5.000000`, and rounds each rate group once through
+`calculateCostBillingTax`. Different rates remain independent components; explicit
+zero overrides remain exempt. Quantity and discount rounding are unchanged. Two
+10-minor lines at 5% therefore have tax 1 in invoice scope and 2 in line scope.
+This is an additive single-rate-per-line editor, not a tax determination or
+compound-tax solver. Invalid scope is a validation error. Drafts still reject
+negative quantities/prices; the signed model calculator is unchanged.
+
+`lineResults` and `resolveInvoiceLineDraft` remain standalone per-line
+calculations, useful for validation and existing line-mode model storage. They
+are **not allocations** of invoice-rounded tax: their tax/total fields may not
+sum to the aggregate. In invoice mode the UI displays each line's subtotal and
+an explanation, with tax and total shown only at invoice level. Persist the
+aggregate with the authorized scope and retained draft when using invoice
+rounding; do not reconstruct it by summing standalone resolved line totals.
+No persistence schema or `InvoiceLineItem` tax behavior is changed by this API.
