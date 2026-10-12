@@ -6,6 +6,7 @@ export const KITCHEN_BRIDGE = `<script>
   let sequence = 0;
   let latest;
   let hostOrigin = '*';
+  let initialized = false;
   function send(message) { window.parent.postMessage({ jsonrpc: '2.0', ...message }, hostOrigin); }
   function request(method, params) {
     return new Promise((resolve, reject) => {
@@ -17,6 +18,30 @@ export const KITCHEN_BRIDGE = `<script>
       pending.set(id, { resolve, reject, timer });
       send({ id, method, params });
     });
+  }
+  // The Planner is an app shell that scrolls inside itself, so it asks for a
+  // stable frame instead of its content height: the host's fixed height wins,
+  // else its maxHeight, else a default. Fullscreen belongs to the host.
+  const DEFAULT_HEIGHT = 720;
+  let dimensions = {};
+  let displayMode = 'inline';
+  let reported;
+  function appHeight() {
+    if (displayMode === 'fullscreen' || typeof dimensions.height === 'number') return undefined;
+    const max = dimensions.maxHeight;
+    return typeof max === 'number' && max > 0 ? Math.round(max) : DEFAULT_HEIGHT;
+  }
+  function reportSize() {
+    const height = appHeight();
+    if (height === undefined || height === reported) return;
+    reported = height;
+    send({ method: 'ui/notifications/size-changed', params: { height } });
+  }
+  function applyHostContext(context) {
+    if (!context || typeof context !== 'object') return;
+    const next = context.containerDimensions;
+    if (next && typeof next === 'object') dimensions = next;
+    if (typeof context.displayMode === 'string') displayMode = context.displayMode;
   }
   function publish(data) {
     if (!data || typeof data.planId !== 'string' || !data.state) return;
@@ -35,6 +60,9 @@ export const KITCHEN_BRIDGE = `<script>
       pending.delete(message.id);
       if (message.error) item.reject(new Error(message.error.message || 'Host request failed'));
       else item.resolve(message.result);
+    } else if (message.method === 'ui/notifications/host-context-changed') {
+      applyHostContext(message.params);
+      if (initialized) reportSize();
     } else if (message.method === 'ui/notifications/tool-result') {
       publish(message.params?.structuredContent);
     } else if (message.method === 'ping' && message.id !== undefined) {
@@ -48,6 +76,9 @@ export const KITCHEN_BRIDGE = `<script>
   }).then((result) => {
     if (result?.protocolVersion !== '2026-01-26') throw new Error('Unsupported MCP Apps protocol');
     send({ method: 'ui/notifications/initialized', params: {} });
+    applyHostContext(result.hostContext);
+    initialized = true;
+    reportSize();
     return result;
   });
   ready.catch(() => {});
@@ -135,14 +166,6 @@ export const KITCHEN_BRIDGE = `<script>
       stopped = true;
       clearInterval(timer);
     }, { once: true });
-  }).catch(() => {});
-  ready.then(() => {
-    const observer = new ResizeObserver(() => send({
-      method: 'ui/notifications/size-changed',
-      params: { height: document.documentElement.scrollHeight },
-    }));
-    observer.observe(document.documentElement);
-    window.addEventListener('pagehide', () => observer.disconnect(), { once: true });
   }).catch(() => {});
 })();
 </script>`;

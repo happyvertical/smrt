@@ -12,6 +12,7 @@ import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -192,6 +193,69 @@ describe('KitchenSession (in process)', () => {
       ok: false,
       error: { code: 'invalid_input' },
     });
+  });
+});
+
+/** Run the injected bridge against a fake MCP Apps host; returns what it sent. */
+async function bridgeHost(hostContext: Record<string, unknown>) {
+  const sent: Array<{ id?: string; method?: string; params?: any }> = [];
+  let receive: ((event: unknown) => void) | undefined;
+  const parent = {
+    postMessage: (message: { id?: string; method?: string }) => {
+      sent.push(message);
+    },
+  };
+  const window = {
+    parent,
+    addEventListener: (type: string, listener: (event: unknown) => void) => {
+      if (type === 'message') receive = listener;
+    },
+  };
+  const deliver = (data: unknown) =>
+    receive?.({ source: parent, origin: 'null', data });
+  runInNewContext(KITCHEN_BRIDGE.replace(/^<script>|<\/script>$/g, ''), {
+    window,
+    document: {},
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+  });
+  const init = sent.find((m) => m.method === 'ui/initialize');
+  deliver({
+    jsonrpc: '2.0',
+    id: init?.id,
+    result: { protocolVersion: '2026-01-26', hostContext },
+  });
+  await new Promise((r) => setTimeout(r, 0));
+  const sizes = () =>
+    sent
+      .filter((m) => m.method === 'ui/notifications/size-changed')
+      .map((m) => m.params.height);
+  return { deliver, sizes };
+}
+
+describe('Kitchen MCP Apps bridge', () => {
+  it('asks for a stable app height instead of following its content', async () => {
+    const roomy = await bridgeHost({ containerDimensions: { maxHeight: 640 } });
+    expect(roomy.sizes()).toEqual([640]);
+    roomy.deliver({
+      jsonrpc: '2.0',
+      method: 'ui/notifications/host-context-changed',
+      params: { containerDimensions: { maxHeight: 900 } },
+    });
+    expect(roomy.sizes()).toEqual([640, 900]);
+    // A host-fixed height or fullscreen belongs to the host: nothing is sent.
+    roomy.deliver({
+      jsonrpc: '2.0',
+      method: 'ui/notifications/host-context-changed',
+      params: { displayMode: 'fullscreen' },
+    });
+    expect(roomy.sizes()).toEqual([640, 900]);
+    const fixed = await bridgeHost({ containerDimensions: { height: 500 } });
+    expect(fixed.sizes()).toEqual([]);
+    const plain = await bridgeHost({});
+    expect(plain.sizes()).toEqual([720]);
   });
 });
 
