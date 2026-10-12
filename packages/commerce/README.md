@@ -137,6 +137,16 @@ await payment.recordPayment({
 
 Invoice and Payment integrate with `@happyvertical/smrt-ledgers` via dynamic import (optional dependency). Invoice stores `arJournalId` and `revenueJournalId` as plain string references to ledger journals. `recognizeRevenue()` creates a balanced AR entry (DR: Accounts Receivable, CR: Revenue, CR: Tax Payable). `recordPayment()` creates a balanced cash receipt entry (DR: Cash, CR: Accounts Receivable). Both methods return null or throw if the ledgers package is not installed.
 
+`Payment.recordPayment()` claims the payment revision and commits the journal,
+entries, and completed payment in one database transaction. A failed completion
+rolls back the posting and restores the instance's settlement fields for retry.
+Concurrent or stale instances fail instead of posting twice; reload the payment
+and retry only if it is still pending. An already completed payment retains the
+`Payment already recorded` error. A caller's enclosing transaction remains the
+owner: if it rolls back after settlement returns, reload the payment before retry.
+These guarantees cover new postings, not orphaned journals written by older
+versions. The returned journal uses the caller's database executor.
+
 ### Cross-Package References
 
 Customer and Vendor link to `@happyvertical/smrt-profiles` via plain `profileId` string. Invoice and Payment reference `@happyvertical/smrt-ledgers` journals via plain string IDs (`arJournalId`, `revenueJournalId`, `journalId`). All models use `@TenantScoped({ mode: 'optional' })` with nullable `tenantId`.

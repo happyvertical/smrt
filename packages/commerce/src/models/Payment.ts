@@ -63,6 +63,9 @@ const loadedPaymentStatus = new WeakMap<Payment, PaymentStatus>();
  */
 const settlementInProgress = new WeakSet<Payment>();
 
+/** Prevent concurrent temporary executor bindings on the same instance. */
+const recordingInProgress = new WeakSet<Payment>();
+
 /**
  * Payment represents a financial transaction against a contract.
  *
@@ -619,6 +622,56 @@ export class Payment extends SmrtObject {
    * ```
    */
   async recordPayment(options: RecordPaymentOptions): Promise<Journal> {
+    if (recordingInProgress.has(this)) {
+      throw new Error('Payment recording is already in progress');
+    }
+    if (this.status === PaymentStatus.COMPLETED) {
+      throw new Error('Payment already recorded');
+    }
+    const previous = {
+      status: this.status,
+      journalId: this.journalId,
+      paidAt: this.paidAt,
+      loadedStatus: loadedPaymentStatus.get(this),
+    };
+    recordingInProgress.add(this);
+    try {
+      await this.withTransaction(async () => {
+        if (!this.isPersisted) await this.save();
+        // The revision claim is a write fence, including under PostgreSQL
+        // repeatable-read snapshots. A stale contender must reload and retry
+        // instead of posting from an earlier pending-payment snapshot.
+        await this.claimRevision(this.updated_at);
+        await this.postPaymentInTransaction(options);
+      });
+    } catch (error) {
+      this.status = previous.status;
+      this.journalId = previous.journalId;
+      this.paidAt = previous.paidAt;
+      if (previous.loadedStatus === undefined) loadedPaymentStatus.delete(this);
+      else loadedPaymentStatus.set(this, previous.loadedStatus);
+      throw error;
+    } finally {
+      recordingInProgress.delete(this);
+      settlementInProgress.delete(this);
+    }
+
+    // Return a journal on the caller's executor, not the now-closed transaction.
+    const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
+    const journals = await JournalCollection.create({
+      ...this.options,
+      db: this.db,
+    });
+    const journal = await journals.get({ id: this.journalId });
+    if (!journal)
+      throw new Error('Recorded payment journal could not be loaded');
+    return journal;
+  }
+
+  /** Post and complete only inside recordPayment's claimed transaction. */
+  private async postPaymentInTransaction(
+    options: RecordPaymentOptions,
+  ): Promise<Journal> {
     if (this.status === PaymentStatus.COMPLETED) {
       throw new Error('Payment already recorded');
     }
