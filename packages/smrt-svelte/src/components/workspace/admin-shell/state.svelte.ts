@@ -118,6 +118,12 @@ export class ShellState {
    * `setInlineEdges`, so a bare `ShellState` keeps its historic behaviour.
    */
   inlineEdges = $state<Partial<Record<PanelEdge, boolean>>>({});
+  /**
+   * Whether any edge has keyboard shortcuts at all (`AdminShell` `hotkeys` /
+   * `edgeToggles`). Read-only for consumers: `AdminShell` keeps it current.
+   * Settings UI shows the shortcuts section only while it is true.
+   */
+  hotkeysAvailable = $state(false);
 
   private activityListeners = new Set<ActivityListener>();
 

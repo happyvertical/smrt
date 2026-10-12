@@ -847,6 +847,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     return toggleOn(edge) || showToggle(edge);
   }
 
+  $effect(() => {
+    shell.hotkeysAvailable = (['top', 'left', 'right', 'bottom'] as const).some(
+      hotkeyActive,
+    );
+  });
+
   function showsHotkeyFor(edge: PanelEdge): boolean {
     return (
       hotkeyActive(edge) &&
