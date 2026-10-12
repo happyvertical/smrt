@@ -56,3 +56,9 @@ DRAFT cannot conceal positive allocations. A DRAFT save checks both its supplied
 delivery timestamps and the currently persisted timestamps, so clearing them
 locally during reversal cannot bypass the undelivered requirement. This guard
 does not introduce an immutable lifetime delivery-history record.
+
+If a prepaid invoice is actually delivered later, call `markSent()` and save.
+For PARTIAL/PAID invoices it records the first `sentAt` while preserving payment
+status, paid amount, paid date and any existing view timestamp. Repeating this
+call preserves the first send timestamp. It records the caller's delivery
+event; it does not send a customer message or manufacture earlier delivery.

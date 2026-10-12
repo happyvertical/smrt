@@ -881,9 +881,18 @@ export class Invoice extends SmrtObject {
    * Mark invoice as sent
    */
   markSent(): void {
+    // Payment progress and actual delivery are independent. A prepaid invoice
+    // may be sent later; preserve its allocation-derived status and first send.
+    if (
+      this.status === InvoiceStatus.PARTIAL ||
+      this.status === InvoiceStatus.PAID
+    ) {
+      this.sentAt ??= new Date();
+      return;
+    }
     if (this.status !== InvoiceStatus.DRAFT) {
       throw new Error(
-        `Cannot send invoice with status '${this.status}'. Only draft invoices can be sent.`,
+        `Cannot send invoice with status '${this.status}'. Only draft or payment-progress invoices can be sent.`,
       );
     }
     this.status = InvoiceStatus.SENT;

@@ -278,6 +278,48 @@ for (const engine of [
         expect(f.invoice.sentAt).toBeNull();
         expect(String(f.invoice.viewedAt)).toBe(viewedAt);
       }));
+    it.each([
+      [40, false],
+      [100, false],
+      [40, true],
+      [100, true],
+    ] as const)('sends a prepaid invoice without losing payment progress (%s, viewed=%s)', (amount, viewed) =>
+      owned(async () => {
+        const f = await fixture();
+        await f.allocations.allocatePayment({
+          ...f.input,
+          allocations: [{ ...f.input.allocations[0], amount }],
+        });
+        await f.invoice.loadFromId();
+        if (viewed) {
+          f.invoice.markViewed();
+          await f.invoice.save();
+        }
+        const status = f.invoice.status;
+        const viewedAt = String(f.invoice.viewedAt);
+        const paidDate = String(f.invoice.paidDate);
+        f.invoice.markSent();
+        await f.invoice.save();
+        await f.invoice.loadFromId();
+        const sentAt = String(f.invoice.sentAt);
+        expect(f.invoice.sentAt).not.toBeNull();
+        expect(f.invoice.status).toBe(status);
+        expect(f.invoice.amountPaid).toBe(amount);
+        expect(String(f.invoice.viewedAt)).toBe(viewedAt);
+        expect(String(f.invoice.paidDate)).toBe(paidDate);
+        f.invoice.markSent();
+        await f.invoice.save();
+        await f.invoice.loadFromId();
+        expect(String(f.invoice.sentAt)).toBe(sentAt);
+        await f.reverse();
+        expect(f.invoice.status).toBe(
+          viewed ? InvoiceStatus.VIEWED : InvoiceStatus.SENT,
+        );
+        expect(String(f.invoice.sentAt)).toBe(sentAt);
+        expect(String(f.invoice.viewedAt)).toBe(viewedAt);
+        expect(f.invoice.amountPaid).toBe(0);
+        expect(f.invoice.paidDate).toBeNull();
+      }));
     it('rolls back allocation/status writes then retries stable ids', () =>
       owned(async () => {
         const f = await fixture();
@@ -330,6 +372,7 @@ for (const engine of [
         const f = await fixture();
         f.invoice.status = status;
         await f.invoice.save();
+        expect(() => f.invoice.markSent()).toThrow(/Cannot send/);
         f.invoice.updatePaymentStatus(0);
         expect(f.invoice.status).toBe(status);
         f.invoice.status = InvoiceStatus.DRAFT;
