@@ -46,13 +46,15 @@ import type { InvoiceLineItem } from './InvoiceLineItem.js';
  *
  * Forward path: DRAFT → SENT → VIEWED → PARTIAL → PAID, with OVERDUE reachable
  * from any open status and CANCELLED / WRITTEN_OFF as terminal exits. Payment
- * progress (SENT/VIEWED ↔ PARTIAL ↔ PAID) is driven by `updatePaymentStatus`,
+ * progress (DRAFT/SENT/VIEWED ↔ PARTIAL ↔ PAID) is driven by `updatePaymentStatus`,
  * which can move both forward and backward as allocations change, so those
  * edges are bidirectional here.
  */
 const INVOICE_STATUS_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
   [InvoiceStatus.DRAFT]: [
     InvoiceStatus.SENT,
+    InvoiceStatus.PARTIAL,
+    InvoiceStatus.PAID,
     InvoiceStatus.CANCELLED,
     InvoiceStatus.WRITTEN_OFF,
   ],
@@ -73,6 +75,7 @@ const INVOICE_STATUS_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
     InvoiceStatus.WRITTEN_OFF,
   ],
   [InvoiceStatus.PARTIAL]: [
+    InvoiceStatus.DRAFT,
     InvoiceStatus.SENT,
     InvoiceStatus.VIEWED,
     InvoiceStatus.PAID,
@@ -92,6 +95,7 @@ const INVOICE_STATUS_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
   // removed or reversed (handled by updatePaymentStatus). It can also be
   // written off as bad debt in unusual reconciliation flows.
   [InvoiceStatus.PAID]: [
+    InvoiceStatus.DRAFT,
     InvoiceStatus.PARTIAL,
     InvoiceStatus.VIEWED,
     InvoiceStatus.SENT,
@@ -515,6 +519,7 @@ export class Invoice extends SmrtObject {
       this.assertNonNegativeAmounts();
       this.assertStatusTransition(prior);
       this.assertPaymentStatusConsistent();
+      await this.assertDraftDeliveryHistory(persisted);
 
       await assertAllocationParent(this, 'invoice');
       const result = (await super.save()) as this;
@@ -670,8 +675,8 @@ export class Invoice extends SmrtObject {
    * SENT → PAID is a structurally legal edge.
    *
    * Only enforced for the payment-derived statuses (PAID / PARTIAL and the
-   * unpaid open states SENT / VIEWED). Lifecycle statuses that aren't a
-   * function of amountPaid — DRAFT, OVERDUE, CANCELLED, WRITTEN_OFF — are left
+   * unpaid states DRAFT / SENT / VIEWED). Lifecycle statuses that aren't a
+   * function of amountPaid — OVERDUE, CANCELLED, WRITTEN_OFF — are left
    * to their own transition rules.
    */
   private assertPaymentStatusConsistent(): void {
@@ -679,6 +684,11 @@ export class Invoice extends SmrtObject {
     const fullyPaid = this.isFullyPaid();
     const partiallyPaid = this.isPartiallyPaid();
 
+    if (this.status === InvoiceStatus.DRAFT && this.amountPaid !== 0) {
+      throw new Error(
+        `Invoice ${label}: DRAFT requires zero derived payment allocations.`,
+      );
+    }
     if (this.status === InvoiceStatus.PAID && !fullyPaid) {
       throw new Error(
         `Invoice ${label}: status is PAID but derived amountPaid ${this.amountPaid} ` +
@@ -706,6 +716,26 @@ export class Invoice extends SmrtObject {
           `${this.amountPaid} fully covers totalAmount ${this.totalAmount}. ` +
           'Use updatePaymentStatus() so the status reflects the allocations.',
       );
+    }
+  }
+
+  /** A payment reversal cannot erase an actual delivery event. */
+  private async assertDraftDeliveryHistory(persisted: boolean): Promise<void> {
+    if (this.status !== InvoiceStatus.DRAFT) return;
+    if (this.sentAt || this.viewedAt) {
+      throw new Error('DRAFT requires an undelivered invoice');
+    }
+    if (persisted && this.id) {
+      const { InvoiceCollection } = await import(
+        '../collections/InvoiceCollection.js'
+      );
+      const invoices = await InvoiceCollection.create({ db: this.db });
+      const prior = await invoices.get({ id: this.id }, { cache: false });
+      if (prior?.sentAt || prior?.viewedAt) {
+        throw new Error(
+          'DRAFT cannot erase persisted invoice delivery history',
+        );
+      }
     }
   }
 
@@ -880,7 +910,7 @@ export class Invoice extends SmrtObject {
    * Update payment amount and status.
    *
    * Called when PaymentAllocations change. Handles both forward transitions
-   * (SENT → PARTIAL → PAID) and reversals (PAID → PARTIAL → original status).
+   * (DRAFT/SENT → PARTIAL → PAID) and reversals (PAID → PARTIAL → original status).
    *
    * Terminal statuses (CANCELLED, WRITTEN_OFF) are not modified.
    */
