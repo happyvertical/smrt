@@ -36,6 +36,7 @@ import { appHref, appQuery, setBasePath } from '$lib/planner/app.svelte.ts';
 import { plannerRuntime } from '$lib/planner/instance.ts';
 import { hasAppState, withTab } from '$lib/planner/query.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
+import { plannerShellProps } from '$lib/planner/shell.ts';
 import { plannerTab } from '$lib/planner/tab.svelte.ts';
 import { FEATURE_SECTION, featureNavItems } from '$lib/recipes/features.ts';
 import {
@@ -69,6 +70,7 @@ plannerRuntime.openSection = (id) => {
 
 // No Planner entry: the shell's Edit layout toggle goes to the Planner page.
 const nav: ShellNavItem[] = [];
+const shellProps = plannerShellProps();
 
 // The sidebar lists only these sections (`navMode="sections"`); each opens its
 // own page (`/s/<section>/`) listing the entries. Navigation sections belong to the app: a recipe only suggests one
@@ -356,7 +358,7 @@ function flushOnHide() {
     },
   ]}
   dockToggles={[{ tool: 'assistant', label: 'Assistant', slot: 'header.end' }]}
-  config={{ right: { initial: 'collapsed', rail: false, presentation: 'overlay' } }}
+  {...shellProps}
   layoutEditing={{ slot: 'header.start' }}
   navMode="sections"
   sectionHref={(id) => appHref(sectionPath(id))}

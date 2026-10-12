@@ -43,4 +43,9 @@ export {
 export * from './planner/commands/index.ts';
 export { plannerController } from './planner/instance.ts';
 export { default as Planner } from './planner/Planner.svelte';
+export {
+  PLANNER_SHELL_EDGE_TOGGLES,
+  PLANNER_SHELL_PANEL_DEFAULTS,
+  plannerShellProps,
+} from './planner/shell.ts';
 export type { PlannerHandle, PlannerProps } from './planner/types.ts';

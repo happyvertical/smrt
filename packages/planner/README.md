@@ -86,6 +86,29 @@ const controller = createPlannerController();
 <Planner {controller} basePath="/planner" />
 ```
 
+When a host also owns an `AppShell`, use Planner's exported shell defaults to
+start its navigation closed while retaining the native Menu control. This keeps
+the Layout tab able to show and restore every available panel; do not replace
+these controls with CSS visibility overrides.
+
+```svelte
+<script lang="ts">
+  import { AppShell } from '@happyvertical/smrt-svelte/app';
+  import {
+    PLANNER_SHELL_EDGE_TOGGLES,
+    PLANNER_SHELL_PANEL_DEFAULTS,
+  } from '@happyvertical/smrt-planner';
+</script>
+
+<AppShell
+  edgeToggles={PLANNER_SHELL_EDGE_TOGGLES}
+  config={PLANNER_SHELL_PANEL_DEFAULTS}
+  layoutEditing
+>
+  <Planner layout="shell" persistence="host" />
+</AppShell>
+```
+
 ```ts
 import { commandTools, createPlannerController } from '@happyvertical/smrt-planner/commands';
 
