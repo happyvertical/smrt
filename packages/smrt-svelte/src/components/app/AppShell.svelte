@@ -60,6 +60,12 @@ import {
 import DockSlot from './DockSlot.svelte';
 import DockToggles from './DockToggles.svelte';
 import type { DockToggle } from './dock-toggle.js';
+import PhoneTabBar from './PhoneTabBar.svelte';
+import {
+  type PhoneTabBarOptions,
+  phoneTabNavEntries,
+  resolvePhoneTabBar,
+} from './phone-tabs.js';
 import RuntimeDiagnosticsWebMcp from './RuntimeDiagnosticsWebMcp.svelte';
 import type { ShellSlotItem } from './slot-item.js';
 
@@ -190,6 +196,26 @@ interface Props {
   edgeToggles?: AdminShellProps['edgeToggles'];
   /** Keyboard shortcuts; default follows `edgeToggles` (see `AdminShell`). */
   hotkeys?: boolean;
+  /**
+   * Phone bottom tab bar (default `false`): on phones, the footer region's
+   * phone presentation (conceptually the footer's center slot) shows the first
+   * N navigation items as icon + label tabs (`aria-current` from
+   * `currentHref`), then a tab for the first `dockToggles` entry (or a "Tools"
+   * tab when the right edge has tools), then "More" opening the left drawer
+   * when navigation overflows. `N` defaults to 4 and counts the dock tab;
+   * `{ items }` overrides it. While on, the header "Tools" opener and the
+   * header copy of the dock tab's toggle are not rendered on phones. Read once
+   * at mount, like `config`.
+   */
+  phoneTabBar?: boolean | PhoneTabBarOptions;
+  /**
+   * How the right edge (dock tools) presents on phones: `'sheet'` rises from
+   * the bottom above the tab bar (grabber, swipe down or Escape to close),
+   * `'drawer'` slides in from the side. Default `'sheet'` when `phoneTabBar`
+   * is on, else `'drawer'`. An explicit value wins over `config.right.phone`.
+   * Read once at mount.
+   */
+  phoneDock?: 'sheet' | 'drawer';
   children: Snippet;
 }
 
@@ -227,6 +253,8 @@ let {
   iconComponent,
   edgeToggles = false,
   hotkeys,
+  phoneTabBar = false,
+  phoneDock,
   children,
 }: Props = $props();
 /** Stable id of the built-in brand item (title, subtitle). */
@@ -296,12 +324,21 @@ const entries = $derived.by(() => {
   }
   return out;
 });
+/** The right edge's phone presentation from `phoneDock` / `phoneTabBar`. */
+function withPhoneDock(base: ShellPanelDefaults | undefined) {
+  const mode =
+    phoneDock ?? (resolvePhoneTabBar(phoneTabBar) ? 'sheet' : undefined);
+  const right = base?.right;
+  if (!mode || right === false) return base;
+  if (!phoneDock && right?.phone !== undefined) return base;
+  return { ...base, right: { ...right, phone: mode } };
+}
 // The shell state lives here (not inside AdminShell) so the layout can reach
 // it: panel overrides apply to it, and the user's layout is stored in it when
 // the host does not own persistence.
 const shell = untrack(() =>
   createShellState({
-    config,
+    config: withPhoneDock(config),
     storageKey,
     layoutPanels: normalizeShellLayout(layout).panels,
   }),
@@ -319,6 +356,16 @@ const applied = $derived(
   applyShellLayout(nav, navGroups, config, effectiveLayout),
 );
 const hasNav = $derived(applied.nav.length > 0 || applied.groups.length > 0);
+
+// Phone tab bar: on only when asked for and there is something to show.
+const tabBarBudget = $derived(resolvePhoneTabBar(phoneTabBar)?.items ?? 0);
+const tabEntries = $derived(
+  phoneTabNavEntries(applied.nav, applied.groups, navMode, sectionHref),
+);
+const tabBarOn = $derived(
+  tabBarBudget > 0 && (tabEntries.length > 0 || dockToggles.length > 0),
+);
+const tabDockToggle = $derived(tabBarOn ? dockToggles[0] : undefined);
 
 const slotIds = $derived(resolveShellPlacements(entries, effectiveLayout));
 const entriesFor = (name: ShellSlot): PlacedEntry[] => {
@@ -579,7 +626,10 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {#snippet slotBody(name: ShellSlot)}
   {#each entriesFor(name) as entry (entry.id)}
     {#if entry.toggle}
-      <DockToggles toggles={[entry.toggle]} />
+      <!-- On phones the tab bar carries this toggle. -->
+      {#if !(tabDockToggle?.tool === entry.toggle.tool && shell.viewport === 'phone')}
+        <DockToggles toggles={[entry.toggle]} />
+      {/if}
     {:else if entry.render}
       {@render entry.render()}
     {/if}
@@ -703,6 +753,16 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   />
 {/snippet}
 
+{#snippet phoneTabs()}
+  <PhoneTabBar
+    entries={tabEntries}
+    {currentHref}
+    budget={tabBarBudget}
+    dockToggle={tabDockToggle}
+    {iconComponent}
+  />
+{/snippet}
+
 <Provider {webmcp} {user} {permissions}>
   <RuntimeDiagnosticsWebMcp enabled={runtimeDiagnostics} />
   <ThemeProvider {preset} {colorScheme} persist={true}>
@@ -719,7 +779,8 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       {edgeToggles}
       {hotkeys}
       brandInSlot
-      phoneDockOpener={dockToggles.length === 0}
+      phoneDockOpener={dockToggles.length === 0 && !tabBarOn}
+      phoneBottomBar={tabBarOn ? phoneTabs : undefined}
       bind:rootElement={shellRoot}
       {floatingReserve}
     >

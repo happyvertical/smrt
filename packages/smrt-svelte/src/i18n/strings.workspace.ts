@@ -212,4 +212,8 @@ export const M = defineMessages({
   'ui.system_feed.chip_running': 'Running',
   'ui.system_feed.chip_queued': 'Queued',
   'ui.system_feed.chip_failed': 'Failed',
+
+  // components/app/PhoneTabBar (issue #3852)
+  'ui.phone_tab_bar.label': 'Main',
+  'ui.phone_tab_bar.more': 'More',
 });

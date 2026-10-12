@@ -1,7 +1,9 @@
 <script lang="ts">
 import { Button } from '@happyvertical/smrt-ui/ui';
+import AppShell from '../src/components/app/AppShell.svelte';
 import AdminShell from '../src/components/workspace/admin-shell/AdminShell.svelte';
 import AppScopePanel from '../src/components/workspace/admin-shell/AppScopePanel.svelte';
+import ShellDockTool from '../src/components/workspace/admin-shell/ShellDockTool.svelte';
 import SystemStatusChips from '../src/components/workspace/admin-shell/SystemStatusChips.svelte';
 import { createShellState } from '../src/components/workspace/admin-shell/state.svelte.js';
 import TenantNav from '../src/components/workspace/admin-shell/TenantNav.svelte';
@@ -31,6 +33,12 @@ const navItems = [
   { href: '#queue', label: 'Queue' },
   { href: '#reports', label: 'Reports' },
 ];
+// `?tabs`: the AppShell phone tab bar (#3852) instead of the bare AdminShell.
+const tabNav = ['Queue', 'Reports', 'Orders', 'Billing', 'Stock', 'Team'].map(
+  (label) => ({ href: `#${label.toLowerCase()}`, label }),
+);
+let tabCurrent = $state(window.location.hash);
+const tabBar = query.get('tabs') === 'off' ? false : true;
 const chips = Array.from({ length: 8 }, (_, index) => ({
   id: String(index),
   label: `Status ${index + 1}`,
@@ -47,6 +55,15 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
 {#snippet account()}<WorkspaceAccountMenu userName="Dana" roleLabel="Welder" density="touch" onSignOut={() => { signedOut = true; }} />{/snippet}
 {#snippet compactAccount()}<WorkspaceAccountMenu userName="Dana" roleLabel="Welder" density="touch" compact onSignOut={() => { signedOut = true; }} />{/snippet}
 {#snippet systemBar()}<SystemStatusChips {chips} />{/snippet}
+<svelte:window onhashchange={() => { tabCurrent = window.location.hash; }} />
+{#snippet assistantBody()}<input aria-label="Ask" />{/snippet}
+{#if query.has('tabs')}
+<AppShell title="Tab fixture" nav={tabNav} currentHref={tabCurrent} phoneTabBar={tabBar}
+  dockToggles={[{ tool: 'assistant', label: 'Assistant' }]} storageKey="phone-tabs-fixture">
+  {#snippet dock()}<ShellDockTool id="assistant" label="Assistant" render={assistantBody} />{/snippet}
+  <p>Main content</p>
+</AppShell>
+{:else}
 <div data-theme="smrt" data-color-scheme="light">
 <AdminShell edgeToggles state={shell} title="Mobile shell fixture" storageKey="mobile-shell-fixture"
   header={query.has('header') ? shellHeader : undefined}
@@ -57,6 +74,7 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
   <Button onclick={() => shell.setPanelState('left', 'hidden')}>Hide navigation</Button>
 </AdminShell>
 </div>
+{/if}
 
 <style>
   :global(body) { margin: 0; font-family: sans-serif; }

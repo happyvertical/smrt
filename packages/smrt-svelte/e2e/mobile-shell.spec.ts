@@ -469,3 +469,99 @@ test('a phone reaches the right edge through the Tools opener and exclusive draw
     'collapsed',
   );
 });
+
+test.describe('AppShell phone tab bar (375px)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+  });
+
+  test('tab navigation moves the current highlight', async ({ page }) => {
+    await page.goto('/?tabs=on');
+    const bar = page.getByTestId('phone-bottom-bar');
+    await expect(bar).toBeVisible();
+    const queue = bar.locator('[data-item="#queue"]');
+    const reports = bar.locator('[data-item="#reports"]');
+    await reports.click();
+    await expect(reports).toHaveAttribute('aria-current', 'page');
+    await expect(queue).not.toHaveAttribute('aria-current', 'page');
+    await queue.click();
+    await expect(queue).toHaveAttribute('aria-current', 'page');
+    // Four navigation/dock tabs plus More; touch targets are large enough.
+    await expect(bar.locator('[data-item]')).toHaveCount(5);
+    const box = await queue.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  });
+
+  test('the assistant tab opens a sheet above the bar, closes by grabber swipe and Escape', async ({
+    page,
+  }) => {
+    await page.goto('/?tabs=on');
+    const bar = page.getByTestId('phone-bottom-bar');
+    const tab = bar.locator('[data-item="dock:assistant"]');
+    const sheet = page.locator('.smrt-admin-shell__edge--right');
+    await expect(sheet).toHaveAttribute('data-phone', 'sheet');
+    await tab.click();
+    await expect(sheet).toHaveAttribute('data-state', 'expanded');
+    const barBox = await bar.boundingBox();
+    if (!barBox) throw new Error('Missing bar bounds');
+    // The sheet rises into place; it ends above the tab bar, full width.
+    await expect
+      .poll(async () => {
+        const box = await sheet.boundingBox();
+        return box ? Math.round(box.y + box.height) : Number.NaN;
+      })
+      .toBeLessThanOrEqual(Math.round(barBox.y) + 1);
+    const sheetBox = await sheet.boundingBox();
+    expect(sheetBox?.width ?? 0).toBeGreaterThanOrEqual(374);
+
+    const grabber = page.locator('.smrt-admin-shell__sheet-grabber');
+    const g = await grabber.boundingBox();
+    if (!g) throw new Error('Missing grabber');
+    const x = g.x + g.width / 2;
+    const y = g.y + g.height / 2;
+    await page.touchscreen.tap(x, y);
+    const client = await page.context().newCDPSession(page);
+    await client.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x, y }],
+    });
+    for (const dy of [30, 80, 140, 200]) {
+      await client.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x, y: y + dy }],
+      });
+    }
+    await client.send('Input.dispatchTouchEvent', {
+      type: 'touchEnd',
+      touchPoints: [],
+    });
+    await expect(sheet).not.toHaveAttribute('data-state', 'expanded');
+
+    await tab.click();
+    await expect(sheet).toHaveAttribute('data-state', 'expanded');
+    await page.keyboard.press('Escape');
+    await expect(sheet).not.toHaveAttribute('data-state', 'expanded');
+  });
+
+  test('opening Menu from More closes the sheet', async ({ page }) => {
+    await page.goto('/?tabs=on');
+    const bar = page.getByTestId('phone-bottom-bar');
+    const sheet = page.locator('.smrt-admin-shell__edge--right');
+    const left = page.locator('.smrt-admin-shell__edge--left');
+    await bar.locator('[data-item="dock:assistant"]').click();
+    await expect(sheet).toHaveAttribute('data-state', 'expanded');
+    await bar.locator('[data-item="more"]').click();
+    await expect(left).toHaveAttribute('data-state', 'expanded');
+    await expect(sheet).not.toHaveAttribute('data-state', 'expanded');
+    await page.getByRole('button', { name: 'Close menu' }).first().click();
+    await bar.locator('[data-item="dock:assistant"]').click();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await expect(left).toHaveAttribute('data-state', 'expanded');
+    await expect(sheet).not.toHaveAttribute('data-state', 'expanded');
+  });
+
+  test('without the prop there is no tab bar', async ({ page }) => {
+    await page.goto('/?tabs=off');
+    await expect(page.getByTestId('phone-bottom-bar')).toHaveCount(0);
+  });
+});

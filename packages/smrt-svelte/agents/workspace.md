@@ -93,6 +93,27 @@ other) and `ADMIN_SHELL_DESKTOP_QUERY` (64rem); `installShellViewport` runs on
 mount and the `ShellState` constructor detects the initial class so the first
 paint is right.
 
+**Phone tab bar (`AppShell` `phoneTabBar`, default `false`).** On phones it
+fills `AdminShell`'s `phoneBottomBar` track; conceptually that is the footer
+region's phone presentation (its center slot), not a new region. Tabs, in
+order: the first N top-level nav items (flat `nav`, then group entries, or one
+per group in `navMode: 'sections'`; icon + label, `aria-current="page"` from
+`currentHref`, placeholder glyph when no icon), the dock tab (first
+`dockToggles` entry, else a "Tools" tab while the right edge has tools), then
+"More" (opens the left drawer) only when nav overflows. `N` defaults to 4 and
+includes the dock tab; `phoneTabBar={{ items: n }}` overrides. Selection is the
+pure `planPhoneTabs` in `app/phone-tabs.ts`; `PhoneTabBar.svelte` renders it
+through `PhoneBottomBar` (which now also takes `iconName` entries and an
+`iconComponent`). With the bar on, the header "Tools" opener and the header copy
+of the dock tab's toggle are not rendered on phones. `phoneDock` (`'sheet' |
+'drawer'`, default `'sheet'` with the tab bar, else `'drawer'`; an explicit value
+beats `config.right.phone`) sets the right edge's phone presentation; the sheet
+already sits between the top bars and the phone-bar track, so it rises above the
+tab bar. Both props are read once at mount (like `config`). Header-end slot
+content (`slots['header.end']`, e.g. a future account avatar) stays in the
+header band on phones. Safe-area padding is `env(safe-area-inset-bottom)` in
+the bar's CSS.
+
 Edge config: `viewportDefaults` (applied per class change; such an edge never
 stores its state), `phone: 'drawer' | 'sheet' | 'hidden'` (`sheet` is right
 edge only), `resizable` (side edges, `push` only, not on phones) and `persist`.
