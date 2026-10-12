@@ -581,19 +581,73 @@ async function stop(context: AppContext): Promise<void> {
   printJson(context, { schemaVersion: 1, status: 'stopped', pid });
 }
 
+/** Ports above the configured one that Vite may fall back to when it is busy. */
+const DEV_PORT_FALLBACK_RANGE = 10;
+const LIVE_PROBE_TIMEOUT_MS = 1000;
+
+/**
+ * Find the port this application's server is actually listening on. Starts
+ * at the configured port and walks the Vite fallback range, accepting only a
+ * server whose runtime health answers with this application's id (so another
+ * app that took the configured port is never mistaken for ours). Returns
+ * `null` when no such server answers.
+ */
+async function resolveLivePort(
+  context: AppContext,
+  host: string,
+  configuredPort: string,
+): Promise<string | null> {
+  const first = Number.parseInt(configuredPort, 10);
+  if (!Number.isInteger(first) || first < 1) return null;
+  for (let offset = 0; offset <= DEV_PORT_FALLBACK_RANGE; offset += 1) {
+    const port = first + offset;
+    if (port > 65535) break;
+    try {
+      const response = await context.deps.fetch(
+        new URL('/api/_runtime/health', `http://${host}:${port}/`),
+        {
+          redirect: 'manual',
+          signal: AbortSignal.timeout(LIVE_PROBE_TIMEOUT_MS),
+        },
+      );
+      if (response.status !== 200) continue;
+      const health = (await response.json()) as Record<string, unknown> | null;
+      if (health?.application === context.appId) return String(port);
+    } catch {
+      // Nothing (or nothing of ours) answered on this port.
+    }
+  }
+  return null;
+}
+
 async function open(context: AppContext): Promise<void> {
   const runtime = await context.deps.resolveRuntime(context.sourceRoot);
   const host =
     runtime.profile === 'local' ? '127.0.0.1' : process.env.HOST || '127.0.0.1';
-  const url = `http://${host}:${process.env.PORT || '5173'}/`;
-  const onboardingUrl =
+  const configuredPort = process.env.PORT || '5173';
+  const livePort = await resolveLivePort(context, host, configuredPort);
+  const port = livePort ?? configuredPort;
+  const url = `http://${host}:${port}/`;
+  let onboardingUrl =
     runtime.profile === 'local' ? readOnboardingUrl(context) : null;
-  if (onboardingUrl) saveOnboardingLaunch(context, onboardingUrl);
+  if (onboardingUrl) {
+    // The retained invitation was minted for the configured port; follow the
+    // server to the port it really bound.
+    const live = new URL(onboardingUrl);
+    live.port = port;
+    onboardingUrl = live.toString();
+    saveOnboardingLaunch(context, onboardingUrl);
+  }
   const destination = onboardingUrl
     ? pathToFileURL(onboardingLaunchPath(context)).toString()
     : url;
   context.deps.openBrowser(destination);
-  printJson(context, { schemaVersion: 1, status: 'opened', url });
+  printJson(context, {
+    schemaVersion: 1,
+    status: 'opened',
+    url,
+    serverRunning: livePort !== null,
+  });
 }
 
 interface DoctorFinding {
