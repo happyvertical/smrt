@@ -69,14 +69,15 @@ function generateTypographyVariables(
     vars[`${prefix}-typography-${cssKey}-line-height`] = token.lineHeight;
     vars[`${prefix}-typography-${cssKey}-weight`] = String(token.weight);
     vars[`${prefix}-typography-${cssKey}-tracking`] = token.tracking;
-    if (token.fontFamily) {
-      vars[`${prefix}-typography-${cssKey}-font-family`] = token.fontFamily;
-    }
+    // Always emit the longhand (issue #3826): a token without its own family
+    // inherits the theme body font, so the longhand is defined for every theme
+    // and components never depend on an unset custom property.
+    const family = token.fontFamily ?? `var(${prefix}-font-family)`;
+    vars[`${prefix}-typography-${cssKey}-font-family`] = family;
     // Additive `font` shorthand alias (issue #1431): components use
     // `font: var(--smrt-typography-body-medium-font)`, expecting the CSS
     // `font` shorthand order (style variant size/line-height family). Built
     // from the emitted longhands so it stays in sync.
-    const family = token.fontFamily ?? `var(${prefix}-font-family)`;
     vars[`${prefix}-typography-${cssKey}-font`] =
       `${token.weight} ${token.size}/${token.lineHeight} ${family}`;
   }
