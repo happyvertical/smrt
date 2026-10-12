@@ -140,7 +140,9 @@ Invoice and Payment integrate with `@happyvertical/smrt-ledgers` via dynamic imp
 `Payment.recordPayment()` claims the payment revision and commits the journal,
 entries, and completed payment in one database transaction. A failed completion
 rolls back the posting and restores the instance's settlement fields for retry.
-Concurrent or stale instances fail instead of posting twice; reload the payment
+The claimed persisted status is authoritative even if a caller locally resets
+status or marks the instance failed without saving. Concurrent or stale instances
+fail instead of posting twice; reload the payment
 and retry only if it is still pending. An already completed payment retains the
 `Payment already recorded` error. A caller's enclosing transaction remains the
 owner: if it rolls back after settlement returns, reload the payment before retry.

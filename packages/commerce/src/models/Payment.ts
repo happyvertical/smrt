@@ -647,6 +647,13 @@ export class Payment extends SmrtObject {
           );
         }
         await this.claimRevision(this.updated_at);
+        // In-memory status can be edited without saving (including markFailed).
+        // Only the claimed persisted row decides whether settlement happened.
+        const persisted = await this.db.get(this.tableName, { id: this.id });
+        if (!persisted) throw new Error('Claimed payment could not be loaded');
+        if (persisted.status === PaymentStatus.COMPLETED) {
+          throw new Error('Payment already recorded');
+        }
         await this.postPaymentInTransaction(options);
       });
     } catch (error) {

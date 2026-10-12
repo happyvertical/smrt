@@ -89,8 +89,13 @@ export function paymentRetryContract(postgres = false, enabled = true): void {
       return payment;
     }
 
-    it('rolls back a posted journal when completion fails and retries the same instance', async () => {
+    it.each([
+      PaymentStatus.PENDING,
+      PaymentStatus.FAILED,
+    ])('rolls back a posted journal and retries the same instance (%s)', async (localStatus) => {
       const payment = await pending();
+      if (localStatus === PaymentStatus.FAILED)
+        payment.markFailed('Retryable transport failure');
       const save = payment.save.bind(payment);
       const fault = vi
         .spyOn(payment, 'save')
@@ -103,7 +108,7 @@ export function paymentRetryContract(postgres = false, enabled = true): void {
       expect(await journals.count({ where: { sourceRef: payment.id } })).toBe(
         0,
       );
-      expect(payment.status).toBe(PaymentStatus.PENDING);
+      expect(payment.status).toBe(localStatus);
       expect((await payments.get({ id: payment.id }))?.status).toBe(
         PaymentStatus.PENDING,
       );
@@ -111,6 +116,25 @@ export function paymentRetryContract(postgres = false, enabled = true): void {
       await payment.recordPayment(posting);
       expect(await journals.count({ where: { sourceRef: payment.id } })).toBe(
         1,
+      );
+    });
+
+    it.each([
+      'reset',
+      'markFailed',
+    ] as const)('rejects locally reset settlement (%s)', async (change) => {
+      const payment = await pending();
+      await payment.recordPayment(posting);
+      if (change === 'reset') payment.status = PaymentStatus.PENDING;
+      else payment.markFailed('Unsaved local failure');
+      await expect(payment.recordPayment(posting)).rejects.toThrow(
+        'Payment already recorded',
+      );
+      expect(await journals.count({ where: { sourceRef: payment.id } })).toBe(
+        1,
+      );
+      expect((await payments.get({ id: payment.id }))?.status).toBe(
+        PaymentStatus.COMPLETED,
       );
     });
 
