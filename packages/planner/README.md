@@ -62,9 +62,14 @@ sidebar footer show **Think** (the language model), **Hear** (voice typing) and
 choose and download them. A first visit with nothing built starts there; "I don't
 need AI, let's just build" skips it for good. Live s-m-r-t objects are tracked in #4.
 
-Generated record forms use the Planner’s responsive, open form layout. Custom CSS notes are saved with the cookbook and included in export and import.
-Generated record lists let you sort any data column by selecting its heading; select it again to reverse the order. Sorting changes only the current view.
-A fresh Planner starts on Cookbooks with the Glass theme; Theme is a dedicated tab, while feature and layout editing remain available through the app shell.
+Generated record forms use the Planner's own responsive, open form layout.
+Generated record lists let you sort any data column by selecting its heading;
+select it again to reverse the order. Sorting changes only the current view.
+The left sidebar starts open, with inference controls above the user menu in
+its footer. The Theme tab offers palette previews, large appearance choices,
+a brand colour wheel and font selection. **Advanced Styles** opens a dedicated
+CSS editor with syntax highlighting. CSS applies to the Planner as it changes
+and travels with the cookbook when saved, exported or imported.
 
 ## Install the package
 
@@ -92,8 +97,9 @@ const controller = createPlannerController();
 
 Hosts that already own an `AppShell` can mount `PlannerControls` inside it.
 The controls are the reusable part; `Planner` remains the complete shell.
-Use the exported shell defaults to start navigation open, with inference controls
-above the user menu in its footer. The separate bottom panel starts hidden.
+Use the exported shell defaults to start navigation open, with inference
+controls above the user menu in its footer. The bottom panel starts hidden.
+
 ```svelte
 <script lang="ts">
   import { AppShell } from '@happyvertical/smrt-svelte/app';

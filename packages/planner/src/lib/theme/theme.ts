@@ -3,8 +3,8 @@ import { availablePresets } from '@happyvertical/smrt-ui/themes/presets';
 /**
  * The app's look, kept in the app document (smrt#3604): a built-in smrt-ui
  * preset, a light/dark/system choice and optionally a brand colour that
- * `createThemeFromColor` expands into a full theme. Custom CSS source is
- * stored with the cookbook for a host to use.
+ * `createThemeFromColor` expands into a full theme. Custom CSS is saved
+ * with the cookbook and applied live by the Planner.
  * Absent means the default (the `glass` preset, following the system scheme).
  */
 export type ColorSchemeSetting = 'light' | 'dark' | 'system';
@@ -20,9 +20,11 @@ export interface ThemeSetting {
   /** A built-in smrt-ui preset; the default when absent. */
   preset?: string;
   colorScheme?: ColorSchemeSetting;
+  /** A font override that preserves the selected preset's palette. */
+  fontFamily?: string;
   /** A brand colour theme; wins over `preset` while present. */
   custom?: CustomTheme;
-  /** User-authored CSS source carried with the cookbook. */
+  /** User-authored CSS carried with the cookbook and applied at runtime. */
   customCss?: string;
 }
 
@@ -97,6 +99,18 @@ export function parseTheme(value: unknown): ThemeParse {
     }
     theme.colorScheme = value.colorScheme as ColorSchemeSetting;
   }
+  if (value.fontFamily !== undefined) {
+    if (
+      typeof value.fontFamily !== 'string' ||
+      !Object.hasOwn(THEME_FONTS, value.fontFamily)
+    ) {
+      return {
+        ok: false,
+        error: `The theme font must be one of ${Object.keys(THEME_FONTS).join(', ')}.`,
+      };
+    }
+    theme.fontFamily = value.fontFamily;
+  }
   if (value.custom !== undefined) {
     if (!isObject(value.custom)) {
       return { ok: false, error: 'The theme "custom" must be an object.' };
@@ -149,7 +163,7 @@ function canonical(theme: ThemeSetting | undefined) {
     preset: theme?.preset ?? DEFAULT_PRESET,
     colorScheme: theme?.colorScheme ?? DEFAULT_COLOR_SCHEME,
     primary: theme?.custom?.primary ?? null,
-    font: theme?.custom ? (theme.custom.fontFamily ?? null) : null,
+    font: theme?.fontFamily ?? theme?.custom?.fontFamily ?? null,
     customCss: theme?.customCss ?? null,
   };
 }
@@ -162,6 +176,7 @@ export function compactTheme(
   const out: ThemeSetting = {};
   if (theme.preset) out.preset = theme.preset;
   if (theme.colorScheme) out.colorScheme = theme.colorScheme;
+  if (theme.fontFamily) out.fontFamily = theme.fontFamily;
   if (theme.custom) out.custom = { ...theme.custom };
   if (theme.customCss) out.customCss = theme.customCss;
   return Object.keys(out).length ? out : undefined;

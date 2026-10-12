@@ -2,6 +2,7 @@
 import { Button } from '@happyvertical/smrt-ui';
 import { aiState } from '$lib/ai/instance.ts';
 import AiSetup from '$lib/components/AiSetup.svelte';
+import { appHref } from '$lib/planner/app.svelte.ts';
 import PlannerControls from '$lib/planner/PlannerControls.svelte';
 </script>
 
@@ -25,7 +26,7 @@ import PlannerControls from '$lib/planner/PlannerControls.svelte';
       </div>
     </section>
   {:else}
-  <PlannerControls layout="shell" persistence="host" themeControls />
+  <PlannerControls layout="shell" persistence="host" themeControls advancedStylesHref={appHref('/advanced-styles/')} />
   {/if}
 </main>
 

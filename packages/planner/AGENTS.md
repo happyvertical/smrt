@@ -72,18 +72,24 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   recipes sharing a suggestion share the section (`section:<id>`), and each recipe's main item
   carries the gear to its own group/recipe options page. `group` is the Planner card + Options/Help
   pages only. `cookbook/migrate.ts` rewrites pre-section layout ids in the loader.
-- `src/lib/theme/`: the app's look, stored in the document as `theme?: { preset?, colorScheme?,
-  custom?: { primary, fontFamily? } }` (absent = default `smrt`/`system`). `theme.ts` is the pure
-  validation (known smrt-ui presets, hex colours, the `THEME_FONTS` allow-list), `runtime.ts` turns a
-  brand colour into a registered theme (`createThemeFromColor` + `registerTheme`, one id per colour
-  because `ThemeProvider` looks a preset up once). `components/ThemeBridge.svelte` (in the layout,
-  and inside `Planner`'s `CookbookApp` so hosted controls reach the plan; `deferInitial` lets the
-  plan theme win over AppShell's browser-stored one) applies the document theme to AppShell's
-  `ThemeProvider` and reads its controls back; the Settings
-  tab's `ThemeSection.svelte` uses `ThemeSwitcher`, `ColorSchemeToggle` and a brand colour picker.
-  The assistant may return `theme` (`{preset}` or `{primary}` hex, optional `colorScheme`): applied
-  live with an Undo (`assistant/theme-undo.svelte.ts`); tokens only, never CSS. Applying a library
-  cookbook that sets no theme keeps the visitor's.
+- `src/lib/theme/`: the app's look, stored in the cookbook as `theme?: { preset?, colorScheme?,
+  fontFamily?, custom?: { primary, fontFamily? }, customCss? }` (absent = default `glass`/`system`).
+  `theme.ts` validates known presets, hex colours, allowed font keys and CSS text length.
+  `runtime.ts` registers a brand-colour theme or a font variant of a built-in preset; ids include
+  the colour/font because `ThemeProvider` looks each preset up once. The top-level font keeps the
+  preset palette; the nested font remains readable for older cookbooks. `ThemeBridge.svelte` (in the
+  layout, and inside `Planner`'s `CookbookApp` so hosted controls reach the plan; `deferInitial`
+  lets the plan theme win over AppShell's browser-stored one) applies the cookbook theme and custom
+  CSS to the shell. `ThemeSection.svelte` shows visual preset and
+  appearance choices, a colour picker and font control; `AdvancedStyles.svelte` edits the CSS on
+  its own page. Cookbook CSS is untrusted (`theme/custom-css.svelte.ts`): it applies only once the
+  visitor approves that exact text (SHA-256; typing it counts), is re-serialized by the browser
+  inside an `@scope` rooted at this Planner's own shell (`data-smrt-planner-scope`), keeping only style,
+  `@media`, `@supports` and `@container` rules (global at-rules like `@font-face`, `@keyframes`,
+  `@property` are dropped) and dropping any rule whose declarations hold an escape or a load other
+  than a literal `data:` URL, and `?styles=off` turns
+  it off, drafts included. The assistant's token-based theme changes have an Undo. A library cookbook with
+  no theme keeps the visitor's current look.
 - `src/lib/settings/app-settings.ts`: app settings (currency, default tax rate, default payment terms)
   belong to the visitor's app, never to a cookbook. They are the same app-scope `defaultValue`
   policy rows a cookbook writes (no cookbook field); `SETTING_TARGETS` is the one list of which

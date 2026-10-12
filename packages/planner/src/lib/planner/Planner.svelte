@@ -12,6 +12,7 @@ import {
 import { type ComponentProps, onMount } from 'svelte';
 import smrtMark from '../assets/smrt-mark.svg';
 import { catalog, getModel } from '../catalog/index.ts';
+import AdvancedStyles from '../components/AdvancedStyles.svelte';
 import ModelWorkspace from '../components/ModelWorkspace.svelte';
 import ThemeBridge from '../components/ThemeBridge.svelte';
 import { cookbookStore, SHELL_STORAGE_KEY } from '../cookbook/store.svelte.ts';
@@ -141,10 +142,12 @@ function updateCookbook(next: ComponentProps<typeof CookbookApp>['cookbook']) {
   <main class="content">
     {#if sectionSlug}
       <CookbookSectionPage slug={sectionSlug} />
+    {:else if pathParts[0] === 'advanced-styles'}
+      <AdvancedStyles backHref="#/configure/" />
     {:else if applied && model}
       <ModelWorkspace model={applied.model} fields={applied.fields} {forms} />
     {:else}
-      <PlannerControls {controller} {basePath} {inference} {persistence} {themeControls} {tabs} managedByParent layout="shell" />
+      <PlannerControls {controller} {basePath} {inference} {persistence} {themeControls} {tabs} managedByParent layout="shell" advancedStylesHref="#/advanced-styles/" />
     {/if}
   </main>
 </CookbookApp>

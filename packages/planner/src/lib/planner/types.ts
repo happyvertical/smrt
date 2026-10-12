@@ -8,7 +8,7 @@ export interface PlannerHandle {
   assistant?: PlannerAssistant;
 }
 
-/** The `Planner` component's props. */
+/** Shared props for the complete Planner and the separately mounted controls. */
 export interface PlannerProps {
   /**
    * The commands to drive the planner with and the snapshot to read. Defaults
@@ -17,16 +17,17 @@ export interface PlannerProps {
    */
   controller?: PlannerController;
   /**
-   * Where the planner's own pages are served from (`''`, `'/planner'`). Only
-   * links to planner pages use it; the component needs no router of its own.
+   * Where the customization controls' own pages are served from (`''`,
+   * `'/planner'`). The complete Planner uses fragment paths for its app
+   * sections and model pages, so it needs no host router.
    */
   basePath?: string;
   /** A model for the planner's assistant; see `createPlannerAssistant`. */
   inference?: PlannerInference;
   /**
-   * `'own'` (the default) edits the menu layout on a headless controller built
-   * from the cookbook. `'shell'` edits the nearest smrt-svelte `AppShell`'s, as
-   * the static app does (it also holds panel and slot placements).
+   * `PlannerControls` uses `'own'` by default, editing the menu layout on a
+   * headless controller. `'shell'` edits the nearest smrt-svelte `AppShell`.
+   * The complete `Planner` always uses its own shell for these controls.
    */
   layout?: 'own' | 'shell';
   /**
@@ -37,6 +38,8 @@ export interface PlannerProps {
   persistence?: 'self' | 'host';
   /** Show the theme preset and light/dark controls (they need a theme provider). */
   themeControls?: boolean;
+  /** Link to the host's Advanced Styles page, when mounting controls alone. */
+  advancedStylesHref?: string;
   /** Tabs to show, in order; defaults to all. */
   tabs?: readonly PlannerTabId[];
   onready?: (handle: PlannerHandle) => void;

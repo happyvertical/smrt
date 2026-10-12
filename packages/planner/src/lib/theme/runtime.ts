@@ -1,6 +1,8 @@
 import {
   createThemeFromColor,
+  getTheme,
   registerTheme,
+  type Theme,
 } from '@happyvertical/smrt-ui/themes';
 import {
   type ColorSchemeSetting,
@@ -31,10 +33,32 @@ export function brandThemeId(primary: string, fontFamily?: string): string {
 export function resolveTheme(theme: ThemeSetting | undefined): ResolvedTheme {
   const colorScheme = theme?.colorScheme ?? DEFAULT_COLOR_SCHEME;
   const custom = theme?.custom;
-  if (!custom) return { preset: theme?.preset ?? DEFAULT_PRESET, colorScheme };
-  const id = brandThemeId(custom.primary, custom.fontFamily);
+  const fontFamily = theme?.fontFamily ?? custom?.fontFamily;
+  const font = fontFamily ? THEME_FONTS[fontFamily] : undefined;
+  if (!custom) {
+    const basePreset = theme?.preset ?? DEFAULT_PRESET;
+    if (!font) return { preset: basePreset, colorScheme };
+    const id = `planner-preset-${basePreset}-${fontFamily?.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+    if (!registered.has(id)) {
+      const base = getTheme(basePreset as Parameters<typeof getTheme>[0]);
+      const typography = Object.fromEntries(
+        Object.entries(base.typography).map(([key, token]) => [
+          key,
+          { ...token, fontFamily: 'var(--smrt-font-family)' },
+        ]),
+      ) as Theme['typography'];
+      registerTheme({
+        ...base,
+        id: id as Theme['id'],
+        fontFamily: font,
+        typography,
+      });
+      registered.add(id);
+    }
+    return { preset: id, colorScheme };
+  }
+  const id = brandThemeId(custom.primary, fontFamily);
   if (!registered.has(id)) {
-    const font = custom.fontFamily ? THEME_FONTS[custom.fontFamily] : undefined;
     registerTheme(
       createThemeFromColor(custom.primary, id, 'Brand colour', {
         ...(font ? { fontFamily: font } : {}),

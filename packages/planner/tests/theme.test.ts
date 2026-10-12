@@ -1,3 +1,4 @@
+import { getTheme } from '@happyvertical/smrt-ui/themes';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   buildResponseSchema,
@@ -97,6 +98,24 @@ describe('theme validation', () => {
     expect(parseTheme({ customCss: 'x'.repeat(65537) }).ok).toBe(false);
   });
 
+  it('keeps a font override separate from the chosen preset and brand colour', () => {
+    const parsed = parseTheme({ preset: 'studio', fontFamily: 'Georgia' });
+    expect(parsed).toEqual({
+      ok: true,
+      theme: { preset: 'studio', fontFamily: 'Georgia' },
+    });
+    expect(
+      themeEquals(
+        { custom: { primary: '#abcabc', fontFamily: 'Georgia' } },
+        {
+          custom: { primary: '#abcabc' },
+          fontFamily: 'Georgia',
+        },
+      ),
+    ).toBe(true);
+    expect(parseTheme({ fontFamily: 'Comic Sans' }).ok).toBe(false);
+  });
+
   it.each([
     [{ preset: 'neon' }],
     [{ colorScheme: 'sepia' }],
@@ -165,6 +184,7 @@ describe('theme in the document', () => {
     expect(store.theme).toBeUndefined();
     expect(saveCookbook(storage, store.snapshot())).toBe(true);
   });
+
   it('round-trips custom CSS through save, import and reset', () => {
     const css = 'form { max-width: 60ch; }\n';
     const storage = memoryStorage();
@@ -182,6 +202,19 @@ describe('theme in the document', () => {
     expect(restored.snapshot().theme).toBeUndefined();
     expect(restored.importText(exported).ok).toBe(true);
     expect(restored.snapshot().theme?.customCss).toBe(css);
+  });
+
+  it('round-trips a preset font override without a brand colour', () => {
+    const storage = memoryStorage();
+    const store = new CookbookStore();
+    store.hydrate('', storage);
+    store.setTheme({ preset: 'studio', fontFamily: 'Georgia' });
+    expect(store.save()).toBe(true);
+    const restored = new CookbookStore();
+    restored.hydrate('', storage);
+    expect(restored.theme).toEqual({ preset: 'studio', fontFamily: 'Georgia' });
+    expect(restored.importText(JSON.stringify(store.snapshot())).ok).toBe(true);
+    expect(restored.theme).toEqual({ preset: 'studio', fontFamily: 'Georgia' });
   });
 });
 
@@ -233,6 +266,17 @@ describe('cookbook themes', () => {
       preset: 'glass',
       colorScheme: 'system',
     });
+  });
+
+  it('overrides a preset font while preserving its palette and spacing', () => {
+    const base = getTheme('studio');
+    const resolved = resolveTheme({ preset: 'studio', fontFamily: 'Georgia' });
+    const derived = getTheme(resolved.preset as Parameters<typeof getTheme>[0]);
+    expect(derived.light).toEqual(base.light);
+    expect(derived.dark).toEqual(base.dark);
+    expect(derived.spacing).toEqual(base.spacing);
+    expect(derived.fontFamily).toContain('Georgia');
+    expect(resolveTheme({ preset: 'studio' }).preset).toBe('studio');
   });
 });
 

@@ -40,6 +40,7 @@ let {
   layout = 'own',
   persistence = 'self',
   themeControls = false,
+  advancedStylesHref,
   tabs = DEFAULT_TABS,
   onready,
   managedByParent = false,
@@ -146,7 +147,7 @@ $effect(() => {
       </div>
     {/if}
     {#if reachable.includes('theme')}
-      <div hidden={active !== 'theme'}><ThemeSection provider={themeControls} /></div>
+      <div hidden={active !== 'theme'}><ThemeSection provider={themeControls} {advancedStylesHref} /></div>
     {/if}
     {#if reachable.includes('settings')}
       <div hidden={active !== 'settings'}><SettingsPanel /></div>
