@@ -177,7 +177,7 @@ function formatDate(date: Date | string | undefined): string {
     size="md"
     placement="end"
   >
-      <div class="detail__body" data-smrt-component="AssetDetail">
+      <div class="detail__body">
         <!-- Preview Section -->
         <section class="detail__section">
           <div class="detail__preview">

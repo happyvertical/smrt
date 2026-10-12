@@ -396,7 +396,7 @@ function inputFor(field: ObjectFormField): FieldInputComponent {
 {#snippet renderGroups(groups: Array<[string | null, ObjectFormField[]]>)}
   {#each groups as [groupName, groupFields] (groupName ?? '__ungrouped__')}
     {#if groupName}
-      <fieldset class="object-form__group" data-smrt-component="ObjectForm">
+      <fieldset class="object-form__group">
         <legend>{groupName}</legend>
         {#each groupFields as field (field.name)}
           {@render renderField(field)}
@@ -418,10 +418,10 @@ function inputFor(field: ObjectFormField): FieldInputComponent {
 <FieldPolicyProvider policy={resolvedPolicy}>
   {#if showModeSwitch || (showPolicyGear && fieldPolicyGear)}
     {#if showModeSwitch}
-      <div class="object-form__mode" data-smrt-component="ObjectForm"><ModeSwitch /></div>
+      <div class="object-form__mode"><ModeSwitch /></div>
     {/if}
     {#if showPolicyGear && fieldPolicyGear}
-      <div class="object-form__gear" data-smrt-component="ObjectForm"><FieldPolicyGearButton /></div>
+      <div class="object-form__gear"><FieldPolicyGearButton /></div>
     {/if}
   {/if}
   <Form class="object-form {className}" onsubmit={handleSubmit}>

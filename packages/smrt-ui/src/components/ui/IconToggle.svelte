@@ -60,7 +60,7 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     class:toned={tone !== undefined}
     style:--smrt-icon-toggle-tone={tone}
     aria-pressed={pressed}
-    aria-label={name} data-smrt-component="IconToggle"
+    aria-label={name}
   >
     <span class="icon" aria-hidden="true">{@render children()}</span>
     {#if count !== undefined}<span class="count" aria-hidden="true">{count}</span>{/if}

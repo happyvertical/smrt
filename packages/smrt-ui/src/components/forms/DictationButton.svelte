@@ -105,16 +105,16 @@ function handleClick() {
   data-dictation-paused={paused || undefined}
   style={speaking ? `--smrt-dictation-level: ${dictation.level}` : undefined}
 >
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-smrt-component="DictationButton">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <rect x="9" y="2" width="6" height="12" rx="3"></rect>
     <path d="M5 10a7 7 0 0 0 14 0"></path>
     <path d="M12 17v4"></path>
   </svg>
   {#if active}
-    <span class="smrt-dictation-dot" aria-hidden="true" data-smrt-component="DictationButton"></span>
+    <span class="smrt-dictation-dot" aria-hidden="true"></span>
   {/if}
   {#if writing || (handsFree && dictation.state === 'transcribing')}
-    <span class="smrt-dictation-writing" aria-hidden="true" data-smrt-component="DictationButton"></span>
+    <span class="smrt-dictation-writing" aria-hidden="true"></span>
   {/if}
 </Button>
 {#if hint !== name}

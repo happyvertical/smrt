@@ -22,7 +22,7 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
   <p class="empty" data-smrt-component="BudgetPacing">No budget pacing is available.</p>
 {:else}
   <Card padding="sm" variant="outlined">
-    <section class="budget-pacing" data-smrt-component="BudgetPacing">
+    <section class="budget-pacing">
       <header>
         <h3>{label}</h3>
         <Badge variant={pacingStatusBadgeVariant(pacing.status)} size="sm">

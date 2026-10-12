@@ -116,17 +116,17 @@ const errorList = $derived(
     <Input interaction={false} type="hidden" name={names.profileId} value={values.profileId} />
   {/if}
   {#if !readOnly && canSubmit}
-    <span class="native-default-submit" aria-hidden="true" data-smrt-component="CustomerForm">
+    <span class="native-default-submit" aria-hidden="true">
       <Button type="submit" name={intentName} value={transport.saveIntent ?? 'save'} tabindex={-1}>
         {labels.save ?? (labels.singular ? t(M[mode === 'create' ? 'commerce.party.add_named' : 'commerce.party.save_named'], { singular: labels.singular }) : t(M[mode === 'create' ? 'commerce.customer.add' : 'commerce.customer.save']))}
       </Button>
     </span>
   {/if}
 
-  {#if errors.form}<p class="form-error" role="alert" data-smrt-component="CustomerForm">{errors.form}</p>{/if}
+  {#if errors.form}<p class="form-error" role="alert">{errors.form}</p>{/if}
   <ErrorSummary errors={errorList} />
 
-  <fieldset class="form-section" data-smrt-component="CustomerForm">
+  <fieldset class="form-section">
     <legend>{t(M['commerce.party.identity'])}</legend>
     {#if lockIdentityKind && values.identityKind}
       <p class="locked-value">{t(M['commerce.party.identity'])}: {values.identityKind === 'business' ? t(M['commerce.party.identity_business']) : t(M['commerce.party.identity_person'])}</p>
@@ -163,7 +163,7 @@ const errorList = $derived(
     </FormGroup>
   </fieldset>
 
-  <fieldset class="form-section" data-smrt-component="CustomerForm">
+  <fieldset class="form-section">
     <legend>{t(M['commerce.party.commercial_terms'])}</legend>
     <div class="field-grid">
       <FormGroup label={t(M['commerce.party.status'])} error={errors.fields?.status}>
@@ -189,7 +189,7 @@ const errorList = $derived(
     </FormGroup>
   </fieldset>
 
-  <div class="address-pair" data-smrt-component="CustomerForm">
+  <div class="address-pair">
     <PartyAddressFields heading={t(M['commerce.party.shipping_address'])} value={values.shippingAddress} names={{ street1: names.shippingStreet1, street2: names.shippingStreet2, city: names.shippingCity, state: names.shippingState, postalCode: names.shippingPostalCode, country: names.shippingCountry }} errors={{ street1: errors.fields?.shippingStreet1, street2: errors.fields?.shippingStreet2, city: errors.fields?.shippingCity, state: errors.fields?.shippingState, postalCode: errors.fields?.shippingPostalCode, country: errors.fields?.shippingCountry }} {readOnly} {countryOptions} {provinceOptions} />
     <PartyAddressFields heading={t(M['commerce.party.billing_address'])} value={values.billingAddress} names={{ street1: names.billingStreet1, street2: names.billingStreet2, city: names.billingCity, state: names.billingState, postalCode: names.billingPostalCode, country: names.billingCountry }} errors={{ street1: errors.fields?.billingStreet1, street2: errors.fields?.billingStreet2, city: errors.fields?.billingCity, state: errors.fields?.billingState, postalCode: errors.fields?.billingPostalCode, country: errors.fields?.billingCountry }} {readOnly} {countryOptions} {provinceOptions} />
   </div>

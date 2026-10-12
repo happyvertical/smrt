@@ -133,7 +133,7 @@ function handleCronPreset(preset: string) {
     <h2>{editMode ? 'Edit Schedule' : 'Create Schedule'}</h2>
   {/snippet}
 
-  <div class="schedule-form-shell" data-smrt-component="AgentScheduleForm">
+  <div class="schedule-form-shell">
   <Form class="schedule-form" onsubmit={handleSubmit}>
     <div class="form-grid">
       <!-- Agent Type -->

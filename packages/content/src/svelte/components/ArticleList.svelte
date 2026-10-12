@@ -49,7 +49,7 @@ const {
 {:else}
   <Grid {columns} role="list" aria-label={t(M['content.article_list.aria_label'])}>
     {#each articles as article (article.id)}
-      <div role="listitem" data-smrt-component="ArticleList">
+      <div role="listitem">
         <ArticleCard
           {article}
           {showExcerpt}

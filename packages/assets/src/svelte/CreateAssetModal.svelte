@@ -159,7 +159,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
           ondragleave={handleDragLeave}
           ondrop={handleDrop}
           onclick={() => document.getElementById('file-input')?.click()}
-          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') document.getElementById('file-input')?.click(); }} data-smrt-component="CreateAssetModal"
+          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') document.getElementById('file-input')?.click(); }}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="dropzone__icon">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
@@ -173,7 +173,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
         </div>
       {:else}
         <!-- File preview + metadata form -->
-        <div class="file-preview" data-smrt-component="CreateAssetModal">
+        <div class="file-preview">
           {#if previewUrl}
             <img src={previewUrl} alt={t(M['assets.create_asset_modal.preview_alt'])} class="file-preview__image" />
           {:else}
@@ -191,7 +191,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
           </Button>
         </div>
 
-        <div class="form-fields" data-smrt-component="CreateAssetModal">
+        <div class="form-fields">
           <div class="form-field">
             <label for="asset-name" class="form-label">Name</label>
             <Input id="asset-name" type="text" bind:value={name} placeholder={t(M['assets.create_asset_modal.name_placeholder'])} />
@@ -217,7 +217,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
       {/if}
 
   {#if error}
-    <p class="create-error" role="alert" aria-live="assertive" data-smrt-component="CreateAssetModal">{error}</p>
+    <p class="create-error" role="alert" aria-live="assertive">{error}</p>
   {/if}
 
   {#snippet footer()}

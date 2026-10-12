@@ -11,10 +11,10 @@ const gear = getFieldPolicyGearContext();
 
 {#if gear.canEdit}
   <Button type="button" variant="ghost" class={className} aria-haspopup="dialog" aria-label={gear.pendingSuggestionCount > 0 ? `${label}, ${gear.pendingSuggestionCount} pending suggestion${gear.pendingSuggestionCount === 1 ? '' : 's'}` : label} onclick={() => gear.show()}>
-    <span aria-hidden="true" data-smrt-component="FieldPolicyGearButton">⚙</span>
-    <span data-smrt-component="FieldPolicyGearButton">{label}</span>
+    <span aria-hidden="true">⚙</span>
+    <span>{label}</span>
     {#if gear.pendingSuggestionCount > 0}
-      <span class="field-policy-gear-button__badge" aria-hidden="true" data-smrt-component="FieldPolicyGearButton">{gear.pendingSuggestionCount}</span>
+      <span class="field-policy-gear-button__badge" aria-hidden="true">{gear.pendingSuggestionCount}</span>
     {/if}
   </Button>
 {/if}

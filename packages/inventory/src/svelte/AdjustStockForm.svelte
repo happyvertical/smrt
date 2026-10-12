@@ -49,11 +49,11 @@ async function submit(event: SubmitEvent) {
 }
 </script>
 <Form onsubmit={submit} aria-label="Adjust stock">
-  <p data-smrt-component="AdjustStockForm">SKU: {skuId} · Location: {locationId}</p>
+  <p>SKU: {skuId} · Location: {locationId}</p>
   <FormGroup label="Quantity adjustment"><Input type="number" step="any" bind:value={delta} required disabled={disabled || pending} /></FormGroup>
   <FormGroup label="Reason"><Input bind:value={reasonCode} required disabled={disabled || pending} /></FormGroup>
   <FormGroup label="Note"><Input bind:value={note} disabled={disabled || pending} /></FormGroup>
-  {#if error}<p role="alert" data-smrt-component="AdjustStockForm">{error}</p>{/if}
-  {#if saved}<p role="status" data-smrt-component="AdjustStockForm">Stock adjusted</p>{/if}
+  {#if error}<p role="alert">{error}</p>{/if}
+  {#if saved}<p role="status">Stock adjusted</p>{/if}
   <Button type="submit" disabled={disabled || pending}>{pending ? 'Saving…' : 'Adjust stock'}</Button>
 </Form>

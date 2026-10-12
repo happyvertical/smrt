@@ -17,7 +17,9 @@ breaking change, so follow these rules rather than improvising names.
   component's own value, so the hook always identifies the component.
 - Components whose template is only a child component (a wrapper) do not own a
   root element. Their rendered root carries the child's hook. They are listed in
-  `NO_ROOT_ELEMENT` in `scripts/component-roots.mjs` with a reason.
+  `NO_ROOT_ELEMENT` in `scripts/component-roots.mjs` with a reason. Elements
+  passed as slot or children content to a root-level child component are never
+  roots: they carry no hook of the wrapper's name.
 
 The gate is `pnpm check:component-roots` (part of `pnpm lint`). It fails when an
 exported component's root lacks its hook. Add the hook when you add a component;

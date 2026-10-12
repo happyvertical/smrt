@@ -111,17 +111,17 @@ const errorList = $derived(
     <Input interaction={false} type="hidden" name={names.profileId} value={values.profileId} />
   {/if}
   {#if !readOnly && canSubmit}
-    <span class="native-default-submit" aria-hidden="true" data-smrt-component="VendorForm">
+    <span class="native-default-submit" aria-hidden="true">
       <Button type="submit" name={intentName} value={transport.saveIntent ?? 'save'} tabindex={-1}>
         {labels.save ?? (labels.singular ? t(M[mode === 'create' ? 'commerce.party.add_named' : 'commerce.party.save_named'], { singular: labels.singular }) : t(M[mode === 'create' ? 'commerce.vendor.add' : 'commerce.vendor.save']))}
       </Button>
     </span>
   {/if}
 
-  {#if errors.form}<p class="form-error" role="alert" data-smrt-component="VendorForm">{errors.form}</p>{/if}
+  {#if errors.form}<p class="form-error" role="alert">{errors.form}</p>{/if}
   <ErrorSummary errors={errorList} />
 
-  <fieldset class="form-section" data-smrt-component="VendorForm">
+  <fieldset class="form-section">
     <legend>{t(M['commerce.party.identity'])}</legend>
     {#if lockIdentityKind && values.identityKind}
       <p class="locked-value">{t(M['commerce.party.identity'])}: {values.identityKind === 'business' ? t(M['commerce.party.identity_business']) : t(M['commerce.party.identity_person'])}</p>
@@ -158,7 +158,7 @@ const errorList = $derived(
     </FormGroup>
   </fieldset>
 
-  <fieldset class="form-section" data-smrt-component="VendorForm">
+  <fieldset class="form-section">
     <legend>{t(M['commerce.party.commercial_terms'])}</legend>
     <div class="field-grid">
       <FormGroup label={t(M['commerce.vendor.lead_time'])} error={errors.fields?.leadTimeDays}>

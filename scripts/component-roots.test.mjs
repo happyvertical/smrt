@@ -21,8 +21,14 @@ test('snippets are roots only when rendered from the root', () => {
   assert.deepEqual(tags('{#snippet s()}<b></b>{/snippet}{@render s()}'), ['b']);
 });
 
-test('slot content of a root-level child component is authored here and counts', () => {
-  assert.deepEqual(tags('<Wrap><button></button></Wrap>'), ['button']);
+test('slot content of a root-level child component is never a root', () => {
+  assert.deepEqual(tags('<Wrap><button></button></Wrap>'), []);
+  assert.deepEqual(tags('<Form>{#if error}<p></p>{/if}<Button /></Form>'), []);
+  assert.deepEqual(tags('<svelte:component this={C}><p></p></svelte:component>'), []);
+});
+
+test('a real element root beside a child-component root is the only root', () => {
+  assert.deepEqual(tags('<Wrap><button></button></Wrap><div></div>'), ['div']);
 });
 
 test('a wrapper whose only child is a component has no root element', () => {

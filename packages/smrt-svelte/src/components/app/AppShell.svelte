@@ -617,7 +617,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet layoutToggle()}
-  <span class="smrt-layout-toggle" class:smrt-layout-toggle--floating={layoutFloating} data-testid="layout-edit-toggle" data-smrt-component="AppShell">
+  <span class="smrt-layout-toggle" class:smrt-layout-toggle--floating={layoutFloating} data-testid="layout-edit-toggle">
     <ShellIconButton
       icon="edit"
       pressed={editing}
@@ -774,9 +774,9 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
         {/if}
       {/snippet}
 
-      <div class="smrt-layout-live" role="status" aria-live="polite" data-smrt-component="AppShell">{modeMessage}</div>
+      <div class="smrt-layout-live" role="status" aria-live="polite">{modeMessage}</div>
       {#if editing}
-        <div class="smrt-layout-live" aria-live="assertive" aria-atomic="true" data-smrt-component="AppShell">{slotSortable.announcement}</div>
+        <div class="smrt-layout-live" aria-live="assertive" aria-atomic="true">{slotSortable.announcement}</div>
       {/if}
       {#if layoutFloating}
         {@render layoutToggle()}

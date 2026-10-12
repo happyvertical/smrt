@@ -12,7 +12,8 @@
  *     `export … from` statements (see exportedComponents()).
  *   - Root elements: elements in the component's template that are not nested
  *     inside another element. Elements inside `{#if}`, `{#each}`, `{#key}` and
- *     `{#await}` branches count; snippets and child-component slot content do not.
+ *     `{#await}` branches count; snippets and child-component slot content do not
+ *     (slot content is never a root: the child's own element is the rendered root).
  *   - Hook value: the component's file basename (no package prefix).
  *   - Placement: after the element's last attribute, so a `{...rest}` spread
  *     earlier in the tag cannot override the component's own value. A consumer
@@ -32,7 +33,7 @@ export const HOOK = 'data-smrt-component';
  * rendered root belongs to a child component, or the template renders nothing.
  * Keyed by repo-relative path; the reason is mandatory and reviewed.
  */
-const CHILD = 'wrapper: template is one child component, whose root element carries the child hook';
+const CHILD = 'wrapper: template is one child component; its rendered root carries the child hook (slot content is never a root)';
 const SLOT = 'renders slot/snippet content only; no element of its own';
 const NONE = 'template renders no DOM of its own';
 export const NO_ROOT_ELEMENT = {
@@ -63,6 +64,32 @@ export const NO_ROOT_ELEMENT = {
   'packages/fields/src/svelte/components/ModeSwitch.svelte': CHILD,
   'packages/fields/src/svelte/components/ObjectFormSourceProvider.svelte': SLOT,
   'packages/content/src/svelte/components/ContentGovernanceTool.svelte': CHILD,
+  'packages/agents/src/svelte/components/AgentScheduleForm.svelte': CHILD,
+  'packages/agents/src/svelte/components/AgentSettingsForm.svelte': CHILD,
+  'packages/assets/src/svelte/AssetDetail.svelte': CHILD,
+  'packages/assets/src/svelte/CreateAssetModal.svelte': CHILD,
+  'packages/chat/src/svelte/components/dialogs/RoomCreateDialog.svelte': CHILD,
+  'packages/chat/src/svelte/components/shared/ModelPicker.svelte': CHILD,
+  'packages/commerce/src/svelte/components/CustomerForm.svelte': CHILD,
+  'packages/commerce/src/svelte/components/VendorForm.svelte': CHILD,
+  'packages/fields/src/svelte/components/FieldPolicyEditor.svelte': CHILD,
+  'packages/fields/src/svelte/components/FieldPolicyGearButton.svelte': CHILD,
+  'packages/inventory/src/svelte/AdjustStockForm.svelte': CHILD,
+  'packages/inventory/src/svelte/LocationForm.svelte': CHILD,
+  'packages/messages/src/svelte/components/AccountCard.svelte': CHILD,
+  'packages/messages/src/svelte/components/MessageTypeBadge.svelte': CHILD,
+  'packages/smrt-svelte/src/components/app/AppShell.svelte': CHILD,
+  'packages/smrt-svelte/src/components/command-palette/CommandPaletteDialog.svelte': CHILD,
+  'packages/smrt-svelte/src/components/command-palette/CommandPaletteTrigger.svelte': CHILD,
+  'packages/smrt-svelte/src/components/overview/WidgetOptionsForm.svelte': CHILD,
+  'packages/smrt-ui/src/components/layout/PageLayout.svelte': CHILD,
+  'packages/smrt-ui/src/components/ui/IconToggle.svelte': CHILD,
+  'packages/smrt-workbench/src/svelte/WorkbenchHost.svelte': CHILD,
+  'packages/users/src/svelte/components/InviteUserModal.svelte': CHILD,
+  'packages/users/src/svelte/components/MagicLinkForm.svelte': CHILD,
+  'packages/users/src/svelte/components/SignInForm.svelte': CHILD,
+  'packages/users/src/svelte/components/SignUpForm.svelte': CHILD,
+  'packages/webhooks/src/svelte/WebhookAdmin.svelte': CHILD,
   'packages/agents/src/svelte/components/ScheduleStatusBadge.svelte': CHILD,
 };
 
@@ -155,13 +182,12 @@ function localExportNames(text) {
 }
 
 /**
- * Control-flow blocks, and the slot content a root-level child component is
- * given (its elements are authored here and render inside the wrapper), pass
- * root-ness through. Snippet bodies are not rendered at the root and do not.
+ * Control-flow blocks pass root-ness through. A root-level child component's
+ * slot/children content never does: its rendered root is the child's element,
+ * which carries the child's hook, so the slot elements are not this component's
+ * roots. Snippet bodies are not rendered at the root and do not either.
  */
 const BLOCK_FRAGMENTS = {
-  Component: ['fragment'],
-  SvelteComponent: ['fragment'],
   IfBlock: ['consequent', 'alternate'],
   EachBlock: ['body', 'fallback'],
   KeyBlock: ['fragment'],

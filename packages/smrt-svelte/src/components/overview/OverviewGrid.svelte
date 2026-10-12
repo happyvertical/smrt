@@ -497,9 +497,9 @@ const headingTag = $derived(`h${headingLevel}`);
 {#if editing}
   <Modal bind:open={() => addOpen, (v) => (addOpen = v)} title={t(M['ui.overview.add_title'])} size="sm">
     {#if controller.addable.length === 0 || controller.full}
-      <p data-smrt-component="OverviewGrid">{t(M['ui.overview.add_none'])}</p>
+      <p>{t(M['ui.overview.add_none'])}</p>
     {:else}
-      <ul class="smrt-overview__choices" data-smrt-component="OverviewGrid">
+      <ul class="smrt-overview__choices">
         {#each controller.addable as def (def.type)}
           <li>
             <Button type="button" variant="ghost" fullWidth onclick={() => chooseType(def.type)}>

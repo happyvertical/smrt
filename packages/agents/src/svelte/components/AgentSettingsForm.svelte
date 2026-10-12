@@ -104,7 +104,7 @@ async function handleSubmit() {
 
 <Form class="agent-settings-form" onsubmit={handleSubmit}>
   {#each schema.fields as field (field.id)}
-    <div class="field" data-smrt-component="AgentSettingsForm">
+    <div class="field">
       {#if field.type === 'boolean'}
         <label class="checkbox" for={field.id}>
           <!-- raw-primitive-allow: native checkbox preserves checkbox semantics without requiring a Provider -->
@@ -162,7 +162,7 @@ async function handleSubmit() {
   {/each}
 
   {#if !readonly}
-    <div class="actions" data-smrt-component="AgentSettingsForm">
+    <div class="actions">
       <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save settings'}</Button>
     </div>
   {/if}
