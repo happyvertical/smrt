@@ -105,3 +105,17 @@ export const purchaseFieldNames: PurchaseFieldNames = {
   fingerprint: 'reviewFingerprint',
   confirmation: 'confirm',
 };
+
+/** Raw header values, including rejected server-retained strings. */
+export interface PurchaseOrderHeaderValues {
+  /** Existing Commerce vendor identity. */
+  vendorId?: string;
+  /** External purchase-order reference. */
+  reference?: string;
+  /** Internal purchase-order notes. */
+  notes?: string;
+  /** Calendar date text; the server validates YYYY-MM-DD or empty. */
+  expectedDate?: string;
+  /** Delivery address/instructions snapshot. */
+  shipTo?: string;
+}

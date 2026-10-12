@@ -333,3 +333,17 @@ ModuleUIRegistry.register(
   'vendor-select',
   VendorSelect,
 );
+
+import PurchaseOrderHeaderForm from './components/PurchaseOrderHeaderForm.svelte';
+
+export { PurchaseOrderHeaderForm };
+export type PurchaseOrderHeaderFormProps = ComponentProps<
+  typeof PurchaseOrderHeaderForm
+>;
+export type { PurchaseOrderHeaderValues } from './purchasing-types.js';
+
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'purchase-order-header-form',
+  PurchaseOrderHeaderForm,
+);

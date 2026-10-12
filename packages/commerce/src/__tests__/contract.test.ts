@@ -8,13 +8,14 @@
  * 4. ContractLineItem operations
  */
 
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
+import { PurchaseOrder } from '../models/Contract.js';
 import { ContractLineItem } from '../models/ContractLineItem.js';
 import { ContractStatus, ContractType } from '../types/index.js';
 
@@ -41,6 +42,52 @@ describe('Contract', () => {
         // Ignore cleanup errors
       }
     }
+  });
+
+  describe('Purchase order delivery header', () => {
+    it('exposes delivery fields as subtype metadata without widening the base schema', () => {
+      const manifest = JSON.parse(
+        readFileSync(join(process.cwd(), '.smrt/manifest.json'), 'utf8'),
+      );
+      const fields =
+        manifest.objects['@happyvertical/smrt-commerce:PurchaseOrder'].fields;
+      expect(fields.expectedDate).toMatchObject({ type: 'meta', default: '' });
+      expect(fields.shipTo).toMatchObject({ type: 'meta', default: '' });
+      expect(
+        manifest.objects['@happyvertical/smrt-commerce:Contract'].fields
+          .expectedDate,
+      ).toBeUndefined();
+    });
+
+    it('defaults missing header metadata to empty strings', () => {
+      const order = new PurchaseOrder();
+      expect(order.expectedDate).toBe('');
+      expect(order.shipTo).toBe('');
+    });
+
+    it('round-trips the header without changing contract financial fields', async () => {
+      const order = await contracts.create({
+        _meta_type: 'PurchaseOrder',
+        expectedDate: '2026-11-02',
+        shipTo: 'Dock 2\nEdmonton',
+        reference: 'PO-7',
+        notes: 'Call first',
+        totalAmount: 1200,
+      });
+      await order.save();
+      const loaded = (await contracts.get({ id: order.id })) as PurchaseOrder;
+      expect(loaded.expectedDate).toBe('2026-11-02');
+      expect(loaded.shipTo).toBe('Dock 2\nEdmonton');
+      expect(loaded.reference).toBe('PO-7');
+      expect(loaded.notes).toBe('Call first');
+      expect(loaded.totalAmount).toBe(1200);
+      loaded.expectedDate = '';
+      loaded.shipTo = '';
+      await loaded.save();
+      const cleared = (await contracts.get({ id: order.id })) as PurchaseOrder;
+      expect(cleared.expectedDate).toBe('');
+      expect(cleared.shipTo).toBe('');
+    });
   });
 
   describe('Basic CRUD Operations', () => {

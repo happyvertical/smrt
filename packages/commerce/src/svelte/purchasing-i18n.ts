@@ -1,6 +1,15 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 /** Localizable purchasing presentation text; domain names and policy remain caller-owned. */
 export const P = defineMessages({
+  'commerce.purchase.header': 'Purchase order header',
+  'commerce.purchase.vendor': 'Vendor',
+  'commerce.purchase.vendor_prompt': 'Choose a vendor',
+  'commerce.purchase.vendor_unavailable': 'Unavailable vendor: {id}',
+  'commerce.purchase.reference': 'Reference',
+  'commerce.purchase.notes': 'Notes',
+  'commerce.purchase.expected_date': 'Expected date (YYYY-MM-DD)',
+  'commerce.purchase.ship_to': 'Ship to',
+  'commerce.purchase.save_header': 'Save header',
   'commerce.purchase.source': 'Purchasing source',
   'commerce.purchase.choose': 'Choose a vendor and source',
   'commerce.purchase.use': 'Use this source',
