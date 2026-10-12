@@ -68,3 +68,67 @@ Notes:
   `<summary>`.
 - Parts shown here are the first wave. Other packages add parts incrementally
   under the same rules.
+
+## Cascade layers
+
+Every component `<style>` block declares and uses the smrt layers, lowest to
+highest: `smrt.reset < smrt.structure < smrt.theme`. Rules sit in
+`@layer smrt.theme { … }` today. Unlayered consumer CSS always beats every smrt
+layer, so restyling needs no `:global()` and no `!important`. The declaration is
+[`src/styles/layers.css`](../src/styles/layers.css)
+(`@happyvertical/smrt-ui/styles/layers.css`), injected by `ThemeProvider`. Keep
+the order exactly as written.
+
+## Restyling a component
+
+Consumers depend on three public things only: **token names** (`--smrt-*`),
+**layer names** (`smrt.reset`, `smrt.structure`, `smrt.theme`), and the
+**`data-smrt-*` hooks** above. To restyle:
+
+1. Change a token (`--smrt-color-primary`, `--smrt-radius-md`) for theme-wide
+   changes.
+2. Target a root or part from unlayered CSS for one-off changes:
+   `[data-smrt-component="Card"]`, `[data-smrt-component="Modal"] [data-smrt-part="header"]`.
+3. Use your own classes on your own elements.
+
+Do not reach into hashed Svelte classes (`.svelte-1x2y3z`); they change on every
+build.
+
+## Styleless mode (`unstyled.css`)
+
+Import one stylesheet to strip the look from every smrt component while keeping
+its layout:
+
+```ts
+import '@happyvertical/smrt-ui/styles/unstyled.css';
+```
+
+- **Kept (layout):** `display`, flex/grid, `gap`, `padding`, `position`, sizing,
+  and everything else not in the list below. Shells, editors, and chat threads
+  depend on this layout CSS.
+- **Reverted (look):** `background`, `border`, `border-radius`, `box-shadow`,
+  `color`, `font`, `letter-spacing`, `text-decoration`, `text-transform`,
+  `text-shadow`, `outline`, `filter`, `backdrop-filter`. Each one falls back to
+  `smrt.structure`, then to the browser default.
+- **Reset:** buttons, inputs, selects, and textareas inside component trees get
+  `margin`, `padding`, `border`, `background`, `color`, and `font` reset, so a
+  stripped control does not show UA chrome such as the 2px outset border.
+- **Specificity:** the revert selector carries three `:not(#\#)` boosts (specificity
+  `(3,1,0)`), which beats Svelte's hashed `.svelte-*` selectors without
+  `!important`.
+- **Consumer CSS wins:** unlayered rules override the revert. Style stripped
+  components with unlayered CSS, `--smrt-*` tokens, or the hooks above.
+
+The reverted list is explicit on purpose. `all: revert-layer` would also drop
+layout declarations until per-package structure/theme sorting lands, because
+every component rule currently sits in `smrt.theme`. When that sorting lands,
+layout moves to `smrt.structure` and the list can be widened to `all`.
+
+Component `transition` declarations still run, so a stripped Card or Button
+fades to its unstyled colours over its usual duration.
+
+Verification: the jsdom contract test
+(`src/themes/__tests__/unstyled-css.test.ts`) asserts the declared rule and its
+targets. Computed-value reversal is asserted in Chromium by
+`e2e/styleless.spec.ts`. The playground entry `styleless-mode` toggles the
+stylesheet across the catalogue.

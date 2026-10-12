@@ -65,6 +65,8 @@ components are exempt — they *are* the primitives.
 | `./themes/styles/happyvertical.css` | static HappyVertical "Day Shift" brand CSS (enamel/faceplate calm instrument panel) + amber focus rule + `.hv-*` utilities |
 | `./themes/styles/happyvertical-fonts.css` | optional self-hosted `@font-face` for the Day Shift type stack (Archivo / B612 / B612 Mono) |
 | `./styles/tokens.css` | base token stylesheet |
+| `./styles/layers.css` | cascade-layer declaration (`smrt.reset < smrt.structure < smrt.theme`) |
+| `./styles/unstyled.css` | styleless mode: reverts component look to `smrt.structure`, keeps layout (see [agents/styling.md](agents/styling.md)) |
 
 Also internal: `actions/` (`ripple`, `permission`), `display/`, `data/`,
 `nav/`, `permissions/`, `utils/`, `test-support/`.

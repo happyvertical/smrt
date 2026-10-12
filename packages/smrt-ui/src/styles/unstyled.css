@@ -1,0 +1,65 @@
+/*
+ * Styleless mode for smrt components (#3825).
+ *
+ *   import '@happyvertical/smrt-ui/styles/unstyled.css';
+ *
+ * Components keep their layout (display, flex/grid, gap, padding, position,
+ * sizing) and lose their look (colour, background, border, radius, shadow,
+ * font, outline, filter). Every rule here lives in a smrt layer, so unlayered
+ * consumer CSS still wins, whatever the import order. Restyle with unlayered
+ * CSS, the --smrt-* tokens, or the data-smrt-component / data-smrt-part hooks.
+ *
+ * The reverted property list is explicit on purpose. `all: revert-layer` would
+ * also drop layout declarations, because until per-package structure/theme
+ * sorting lands every component rule sits in smrt.theme. Keep this list in
+ * step with the "Styleless mode" section of agents/styling.md.
+ */
+@layer smrt.reset, smrt.structure, smrt.theme;
+
+/*
+ * Reset: once the look is stripped, text inherits the page typography instead
+ * of the browser's serif default, and form controls drop their UA chrome.
+ */
+@layer smrt.reset {
+  :is([data-smrt-component], [data-smrt-component] *) {
+    font: inherit;
+  }
+
+  :is([data-smrt-component], [data-smrt-component] *):is(
+      button,
+      input,
+      select,
+      textarea
+    ) {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+}
+
+/*
+ * Revert the look back to smrt.structure (and then the reset). The :not(#\#)
+ * x3 boost gives specificity (3,1,0), which beats Svelte's hashed .svelte-*
+ * class selectors without !important.
+ */
+@layer smrt.theme {
+  :is([data-smrt-component], [data-smrt-component] *):not(#\#):not(#\#):not(#\#) {
+    background: revert-layer;
+    border: revert-layer;
+    border-radius: revert-layer;
+    box-shadow: revert-layer;
+    color: revert-layer;
+    font: revert-layer;
+    letter-spacing: revert-layer;
+    text-decoration: revert-layer;
+    text-transform: revert-layer;
+    text-shadow: revert-layer;
+    outline: revert-layer;
+    filter: revert-layer;
+    backdrop-filter: revert-layer;
+  }
+}
