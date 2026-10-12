@@ -447,6 +447,7 @@ control panel), wired by `app/AppShell.svelte`.
   popover grid ("Use <icon> icon", `aria-pressed` on the current one; Escape
   closes the grid before the toolbar). Entries are not in the sidebar in
   `sections` mode; `sections-with-items` shows them under their section.
+- **TenantNav rows.** `ShellNavItem.icon` renders in items mode and the collapsed rail (host `iconComponent` first, else `SHELL_ICON_PATHS`); an iconless item shows the `placeholder` glyph in the rail only. The current row has a `secondary-container` fill plus a start indicator bar (`aria-current="page"` unchanged). Row block-size is `--smrt-touch-target-min` at the phone boundary (`max-width: 48rem`) and `--smrt-control-target-min` otherwise; `ShellNavEditor` item rows use the same sizing.
 - **`ShellSectionMenu`** (`sectionId`, `controller?`, `meta(entry)`,
   `actions(entry)`, `iconComponent`, `aria-label`, `layout`): the section's page body.
   `layout="cards"` renders an auto-fill grid (min 16rem) of cards: 32px icon in a
