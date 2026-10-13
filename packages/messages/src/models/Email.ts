@@ -9,7 +9,11 @@
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
 import { field, smrt } from '@happyvertical/smrt-core';
-import type { EmailOptions } from '../types';
+import type {
+  EmailOptions,
+  MessageSendResult,
+  SendEmailOptions,
+} from '../types';
 import { Message } from './Message';
 
 @smrt({
@@ -393,5 +397,18 @@ export class Email extends Message {
       '',
       bodyText,
     ].join('\n');
+  }
+
+  /**
+   * Send this email. Accepts {@link SendEmailOptions}, including send-time
+   * `attachments`, which `EmailSender` merges with the stored rows (#3808).
+   */
+  override send(options?: SendEmailOptions): Promise<MessageSendResult> {
+    return super.send(options);
+  }
+
+  /** Retry a failed send; takes the same options as {@link Email.send}. */
+  override retrySend(options?: SendEmailOptions): Promise<MessageSendResult> {
+    return super.retrySend(options);
   }
 }
