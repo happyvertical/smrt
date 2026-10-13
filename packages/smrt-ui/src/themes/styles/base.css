@@ -1,5 +1,8 @@
 
-@layer smrt.reset, smrt.structure, smrt.theme;/**
+@layer smrt.reset, smrt.structure, smrt.theme;
+@import url('./forced-colors.css') (forced-colors: active);
+
+/**
  * Application baseline for SMRT interfaces.
  *
  * Import this once at an application entry point, alongside the selected
@@ -266,47 +269,14 @@ time,
  * layered one, so a layered override would never apply. The selectors match
  * whichever element carries the theme attributes (document root, ThemeProvider
  * root or a consumer wrapper) with one more attribute selector than the preset
- * block (a repeated `[data-theme]` in the media block). The same values ship as
+ * block. The `forced-colors: active` media case is the conditional `@import`
+ * at the top of this file (forced-colors.css); the attribute case is the
+ * block below. The same values ship as
  * `FORCED_COLORS_TOKENS` (src/themes/forced-colors.ts): ThemeProvider appends
  * them inline so runtime themes cannot win; a unit test keeps both in step.
  * `[data-forced-colors]` is stamped by ThemeProvider and `themeScript()`;
  * tests can set it without media emulation. Components only consume tokens.
  */
-@media (forced-colors: active) {
-[data-theme][data-theme][data-color-scheme] {
-  --smrt-hairline-color: CanvasText;
-  --smrt-hairline-strong-color: CanvasText;
-  --smrt-hairline: 1px solid CanvasText;
-  --smrt-hairline-strong: 1px solid CanvasText;
-  --smrt-inset-highlight: inset 0 0 0 0 transparent;
-  --smrt-elevation-0: 0 0 0 0 transparent;
-  --smrt-elevation-1: 0 0 0 0 transparent;
-  --smrt-elevation-2: 0 0 0 0 transparent;
-  --smrt-elevation-3: 0 0 0 0 transparent;
-  --smrt-elevation-4: 0 0 0 0 transparent;
-  --smrt-elevation-5: 0 0 0 0 transparent;
-  --smrt-focus-ring-color: Highlight;
-  --smrt-focus-ring-width: 3px;
-  --smrt-focus-ring-offset: 2px;
-  --smrt-glass-blur: 0px;
-  --smrt-glass-saturation: 100%;
-  --smrt-glass-surface: Canvas;
-  --smrt-glass-surface-strong: Canvas;
-  --smrt-glass-border: CanvasText;
-  --smrt-surface-overlay: Canvas;
-  --smrt-state-hover: 0;
-  --smrt-state-pressed: 0;
-  --smrt-state-selected: 0;
-  --smrt-state-focus: 0;
-  --smrt-state-dragged: 0;
-  --smrt-accent-color: Highlight;
-  --smrt-caret-color: CanvasText;
-  --smrt-selection-background: Highlight;
-  --smrt-selection-color: HighlightText;
-  --smrt-scrollbar-thumb: CanvasText;
-  --smrt-scrollbar-track: Canvas;
-}
-}
 
 [data-forced-colors][data-theme][data-color-scheme] {
   --smrt-hairline-color: CanvasText;
