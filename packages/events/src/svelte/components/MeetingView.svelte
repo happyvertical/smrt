@@ -239,7 +239,7 @@ const hasDocuments = $derived(
 
   .document-card:hover {
     background: var(--smrt-meeting-view-card-hover);
-    border-color: var(--smrt-color-outline-variant);
+    border-color: var(--smrt-hairline-color);
     transform: translateY(-1px);
   }
 

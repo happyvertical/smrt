@@ -118,7 +118,7 @@ const identity = (controlId: string) => ({
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .workbench { display: grid; gap: var(--smrt-spacing-5); color: var(--smrt-color-on-surface); }
-  header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--smrt-spacing-5); padding-bottom: var(--smrt-spacing-4); border-bottom: 1px solid var(--smrt-color-outline-variant); }
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--smrt-spacing-5); padding-bottom: var(--smrt-spacing-4); border-bottom: var(--smrt-hairline); }
   h4, h5, p { margin: 0; } h4 { font: var(--smrt-typography-headline-small-font); } h5 { margin-bottom: var(--smrt-spacing-3); font: var(--smrt-typography-title-medium-font); }
   header p:not(.eyebrow) { max-width: 40rem; color: var(--smrt-color-on-surface-variant); }
   .eyebrow { color: var(--smrt-color-primary); font: var(--smrt-typography-label-small-font); letter-spacing: .1em; text-transform: uppercase; }

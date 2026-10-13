@@ -112,7 +112,7 @@ const { t } = useI18n();
 
   .summary-card {
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
     padding: 1rem;
     display: flex;

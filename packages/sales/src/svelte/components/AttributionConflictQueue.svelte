@@ -287,13 +287,13 @@ function resolve(exception: AttributionExceptionView) {
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
     text-align: left;
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     white-space: nowrap;
   }
 
   .candidates td {
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .award-editor {

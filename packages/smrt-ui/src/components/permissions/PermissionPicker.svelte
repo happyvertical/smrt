@@ -199,11 +199,11 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
   .search { display: grid; flex: 1 1 16rem; max-inline-size: 28rem; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); font: var(--smrt-typography-label-medium-font); }
   fieldset { min-inline-size: 0; margin: 0; padding: 0; border: 0; }
   .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr)); gap: var(--smrt-spacing-4); align-items: start; }
-  .group { min-inline-size: 0; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); }
+  .group { min-inline-size: 0; border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); }
   summary { display: flex; min-block-size: 2.75rem; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3) var(--smrt-spacing-4); color: var(--smrt-color-on-surface); font: var(--smrt-typography-title-medium-font); cursor: pointer; }
   summary:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .selected-count { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-medium-font); }
-  .choices { display: grid; gap: var(--smrt-spacing-4); padding: 0 var(--smrt-spacing-4) var(--smrt-spacing-4); border-block-start: 1px solid var(--smrt-color-outline-variant); padding-block-start: var(--smrt-spacing-4); }
+  .choices { display: grid; gap: var(--smrt-spacing-4); padding: 0 var(--smrt-spacing-4) var(--smrt-spacing-4); border-block-start: var(--smrt-hairline); padding-block-start: var(--smrt-spacing-4); }
   .choice { display: grid; min-inline-size: 0; gap: var(--smrt-spacing-1); }
   .choice :global(.checkbox) { min-inline-size: 0; }
   .choice :global(.checkbox__label), code, .choice p { overflow-wrap: anywhere; }

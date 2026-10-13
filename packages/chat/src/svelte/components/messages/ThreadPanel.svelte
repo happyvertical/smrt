@@ -86,7 +86,7 @@ const replyCount = $derived(
     height: 100%;
     width: 100%;
     background: var(--smrt-color-surface);
-    border-left: 1px solid var(--smrt-color-outline-variant);
+    border-left: var(--smrt-hairline);
   }
 
   .thread-panel__header {
@@ -94,7 +94,7 @@ const replyCount = $derived(
     align-items: center;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-4, 1rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     flex-shrink: 0;
   }
 

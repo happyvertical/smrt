@@ -114,7 +114,7 @@ function handlePointerUp() {
     display: flex;
     flex-direction: column;
     background: var(--smrt-color-surface-container);
-    border-right: 1px solid var(--smrt-color-outline-variant);
+    border-right: var(--smrt-hairline);
     overflow-y: auto;
     overflow-x: hidden;
   }
@@ -157,7 +157,7 @@ function handlePointerUp() {
       width: 100%;
       max-height: 14rem;
       border-right: 0;
-      border-bottom: 1px solid var(--smrt-color-outline-variant);
+      border-bottom: var(--smrt-hairline);
     }
 
     .chat-layout__resize-handle {

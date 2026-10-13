@@ -1241,7 +1241,7 @@ onMount(() => {
     justify-content: space-between;
     gap: 1rem;
     padding: 0.8rem 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
   }
@@ -1274,7 +1274,7 @@ onMount(() => {
   .mode-toggle {
     display: inline-flex;
     padding: 0.16rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface-container-high);
   }
@@ -1300,7 +1300,7 @@ onMount(() => {
     align-items: center;
     min-height: 2rem;
     padding: 0 0.7rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface-container-lowest);
     color: var(--smrt-color-on-surface);
@@ -1326,7 +1326,7 @@ onMount(() => {
     min-height: 32rem;
     height: calc(100vh - 5.1rem);
     overflow: hidden;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface);
   }
@@ -1343,7 +1343,7 @@ onMount(() => {
     margin: 0 1rem 0.75rem;
     padding: 0.55rem 0.7rem;
     align-self: flex-start;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface-variant);
@@ -1356,7 +1356,7 @@ onMount(() => {
     gap: 0.75rem;
     height: max-content;
     padding: 0.9rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
@@ -1366,7 +1366,7 @@ onMount(() => {
     display: grid;
     gap: 0.2rem;
     padding-bottom: 0.65rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .status-row:last-of-type {

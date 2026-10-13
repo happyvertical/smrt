@@ -129,7 +129,7 @@ const {
 
   .actions :global(.action-btn) {
     padding: 0.25rem 0.625rem;
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);

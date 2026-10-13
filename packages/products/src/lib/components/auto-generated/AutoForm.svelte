@@ -192,7 +192,7 @@ function _getFieldType(
     gap: 0.75rem;
     margin-top: 1.5rem;
     padding-top: 1.5rem;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 
   .form-debug {
@@ -200,7 +200,7 @@ function _getFieldType(
     padding: 1rem;
     background: var(--smrt-color-surface-container-low);
     border-radius: var(--smrt-radius-sm, 0.375rem);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
   }
 
   .form-debug summary {

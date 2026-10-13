@@ -261,7 +261,7 @@ function handleKeydown(e: KeyboardEvent) {
 		font-size: var(--smrt-typography-label-large-size, 0.875rem);
 		color: var(--smrt-color-on-surface-variant);
 		background: transparent;
-		border: 1px solid var(--smrt-color-outline);
+		border: var(--smrt-hairline-strong);
 		border-radius: var(--smrt-radius-md);
 		cursor: pointer;
 		transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
@@ -269,7 +269,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 	.dismiss-btn:hover {
 		background: var(--smrt-color-surface-container-highest);
-		border-color: var(--smrt-color-outline);
+		border-color: var(--smrt-hairline-strong-color);
 	}
 
 	.dismiss-btn:focus-visible {

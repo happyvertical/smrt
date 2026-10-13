@@ -126,7 +126,7 @@ function formatWhen(value?: Date | string): string {
 
   .request-card {
     padding: 1rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
     background: linear-gradient(
       180deg,

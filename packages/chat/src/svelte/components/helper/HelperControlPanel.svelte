@@ -393,12 +393,12 @@ async function customSaved(offering: HelperOffering) {
   fieldset { display: grid; gap: var(--smrt-spacing-3); border: 0; margin: 0; padding: 0; }
   label { display: grid; gap: var(--smrt-spacing-1); font: var(--smrt-typography-label-large-font); }
   .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--smrt-spacing-2); }
-  .gallery :global(.button) { min-height: 3rem; border-color: var(--smrt-color-outline); background: var(--smrt-color-surface); color: inherit; }
+  .gallery :global(.button) { min-height: 3rem; border-color: var(--smrt-hairline-strong-color); background: var(--smrt-color-surface); color: inherit; }
   .gallery :global(.button.selected) { border-color: var(--smrt-color-primary); background: var(--smrt-color-primary-container); }
-  .preview { min-height: 5rem; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface-container-low); }
+  .preview { min-height: 5rem; display: grid; place-items: center; overflow: hidden; border: var(--smrt-hairline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface-container-low); }
   .preview :global(svg), .preview :global(img) { max-width: 100%; max-height: 12rem; }
   .setup-actions, .actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); }
-  .custom-setup { display: grid; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-small); }
+  .custom-setup { display: grid; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3); border: var(--smrt-hairline); border-radius: var(--smrt-radius-small); }
   .message { margin: 0; color: var(--smrt-color-on-surface-variant); }
 }
 </style>

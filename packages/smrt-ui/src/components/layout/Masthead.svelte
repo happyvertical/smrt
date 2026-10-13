@@ -90,7 +90,7 @@ const {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .masthead {
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     background: var(--smrt-color-surface);
   }
 

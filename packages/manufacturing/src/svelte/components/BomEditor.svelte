@@ -505,7 +505,7 @@ const ancestors = $derived(bomId ? [bomId] : []);
     padding: 0.5rem 0.75rem;
     text-align: left;
     vertical-align: top;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, transparent);
+    border-bottom: var(--smrt-hairline);
   }
 
   .bom-editor-table thead th {

@@ -72,8 +72,8 @@ const cards = $derived.by((): Card[] => {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-shortcuts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(12rem, 100%), 1fr)); gap: var(--smrt-spacing-3); margin: 0; padding: 0; list-style: none; }
-  .smrt-shortcuts__card { position: relative; display: flex; min-inline-size: 0; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-color-surface); transition: background-color 120ms, border-color 120ms; }
-  .smrt-shortcuts__card:hover { background: var(--smrt-color-surface-container-high); border-color: var(--smrt-color-outline); }
+  .smrt-shortcuts__card { position: relative; display: flex; min-inline-size: 0; border: var(--smrt-hairline); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-color-surface); transition: background-color 120ms, border-color 120ms; }
+  .smrt-shortcuts__card:hover { background: var(--smrt-color-surface-container-high); border-color: var(--smrt-hairline-strong-color); }
   .smrt-shortcuts__link { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-3); color: var(--smrt-color-on-surface); text-decoration: none; }
   .smrt-shortcuts__link:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; border-radius: inherit; }
   .smrt-shortcuts__heading { display: flex; align-items: center; gap: var(--smrt-spacing-2); min-inline-size: 0; }

@@ -48,7 +48,7 @@ const hostname = $derived.by(() => {
 @layer smrt.theme {
   .link-preview {
     display: flex;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
     text-decoration: none;

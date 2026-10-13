@@ -16,7 +16,7 @@ let { prefix, suffix, children, class: className = '' }: Props = $props();
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-  .input-group { display: flex; align-items: stretch; width: 100%; border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); overflow: hidden; }
+  .input-group { display: flex; align-items: stretch; width: 100%; border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); overflow: hidden; }
   .adornment { display: inline-flex; align-items: center; padding: 0 var(--smrt-spacing-3); background: var(--smrt-color-surface-container-low); color: var(--smrt-color-on-surface-variant); }
   .control { flex: 1; min-width: 0; } .input-group .control :global(input), .input-group .control :global(select), .input-group .control :global(textarea) { border: 0; border-radius: 0; box-shadow: none; }
   .input-group:focus-within { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }

@@ -193,7 +193,7 @@ const isOverdue = $derived.by(() => {
     gap: var(--smrt-spacing-6, 1.5rem);
     padding: var(--smrt-spacing-6, 1.5rem);
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     flex-wrap: wrap;
   }

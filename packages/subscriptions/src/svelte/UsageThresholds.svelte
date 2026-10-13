@@ -41,7 +41,7 @@ let {
   }
 
   .smrt-usage-thresholds__row {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     display: grid;
     gap: 0.45rem;

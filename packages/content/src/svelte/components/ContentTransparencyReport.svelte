@@ -281,7 +281,7 @@ function getFactLabel(fact: {
 
   .panel {
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 1rem;
     padding: 1rem;
     display: flex;
@@ -296,7 +296,7 @@ function getFactLabel(fact: {
   }
 
   .item-card {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.85rem;
     background: var(--smrt-color-surface-container-low);
     padding: 0.85rem;

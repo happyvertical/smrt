@@ -226,7 +226,7 @@ const _sortedMessages = $derived(
     gap: 0.75rem;
     width: 100%;
     padding: 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     background: var(--smrt-color-surface-variant);
     text-align: left;

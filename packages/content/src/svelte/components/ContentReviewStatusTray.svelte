@@ -105,7 +105,7 @@ let {
     place-items: center;
     width: 2.75rem;
     height: 2.75rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.55rem;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface-variant);

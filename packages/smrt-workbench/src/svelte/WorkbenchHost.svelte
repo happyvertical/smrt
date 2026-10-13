@@ -1434,7 +1434,7 @@ function apiTabCount(
     height: 2rem;
     place-items: center;
     cursor: pointer;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 6px;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
@@ -1482,7 +1482,7 @@ function apiTabCount(
 
   .workbench-scope-metrics div,
   .workbench-system-summary div {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 8px;
     background: var(--smrt-color-surface-container-low);
     padding: 0.75rem;
@@ -1517,7 +1517,7 @@ function apiTabCount(
   .search input {
     width: 100%;
     box-sizing: border-box;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 6px;
     background: var(--smrt-color-surface-container-high);
     color: inherit;
@@ -1567,7 +1567,7 @@ function apiTabCount(
 
   .section-list {
     padding-left: 0.65rem;
-    border-left: 1px solid var(--smrt-color-outline-variant);
+    border-left: var(--smrt-hairline);
     margin-left: 0.65rem;
   }
 
@@ -1630,7 +1630,7 @@ function apiTabCount(
     justify-content: space-between;
     gap: 1rem;
     align-items: start;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     padding-bottom: 1rem;
   }
 
@@ -1648,7 +1648,7 @@ function apiTabCount(
 
   .scope-pills span,
   .chip-list code {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 999px;
     padding: 0.24rem 0.55rem;
     background: var(--smrt-color-surface-container-low);
@@ -1665,7 +1665,7 @@ function apiTabCount(
   .empty-panel,
   .route-stage,
   .script-list > div {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 8px;
     background: var(--smrt-color-surface);
     padding: 1rem;
@@ -1700,7 +1700,7 @@ function apiTabCount(
     gap: 1rem;
     width: 100%;
     cursor: pointer;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 8px;
     background: var(--smrt-color-surface);
     color: inherit;
@@ -1733,7 +1733,7 @@ function apiTabCount(
   }
 
   .package-index-meta span {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 999px;
     padding: 0.22rem 0.5rem;
     background: var(--smrt-color-surface-container-low);
@@ -1774,7 +1774,7 @@ function apiTabCount(
     flex-wrap: wrap;
     gap: 0.5rem;
     align-items: center;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     padding-bottom: 0.75rem;
   }
 
@@ -1783,7 +1783,7 @@ function apiTabCount(
     cursor: pointer;
     align-items: center;
     gap: 0.45rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 999px;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface-variant);
@@ -1809,7 +1809,7 @@ function apiTabCount(
   }
 
   .api-layout section {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 8px;
     background: var(--smrt-color-surface);
     padding: 1rem;
@@ -1836,7 +1836,7 @@ function apiTabCount(
   .api-object-doc {
     display: grid;
     gap: 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 8px;
     background: var(--smrt-color-surface-container-low);
     padding: 0.85rem;
@@ -1865,7 +1865,7 @@ function apiTabCount(
   }
 
   .api-object-doc details {
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     padding-top: 0.65rem;
   }
 
@@ -1879,7 +1879,7 @@ function apiTabCount(
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 0.45rem 0.75rem;
     align-items: start;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     padding: 0.55rem 0;
   }
 
@@ -1904,7 +1904,7 @@ function apiTabCount(
     grid-row: 1 / 2;
     justify-self: end;
     cursor: pointer;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 6px;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
@@ -1951,7 +1951,7 @@ function apiTabCount(
     grid-template-columns: minmax(8rem, 1fr) minmax(6rem, auto) auto auto;
     gap: 0.45rem 0.7rem;
     align-items: start;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     padding-bottom: 0.5rem;
   }
 
@@ -1965,7 +1965,7 @@ function apiTabCount(
   .document-list pre {
     max-height: 30rem;
     overflow: auto;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 6px;
     padding: 0.75rem;
     background: var(--smrt-color-surface-container-lowest);
@@ -2002,7 +2002,7 @@ function apiTabCount(
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     padding: 0.45rem 0;
   }
 
@@ -2016,7 +2016,7 @@ function apiTabCount(
     display: flex;
     justify-content: space-between;
     gap: 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     padding-bottom: 0.35rem;
   }
 

@@ -419,7 +419,7 @@ async function reset(fieldName: string): Promise<void> {
 @layer smrt.theme {
   .field-policy-editor { background: var(--smrt-color-surface, white); color: var(--smrt-color-on-surface); display: grid; gap: var(--smrt-spacing-4, 1rem); max-block-size: min(90vh, 56rem); overflow: auto; padding: var(--smrt-spacing-5, 1.25rem); }
   .field-policy-editor__actions, .field-policy-editor__tabs { align-items: center; display: flex; gap: var(--smrt-spacing-2, .5rem); justify-content: space-between; }
-  .field-policy-editor__field { border: 1px solid var(--smrt-color-outline); display: grid; gap: var(--smrt-spacing-3, .75rem); margin: 0 0 var(--smrt-spacing-3, .75rem); padding: var(--smrt-spacing-3, .75rem); }
+  .field-policy-editor__field { border: var(--smrt-hairline-strong); display: grid; gap: var(--smrt-spacing-3, .75rem); margin: 0 0 var(--smrt-spacing-3, .75rem); padding: var(--smrt-spacing-3, .75rem); }
   .field-policy-editor__field label { display: grid; gap: var(--smrt-spacing-1, .25rem); }
   .field-policy-editor__error { color: var(--smrt-color-error); }
   .field-policy-editor__notice { margin: 0; }

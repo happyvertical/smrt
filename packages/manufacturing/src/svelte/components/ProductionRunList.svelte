@@ -370,7 +370,7 @@ async function confirmAction() {
     padding: 0.5rem;
     text-align: left;
     vertical-align: top;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, transparent);
+    border-bottom: var(--smrt-hairline);
   }
 
   .run-list-progress {

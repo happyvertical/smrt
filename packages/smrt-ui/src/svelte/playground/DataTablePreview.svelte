@@ -514,7 +514,7 @@ function selectAllMatching() {
     justify-content: space-between;
     gap: var(--smrt-spacing-4);
     padding-bottom: var(--smrt-spacing-4);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   h4,
@@ -561,7 +561,7 @@ function selectAllMatching() {
   .table-frame {
     overflow: auto;
     max-width: 100%;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
   }
 
@@ -569,14 +569,14 @@ function selectAllMatching() {
     display: grid;
     gap: var(--smrt-spacing-3);
     padding-top: var(--smrt-spacing-4);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 
   .report-fixture {
     display: grid;
     gap: var(--smrt-spacing-3);
     padding-top: var(--smrt-spacing-4);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 
   .manual-fixture,
@@ -585,7 +585,7 @@ function selectAllMatching() {
     display: grid;
     gap: var(--smrt-spacing-3);
     padding-top: var(--smrt-spacing-4);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 
   .table-frame--virtual {

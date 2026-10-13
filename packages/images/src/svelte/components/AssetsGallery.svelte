@@ -268,7 +268,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     padding: 1rem;
     background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-lg);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
   }
 
   .gallery-header h3 {
@@ -411,7 +411,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     padding: 0.75rem 2rem;
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-primary);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: background 0.2s;

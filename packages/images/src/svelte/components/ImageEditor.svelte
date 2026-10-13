@@ -293,14 +293,14 @@ async function handleAIEdit() {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     border-radius: var(--smrt-radius-lg);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
   }
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     padding-bottom: 1rem;
     margin-bottom: 0.5rem;
   }
@@ -417,7 +417,7 @@ async function handleAIEdit() {
   .tool-section :global(.tonal-btn--filled) {
     background: var(--smrt-color-surface-container-highest);
     color: var(--smrt-color-primary);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     padding: 0.6rem 1.2rem;
     border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);

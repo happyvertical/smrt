@@ -178,7 +178,7 @@ function getFolderIcon(specialUse?: string): string {
 
   .divider {
     border: none;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     margin: 0.25rem 0.75rem;
   }
 }

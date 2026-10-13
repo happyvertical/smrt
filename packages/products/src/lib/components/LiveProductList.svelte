@@ -166,7 +166,7 @@ async function addProduct() {
     margin: 0 auto;
     padding: 1.5rem;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
   }
 

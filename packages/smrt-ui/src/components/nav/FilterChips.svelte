@@ -102,7 +102,7 @@ function handleClick(value: string) {
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant);
     background-color: transparent;
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-md);
     cursor: pointer;
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);

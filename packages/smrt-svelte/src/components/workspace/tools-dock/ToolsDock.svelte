@@ -308,7 +308,7 @@
     gap: 0.35rem;
     padding: 0.6rem 0.45rem;
     background: var(--smrt-color-surface-container-low);
-    border-left: 1px solid var(--smrt-color-outline-variant);
+    border-left: var(--smrt-hairline);
   }
 
   .tools-dock__rail-button {
@@ -376,8 +376,8 @@
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     overflow: hidden;
-    border-left: 1px solid var(--smrt-color-outline-variant);
-    border-right: 1px solid var(--smrt-color-outline-variant);
+    border-left: var(--smrt-hairline);
+    border-right: var(--smrt-hairline);
     box-shadow: -24px 0 40px
       color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
     transform: translateX(calc(100% + var(--smrt-tools-dock-rail-width)));
@@ -423,7 +423,7 @@
     height: 2rem;
     display: inline-grid;
     place-items: center;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.5rem;
     background: var(--smrt-color-surface-container-high);
     color: inherit;
@@ -471,7 +471,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface-variant);
     border-radius: 0.6rem;

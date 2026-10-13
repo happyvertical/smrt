@@ -231,7 +231,7 @@ function handleKeydown(event: KeyboardEvent) {
 
   .floating-assistant :global(.floating-assistant-launcher),
   .floating-assistant :global(.floating-assistant-collapse) {
-    border: 1px solid var(--smrt-color-outline, currentColor);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface, Canvas);
     color: var(--smrt-color-on-surface, CanvasText);
@@ -266,7 +266,7 @@ function handleKeydown(event: KeyboardEvent) {
     max-block-size: min(42rem, calc(100dvh - 6rem));
     overflow: auto;
     padding: 0.75rem;
-    border: 1px solid var(--smrt-color-outline, currentColor);
+    border: var(--smrt-hairline-strong);
     border-radius: 1rem;
     background: var(--smrt-color-surface, Canvas);
     color: var(--smrt-color-on-surface, CanvasText);

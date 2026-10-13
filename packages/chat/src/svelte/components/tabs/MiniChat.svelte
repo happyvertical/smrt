@@ -194,7 +194,7 @@ $effect(() => {
     align-items: center;
     gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-2);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     background: var(--smrt-color-surface);
   }
 

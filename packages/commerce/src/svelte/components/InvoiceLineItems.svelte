@@ -232,7 +232,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant);
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-2, 0.5rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .line-items-table td {

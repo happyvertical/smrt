@@ -269,7 +269,7 @@ function handleKeydown(event: KeyboardEvent) {
     box-sizing: border-box;
     min-block-size: 2.75rem;
     padding-inline-end: var(--smrt-spacing-2);
-    border-block-start: 1px solid var(--smrt-color-outline-variant);
+    border-block-start: var(--smrt-hairline);
     box-shadow: var(--smrt-elevation-2);
   }
 
@@ -279,14 +279,14 @@ function handleKeydown(event: KeyboardEvent) {
     max-inline-size: min(34rem, calc(100vw - 2rem));
     padding-block: var(--smrt-spacing-1);
     padding-inline-end: var(--smrt-spacing-2);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-xl, 1.25rem);
     box-shadow: var(--smrt-elevation-3);
   }
 
   .working-strip--inline {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-block-end: 1px solid var(--smrt-color-outline-variant);
+    border-block-end: var(--smrt-hairline);
   }
 
   .working-strip[data-phase='waiting'] {
@@ -390,7 +390,7 @@ function handleKeydown(event: KeyboardEvent) {
     min-inline-size: 2.75rem;
     min-block-size: 2.75rem;
     padding: 0 var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);

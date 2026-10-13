@@ -217,7 +217,7 @@ function getRoleBadgeLabel(role: string): string {
     width: 240px;
     height: 100%;
     background: var(--smrt-color-surface-container);
-    border-left: 1px solid var(--smrt-color-outline-variant);
+    border-left: var(--smrt-hairline);
     overflow: hidden;
   }
 
@@ -226,7 +226,7 @@ function getRoleBadgeLabel(role: string): string {
     align-items: center;
     gap: 0.375rem;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .member-list__title {

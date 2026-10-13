@@ -188,7 +188,7 @@ function getAltText(asset: PersistedAsset): string {
     display: flex;
     flex-direction: column;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
     cursor: pointer;

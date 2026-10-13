@@ -600,7 +600,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     min-height: 2.5rem;
     padding: 0 1rem;
     border-radius: var(--smrt-radius-full);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: color-mix(
       in srgb,
       var(--smrt-color-surface) 92%,
@@ -632,7 +632,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
 
   .callout,
   .panel {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: color-mix(
       in srgb,
       var(--smrt-color-surface) 95%,
@@ -735,7 +735,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     min-width: min(22rem, 100%);
     padding: 0.7rem 0.85rem;
     border-radius: 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
   }
