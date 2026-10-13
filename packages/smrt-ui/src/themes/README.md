@@ -333,8 +333,11 @@ system palette. The theme layer and the components cooperate so nothing paints o
 
 **Token level** (`styles/base.css`, mirrored by `FORCED_COLORS_TOKENS` in
 `forced-colors.ts`). Under `@media (forced-colors: active)` and `[data-forced-colors]`
-(stamped by `ThemeProvider` and `themeScript()`; a test or an explicit `contrast` can set
-it without media emulation) the theme tokens are redefined:
+(stamped by `ThemeProvider` and `themeScript()` only while the media query matches; a test
+can set it without emulation) the theme tokens below are redefined. Surface, text and
+primary colours are not mapped: in forced-colors mode the browser already replaces them
+with the system palette, so the map covers only what it cannot see through (shadows,
+blur, translucent state layers, custom-property colours used outside colour properties):
 
 | Token | Forced value |
 | --- | --- |
