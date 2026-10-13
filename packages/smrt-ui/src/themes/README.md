@@ -323,10 +323,61 @@ Behaviour notes (state exposed on context: `contrast`, `isChangingScheme`):
   the root and `<html>` for one `--smrt-duration-scheme`, so styles can crossfade.
   Never on first paint; skipped under `prefers-reduced-motion: reduce`.
 - Contrast: `data-contrast="standard|more|forced"` on `<html>` and the root;
-  `forced-colors: active` also sets `data-forced-colors`. Contract for components in
-  forced-colors mode: do not paint over system colours, hairlines become `CanvasText`
-  and focus rings `Highlight` (component side: #3867 follow-up).
+  `forced-colors: active` also sets `data-forced-colors`. See [Forced colors](#forced-colors).
 - `themeScript()` stamps `data-contrast` and (when persisted) `data-density` pre-paint.
+
+## Forced colors
+
+Windows High Contrast (`forced-colors: active`) replaces author colours with the user's
+system palette. The theme layer and the components cooperate so nothing paints over it.
+
+**Token level** (`styles/base.css`, mirrored by `FORCED_COLORS_TOKENS` in
+`forced-colors.ts`). Under `@media (forced-colors: active)` and `[data-forced-colors]`
+(stamped by `ThemeProvider` and `themeScript()`; a test or an explicit `contrast` can set
+it without media emulation) the theme tokens are redefined:
+
+| Token | Forced value |
+| --- | --- |
+| `--smrt-hairline-color` / `-strong-color` and the `--smrt-hairline*` shorthands | `CanvasText` |
+| `--smrt-focus-ring-color` / `-width` / `-offset` | `Highlight` / `3px` / `2px` |
+| `--smrt-inset-highlight`, `--smrt-elevation-0..5` | transparent shadows (never `none`: components compose `box-shadow` lists) |
+| `--smrt-glass-blur` / `-saturation` | `0px` / `100%` |
+| `--smrt-glass-surface(-strong)`, `--smrt-surface-overlay` | `Canvas` (scrim and glass edges also `CanvasText`) |
+| `--smrt-state-hover/pressed/selected/focus/dragged` | `0` (a translucent fill cannot be seen) |
+| `--smrt-accent-color`, selection, caret, scrollbar | `Highlight`, `HighlightText`, `CanvasText` |
+
+These blocks are deliberately **unlayered**. Preset stylesheets declare their tokens
+unlayered on `[data-theme][data-color-scheme]`, and an unlayered rule always beats a
+layered one, so a layered override would never apply. The selectors out-rank the preset
+block by one attribute. While forced, `ThemeProvider` also appends the same map to the
+root inline style (after generated variables and `primaryColor`, before explicit
+`overrides`), so runtime themes and `primaryColor` cannot win.
+
+**Generic rules** (in `smrt.theme`, zero specificity, so a component rule always wins):
+hover is a 1px `Highlight` outline instead of a state-layer fill, disabled controls use
+`GrayText`, and elements that rely on the UA focus ring get the token ring.
+
+**Components** add `@media (forced-colors: active)` rules only where colour alone carried
+meaning, using system colours: `Canvas`, `CanvasText`, `Highlight`, `HighlightText`,
+`GrayText` (and `LinkText` and friends for chart series). Switch, Toggle, Checkbox and
+Radio fill their track, box or mark with `Highlight`; Tabs draw the `Highlight` indicator
+only on the current tab; Chip, FilterChips, SegmentedControl, ToggleButton, IconToggle
+and the selected DataTable row get a `Highlight` fill or outline; Badge and Alert keep
+text and border without the tinted fill; Progress uses `Highlight`/`CanvasText`. The shell
+(TenantNav, phone tab bar, dock toggles, account trigger, focus tools) keeps its selected
+and open states, e.g. the tenant nav start bar becomes `Highlight` and the row is bold.
+Component rules use the media query only (no attribute mirror); the attribute path exists
+for the token layer.
+
+**Exceptions to `forced-color-adjust: auto`**: none are needed today, because system
+colour keywords survive the adjustment. A component that must show an author colour to be
+understood (a colour picker or swatch) sets `forced-color-adjust: none` on that element
+only and documents why. Chart series cycle system colours by slot and the legend always
+carries label, value and share as text.
+
+Verification: Chromium e2e with `page.emulateMedia({ forcedColors: 'active' })` in
+`e2e/forced-colors.spec.ts` (smrt-ui), `packages/smrt-svelte/e2e/forced-colors.spec.ts`
+(shell) and the playground host. Unit parity test: `src/themes/__tests__/forced-colors.test.ts`.
 
 ## Theme Switching
 
