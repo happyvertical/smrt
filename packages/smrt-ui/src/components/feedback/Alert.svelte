@@ -48,6 +48,7 @@ const role = $derived(
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .alert { --smrt-alert-color: var(--smrt-color-primary); display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: start; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3) var(--smrt-spacing-4); border: var(--smrt-hairline); border-color: color-mix(in srgb, var(--smrt-alert-color) 35%, var(--smrt-hairline-color)); box-shadow: var(--smrt-inset-highlight); border-radius: var(--smrt-radius-medium); background: color-mix(in srgb, var(--smrt-alert-color) 8%, var(--smrt-surface-panel)); color: var(--smrt-color-on-surface); }
+  .alert--info { --smrt-alert-color: var(--smrt-color-info); }
   .alert--success { --smrt-alert-color: var(--smrt-color-success); }
   .alert--warning { --smrt-alert-color: var(--smrt-color-warning); }
   .alert--error { --smrt-alert-color: var(--smrt-color-error); }
