@@ -9,6 +9,7 @@ import { createServer } from 'vite';
 test('OverviewGrid server rendering draws every widget from loaded data', async () => {
   const server = await createServer({
     configFile: 'e2e/vite.config.ts',
+    cacheDir: resolve('node_modules/.vite/overview-ssr'),
     server: { middlewareMode: true },
   });
   try {

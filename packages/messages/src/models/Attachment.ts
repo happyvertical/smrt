@@ -16,6 +16,25 @@ import {
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AttachmentOptions } from '../types';
 
+/**
+ * Split an absolute path into its directory and file name, or return null for
+ * a relative path. Plain string handling rather than `node:path`: the package
+ * root must stay browser-reachable (the bundle-gate forbids `node:*` there).
+ */
+function splitAbsolutePath(
+  filePath: string,
+): { dir: string; base: string } | null {
+  // A backslash separates segments only in a Windows path; in a POSIX path it
+  // is an ordinary filename character.
+  const windows = /^[A-Za-z]:[\\/]/.test(filePath);
+  if (!windows && !filePath.startsWith('/')) return null;
+  const cut = windows
+    ? Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
+    : filePath.lastIndexOf('/');
+  const dir = filePath.slice(0, cut) || filePath.slice(0, cut + 1);
+  return { dir, base: filePath.slice(cut + 1) };
+}
+
 @TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'delete'] },
@@ -129,17 +148,30 @@ export class Attachment extends SmrtObject {
    * The files SDK is loaded through core's bundler-invisible optional-import
    * boundary so it never enters provider-neutral consumer bundles (#1979).
    * Absence of the SDK at runtime degrades to the existing null contract.
+   *
+   * The local provider joins every path onto its base path (the process cwd
+   * by default), so an absolute `filePath` is rooted at its own directory, and
+   * the bytes are read raw: decoding a PDF as UTF-8 corrupts it (#3808).
    */
   async readContent(): Promise<Buffer | null> {
     if (!this.filePath) return null;
 
     try {
-      const { getFilesystem } = (await importOptionalDependency(
-        '@happyvertical/files',
-        "Import '@happyvertical/smrt-core/filesystem' (or '@happyvertical/smrt-assets/filesystem') during server startup to read externally-stored attachments in bundled builds.",
-      )) as typeof import('@happyvertical/files');
-      const files = await getFilesystem({ type: 'local' });
-      const data = await files.read(this.filePath);
+      const { getFilesystem, initializeProviders } =
+        (await importOptionalDependency(
+          '@happyvertical/files',
+          "Import '@happyvertical/smrt-core/filesystem' (or '@happyvertical/smrt-assets/filesystem') during server startup to read externally-stored attachments in bundled builds.",
+        )) as typeof import('@happyvertical/files');
+      // The SDK registers its providers asynchronously on import; make the
+      // local one available before asking for it.
+      await initializeProviders?.();
+      const split = splitAbsolutePath(this.filePath);
+      const files = await getFilesystem(
+        split ? { type: 'local', basePath: split.dir } : { type: 'local' },
+      );
+      const data = await files.read(split ? split.base : this.filePath, {
+        raw: true,
+      });
       return data instanceof Buffer ? data : Buffer.from(data);
     } catch {
       return null;

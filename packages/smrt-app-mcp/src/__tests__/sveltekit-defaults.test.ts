@@ -601,6 +601,176 @@ describe('bearer authentication source', () => {
     expect(await toolNames(handler, {})).toEqual([]);
   });
 
+  it('allows only headerless anonymous public access when explicitly enabled', async () => {
+    const validBearer = 'Bearer live-token';
+    const auth: McpRouteResourceAuth = {
+      metadataUrl:
+        'https://app.example/.well-known/oauth-protected-resource/api/mcp',
+      metadataResponse: () => Response.json({ resource: 'stub' }),
+      async authenticate(request) {
+        const scopes =
+          request.headers.get('authorization') === validBearer
+            ? ['items.read']
+            : request.headers.get('authorization') === 'Bearer narrow-token'
+              ? ['other.read']
+              : undefined;
+        if (scopes) {
+          return {
+            ok: true as const,
+            principal: {
+              id: 'remote',
+              tenantId: 'tenant-a',
+              kind: 'human',
+              scopes,
+            },
+          };
+        }
+        return {
+          ok: false as const,
+          response: new Response(null, {
+            status: 401,
+            headers: { 'WWW-Authenticate': 'Bearer error="invalid_token"' },
+          }),
+        };
+      },
+    };
+    const publicResource = 'ui://lane/v1/public.html';
+    const privateResource = 'ui://lane/v1/private.html';
+    const handler = route({
+      auth,
+      allowAnonymous: true,
+      publicToolPatterns: () => ['lanerouteitem_list'],
+      resources: [
+        {
+          uri: publicResource,
+          version: 'v1',
+          name: 'Public view',
+          html: '<title>Public</title>',
+          public: true,
+        },
+        {
+          uri: privateResource,
+          version: 'v1',
+          name: 'Private view',
+          html: '<title>Private</title>',
+        },
+      ],
+    });
+
+    // No header is the only anonymous path. It exposes the declared public
+    // read-only surface but no private tool or resource.
+    expect(await toolNames(handler, {})).toEqual(['lanerouteitem_list']);
+    const publicCall = await call(handler, 'lanerouteitem_list', {});
+    expect(publicCall.body.result.isError).not.toBe(true);
+    const privateCall = await call(handler, 'lanerouteitem_create', {});
+    expect(privateCall.body.error.message).toContain(
+      'Authentication is required',
+    );
+    const anonymousResources = await handler(rpc({ method: 'resources/list' }));
+    expect(
+      (await anonymousResources.json()).result.resources.map(
+        (resource: { uri: string }) => resource.uri,
+      ),
+    ).toEqual([publicResource]);
+    const hiddenResource = await handler(
+      rpc({ method: 'resources/read', params: { uri: privateResource } }),
+    );
+    expect((await hiddenResource.json()).error.message).toBe(
+      'MCP resource is not available.',
+    );
+    // `allowAnonymous` is deliberately not a session fallback: ambient
+    // session locals and a custom resolver must not widen it.
+    expect(await toolNames(handler, ownerLocals)).toEqual([
+      'lanerouteitem_list',
+    ]);
+    const sessionPrivateCall = await call(
+      handler,
+      'lanerouteitem_create',
+      ownerLocals,
+    );
+    expect(sessionPrivateCall.body.error.message).toContain(
+      'Authentication is required',
+    );
+    const sessionResources = await handler(
+      rpc({ method: 'resources/list', locals: ownerLocals }),
+    );
+    expect(
+      (await sessionResources.json()).result.resources.map(
+        (resource: { uri: string }) => resource.uri,
+      ),
+    ).toEqual([publicResource]);
+    const customResolver = route({
+      auth,
+      allowAnonymous: true,
+      publicToolPatterns: () => ['lanerouteitem_list'],
+      resolvePrincipal: () => ({
+        id: 'custom-owner',
+        tenantId: 'tenant-a',
+        kind: 'human',
+        scopes: ['items.read'],
+      }),
+    });
+    expect(await toolNames(customResolver, {})).toEqual(['lanerouteitem_list']);
+
+    // Any supplied credentials stay on the bearer path. They cannot turn a
+    // protected route into an anonymous one, even with a valid cookie session.
+    for (const authorization of [
+      'Bearer revoked-token',
+      'Bearer malformed token',
+      'Basic malformed',
+    ]) {
+      const denied = await handler(
+        rpc({
+          method: 'tools/list',
+          headers: { authorization },
+          locals: ownerLocals,
+        }),
+      );
+      expect(denied.status).toBe(401);
+      expect(denied.headers.get('www-authenticate')).toBe(
+        'Bearer error="invalid_token"',
+      );
+    }
+
+    // A verified bearer receives the authenticated, scope-filtered surface.
+    const verified = await handler(
+      rpc({
+        method: 'tools/list',
+        headers: { authorization: validBearer },
+      }),
+    );
+    expect(
+      (await verified.json()).result.tools.map(
+        (tool: { name: string }) => tool.name,
+      ),
+    ).toEqual(
+      expect.arrayContaining(['lanerouteitem_create', 'lanerouteitem_list']),
+    );
+    const verifiedResources = await handler(
+      rpc({
+        method: 'resources/list',
+        headers: { authorization: validBearer },
+      }),
+    );
+    expect(
+      (await verifiedResources.json()).result.resources.map(
+        (resource: { uri: string }) => resource.uri,
+      ),
+    ).toEqual([privateResource, publicResource]);
+    const narrow = await handler(
+      rpc({
+        method: 'tools/list',
+        headers: { authorization: 'Bearer narrow-token' },
+      }),
+    );
+    expect((await narrow.json()).result.tools).toEqual([]);
+    const unknown = await call(handler, 'does_not_exist', {});
+    expect(unknown.body.error).toMatchObject({
+      code: -32602,
+      message: 'Unknown MCP tool.',
+    });
+  });
+
   it('authenticates a real signed token end to end through the default route', async () => {
     const pair = await generateKeyPair('RS256');
     const jwk = {

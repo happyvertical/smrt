@@ -32,6 +32,7 @@ import { UsersLoginAttemptCollection } from './collections/LoginAttemptCollectio
 import { UsersLoginAuditEventCollection } from './collections/LoginAuditEventCollection.js';
 import { UsersMagicLinkTokenCollection } from './collections/MagicLinkTokenCollection.js';
 import { SessionCollection } from './collections/SessionCollection.js';
+import { pruneOAuthCredentials } from './services/oauth-retention.js';
 
 /** Retention task name for expired and revoked sessions. */
 export const SESSIONS_RETENTION_TASK = 'users-sessions';
@@ -51,8 +52,12 @@ export const LOGIN_AUDIT_RETENTION_TASK = 'users-login-audit-events';
 /** How long login audit events are kept by default. */
 export const DEFAULT_LOGIN_AUDIT_RETENTION_DAYS = 90;
 
+/** Retention task for OAuth codes, refresh history/families and revocations. */
+export const OAUTH_CREDENTIALS_RETENTION_TASK = 'users-oauth-credentials';
+
 /** Every task name {@link registerUserRetentionTasks} installs. */
 export const USER_RETENTION_TASKS = [
+  OAUTH_CREDENTIALS_RETENTION_TASK,
   SESSIONS_RETENTION_TASK,
   MAGIC_LINK_RETENTION_TASK,
   CLI_AUTH_RETENTION_TASK,
@@ -72,6 +77,13 @@ export const USER_RETENTION_TASKS = [
  * themselves.
  */
 export function registerUserRetentionTasks(): void {
+  registerRetentionTask({
+    name: OAUTH_CREDENTIALS_RETENTION_TASK,
+    description: 'Delete expired OAuth credentials after their replay window',
+    run: (db, context) =>
+      pruneOAuthCredentials(db, { dryRun: context.dryRun, now: context.now }),
+  });
+
   registerRetentionTask({
     name: SESSIONS_RETENTION_TASK,
     description: 'Delete expired and revoked sessions',
