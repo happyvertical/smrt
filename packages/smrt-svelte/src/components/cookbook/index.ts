@@ -34,6 +34,7 @@ export {
   type CookbookRegistry,
   type CookbookRegistryOptions,
   type CookbookWidgetContext,
+  composeShortcutsLoader,
   createCookbookRegistry,
   loadShortcuts,
 } from './registry.js';

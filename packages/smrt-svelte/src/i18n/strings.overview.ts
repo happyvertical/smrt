@@ -126,6 +126,8 @@ export const M = defineMessages({
   'ui.overview.records.view_all': 'View all',
   'ui.overview.records.total': '{count} in total',
   'ui.overview.shortcuts.empty': 'No pages to show.',
+  'ui.overview.shortcuts.records_one': '{count} record',
+  'ui.overview.shortcuts.records_other': '{count} records',
 
   // Cookbook section page
   'ui.cookbook.menu_entries': 'Menu entries',

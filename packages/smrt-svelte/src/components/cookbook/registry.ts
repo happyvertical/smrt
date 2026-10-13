@@ -14,12 +14,11 @@ import {
   createWidgetRegistry,
   type WidgetRegistry,
 } from '../overview/registry.js';
-import type { WidgetLoadContext } from '../overview/types.js';
+import type { WidgetLoad, WidgetLoadContext } from '../overview/types.js';
+import type { CookbookLoaders, CookbookShortcutsLoader } from './types.js';
+import { registerCoreWidgets } from '../overview/widgets/core.js';
 import {
-  type CoreWidgetLoaders,
-  registerCoreWidgets,
-} from '../overview/widgets/core.js';
-import {
+  type ShortcutEntry,
   type ShortcutNavSection,
   type ShortcutsWidgetData,
   shortcutsFromNav,
@@ -53,9 +52,49 @@ export function loadShortcuts(
   return shortcutsFromNav(sections, sectionId);
 }
 
+/**
+ * The registry's shortcuts loader composed with a host's (#3888): the default
+ * entries come from the shell's sections as in {@link loadShortcuts}; the host
+ * loader receives them and returns the entries to show (counts, reorders,
+ * additions). Without a host loader this is `loadShortcuts`. A host loader
+ * that throws (or returns something that is not an entry list) leaves the
+ * defaults in place for that load, so a failed count query never empties the
+ * page; an aborted load still rejects.
+ */
+export function composeShortcutsLoader(
+  host?: CookbookShortcutsLoader,
+): WidgetLoad<ShortcutsWidgetData> {
+  if (!host) return loadShortcuts;
+  return async (options, ctx) => {
+    const base = loadShortcuts(options, ctx);
+    try {
+      const entries = await host(ctx, base.items.map((item) => ({ ...item })));
+      if (!Array.isArray(entries)) return base;
+      const seen = new Set<string>();
+      const items: ShortcutsWidgetData['items'] = [];
+      for (const entry of entries as (ShortcutEntry & { id?: unknown })[]) {
+        if (!entry || typeof entry.href !== 'string') continue;
+        let id =
+          typeof entry.id === 'string' && entry.id ? entry.id : entry.href;
+        if (seen.has(id)) id = `${id}#${items.length}`;
+        seen.add(id);
+        items.push({ ...entry, id });
+      }
+      return { items };
+    } catch (error) {
+      if (ctx.signal?.aborted) throw error;
+      return base;
+    }
+  };
+}
+
 export interface CookbookRegistryOptions {
-  /** Data loaders for `metric`, `records` and `chart` (omitted ones are not registered). */
-  loaders?: Omit<CoreWidgetLoaders, 'shortcuts'>;
+  /**
+   * Data loaders for `metric`, `records` and `chart` (omitted ones are not
+   * registered), and an optional `shortcuts` loader that receives the
+   * registry's default entries.
+   */
+  loaders?: CookbookLoaders;
   /** Recipes whose `widget` surfaces to register. */
   widgets?: readonly RecipeWidgetSource[];
   /** The host's module resolver for recipe exports. */
@@ -75,7 +114,7 @@ export async function createCookbookRegistry(
   const registry = createWidgetRegistry();
   registerCoreWidgets(registry, {
     ...options.loaders,
-    shortcuts: loadShortcuts,
+    shortcuts: composeShortcutsLoader(options.loaders?.shortcuts),
   });
   const recipeWidgets =
     options.widgets && options.widgets.length > 0 && options.resolveExport
