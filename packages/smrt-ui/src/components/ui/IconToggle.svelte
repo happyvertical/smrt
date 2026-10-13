@@ -141,7 +141,7 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
     .icon-toggle.pressed { background: Highlight; color: HighlightText; border-color: Highlight; }
-    .icon-toggle.pressed:not(:focus-visible) { outline: 2px solid CanvasText; outline-offset: -4px; }
+    .icon-toggle.pressed:not(:focus-visible) { outline: var(--smrt-focus-ring-width) solid CanvasText; outline-offset: calc(-2 * var(--smrt-focus-ring-width)); }
   }
 }
 </style>

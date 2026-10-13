@@ -544,7 +544,7 @@ $effect(() => {
   }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
-    .smrt-workspace-account-menu__trigger[aria-expanded='true']:not(:focus-visible) { outline: 2px solid Highlight; outline-offset: -2px; }
+    .smrt-workspace-account-menu__trigger[aria-expanded='true']:not(:focus-visible) { outline: var(--smrt-focus-ring-width) solid Highlight; outline-offset: calc(-1 * var(--smrt-focus-ring-width)); }
     .smrt-workspace-account-menu__trigger:disabled { opacity: 1; color: GrayText; }
   }
 }

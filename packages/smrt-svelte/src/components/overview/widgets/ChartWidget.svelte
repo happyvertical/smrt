@@ -263,9 +263,9 @@ const summary = $derived(
     .smrt-chart__slice[data-slot='5'], .smrt-chart__swatch[data-slot='5'] { stroke: GrayText; background: GrayText; }
     .smrt-chart__slice[data-slot='6'], .smrt-chart__swatch[data-slot='6'] { stroke: ButtonText; background: ButtonText; }
     .smrt-chart__slice[data-slot='7'], .smrt-chart__swatch[data-slot='7'] { stroke: MarkText; background: MarkText; }
-    .smrt-chart__swatch { border: 1px solid CanvasText; }
+    .smrt-chart__swatch { border: var(--smrt-hairline-strong); }
     .smrt-chart__slice { stroke-linecap: butt; }
-    .smrt-chart__track { background: Canvas; border: 1px solid CanvasText; }
+    .smrt-chart__track { background: Canvas; border: var(--smrt-hairline-strong); }
     .smrt-chart__bar { background: Highlight; }
   }
 }

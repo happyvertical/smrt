@@ -2354,7 +2354,7 @@ $effect(() => {
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
     .data-table__row--selected, .data-table__row--selected .data-table__cell--pinned-start, .data-table__row--selected .data-table__cell--pinned-end { background: Canvas; }
-    .data-table__row--selected { outline: 2px solid Highlight; outline-offset: -2px; }
+    .data-table__row--selected { outline: var(--smrt-focus-ring-width) solid Highlight; outline-offset: calc(-1 * var(--smrt-focus-ring-width)); }
   }
 }
 </style>

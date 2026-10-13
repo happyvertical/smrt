@@ -192,7 +192,7 @@ const {
   }
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
-    .chip.selected { border-color: Highlight; outline: 2px solid Highlight; outline-offset: -3px; }
+    .chip.selected { border-color: Highlight; outline: var(--smrt-focus-ring-width) solid Highlight; outline-offset: calc(-1 * var(--smrt-focus-ring-width)); }
     .chip.disabled { opacity: 1; color: GrayText; border-color: GrayText; }
   }
 }

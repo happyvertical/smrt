@@ -212,7 +212,7 @@ function accessibleName(item: PhoneBottomBarEntry): string {
   }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
-    .smrt-phone-bottom-bar__item.active { color: CanvasText; font-weight: 700; }
+    .smrt-phone-bottom-bar__item.active { color: CanvasText; font-weight: var(--smrt-typography-weight-bold); }
     .smrt-phone-bottom-bar__item.active .smrt-phone-bottom-bar__icon { background: Highlight; color: HighlightText; }
     .smrt-phone-bottom-bar__badge { background: CanvasText; color: Canvas; }
     .smrt-phone-bottom-bar__dot { background: Highlight; border-color: Canvas; }

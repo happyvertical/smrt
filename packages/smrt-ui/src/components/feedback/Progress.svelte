@@ -70,7 +70,7 @@ const displayValue = $derived(
   @media (prefers-reduced-motion: reduce) { .progress--linear .indicator, .progress--circular .indicator { transition: none; } .progress--linear.indeterminate .indicator { animation-duration: 2.5s; } }
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
-    .progress--linear .track { background: Canvas; border: 1px solid CanvasText; }
+    .progress--linear .track { background: Canvas; border: var(--smrt-hairline-strong); }
     .progress--linear .indicator { background: Highlight; }
     .progress--circular .track { stroke: CanvasText; }
     .progress--circular .indicator { stroke: Highlight; }
