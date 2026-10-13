@@ -14,8 +14,12 @@ import type {
 import type { ComponentProps } from 'svelte';
 import type AppShell from '../app/AppShell.svelte';
 import type { RecipeExportResolver } from '../overview/recipe-widgets.js';
-import type { OverviewDefinition } from '../overview/types.js';
+import type {
+  OverviewDefinition,
+  WidgetLoadContext,
+} from '../overview/types.js';
 import type { CoreWidgetLoaders } from '../overview/widgets/core.js';
+import type { ShortcutEntry } from '../overview/widgets/data.js';
 import type { ShellLayout } from '../workspace/admin-shell/layout.js';
 import type { ShellNavGroup } from '../workspace/admin-shell/types.js';
 
@@ -194,8 +198,32 @@ export interface CookbookShell {
   issues: string[];
 }
 
+/** The section a heading snippet draws (#3888). */
+export interface CookbookSectionHeadingInfo {
+  /** The layout id (`section:sales`, `custom:shop`). */
+  id: string;
+  /** The section's title as the layout names it. */
+  title: string;
+  description?: string;
+  /** Shell icon name. */
+  icon: string;
+}
+
+/** Props of `CookbookSectionOverview` (the presentation half is shared with the page). */
+export interface CookbookSectionPresentationProps {
+  /**
+   * How the overview's tiles are drawn outside edit mode: `'plain'` (default)
+   * lists a section's entries as unframed rows or tiles on the panel surface;
+   * `'card'` keeps the framed look. Editing always keeps its frame.
+   */
+  presentation?: 'plain' | 'card';
+  /** Replaces the section heading with host content. */
+  heading?: import('svelte').Snippet<[{ section: CookbookSectionHeadingInfo }]>;
+}
+
 /** Props of `CookbookSectionPage`. */
-export interface CookbookSectionPageProps {
+export interface CookbookSectionPageProps
+  extends CookbookSectionPresentationProps {
   /** The layout id (`section:sales`, `custom:shop`). */
   sectionId?: string;
   /** The route slug (`section-sales`); used when `sectionId` is absent. */
@@ -230,9 +258,10 @@ export interface CookbookAppProps
   /**
    * Data loaders for the `metric`, `records` and `chart` widgets. With
    * `metric` and `records`, section pages also show a record count and the
-   * latest records of the section's lead model.
+   * latest records of the section's lead model. `shortcuts` composes with the
+   * registry's own entries (see {@link CookbookShortcutsLoader}).
    */
-  loaders?: Omit<CoreWidgetLoaders, 'shortcuts'>;
+  loaders?: CookbookLoaders;
   /** Host capabilities handed to widget loaders that run in the browser. */
   widgetContext?: () => Record<string, unknown>;
   /**
@@ -245,3 +274,18 @@ export interface CookbookAppProps
   oncookbookchange?: (cookbook: Cookbook) => void;
   children: import('svelte').Snippet;
 }
+
+/**
+ * A host's shortcuts loader (#3888). Receives the entries the registry derived
+ * from the shell's sections and returns the entries to show: add `count`,
+ * reorder, or replace them. A throw falls back to the defaults for that load.
+ */
+export type CookbookShortcutsLoader = (
+  ctx: WidgetLoadContext,
+  defaults: ShortcutEntry[],
+) => Promise<ShortcutEntry[]> | ShortcutEntry[];
+
+/** The data loaders a cookbook app accepts. */
+export type CookbookLoaders = Omit<CoreWidgetLoaders, 'shortcuts'> & {
+  shortcuts?: CookbookShortcutsLoader;
+};

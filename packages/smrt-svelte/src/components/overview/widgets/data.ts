@@ -44,15 +44,18 @@ export interface RecordListWidgetData {
   href?: string;
 }
 
+/** One page a shortcut links to (#3888). `count` is the record count, when known. */
+export interface ShortcutEntry {
+  href: string;
+  label: string;
+  icon?: string;
+  description?: string;
+  count?: number;
+}
+
 /** `shortcuts`: cards that link to pages. */
 export interface ShortcutsWidgetData {
-  items: {
-    id: string;
-    label: string;
-    href: string;
-    icon?: string;
-    description?: string;
-  }[];
+  items: (ShortcutEntry & { id: string })[];
 }
 
 /** The part of a shell nav model section `shortcutsFromNav` reads. */

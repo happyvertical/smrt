@@ -11,9 +11,13 @@ import type { WidgetComponents, WidgetRegistry } from '../overview/registry.js';
 import type { OverviewDefinition } from '../overview/types.js';
 import { useShellLayout } from '../workspace/admin-shell/layout-context.js';
 import { type CookbookOverviewStore, createSectionOverview } from './page.js';
-import type { CookbookEntry } from './types.js';
+import type {
+  CookbookEntry,
+  CookbookSectionHeadingInfo,
+  CookbookSectionPresentationProps,
+} from './types.js';
 
-interface Props {
+interface Props extends CookbookSectionPresentationProps {
   definition: OverviewDefinition;
   registry: WidgetRegistry;
   store: CookbookOverviewStore;
@@ -23,6 +27,8 @@ interface Props {
   /** Host capabilities for widget loaders. */
   hostContext: () => Record<string, unknown>;
   label: string;
+  /** The section; needed for `heading`, which renders above the grid. */
+  section?: CookbookSectionHeadingInfo;
 }
 
 let {
@@ -34,6 +40,9 @@ let {
   models,
   hostContext,
   label,
+  presentation = 'plain',
+  heading,
+  section,
 }: Props = $props();
 
 const layout = useShellLayout();
@@ -68,4 +77,5 @@ $effect(() => {
 onDestroy(() => controller.destroy());
 </script>
 
-<OverviewGrid {controller} {components} {models} {label} />
+{#if heading && section}{@render heading({ section })}{/if}
+<OverviewGrid {controller} {components} {models} {label} {presentation} />

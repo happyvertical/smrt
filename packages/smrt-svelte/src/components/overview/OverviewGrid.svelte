@@ -371,6 +371,7 @@ const headingTag = $derived(`h${headingLevel}`);
           title={row.title}
           {locale}
           {iconComponent}
+          presentation={editing ? 'card' : presentation}
         />
       {:else}
         <p class="smrt-overview__state">{t(M['ui.overview.unavailable'])}</p>
