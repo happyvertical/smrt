@@ -12,6 +12,10 @@ import type {
   DataTableViewStateInput,
 } from './DataTableController.js';
 import type { DataTableRowKey } from './DataTableIdentity.js';
+import type {
+  DataTableSummaries,
+  DataTableSummaryFormatContext,
+} from './DataTableSummaries.js';
 import type { DataTableVirtualizationOptions } from './DataTableVirtualization.js';
 import type {
   DataSurfaceDescriptor,
@@ -150,6 +154,15 @@ export interface DataTableColumn<T> {
   filterFn?: (row: T, value: unknown, filter: DataTableFilter) => boolean;
   /** Column class name */
   className?: string;
+  /**
+   * Text of this column's `sum` / `count` / `avg` footer cell (the table's
+   * `summaries`). A money column keeps integer minor units in `value` and
+   * formats them here; without it the number is `Intl.NumberFormat`ted.
+   */
+  summaryFormat?: (
+    value: number,
+    context: DataTableSummaryFormatContext,
+  ) => string;
 }
 
 /**
@@ -249,6 +262,16 @@ export interface DataTableProps<T> {
   footer?: Snippet<[{ rows: T[] }]>;
   /** Generic report-like rows rendered independently from data row interactions. */
   structuralRows?: readonly DataTableStructuralRow<T>[];
+  /**
+   * Column summaries: a `<tfoot>` row with a `count`, `sum` or `avg` per
+   * column id, or a function of the rows returning the cell text. Computed
+   * over every filtered row (all pages; only the given rows under manual
+   * pagination). A `sum` / `avg` column without an explicit `align` is
+   * right-aligned. Rendered after any `footer` structural rows.
+   */
+  summaries?: DataTableSummaries<T>;
+  /** Label of the summaries row (default "Total", localized). */
+  summaryLabel?: string;
   /** Controlled visible column ids. Column.hidden is still respected. */
   visibleColumnIds?: Set<string>;
   /**
