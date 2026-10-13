@@ -1164,6 +1164,29 @@ describe('buildWebFieldDefinitions', () => {
     });
   });
 
+  it('emits a valid ui.format and drops an unknown one (#3718)', () => {
+    const fields = buildWebFieldDefinitions(
+      obj({
+        className: 'Order',
+        collection: 'orders',
+        fields: {
+          totalAmount: field({
+            type: 'integer',
+            _meta: { ui: { format: 'money' } },
+          }),
+          junk: field({
+            type: 'integer',
+            _meta: { ui: { format: 'cents' as never } },
+          }),
+        },
+      }),
+    );
+    expect(fields).toEqual({
+      totalAmount: { type: 'integer', ui: { format: 'money' } },
+      junk: { type: 'integer' },
+    });
+  });
+
   it('falls back to _meta.description when the top-level key is absent (runtime-registry manifests)', () => {
     // registeredFieldsToManifest (computeRuntimeWebManifestHash) hoists only
     // `default` out of `_meta` — description stays nested. The emission must
@@ -1274,6 +1297,42 @@ describe('buildWebRelationships', () => {
     expect(edges).toEqual([
       { field: 'groupId', kind: 'foreignKey', relatedCollection: 'ad_groups' },
     ]);
+  });
+
+  it('carries a line-items role on the edge and drops an unknown one (#3718)', () => {
+    const line = obj({
+      className: 'OrderLine',
+      collection: 'order_lines',
+      fields: {
+        orderId: field({
+          type: 'foreignKey',
+          related: 'Order',
+          _meta: { role: 'items' },
+        }),
+        productId: field({
+          type: 'foreignKey',
+          related: 'Product',
+          _meta: { role: 'lines' },
+        }),
+      },
+    });
+    const order = obj({ className: 'Order', collection: 'orders' });
+    const product = obj({ className: 'Product', collection: 'products' });
+    expect(buildWebRelationships(line, manifest(line, order, product))).toEqual(
+      [
+        {
+          field: 'orderId',
+          kind: 'foreignKey',
+          relatedCollection: 'orders',
+          role: 'items',
+        },
+        {
+          field: 'productId',
+          kind: 'foreignKey',
+          relatedCollection: 'products',
+        },
+      ],
+    );
   });
 
   it('emits oneToMany and manyToMany edges to their related REST collections', () => {
