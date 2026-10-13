@@ -268,6 +268,7 @@ describe('public exact cost billing', () => {
     expect(Object.keys(api).sort()).toEqual([
       'calculateCostBilling',
       'calculateCostBillingTax',
+      'calculateOrderedCostBillingTax',
       'resolveCostMarkup',
     ]);
   });
