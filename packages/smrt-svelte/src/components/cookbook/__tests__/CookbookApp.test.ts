@@ -95,6 +95,31 @@ describe('CookbookApp', () => {
     });
   });
 
+  it('passes the cookbook radius, density and contrast to the theme provider', async () => {
+    const themed: Cookbook = {
+      ...cookbook,
+      theme: {
+        preset: 'glass',
+        borderRadius: 'xl',
+        density: 'touch',
+        contrast: 'more',
+      },
+    };
+    render(Harness, { cookbook: themed, catalog, sectionId: 'custom:shop' });
+    await screen.findByRole('heading', { level: 1, name: 'Shop' });
+    await waitFor(() => {
+      const root = document.querySelector<HTMLElement>(
+        '[data-smrt-component="ThemeProvider"]',
+      );
+      expect(root?.getAttribute('data-theme')).toBe('glass');
+      expect(root?.getAttribute('data-density')).toBe('touch');
+      expect(root?.getAttribute('data-contrast')).toBe('more');
+      expect(root?.getAttribute('style')).toContain(
+        '--smrt-control-radius: var(--smrt-radius-xl)',
+      );
+    });
+  });
+
   it('hands overview edits to oncookbookchange', async () => {
     const changes: Cookbook[] = [];
     render(Harness, {

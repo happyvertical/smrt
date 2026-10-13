@@ -230,6 +230,9 @@ setCookbookContext({
   }}
   {preset}
   colorScheme={shell.theme.colorScheme}
+  borderRadius={shell.theme.borderRadius}
+  density={shell.theme.density}
+  contrast={shell.theme.contrast}
   sectionHref={(id) => shell.sectionPath(id)}
   slotItems={[...slotItems, ...recipeSlotItems]}
 >

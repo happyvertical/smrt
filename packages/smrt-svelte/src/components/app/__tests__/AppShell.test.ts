@@ -89,6 +89,49 @@ describe('AppShell', () => {
     expect(root?.getAttribute('data-theme')).toBe('smrt');
   });
 
+  it('passes borderRadius, density and contrast to the theme provider', async () => {
+    await render({ borderRadius: 'xl', density: 'touch', contrast: 'more' });
+    const root = container.querySelector<HTMLElement>('[data-theme]');
+    expect(root?.getAttribute('data-density')).toBe('touch');
+    expect(root?.getAttribute('data-contrast')).toBe('more');
+    expect(root?.getAttribute('style')).toContain(
+      '--smrt-control-radius: var(--smrt-radius-xl)',
+    );
+    expect(root?.getAttribute('style')).toContain(
+      '--smrt-control-target-min: var(--smrt-touch-target-min)',
+    );
+  });
+
+  it('leaves the theme provider defaults when the props are omitted', async () => {
+    await render({});
+    const root = container.querySelector<HTMLElement>('[data-theme]');
+    expect(root?.hasAttribute('data-density')).toBe(false);
+    expect(root?.getAttribute('data-contrast')).toBe('standard');
+    expect(root?.getAttribute('style') ?? '').not.toContain(
+      '--smrt-control-radius',
+    );
+  });
+
+  it("keeps the user's persisted choice over the props", async () => {
+    localStorage.setItem(
+      'smrt-theme',
+      JSON.stringify({ borderRadius: 'none', density: 'comfortable' }),
+    );
+    try {
+      await render({ borderRadius: 'xl', density: 'touch', contrast: 'more' });
+      await tick();
+      const root = container.querySelector<HTMLElement>('[data-theme]');
+      expect(root?.getAttribute('data-density')).toBe('comfortable');
+      expect(root?.getAttribute('style')).toContain(
+        '--smrt-control-radius: var(--smrt-radius-none)',
+      );
+      // No persisted contrast: the prop still applies.
+      expect(root?.getAttribute('data-contrast')).toBe('more');
+    } finally {
+      localStorage.clear();
+    }
+  });
+
   it('ships the theme stylesheets with the component (variables are not left unresolved)', async () => {
     const source = (await import('../AppShell.svelte?raw')).default;
     expect(source).toContain("'@happyvertical/smrt-ui/themes/styles/all.css'");
