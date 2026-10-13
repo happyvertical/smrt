@@ -1,41 +1,53 @@
 /**
- * The default overview of a record view (#3718 record view): one `records`
- * panel (newest related records) per `children` relation of the model,
- * persisted per model kind under `detail:<model>`. `RecordScreen` heads each
- * panel with the relation's count and its one "View all" link, so a default
- * record page reads as one panel per relation; `metrics: true` adds a paired
- * `metric` count before each panel, and a person can add one from the
- * layout editor either way.
+ * The default overview of a record view (#3718 record page), persisted per
+ * model kind under `detail:<model>`: a summary strip of `metric` tiles
+ * (a count per related relation, and the sum of its money column where it
+ * has one), then the `line-items` table and totals when the model has an
+ * `items` relation, then one tabbed `related` widget over the `children`
+ * relations. Every piece is an ordinary widget, so a person can remove,
+ * move or replace it from the layout editor; `related: 'panels'` keeps the
+ * earlier one `records` panel per relation.
  *
- * Svelte-free. The widgets are the core `records` / `metric` types with the
- * parent-filter vocabulary: `filter: 'parent'` plus `field` (the FK on the
- * child) tell the host's loader to confine the query to rows whose `field`
- * equals `ctx.record.id`, the record the overview is rendered on
- * (`WidgetLoadContext.record`). The shell's own loaders need no data access;
- * hosts implement it.
+ * Svelte-free. The widgets use the parent-filter vocabulary: `filter:
+ * 'parent'` plus the FK on the child (`field` for a count or a records
+ * panel; `parentField` when `field` is the measured one) confine the
+ * host's query to rows that point at `ctx.record.id`. `related` and
+ * `line-items` load through the host's `records` loader
+ * (`registerRecordWidgets`), so the shell's own loaders need no data access.
  */
 import type { ScreenRelation } from '../screens/relations.js';
+import { relationKey } from '../screens/relations.js';
 import type { ScreenCollectionDefinition } from '../screens/types.js';
 import { defineOverview } from './model.js';
 import type { OverviewDefinition, OverviewWidget } from './types.js';
+import { formatColumnsOption } from './widgets/record-table.js';
 
 export interface RecordOverviewOptions {
   /** Overview id; defaults to `recordOverviewId(definition.objectRef)`. */
   id?: string;
-  /**
-   * Also declare a `metric` count (span 1) before each `records` panel, which
-   * then spans 3. Off by default: the panel heading already carries the count.
-   */
+  /** The summary strip of `metric` tiles (default on). */
   metrics?: boolean;
+  /** Most tiles in the strip (default {@link RECORD_OVERVIEW_MAX_METRICS}). */
+  maxMetrics?: number;
+  /**
+   * `tabs` (default): one `related` widget with a tab per relation.
+   * `panels`: one `records` panel per relation, with role-chosen columns.
+   */
+  related?: 'tabs' | 'panels';
 }
 
 /** Widget types a record overview offers by default. */
 export const RECORD_OVERVIEW_ALLOWED: readonly string[] = [
+  'related',
+  'line-items',
   'records',
   'metric',
   'chart',
   'note',
 ];
+
+/** Tiles in the default summary strip. */
+export const RECORD_OVERVIEW_MAX_METRICS = 4;
 
 /** Rows a default `records` panel shows. */
 export const RECORD_OVERVIEW_LIMIT = 5;
@@ -68,8 +80,7 @@ function relationWidgetId(
   relation: ScreenRelation,
   taken: Set<string>,
 ): string {
-  const className = relation.model.split(/[:/]/).pop() ?? relation.model;
-  const base = `${prefix}-${className}-${relation.field}`
+  const base = `${prefix}-${relationKey(relation)}`
     .replace(/[^A-Za-z0-9_-]+/g, '-')
     .slice(0, 60);
   let id = base;
@@ -81,20 +92,27 @@ function relationWidgetId(
 /** Span of a default `records` panel: two side by side on a wide page. */
 export const RECORD_OVERVIEW_PANEL_SPAN = 2;
 
-/** The default record overview of `definition` for its `children` relations. */
+/** The default record overview of `definition` for its relations. */
 export function recordOverview(
   definition: ScreenCollectionDefinition,
   relations: readonly ScreenRelation[],
   options: RecordOverviewOptions = {},
 ): OverviewDefinition {
   const children = relations.filter((r) => r.kind === 'children');
+  const items = relations.filter((r) => r.kind === 'items');
   const defaults: OverviewWidget[] = [];
   const models: string[] = [];
   const taken = new Set<string>();
-  for (const relation of children) {
+  for (const relation of [...items, ...children]) {
     if (!models.includes(relation.model)) models.push(relation.model);
-    if (options.metrics) {
-      defaults.push({
+  }
+
+  if (options.metrics !== false) {
+    const max = options.maxMetrics ?? RECORD_OVERVIEW_MAX_METRICS;
+    const strip: OverviewWidget[] = [];
+    for (const relation of children) {
+      if (strip.length >= max) break;
+      strip.push({
         id: relationWidgetId('count', relation, taken),
         type: 'metric',
         span: 1,
@@ -106,22 +124,69 @@ export function recordOverview(
           filter: 'parent',
         },
       });
+      const money = (relation.columns ?? []).find((c) => c.role === 'money');
+      if (!money || strip.length >= max) continue;
+      strip.push({
+        id: relationWidgetId('sum', relation, taken),
+        type: 'metric',
+        span: 1,
+        options: {
+          title: `${relation.label} · ${money.label}`,
+          model: relation.model,
+          measure: 'sum',
+          field: money.key,
+          filter: 'parent',
+          parentField: relation.field,
+        },
+      });
     }
+    defaults.push(...strip);
+  }
+
+  const lines = items[0];
+  if (lines) {
     defaults.push({
-      id: relationWidgetId('records', relation, taken),
-      type: 'records',
-      span: options.metrics ? 3 : RECORD_OVERVIEW_PANEL_SPAN,
-      options: {
-        title: relation.label,
-        model: relation.model,
-        field: relation.field,
-        filter: 'parent',
-        sort: 'createdAt',
-        direction: 'desc',
-        limit: RECORD_OVERVIEW_LIMIT,
-      },
+      id: relationWidgetId('items', lines, taken),
+      type: 'line-items',
+      span: 4,
+      options: { title: lines.label, relation: relationKey(lines) },
     });
   }
+
+  if (options.related === 'panels') {
+    for (const relation of children) {
+      defaults.push({
+        id: relationWidgetId('records', relation, taken),
+        type: 'records',
+        span: RECORD_OVERVIEW_PANEL_SPAN,
+        options: {
+          title: relation.label,
+          model: relation.model,
+          field: relation.field,
+          filter: 'parent',
+          sort: 'createdAt',
+          direction: 'desc',
+          limit: RECORD_OVERVIEW_LIMIT,
+          ...((relation.columns ?? []).length > 0
+            ? {
+                columns: formatColumnsOption(
+                  (relation.columns ?? []).map((c) => c.key),
+                ),
+              }
+            : {}),
+        },
+      });
+    }
+  } else if (children.length > 0) {
+    taken.add('related');
+    defaults.push({
+      id: 'related',
+      type: 'related',
+      span: 4,
+      options: { limit: RECORD_OVERVIEW_LIMIT },
+    });
+  }
+
   return defineOverview({
     id: options.id ?? recordOverviewId(definition.objectRef),
     allowed: RECORD_OVERVIEW_ALLOWED,

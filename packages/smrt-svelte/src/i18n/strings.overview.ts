@@ -115,6 +115,9 @@ export const M = defineMessages({
   'ui.overview.opt.direction_desc': 'Newest or largest first',
   'ui.overview.opt.direction_asc': 'Oldest or smallest first',
   'ui.overview.opt.limit': 'Rows',
+  'ui.overview.opt.parent_field': 'Link to this record',
+  'ui.overview.opt.parent_field_help':
+    'With the parent filter: the field that points at this record, when Field is the one to measure.',
   'ui.overview.opt.relation': 'Relation',
   'ui.overview.opt.relation_help':
     'The line-item relation to show, as its key (OrderLine-orderId). Leave empty for the first one.',

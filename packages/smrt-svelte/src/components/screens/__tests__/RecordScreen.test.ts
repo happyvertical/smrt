@@ -1,12 +1,14 @@
 import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
+import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { recordOverview } from '../../overview/record.js';
 import type { WidgetLoadContext } from '../../overview/types.js';
 import RecordScreen from '../RecordScreen.svelte';
-import type { ScreenRelation } from '../relations.js';
+import { deriveScreenRelations, type ScreenRelation } from '../relations.js';
 import { taskDefinition, taskPolicy, taskRows } from './fixtures.js';
+import { orderRecord, orders, shopDefinitions } from './shop-fixtures.js';
 
 const relations: ScreenRelation[] = [
   {
@@ -76,8 +78,13 @@ beforeEach(() => stubViewport(true));
 afterEach(() => vi.unstubAllGlobals());
 
 describe('RecordScreen (view)', () => {
-  it('renders the detail, the default related panels with the record context, and View all links', async () => {
-    const { seen } = mount();
+  it('renders the detail, related panels with the record context, and View all links', async () => {
+    const { seen } = mount({
+      overview: recordOverview(taskDefinition, relations, {
+        metrics: false,
+        related: 'panels',
+      }),
+    });
     expect(
       screen.getByRole('heading', { level: 1, name: 'Write docs' }),
     ).toBeInTheDocument();
@@ -114,7 +121,9 @@ describe('RecordScreen (view)', () => {
   it("falls back to the loader's href for View all, and keeps a paired metric without one", async () => {
     mount({
       viewAllHref: undefined,
-      overview: recordOverview(taskDefinition, relations, { metrics: true }),
+      overview: recordOverview(taskDefinition, relations, {
+        related: 'panels',
+      }),
       loaders: {
         metric: () => ({ value: 3, href: '/comments?task=t-1' }),
         records: () => ({
@@ -260,6 +269,126 @@ describe('RecordScreen (overview)', () => {
     mount({ loaders: undefined });
     expect(
       screen.getByText('There are no widgets on this overview yet.'),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('RecordScreen (record page anatomy)', () => {
+  const shopRelations = deriveScreenRelations(
+    shopDefinitions,
+    '@acme/shop:Order',
+  );
+  const lineRows = [
+    {
+      id: 'l1',
+      title: 'Labour',
+      cells: {
+        description: 'Labour',
+        quantity: 2,
+        unitPrice: 200000,
+        amount: 400000,
+      },
+    },
+    {
+      id: 'l2',
+      title: 'Shingles',
+      cells: {
+        description: 'Shingles',
+        quantity: 1,
+        unitPrice: 89000,
+        amount: 89000,
+      },
+    },
+  ];
+
+  function mountOrder(extra: Record<string, unknown> = {}) {
+    const records = vi.fn((options: { model?: unknown }) =>
+      options.model === '@acme/shop:OrderLine'
+        ? { rows: lineRows }
+        : { rows: [] },
+    );
+    const result = render(RecordScreen, {
+      props: {
+        definition: orders,
+        record: orderRecord,
+        relations: shopRelations,
+        mode: 'view' as const,
+        loaders: { records, metric: () => ({ value: 0 }) },
+        hrefFor: (_field: unknown, id: string) => `/customers/${id}`,
+        labels: { '@acme/shop:Customer': () => 'Ridgeline Construction' },
+        locale: 'en-US',
+        onedit: vi.fn(),
+        ondelete: vi.fn(),
+        ...extra,
+      },
+    });
+    return { ...result, records };
+  }
+
+  it('leads a document with its identifier, a status badge and key facts', async () => {
+    const { container } = mountOrder();
+    const h1 = screen.getByRole('heading', { level: 1 });
+    expect(h1).toHaveTextContent('Order GRA-3159');
+    expect(h1.querySelector('code')).toHaveTextContent('GRA-3159');
+    expect(screen.getByText('Sent')).toBeInTheDocument();
+    const facts = container.querySelector(
+      '.smrt-record-header__facts',
+    ) as HTMLElement;
+    expect(
+      within(facts).getByRole('link', { name: 'Ridgeline Construction' }),
+    ).toHaveAttribute('href', '/customers/c-1');
+    expect(facts).toHaveTextContent('Feb 7, 2025');
+    expect(facts).toHaveTextContent('$5,134.50');
+    // Edit is the one primary action; Delete sits in the overflow menu.
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('keeps the header fields, currency code and totals out of the details card, empty ones behind a disclosure', async () => {
+    const { container } = mountOrder();
+    const details = screen.getByRole('article', { name: 'Details' });
+    for (const label of [
+      'Number',
+      'Status',
+      'Subtotal',
+      'Total amount',
+      'Currency',
+    ]) {
+      expect(within(details).queryByText(label, { selector: 'dt' })).toBeNull();
+    }
+    expect(within(details).getByText(/Show empty fields/)).toBeInTheDocument();
+    // the line items and their totals block come from the default overview
+    expect(await screen.findByText('Labour')).toBeInTheDocument();
+    const totals = container.querySelector(
+      '.smrt-line-items__totals',
+    ) as HTMLElement;
+    expect(totals).toHaveTextContent('Subtotal $4,890.00');
+    expect(totals).toHaveTextContent('Total $5,134.50');
+    expect(screen.queryByText(/Lines add up to/)).toBeNull();
+    await expectNoA11yViolations(container);
+  });
+
+  it('flags lines that disagree with the recorded subtotal', async () => {
+    mountOrder({
+      record: { ...orderRecord, subtotal: 400000, totalAmount: 424450 },
+    });
+    expect(
+      await screen.findByText('Lines add up to $4,890.00.'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders extra actions in the overflow menu', async () => {
+    const extraActions = createRawSnippet(() => ({
+      render: () => '<button type="button">Duplicate</button>',
+    }));
+    mountOrder({ extraActions, ondelete: undefined });
+    expect(screen.queryByRole('button', { name: 'Duplicate' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    expect(
+      screen.getByRole('button', { name: 'Duplicate' }),
     ).toBeInTheDocument();
   });
 });

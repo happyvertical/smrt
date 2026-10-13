@@ -15,6 +15,15 @@ export { default as ListScreen } from './ListScreen.svelte';
 export { default as RecipeScreens } from './RecipeScreens.svelte';
 export { default as RecordScreen } from './RecordScreen.svelte';
 export {
+  deriveRecordHeader,
+  RECORD_HEADER_MAX_FACTS,
+  type RecordFact,
+  type RecordFactKind,
+  type RecordHeaderModel,
+  recordTotals,
+  totalsFields,
+} from './record-header.js';
+export {
   deriveScreenRelations,
   relationKey,
   type ScreenRelation,

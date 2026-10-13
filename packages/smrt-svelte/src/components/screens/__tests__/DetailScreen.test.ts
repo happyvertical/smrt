@@ -210,4 +210,29 @@ describe('DetailScreen', () => {
     });
     await expectNoA11yViolations(container);
   });
+
+  it('as a details card leaves out excluded fields and tucks empty ones away', async () => {
+    const { container } = render(DetailScreen, {
+      props: {
+        definition: taskDefinition,
+        policy: taskPolicy,
+        record: taskRows[1],
+        showHeader: false,
+        exclude: ['title'],
+        hideEmpty: true,
+        variant: 'card',
+        locale: 'en-US',
+      },
+    });
+    const card = screen.getByRole('article', { name: 'Details' });
+    expect(card).toHaveClass('smrt-detail-screen--card');
+    expect(within(card).queryByText('Task name')).toBeNull();
+    const first = card.querySelector(
+      '.smrt-detail-screen__group',
+    ) as HTMLElement;
+    expect(first).not.toHaveTextContent('Not set');
+    expect(within(card).getByText(/Show empty fields/)).toBeInTheDocument();
+    expect(within(card).getByText('Priority')).toBeInTheDocument();
+    await expectNoA11yViolations(container);
+  });
 });

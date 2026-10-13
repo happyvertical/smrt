@@ -1,23 +1,27 @@
 <script lang="ts">
 /**
- * RecordScreen - the record view (#3718 record view): the `DetailScreen`
- * header and fields at the top, a customizable `OverviewGrid` of related
- * records below (one panel per `children` relation, persisted per model
- * kind), and the edit form as a mode of the same screen: `mode: 'edit'`
- * opens `EditForm` beside the header on desktop (`min-width: 48rem`) and in
- * a full-screen `PhoneSheet` on phones. Closing the form calls `oncancel`.
+ * RecordScreen - the record page (#3718): a header (back link, the title or
+ * a document's "Order GRA-3159", the monospace identifier, a status badge
+ * and key facts by role; Edit as the one primary action and an overflow
+ * menu with the host's extra actions and Delete), a details card of the
+ * remaining fields (empty ones behind "Show empty fields"), and a
+ * customizable `OverviewGrid` below: by default a summary strip of metric
+ * tiles, the `line-items` table and totals when the model has line items,
+ * and one tabbed `related` widget (`recordOverview`, persisted per model
+ * kind). The edit form is a mode of the same screen: `mode: 'edit'` opens
+ * `EditForm` beside the header on desktop (`min-width: 48rem`) and in a
+ * full-screen `PhoneSheet` on phones. Closing the form calls `oncancel`.
  *
  * A related-records panel (a `records` widget with `filter: 'parent'` on one
- * of the `children` relations) is headed `Orders · 3` with its one
- * "View all" link (`viewAllHref`, else the loaded data's `href`); the panel
- * body then lists the rows only, so the count and the link never repeat. A
- * paired `metric` widget (`recordOverview(..., { metrics: true })`, or one a
- * person adds) shows its number under the plain relation title.
+ * of the relations) is headed `Orders · 3` with its one "View all" link
+ * (`viewAllHref`, else the loaded data's `href`); the panel body then lists
+ * the rows only, so the count and the link never repeat.
  *
  * The widget loaders run in the browser with the record context
- * (`ctx.record = { model, id }`); the host owns the data access. The
- * registry and overview are fixed at mount: remount (`{#key}`) to change the
- * model kind. A record change reloads every widget.
+ * (`ctx.record = { model, id }`); the host owns the data access. `related`
+ * and `line-items` load through `loaders.records`. The registry and
+ * overview are fixed at mount: remount (`{#key}`) to change the model kind.
+ * A record change reloads every widget.
  */
 import { PhoneSheet } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
@@ -32,10 +36,22 @@ import { createWidgetRegistry } from '../overview/registry.js';
 import type { OverviewWidget, WidgetLoadContext } from '../overview/types.js';
 import { registerCoreWidgets } from '../overview/widgets/core.js';
 import { isRecord } from '../overview/widgets/data.js';
+import { registerRecordWidgets } from '../overview/widgets/record-widgets.js';
 import DetailScreen from './DetailScreen.svelte';
 import EditForm from './EditForm.svelte';
-import { screenTitles } from './fields.js';
+import {
+  deriveScreenFields,
+  screenSourceError,
+  screenTitles,
+} from './fields.js';
+import RecordHeader from './RecordHeader.svelte';
+import {
+  deriveRecordHeader,
+  recordTotals,
+  totalsFields,
+} from './record-header.js';
 import type { ScreenRelation } from './relations.js';
+import { currencyCodeField, deriveFieldRoles } from './roles.js';
 import type { RecordScreenProps } from './types.js';
 
 let {
@@ -70,6 +86,7 @@ let {
   onsave,
   ondelete,
   extraActions,
+  statusTones,
   children,
 }: RecordScreenProps = $props();
 
@@ -90,12 +107,53 @@ const editTitle = $derived(
   t(M['ui.screens.edit_title'], { name: titles.singular.toLowerCase() }),
 );
 
+const roles = $derived(deriveFieldRoles(definition));
+const viewFields = $derived(
+  screenSourceError(definition, policy)
+    ? []
+    : deriveScreenFields(definition, policy, { mode: 'view', include: fields }),
+);
+const header = $derived(
+  deriveRecordHeader(definition, viewFields, record, roles, { title }),
+);
+const hasItems = $derived(relations.some((r) => r.kind === 'items'));
+const currencyField = $derived(currencyCodeField(definition));
+/** The record's currency: the prop, else its own currency-code field. */
+const recordCurrency = $derived.by(() => {
+  if (currency) return currency;
+  const value = currencyField ? record[currencyField] : undefined;
+  return typeof value === 'string' && /^[A-Za-z]{3}$/.test(value.trim())
+    ? value.trim().toUpperCase()
+    : undefined;
+});
+/**
+ * The details card leaves out what the header shows, the currency code
+ * (every amount is formatted in it) and, when line items carry the totals
+ * block, the subtotal / discount / tax / total fields.
+ */
+const detailExclude = $derived([
+  ...header.shown,
+  ...(currencyField ? [currencyField] : []),
+  ...(hasItems ? totalsFields(roles) : []),
+]);
+
 // The registry and the overview definition are fixed for the life of the
 // component (a controller is built once); the loaders read live props.
 const widgetRegistry = untrack(() => {
   if (registry) return registry;
   const own = createWidgetRegistry();
   registerCoreWidgets(own, loaders ?? {});
+  // `related` and `line-items` load through the `records` loader, one
+  // parent-filtered load per relation.
+  if (loaders?.records) {
+    registerRecordWidgets(own, {
+      relations,
+      records: loaders.records,
+      viewAllHref: (relation) => viewAllHref?.(relation),
+      totals: () => recordTotals(record, roles),
+      currency: () => recordCurrency,
+    });
+  }
   return own;
 });
 const overviewDefinition = untrack(
@@ -103,7 +161,8 @@ const overviewDefinition = untrack(
 );
 const hostOwned = untrack(() => override !== undefined);
 
-const children_ = $derived(relations.filter((r) => r.kind === 'children'));
+/** Relations a records panel can show: related records and line items. */
+const children_ = $derived(relations.filter((r) => r.kind !== 'reference'));
 
 /** What a related-records panel's heading shows: its count and View all. */
 interface PanelSummary {
@@ -244,7 +303,7 @@ function cancel(): void {
       <EditForm
         {definition}
         {policy}
-        {currency}
+        currency={recordCurrency}
         {fields}
         {record}
         showHeader={false}
@@ -265,23 +324,37 @@ function cancel(): void {
   data-smrt-component="RecordScreen"
 >
   <div class="smrt-record-screen__main">
+    <RecordHeader
+      {definition}
+      model={header}
+      {record}
+      {relations}
+      {hrefFor}
+      {labels}
+      currency={recordCurrency}
+      {locale}
+      {backLabel}
+      {deleting}
+      {statusTones}
+      {onback}
+      onedit={editing ? undefined : onedit}
+      {ondelete}
+      {extraActions}
+    />
     <DetailScreen
       {definition}
       {policy}
       {record}
       {relations}
-      {title}
       {fields}
-      {currency}
+      currency={recordCurrency}
       {locale}
-      {backLabel}
-      {deleting}
       {hrefFor}
       {labels}
-      {onback}
-      onedit={editing ? undefined : onedit}
-      {ondelete}
-      {extraActions}
+      showHeader={false}
+      exclude={detailExclude}
+      hideEmpty
+      variant="card"
     >
       {@render children?.()}
     </DetailScreen>

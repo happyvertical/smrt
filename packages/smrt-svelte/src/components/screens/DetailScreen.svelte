@@ -59,6 +59,9 @@ let {
   relations = [],
   hrefFor,
   labels,
+  exclude,
+  hideEmpty = false,
+  variant = 'plain',
 }: DetailScreenProps = $props();
 
 const { t } = useI18n();
@@ -71,8 +74,17 @@ const allFields = $derived(
     ? []
     : deriveScreenFields(definition, policy, { mode: 'view', include }),
 );
-const primary = $derived(allFields.filter((f) => f.tier === 'basic'));
-const secondary = $derived(allFields.filter((f) => f.tier === 'advanced'));
+const listed = $derived(
+  exclude ? allFields.filter((f) => !exclude.includes(f.name)) : allFields,
+);
+const filled = $derived(
+  hideEmpty ? listed.filter((f) => display(f) !== '') : listed,
+);
+const empty = $derived(
+  hideEmpty ? listed.filter((f) => display(f) === '') : [],
+);
+const primary = $derived(filled.filter((f) => f.tier === 'basic'));
+const secondary = $derived(filled.filter((f) => f.tier === 'advanced'));
 
 const heading = $derived.by(() => {
   if (title) return title;
@@ -203,7 +215,12 @@ async function confirmDelete(): Promise<void> {
   </PageHeader>
 {/if}
 
-<article class="smrt-detail-screen" aria-label={heading} data-smrt-component="DetailScreen">
+<article
+  class="smrt-detail-screen"
+  class:smrt-detail-screen--card={variant === 'card'}
+  aria-label={variant === 'card' ? t(M['ui.screens.details']) : heading}
+  data-smrt-component="DetailScreen"
+>
   {#if sourceError}
     <Alert variant="error">{sourceError}</Alert>
   {:else}
@@ -216,6 +233,11 @@ async function confirmDelete(): Promise<void> {
     {#if secondary.length > 0}
       <Disclosure title={t(M['ui.screens.more_details'])}>
         {@render fieldList(secondary)}
+      </Disclosure>
+    {/if}
+    {#if empty.length > 0}
+      <Disclosure title={t(M['ui.screens.show_empty'], { count: empty.length })}>
+        {@render fieldList(empty)}
       </Disclosure>
     {/if}
     {@render children?.()}
@@ -243,6 +265,15 @@ async function confirmDelete(): Promise<void> {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-lg, 1.5rem);
+  }
+  .smrt-detail-screen--card {
+    padding: var(--smrt-spacing-md, 1rem);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-lg);
+    background: var(--smrt-color-surface);
+  }
+  .smrt-detail-screen--card .smrt-detail-screen__fields {
+    grid-template-columns: repeat(auto-fill, minmax(max(14rem, 40%), 1fr));
   }
   .smrt-detail-screen__group-title {
     margin: 0 0 var(--smrt-spacing-sm, 0.5rem);

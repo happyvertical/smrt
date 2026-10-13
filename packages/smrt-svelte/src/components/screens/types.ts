@@ -6,6 +6,7 @@ import type {
   WidgetLoadContext,
 } from '../overview/types.js';
 import type { CoreWidgetLoaders } from '../overview/widgets/core.js';
+import type { RecordStatusTone } from '../overview/widgets/data.js';
 import type { ScreenRelation } from './relations.js';
 import type { FieldRole } from './roles.js';
 
@@ -283,6 +284,15 @@ export interface DetailScreenProps {
    * (`relation.model`); `undefined` falls back to the raw id.
    */
   labels?: Readonly<Record<string, (id: string) => string | undefined>>;
+  /** Field names to leave out (the record header shows them). */
+  exclude?: readonly string[];
+  /**
+   * Move fields with no value behind a "Show empty fields" disclosure
+   * instead of listing "Not set" cells.
+   */
+  hideEmpty?: boolean;
+  /** `card`: the fields sit in a bordered card (the record page's details card). */
+  variant?: 'plain' | 'card';
 }
 
 /** What a submit handler may return to report server-side field problems. */
@@ -390,11 +400,16 @@ export interface RecordScreenProps {
   oncancel?: () => void;
   /** Receives the edit form's wire-ready values; `EditFormProps['onsubmit']`. */
   onsave?: EditFormProps['onsubmit'];
-  /** When set, a Delete action with a confirmation is offered. */
+  /** When set, Delete (with a confirmation) is offered in the overflow menu. */
   ondelete?: () => void | Promise<void>;
-  /** Extra header actions, rendered before Edit and Delete. */
+  /** Extra actions, rendered in the header's overflow menu before Delete. */
   extraActions?: Snippet;
-  /** Extra content between the fields and the overview. */
+  /**
+   * Badge tone per status value (`paid: 'success'`); unmapped values use
+   * `DEFAULT_STATUS_TONES`, else neutral.
+   */
+  statusTones?: Readonly<Record<string, RecordStatusTone>>;
+  /** Extra content under the fields, inside the details card. */
   children?: Snippet;
 }
 
@@ -438,5 +453,6 @@ export interface RecipeScreensProps {
     | 'hrefFor'
     | 'labels'
     | 'viewAllHref'
+    | 'statusTones'
   >;
 }

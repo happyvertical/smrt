@@ -56,6 +56,13 @@ const fieldField: WidgetOptionField = {
   label: 'ui.overview.opt.field',
   help: 'ui.overview.opt.field_help',
 };
+/** The FK to the record under `filter: 'parent'`, when `field` is the measured field. */
+const parentFieldField: WidgetOptionField = {
+  key: 'parentField',
+  type: 'identifier',
+  label: 'ui.overview.opt.parent_field',
+  help: 'ui.overview.opt.parent_field_help',
+};
 /**
  * Table columns: field names, comma-separated (`number,status,issuedAt`).
  * Options are flat JSON primitives, so the list travels as text;
@@ -86,7 +93,12 @@ const measureField = (choices: readonly string[]): WidgetOptionField => ({
   })),
 });
 
-/** Metric: one number from a model. Options: model, measure, field, filter. */
+/**
+ * Metric: one number from a model. Options: model, measure, field, filter,
+ * parentField. Under `filter: 'parent'` the FK to the record is
+ * `parentField` when given (and `field` is then the measured field, a `sum`
+ * of `totalAmount`), else `field` (a count).
+ */
 export function createMetricWidget(
   load: WidgetLoad<MetricWidgetData>,
 ): WidgetDefinition<MetricWidgetData> {
@@ -101,6 +113,7 @@ export function createMetricWidget(
       measureField(['count', 'sum', 'avg', 'min', 'max']),
       fieldField,
       filterField,
+      parentFieldField,
     ],
     component: MetricWidget,
     load,
