@@ -62,6 +62,11 @@ directly. Credential descriptor schemas contain field definitions, never values.
 ## Send Lifecycle
 
 `message.send()`: resolves account → creates provider sender → updates sendStatus. Retry support with `maxRetries` budget.
+`EmailSender` attaches the message's stored `Attachment` rows (read through
+`Attachment.readContent()`, under the message's tenant context) plus
+`SendEmailOptions.attachments` bytes; an unreadable or file-less row fails the
+send with the error on `sendError`, never a silent drop (#3808).
+`PersonaMessagingService.send({ attachments })` accepts them on email routes only.
 
 ## Provider entry points (bundle boundary, #1979)
 
