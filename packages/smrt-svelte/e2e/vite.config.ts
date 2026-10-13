@@ -19,6 +19,7 @@ export default defineConfig({
         'file-upload',
         'activity-ticker',
         'phone-heading',
+        'forced-colors',
       ].map((entry) =>
         fileURLToPath(new URL(`./${entry}.html`, import.meta.url)),
       ),
