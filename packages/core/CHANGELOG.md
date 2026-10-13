@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 0.55.17
+
+### Patch Changes
+
+- ### Features
+  
+  - app layout foundation on desktop and phone (epic #3850) (#3861) (shell)
+  - wave 1 styling contract — token vocabulary, cascade layers, root hooks (#3828) (styling)
+  - cookbook theme, overview and shell polish for the Planner (#3847) (kitchen)
+  - serve a live local Planner MCP app (#3838) (kitchen)
+  
+  ### Bug Fixes
+  
+  - ask MCP hosts for a stable Planner height (#3849) (kitchen)
+- @happyvertical/smrt-config@0.55.17
+  - @happyvertical/smrt-scanner@0.55.17
+  - @happyvertical/smrt-types@0.55.17
+
 ## 0.55.16
 
 ### Patch Changes
