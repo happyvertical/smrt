@@ -49,13 +49,25 @@ export const SHELL_ICON_PATHS = {
   tag: 'M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58s1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41s-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z',
   archive:
     'M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z',
+  placeholder:
+    'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 3a5 5 0 1 1 0 10 5 5 0 0 1 0-10z',
   chevronRight: 'M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z',
+  menu: 'M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z',
+  chat: 'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z',
+  close:
+    'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z',
 } as const;
 
 export type ShellIconName = keyof typeof SHELL_ICON_PATHS;
 
+/** Icon used for a dock or focus tool that does not bring its own. */
+export const SHELL_DEFAULT_TOOL_ICON: ShellIconName = 'wrench';
+
 /** Section icon used when neither the host nor the user chose one. */
 export const SHELL_DEFAULT_SECTION_ICON: ShellIconName = 'folder';
+
+/** Rail glyph for an entry that has no icon of its own. */
+export const SHELL_PLACEHOLDER_ICON: ShellIconName = 'placeholder';
 
 /** Icons the section icon picker offers (a subset of the shell icon set). */
 export const SHELL_SECTION_ICONS: readonly ShellIconName[] = [

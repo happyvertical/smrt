@@ -60,6 +60,7 @@ import {
   createRuntimeDiagnosticsHandler,
   createRuntimeHealthHandler,
   createSessionLayoutLoad,
+  createSignOutHandler,
   createSmrtSvelteKitRuntime,
   createSubdomainTenantSelector,
   DEFAULT_OWNER_SETUP_MESSAGES,
@@ -530,7 +531,7 @@ describe('local SvelteKit runtime', () => {
     // load: loopback shows the form and echoes the URL token.
     await expect(
       page.load(testEvent(`${SETUP_URL}?token=${token}`)),
-    ).resolves.toEqual({ available: true, token });
+    ).resolves.toEqual({ available: true, token, link: 'ready' });
     // load: a remote peer, a non-loopback host, or a throwing address lookup
     // never sees the form or the token.
     for (const event of [
@@ -545,6 +546,7 @@ describe('local SvelteKit runtime', () => {
       await expect(page.load(event)).resolves.toEqual({
         available: false,
         token: '',
+        link: 'unavailable',
       });
     }
 
@@ -648,10 +650,131 @@ describe('local SvelteKit runtime', () => {
     // After the claim: load reports unavailable and a signed-in user is redirected.
     await expect(
       page.load(testEvent(`${SETUP_URL}?token=${token}`)),
-    ).resolves.toEqual({ available: false, token: '' });
+    ).resolves.toEqual({
+      available: false,
+      token: '',
+      link: 'unavailable',
+    });
     const signedIn = testEvent(SETUP_URL);
     signedIn.locals.user = { id: 'someone' };
     await expect(page.load(signedIn)).rejects.toSatisfy(isRedirect);
+  });
+
+  describe('session layout user and sign-out', () => {
+    it('exposes only id, email and name of the user', () => {
+      const load = createSessionLayoutLoad();
+      expect(
+        load({
+          locals: {
+            user: { id: 'u1', email: 'a@b.test', name: 'A', token: 'secret' },
+          },
+        }).session.user,
+      ).toEqual({ id: 'u1', email: 'a@b.test', name: 'A' });
+      expect(
+        load({ locals: { user: { id: 'u1', email: 'a@b.test' } } }).session
+          .user,
+      ).toEqual({ id: 'u1', email: 'a@b.test' });
+      expect(load({ locals: { user: null } }).session.user).toBeNull();
+      expect(load({ locals: { user: { id: 'u1' } } }).session.user).toBeNull();
+    });
+
+    async function signedInRuntime(label: string) {
+      const { runtime } = await localRuntime(label);
+      await runtime.init();
+      const page = createOwnerSetupPage(runtime);
+      const claimEvent = testEvent(SETUP_URL, {
+        form: {
+          token: await bootstrapToken(runtime),
+          name: 'Owner',
+          email: 'owner@example.com',
+        },
+      });
+      await runAction(page, claimEvent);
+      return { runtime, sid: claimEvent.setCookies[0]?.value as string };
+    }
+
+    function signOutEvent(
+      sid: string | undefined,
+      method: string,
+      headers: Record<string, string>,
+    ) {
+      const url = 'http://127.0.0.1:5173/sign-out';
+      const event = testEvent(url, sid ? { sid } : {});
+      event.request = new Request(url, { method, headers });
+      const deleted: string[] = [];
+      const remove = event.cookies.delete;
+      event.cookies.delete = (name: string, ...rest: unknown[]) => {
+        deleted.push(name);
+        return (remove as (...a: unknown[]) => void)(name, ...rest);
+      };
+      return { event, deleted };
+    }
+
+    it('destroys the session and clears the cookie on a same-origin POST', async () => {
+      const { runtime, sid } = await signedInRuntime('sign-out-ok');
+      const handler = createSignOutHandler(runtime);
+      const before = await runHandle(
+        runtime.handle,
+        testEvent('http://127.0.0.1:5173/', { sid }),
+      );
+      expect(before.locals.user).not.toBeNull();
+
+      const { event, deleted } = signOutEvent(sid, 'POST', {
+        origin: 'http://127.0.0.1:5173',
+      });
+      const response = await handler(event as never);
+      expect(response.status).toBe(204);
+      expect(deleted).toEqual(['sid']);
+      const after = await runHandle(
+        runtime.handle,
+        testEvent('http://127.0.0.1:5173/', { sid }),
+      );
+      expect(after.locals.user).toBeNull();
+
+      // Already-gone session row: the cookie is still cleared.
+      const again = signOutEvent(sid, 'POST', {
+        'sec-fetch-site': 'same-origin',
+      });
+      expect((await handler(again.event as never)).status).toBe(204);
+      expect(again.deleted).toEqual(['sid']);
+    });
+
+    it('answers a no-JS form post with a 303 to /', async () => {
+      const { runtime, sid } = await signedInRuntime('sign-out-form');
+      const { event } = signOutEvent(sid, 'POST', {
+        origin: 'http://127.0.0.1:5173',
+        accept: 'text/html',
+      });
+      await expect(
+        createSignOutHandler(runtime)(event as never),
+      ).rejects.toSatisfy(isRedirect);
+    });
+
+    it('rejects non-POST with 405 and cross-origin with 403 without touching the session', async () => {
+      const { runtime, sid } = await signedInRuntime('sign-out-reject');
+      const handler = createSignOutHandler(runtime);
+      const get = signOutEvent(sid, 'GET', {
+        origin: 'http://127.0.0.1:5173',
+      });
+      const getResponse = await handler(get.event as never);
+      expect(getResponse.status).toBe(405);
+      expect(getResponse.headers.get('allow')).toBe('POST');
+      for (const headers of [
+        { origin: 'http://evil.test' },
+        { 'sec-fetch-site': 'cross-site' },
+        { 'sec-fetch-site': 'same-site' },
+        {},
+      ]) {
+        const { event, deleted } = signOutEvent(sid, 'POST', headers);
+        expect((await handler(event as never)).status).toBe(403);
+        expect(deleted).toEqual([]);
+      }
+      const still = await runHandle(
+        runtime.handle,
+        testEvent('http://127.0.0.1:5173/', { sid }),
+      );
+      expect(still.locals.user).not.toBeNull();
+    });
   });
 
   describe('onboarding hand-off files', () => {
@@ -769,6 +892,17 @@ describe('local SvelteKit runtime', () => {
     });
   });
 
+  it('reports a missing setup token from load without echoing anything', async () => {
+    const { runtime } = await localRuntime('missing-token');
+    await runtime.init();
+    const page = createOwnerSetupPage(runtime);
+    await expect(page.load(testEvent(SETUP_URL))).resolves.toEqual({
+      available: true,
+      token: '',
+      link: 'missing',
+    });
+  });
+
   it('rejects an expired bootstrap token', async () => {
     let now = new Date('2026-10-02T12:00:00.000Z');
     const { runtime } = await localRuntime('expired', {
@@ -779,6 +913,10 @@ describe('local SvelteKit runtime', () => {
     const page = createOwnerSetupPage(runtime);
     const token = await bootstrapToken(runtime);
     now = new Date(now.getTime() + 61_000);
+    // load reports the lapsed link instead of echoing the dead token.
+    await expect(
+      page.load(testEvent(`${SETUP_URL}?token=${token}`)),
+    ).resolves.toEqual({ available: true, token: '', link: 'expired' });
     const { failure } = await runAction(
       page,
       testEvent(SETUP_URL, {
@@ -952,6 +1090,10 @@ describe('local SvelteKit runtime', () => {
         authenticated: true,
         activeTenantId: ownerTenantId,
         selectedTenantSlug: 'other',
+        user: {
+          id: expect.any(String),
+          email: 'owner@example.com',
+        },
       },
     });
 
@@ -1307,6 +1449,7 @@ describe('deployed SvelteKit runtime', () => {
     await expect(page.load(testEvent(SETUP_URL))).resolves.toEqual({
       available: false,
       token: '',
+      link: 'unavailable',
     });
     const { failure } = await runAction(
       page,

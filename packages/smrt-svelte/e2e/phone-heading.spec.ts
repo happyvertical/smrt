@@ -39,6 +39,11 @@ for (const width of [320, 390, 768, 1024]) {
         ).toHaveAttribute('href', '/projects');
       }
       if (width <= 768 && kind === 'action') {
+        // Phone drawers start closed: the account menu lives in the drawer.
+        const drawer = width < 768;
+        if (drawer) {
+          await page.getByRole('button', { name: 'Menu', exact: true }).click();
+        }
         const accountMenu = page.getByRole('button', {
           name: /Open account menu Dana Welder/,
         });
@@ -46,7 +51,13 @@ for (const width of [320, 390, 768, 1024]) {
         await expect(
           page.getByRole('menuitem', { name: 'Sign out' }),
         ).toBeVisible();
+        // Escape closes the menu only (the innermost layer) and keeps focus on
+        // its trigger; the drawer is then closed on its own.
         await page.keyboard.press('Escape');
+        await expect(accountMenu).toBeFocused();
+        if (drawer) {
+          await page.locator('[data-smrt-part="close"]').click();
+        }
         const assistant = page.getByRole('button', {
           name: 'Assistant',
           exact: true,

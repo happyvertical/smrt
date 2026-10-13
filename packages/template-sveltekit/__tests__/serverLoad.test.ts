@@ -12,8 +12,8 @@ describe('home page server-load convention', () => {
   const page = readFileSync(join(routesDir, '+page.svelte'), 'utf8');
 
   it('uses depends and targeted invalidation', () => {
-    expect(pageServer).toContain("depends('smrt:items')");
-    expect(page).toContain("invalidate('smrt:items')");
+    expect(pageServer).toContain("depends('smrt:notes')");
+    expect(page).toContain("invalidate('smrt:notes')");
   });
 
   it('hydrates server data without a mount-time initial fetch', () => {
@@ -24,7 +24,7 @@ describe('home page server-load convention', () => {
   });
 
   it('guards reads and hand-written writes with manifest-derived permissions', () => {
-    expect(pageServer).toContain("const READ_PERMISSION = 'items.read'");
+    expect(pageServer).toContain("const READ_PERMISSION = 'notes.read'");
     expect(pageServer).toContain('assertOperationPermission');
     expect(pageServer).toContain('permissionSet: locals.permissions');
   });
@@ -47,8 +47,8 @@ describe('home page server load and action', () => {
       },
     } as never);
 
-    expect(depends).toHaveBeenCalledWith('smrt:items');
-    expect(result.items).toEqual([]);
+    expect(depends).toHaveBeenCalledWith('smrt:notes');
+    expect(result.notes).toEqual([]);
     expect(result.accessMessage).toMatch(/Sign in/);
   });
 

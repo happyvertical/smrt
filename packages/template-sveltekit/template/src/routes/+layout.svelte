@@ -3,6 +3,7 @@
   import { webMcpToolDefinitions } from '@happyvertical/smrt-virt-web';
   import { AppShell } from '@happyvertical/smrt-svelte/app';
   import type { ShellNavItem } from '@happyvertical/smrt-svelte/workspace';
+  import { signOut } from '$lib/sign-out';
   import type { LayoutProps } from './$types';
 
   let { data, children }: LayoutProps = $props();
@@ -10,8 +11,8 @@
   // Add application routes here. Generated REST routes live under /api and do
   // not automatically imply a human-facing page.
   const nav: ShellNavItem[] = [
-    { href: '/', label: 'Items', description: 'The example s-m-r-t object' },
-    { href: '/settings', label: 'Settings', description: 'Workspace layout and shortcuts' },
+    { href: '/', label: 'Notes', icon: 'book', description: 'Your workspace notes' },
+    { href: '/settings', label: 'Settings', icon: 'settings', description: 'Workspace layout and shortcuts' },
   ];
 
   // Generated read-only WebMCP tools, only in browsers that expose WebMCP.
@@ -24,18 +25,17 @@
 
 <AppShell
   title="s-m-r-t app"
-  subtitle="SvelteKit"
   {webmcp}
   {nav}
   currentHref={page.url.pathname}
   runtimeDiagnostics={data.session.authenticated}
-  tenantLabel={data.session.activeTenantId ? 'Authorized session tenant' : 'No active tenant'}
   settingsHref="/settings"
+  edgeToggles={{ left: true }}
+  config={{ left: { initial: 'expanded' } }}
+  user={data.session.user}
+  onSignOut={signOut}
+  phoneTabBar
+  chrome={!page.route.id?.startsWith('/setup')}
 >
-  {#snippet appPanelDocs()}
-    {#if data.session.selectedTenantSlug}
-      <p>Selected URL tenant: <strong>{data.session.selectedTenantSlug}</strong></p>
-    {/if}
-  {/snippet}
   {@render children()}
 </AppShell>

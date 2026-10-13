@@ -1,6 +1,7 @@
 <script lang="ts" generics="Item extends SortableItem, Container extends SortableContainer">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n/strings.sortable.js';
+import { flipRow } from '../workspace/admin-shell/motion.js';
 import { formatSortableAnnouncement } from './announce.js';
 import {
   createSortable,
@@ -163,12 +164,10 @@ function containerRank(id: string): number {
     aria-label={t(M['ui.sortable.group'], { label: container.label, count })}
   >
     {#each list as entry, index (entry.id)}
-      {#if markerBefore(container.id, nonDraggedRank(list, index)) && entry.id !== dragged}
-        <div class="smrt-sortable__marker" aria-hidden="true"></div>
-      {/if}
       <div
         role="listitem"
         class="smrt-sortable__item"
+        animate:flipRow
         class:smrt-sortable__item--dragging={dragged === entry.id}
         data-smrt-sortable-item-id={entry.id}
         ondragover={(event) => event.preventDefault()}
@@ -178,6 +177,9 @@ function containerRank(id: string): number {
           itemSortable.dropOnItem(event, container.id, index);
         }}
       >
+        {#if markerBefore(container.id, nonDraggedRank(list, index)) && entry.id !== dragged}
+          <div class="smrt-sortable__marker smrt-sortable__marker--before" aria-hidden="true"></div>
+        {/if}
         <!-- raw-primitive-allow: native button owns keyboard pickup and HTML drag/drop -->
         <button
           type="button"
@@ -321,7 +323,7 @@ function containerRank(id: string): number {
   .smrt-sortable__header { display: flex; align-items: center; gap: var(--smrt-spacing-2); min-block-size: 2.25rem; }
   .smrt-sortable__content { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--smrt-spacing-2); }
   .smrt-sortable__items { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-1); min-block-size: 2.25rem; min-width: 0; }
-  .smrt-sortable__item { display: flex; align-items: center; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-sm); background: var(--smrt-color-surface); min-width: 0; }
+  .smrt-sortable__item { display: flex; align-items: center; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-sm); background: var(--smrt-color-surface); min-width: 0; position: relative; }
   .smrt-sortable__item--dragging { opacity: 0.55; }
   .smrt-sortable__handle { display: inline-grid; place-items: center; flex: 0 0 auto; inline-size: 2rem; block-size: 2rem; padding: 0; border: 0; border-radius: var(--smrt-radius-sm); background: transparent; color: var(--smrt-color-on-surface-variant); cursor: grab; touch-action: none; }
   .smrt-sortable__handle:active { cursor: grabbing; }
@@ -329,6 +331,7 @@ function containerRank(id: string): number {
   .smrt-sortable__handle:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   .smrt-sortable__handle[aria-pressed='true'] { background: var(--smrt-color-primary-container, var(--smrt-color-surface-container-high)); color: var(--smrt-color-on-primary-container, inherit); }
   .smrt-sortable__marker { block-size: 0.1875rem; border-radius: var(--smrt-radius-full); background: var(--smrt-color-primary); }
+  .smrt-sortable__marker--before { position: absolute; inset-inline: 0; inset-block-start: calc(-0.5 * (var(--smrt-spacing-1) + 0.1875rem)); }
   .smrt-sortable__empty { margin: 0; padding: var(--smrt-spacing-2); color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-body-small-font); }
   .smrt-sortable__live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 }

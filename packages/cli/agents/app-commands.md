@@ -75,6 +75,16 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   `/setup?token=` URL only to an interactive terminal (`io.operatorTerminal`,
   stderr when both stdio are TTYs), never to stdout/stderr logs or pipes. The
   web runtime deletes the files after a successful owner claim.
+- **`open` port resolution** (#3857): `open` probes `/api/_runtime/health` from
+  the configured `PORT` (default 5173) through the next ten ports (Vite's
+  fallback range) and takes the first whose `application` equals this app's id,
+  so a busy port held by another app is skipped. The printed `url` and the
+  retained onboarding launch file follow that port. Output carries
+  `serverRunning`: `false` when nothing answered (the configured port is kept).
+  `setup`/`recover` run before a server exists, so their retained invitation
+  keeps the configured port until `open` rewrites it. `smrt app <op> --help`
+  prints usage for every operation except `dev`/`build`/`vite` (Vite's help)
+  and `token` (its own).
 - **`token`** (`tokens.ts`, local only): parses every argument before touching
   state, opens `openLocalMcpTokenStore` (validated custody, uncached
   connection, no writer lease, so it runs beside `app:start`), and serializes

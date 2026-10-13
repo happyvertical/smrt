@@ -24,7 +24,7 @@ export const DEFAULT_SHELL_KEYMAP: Record<PanelEdge, ShellHotkeyBinding> = {
   right: { code: 'KeyD' },
 };
 
-const DEFAULT_PANEL_CONFIG: Record<PanelEdge, ShellPanelConfig> = {
+export const DEFAULT_PANEL_CONFIG: Record<PanelEdge, ShellPanelConfig> = {
   top: {
     edge: 'top',
     scope: 'app',

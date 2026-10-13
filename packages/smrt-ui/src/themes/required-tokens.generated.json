@@ -47,6 +47,7 @@
     "--smrt-duration-short2",
     "--smrt-duration-short3",
     "--smrt-duration-short4",
+    "--smrt-easing-emphasized",
     "--smrt-easing-emphasized-decelerate",
     "--smrt-easing-standard",
     "--smrt-elevation-1",

@@ -1,5 +1,10 @@
 <script lang="ts">
 import { useShellDock } from '../workspace/admin-shell/dock.js';
+import {
+  isShellIconName,
+  SHELL_DEFAULT_TOOL_ICON,
+  SHELL_ICON_PATHS,
+} from '../workspace/admin-shell/shell-icons.js';
 import type { DockToggle } from './dock-toggle.js';
 
 interface Props {
@@ -54,8 +59,19 @@ function press(event: MouseEvent, toggle: DockToggle): void {
         >
           <path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.5L3 20.5l1.6-5A8.5 8.5 0 1 1 21 11.5z" />
         </svg>
+      {:else if icon === undefined || isShellIconName(icon)}
+        <svg
+          viewBox="0 0 24 24"
+          width="20"
+          height="20"
+          fill="currentColor"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d={SHELL_ICON_PATHS[icon === undefined ? SHELL_DEFAULT_TOOL_ICON : icon]} />
+        </svg>
       {:else}
-        <span aria-hidden="true">{icon ?? toggle.label.charAt(0)}</span>
+        <span aria-hidden="true">{icon}</span>
       {/if}
     </button>
   {/each}
@@ -81,6 +97,13 @@ function press(event: MouseEvent, toggle: DockToggle): void {
     background: transparent;
     color: var(--smrt-color-on-surface);
     cursor: pointer;
+  }
+
+  @media (max-width: 48rem) {
+    .smrt-dock-toggles__button {
+      min-inline-size: var(--smrt-touch-target-min);
+      min-block-size: var(--smrt-touch-target-min);
+    }
   }
 
   .smrt-dock-toggles__button:hover {

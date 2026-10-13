@@ -572,8 +572,8 @@ keys the shell renders exactly as before.
   on scroll (`phone.hideOnScroll`, pinned by `pinChrome` or an open drawer);
   `phoneBottomBar` is a bottom row that a form's `[data-form-action-bar]` (see
   smrt-ui `FormActionBar`) replaces and the on-screen keyboard hides
-  (`:root[data-keyboard-open]`). `phone.scrim` dims the page behind a drawer or
-  sheet, `phone.swipeToClose` closes drawers by swiping. A `path` change on a
+  (`:root[data-keyboard-open]`). `phone.scrim` (default on) dims the page behind a drawer or
+  sheet, `phone.swipeToClose` (default on) closes drawers by swiping. A `path` change on a
   phone closes open drawers. `overlays` is a layer above the edges (and above
   the bottom bar's row) for `PhoneSheet`s and status strips.
 - **Page contracts** on phones: `data-shell-breadcrumbs` is hidden only when
@@ -857,7 +857,9 @@ AdminShell's edge toggle buttons and WASD hotkeys are opt-in via `edgeToggles`
 keep the drop-down behaviour; `showTenantToggle` is a deprecated alias for
 `edgeToggles.left`), a Menu opener in narrow layouts, and the
 system toggle alongside a custom `systemBar` that has a `systemPanel` to open
-(a `systemBar` with no `systemPanel` owns the bottom band and draws no toggle). Closed narrow drawers are inert;
+(a `systemBar` with no `systemPanel` owns the bottom band and draws no toggle). The left toggle is an
+icon-only chevron pinned to the bottom of the sidebar rail (its accessible name is
+`Collapse Left sidebar` / `Expand Left sidebar`); the other edges keep their labelled buttons. Closed narrow drawers are inert;
 opening focuses the first control, and closing or Escape restores the opener.
 TenantNav accepts `density="touch"` for canonical 48px link targets, including
 collapsed rail links; omit density to inherit the theme's control density.

@@ -308,7 +308,7 @@ describe('TenantNav', () => {
     }
   });
 
-  it('renders a visible fallback glyph for iconless collapsed items', () => {
+  it('renders a placeholder glyph for iconless collapsed items', () => {
     const component = mount(TenantNav, {
       target: container,
       props: {
@@ -320,10 +320,38 @@ describe('TenantNav', () => {
 
     try {
       const link = container.querySelector('a[href="/admin/memory"]');
-      const fallback = link?.querySelector('.smrt-tenant-nav__icon--fallback');
+      const placeholder = link?.querySelector(
+        '.smrt-tenant-nav__icon--placeholder svg path',
+      );
 
-      expect(fallback?.textContent?.trim()).toBe('M');
+      expect(placeholder).not.toBeNull();
+      expect(link?.textContent?.trim()).toBe('Memory');
       expect(link).toHaveAttribute('aria-current', 'page');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('marks the current item with aria-current and no placeholder when expanded', () => {
+    const component = mount(TenantNav, {
+      target: container,
+      props: {
+        currentHref: '/a',
+        items: [
+          { href: '/a', label: 'A', icon: 'users' },
+          { href: '/b', label: 'B' },
+        ],
+      },
+    });
+    try {
+      expect(container.querySelector('a[href="/a"]')).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+      expect(container.querySelector('a[href="/a"] svg path')).not.toBeNull();
+      expect(
+        container.querySelector('.smrt-tenant-nav__icon--placeholder'),
+      ).toBeNull();
     } finally {
       unmount(component);
     }

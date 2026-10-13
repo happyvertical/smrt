@@ -166,6 +166,14 @@ export async function runAppCommand(
     io.stdout(renderAppHelp());
     return 0;
   }
+  // `dev`/`build`/`vite` forward `--help` to Vite; `token` has its own usage.
+  if (
+    !['dev', 'build', 'vite', 'token'].includes(operation) &&
+    args.some((arg) => arg === '--help' || arg === '-h')
+  ) {
+    io.stdout(renderAppHelp());
+    return 0;
+  }
   try {
     const sourceRoot = resolve(options.cwd ?? process.cwd());
     if (ENV_FILE_OPERATIONS.has(operation)) loadSourceEnvironment(sourceRoot);

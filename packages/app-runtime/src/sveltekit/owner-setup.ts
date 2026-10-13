@@ -19,7 +19,21 @@ export interface OwnerSetupPageData {
   readonly available: boolean;
   /** One-time token from `?token=` (empty unless available). */
   readonly token: string;
+  /**
+   * State of the setup link, so the page can explain a dead link instead of
+   * offering a form that cannot succeed. `ready`: a token is present and the
+   * invitation has not expired (the token itself is verified on submit);
+   * `missing`: no `?token=`; `expired`: the invitation lapsed; `unavailable`:
+   * claimed, disabled, or not a loopback request.
+   */
+  readonly link: OwnerSetupLinkState;
 }
+
+export type OwnerSetupLinkState =
+  | 'ready'
+  | 'missing'
+  | 'expired'
+  | 'unavailable';
 
 /** Stable failure codes returned by the setup action. */
 export type OwnerSetupErrorCode =
@@ -137,17 +151,19 @@ export function createOwnerSetupPage(
     if (resolveUser(event)) redirect(303, redirectTo);
     const resolved = await runtime.resolvedRuntime();
     if (resolved.profile !== 'local' || !isLoopbackRequest(event)) {
-      return { available: false, token: '' };
+      return { available: false, token: '', link: 'unavailable' };
     }
     const local = await runtime.localRuntime();
     const diagnostics = await local.diagnostics();
-    const available = diagnostics.bootstrap.status !== 'claimed';
-    return {
-      available,
-      token: available
-        ? event.url.searchParams.get(OWNER_SETUP_FIELDS.token) || ''
-        : '',
-    };
+    const status = diagnostics.bootstrap.status;
+    if (status === 'claimed') {
+      return { available: false, token: '', link: 'unavailable' };
+    }
+    const token = event.url.searchParams.get(OWNER_SETUP_FIELDS.token) || '';
+    if (status === 'expired')
+      return { available: true, token: '', link: 'expired' };
+    if (!token) return { available: true, token: '', link: 'missing' };
+    return { available: true, token, link: 'ready' };
   };
 
   const claim = async (

@@ -178,7 +178,14 @@ export const GET = createRuntimeDiagnosticsHandler({ runtime, toolNames });
 export const { load, actions } = createOwnerSetupPage(runtime);
 // src/routes/+layout.server.ts
 export const load = createSessionLayoutLoad();
+// src/routes/sign-out/+server.ts
+export const POST = createSignOutHandler(runtime);
 ```
+
+`createSessionLayoutLoad()` returns `session.user` (`{ id, email, name? }` or
+`null`). `createSignOutHandler` accepts only same-origin `POST` (405 / 403
+otherwise), destroys the session, clears the cookie, and answers 204 (303 to
+`/` for HTML form posts).
 
 Diagnostics authorize (owner role or `runtime_diagnostics.read` on an active,
 session-matching membership) before reading the runtime and return only stable

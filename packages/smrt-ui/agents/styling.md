@@ -99,6 +99,17 @@ Consumers depend on three public things only: **token names** (`--smrt-*`),
 Do not reach into hashed Svelte classes (`.svelte-1x2y3z`); they change on every
 build.
 
+## Copy
+
+User-facing copy in components follows three rules:
+
+- Sentence case ("Close menu", not "Close Menu").
+- No developer region names. "Left sidebar", "Right sidebar", "Header" and
+  "Footer" name regions in the layout editor and settings only; everywhere else
+  say what the control does ("Menu", "Tools", "Collapse sidebar").
+- Strings come from the i18n message tables (for example
+  `smrt-svelte/src/i18n/strings.workspace.ts`), never hardcoded in markup.
+
 ## Styleless mode (`unstyled.css`)
 
 Import one stylesheet to strip the look from every smrt component while keeping
@@ -137,3 +148,5 @@ Verification: the jsdom contract test
 targets. Computed-value reversal is asserted in Chromium by
 `e2e/styleless.spec.ts`. The playground entry `styleless-mode` toggles the
 stylesheet across the catalogue.
+
+Shell motion (track transitions, list flips, view transitions, theme crossfade) and its reduced-motion behaviour: see the Motion section of `packages/smrt-svelte/agents/workspace.md`.

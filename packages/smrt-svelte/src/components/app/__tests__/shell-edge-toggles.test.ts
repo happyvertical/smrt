@@ -90,6 +90,29 @@ describe('edge toggles are opt-in (default off)', () => {
     );
   });
 
+  it('names the left chevron after a host-configured panel label', () => {
+    render(Harness, {
+      edgeToggles: true,
+      config: { left: { initial: 'expanded', label: 'Packages' } },
+    });
+    const chevron = document.querySelector(
+      '.smrt-admin-shell__edge--left .smrt-admin-shell__edge-toggle--left',
+    );
+    expect(chevron?.getAttribute('aria-label')).toBe('Collapse Packages');
+    cleanup();
+    render(Harness, {
+      edgeToggles: true,
+      config: { left: { initial: 'expanded' } },
+    });
+    expect(
+      document
+        .querySelector(
+          '.smrt-admin-shell__edge--left .smrt-admin-shell__edge-toggle--left',
+        )
+        ?.getAttribute('aria-label'),
+    ).toBe('Collapse sidebar');
+  });
+
   it('accepts a per-edge map', () => {
     render(Harness, { edgeToggles: { bottom: true } });
     expect(
@@ -191,5 +214,57 @@ describe('hiding a visible region from edit mode', () => {
     const hide = hideButton('Header') as HTMLButtonElement;
     expect(hide.disabled).toBe(true);
     expect(hide.getAttribute('title')).toContain('at least one region');
+  });
+});
+
+describe('the left edge toggle is an icon-only chevron closing the nav region', () => {
+  const leftToggle = () =>
+    document.querySelector<HTMLButtonElement>(
+      '.smrt-admin-shell__edge--left .smrt-admin-shell__edge-toggle',
+    );
+
+  it('renders no visible label, names the action, and sits after the nav inside the sidebar body', async () => {
+    const user = userEvent.setup();
+    render(Harness, {
+      edgeToggles: { left: true },
+      config: { left: { initial: 'expanded' } },
+    });
+    const toggle = leftToggle();
+    expect(toggle).toBeTruthy();
+    expect(toggle?.textContent?.trim()).toBe('');
+    expect(toggle?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+    expect(toggle?.getAttribute('aria-label')).toBe('Collapse sidebar');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      toggle?.querySelector('.smrt-admin-shell__edge-toggle-kbd'),
+    ).toBeNull();
+    const rail = document.querySelector(
+      '.smrt-admin-shell__edge--left .smrt-admin-shell__rail',
+    );
+    // It closes the nav region (inside the sidebar body), not the rail.
+    expect(rail?.contains(toggle)).toBe(true);
+    expect(rail?.lastElementChild).not.toBe(toggle);
+    expect(toggle?.parentElement?.classList).toContain(
+      'smrt-admin-shell__tenant-stack',
+    );
+    // Navigation comes before it, not after.
+    const nav = document.querySelector('a[href="/posts"]');
+    expect(
+      nav && toggle
+        ? nav.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING
+        : 0,
+    ).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    await vi.waitFor(() =>
+      expect(
+        document
+          .querySelector('.smrt-admin-shell__edge--left')
+          ?.getAttribute('data-state'),
+      ).toBe('collapsed'),
+    );
+    const collapsed = leftToggle();
+    expect(collapsed?.getAttribute('aria-label')).toBe('Expand sidebar');
+    expect(collapsed?.textContent?.trim()).toBe('');
   });
 });

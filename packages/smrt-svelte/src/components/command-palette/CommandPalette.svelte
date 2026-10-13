@@ -34,6 +34,8 @@ interface Props {
   hotkeys?: readonly string[] | false;
   /** Trigger text and dialog name (default "Search"). */
   label?: string;
+  /** Search box placeholder in the dialog. */
+  placeholder?: string;
   /** Show only the glyph in the trigger. */
   compact?: boolean;
   /** Render the dialog and shortcut without a trigger. */
@@ -46,6 +48,7 @@ let {
   navigate,
   hotkeys = DEFAULT_PALETTE_HOTKEYS,
   label,
+  placeholder,
   compact = false,
   hideTrigger = false,
 }: Props = $props();
@@ -72,4 +75,4 @@ const palette = $derived(
     hotkeys={hotkeys === false ? [] : hotkeys}
   />
 {/if}
-<CommandPaletteDialog {palette} {hotkeys} {label} />
+<CommandPaletteDialog {palette} {hotkeys} {label} {placeholder} />

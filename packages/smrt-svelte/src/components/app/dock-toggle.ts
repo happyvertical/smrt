@@ -8,8 +8,9 @@ export interface DockToggle {
   label: string;
   /**
    * Icon name. `chat` (the default for the `assistant` tool) draws a
-   * chat bubble; any other text is shown as a glyph. Without an icon the
-   * label's first letter stands in.
+   * chat bubble, a shell icon name (`SHELL_ICON_PATHS`) draws that icon, and
+   * any other text is shown as a glyph. Without an icon a generic tool icon
+   * stands in, never the label's first letter.
    */
   icon?: string;
   /**

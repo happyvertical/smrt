@@ -51,7 +51,7 @@ describe('AdminShell', () => {
     try {
       await tick();
       const toggle = container.querySelector<HTMLButtonElement>(
-        'button[aria-label="Collapse Left sidebar"]',
+        'button[aria-label="Collapse sidebar"]',
       );
       const navigation = container.querySelector(
         '.smrt-admin-shell__tenant-content',
@@ -60,18 +60,19 @@ describe('AdminShell', () => {
       expect(navigation).not.toBeNull();
       expect(toggle?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
       expect(toggle?.textContent).not.toContain('Left sidebar');
-      expect(toggle).toHaveAttribute('title', 'Collapse Left sidebar');
+      expect(toggle).toHaveAttribute('title', 'Collapse sidebar (A)');
       expect(toggle).toHaveAttribute('aria-expanded', 'true');
-      expect(toggle?.compareDocumentPosition(navigation as Node)).toBe(
+      // The chevron is pinned at the bottom of the rail, after the navigation.
+      expect(navigation?.compareDocumentPosition(toggle as Node)).toBe(
         Node.DOCUMENT_POSITION_FOLLOWING,
       );
       toggle?.click();
       await tick();
       const opener = container.querySelector<HTMLButtonElement>(
-        'button[aria-label="Expand Left sidebar"]',
+        'button[aria-label="Expand sidebar"]',
       );
       expect(opener?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
-      expect(opener).toHaveAttribute('title', 'Expand Left sidebar');
+      expect(opener).toHaveAttribute('title', 'Expand sidebar (A)');
       expect(opener).toHaveAttribute('aria-expanded', 'false');
     } finally {
       await unmount(component);
@@ -257,9 +258,9 @@ describe('AdminShell', () => {
     }
   });
 
-  it('assigns a footer-only collapsed rail to the bottom grid row', () => {
+  it('assigns a footer-only collapsed rail to the bottom grid row, below the toggle row', () => {
     expect(adminShellSource).toMatch(
-      /\.smrt-admin-shell__tenant-rail-footer\s*\{[^}]*grid-row:\s*2;/s,
+      /\.smrt-admin-shell__tenant-rail-footer\s*\{[^}]*grid-row:\s*3;/s,
     );
   });
 

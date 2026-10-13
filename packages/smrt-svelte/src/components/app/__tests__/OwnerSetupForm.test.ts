@@ -133,4 +133,41 @@ describe('OwnerSetupForm', () => {
     log.mockRestore();
     setItem.mockRestore();
   });
+
+  it('renders the missing-or-expired state with recovery commands and no form', async () => {
+    for (const link of ['missing', 'expired'] as const) {
+      await render({ data: { available: true, token: '', link } });
+      expect(container.querySelector('form')).toBeNull();
+      expect(container.querySelector('input')).toBeNull();
+      expect(container.querySelector('button')).toBeNull();
+      expect(container.querySelector('h1')?.textContent?.trim()).toBe(
+        'This setup link is missing or has expired',
+      );
+      const commands = [...container.querySelectorAll('code')].map(
+        (c) => c.textContent,
+      );
+      expect(commands).toEqual(['pnpm app:open', 'pnpm app:recover']);
+      unmount(component as never);
+      component = undefined;
+      container.innerHTML = '';
+    }
+  });
+
+  it('derives the missing state when an older load sends an empty token', async () => {
+    await render({ data: { available: true, token: '' } });
+    expect(container.querySelector('form')).toBeNull();
+    expect(
+      container.querySelector('[data-owner-setup="recovery"]'),
+    ).not.toBeNull();
+  });
+
+  it('is a branded card', async () => {
+    await render({ data: { available: true, token: 't' }, title: 'Planner' });
+    expect(
+      container.querySelector('[data-smrt-part="brand"]')?.textContent,
+    ).toContain('Planner');
+    expect(
+      container.querySelector('[data-smrt-component="Card"]'),
+    ).not.toBeNull();
+  });
 });

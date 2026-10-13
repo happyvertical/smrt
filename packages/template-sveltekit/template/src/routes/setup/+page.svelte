@@ -8,4 +8,4 @@
 
 <svelte:head><title>Set up your local application</title></svelte:head>
 
-<OwnerSetupForm {data} {form} {enhance} />
+<OwnerSetupForm {data} {form} {enhance} title="s-m-r-t app" />

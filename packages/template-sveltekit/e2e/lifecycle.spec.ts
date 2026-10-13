@@ -38,7 +38,7 @@ test('mount, navigation, and unmount leave no duplicate live registrations', asy
   for (let cycle = 0; cycle < 2; cycle += 1) {
     await ownerPage.getByRole('link', { name: 'Settings' }).first().click();
     await ownerPage.waitForURL((url) => new URL(url).pathname === '/settings');
-    await ownerPage.getByRole('link', { name: 'Items' }).first().click();
+    await ownerPage.getByRole('link', { name: 'Notes' }).first().click();
     await ownerPage.waitForURL((url) => new URL(url).pathname === '/');
   }
 

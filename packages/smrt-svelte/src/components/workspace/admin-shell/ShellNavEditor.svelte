@@ -432,7 +432,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
             {#if IconComponent}
               <IconComponent name={icon} size={18} />
             {:else}
-              {icon}
+              <ShellSectionIcon name={icon} size={18} />
             {/if}
           </span>
         {/if}
@@ -513,7 +513,10 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   .smrt-nav-editor__overlay { display: inline-flex; align-items: center; flex: 0 0 auto; }
   .smrt-nav-editor__toolbar { position: absolute; inset-block-start: 100%; inset-inline: 0; z-index: 40; display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-1); padding: var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface-container-high); box-shadow: var(--smrt-elevation-2, 0 4px 12px rgb(0 0 0 / 0.2)); }
   :global(.smrt-nav-editor__name) { flex: 1 1 100%; min-inline-size: 0; }
-  .smrt-nav-editor__row { flex: 1 1 auto; min-inline-size: 0; display: flex; align-items: center; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-2) var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }
+  .smrt-nav-editor__row { flex: 1 1 auto; min-inline-size: 0; display: flex; align-items: center; gap: var(--smrt-spacing-2); box-sizing: border-box; min-block-size: var(--smrt-control-target-min); padding: var(--smrt-spacing-2) var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }
+  @media (max-width: 48rem) {
+    .smrt-nav-editor { --smrt-control-target-min: var(--smrt-touch-target-min); }
+  }
   .smrt-nav-editor__row--muted { opacity: 0.55; }
   .smrt-nav-editor__row strong { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--smrt-typography-weight-medium, 500); }
   /* Keep editor rows inside the sidebar: the implicit grid column would size to

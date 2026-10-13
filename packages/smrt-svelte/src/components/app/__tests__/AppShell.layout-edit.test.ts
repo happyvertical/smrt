@@ -268,7 +268,7 @@ describe('right sidebar (dock)', () => {
     const setItem = vi.spyOn(Storage.prototype, 'setItem');
     const stored = () => localStorage.getItem('smrt-app-shell');
     const before = stored();
-    mount();
+    mount({ withDock: true });
     await edit(user);
     expect(
       document
@@ -296,7 +296,7 @@ describe('right sidebar (dock)', () => {
 
   it('restores the collapsed sidebar when edit mode ends', async () => {
     const user = userEvent.setup();
-    mount();
+    mount({ withDock: true });
     await edit(user);
     expect(zone('rightSidebar.header')).toBeTruthy();
     await edit(user);

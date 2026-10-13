@@ -188,7 +188,7 @@ describe('AdminShell on a phone', () => {
     shell.expandPanel('left');
     flushSync();
     const scrim = screen.getByTestId('admin-shell-scrim');
-    expect(scrim).toHaveAttribute('aria-label', 'Close Navigation');
+    expect(scrim).toHaveAttribute('aria-label', 'Close menu');
     await fireEvent.click(scrim);
     expect(shell.panels.left).toBe('collapsed');
   });
@@ -267,7 +267,7 @@ describe('AdminShell on a phone', () => {
     ).not.toBeNull();
     expect(screen.getByTestId('admin-shell-scrim')).toHaveAttribute(
       'aria-label',
-      'Close Assistant',
+      'Close tools',
     );
   });
 
@@ -488,7 +488,11 @@ describe('AdminShell overlay edges (overlayMedia)', () => {
     setWidth(1280);
     const shell = overlayShell();
     render(AdminShell, {
-      props: { state: shell, children: html('<button>page action</button>') },
+      props: {
+        state: shell,
+        focusPanel: html('<p>dock</p>'),
+        children: html('<button>page action</button>'),
+      },
     });
     await settle();
     shell.expandPanel('right');
@@ -520,7 +524,11 @@ describe('AdminShell overlay edges (overlayMedia)', () => {
     setWidth(1100);
     const shell = overlayShell();
     render(AdminShell, {
-      props: { state: shell, children: html('<p>page</p>') },
+      props: {
+        state: shell,
+        focusPanel: html('<p>dock</p>'),
+        children: html('<p>page</p>'),
+      },
     });
     await settle();
     const opener = document.createElement('button');
@@ -592,7 +600,11 @@ describe('AdminShell overlay edges (overlayMedia)', () => {
       setWidth(1100);
       const shell = overlayShell();
       render(AdminShell, {
-        props: { state: shell, children: html('<p>page</p>') },
+        props: {
+          state: shell,
+          focusPanel: html('<p>dock</p>'),
+          children: html('<p>page</p>'),
+        },
       });
       await settle();
       shell.expandPanel('right');
@@ -636,7 +648,11 @@ describe('AdminShell overlay edges (overlayMedia)', () => {
         : base(query)) as typeof window.matchMedia;
     const shell = overlayShell();
     render(AdminShell, {
-      props: { state: shell, children: html('<p>page</p>') },
+      props: {
+        state: shell,
+        focusPanel: html('<p>dock</p>'),
+        children: html('<p>page</p>'),
+      },
     });
     await settle();
     shell.expandPanel('right');
@@ -651,7 +667,11 @@ describe('AdminShell overlay edges (overlayMedia)', () => {
     setWidth(390);
     const shell = overlayShell();
     render(AdminShell, {
-      props: { state: shell, children: html('<p>page</p>') },
+      props: {
+        state: shell,
+        focusPanel: html('<p>dock</p>'),
+        children: html('<p>page</p>'),
+      },
     });
     await settle();
     shell.expandPanel('right');
@@ -662,7 +682,7 @@ describe('AdminShell overlay edges (overlayMedia)', () => {
 });
 
 describe('AdminShell backward compatibility', () => {
-  it('adds no header, phone chrome, overlays, or scrim without the new props', async () => {
+  it('adds no header, phone chrome or overlays without the new props (the scrim is on by default)', async () => {
     setWidth(390);
     const shell = createShellState({
       config: { left: { initial: 'expanded' } },
@@ -674,7 +694,6 @@ describe('AdminShell backward compatibility', () => {
     expect(screen.queryByTestId('admin-shell-header')).toBeNull();
     expect(screen.queryByTestId('admin-shell-phone-top')).toBeNull();
     expect(screen.queryByTestId('admin-shell-phone-bar')).toBeNull();
-    expect(screen.queryByTestId('admin-shell-scrim')).toBeNull();
     expect(document.querySelector('.smrt-admin-shell__overlays')).toBeNull();
     // Without viewport defaults the left edge keeps its configured state.
     expect(shell.panels.left).toBe('expanded');
