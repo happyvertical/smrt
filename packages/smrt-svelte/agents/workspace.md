@@ -257,6 +257,21 @@ that. The shell reads `name`, `email` and `avatarUrl` for the account menu
 (one internal cast; the Provider is typed for the full `User`), so nothing is
 added or invented on the way.
 
+DockToggle fallback (#3860): a `dockToggles` entry also takes `href?`, `ready?`
+(reactive, default `true`), `labelNotReady?` and `onpress?(event, { registered,
+ready }) => boolean | void`. Precedence on activation: (1) `onpress` runs first;
+returning `false` or calling `event.preventDefault()` stops everything (no
+toggle, no navigation). (2) If the tool is registered with `useShellDock()`
+(and the dock is available) and `ready !== false`, the dock toggles as before.
+(3) Otherwise `href` is followed, else nothing happens (the inert
+`aria-disabled` button, unchanged). With an `href` in state 3 the toggle renders
+as an `<a>` (middle-click and open-in-new-tab work) with no `aria-pressed` /
+`aria-expanded`. Its name and tooltip are `labelNotReady`, else "Set up {label}"
+(`ui.dock_toggles.set_up`), whenever it is not ready or links. The phone tab
+bar's dock tab (the first toggle) follows the same resolution through the shared
+`resolveDockToggle` / `runDockTogglePress` helpers in `dock-toggle.ts`; that tab
+becomes a link entry. `PhoneBottomBarItem.onclick` now receives the click event.
+
 `ShellLayout.placements?: Record<itemId, ShellSlot>` (additive, still version
 1) overrides default slots. Pure helpers in `layout.ts` (also `./workspace/layout`):
 `placeShellItem(layout, id, slot, defaultSlot?)` (passing the default drops a

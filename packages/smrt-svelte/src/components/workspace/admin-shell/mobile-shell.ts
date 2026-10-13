@@ -319,7 +319,7 @@ export interface PhoneBottomBarItem {
   label: string;
   icon: ShellIcon;
   href?: string;
-  onclick?: () => void;
+  onclick?: (event: MouseEvent) => void;
   active?: boolean;
   /** Count badge (hidden at 0). */
   badge?: number;
