@@ -99,6 +99,44 @@ describe('cookbook v1', () => {
     }
   });
 
+  it('accepts each radius, density and contrast value and rejects others', () => {
+    const base = { version: 1, recipes: [], policies: [] };
+    const values = {
+      borderRadius: ['none', 'sm', 'md', 'lg', 'xl', 'full'],
+      density: ['comfortable', 'touch'],
+      contrast: ['auto', 'standard', 'more'],
+    };
+    for (const [key, allowed] of Object.entries(values)) {
+      for (const value of allowed) {
+        const doc = { ...base, theme: { [key]: value } };
+        expect(matches(doc), `${key}=${value}`).toBe(true);
+        const parsed = validateCookbook(doc);
+        expect(parsed.ok && parsed.cookbook.theme).toEqual({ [key]: value });
+      }
+      for (const value of ['huge', '', 3, null, 'MORE']) {
+        const doc = { ...base, theme: { [key]: value } };
+        expect(matches(doc), `${key}=${String(value)}`).toBe(false);
+        const result = validateCookbook(doc);
+        expect(result.ok).toBe(false);
+        expect(JSON.stringify(result)).toContain(`theme.${key}`);
+      }
+    }
+  });
+
+  it('leaves a document without the newer theme fields unchanged', () => {
+    const doc = {
+      $schema: COOKBOOK_SCHEMA_URL,
+      version: 1,
+      recipes: [],
+      features: [],
+      policies: [],
+      theme: { preset: 'glass', colorScheme: 'dark' },
+    };
+    expect(matches(doc)).toBe(true);
+    const parsed = validateCookbook(doc);
+    expect(parsed.ok && parsed.cookbook).toEqual(doc);
+  });
+
   it('reports every problem with its path', () => {
     const doc = {
       version: 1,

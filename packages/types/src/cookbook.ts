@@ -106,6 +106,12 @@ export interface CookbookTheme {
   /** A built-in smrt-ui preset name. */
   preset?: string;
   colorScheme?: 'light' | 'dark' | 'system';
+  /** Corner radius scale (`ThemeProvider` `borderRadius`); absent keeps the preset's own. */
+  borderRadius?: 'none' | 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  /** Control target density (`ThemeProvider` `density`); absent keeps the preset's own. */
+  density?: 'comfortable' | 'touch';
+  /** Contrast preference (`ThemeProvider` `contrast`); `auto` follows the OS. */
+  contrast?: 'auto' | 'standard' | 'more';
   /** Font key applied independently of the selected preset or brand colour. */
   fontFamily?: string;
   /** A brand colour theme; wins over `preset` while present. */

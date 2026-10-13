@@ -116,6 +116,9 @@
       "properties": {
         "preset": { "type": "string" },
         "colorScheme": { "enum": ["light", "dark", "system"] },
+        "borderRadius": { "enum": ["none", "sm", "md", "lg", "xl", "full"] },
+        "density": { "enum": ["comfortable", "touch"] },
+        "contrast": { "enum": ["auto", "standard", "more"] },
         "fontFamily": { "type": "string", "minLength": 1, "description": "Host font key, independent of the preset." },
         "customCss": { "type": "string", "maxLength": 65536, "description": "Stored CSS source text; consumers do not execute it automatically." },
         "custom": {
