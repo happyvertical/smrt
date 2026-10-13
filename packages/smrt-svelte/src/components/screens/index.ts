@@ -1,3 +1,4 @@
+export { lineItemColumns, relatedColumns } from './columns.js';
 export { default as DetailScreen } from './DetailScreen.svelte';
 export { default as EditForm } from './EditForm.svelte';
 export {
@@ -13,7 +14,11 @@ export {
 export { default as ListScreen } from './ListScreen.svelte';
 export { default as RecipeScreens } from './RecipeScreens.svelte';
 export { default as RecordScreen } from './RecordScreen.svelte';
-export { deriveScreenRelations, type ScreenRelation } from './relations.js';
+export {
+  deriveScreenRelations,
+  relationKey,
+  type ScreenRelation,
+} from './relations.js';
 export {
   currencyCodeField,
   deriveFieldRoles,

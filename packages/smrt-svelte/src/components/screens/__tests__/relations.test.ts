@@ -39,7 +39,11 @@ const definitions = { customers, orders, addresses };
 
 describe('deriveScreenRelations', () => {
   it('lists children (sorted, disambiguated per FK) before references', () => {
-    expect(deriveScreenRelations(definitions, '@acme/shop:Customer')).toEqual([
+    expect(
+      deriveScreenRelations(definitions, '@acme/shop:Customer').map(
+        ({ columns: _columns, ...relation }) => relation,
+      ),
+    ).toEqual([
       {
         model: '@acme/shop:Address',
         field: 'customerId',
@@ -93,5 +97,22 @@ describe('deriveScreenRelations', () => {
         '@acme/shop:Customer',
       ),
     ).toEqual([]);
+  });
+
+  it('attaches role-chosen columns to children and keys relations', async () => {
+    const { shopDefinitions } = await import('./shop-fixtures.js');
+    const relations = deriveScreenRelations(
+      shopDefinitions,
+      '@acme/shop:Customer',
+    );
+    const orders = relations.find((r) => r.model === '@acme/shop:Order');
+    expect(orders?.columns?.map((c) => c.key)).toEqual([
+      'number',
+      'status',
+      'issuedAt',
+      'totalAmount',
+    ]);
+    const { relationKey } = await import('../relations.js');
+    expect(relationKey(orders as never)).toBe('Order-customerId');
   });
 });

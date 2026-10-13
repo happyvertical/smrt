@@ -91,6 +91,29 @@ export interface RecordListWidgetData {
   summaries?: Record<string, number>;
 }
 
+/** One tab of the `related` widget: one relation's records table. */
+export interface RelatedWidgetTab {
+  /** The relation's key (`relationKey`, `Order-customerId`). */
+  key: string;
+  /** Tab label; the widget appends the count ("Orders 6"). */
+  label: string;
+  rows: RecordListRow[];
+  /** Every matching record; the tab count. Defaults to `rows.length`. */
+  total?: number;
+  columns: RecordListColumn[];
+  /** The tab's one "View all" link. */
+  href?: string;
+  currency?: string;
+  timeZone?: string;
+  /** Footer values over every matching record (money in minor units). */
+  summaries?: Record<string, number>;
+}
+
+/** `related`: one tab per `children` relation; empty relations are hidden. */
+export interface RelatedWidgetData {
+  tabs: RelatedWidgetTab[];
+}
+
 /** `shortcuts`: cards that link to pages. */
 export interface ShortcutsWidgetData {
   items: {

@@ -73,6 +73,9 @@ export const M = defineMessages({
   'ui.overview.widget.records.title': 'Record list',
   'ui.overview.widget.records.description':
     'The latest or top records of a model.',
+  'ui.overview.widget.related.title': 'Related records',
+  'ui.overview.widget.related.description':
+    'Records linked to this one, a tab per kind, with totals.',
   'ui.overview.widget.shortcuts.title': 'Shortcuts',
   'ui.overview.widget.shortcuts.description':
     'Cards that link to a section’s pages.',
@@ -109,6 +112,9 @@ export const M = defineMessages({
   'ui.overview.opt.direction_desc': 'Newest or largest first',
   'ui.overview.opt.direction_asc': 'Oldest or smallest first',
   'ui.overview.opt.limit': 'Rows',
+  'ui.overview.opt.relations': 'Relations',
+  'ui.overview.opt.relations_help':
+    'Which related records get a tab, as relation keys separated by commas (Order-customerId). Leave empty for all of them.',
   'ui.overview.opt.columns': 'Columns',
   'ui.overview.opt.columns_help':
     'Field names to show as columns, separated by commas. Leave empty for a plain list.',
@@ -132,6 +138,7 @@ export const M = defineMessages({
   'ui.overview.records.view_all': 'View all',
   'ui.overview.records.total': '{count} in total',
   'ui.overview.table.total': 'Total',
+  'ui.overview.related.empty': 'No related records yet.',
   'ui.overview.shortcuts.empty': 'No pages to show.',
 
   // Cookbook section page

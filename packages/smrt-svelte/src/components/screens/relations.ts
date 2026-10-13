@@ -9,7 +9,10 @@
  * source is not in `definitions` are skipped: an unexposed model has neither
  * a definition nor a route, so nothing could be linked.
  */
+import type { RecordListColumn } from '../overview/widgets/data.js';
+import { relatedColumns } from './columns.js';
 import { humanizeLabel, screenTitles } from './fields.js';
+import { deriveFieldRoles } from './roles.js';
 import type {
   ScreenCollectionDefinition,
   ScreenRelationshipDefinition,
@@ -22,6 +25,25 @@ export interface ScreenRelation {
   field: string;
   label: string;
   kind: 'children' | 'reference';
+  /**
+   * `children` only: the columns a related-records table shows for the child
+   * model, chosen by role (`relatedColumns`, the FK back to this model
+   * excluded).
+   */
+  columns?: readonly RecordListColumn[];
+}
+
+/**
+ * A relation's stable key, `<Class>-<field>` (`Order-customerId`): what the
+ * `related` widget's `relations` option lists and default widget ids end in.
+ */
+export function relationKey(
+  relation: Pick<ScreenRelation, 'model' | 'field'>,
+): string {
+  const className = relation.model.split(/[:/]/).pop() ?? relation.model;
+  return `${className}-${relation.field}`
+    .replace(/[^A-Za-z0-9_.-]+/g, '-')
+    .slice(0, 64);
 }
 
 const FK_KINDS: ReadonlySet<ScreenRelationshipDefinition['kind']> = new Set([
@@ -73,6 +95,7 @@ export function deriveScreenRelations(
           self.objectRef,
     );
     const titles = screenTitles(child);
+    const roles = edges.length > 0 ? deriveFieldRoles(child) : {};
     const list: ScreenRelation[] = edges.map((edge) => ({
       model: child.objectRef,
       field: edge.field,
@@ -81,6 +104,7 @@ export function deriveScreenRelations(
           ? `${titles.plural} (${fieldLabel(edge.field, child)})`
           : titles.plural,
       kind: 'children',
+      columns: relatedColumns(child, roles, { exclude: [edge.field] }),
     }));
     if (list.length > 0) perChild.set(child.objectRef, list);
   }

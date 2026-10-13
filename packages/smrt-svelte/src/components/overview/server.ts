@@ -91,6 +91,14 @@ export {
 } from './schema.js';
 export * from './types.js';
 export {
+  createRelatedLoader,
+  RELATED_WIDGET_LIMIT,
+  RELATED_WIDGET_MAX_TABS,
+  type RecordWidgetsOptions,
+  relatedRelations,
+  relatedTabOptions,
+} from './widgets/record-loaders.js';
+export {
   DEFAULT_STATUS_TONES,
   formatColumnsOption,
   formatRecordCell,

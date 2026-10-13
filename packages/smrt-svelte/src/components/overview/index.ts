@@ -61,6 +61,8 @@ export {
   type RecordListRow,
   type RecordListWidgetData,
   type RecordStatusTone,
+  type RelatedWidgetData,
+  type RelatedWidgetTab,
   type ShortcutNavSection,
   type ShortcutsWidgetData,
   shortcutsFromNav,
@@ -68,4 +70,9 @@ export {
 export { default as MetricWidget } from './widgets/MetricWidget.svelte';
 export { default as NoteWidget } from './widgets/NoteWidget.svelte';
 export { default as RecordListWidget } from './widgets/RecordListWidget.svelte';
+export { default as RelatedWidget } from './widgets/RelatedWidget.svelte';
+export {
+  createRelatedWidget,
+  registerRecordWidgets,
+} from './widgets/record-widgets.js';
 export { default as ShortcutsWidget } from './widgets/ShortcutsWidget.svelte';
