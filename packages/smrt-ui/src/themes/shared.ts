@@ -196,3 +196,54 @@ export const studioEasing: EasingScale = {
   emphasizedDecelerate: 'cubic-bezier(0.0, 0, 0.2, 1)',
   emphasizedAccelerate: 'cubic-bezier(0.4, 0, 1, 1)',
 };
+
+/**
+ * One shadow layer: `[offset-y, blur, spread, alpha%]`, tinted by the scheme's
+ * `--smrt-shadow-color` (the theme's own token, so the tint follows the preset).
+ */
+export type ShadowLayer = readonly [
+  y: number,
+  blur: number,
+  spread: number,
+  alphaPercent: number,
+];
+
+/** `px` length, `0` without a unit so the value stays valid and short. */
+const px = (n: number): string => (n === 0 ? '0' : `${n}px`);
+
+/**
+ * Compose a box-shadow from layers. Elevation levels are two-layer: a contact
+ * shadow (`0 1px 2px`) that anchors the edge, and an ambient shadow (`0 Npx Mpx`
+ * with negative spread) that lifts it. `prefix` lists extra leading layers, e.g.
+ * `var(--smrt-inset-highlight)` on dark schemes.
+ */
+export function shadow(
+  layers: readonly ShadowLayer[],
+  prefix?: string,
+): string {
+  const parts = layers.map(
+    ([y, blur, spread, alpha]) =>
+      `0 ${px(y)} ${px(blur)} ${px(spread)} color-mix(in srgb, var(--smrt-shadow-color) ${alpha}%, transparent)`,
+  );
+  return prefix ? [prefix, ...parts].join(', ') : parts.join(', ');
+}
+
+/** Quiet hairline inset used as elevation 1 by the flat presets. */
+export const hairlineInset = 'inset 0 0 0 1px var(--smrt-hairline-color)';
+
+/** Text-colour mixes used for hairlines: quiet edge and strong control edge. */
+export function hairlineMix(
+  quietPercent: number,
+  strongPercent: number,
+  insetHighlight: string,
+): { color: string; strongColor: string; insetHighlight: string } {
+  return {
+    color: `color-mix(in srgb, var(--smrt-color-on-surface) ${quietPercent}%, transparent)`,
+    strongColor: `color-mix(in srgb, var(--smrt-color-on-surface) ${strongPercent}%, transparent)`,
+    insetHighlight,
+  };
+}
+
+/** Top inner light line for dark surfaces (`--smrt-inset-highlight`). */
+export const darkInsetHighlight = (alpha: number): string =>
+  `inset 0 1px 0 rgb(255 255 255 / ${alpha})`;

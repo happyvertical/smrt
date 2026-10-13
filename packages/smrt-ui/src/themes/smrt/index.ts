@@ -6,6 +6,9 @@
  * accent (`#ff7a1a`), hairline outlines, deep low shadows, and a
  * Space Grotesk / Inter / JetBrains Mono type stack.
  *
+ * Depth is calm: two-layer shadows (contact + short ambient) and graphite surface
+ * lightness, never far-spread or glowing shadows.
+ *
  * The token palette restyles every existing smrt-ui component; the signature
  * motifs (engineering-grid background, glow, oscilloscope hairline, instrument
  * readouts, monospace technical labels) ship as opt-in utility classes in
@@ -13,7 +16,15 @@
  */
 
 import { baselineTokens, opaqueGlass } from '../derive.js';
-import { borderRadiusScale, durationScale, spacingScale } from '../shared.js';
+import {
+  borderRadiusScale,
+  darkInsetHighlight,
+  durationScale,
+  hairlineInset,
+  hairlineMix,
+  shadow,
+  spacingScale,
+} from '../shared.js';
 import type {
   ColorPalette,
   EasingScale,
@@ -50,6 +61,12 @@ const lightColors: ColorPalette = {
   onTertiary: '#ffffff',
   tertiaryContainer: '#e7e0ff',
   onTertiaryContainer: '#3a2b8c',
+
+  // Info - Steel blue, distinct from the amber signal and the violet tertiary
+  info: '#2c6a96',
+  onInfo: '#ffffff',
+  infoContainer: '#dcebf5',
+  onInfoContainer: '#0f3149',
 
   // Error
   error: '#c0362c',
@@ -128,6 +145,12 @@ const darkColors: ColorPalette = {
   onTertiary: '#241a4d',
   tertiaryContainer: '#2a2350',
   onTertiaryContainer: '#ddd4ff',
+
+  // Info - Steel blue, distinct from the amber signal and the violet tertiary
+  info: '#6fa8d6',
+  onInfo: '#08202f',
+  infoContainer: '#162a39',
+  onInfoContainer: '#b5d6ee',
 
   // Error
   error: '#ff6b6b',
@@ -295,33 +318,69 @@ const typography: TypographyScale = {
 };
 
 /**
- * SMRT elevation (light) — deep, soft, low-spread shadows.
- *
- * The workbench panels sit on big diffuse drop shadows with a tight inset
- * hairline at level 1. Light scheme tints the shadow with the cool ink grey.
+ * SMRT elevation (light) — calm, visible two-layer shadows. Level 1 is the
+ * hairline; the former far-spread drop shadows (44-90px blur, -28 to -50px
+ * spread, which disappeared on paper) are replaced by a contact shadow plus a
+ * short ambient layer.
  */
 const elevation: ElevationScale = {
   0: 'none',
-  1: 'inset 0 0 0 1px rgba(20, 26, 36, 0.08)',
-  2: '0 18px 44px -28px rgba(20, 26, 36, 0.18)',
-  3: '0 24px 56px -34px rgba(20, 26, 36, 0.22)',
-  4: '0 30px 70px -40px rgba(20, 26, 36, 0.28)',
-  5: '0 40px 90px -50px rgba(20, 26, 36, 0.3)',
+  1: hairlineInset,
+  2: shadow([
+    [1, 2, 0, 10],
+    [4, 10, -4, 10],
+  ]),
+  3: shadow([
+    [1, 3, 0, 12],
+    [8, 18, -6, 14],
+  ]),
+  4: shadow([
+    [2, 4, 0, 14],
+    [14, 28, -8, 16],
+  ]),
+  5: shadow([
+    [2, 6, 0, 16],
+    [24, 48, -12, 20],
+  ]),
 };
 
 /**
- * SMRT elevation (dark) — black drop shadows with a white inset hairline.
- *
- * Defined here (not only in the static `styles/smrt.css`) so the JS
+ * SMRT elevation (dark) — the hairline at level 1; above it graphite surface
+ * lightness carries altitude, with the inset top highlight and black shadows in
+ * support. Defined here (not only in the static `styles/smrt.css`) so the JS
  * ThemeProvider output and the static dark CSS stay in lockstep (#1586).
  */
 const darkElevation: ElevationScale = {
   0: 'none',
-  1: 'inset 0 0 0 1px rgba(255, 255, 255, 0.06)',
-  2: '0 18px 44px -28px rgba(0, 0, 0, 0.6)',
-  3: '0 24px 56px -34px rgba(0, 0, 0, 0.72)',
-  4: '0 30px 66px -40px rgba(0, 0, 0, 0.82)',
-  5: '0 40px 90px -50px rgba(0, 0, 0, 0.88)',
+  1: hairlineInset,
+  2: shadow(
+    [
+      [1, 2, 0, 36],
+      [4, 10, -4, 28],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  3: shadow(
+    [
+      [1, 3, 0, 40],
+      [8, 18, -6, 36],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  4: shadow(
+    [
+      [2, 4, 0, 44],
+      [14, 28, -8, 42],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  5: shadow(
+    [
+      [2, 6, 0, 48],
+      [24, 48, -12, 50],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
 };
 
 /**
@@ -354,6 +413,45 @@ export const smrtTheme: Theme = {
   glass: { ...opaqueGlass },
   ...baselineTokens(lightColors, darkColors),
   shadowColor: { light: 'rgb(20 26 36)', dark: 'rgb(0 0 0)' },
+  // Instrument ladder: deep ground, graphite panels, then control and raised
+  // tiers that step up in lightness (dark); paper panels on a cool ground (light).
+  surfaces: {
+    light: {
+      ground: lightColors.background,
+      panel: lightColors.surface,
+      control: lightColors.surfaceContainer,
+      raised: lightColors.surfaceContainerLowest,
+      sunken: lightColors.surfaceContainerHighest,
+      overlay: lightColors.scrim,
+    },
+    dark: {
+      ground: darkColors.background,
+      panel: darkColors.surface,
+      control: darkColors.surfaceContainerHigh,
+      raised: '#1d2126',
+      sunken: '#08090b',
+      overlay: darkColors.scrim,
+    },
+  },
+  hairlines: {
+    light: hairlineMix(12, 30, 'none'),
+    dark: hairlineMix(9, 24, darkInsetHighlight(0.05)),
+  },
+  states: {
+    hover: '0.10',
+    pressed: '0.16',
+    selected: '0.14',
+    focus: '0.16',
+    dragged: '0.20',
+    disabled: '0.38',
+  },
+  controls: {
+    radius: 'var(--smrt-radius-sm)',
+    radiusSmall: 'var(--smrt-radius-sm)',
+    height: '2.5rem',
+    heightSmall: '2rem',
+    weight: '500',
+  },
   // Inter: tabular figures and the flat-topped 1 keep columns of numbers aligned.
   fontFeatureSettings: '"tnum" 1, "cv11" 1',
   fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif',

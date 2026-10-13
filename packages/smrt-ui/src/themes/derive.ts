@@ -98,7 +98,7 @@ export function deriveNative(prefix = '--smrt'): NativeChromeTokens {
     selectionBackground: `var(${prefix}-color-primary-container)`,
     selectionColor: `var(${prefix}-color-on-primary-container)`,
     caret: `var(${prefix}-color-primary)`,
-    scrollbarThumb: `var(${prefix}-color-outline-variant)`,
+    scrollbarThumb: `var(${prefix}-hairline-strong-color)`,
     scrollbarTrack: 'transparent',
   };
 }

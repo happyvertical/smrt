@@ -45,6 +45,12 @@ export interface ColorPalette {
   tertiaryContainer: string;
   onTertiaryContainer: string;
 
+  // Info (informational status; presets without a distinct hue reuse tertiary)
+  info: string;
+  onInfo: string;
+  infoContainer: string;
+  onInfoContainer: string;
+
   // Error
   error: string;
   onError: string;

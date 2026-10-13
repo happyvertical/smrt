@@ -79,6 +79,10 @@ const defaultColorStructure: Omit<ColorPalette, 'primary' | 'background'> = {
   onTertiary: '#ffffff',
   tertiaryContainer: '#ede9fe',
   onTertiaryContainer: '#3b0764',
+  info: '#8b5cf6',
+  onInfo: '#ffffff',
+  infoContainer: '#ede9fe',
+  onInfoContainer: '#3b0764',
   error: '#dc2626',
   onError: '#ffffff',
   errorContainer: '#fee2e2',
@@ -304,6 +308,26 @@ function mergeTypography(custom?: Partial<TypographyScale>): TypographyScale {
   };
 }
 
+/**
+ * The info family follows an explicitly supplied tertiary unless the caller
+ * also supplied a distinct info hue; otherwise it keeps the extended preset's
+ * (or the default) info. Presets without a distinct info hue define it as their
+ * tertiary, so a custom tertiary carries the Information status with it.
+ */
+function withInfoFromTertiary(
+  palette: ColorPalette,
+  partial: Partial<ColorPalette> | undefined,
+): ColorPalette {
+  if (partial?.tertiary === undefined) return palette;
+  return {
+    ...palette,
+    info: partial.info ?? palette.tertiary,
+    onInfo: partial.onInfo ?? palette.onTertiary,
+    infoContainer: partial.infoContainer ?? palette.tertiaryContainer,
+    onInfoContainer: partial.onInfoContainer ?? palette.onTertiaryContainer,
+  };
+}
+
 /** Drop undefined entries so they cannot clobber derived defaults. */
 function definedOnly<T extends object>(value: T): Partial<T> {
   return Object.fromEntries(
@@ -350,24 +374,31 @@ export function createTheme(options: CreateThemeOptions): Theme {
   const baseTheme = extend ? getBaseThemeSync(extend) : null;
 
   // Build light colors
-  const lightColors: ColorPalette = {
-    ...defaultColorStructure,
-    ...baseTheme?.light,
-    ...lightPartial,
-    // Generate derived colors. The container is the primary at ~12.5% alpha,
-    // expressed as 8-digit hex. Normalize the primary to canonical 6-hex first
-    // so a 3-digit hex or rgb()/rgba() primary can't yield invalid CSS like
-    // `rgb(0,122,255)20` or `#f6320` (#1586).
-    primaryContainer:
-      lightPartial.primaryContainer ||
-      `${normalizeHex(lightPartial.primary)}20`,
-    onPrimaryContainer: lightPartial.onPrimaryContainer || lightPartial.primary,
-    inversePrimary: lightPartial.inversePrimary || lightPartial.primary,
-  } as ColorPalette;
+  const lightColors: ColorPalette = withInfoFromTertiary(
+    {
+      ...defaultColorStructure,
+      ...baseTheme?.light,
+      ...lightPartial,
+      // Generate derived colors. The container is the primary at ~12.5% alpha,
+      // expressed as 8-digit hex. Normalize the primary to canonical 6-hex first
+      // so a 3-digit hex or rgb()/rgba() primary can't yield invalid CSS like
+      // `rgb(0,122,255)20` or `#f6320` (#1586).
+      primaryContainer:
+        lightPartial.primaryContainer ||
+        `${normalizeHex(lightPartial.primary)}20`,
+      onPrimaryContainer:
+        lightPartial.onPrimaryContainer || lightPartial.primary,
+      inversePrimary: lightPartial.inversePrimary || lightPartial.primary,
+    } as ColorPalette,
+    lightPartial,
+  );
 
   // Build dark colors
   const darkColors: ColorPalette = darkPartial
-    ? ({ ...lightColors, ...darkPartial } as ColorPalette)
+    ? withInfoFromTertiary(
+        { ...lightColors, ...darkPartial } as ColorPalette,
+        darkPartial,
+      )
     : generateDarkColors(lightColors);
 
   const baseline = baselineTokens(lightColors, darkColors);

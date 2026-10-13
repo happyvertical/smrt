@@ -673,6 +673,34 @@ calc(var(--smrt-button-state-hover, var(--smrt-state-hover)) * 100%), transparen
 | `--smrt-duration-scheme` | Scheme crossfade duration | `transition-duration` when the colour scheme changes |
 | `--smrt-font-feature-settings` | OpenType features (`"tnum" 1, "cv11" 1` on Inter presets) | `font-feature-settings` on the root and numeric cells |
 
+#### Semantic info colour
+
+`ColorPalette` carries an info family beside success, warning and error:
+`--smrt-color-info`, `--smrt-color-on-info`, `--smrt-color-info-container` and
+`--smrt-color-on-info-container`. Presets without a distinct information hue define
+it as their tertiary family (Material, Glass, Studio, Day Shift); **smrt** uses a
+steel blue (`#2c6a96` light, `#6fa8d6` dark) so Information no longer shares amber
+with Warning. `createTheme()` follows a supplied `tertiary` unless `info` is also
+given. Components that show information status (for example `Alert` `variant="info"`)
+should consume these, not tertiary.
+
+#### Preset identities on the baseline
+
+| Preset | Dark ladder (ground / panel / control / raised) | Depth | State layers (hover / pressed / selected) | Controls |
+| --- | --- | --- | --- | --- |
+| Material | `#121316` / `#1b1c20` / `#26282c` / `#34363a` (M3 tonal, no borders needed; control border is transparent) | contact + ambient; dark adds the inset highlight | .08 / .12 / .12 | radius md / sm, 2.75rem |
+| Glass | `#0b0b0f` ground; panel 72% and popover 88% frosted glass, input a recessed 28% black well; blur 20px, saturation 180% | softest, widest ambient | .10 / .14 / .14 | radius lg / md, 2.75rem |
+| Studio | `#131416` / `#131416` / `#1c1d20` / `#292a2d` (flat, crisp hairlines, panel equals ground) | elevation 1 is the hairline; tight shadows | .06 / .10 / .10 | radius 0.375rem / sm, 2.5rem |
+| smrt | `#0b0c0e` / `#121417` / `#181b1f` / `#1d2126` (instrument dark, amber signal, steel-blue info) | elevation 1 is the hairline; calm two-layer shadows (no far-spread) | .10 / .16 / .14 | radius sm, 2.5rem |
+| Day Shift | enamel ground, faceplate panel, control a hair lighter, raised = faceplate; hairlines are the bezel | elevation 1 is the bezel hairline; minimal | .06 / .10 / .10 | radius md (6px) / sm, 2.5rem |
+
+Elevation 2 to 5 are two-layer shadows built with `shadow()` in `shared.ts`: a contact
+layer (`0 1px 2px`) plus an ambient layer (`0 Npx Mpx` with negative spread), both
+`color-mix`ed from `--smrt-shadow-color`. Dark schemes prepend
+`var(--smrt-inset-highlight)`. Weight is 500 on every preset. Native chrome follows the
+baseline: accent and caret are primary, selection is the primary container, and the
+scrollbar thumb is the strong hairline over a transparent track.
+
 The former `--smrt-glass-border-opacity` and `--smrt-glass-background-opacity`
 tokens, and the ThemeProvider-local `--smrt-glass-surface`/`--smrt-glass-border`,
 were folded into the glass surface colours above.

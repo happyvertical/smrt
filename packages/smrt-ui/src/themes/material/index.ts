@@ -8,8 +8,11 @@
 import { baselineTokens, opaqueGlass } from '../derive.js';
 import {
   borderRadiusScale,
+  darkInsetHighlight,
   durationScale,
+  hairlineMix,
   materialEasing,
+  shadow,
   spacingScale,
 } from '../shared.js';
 import type {
@@ -41,6 +44,12 @@ const lightColors: ColorPalette = {
   onTertiary: '#ffffff',
   tertiaryContainer: '#e8ddff',
   onTertiaryContainer: '#1e005f',
+
+  // Info - Shares the tertiary hue (no distinct info hue in this preset)
+  info: '#7c4dff',
+  onInfo: '#ffffff',
+  infoContainer: '#e8ddff',
+  onInfoContainer: '#1e005f',
 
   // Error - Google red
   error: '#b3261e',
@@ -74,7 +83,7 @@ const lightColors: ColorPalette = {
   surfaceBright: '#f8f9fa',
 
   // Background
-  background: '#ffffff',
+  background: '#f6f8fc',
   onBackground: '#1f1f1f',
 
   // Outline
@@ -93,7 +102,7 @@ const lightColors: ColorPalette = {
 
 /**
  * Material dark color palette
- * True dark mode with OLED-friendly blacks
+ * M3 tonal dark mode: a #121316 ground with stepped container tiers
  */
 const darkColors: ColorPalette = {
   // Primary - Lighter blue for dark mode
@@ -114,6 +123,12 @@ const darkColors: ColorPalette = {
   tertiaryContainer: '#5e3fc0',
   onTertiaryContainer: '#e8ddff',
 
+  // Info - Shares the tertiary hue (no distinct info hue in this preset)
+  info: '#cbb7ff',
+  onInfo: '#3e1e96',
+  infoContainer: '#5e3fc0',
+  onInfoContainer: '#e8ddff',
+
   // Error
   error: '#f2b8b5',
   onError: '#601410',
@@ -132,21 +147,22 @@ const darkColors: ColorPalette = {
   successContainer: '#1e4620',
   onSuccessContainer: '#e6f4ea',
 
-  // Surface - True dark OLED black base
-  surface: '#0e0e0e',
+  // Surface - M3 tonal ladder (ground < panel < control < raised), each tier a
+  // visible step so depth reads from lightness and needs no borders
+  surface: '#1b1c20',
   onSurface: '#e3e3e3',
-  surfaceVariant: '#1f1f1f',
+  surfaceVariant: '#26282c',
   onSurfaceVariant: '#c4c7c5',
-  surfaceContainer: '#1f1f1f',
-  surfaceContainerLow: '#141414',
-  surfaceContainerHigh: '#2d2d2d',
-  surfaceContainerHighest: '#363636',
-  surfaceContainerLowest: '#0a0a0a',
-  surfaceDim: '#141414',
-  surfaceBright: '#2d2d2d',
+  surfaceContainer: '#1f2024',
+  surfaceContainerLow: '#17181c',
+  surfaceContainerHigh: '#26282c',
+  surfaceContainerHighest: '#34363a',
+  surfaceContainerLowest: '#0d0e11',
+  surfaceDim: '#121316',
+  surfaceBright: '#393b3f',
 
   // Background
-  background: '#0e0e0e',
+  background: '#121316',
   onBackground: '#e3e3e3',
 
   // Outline
@@ -276,16 +292,72 @@ const typography: TypographyScale = {
 };
 
 /**
- * Material elevation shadows
- * More refined shadows with better diffusion
+ * Material elevation (light) — two layers per level: a contact shadow plus an
+ * ambient shadow with negative spread, tinted by `--smrt-shadow-color`.
  */
 const elevation: ElevationScale = {
   0: 'none',
-  1: '0 1px 2px 0 rgb(0 0 0 / 0.05), 0 1px 3px 0 rgb(0 0 0 / 0.02)',
-  2: '0 1px 2px 0 rgb(0 0 0 / 0.06), 0 2px 4px 0 rgb(0 0 0 / 0.04)',
-  3: '0 2px 4px 0 rgb(0 0 0 / 0.06), 0 4px 8px 0 rgb(0 0 0 / 0.04)',
-  4: '0 4px 8px 0 rgb(0 0 0 / 0.08), 0 8px 16px 0 rgb(0 0 0 / 0.04)',
-  5: '0 8px 16px 0 rgb(0 0 0 / 0.1), 0 16px 32px 0 rgb(0 0 0 / 0.04)',
+  1: shadow([
+    [1, 2, 0, 8],
+    [2, 4, -1, 6],
+  ]),
+  2: shadow([
+    [1, 2, 0, 10],
+    [4, 8, -2, 10],
+  ]),
+  3: shadow([
+    [1, 3, 0, 12],
+    [8, 16, -4, 12],
+  ]),
+  4: shadow([
+    [2, 4, 0, 12],
+    [12, 24, -6, 14],
+  ]),
+  5: shadow([
+    [2, 6, 0, 14],
+    [20, 40, -10, 18],
+  ]),
+};
+
+/**
+ * Material elevation (dark) — altitude is carried by the tonal ladder, so the
+ * shadows are tighter and lower in reach and every level adds the inset top
+ * highlight.
+ */
+const darkElevation: ElevationScale = {
+  0: 'none',
+  1: shadow([
+    [1, 2, 0, 24],
+    [1, 3, -1, 16],
+  ]),
+  2: shadow(
+    [
+      [1, 2, 0, 28],
+      [3, 6, -2, 20],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  3: shadow(
+    [
+      [1, 3, 0, 30],
+      [6, 12, -3, 24],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  4: shadow(
+    [
+      [2, 4, 0, 32],
+      [10, 20, -5, 28],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  5: shadow(
+    [
+      [2, 6, 0, 34],
+      [16, 32, -8, 32],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
 };
 
 /**
@@ -298,6 +370,7 @@ export const materialTheme: Theme = {
   dark: darkColors,
   typography,
   elevation,
+  darkElevation,
   spacing: spacingScale,
   borderRadius: borderRadiusScale,
   duration: durationScale,
@@ -305,6 +378,48 @@ export const materialTheme: Theme = {
   glass: { ...opaqueGlass },
   ...baselineTokens(lightColors, darkColors),
   shadowColor: { light: 'rgb(0 0 0)', dark: 'rgb(0 0 0)' },
+  // Tonal ladder: ground < panel < control < raised in dark. Light recesses the
+  // filled control into the white panel (M3 filled field) and lifts overlays.
+  surfaces: {
+    light: {
+      ground: lightColors.background,
+      panel: lightColors.surface,
+      control: lightColors.surfaceContainerHigh,
+      raised: lightColors.surfaceContainerLowest,
+      sunken: '#eef1f6',
+      overlay: lightColors.scrim,
+    },
+    dark: {
+      ground: darkColors.background,
+      panel: darkColors.surface,
+      control: darkColors.surfaceContainerHigh,
+      raised: darkColors.surfaceContainerHighest,
+      sunken: darkColors.surfaceContainerLowest,
+      overlay: darkColors.scrim,
+    },
+  },
+  hairlines: {
+    light: hairlineMix(10, 30, 'none'),
+    dark: hairlineMix(10, 30, darkInsetHighlight(0.05)),
+  },
+  // M3 state layers.
+  states: {
+    hover: '0.08',
+    pressed: '0.12',
+    selected: '0.12',
+    focus: '0.12',
+    dragged: '0.16',
+    disabled: '0.38',
+  },
+  // Filled controls separate by tier, not by an edge.
+  controls: {
+    radius: 'var(--smrt-radius-md)',
+    radiusSmall: 'var(--smrt-radius-sm)',
+    height: '2.75rem',
+    heightSmall: '2.25rem',
+    weight: '500',
+    border: '1px solid transparent',
+  },
   fontFamily: '"Google Sans", "Roboto", system-ui, -apple-system, sans-serif',
 };
 
