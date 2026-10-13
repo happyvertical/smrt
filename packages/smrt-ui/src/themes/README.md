@@ -705,6 +705,36 @@ The former `--smrt-glass-border-opacity` and `--smrt-glass-background-opacity`
 tokens, and the ThemeProvider-local `--smrt-glass-surface`/`--smrt-glass-border`,
 were folded into the glass surface colours above.
 
+### Typography
+
+`themes/styles/base.css` (import once at the app entry) maps headings to type roles
+inside `@layer smrt.structure`, scoped under `body` and `.smrt-theme-root`, so presets'
+display faces reach plain markup. Hosts restyle with unlayered CSS.
+
+| Element | Role |
+| --- | --- |
+| `h1` | `display-small` |
+| `h2` | `headline-large` |
+| `h3` | `headline-medium` |
+| `h4` | `headline-small` |
+| `h5` | `title-large` |
+| `h6` | `title-medium` |
+
+Each heading takes `font-family`, `font-size`, `line-height`, `font-weight` and
+`letter-spacing` from `--smrt-typography-<role>-*`, and a `margin-block` from
+`--smrt-spacing-*` (first children lose the top margin). Utilities
+`.smrt-{display,headline,title,body,label}-{large,medium,small}` apply the same five
+properties to any element.
+
+Tabular figures: the root sets `font-feature-settings: var(--smrt-font-feature-settings)`,
+and `table`, `time`, `[data-smrt-component="DataTable"]`, `[data-smrt-component="Badge"]`
+and `.smrt-tabular` set `font-variant-numeric: tabular-nums`.
+
+Preset rhythm: display tracking tightens with size (about -0.02em at display, -0.01em at
+headline, 0 at title), labels weigh 500 (Day Shift keeps its documented bold B612 labels),
+body is 400, and display plus headline roles use the preset's display face where it has one
+(smrt: Space Grotesk; Day Shift: its documented stack).
+
 ## Advanced Usage
 
 ### Build-Time Theming

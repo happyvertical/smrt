@@ -154,3 +154,7 @@ Shell motion (track transitions, list flips, view transitions, theme crossfade) 
 ## Premium baseline token vocabulary
 
 See the table in [src/themes/README.md](../src/themes/README.md#premium-baseline-token-vocabulary): surface ladder, hairlines, state layers, shadow colour, control geometry, focus ring, native chrome, glass and motion/typography tokens. Themes define them; components consume them and use a component-prefixed name () that falls back to the theme token for per-variant overrides, because the required-tokens scanner drops any name a component defines on its own root.
+
+## Typography
+
+Headings, role utilities (`.smrt-display-large` ... `.smrt-label-small`) and tabular figures live in `base.css`; see [Typography](../src/themes/README.md#typography).
