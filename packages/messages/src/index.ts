@@ -154,6 +154,7 @@ export type {
   MessagingEndpointOptions,
   PersonaMessageRouteOptions,
   ProviderType,
+  SendEmailAttachment,
   SendEmailOptions,
   SendMessageOptions,
   SendPersonaMessageOptions,

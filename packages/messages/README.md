@@ -14,6 +14,7 @@ pnpm add @happyvertical/smrt-messages
 
 ```typescript
 import {
+  AttachmentCollection,
   Email, EmailCollection,
   EmailAccount, EmailAccountCollection,
   EmailSender,
@@ -47,6 +48,25 @@ const result = await email.send();
 if (!result.success) {
   await email.retrySend();
 }
+
+// Attach files: stored `Attachment` rows are read through
+// `Attachment.readContent()` at send time, and bytes rendered on demand go in
+// `send({ attachments })`. Both reach the transport together; a stored file
+// that cannot be read fails the send (sendStatus 'failed', sendError set)
+// instead of being dropped.
+const attachments = await AttachmentCollection.create({ db });
+await attachments.create({
+  messageId: email.id,
+  filename: 'PO-1042.pdf',
+  contentType: 'application/pdf',
+  size: pdfBytes.length,
+  filePath: '/data/po/PO-1042.pdf',
+});
+await email.send({
+  attachments: [
+    { filename: 'terms.txt', contentType: 'text/plain', content: termsBytes },
+  ],
+});
 
 // Query messages across all channels via base collection
 const messages = await MessageCollection.create({ db });
@@ -120,6 +140,17 @@ await messaging.send({
   personaId,
   channel: 'telegram', // optional; default route otherwise
   body: 'The scheduled report is ready.',
+});
+
+// Email routes also take send-time attachments; any other route rejects them.
+await messaging.send({
+  personaId,
+  channel: 'email',
+  subject: 'Weekly report',
+  body: 'The report is attached.',
+  attachments: [
+    { filename: 'report.pdf', contentType: 'application/pdf', content: pdf },
+  ],
 });
 ```
 
