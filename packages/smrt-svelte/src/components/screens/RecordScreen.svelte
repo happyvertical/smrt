@@ -310,7 +310,7 @@ function cancel(): void {
   <section class="smrt-record-screen__sheet" data-smrt-component="RecordScreen">
     <PhoneSheet open={editing} title={editTitle} onclose={cancel} variant="page">
       {#if editing}
-        {@render editForm()}
+        <div class="smrt-record-screen__sheet-body">{@render editForm()}</div>
       {/if}
     </PhoneSheet>
   </section>
@@ -381,6 +381,10 @@ function cancel(): void {
   }
   .smrt-record-screen__sheet > :global(*) {
     pointer-events: auto;
+  }
+  /* The sheet body is edge to edge; the form gets the page gutter. */
+  .smrt-record-screen__sheet-body {
+    padding: var(--smrt-spacing-md, 1rem);
   }
   @keyframes smrt-record-screen-in {
     from {
