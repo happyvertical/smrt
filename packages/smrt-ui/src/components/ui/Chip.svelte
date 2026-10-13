@@ -190,5 +190,10 @@ const {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .chip.selected { border-color: Highlight; outline: 2px solid Highlight; outline-offset: -3px; }
+    .chip.disabled { opacity: 1; color: GrayText; border-color: GrayText; }
+  }
 }
 </style>

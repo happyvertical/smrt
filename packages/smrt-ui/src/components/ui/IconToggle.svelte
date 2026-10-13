@@ -138,5 +138,9 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     text-align: center;
     font-variant-numeric: tabular-nums;
   }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .icon-toggle.pressed { background: Highlight; color: HighlightText; border-color: Highlight; outline: 2px solid CanvasText; outline-offset: -4px; }
+  }
 }
 </style>

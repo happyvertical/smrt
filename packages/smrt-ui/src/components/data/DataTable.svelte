@@ -2351,5 +2351,10 @@ $effect(() => {
   .data-table-container--narrow .data-table { table-layout: fixed; }
   .data-table-container--narrow .data-table__cell { white-space: normal; overflow-wrap: anywhere; }
   .data-table-container--narrow .data-table__sort-button { max-width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .data-table__row--selected, .data-table__row--selected .data-table__cell--pinned-start, .data-table__row--selected .data-table__cell--pinned-end { background: Canvas; }
+    .data-table__row--selected { outline: 2px solid Highlight; outline-offset: -2px; }
+  }
 }
 </style>
