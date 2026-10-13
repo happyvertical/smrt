@@ -3,6 +3,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -65,6 +66,31 @@ describe('ShellSettingsPage', () => {
     expect(
       screen.getByRole('link', { name: 'Sign out' }).getAttribute('href'),
     ).toBe('/logout');
+  });
+
+  it('awaits an async sign-out: busy while pending, no double submit', async () => {
+    let resolve!: () => void;
+    const onSignOut = vi.fn(() => new Promise<void>((r) => (resolve = r)));
+    render(Harness, { onSignOut });
+    const button = screen.getByRole('button', { name: 'Sign out' });
+    await fireEvent.click(button);
+    await fireEvent.click(button);
+    expect(onSignOut).toHaveBeenCalledOnce();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button).toBeDisabled();
+    resolve();
+    await waitFor(() => expect(button).not.toHaveAttribute('aria-busy', 'true'));
+  });
+
+  it('shows an inline error in the Account section when sign-out rejects', async () => {
+    const onSignOut = vi.fn().mockRejectedValue(new Error('nope'));
+    render(Harness, { onSignOut });
+    await fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't sign out. Try again.",
+    );
+    expect(part('account')?.contains(screen.getByRole('alert'))).toBe(true);
+    expect(screen.getByRole('button', { name: 'Sign out' })).not.toBeDisabled();
   });
 
   it('hides the keyboard shortcuts section when hotkeys and edge toggles are off', () => {

@@ -1,5 +1,5 @@
 import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import WorkspaceAccountMenu from '../admin-shell/WorkspaceAccountMenu.svelte';
@@ -167,5 +167,56 @@ describe('WorkspaceAccountMenu', () => {
     });
     await user.click(screen.getByRole('button', { name: /Open account menu/ }));
     await expectNoA11yViolations(container);
+  });
+
+  describe('async sign-out', () => {
+    const open = async (onSignOut: () => void | Promise<void>) => {
+      const user = userEvent.setup();
+      render(WorkspaceAccountMenu, { props: { userName: 'Ada', onSignOut } });
+      await user.click(
+        screen.getByRole('button', { name: /Open account menu/ }),
+      );
+      return user;
+    };
+
+    it('shows a busy, disabled item while pending and closes on success', async () => {
+      let resolve!: () => void;
+      const onSignOut = vi.fn(() => new Promise<void>((r) => (resolve = r)));
+      const user = await open(onSignOut);
+      await user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
+      const item = screen.getByRole('menuitem', { name: 'Sign out' });
+      expect(item).toHaveAttribute('aria-busy', 'true');
+      expect(item).toBeDisabled();
+      resolve();
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(onSignOut).toHaveBeenCalledOnce();
+    });
+
+    it('ignores a second activation while pending', async () => {
+      const onSignOut = vi.fn(() => new Promise<void>(() => {}));
+      const user = await open(onSignOut);
+      const item = screen.getByRole('menuitem', { name: 'Sign out' });
+      await user.dblClick(item);
+      await user.click(item);
+      expect(onSignOut).toHaveBeenCalledOnce();
+    });
+
+    it('stays open with an inline error on rejection and can retry', async () => {
+      const onSignOut = vi
+        .fn<() => Promise<void>>()
+        .mockRejectedValueOnce(new Error('network'))
+        .mockResolvedValueOnce(undefined);
+      const user = await open(onSignOut);
+      await user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        "Couldn't sign out. Try again.",
+      );
+      const item = screen.getByRole('menuitem', { name: 'Sign out' });
+      expect(item).not.toBeDisabled();
+      expect(item).not.toHaveAttribute('aria-busy');
+      await user.click(item);
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(onSignOut).toHaveBeenCalledTimes(2);
+    });
   });
 });

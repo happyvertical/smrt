@@ -112,8 +112,12 @@ interface Props {
    * default slot (users can still move it in the layout editor).
    */
   accountMenu?: AppShellAccountMenu;
-  /** Called when the account menu's Sign out is chosen (wins over `signOutHref`). */
-  onSignOut?: () => void;
+  /**
+   * Called when the account menu's Sign out is chosen (wins over
+   * `signOutHref`). May be async: the menu awaits it, shows a busy state, and
+   * on rejection stays open with an inline error.
+   */
+  onSignOut?: () => void | Promise<void>;
   /**
    * Where the account menu's Sign out link goes when there is no `onSignOut`.
    * A link is a GET: never point it at the runtime's POST-only `/sign-out`

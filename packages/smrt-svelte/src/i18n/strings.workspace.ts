@@ -135,6 +135,7 @@ export const M = defineMessages({
   'ui.shell_settings.account_email': 'Email',
   'ui.shell_settings.account_signed_out': 'You are not signed in.',
   'ui.shell_settings.sign_out': 'Sign out',
+  'ui.shell_settings.sign_out_failed': "Couldn't sign out. Try again.",
   'ui.shell_settings.layout': 'Layout',
   'ui.shell_settings.hide': 'Hide',
   'ui.shell_settings.show': 'Show',
