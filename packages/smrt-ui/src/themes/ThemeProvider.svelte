@@ -5,6 +5,7 @@ import { SMRT_CASCADE_LAYERS_CSS } from '../styles/layers.js';
 import { setThemeContext, type ThemeContext } from './context.svelte.js';
 import { derivePrimaryOverrides } from './create-theme.js';
 import { generateThemeVariables } from './css-generator.js';
+import { FORCED_COLORS_TOKENS } from './forced-colors.js';
 import { availablePresets, getTheme, isValidPreset } from './registry.js';
 import type {
   ColorScheme,
@@ -188,6 +189,14 @@ const styleString = $derived.by(() => {
     declarations.push(
       `--smrt-control-target-min: ${config.density === 'touch' ? 'var(--smrt-touch-target-min)' : '0px'}`,
     );
+  }
+
+  // Forced colors (#3908): system palette beats every preset, runtime theme and
+  // primaryColor value; explicit `overrides` still win below.
+  if (resolvedContrast === 'forced') {
+    for (const [key, value] of Object.entries(FORCED_COLORS_TOKENS)) {
+      declarations.push(`${key}: ${value}`);
+    }
   }
 
   // Apply custom overrides

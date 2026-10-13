@@ -257,3 +257,104 @@ time,
   }
 }
 }
+
+/*
+ * Forced colors (#3908). Token level: Windows High Contrast / `forced-colors:
+ * active` maps the theme onto the system palette. These two token blocks are
+ * deliberately UNLAYERED: preset stylesheets declare their tokens unlayered on
+ * `[data-theme][data-color-scheme]`, and an unlayered rule always beats a
+ * layered one, so a layered override would never apply. `:is(html,
+ * .smrt-theme-root)` raises specificity above the preset block and covers the
+ * document root and the ThemeProvider root. The same values ship as
+ * `FORCED_COLORS_TOKENS` (src/themes/forced-colors.ts): ThemeProvider appends
+ * them inline so runtime themes cannot win; a unit test keeps both in step.
+ * `[data-forced-colors]` is stamped by ThemeProvider and `themeScript()`;
+ * tests can set it without media emulation. Components only consume tokens.
+ */
+@media (forced-colors: active) {
+:is(html, .smrt-theme-root)[data-theme][data-color-scheme] {
+  --smrt-hairline-color: CanvasText;
+  --smrt-hairline-strong-color: CanvasText;
+  --smrt-hairline: 1px solid CanvasText;
+  --smrt-hairline-strong: 1px solid CanvasText;
+  --smrt-inset-highlight: inset 0 0 0 0 transparent;
+  --smrt-elevation-0: 0 0 0 0 transparent;
+  --smrt-elevation-1: 0 0 0 0 transparent;
+  --smrt-elevation-2: 0 0 0 0 transparent;
+  --smrt-elevation-3: 0 0 0 0 transparent;
+  --smrt-elevation-4: 0 0 0 0 transparent;
+  --smrt-elevation-5: 0 0 0 0 transparent;
+  --smrt-focus-ring-color: Highlight;
+  --smrt-focus-ring-width: 3px;
+  --smrt-focus-ring-offset: 2px;
+  --smrt-glass-blur: 0px;
+  --smrt-glass-saturation: 100%;
+  --smrt-glass-surface: Canvas;
+  --smrt-glass-surface-strong: Canvas;
+  --smrt-glass-border: CanvasText;
+  --smrt-surface-overlay: Canvas;
+  --smrt-state-hover: 0;
+  --smrt-state-pressed: 0;
+  --smrt-state-selected: 0;
+  --smrt-state-focus: 0;
+  --smrt-state-dragged: 0;
+  --smrt-accent-color: Highlight;
+  --smrt-caret-color: CanvasText;
+  --smrt-selection-background: Highlight;
+  --smrt-selection-color: HighlightText;
+  --smrt-scrollbar-thumb: CanvasText;
+  --smrt-scrollbar-track: Canvas;
+}
+}
+
+:is(html, .smrt-theme-root)[data-forced-colors][data-theme][data-color-scheme] {
+  --smrt-hairline-color: CanvasText;
+  --smrt-hairline-strong-color: CanvasText;
+  --smrt-hairline: 1px solid CanvasText;
+  --smrt-hairline-strong: 1px solid CanvasText;
+  --smrt-inset-highlight: inset 0 0 0 0 transparent;
+  --smrt-elevation-0: 0 0 0 0 transparent;
+  --smrt-elevation-1: 0 0 0 0 transparent;
+  --smrt-elevation-2: 0 0 0 0 transparent;
+  --smrt-elevation-3: 0 0 0 0 transparent;
+  --smrt-elevation-4: 0 0 0 0 transparent;
+  --smrt-elevation-5: 0 0 0 0 transparent;
+  --smrt-focus-ring-color: Highlight;
+  --smrt-focus-ring-width: 3px;
+  --smrt-focus-ring-offset: 2px;
+  --smrt-glass-blur: 0px;
+  --smrt-glass-saturation: 100%;
+  --smrt-glass-surface: Canvas;
+  --smrt-glass-surface-strong: Canvas;
+  --smrt-glass-border: CanvasText;
+  --smrt-surface-overlay: Canvas;
+  --smrt-state-hover: 0;
+  --smrt-state-pressed: 0;
+  --smrt-state-selected: 0;
+  --smrt-state-focus: 0;
+  --smrt-state-dragged: 0;
+  --smrt-accent-color: Highlight;
+  --smrt-caret-color: CanvasText;
+  --smrt-selection-background: Highlight;
+  --smrt-selection-color: HighlightText;
+  --smrt-scrollbar-thumb: CanvasText;
+  --smrt-scrollbar-track: Canvas;
+}
+
+/*
+ * A translucent state-layer fill cannot be seen in forced colors, so hover is
+ * an outline instead. :where() keeps specificity at zero: every component's own
+ * focus, selected or outline rule still wins.
+ */
+@layer smrt.theme {
+@media (forced-colors: active) {
+  :where(button, [role="button"], [role="tab"], [role="menuitem"], [role="option"], a[href], summary, label):where(:hover):where(:not(:disabled, [aria-disabled="true"])) {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+
+  :where(:disabled, [aria-disabled="true"]) {
+    color: GrayText;
+  }
+}
+}
