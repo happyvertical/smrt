@@ -787,7 +787,9 @@ export class ReportScheduleRunner extends EventEmitter {
   async poll(): Promise<void> {
     if (!this.db) return;
     const result = await this.db.query(
-      `SELECT * FROM ${REPORT_SCHEDULES_TABLE}
+      `SELECT CAST(id AS TEXT) AS id, CAST(tenant_id AS TEXT) AS tenant_id,
+              report_class, cron, mode, trigger, queue, priority, timeout
+         FROM ${REPORT_SCHEDULES_TABLE}
         WHERE enabled = true
           AND status = 'active'
           AND next_run <= ?
