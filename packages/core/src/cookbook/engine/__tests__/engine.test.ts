@@ -282,6 +282,50 @@ describe('commands', () => {
     expect(restored.cookbook().theme?.fontFamily).toBeUndefined();
   });
 
+  it('round-trips radius, density and contrast through set_theme', () => {
+    const e = engine();
+    const input = {
+      preset: 'glass',
+      borderRadius: 'xl',
+      density: 'touch',
+      contrast: 'more',
+    } as const;
+    ok(e.run({ name: 'set_theme', input }));
+    expect(e.cookbook().theme).toEqual(input);
+    expect(e.snapshot().theme).toMatchObject({
+      borderRadius: 'xl',
+      density: 'touch',
+      contrast: 'more',
+    });
+    const retry = e.run({ name: 'set_theme', input });
+    expect(ok(retry)).toBeTruthy();
+    expect(e.cookbook().theme).toEqual(input);
+    ok(e.run({ name: 'set_theme', input: { colorScheme: 'dark' } }));
+    expect(e.cookbook().theme).toMatchObject({ ...input, colorScheme: 'dark' });
+    const exported = ok(e.run({ name: 'export_cookbook', input: {} })).data as {
+      text: string;
+    };
+    expect(JSON.parse(exported.text).theme).toMatchObject(input);
+    const restored = createCookbookEngine({ catalog, state: e.state() });
+    expect(restored.cookbook().theme).toMatchObject(input);
+    ok(restored.run({ name: 'reset_theme', input: {} }));
+    expect(restored.cookbook().theme).toBeUndefined();
+  });
+
+  it('rejects radius, density and contrast values outside their enums', () => {
+    const e = engine();
+    for (const input of [
+      { borderRadius: 'huge' },
+      { density: 'compact' },
+      { contrast: 'high' },
+    ]) {
+      const result = e.run({ name: 'set_theme', input });
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.error.code).toBe('invalid_input');
+    }
+    expect(e.cookbook().theme).toBeUndefined();
+  });
+
   it('clearing the font also clears a legacy brand font, keeping the colour', () => {
     const e = engine();
     ok(
@@ -945,6 +989,10 @@ describe('JSON Schemas', () => {
       ['set_theme', { primary: '#abcdef' }],
       ['set_theme', { primary: 'red' }],
       ['set_theme', { preset: 'neon' }],
+      ['set_theme', { borderRadius: 'xl', density: 'touch', contrast: 'more' }],
+      ['set_theme', { borderRadius: 'huge' }],
+      ['set_theme', { density: 'compact' }],
+      ['set_theme', { contrast: 'high' }],
       ['set_policy', { model: 'a', field: 'b', visibility: null }],
       ['set_policy', { model: 'a', field: 'b', visibility: 'x' }],
       ['rename_item', { id: 'a', label: null }],
@@ -1067,6 +1115,14 @@ describe('schema portability', () => {
     const font = tool('set_theme').properties.fontFamily;
     expect(font).toMatchObject({ type: ['string', 'null'], minLength: 1 });
     expect(font).not.toHaveProperty('anyOf');
+    const props = tool('set_theme').properties;
+    expect(props.borderRadius).toMatchObject({
+      enum: ['none', 'sm', 'md', 'lg', 'xl', 'full'],
+    });
+    expect(props.density).toMatchObject({ enum: ['comfortable', 'touch'] });
+    expect(props.contrast).toMatchObject({
+      enum: ['auto', 'standard', 'more'],
+    });
   });
 });
 

@@ -264,6 +264,9 @@ export function createCookbookEngine(
         preset: doc.theme?.preset ?? null,
         primary: doc.theme?.custom?.primary ?? null,
         colorScheme: doc.theme?.colorScheme ?? DEFAULT_COLOR_SCHEME,
+        borderRadius: doc.theme?.borderRadius ?? null,
+        density: doc.theme?.density ?? null,
+        contrast: doc.theme?.contrast ?? null,
       },
       sections: buildNav(catalog, doc).map((s) => ({
         id: s.id,
