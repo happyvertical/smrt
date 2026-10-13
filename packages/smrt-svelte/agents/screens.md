@@ -103,8 +103,8 @@ customizable `OverviewGrid` of related records below, and the edit form as a
 **mode** of the same screen. Props are `RecordScreenProps` in `types.ts`.
 
 - **Body = `recordOverview(definition, relations)`** unless an `overview` is
-  passed: one `metric` count and one `records` panel (newest five) per
-  `children` relation, persisted **per model kind** under
+  passed: one `records` panel (newest five, span 2) per `children` relation
+  (`{ metrics: true }` pairs a `metric` count with each), persisted **per model kind** under
   `recordOverviewId(objectRef)` (`detail:acme.shop.Customer`) — see
   [overview-surfaces.md](overview-surfaces.md#record-overviews-recordts). The
   grid renders `presentation="plain"`, follows the shell's layout editor
@@ -123,10 +123,13 @@ customizable `OverviewGrid` of related records below, and the edit form as a
   reloads every panel; the registry and overview are fixed at mount, so
   remount (`{#key}`) to change the model kind — `RecipeScreens` keys on
   `definition.objectRef`.
-- **"View all"** is `viewAllHref(relation)`, rendered in the panel heading
-  (the grid's `heading` snippet) for any `records` / `metric` widget whose
-  `model` + `field` + `filter: 'parent'` match a `children` relation,
-  user-added ones included; `undefined` renders no link.
+- **One heading per related panel.** A `records` widget whose `model` +
+  `field` + `filter: 'parent'` match a `children` relation (user-added ones
+  included) is headed `Orders · 3` (the loader's `total`, else its row count)
+  with the panel's only "View all": `viewAllHref(relation)`, else the loaded
+  `href`. The screen strips `total` / `href` from that widget's data, so the
+  body never repeats them. A `metric` widget keeps the plain title and no
+  link (its number links when its data has an `href`).
 - **`mode: 'edit'`** keeps the detail rendered and adds `EditForm`
   (`showHeader={false}`, keyed by record id, `fieldErrors` / `error` /
   `submitting` / `onsave` as `EditFormProps`): on desktop (`min-width: 48rem`,

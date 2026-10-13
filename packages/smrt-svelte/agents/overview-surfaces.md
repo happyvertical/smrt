@@ -378,12 +378,17 @@ and the person can undo the change.
 
 ## Record overviews (`record.ts`)
 
-`recordOverview(definition, relations, { id? })` (both entries) is the default
-overview of a record view: per `children` relation of the model
-(`deriveScreenRelations` in [screens.md](screens.md#relations)) one `metric`
-count (span 1) and one `records` panel (span 3, newest five), both with
-`filter: 'parent'` and `field` set to the child's FK, titled by the relation
-label; `models` confines added widgets to the child models and `allowed` is
+`recordOverview(definition, relations, { id?, metrics? })` (both entries) is
+the default overview of a record view: per `children` relation of the model
+(`deriveScreenRelations` in [screens.md](screens.md#relations)) one `records`
+panel (span `RECORD_OVERVIEW_PANEL_SPAN` = 2, newest five) with `filter:
+'parent'` and `field` set to the child's FK, titled by the relation label
+(`RecordScreen` adds its count and View all to the heading); `metrics: true`
+puts a `metric` count (span 1) before each panel, which then spans 3.
+Default widget ids come from the relation (`records-Order-customerId`,
+`count-Order-customerId`; a `-2` suffix tells apart two that fold alike), not
+their position, so a host that narrows the defaults to the models one app has
+keeps every id, and added widgets (`w<n>`) never collide with a hidden default; `models` confines added widgets to the child models and `allowed` is
 `RECORD_OVERVIEW_ALLOWED` (`records`, `metric`, `chart`, `note`). The id
 defaults to `recordOverviewId(definition.objectRef)` — `detail:<model>` with
 `@`, `/` and `:` folded to dots (`detail:acme.shop.Customer`), because a

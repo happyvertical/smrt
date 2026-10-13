@@ -68,6 +68,7 @@ export {
 export {
   RECORD_OVERVIEW_ALLOWED,
   RECORD_OVERVIEW_LIMIT,
+  RECORD_OVERVIEW_PANEL_SPAN,
   type RecordOverviewOptions,
   recordOverview,
   recordOverviewId,

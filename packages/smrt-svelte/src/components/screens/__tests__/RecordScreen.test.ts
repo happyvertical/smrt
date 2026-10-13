@@ -2,6 +2,7 @@ import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y
 import { render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { recordOverview } from '../../overview/record.js';
 import type { WidgetLoadContext } from '../../overview/types.js';
 import RecordScreen from '../RecordScreen.svelte';
 import type { ScreenRelation } from '../relations.js';
@@ -85,18 +86,21 @@ describe('RecordScreen (view)', () => {
       `/users/${taskRows[0].ownerId}`,
     );
 
-    // one metric + one records panel for the single children relation
+    // one records panel for the single children relation, headed with its
+    // count and its one View all; the body repeats neither
     expect(await screen.findByText('Comment on t-1')).toBeInTheDocument();
     const headings = screen.getAllByRole('heading', { level: 2 });
-    expect(
-      headings.filter((h) => h.textContent?.includes('Comments')),
-    ).toHaveLength(2);
+    const panels = headings.filter((h) => h.textContent?.includes('Comments'));
+    expect(panels).toHaveLength(1);
+    expect(panels[0]).toHaveTextContent(/Comments · 3/);
     const viewAll = screen.getAllByRole('link', { name: 'View all' });
-    expect(viewAll).toHaveLength(2);
+    expect(viewAll).toHaveLength(1);
     expect(viewAll[0]).toHaveAttribute('href', '/tasks/t-1/taskId');
+    expect(panels[0]).toContainElement(viewAll[0]);
+    expect(screen.queryByText('3 in total')).toBeNull();
 
     // every loader saw the record context and the host capabilities
-    expect(seen).toHaveLength(2);
+    expect(seen).toHaveLength(1);
     for (const ctx of seen) {
       expect(ctx.record).toEqual({ model: '@acme/tasks:Task', id: 't-1' });
       expect(ctx.overviewId).toBe('detail:acme.tasks.Task');
@@ -105,6 +109,31 @@ describe('RecordScreen (view)', () => {
     }
     expect(screen.queryByRole('form')).toBeNull();
     expect(document.querySelector('[data-testid="phone-sheet"]')).toBeNull();
+  });
+
+  it("falls back to the loader's href for View all, and keeps a paired metric without one", async () => {
+    mount({
+      viewAllHref: undefined,
+      overview: recordOverview(taskDefinition, relations, { metrics: true }),
+      loaders: {
+        metric: () => ({ value: 3, href: '/comments?task=t-1' }),
+        records: () => ({
+          rows: [{ id: 'c1', title: 'First comment' }],
+          total: 1,
+          href: '/comments?task=t-1',
+        }),
+      },
+    });
+    expect(await screen.findByText('First comment')).toBeInTheDocument();
+    const panels = screen
+      .getAllByRole('heading', { level: 2 })
+      .filter((h) => h.textContent?.includes('Comments'));
+    expect(panels).toHaveLength(2);
+    const viewAll = screen.getAllByRole('link', { name: 'View all' });
+    expect(viewAll).toHaveLength(1);
+    expect(viewAll[0]).toHaveAttribute('href', '/comments?task=t-1');
+    expect(panels[0]).not.toContainElement(viewAll[0]);
+    expect(panels[1]).toContainElement(viewAll[0]);
   });
 
   it('reloads the panels when the record changes', async () => {

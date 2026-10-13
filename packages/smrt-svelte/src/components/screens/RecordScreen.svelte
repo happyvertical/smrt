@@ -7,6 +7,13 @@
  * opens `EditForm` beside the header on desktop (`min-width: 48rem`) and in
  * a full-screen `PhoneSheet` on phones. Closing the form calls `oncancel`.
  *
+ * A related-records panel (a `records` widget with `filter: 'parent'` on one
+ * of the `children` relations) is headed `Orders · 3` with its one
+ * "View all" link (`viewAllHref`, else the loaded data's `href`); the panel
+ * body then lists the rows only, so the count and the link never repeat. A
+ * paired `metric` widget (`recordOverview(..., { metrics: true })`, or one a
+ * person adds) shows its number under the plain relation title.
+ *
  * The widget loaders run in the browser with the record context
  * (`ctx.record = { model, id }`); the host owns the data access. The
  * registry and overview are fixed at mount: remount (`{#key}`) to change the
@@ -18,11 +25,13 @@ import { onDestroy, untrack } from 'svelte';
 import { M } from '../../i18n/strings.screens.js';
 import { createOverview } from '../overview/controller.svelte.js';
 import type { OverviewModelChoice } from '../overview/grid-types.js';
+import { safeHref } from '../overview/markdown.js';
 import OverviewGrid from '../overview/OverviewGrid.svelte';
 import { recordOverview } from '../overview/record.js';
 import { createWidgetRegistry } from '../overview/registry.js';
 import type { OverviewWidget, WidgetLoadContext } from '../overview/types.js';
 import { registerCoreWidgets } from '../overview/widgets/core.js';
+import { isRecord } from '../overview/widgets/data.js';
 import DetailScreen from './DetailScreen.svelte';
 import EditForm from './EditForm.svelte';
 import { screenTitles } from './fields.js';
@@ -94,6 +103,38 @@ const overviewDefinition = untrack(
 );
 const hostOwned = untrack(() => override !== undefined);
 
+const children_ = $derived(relations.filter((r) => r.kind === 'children'));
+
+/** What a related-records panel's heading shows: its count and View all. */
+interface PanelSummary {
+  count: number | null;
+  href: string | null;
+}
+let summaries = $state<Record<string, PanelSummary>>({});
+
+/**
+ * A related-records panel's data, with its count and "View all" moved into
+ * the heading: the widget body gets the rows only (no `total` / `href`
+ * footer), so each panel carries exactly one View all.
+ */
+function headPanel(widget: OverviewWidget, data: unknown): unknown {
+  if (widget.type !== 'records') return data;
+  const relation = relationOf(widget);
+  if (!relation || !isRecord(data)) return data;
+  const { total, href, ...rest } = data;
+  const rows = Array.isArray(rest.rows) ? rest.rows.length : null;
+  summaries = {
+    ...summaries,
+    [widget.id]: {
+      count: typeof total === 'number' && Number.isFinite(total) ? total : rows,
+      href:
+        viewAllHref?.(relation) ??
+        (typeof href === 'string' ? safeHref(href) : null),
+    },
+  };
+  return rest;
+}
+
 const controller = createOverview({
   definition: overviewDefinition,
   registry: widgetRegistry,
@@ -113,7 +154,9 @@ const controller = createOverview({
           : locale,
       record: { model: definition.objectRef, id: recordId },
     };
-    return Promise.resolve(load(widget.options, ctx));
+    return Promise.resolve(load(widget.options, ctx)).then((data) =>
+      headPanel(widget, data),
+    );
   },
 });
 onDestroy(() => controller.destroy());
@@ -136,7 +179,6 @@ $effect(() => {
   untrack(() => controller.sync());
 });
 
-const children_ = $derived(relations.filter((r) => r.kind === 'children'));
 const modelChoices = $derived.by((): OverviewModelChoice[] => {
   const out: OverviewModelChoice[] = [];
   for (const relation of children_) {
@@ -146,7 +188,7 @@ const modelChoices = $derived.by((): OverviewModelChoice[] => {
   return out;
 });
 
-/** The relation a related-records widget shows, for its "View all" link. */
+/** The `children` relation a parent-filtered widget shows, if any. */
 function relationOf(widget: OverviewWidget): ScreenRelation | undefined {
   const { filter, model, field } = widget.options;
   if (filter !== 'parent') return undefined;
@@ -178,12 +220,22 @@ function cancel(): void {
 </script>
 
 {#snippet widgetHeading(widget: OverviewWidget, widgetTitle: string)}
-  {@const relation = relationOf(widget)}
-  {@const href = relation ? viewAllHref?.(relation) : undefined}
-  <span class="smrt-record-screen__widget-title">{widgetTitle}</span>
-  {#if href}
-    <a class="smrt-record-screen__view-all" {href}>{t(M['ui.screens.view_all'])}</a>
-  {/if}
+  {@const panel =
+    widget.type === 'records' &&
+    relationOf(widget) &&
+    controller.entry(widget).status === 'ready'
+      ? summaries[widget.id]
+      : undefined}
+  <span class="smrt-record-screen__widget-heading">
+    <span class="smrt-record-screen__widget-title">
+      {widgetTitle}{#if panel && panel.count !== null}<span class="smrt-record-screen__count"
+          >{' · '}{new Intl.NumberFormat(locale).format(panel.count)}</span
+        >{/if}
+    </span>
+    {#if panel?.href}
+      <a class="smrt-record-screen__view-all" href={panel.href}>{t(M['ui.screens.view_all'])}</a>
+    {/if}
+  </span>
 {/snippet}
 
 {#snippet editForm()}
@@ -282,10 +334,20 @@ function cancel(): void {
   .smrt-record-screen__related {
     min-inline-size: 0;
   }
+  .smrt-record-screen__widget-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-sm, 0.5rem);
+  }
+  .smrt-record-screen__count {
+    color: var(--smrt-color-on-surface-variant);
+    font-variant-numeric: tabular-nums;
+  }
   .smrt-record-screen__view-all {
-    margin-inline-start: var(--smrt-spacing-sm, 0.5rem);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: normal;
+    font-weight: var(--smrt-typography-weight-normal, 400);
   }
   .smrt-record-screen__aside {
     display: flex;
