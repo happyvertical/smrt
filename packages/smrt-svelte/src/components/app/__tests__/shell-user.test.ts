@@ -27,3 +27,22 @@ describe('AppShell user prop type', () => {
     expect(true).toBe(true);
   });
 });
+
+type SignOutProp = ComponentProps<typeof AppShell>['onSignOut'];
+
+describe('AppShell onSignOut prop type', () => {
+  it('accepts every callback a `() => void` prop accepted, plus async ones', () => {
+    const cache = new Map<string, number>();
+    // Review finding on #3860: a value-returning sync callback compiled
+    // against `() => void` and must keep compiling.
+    expectTypeOf(() => cache.delete('session')).toExtend<
+      NonNullable<SignOutProp>
+    >();
+    expectTypeOf(() => {}).toExtend<NonNullable<SignOutProp>>();
+    expectTypeOf(async () => {}).toExtend<NonNullable<SignOutProp>>();
+    expectTypeOf(() => Promise.resolve(true)).toExtend<
+      NonNullable<SignOutProp>
+    >();
+    expect(true).toBe(true);
+  });
+});

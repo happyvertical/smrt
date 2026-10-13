@@ -11,7 +11,7 @@ interface Props {
    */
   signOutHref?: string;
   /** Called by the sign-out control instead of following `signOutHref`; may be async (busy while pending, inline error on rejection). */
-  onSignOut?: () => void | Promise<void>;
+  onSignOut?: () => unknown;
 }
 
 const { signOutHref, onSignOut }: Props = $props();

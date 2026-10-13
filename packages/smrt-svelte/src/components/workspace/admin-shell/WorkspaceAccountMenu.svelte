@@ -54,7 +54,7 @@ export interface Props {
    * pending, the menu closes on success, and stays open with an inline error
    * when it rejects.
    */
-  onSignOut?: () => void | Promise<void>;
+  onSignOut?: () => unknown;
 }
 
 let {
@@ -166,7 +166,15 @@ async function runSignOut() {
   try {
     // A synchronous callback closes the menu in the same turn.
     const pending = onSignOut();
-    if (pending && typeof pending.then === 'function') await pending;
+    // Any return value is accepted (a plain `() => void` callback may return
+    // something); only a thenable is awaited.
+    if (
+      typeof pending === 'object' &&
+      pending !== null &&
+      typeof (pending as PromiseLike<unknown>).then === 'function'
+    ) {
+      await pending;
+    }
   } catch {
     signOutFailed = true;
     signingOut = false;

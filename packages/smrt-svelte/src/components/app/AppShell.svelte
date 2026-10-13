@@ -118,7 +118,7 @@ interface Props {
    * `signOutHref`). May be async: the menu awaits it, shows a busy state, and
    * on rejection stays open with an inline error.
    */
-  onSignOut?: () => void | Promise<void>;
+  onSignOut?: () => unknown;
   /**
    * Where the account menu's Sign out link goes when there is no `onSignOut`.
    * A link is a GET: never point it at the runtime's POST-only `/sign-out`

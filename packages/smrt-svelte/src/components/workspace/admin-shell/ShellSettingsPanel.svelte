@@ -27,7 +27,7 @@ interface Props {
    * return a promise: the control is busy and disabled while it is pending;
    * a rejection shows an inline error and leaves the section as it was.
    */
-  onSignOut?: () => void | Promise<void>;
+  onSignOut?: () => unknown;
 }
 
 const {
