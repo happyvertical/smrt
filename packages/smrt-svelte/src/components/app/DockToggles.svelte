@@ -182,5 +182,10 @@ function press(event: MouseEvent, toggle: DockToggle): void {
     opacity: var(--smrt-state-disabled);
     cursor: default;
   }
+  /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
+  @media (forced-colors: active) {
+    .smrt-dock-toggles__button.active { background: Highlight; color: HighlightText; border-color: Highlight; }
+    .smrt-dock-toggles__button[aria-disabled='true'] { opacity: 1; color: GrayText; }
+  }
 }
 </style>

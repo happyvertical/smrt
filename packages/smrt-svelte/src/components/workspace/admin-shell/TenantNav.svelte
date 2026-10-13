@@ -491,5 +491,13 @@ function fallbackIcon(label: string): string {
     white-space: nowrap;
     border: 0;
   }
+  /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
+  @media (forced-colors: active) {
+    .smrt-tenant-nav a[aria-current='page'],
+    .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active { background: Canvas; color: CanvasText; font-weight: 700; }
+    .smrt-tenant-nav a[aria-current='page']::before,
+    .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active::before { background: Highlight; }
+    .smrt-tenant-nav a[aria-disabled='true'] { opacity: 1; color: GrayText; }
+  }
 }
 </style>
