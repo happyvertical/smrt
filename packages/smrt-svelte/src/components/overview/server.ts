@@ -90,3 +90,16 @@ export {
   validateWidgetOptions,
 } from './schema.js';
 export * from './types.js';
+export {
+  DEFAULT_STATUS_TONES,
+  formatColumnsOption,
+  formatRecordCell,
+  lineItemColumns,
+  parseColumnsOption,
+  RECORD_TABLE_MAX_COLUMNS,
+  RECORD_TABLE_MAX_ROWS,
+  type RecordCellContext,
+  relatedColumns,
+  statusLabel,
+  statusTone,
+} from './widgets/record-table.js';

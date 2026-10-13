@@ -57,7 +57,10 @@ export {
 export {
   type ChartWidgetData,
   type MetricWidgetData,
+  type RecordListColumn,
+  type RecordListRow,
   type RecordListWidgetData,
+  type RecordStatusTone,
   type ShortcutNavSection,
   type ShortcutsWidgetData,
   shortcutsFromNav,

@@ -5,6 +5,7 @@
  * source without this package depending on any of them.
  */
 
+import type { FieldRole } from '../../screens/roles.js';
 import type { WidgetValueFormat } from '../format.js';
 import { safeHref } from '../markdown.js';
 
@@ -29,19 +30,65 @@ export interface ChartWidgetData {
   href?: string;
 }
 
-/** `records`: the rows to list. The loader chooses the title field. */
+/** Badge tone of a status value (`statusTone`). */
+export type RecordStatusTone =
+  | 'default'
+  | 'primary'
+  | 'success'
+  | 'warning'
+  | 'error'
+  | 'info';
+
+/**
+ * One column of a records table: the cell key (a field name of the listed
+ * model) and how it renders, by role: `identifier` monospace, `status` a
+ * badge, `date` a date without a time, `money` integer minor units as
+ * currency, `quantity` a number; anything else as text. `money` and
+ * `quantity` columns are right-aligned and summed in the footer.
+ */
+export interface RecordListColumn {
+  key: string;
+  label: string;
+  role?: FieldRole;
+}
+
+/** One listed record. `cells` carries the column values, keyed by column key. */
+export interface RecordListRow {
+  id: string;
+  title: string;
+  subtitle?: string;
+  meta?: string;
+  href?: string;
+  /**
+   * Column values (`columns`), raw: money in integer minor units, dates as
+   * ISO strings (or preformatted text), a party as its display label.
+   */
+  cells?: Record<string, unknown>;
+}
+
+/**
+ * `records`: the rows to list. The loader chooses the title field. With
+ * columns (the widget's `columns` option or `columns` here) the rows render
+ * as a table of `cells`; without, as the title list.
+ */
 export interface RecordListWidgetData {
-  rows: {
-    id: string;
-    title: string;
-    subtitle?: string;
-    meta?: string;
-    href?: string;
-  }[];
+  rows: RecordListRow[];
   /** Total matching records, when more than `rows`. */
   total?: number;
   /** Link to the full list. */
   href?: string;
+  /** Column labels and roles; keys not listed here get a humanized label. */
+  columns?: RecordListColumn[];
+  /** ISO 4217 code of the money cells (default USD). */
+  currency?: string;
+  /** Time zone a date cell is shown in (default UTC, so SSR and the browser agree). */
+  timeZone?: string;
+  /**
+   * Footer values over EVERY matching record, keyed by column key (money in
+   * minor units). Without them the footer sums the loaded rows, and only
+   * when they are all the matching records (`total` absent or not more).
+   */
+  summaries?: Record<string, number>;
 }
 
 /** `shortcuts`: cards that link to pages. */

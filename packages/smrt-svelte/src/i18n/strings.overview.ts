@@ -109,6 +109,12 @@ export const M = defineMessages({
   'ui.overview.opt.direction_desc': 'Newest or largest first',
   'ui.overview.opt.direction_asc': 'Oldest or smallest first',
   'ui.overview.opt.limit': 'Rows',
+  'ui.overview.opt.columns': 'Columns',
+  'ui.overview.opt.columns_help':
+    'Field names to show as columns, separated by commas. Leave empty for a plain list.',
+  'ui.overview.opt.summaries': 'Totals row',
+  'ui.overview.opt.summaries_help':
+    'Count the rows and add up money and quantity columns. On by default when there are such columns.',
   'ui.overview.opt.section': 'Section',
   'ui.overview.opt.section_help':
     'The navigation section whose pages are shown.',
@@ -125,6 +131,7 @@ export const M = defineMessages({
   'ui.overview.records.empty': 'No records to show.',
   'ui.overview.records.view_all': 'View all',
   'ui.overview.records.total': '{count} in total',
+  'ui.overview.table.total': 'Total',
   'ui.overview.shortcuts.empty': 'No pages to show.',
 
   // Cookbook section page

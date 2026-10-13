@@ -56,6 +56,25 @@ const fieldField: WidgetOptionField = {
   label: 'ui.overview.opt.field',
   help: 'ui.overview.opt.field_help',
 };
+/**
+ * Table columns: field names, comma-separated (`number,status,issuedAt`).
+ * Options are flat JSON primitives, so the list travels as text;
+ * `parseColumnsOption` reads it.
+ */
+const columnsField: WidgetOptionField = {
+  key: 'columns',
+  type: 'text',
+  label: 'ui.overview.opt.columns',
+  help: 'ui.overview.opt.columns_help',
+  maxLength: 400,
+};
+/** Totals row; unset means on when a money or quantity column exists. */
+const summariesField: WidgetOptionField = {
+  key: 'summaries',
+  type: 'boolean',
+  label: 'ui.overview.opt.summaries',
+  help: 'ui.overview.opt.summaries_help',
+};
 const measureField = (choices: readonly string[]): WidgetOptionField => ({
   key: 'measure',
   type: 'enum',
@@ -138,6 +157,9 @@ export function createChartWidget(
 /**
  * Record list: the latest or top records of a model. `field` names the FK on
  * the model for `filter: 'parent'` (a record view's related-records panel).
+ * `columns` (comma-separated field names) renders the rows as a table of
+ * their `cells` with a totals footer (`summaries`); the loader receives the
+ * option and fills `cells` for those keys.
  */
 export function createRecordListWidget(
   load: WidgetLoad<RecordListWidgetData>,
@@ -171,6 +193,8 @@ export function createRecordListWidget(
         max: 20,
       },
       filterField,
+      columnsField,
+      summariesField,
     ],
     component: RecordListWidget,
     load,
