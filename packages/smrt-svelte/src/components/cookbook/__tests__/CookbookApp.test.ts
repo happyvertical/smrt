@@ -17,6 +17,7 @@ import {
   vi,
 } from 'vitest';
 import { narrowCatalog } from '../catalog.js';
+import type { ShortcutEntry } from '../../overview/widgets/data.js';
 import type { CookbookCatalog } from '../types.js';
 import Harness from './app-harness.svelte';
 import { readFixture, workspaceCatalog } from './workspace-catalog.js';
@@ -120,5 +121,65 @@ describe('CookbookApp', () => {
   it('says so when the section is not in the app', async () => {
     render(Harness, { cookbook, catalog, sectionId: 'custom:missing' });
     expect(await screen.findByText('Section not found')).toBeTruthy();
+  });
+
+  describe('section page presentation (#3888)', () => {
+    const shortcuts = () =>
+      document.querySelector('[data-smrt-component="ShortcutsWidget"]');
+
+    it('draws shortcuts plain by default', async () => {
+      render(Harness, { cookbook, catalog, sectionId: 'custom:shop' });
+      await waitFor(() => expect(shortcuts()).toBeTruthy());
+      expect(shortcuts()?.getAttribute('data-presentation')).toBe('plain');
+      expect(
+        document
+          .querySelector('[data-smrt-component="OverviewGrid"]')
+          ?.getAttribute('data-presentation'),
+      ).toBe('plain');
+    });
+
+    it('keeps the framed look with presentation="card"', async () => {
+      render(Harness, {
+        cookbook,
+        catalog,
+        sectionId: 'custom:shop',
+        presentation: 'card',
+      });
+      await waitFor(() => expect(shortcuts()).toBeTruthy());
+      expect(shortcuts()?.getAttribute('data-presentation')).toBe('card');
+      expect(
+        document
+          .querySelector('[data-smrt-component="OverviewGrid"]')
+          ?.getAttribute('data-presentation'),
+      ).toBe('card');
+    });
+
+    it('renders the heading snippet in place of the default header', async () => {
+      render(Harness, {
+        cookbook,
+        catalog,
+        sectionId: 'custom:shop',
+        customHeading: true,
+      });
+      expect((await screen.findByTestId('custom-heading')).textContent).toBe(
+        'Custom Shop',
+      );
+      expect(document.querySelector('.cookbook-section > header')).toBeNull();
+    });
+
+    it('shows host-supplied shortcut counts through the shell path', async () => {
+      render(Harness, {
+        cookbook,
+        catalog,
+        sectionId: 'custom:shop',
+        loaders: {
+          shortcuts: async (_ctx: unknown, defaults: ShortcutEntry[]) =>
+            defaults.map((entry) => ({ ...entry, count: 7 })),
+        },
+      });
+      await waitFor(() =>
+        expect(screen.getAllByText('7 records').length).toBeGreaterThan(0),
+      );
+    });
   });
 });

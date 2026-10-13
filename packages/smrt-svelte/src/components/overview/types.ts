@@ -194,6 +194,12 @@ export interface WidgetComponentProps<Data = unknown> {
   locale: string;
   /** The host's renderer for icon names that are not built in. */
   iconComponent?: Component<{ name: string; size?: number }>;
+  /**
+   * How the grid frames tiles right now (`card` when editing, whatever the
+   * grid's `presentation` is otherwise). Widgets that draw their own frame
+   * drop it under `plain`.
+   */
+  presentation?: 'card' | 'plain';
 }
 
 /**
