@@ -63,29 +63,30 @@ const {
    * The `outlined` variant always draws its outline.
    */
   .card {
-    background: var(--smrt-card-background, var(--smrt-color-surface));
+    background: var(--smrt-card-background, var(--smrt-surface-panel));
     border-radius: var(--smrt-radius-medium);
     transition: all var(--smrt-duration-short2) var(--smrt-easing-standard);
   }
 
   /* Variants */
   .default {
-    border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant));
-    box-shadow: var(--smrt-card-shadow, none);
+    border: var(--smrt-card-border, var(--smrt-hairline));
+    box-shadow: var(--smrt-card-shadow, var(--smrt-inset-highlight));
   }
 
   .outlined {
-    border: 2px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
+    box-shadow: var(--smrt-inset-highlight);
   }
 
   .elevated {
-    border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant));
-    box-shadow: var(--smrt-elevation-2);
+    border: var(--smrt-card-border, var(--smrt-hairline));
+    box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-2);
   }
 
   /* Hoverable state */
   .hoverable:hover {
-    box-shadow: var(--smrt-elevation-3);
+    box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3);
     transform: translateY(-2px);
   }
 
@@ -109,7 +110,7 @@ const {
   /* Header */
   .card-header {
     padding: var(--smrt-spacing-6);
-    border-bottom: var(--smrt-card-divider, 1px solid var(--smrt-color-outline-variant));
+    border-bottom: var(--smrt-card-divider, var(--smrt-hairline));
   }
 
   .padding-sm .card-header {
@@ -123,8 +124,8 @@ const {
   /* Footer */
   .card-footer {
     padding: var(--smrt-spacing-6);
-    border-top: var(--smrt-card-divider, 1px solid var(--smrt-color-outline-variant));
-    background: var(--smrt-color-surface-container-low);
+    border-top: var(--smrt-card-divider, var(--smrt-hairline));
+    background: var(--smrt-surface-sunken);
     border-bottom-left-radius: var(--smrt-radius-medium);
     border-bottom-right-radius: var(--smrt-radius-medium);
   }

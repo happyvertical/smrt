@@ -98,12 +98,14 @@ onDestroy(() => {
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-3);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-surface-container);
+    background: var(--smrt-glass-surface-strong);
+    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
     color: var(--smrt-color-on-surface);
     padding: var(--smrt-spacing-3);
-    box-shadow: var(--smrt-elevation-2);
+    box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight);
   }
 
   .smrt-activity-toast div {

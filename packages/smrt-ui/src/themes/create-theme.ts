@@ -4,7 +4,13 @@
  * Helper functions for creating custom themes that match the SMRT theme system.
  */
 
-import { generateTheme, hexToRgb, rgbToHex } from '../utils/theme/color.js';
+import {
+  generateTheme,
+  getContrastRatio,
+  hexToRgb,
+  rgbToHex,
+} from '../utils/theme/color.js';
+import { baselineTokens, opaqueGlass } from './derive.js';
 import {
   hasCustomTheme,
   registerCustomTheme,
@@ -44,8 +50,18 @@ export interface CreateThemeOptions {
   elevation?: Partial<ElevationScale>;
   /** Custom easing curves (optional) */
   easing?: Partial<EasingScale>;
-  /** Glass effects (optional) */
+  /** Glass effects (optional; defaults to opaque) */
   glass?: GlassEffects;
+  /** Optional overrides for the premium-baseline token families */
+  surfaces?: Theme['surfaces'];
+  hairlines?: Theme['hairlines'];
+  states?: Theme['states'];
+  shadowColor?: Theme['shadowColor'];
+  controls?: Theme['controls'];
+  focus?: Theme['focus'];
+  native?: Theme['native'];
+  schemeDuration?: string;
+  fontFeatureSettings?: string;
   /** Font family */
   fontFamily?: string;
   /** Base theme to extend (copies all tokens as starting point) */
@@ -55,10 +71,7 @@ export interface CreateThemeOptions {
 /**
  * Default color palette structure with neutral grays
  */
-const defaultColorStructure: Omit<
-  ColorPalette,
-  'primary' | 'background' | keyof GlassEffects
-> = {
+const defaultColorStructure: Omit<ColorPalette, 'primary' | 'background'> = {
   // These will be generated from the primary color
   onPrimary: '#ffffff',
   primaryContainer: '',
@@ -71,6 +84,10 @@ const defaultColorStructure: Omit<
   onTertiary: '#ffffff',
   tertiaryContainer: '#ede9fe',
   onTertiaryContainer: '#3b0764',
+  info: '#8b5cf6',
+  onInfo: '#ffffff',
+  infoContainer: '#ede9fe',
+  onInfoContainer: '#3b0764',
   error: '#dc2626',
   onError: '#ffffff',
   errorContainer: '#fee2e2',
@@ -297,6 +314,33 @@ function mergeTypography(custom?: Partial<TypographyScale>): TypographyScale {
 }
 
 /**
+ * The info family follows an explicitly supplied tertiary unless the caller
+ * also supplied a distinct info hue; otherwise it keeps the extended preset's
+ * (or the default) info. Presets without a distinct info hue define it as their
+ * tertiary, so a custom tertiary carries the Information status with it.
+ */
+function withInfoFromTertiary(
+  palette: ColorPalette,
+  partial: Partial<ColorPalette> | undefined,
+): ColorPalette {
+  if (partial?.tertiary === undefined) return palette;
+  return {
+    ...palette,
+    info: partial.info ?? palette.tertiary,
+    onInfo: partial.onInfo ?? palette.onTertiary,
+    infoContainer: partial.infoContainer ?? palette.tertiaryContainer,
+    onInfoContainer: partial.onInfoContainer ?? palette.onTertiaryContainer,
+  };
+}
+
+/** Drop undefined entries so they cannot clobber derived defaults. */
+function definedOnly<T extends object>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, v]) => v !== undefined),
+  ) as Partial<T>;
+}
+
+/**
  * Create a custom theme
  *
  * @example
@@ -335,25 +379,34 @@ export function createTheme(options: CreateThemeOptions): Theme {
   const baseTheme = extend ? getBaseThemeSync(extend) : null;
 
   // Build light colors
-  const lightColors: ColorPalette = {
-    ...defaultColorStructure,
-    ...baseTheme?.light,
-    ...lightPartial,
-    // Generate derived colors. The container is the primary at ~12.5% alpha,
-    // expressed as 8-digit hex. Normalize the primary to canonical 6-hex first
-    // so a 3-digit hex or rgb()/rgba() primary can't yield invalid CSS like
-    // `rgb(0,122,255)20` or `#f6320` (#1586).
-    primaryContainer:
-      lightPartial.primaryContainer ||
-      `${normalizeHex(lightPartial.primary)}20`,
-    onPrimaryContainer: lightPartial.onPrimaryContainer || lightPartial.primary,
-    inversePrimary: lightPartial.inversePrimary || lightPartial.primary,
-  } as ColorPalette;
+  const lightColors: ColorPalette = withInfoFromTertiary(
+    {
+      ...defaultColorStructure,
+      ...baseTheme?.light,
+      ...lightPartial,
+      // Generate derived colors. The container is the primary at ~12.5% alpha,
+      // expressed as 8-digit hex. Normalize the primary to canonical 6-hex first
+      // so a 3-digit hex or rgb()/rgba() primary can't yield invalid CSS like
+      // `rgb(0,122,255)20` or `#f6320` (#1586).
+      primaryContainer:
+        lightPartial.primaryContainer ||
+        `${normalizeHex(lightPartial.primary)}20`,
+      onPrimaryContainer:
+        lightPartial.onPrimaryContainer || lightPartial.primary,
+      inversePrimary: lightPartial.inversePrimary || lightPartial.primary,
+    } as ColorPalette,
+    lightPartial,
+  );
 
   // Build dark colors
   const darkColors: ColorPalette = darkPartial
-    ? ({ ...lightColors, ...darkPartial } as ColorPalette)
+    ? withInfoFromTertiary(
+        { ...lightColors, ...darkPartial } as ColorPalette,
+        darkPartial,
+      )
     : generateDarkColors(lightColors);
+
+  const baseline = baselineTokens(lightColors, darkColors);
 
   return {
     id: id as ThemePreset,
@@ -372,7 +425,22 @@ export function createTheme(options: CreateThemeOptions): Theme {
       ...(baseTheme?.easing || materialEasing),
       ...options.easing,
     } as EasingScale,
-    glass: options.glass,
+    glass: options.glass ?? baseTheme?.glass ?? { ...opaqueGlass },
+    ...baseline,
+    ...definedOnly({
+      surfaces: options.surfaces,
+      hairlines: options.hairlines,
+      states: options.states && { ...baseline.states, ...options.states },
+      shadowColor: options.shadowColor,
+      controls: options.controls && {
+        ...baseline.controls,
+        ...options.controls,
+      },
+      focus: options.focus && { ...baseline.focus, ...options.focus },
+      native: options.native,
+      schemeDuration: options.schemeDuration,
+      fontFeatureSettings: options.fontFeatureSettings,
+    }),
     fontFamily:
       options.fontFamily || baseTheme?.fontFamily || 'system-ui, sans-serif',
   };
@@ -481,3 +549,52 @@ export function createThemeFromColor(
 }
 
 // Types are exported from index.ts
+
+/**
+ * Derive the primary-dependent token overrides for a user-chosen primary colour
+ * in one resolved scheme, using the same derivation as `createThemeFromColor`
+ * (light: the colour itself with a ~12.5% container; dark: the tonal primary
+ * pair from `generateTheme`). `on-primary` is the higher-contrast of white and
+ * black on the final primary so an override never leaves it mismatched. Focus,
+ * accent, caret and selection tokens follow the primary via `var()`.
+ *
+ * Returns `--smrt-*` declarations; throws on an unparseable colour.
+ */
+export function derivePrimaryOverrides(
+  color: string,
+  scheme: 'light' | 'dark',
+): Record<string, string> {
+  const seed = normalizeHex(color);
+  let primary = seed;
+  let onPrimary: string;
+  let container = `${seed}20`;
+  let onContainer = seed;
+  if (scheme === 'dark') {
+    const tonal = generateTheme(seed, 'dark');
+    primary = tonal.primary;
+    onPrimary = tonal.onPrimary;
+    container = tonal.primaryContainer;
+    onContainer = tonal.onPrimaryContainer;
+  } else {
+    onPrimary = '#ffffff';
+  }
+  const bg = hexToRgb(primary);
+  const white = getContrastRatio(hexToRgb('#ffffff'), bg);
+  const black = getContrastRatio(hexToRgb('#000000'), bg);
+  const tonalOn = hexToRgb(onPrimary);
+  if (getContrastRatio(tonalOn, bg) < 4.5) {
+    onPrimary = white >= black ? '#ffffff' : '#000000';
+  }
+  return {
+    '--smrt-color-primary': primary,
+    '--smrt-color-on-primary': onPrimary,
+    '--smrt-color-primary-container': container,
+    '--smrt-color-on-primary-container': onContainer,
+    '--smrt-color-inverse-primary': seed,
+    '--smrt-focus-ring-color': 'var(--smrt-color-primary)',
+    '--smrt-accent-color': 'var(--smrt-color-primary)',
+    '--smrt-caret-color': 'var(--smrt-color-primary)',
+    '--smrt-selection-background': 'var(--smrt-color-primary-container)',
+    '--smrt-selection-color': 'var(--smrt-color-on-primary-container)',
+  };
+}

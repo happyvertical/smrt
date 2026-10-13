@@ -166,16 +166,46 @@ function handleClick(event: MouseEvent) {
     align-items: center;
     justify-content: center;
     gap: var(--smrt-spacing-2);
-    font-weight: var(--smrt-typography-body-medium-weight);
-    border-radius: var(--smrt-radius-medium);
+    position: relative;
+    font-weight: var(--smrt-control-weight);
+    border-radius: var(--smrt-control-radius);
     transition: all var(--smrt-duration-short2) var(--smrt-easing-standard);
     cursor: pointer;
     text-decoration: none;
     border: 1px solid transparent;
   }
 
+  /* One state layer for every variant: currentColor mixed at the theme's
+     state opacity. Per-variant tweaks use --smrt-button-state-* names. */
+  .button::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: transparent;
+    pointer-events: none;
+    transition: background-color var(--smrt-duration-short2) var(--smrt-easing-standard);
+  }
+
+  .button:hover:not(:disabled):not(.disabled)::after {
+    background: color-mix(
+      in srgb,
+      currentColor calc(var(--smrt-state-hover) * 100%),
+      transparent
+    );
+  }
+
+  .button:active:not(:disabled):not(.disabled)::after {
+    background: color-mix(
+      in srgb,
+      currentColor calc(var(--smrt-state-pressed) * 100%),
+      transparent
+    );
+  }
+
   /* Sizes */
   .sm {
+    border-radius: var(--smrt-control-radius-small);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     font-size: var(--smrt-typography-body-medium-size);
   }
@@ -196,47 +226,25 @@ function handleClick(event: MouseEvent) {
     color: var(--smrt-color-on-primary);
   }
 
-  /* M3 hover state layer: 8% of the on-color blended over the base, so the
-     button visibly darkens on hover instead of repeating its base color. */
-  .primary:hover:not(:disabled):not(.disabled) {
-    background: color-mix(
-      in srgb,
-      var(--smrt-color-on-primary) 8%,
-      var(--smrt-color-primary)
-    );
-  }
 
   .secondary {
-    background: var(--smrt-color-surface);
+    background: var(--smrt-surface-control);
     color: var(--smrt-color-primary);
     border-color: var(--smrt-color-primary);
   }
 
-  .secondary:hover:not(:disabled):not(.disabled) {
-    background: var(--smrt-color-primary-container);
-  }
 
   .ghost {
     background: transparent;
     color: var(--smrt-color-primary);
   }
 
-  .ghost:hover:not(:disabled):not(.disabled) {
-    background: var(--smrt-color-primary-container);
-  }
 
   .danger {
     background: var(--smrt-color-error);
     color: var(--smrt-color-on-error);
   }
 
-  .danger:hover:not(:disabled):not(.disabled) {
-    background: color-mix(
-      in srgb,
-      var(--smrt-color-on-error) 8%,
-      var(--smrt-color-error)
-    );
-  }
 
   /* Full width */
   .full-width {
@@ -289,15 +297,15 @@ function handleClick(event: MouseEvent) {
   /* Disabled state */
   .button:disabled,
   .button.disabled {
-    opacity: 0.5;
+    opacity: var(--smrt-state-disabled);
     cursor: not-allowed;
     pointer-events: none;
   }
 
   /* Focus state */
   .button:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 
   /* Phones: every size is at least a 44px touch target. */
@@ -316,6 +324,7 @@ function handleClick(event: MouseEvent) {
 
   .button[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .button[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .button { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+  .button { min-height: max(var(--smrt-control-height), var(--smrt-control-target-min, 0px)); min-width: var(--smrt-control-target-min, 0px); }
+  .button.sm { min-height: max(var(--smrt-control-height-small), var(--smrt-control-target-min, 0px)); }
 }
 </style>

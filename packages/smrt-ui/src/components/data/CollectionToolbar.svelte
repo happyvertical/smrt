@@ -278,7 +278,7 @@ onDestroy(() => surfaceRegistration?.cleanup());
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-2) 0; color: var(--smrt-color-on-surface); }
-  .toolbar--highlighted { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
+  .toolbar--highlighted { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .search { flex: 1 1 14rem; max-width: 24rem; }
   .filters, .actions, .bulk { display: flex; align-items: center; gap: var(--smrt-spacing-2); }
   .bulk { padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border-radius: var(--smrt-radius-small); background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); }

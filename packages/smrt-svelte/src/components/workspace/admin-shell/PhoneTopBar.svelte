@@ -61,8 +61,10 @@ const { t } = useI18n();
     box-sizing: border-box;
     block-size: var(--smrt-admin-shell-phone-top-size, 3.5rem);
     padding: 0 var(--smrt-spacing-2);
-    border-block-end: 1px solid var(--smrt-color-outline-variant);
-    background: var(--smrt-color-surface);
+    border-block-end: var(--smrt-hairline);
+    background: var(--smrt-glass-surface);
+    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
     color: var(--smrt-color-on-surface);
   }
 
@@ -78,12 +80,16 @@ const { t } = useI18n();
 
   .smrt-phone-top-bar__back:hover,
   .smrt-phone-top-bar__back:focus-visible {
-    background: var(--smrt-color-surface-container-high);
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+
+  .smrt-phone-top-bar__back:active {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
   }
 
   .smrt-phone-top-bar__back:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(-1 * var(--smrt-focus-ring-width));
   }
 
   .smrt-phone-top-bar__title {

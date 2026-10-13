@@ -211,7 +211,9 @@ test('form controls stay within their grid cells without a global box-sizing res
 
   await page.addStyleTag({
     content:
-      ':where(.preview-stage) input, :where(.preview-stage) select, :where(.preview-stage) textarea { box-sizing: content-box; }',
+      // Layered like a host reset: an unlayered rule would beat the
+      // components' own `smrt.theme` border-box and stop testing them.
+      '@layer smrt.reset { :where(.preview-stage) input, :where(.preview-stage) select, :where(.preview-stage) textarea { box-sizing: content-box; } }',
   });
 
   const stage = page.getByTestId('playground-preview-stage');

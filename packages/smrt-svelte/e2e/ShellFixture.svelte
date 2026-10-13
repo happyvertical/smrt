@@ -9,9 +9,13 @@ import { createShellState } from '../src/components/workspace/admin-shell/state.
 import TenantNav from '../src/components/workspace/admin-shell/TenantNav.svelte';
 import type { PanelState } from '../src/components/workspace/admin-shell/types.js';
 import WorkspaceAccountMenu from '../src/components/workspace/admin-shell/WorkspaceAccountMenu.svelte';
-import '@happyvertical/smrt-ui/themes/styles/smrt.css';
+import '@happyvertical/smrt-ui/themes/styles/all.css';
 
 const query = new URLSearchParams(window.location.search);
+// `?theme=glass|material|studio|smrt` and `?scheme=dark` pick the preset for the
+// per-preset screenshots; the default stays smrt light.
+const theme = query.get('theme') ?? 'smrt';
+const scheme = query.get('scheme') === 'dark' ? 'dark' : 'light';
 function panelInitial(name: string): PanelState {
   const value = query.get(name);
   return value === 'expanded' || value === 'hidden' ? value : 'collapsed';
@@ -57,6 +61,7 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
 {#snippet systemBar()}<SystemStatusChips {chips} />{/snippet}
 <svelte:window onhashchange={() => { tabCurrent = window.location.hash; }} />
 {#snippet assistantBody()}<input aria-label="Ask" />{/snippet}
+<div data-theme={theme} data-color-scheme={scheme}>
 {#if query.has('account-menu')}
 <AppShell title="Account fixture" nav={tabNav} currentHref="#queue" storageKey="account-menu-fixture"
   user={{ id: 'u1', email: 'ada@example.com', name: 'Ada Lovelace' } as never}
@@ -72,7 +77,6 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
   <p>Main content</p>
 </AppShell>
 {:else}
-<div data-theme="smrt" data-color-scheme="light">
 <AdminShell edgeToggles state={shell} title="Mobile shell fixture" storageKey="mobile-shell-fixture"
   header={query.has('header') ? shellHeader : undefined}
   homeHref={query.has('brand') ? '/home' : undefined} logoSrc={query.has('brand') ? 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"%3E%3Ccircle cx="16" cy="16" r="15"/%3E%3C/svg%3E' : undefined}
@@ -81,8 +85,8 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
   {#if signedOut}<p>Signed out callback</p>{/if}
   <Button onclick={() => shell.setPanelState('left', 'hidden')}>Hide navigation</Button>
 </AdminShell>
-</div>
 {/if}
+</div>
 
 <style>
   :global(body) { margin: 0; font-family: sans-serif; }

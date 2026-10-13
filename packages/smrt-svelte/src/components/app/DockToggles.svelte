@@ -89,11 +89,12 @@ function press(event: MouseEvent, toggle: DockToggle): void {
   .smrt-dock-toggles__button {
     display: inline-grid;
     place-items: center;
-    inline-size: 2.25rem;
-    block-size: 2.25rem;
+    position: relative;
+    inline-size: var(--smrt-control-height-small);
+    block-size: var(--smrt-control-height-small);
     padding: 0;
     border: 1px solid transparent;
-    border-radius: var(--smrt-radius-md, 0.5rem);
+    border-radius: var(--smrt-control-radius);
     background: transparent;
     color: var(--smrt-color-on-surface);
     cursor: pointer;
@@ -106,22 +107,37 @@ function press(event: MouseEvent, toggle: DockToggle): void {
     }
   }
 
-  .smrt-dock-toggles__button:hover {
-    background: var(--smrt-color-surface-container-high);
+  /* State layer over the button; the active container fill sits under it. */
+  .smrt-dock-toggles__button::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .smrt-dock-toggles__button:hover::after {
+    opacity: var(--smrt-state-hover);
+  }
+
+  .smrt-dock-toggles__button:active::after {
+    opacity: var(--smrt-state-pressed);
   }
 
   .smrt-dock-toggles__button:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 
   .smrt-dock-toggles__button.active {
-    background: var(--smrt-color-primary-container, var(--smrt-color-surface-container-high));
-    color: var(--smrt-color-on-primary-container, var(--smrt-color-primary));
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .smrt-dock-toggles__button[aria-disabled='true'] {
-    opacity: 0.5;
+    opacity: var(--smrt-state-disabled);
     cursor: default;
   }
 }

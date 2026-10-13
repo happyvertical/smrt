@@ -83,12 +83,18 @@ describe('theme CSS generator', () => {
     it('emits distinct dark-scheme elevation, not the light values', () => {
       const light = generateThemeVariables(studio, false);
       const dark = generateThemeVariables(studio, true);
-      // Level 1 is a white inset hairline in dark vs a tinted inset in light.
-      expect(dark['--smrt-elevation-1']).toContain('rgba(255, 255, 255');
-      expect(light['--smrt-elevation-1']).toContain('rgba(60, 64, 67');
-      expect(dark['--smrt-elevation-1']).not.toBe(light['--smrt-elevation-1']);
-      // Deeper black shadows above level 1.
-      expect(dark['--smrt-elevation-5']).toContain('rgba(0, 0, 0, 0.25)');
+      // Level 1 is the scheme's hairline inset in both (the hairline colour
+      // token differs per scheme); above it dark adds the inset highlight and
+      // carries its own, stronger black shadow alphas.
+      expect(dark['--smrt-elevation-1']).toBe(
+        'inset 0 0 0 1px var(--smrt-hairline-color)',
+      );
+      expect(light['--smrt-elevation-1']).toBe(dark['--smrt-elevation-1']);
+      expect(dark['--smrt-elevation-5']).toContain(
+        'var(--smrt-inset-highlight)',
+      );
+      expect(light['--smrt-elevation-5']).not.toContain('inset-highlight');
+      expect(dark['--smrt-elevation-5']).not.toBe(light['--smrt-elevation-5']);
     });
 
     it('matches every static preset CSS on colour values (drift guard)', () => {

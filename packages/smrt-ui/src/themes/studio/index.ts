@@ -6,9 +6,16 @@
  * clean lines, and a focus on content clarity.
  */
 
+import { baselineTokens, opaqueGlass } from '../derive.js';
 import {
   borderRadiusScale,
+  darkInsetHighlight,
   durationScale,
+  hairlineInset,
+  hairlineMix,
+  noInsetHighlight,
+  noShadow,
+  shadow,
   spacingScale,
   studioEasing,
 } from '../shared.js';
@@ -41,6 +48,12 @@ const lightColors: ColorPalette = {
   onTertiary: '#ffffff',
   tertiaryContainer: '#f3e8fd',
   onTertiaryContainer: '#6b12b8',
+
+  // Info - Shares the tertiary hue (no distinct info hue in this preset)
+  info: '#9334e6',
+  onInfo: '#ffffff',
+  infoContainer: '#f3e8fd',
+  onInfoContainer: '#6b12b8',
 
   // Error - Google red
   error: '#d93025',
@@ -118,6 +131,12 @@ const darkColors: ColorPalette = {
   tertiaryContainer: '#6b12b8',
   onTertiaryContainer: '#f3e8fd',
 
+  // Info - Shares the tertiary hue (no distinct info hue in this preset)
+  info: '#c58af9',
+  onInfo: '#3e1385',
+  infoContainer: '#6b12b8',
+  onInfoContainer: '#f3e8fd',
+
   // Error
   error: '#f28b82',
   onError: '#5c150c',
@@ -136,21 +155,21 @@ const darkColors: ColorPalette = {
   successContainer: '#137333',
   onSuccessContainer: '#e6f4ea',
 
-  // Surface - Near black
-  surface: '#0e0e0e',
+  // Surface - Cool flat greys; panel equals ground and is separated by a hairline
+  surface: '#131416',
   onSurface: '#e8eaed',
-  surfaceVariant: '#1f1f1f',
+  surfaceVariant: '#1c1d20',
   onSurfaceVariant: '#9aa0a6',
-  surfaceContainer: '#1f1f1f',
-  surfaceContainerLow: '#141414',
-  surfaceContainerHigh: '#2d2d2d',
-  surfaceContainerHighest: '#3c4043',
-  surfaceContainerLowest: '#0a0a0a',
-  surfaceDim: '#141414',
-  surfaceBright: '#2d2d2d',
+  surfaceContainer: '#1a1b1e',
+  surfaceContainerLow: '#16171a',
+  surfaceContainerHigh: '#202124',
+  surfaceContainerHighest: '#292a2d',
+  surfaceContainerLowest: '#0e0f10',
+  surfaceDim: '#0e0f10',
+  surfaceBright: '#2b2c2f',
 
   // Background
-  background: '#0e0e0e',
+  background: '#131416',
   onBackground: '#e8eaed',
 
   // Outline
@@ -176,35 +195,35 @@ const typography: TypographyScale = {
     size: '3rem',
     lineHeight: '1.1',
     weight: '400',
-    tracking: '-0.01em',
+    tracking: '-0.02em',
     fontFamily: 'var(--smrt-font-family)',
   },
   displayMedium: {
     size: '2.5rem',
     lineHeight: '1.15',
     weight: '400',
-    tracking: '-0.008em',
+    tracking: '-0.015em',
     fontFamily: 'var(--smrt-font-family)',
   },
   displaySmall: {
     size: '2rem',
     lineHeight: '1.2',
     weight: '400',
-    tracking: '-0.005em',
+    tracking: '-0.01em',
     fontFamily: 'var(--smrt-font-family)',
   },
   headlineLarge: {
     size: '1.75rem',
     lineHeight: '1.25',
     weight: '400',
-    tracking: '0',
+    tracking: '-0.01em',
     fontFamily: 'var(--smrt-font-family)',
   },
   headlineMedium: {
     size: '1.5rem',
     lineHeight: '1.3',
     weight: '400',
-    tracking: '0',
+    tracking: '-0.005em',
     fontFamily: 'var(--smrt-font-family)',
   },
   headlineSmall: {
@@ -260,14 +279,14 @@ const typography: TypographyScale = {
     size: '0.875rem',
     lineHeight: '1.5',
     weight: '500',
-    tracking: '0.02em',
+    tracking: '0.01em',
     fontFamily: 'var(--smrt-font-family)',
   },
   labelMedium: {
     size: '0.75rem',
     lineHeight: '1.5',
     weight: '500',
-    tracking: '0.025em',
+    tracking: '0.02em',
     fontFamily: 'var(--smrt-font-family)',
   },
   labelSmall: {
@@ -280,34 +299,68 @@ const typography: TypographyScale = {
 };
 
 /**
- * Studio elevation (light) - Minimal, subtle shadows
- * Flat design philosophy with only slight depth indication
+ * Studio elevation (light) — flat. Level 1 is the hairline itself; the rest are
+ * crisp two-layer shadows (tight contact, short ambient) so overlays separate
+ * without softness.
  */
 const elevation: ElevationScale = {
-  0: 'none',
-  1: 'inset 0 0 0 1px rgba(60, 64, 67, 0.08)',
-  2: '0 1px 2px 0 rgba(60, 64, 67, 0.08), 0 1px 3px 0 rgba(60, 64, 67, 0.04)',
-  3: '0 2px 4px 0 rgba(60, 64, 67, 0.1), 0 1px 2px 0 rgba(60, 64, 67, 0.06)',
-  4: '0 4px 8px 0 rgba(60, 64, 67, 0.1), 0 2px 4px 0 rgba(60, 64, 67, 0.06)',
-  5: '0 8px 16px 0 rgba(60, 64, 67, 0.12), 0 4px 8px 0 rgba(60, 64, 67, 0.06)',
+  0: noShadow,
+  1: hairlineInset,
+  2: shadow([
+    [1, 2, 0, 10],
+    [2, 4, -2, 8],
+  ]),
+  3: shadow([
+    [1, 2, 0, 12],
+    [4, 8, -3, 10],
+  ]),
+  4: shadow([
+    [2, 3, 0, 12],
+    [8, 16, -4, 12],
+  ]),
+  5: shadow([
+    [2, 4, 0, 14],
+    [16, 32, -8, 16],
+  ]),
 };
 
 /**
- * Studio elevation (dark) - Tuned for a near-black surface.
- *
- * The flat light shadows (tinted with the light surface color, very low alpha)
- * read as invisible on a dark surface, so dark mode uses a white inset hairline
- * at level 1 and deeper black shadows above it. Defining this here — rather than
- * only in the static `styles/studio.css` — keeps the JS ThemeProvider output and
- * the static dark CSS in lockstep (#1586).
+ * Studio elevation (dark) — the hairline at level 1, tighter shadows above it
+ * with the inset top highlight. Defined here (not only in the static
+ * `styles/studio.css`) so the JS ThemeProvider output and the static dark CSS
+ * stay in lockstep (#1586).
  */
 const darkElevation: ElevationScale = {
-  0: 'none',
-  1: 'inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
-  2: '0 1px 2px 0 rgba(0, 0, 0, 0.2), 0 1px 3px 0 rgba(0, 0, 0, 0.1)',
-  3: '0 2px 4px 0 rgba(0, 0, 0, 0.2), 0 1px 2px 0 rgba(0, 0, 0, 0.1)',
-  4: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 2px 4px 0 rgba(0, 0, 0, 0.1)',
-  5: '0 8px 16px 0 rgba(0, 0, 0, 0.25), 0 4px 8px 0 rgba(0, 0, 0, 0.1)',
+  0: noShadow,
+  1: hairlineInset,
+  2: shadow(
+    [
+      [1, 2, 0, 28],
+      [2, 4, -2, 20],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  3: shadow(
+    [
+      [1, 2, 0, 30],
+      [4, 8, -3, 24],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  4: shadow(
+    [
+      [2, 3, 0, 32],
+      [8, 16, -4, 28],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  5: shadow(
+    [
+      [2, 4, 0, 34],
+      [16, 32, -8, 32],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
 };
 
 /**
@@ -325,6 +378,49 @@ export const studioTheme: Theme = {
   borderRadius: borderRadiusScale,
   duration: durationScale,
   easing: studioEasing,
+  glass: { ...opaqueGlass },
+  ...baselineTokens(lightColors, darkColors),
+  shadowColor: { light: 'rgb(60 64 67)', dark: 'rgb(0 0 0)' },
+  // Flat: panel equals ground (a hairline separates them); controls sit a hair
+  // darker in light and a step lighter in dark; overlays are the highest tier.
+  surfaces: {
+    light: {
+      ground: lightColors.background,
+      panel: lightColors.surface,
+      control: '#f6f7f8',
+      raised: lightColors.surfaceContainerLowest,
+      sunken: lightColors.surfaceContainer,
+      overlay: lightColors.scrim,
+    },
+    dark: {
+      ground: darkColors.background,
+      panel: darkColors.surface,
+      control: '#1c1d20',
+      raised: darkColors.surfaceContainerHighest,
+      sunken: darkColors.surfaceContainerLowest,
+      overlay: darkColors.scrim,
+    },
+  },
+  hairlines: {
+    light: hairlineMix(12, 32, noInsetHighlight),
+    dark: hairlineMix(14, 32, darkInsetHighlight(0.05)),
+  },
+  states: {
+    hover: '0.06',
+    pressed: '0.10',
+    selected: '0.10',
+    focus: '0.10',
+    dragged: '0.14',
+    disabled: '0.38',
+  },
+  // Crisp: a 6px radius and a denser control height.
+  controls: {
+    radius: '0.375rem',
+    radiusSmall: 'var(--smrt-radius-sm)',
+    height: '2.5rem',
+    heightSmall: '2rem',
+    weight: '500',
+  },
   fontFamily: '"Google Sans Text", "Roboto", "Segoe UI", system-ui, sans-serif',
 };
 

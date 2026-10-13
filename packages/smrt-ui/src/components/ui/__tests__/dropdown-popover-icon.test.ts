@@ -138,7 +138,7 @@ describe('Popover icon variant', () => {
     );
     const css = source.slice(source.indexOf('<style>'));
     expect(css).toMatch(
-      /\.popover__trigger:focus-visible[^{]*\{ outline: 2px solid var\(--smrt-color-primary\)/,
+      /\.popover__trigger:focus-visible[^{]*\{ outline: var\(--smrt-focus-ring-width\) solid var\(--smrt-focus-ring-color\)/,
     );
     // No icon-specific outline override (a currentColor ring under 3:1).
     expect(css).not.toMatch(

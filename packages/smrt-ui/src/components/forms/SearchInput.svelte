@@ -196,8 +196,8 @@ onDestroy(cancel);
     color: var(--smrt-color-on-surface);
   }
   .search-input__clear:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
   /* Phones: full width. */
   @media (max-width: 48rem) {

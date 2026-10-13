@@ -496,8 +496,8 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   .smrt-nav-editor :global(.smrt-sortable) { gap: var(--smrt-spacing-1); }
   .smrt-nav-editor :global(.smrt-sortable__containers) { gap: var(--smrt-spacing-1); }
   .smrt-nav-editor :global(.smrt-sortable__container) { padding: 0; border: 0; background: transparent; gap: var(--smrt-spacing-1); }
-  .smrt-nav-editor :global(.smrt-sortable__item) { padding: 0; border: 0; border-radius: var(--smrt-radius-medium); background: transparent; }
-  .smrt-nav-editor :global(.smrt-sortable__item:hover) { background: var(--smrt-color-surface-container-high); }
+  .smrt-nav-editor :global(.smrt-sortable__item) { padding: 0; border: 0; border-radius: var(--smrt-control-radius); background: transparent; }
+  .smrt-nav-editor :global(.smrt-sortable__item:hover) { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); }
   .smrt-nav-editor :global(.smrt-sortable__items) { padding-inline-start: var(--smrt-spacing-3); min-block-size: 0; }
   .smrt-nav-editor :global(.smrt-sortable__header) { min-block-size: 0; }
   .smrt-nav-editor :global(.smrt-sortable__empty) { padding-block: 0; }
@@ -505,13 +505,13 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 
   .smrt-nav-editor__top { color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-small-font); text-transform: uppercase; letter-spacing: 0.04em; }
   .smrt-nav-editor__head { position: relative; flex: 1 1 auto; display: flex; align-items: center; gap: var(--smrt-spacing-1); min-inline-size: 0; }
-  .smrt-nav-editor__title { flex: 1 1 auto; min-inline-size: 0; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 0; border-radius: var(--smrt-radius-medium); background: transparent; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size); font-weight: var(--smrt-typography-weight-semibold); text-align: start; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .smrt-nav-editor__title:hover, .smrt-nav-editor__head[data-toolbar-open] .smrt-nav-editor__title { background: var(--smrt-color-surface-container-high); }
-  .smrt-nav-editor__title:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
+  .smrt-nav-editor__title { flex: 1 1 auto; min-inline-size: 0; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 0; border-radius: var(--smrt-control-radius); background: transparent; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size); font-weight: var(--smrt-typography-weight-semibold); text-align: start; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .smrt-nav-editor__title:hover, .smrt-nav-editor__head[data-toolbar-open] .smrt-nav-editor__title { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); }
+  .smrt-nav-editor__title:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .smrt-nav-editor__title--off { font-style: italic; font-weight: var(--smrt-typography-weight-normal, normal); }
   .smrt-nav-editor__title--hidden { opacity: 0.55; }
   .smrt-nav-editor__overlay { display: inline-flex; align-items: center; flex: 0 0 auto; }
-  .smrt-nav-editor__toolbar { position: absolute; inset-block-start: 100%; inset-inline: 0; z-index: 40; display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-1); padding: var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface-container-high); box-shadow: var(--smrt-elevation-2, 0 4px 12px rgb(0 0 0 / 0.2)); }
+  .smrt-nav-editor__toolbar { position: absolute; inset-block-start: 100%; inset-inline: 0; z-index: 40; display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-1); padding: var(--smrt-spacing-2); border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); background: var(--smrt-glass-surface-strong); -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation)); backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation)); box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight); }
   :global(.smrt-nav-editor__name) { flex: 1 1 100%; min-inline-size: 0; }
   .smrt-nav-editor__row { flex: 1 1 auto; min-inline-size: 0; display: flex; align-items: center; gap: var(--smrt-spacing-2); box-sizing: border-box; min-block-size: var(--smrt-control-target-min); padding: var(--smrt-spacing-2) var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }
   @media (max-width: 48rem) {

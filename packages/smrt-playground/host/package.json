@@ -8,10 +8,14 @@
     "build": "svelte-kit sync && vite build",
     "preview": "vite preview",
     "test:e2e": "pnpm exec playwright test -c playwright.config.ts",
+    "test:e2e:update-snapshots": "pnpm exec playwright test -c playwright.config.ts theme-gallery --update-snapshots",
     "test:e2e:headed": "pnpm exec playwright test -c playwright.config.ts --headed"
   },
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*",
+    "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/smrt-web": "workspace:*",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "2.69.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

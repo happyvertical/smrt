@@ -88,6 +88,7 @@ function onKeydown(event: KeyboardEvent) {
     color: var(--smrt-color-inverse-on-surface);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     line-height: var(--smrt-typography-body-small-line-height, 1.4);
+    box-shadow: var(--smrt-elevation-3);
     pointer-events: none;
   }
 
