@@ -1698,7 +1698,11 @@ describe('report refresh integration', () => {
     const finished = new Promise<void>((resolve) =>
       runner.once('schedule:failed', () => resolve()),
     );
-    tasks.emit('job:failed', job, new Error('refresh failed'));
+    tasks.emit(
+      'job:failed',
+      job,
+      new Error('refresh failed: password=synthetic-canary'),
+    );
     await finished;
     expect(
       (
@@ -1711,7 +1715,7 @@ describe('report refresh integration', () => {
         running_count: 0,
         run_count: 1,
         failure_count: 1,
-        last_error: 'refresh failed',
+        last_error: 'refresh failed: password=***REDACTED***',
       },
     ]);
     const counterFailure = new Error('counter update failed');

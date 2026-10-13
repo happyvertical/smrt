@@ -250,8 +250,13 @@ not manual.
 
 Declare `refresh: { schedule: '*/5 * * * *', tenantFanout: 'discover' }`
 on a tenant-scoped report to discover distinct non-null source tenants each
-scheduled run. Provision schedules with `ensureReportRefreshSchedules({ db,
-reports })`; an empty source does no work and never refreshes the global slice.
+scheduled run. Include scopes still present in the materialized table so a
+the next rebuild removes stale groups for tenants losing their final source row.
+Discovery preserves the configured refresh mode. Incremental reports still need
+a `fullRebuildSchedule` to catch hard deletions that do not advance a source
+watermark. Provision schedules with `ensureReportRefreshSchedules({ db,
+reports })`; no discovered scopes means no work, and discovery never refreshes
+the global slice.
 The worker uses the registered source/report tenant columns and its supplied
 maintenance executor. Discovery does not grant database privileges or widen a
 tenant-bound or manual job. Keep `tenantFanout: true` with explicit `tenantIds`
@@ -262,7 +267,8 @@ database, then call `const unbind = schedules.bindTaskRunner(tasks)` before
 starting them. This connects terminal job events to schedule counters, freeing
 the concurrency slot after success or failure. Repeated binding is idempotent;
 call `unbind()` on shutdown. Listen for `runner:error` to detect failed counter
-updates. Durable payload signing and execution-time authority checks remain
+updates. Persisted failure messages use the jobs package redaction policy.
+Durable payload signing and execution-time authority checks remain
 required; completion accounting uses the signed schedule identity.
 
 Repeated schedule provisioning inserts missing identities and preserves existing

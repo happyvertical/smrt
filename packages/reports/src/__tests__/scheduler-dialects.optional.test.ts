@@ -190,6 +190,26 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
           ['b', 40],
           ['global', 99],
         ]);
+        // A vanished source scope must still clear its materialized rows.
+        await db.query(`DELETE FROM ${SOURCE} WHERE tenant_id = $1`, TENANT_A);
+        expect(await run()).toMatchObject({
+          tenantResults: [
+            { tenantId: TENANT_A, rowCount: 0 },
+            { tenantId: TENANT_B },
+          ],
+        });
+        expect(
+          (await db.query(`SELECT category FROM ${REPORT} ORDER BY category`))
+            .rows,
+        ).toEqual([{ category: 'b' }, { category: 'global' }]);
+        await db.query(`DELETE FROM ${SOURCE}`);
+        expect(await run()).toMatchObject({
+          tenantResults: [{ tenantId: TENANT_B, rowCount: 0 }],
+        });
+        expect((await db.query(`SELECT category FROM ${REPORT}`)).rows).toEqual(
+          [{ category: 'global' }],
+        );
+        expect(await run()).toMatchObject({ rowCount: 0, tenantResults: [] });
       } finally {
         unregister();
         await db.query(`DROP TABLE IF EXISTS ${REPORT}`);

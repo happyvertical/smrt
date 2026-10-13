@@ -121,8 +121,10 @@ packages without one contain framework utilities or example/test decorators.
 
 ## Schedule lifecycle
 
-`tenantFanout: 'discover'` resolves non-null source tenants at execution time
-only for signed global scheduled maintenance. Empty discovery must not call
+`tenantFanout: 'discover'` resolves non-null tenants in the source and existing
+materialization at execution time only for signed global scheduled maintenance.
+Include materialized scopes so rebuilds clear groups after their last source
+row is deleted; discovery does not change incremental watermark semantics. Empty discovery must not call
 refresh with an empty tenant array, which would select the global slice.
 Schedule provisioning preserves existing state. Hosts bind terminal job events
 with `ReportScheduleRunner.bindTaskRunner()` and dispose the returned binding

@@ -18,6 +18,7 @@ import {
   getNextCronDate,
   isRunnerExecutionContext,
   type JobExecutionContext,
+  redactErrorMessage,
   type SmrtJob,
   SmrtJobCollection,
   type TaskRunner,
@@ -499,8 +500,20 @@ export class SmrtReportRefreshTask extends SmrtObject {
         }
         const column = validateColumnName(sourceTenant);
         const table = validateColumnName(definition.sourceTable);
+        const materializedName = ObjectRegistry.getTableName(
+          definition.reportClassName,
+        );
+        if (!materializedName)
+          throw new Error('Report table is not registered');
+        const materializedTable = validateColumnName(materializedName);
+        const materializedTenant = validateColumnName(reportTenant);
+        // Retain scopes with cached rows after their final source row disappears,
+        // so a rebuild can clear stale groups without touching the global slice.
         const result = await this.db.query(
-          `SELECT DISTINCT CAST(${column} AS TEXT) AS tenant_id FROM ${table} WHERE ${column} IS NOT NULL ORDER BY tenant_id`,
+          `SELECT CAST(${column} AS TEXT) AS tenant_id FROM ${table} WHERE ${column} IS NOT NULL
+           UNION
+           SELECT CAST(${materializedTenant} AS TEXT) AS tenant_id FROM ${materializedTable} WHERE ${materializedTenant} IS NOT NULL
+           ORDER BY tenant_id`,
         );
         tenantIds = result.rows.map((row) => {
           if (
@@ -857,7 +870,7 @@ export class ReportScheduleRunner extends EventEmitter {
       return;
     }
 
-    const safeError = errorMessage ?? 'Unknown error';
+    const safeError = redactErrorMessage(errorMessage ?? 'Unknown error');
     await this.db.query(
       `UPDATE ${REPORT_SCHEDULES_TABLE}
           SET running_count = CASE WHEN COALESCE(running_count, 0) > 0 THEN running_count - 1 ELSE 0 END,
