@@ -24,9 +24,13 @@ import type { AttachmentOptions } from '../types';
 function splitAbsolutePath(
   filePath: string,
 ): { dir: string; base: string } | null {
-  const absolute = filePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(filePath);
-  if (!absolute) return null;
-  const cut = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+  // A backslash separates segments only in a Windows path; in a POSIX path it
+  // is an ordinary filename character.
+  const windows = /^[A-Za-z]:[\\/]/.test(filePath);
+  if (!windows && !filePath.startsWith('/')) return null;
+  const cut = windows
+    ? Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
+    : filePath.lastIndexOf('/');
   const dir = filePath.slice(0, cut) || filePath.slice(0, cut + 1);
   return { dir, base: filePath.slice(cut + 1) };
 }

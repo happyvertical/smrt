@@ -245,6 +245,23 @@ describe('Email.send with stored attachments', () => {
     });
   });
 
+  it.skipIf(process.platform === 'win32')(
+    'reads a POSIX file whose name contains a backslash',
+    async () => {
+      const filePath = join(dir, 'report\\2026.pdf');
+      writeFileSync(filePath, PDF_BYTES);
+      const email = await makeEmail();
+      await storeAttachment(email.id ?? '', { filePath });
+
+      const result = await email.send();
+
+      expect(result.error).toBeUndefined();
+      expect(
+        sentPayload(client).attachments?.[0].content?.equals(PDF_BYTES),
+      ).toBe(true);
+    },
+  );
+
   it('sends stored rows first, then the send-time attachments', async () => {
     const filePath = join(dir, 'PO-1042.pdf');
     writeFileSync(filePath, PDF_BYTES);
