@@ -5,6 +5,7 @@
  */
 
 import { generateTheme, hexToRgb, rgbToHex } from '../utils/theme/color.js';
+import { baselineTokens, opaqueGlass } from './derive.js';
 import {
   hasCustomTheme,
   registerCustomTheme,
@@ -44,8 +45,18 @@ export interface CreateThemeOptions {
   elevation?: Partial<ElevationScale>;
   /** Custom easing curves (optional) */
   easing?: Partial<EasingScale>;
-  /** Glass effects (optional) */
+  /** Glass effects (optional; defaults to opaque) */
   glass?: GlassEffects;
+  /** Optional overrides for the premium-baseline token families */
+  surfaces?: Theme['surfaces'];
+  hairlines?: Theme['hairlines'];
+  states?: Theme['states'];
+  shadowColor?: Theme['shadowColor'];
+  controls?: Theme['controls'];
+  focus?: Theme['focus'];
+  native?: Theme['native'];
+  schemeDuration?: string;
+  fontFeatureSettings?: string;
   /** Font family */
   fontFamily?: string;
   /** Base theme to extend (copies all tokens as starting point) */
@@ -55,10 +66,7 @@ export interface CreateThemeOptions {
 /**
  * Default color palette structure with neutral grays
  */
-const defaultColorStructure: Omit<
-  ColorPalette,
-  'primary' | 'background' | keyof GlassEffects
-> = {
+const defaultColorStructure: Omit<ColorPalette, 'primary' | 'background'> = {
   // These will be generated from the primary color
   onPrimary: '#ffffff',
   primaryContainer: '',
@@ -296,6 +304,13 @@ function mergeTypography(custom?: Partial<TypographyScale>): TypographyScale {
   };
 }
 
+/** Drop undefined entries so they cannot clobber derived defaults. */
+function definedOnly<T extends object>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, v]) => v !== undefined),
+  ) as Partial<T>;
+}
+
 /**
  * Create a custom theme
  *
@@ -355,6 +370,8 @@ export function createTheme(options: CreateThemeOptions): Theme {
     ? ({ ...lightColors, ...darkPartial } as ColorPalette)
     : generateDarkColors(lightColors);
 
+  const baseline = baselineTokens(lightColors, darkColors);
+
   return {
     id: id as ThemePreset,
     name,
@@ -372,7 +389,22 @@ export function createTheme(options: CreateThemeOptions): Theme {
       ...(baseTheme?.easing || materialEasing),
       ...options.easing,
     } as EasingScale,
-    glass: options.glass,
+    glass: options.glass ?? baseTheme?.glass ?? { ...opaqueGlass },
+    ...baseline,
+    ...definedOnly({
+      surfaces: options.surfaces,
+      hairlines: options.hairlines,
+      states: options.states && { ...baseline.states, ...options.states },
+      shadowColor: options.shadowColor,
+      controls: options.controls && {
+        ...baseline.controls,
+        ...options.controls,
+      },
+      focus: options.focus && { ...baseline.focus, ...options.focus },
+      native: options.native,
+      schemeDuration: options.schemeDuration,
+      fontFeatureSettings: options.fontFeatureSettings,
+    }),
     fontFamily:
       options.fontFamily || baseTheme?.fontFamily || 'system-ui, sans-serif',
   };

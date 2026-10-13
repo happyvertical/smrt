@@ -206,18 +206,94 @@ export interface EasingScale {
   emphasizedAccelerate: string;
 }
 
+/** A pair of values that depend on the resolved colour scheme. */
+export interface PerScheme<T> {
+  light: T;
+  dark: T;
+}
+
+/** Surface ladder (`--smrt-surface-*`), from the page ground up to overlays. */
+export interface SurfaceLadder {
+  /** Page ground behind everything. */
+  ground: string;
+  /** Panels, cards, sidebars sitting on the ground. */
+  panel: string;
+  /** Input and control fills. */
+  control: string;
+  /** Menus, popovers, dialogs lifted above panels. */
+  raised: string;
+  /** Wells and inset regions recessed below panels. */
+  sunken: string;
+  /** Modal scrim colour. */
+  overlay: string;
+}
+
+/** Edge tokens (`--smrt-hairline-*`, `--smrt-inset-highlight`). */
+export interface HairlineTokens {
+  /** Quiet divider colour. */
+  color: string;
+  /** Stronger edge colour (control borders). */
+  strongColor: string;
+  /** `box-shadow` value for the top inner light line (`none` on light). */
+  insetHighlight: string;
+}
+
+/** Interaction state-layer opacities (unitless, 0 to 1). */
+export interface StateLayers {
+  hover: string;
+  pressed: string;
+  selected: string;
+  focus: string;
+  dragged: string;
+  disabled: string;
+}
+
+/** Shared control geometry (`--smrt-control-*`). */
+export interface ControlTokens {
+  radius: string;
+  radiusSmall: string;
+  height: string;
+  heightSmall: string;
+  weight: string;
+  border: string;
+}
+
+/** Focus ring (`--smrt-focus-ring-*`). */
+export interface FocusRingTokens {
+  color: string;
+  width: string;
+  offset: string;
+}
+
+/** Native browser chrome colours. */
+export interface NativeChromeTokens {
+  accent: string;
+  selectionBackground: string;
+  selectionColor: string;
+  caret: string;
+  scrollbarThumb: string;
+  scrollbarTrack: string;
+}
+
+/** Translucent glass surfaces (`--smrt-glass-surface*`, `--smrt-glass-border`). */
+export interface GlassSurfaces {
+  surface: string;
+  surfaceStrong: string;
+  border: string;
+}
+
 /**
- * Glass effect configuration
+ * Glass effect configuration. Every theme has one: non-glass themes use the
+ * opaque default (`blur: 0px`, `saturation: 100%`, opaque surfaces) so
+ * components can always consume the glass tokens.
  */
 export interface GlassEffects {
   /** Backdrop blur amount */
   blur: string;
   /** Saturation adjustment */
   saturation: string;
-  /** Border opacity */
-  borderOpacity: string;
-  /** Background opacity */
-  backgroundOpacity: string;
+  /** Per-scheme surfaces; defaults to opaque panel/raised colours. */
+  surfaces?: PerScheme<GlassSurfaces>;
 }
 
 /**
@@ -251,8 +327,26 @@ export interface Theme {
   duration: DurationScale;
   /** Transition easings */
   easing: EasingScale;
-  /** Glass effects (for glass theme) */
-  glass?: GlassEffects;
+  /** Glass effects (opaque for non-glass themes) */
+  glass: GlassEffects;
+  /** Surface ladder per scheme (derived from the palette when absent) */
+  surfaces?: PerScheme<SurfaceLadder>;
+  /** Hairline edges per scheme (derived from on-surface when absent) */
+  hairlines?: PerScheme<HairlineTokens>;
+  /** State-layer opacities (M3-like defaults when absent) */
+  states?: StateLayers;
+  /** `--smrt-shadow-color` per scheme, an `rgb(r g b)` colour */
+  shadowColor?: PerScheme<string>;
+  /** Control geometry (derived from the radius scale when absent) */
+  controls?: Partial<ControlTokens>;
+  /** Focus ring (primary, 2px, 2px offset when absent) */
+  focus?: Partial<FocusRingTokens>;
+  /** Native chrome per scheme (primary-derived when absent) */
+  native?: PerScheme<NativeChromeTokens>;
+  /** `--smrt-duration-scheme`, the scheme crossfade duration */
+  schemeDuration?: string;
+  /** `--smrt-font-feature-settings`, e.g. `"tnum" 1, "cv11" 1` */
+  fontFeatureSettings?: string;
   /** Primary font family */
   fontFamily: string;
   /**

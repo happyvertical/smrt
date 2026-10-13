@@ -119,12 +119,31 @@ const GLASS_COLOR_TOKENS = [
   'glass-backdrop', 'glass-border',
 ];
 
-const GLASS_EFFECT_TOKENS = [
-  '--smrt-glass-blur',
-  '--smrt-glass-saturation',
-  '--smrt-glass-border-opacity',
-  '--smrt-glass-background-opacity',
+/**
+ * Premium-baseline tokens (#3865): emitted for every preset and scheme by
+ * `generateBaselineVariables` in themes/derive.ts, glass included.
+ */
+const BASELINE_TOKENS = [
+  ...['ground', 'panel', 'control', 'raised', 'sunken', 'overlay'].map(
+    (k) => `--smrt-surface-${k}`,
+  ),
+  '--smrt-hairline-color', '--smrt-hairline-strong-color', '--smrt-hairline',
+  '--smrt-hairline-strong', '--smrt-inset-highlight',
+  ...['hover', 'pressed', 'selected', 'focus', 'dragged', 'disabled'].map(
+    (k) => `--smrt-state-${k}`,
+  ),
+  '--smrt-shadow-color',
+  ...['radius', 'radius-small', 'height', 'height-small', 'weight', 'border'].map(
+    (k) => `--smrt-control-${k}`,
+  ),
+  '--smrt-focus-ring-color', '--smrt-focus-ring-width', '--smrt-focus-ring-offset',
+  '--smrt-accent-color', '--smrt-selection-background', '--smrt-selection-color',
+  '--smrt-caret-color', '--smrt-scrollbar-thumb', '--smrt-scrollbar-track',
+  '--smrt-glass-blur', '--smrt-glass-saturation', '--smrt-glass-surface',
+  '--smrt-glass-surface-strong', '--smrt-glass-border',
+  '--smrt-duration-scheme', '--smrt-font-feature-settings',
 ];
+
 
 const FONT_WEIGHT_TOKEN_NAMES = ['normal', 'medium', 'semibold', 'bold'];
 
@@ -146,7 +165,7 @@ function collectGeneratorEmitted(into) {
   into.add('--smrt-theme-id');
   into.add('--smrt-theme-name');
   into.add('--smrt-font-family');
-  for (const token of GLASS_EFFECT_TOKENS) into.add(token);
+  for (const token of BASELINE_TOKENS) into.add(token);
   for (const k of SCALE_KEYS.spacing) into.add(`--smrt-spacing-${k}`);
   for (const k of SCALE_KEYS.radius) into.add(`--smrt-radius-${k}`);
   for (const k of SCALE_KEYS.duration) into.add(`--smrt-duration-${k}`);
@@ -176,9 +195,7 @@ function collectPresetGeneratorTokens({ includeGlass = false } = {}) {
   emitted.add('--smrt-theme-id');
   emitted.add('--smrt-theme-name');
   emitted.add('--smrt-font-family');
-  if (includeGlass) {
-    for (const token of GLASS_EFFECT_TOKENS) emitted.add(token);
-  }
+  for (const token of BASELINE_TOKENS) emitted.add(token);
   for (const k of SCALE_KEYS.spacing) emitted.add(`--smrt-spacing-${k}`);
   for (const k of SCALE_KEYS.radius) emitted.add(`--smrt-radius-${k}`);
   for (const k of SCALE_KEYS.duration) emitted.add(`--smrt-duration-${k}`);

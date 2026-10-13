@@ -630,6 +630,53 @@ on any custom property outside `--smrt-*` in `packages/*/src`. The one-time rewr
 was `scripts/codemod-smrt-tokens.mjs`; it is idempotent, so re-run it after a rebase
 instead of hand-merging renamed names.
 
+### Premium baseline token vocabulary
+
+Every preset and every `createTheme()` result defines all of these in both schemes
+(sections of `Theme` in `types.ts`; defaults derived in `derive.ts`; emitted by
+`generateThemeVariables`). Themes and presets define them; **components only consume
+them**. Do not redeclare a theme token on a component root (CSS or `style:`): the
+required-tokens scanner (`scripts/smrt-token-scan-lib.mjs`) treats any `--smrt-*` name
+a component defines on its own root as component-private and drops it from the required
+list repo-wide. A per-variant override uses a component-prefixed name that falls back to
+the theme token, for example `background: color-mix(in srgb, currentColor
+calc(var(--smrt-button-state-hover, var(--smrt-state-hover)) * 100%), transparent)`.
+
+| Token | Meaning | Consumed by |
+| --- | --- | --- |
+| `--smrt-surface-ground` | Page ground | `body`/shell background |
+| `--smrt-surface-panel` | Cards, sidebars, panels on the ground | `background` of Card, sidebars, header, footer |
+| `--smrt-surface-control` | Input and control fill | `background` of Input, Select, Textarea, Button (outlined/tonal) |
+| `--smrt-surface-raised` | Menus, popovers, dialogs above panels | `background` of overlays |
+| `--smrt-surface-sunken` | Wells and recessed regions | `background` of tables headers, code, inset areas |
+| `--smrt-surface-overlay` | Modal scrim | `background` of Modal/Drawer backdrops |
+| `--smrt-hairline-color` / `-strong-color` | Quiet and strong edge colours | `border-color`, `outline-color`, dividers |
+| `--smrt-hairline` / `--smrt-hairline-strong` | `1px solid` edge shorthands | `border`, `border-top` etc. on panels (quiet) and controls (strong) |
+| `--smrt-inset-highlight` | Top inner light line (`none` on light) | `box-shadow` (layer with an elevation) on raised dark surfaces |
+| `--smrt-state-{hover,pressed,selected,focus,dragged,disabled}` | Unitless state-layer opacities, 0 to 1 | Mix percentage of a state overlay (`calc(var(--smrt-state-hover) * 100%)`); `disabled` as `opacity` |
+| `--smrt-shadow-color` | `rgb(r g b)` shadow base, per scheme | `box-shadow` colour: `rgb(from var(--smrt-shadow-color) r g b / 0.2)` |
+| `--smrt-elevation-0..5` | Existing shadow scale | `box-shadow` |
+| `--smrt-control-radius` / `-radius-small` | Control corner radii | `border-radius` of controls |
+| `--smrt-control-height` / `-height-small` | Control heights | `min-height`/`block-size` of controls |
+| `--smrt-control-weight` | Control label weight | `font-weight` of buttons and inputs |
+| `--smrt-control-border` | Control edge shorthand (`var(--smrt-hairline-strong)`) | `border` of controls |
+| `--smrt-control-target-min` | Density-driven minimum hit size (set by ThemeProvider `density`) | `min-height`/`min-width` of interactive controls |
+| `--smrt-control-hit-size` | Hit area of small icon controls | `inline-size`/`block-size` of icon buttons |
+| `--smrt-focus-ring-{color,width,offset}` | Focus indicator | `outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color)`, `outline-offset` on `:focus-visible` |
+| `--smrt-accent-color` | Native control accent | `accent-color` (checkbox, radio, range, date pickers) |
+| `--smrt-selection-{background,color}` | Text selection | `::selection` |
+| `--smrt-caret-color` | Text caret | `caret-color` |
+| `--smrt-scrollbar-{thumb,track}` | Scrollbar colours | `scrollbar-color: thumb track` |
+| `--smrt-glass-blur` / `-saturation` | Backdrop filter amounts (`0px`/`100%` outside Glass) | `backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation))` |
+| `--smrt-glass-surface` / `-surface-strong` | Translucent (Glass) or opaque surface fills; opacity is part of the colour | `background` of floating chrome and overlays |
+| `--smrt-glass-border` | Glass edge colour | `border-color` of glass surfaces |
+| `--smrt-duration-scheme` | Scheme crossfade duration | `transition-duration` when the colour scheme changes |
+| `--smrt-font-feature-settings` | OpenType features (`"tnum" 1, "cv11" 1` on Inter presets) | `font-feature-settings` on the root and numeric cells |
+
+The former `--smrt-glass-border-opacity` and `--smrt-glass-background-opacity`
+tokens, and the ThemeProvider-local `--smrt-glass-surface`/`--smrt-glass-border`,
+were folded into the glass surface colours above.
+
 ## Advanced Usage
 
 ### Build-Time Theming

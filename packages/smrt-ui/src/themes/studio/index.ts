@@ -6,6 +6,7 @@
  * clean lines, and a focus on content clarity.
  */
 
+import { baselineTokens, opaqueGlass } from '../derive.js';
 import {
   borderRadiusScale,
   durationScale,
@@ -325,6 +326,9 @@ export const studioTheme: Theme = {
   borderRadius: borderRadiusScale,
   duration: durationScale,
   easing: studioEasing,
+  glass: { ...opaqueGlass },
+  ...baselineTokens(lightColors, darkColors),
+  shadowColor: { light: 'rgb(60 64 67)', dark: 'rgb(0 0 0)' },
   fontFamily: '"Google Sans Text", "Roboto", "Segoe UI", system-ui, sans-serif',
 };
 

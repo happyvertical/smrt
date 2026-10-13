@@ -5,6 +5,7 @@
  * Features refined colors, updated typography, and polished elevation.
  */
 
+import { baselineTokens, opaqueGlass } from '../derive.js';
 import {
   borderRadiusScale,
   durationScale,
@@ -301,6 +302,9 @@ export const materialTheme: Theme = {
   borderRadius: borderRadiusScale,
   duration: durationScale,
   easing: materialEasing,
+  glass: { ...opaqueGlass },
+  ...baselineTokens(lightColors, darkColors),
+  shadowColor: { light: 'rgb(0 0 0)', dark: 'rgb(0 0 0)' },
   fontFamily: '"Google Sans", "Roboto", system-ui, -apple-system, sans-serif',
 };
 

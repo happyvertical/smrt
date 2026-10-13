@@ -377,12 +377,6 @@ $effect(() => {
     font-family: inherit;
   }
 
-  /* Glass theme specific base styles */
-  :global(.smrt-theme-glass) {
-    --smrt-glass-surface: var(--smrt-color-surface);
-    --smrt-glass-border: var(--smrt-color-outline);
-  }
-
   /* HappyVertical ("Day Shift") focus indicator (#2318).
    * The brand focus ring is part of the preset, so it has to travel on BOTH
    * delivery paths: this mirrors the identical rule in

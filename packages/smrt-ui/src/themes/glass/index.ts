@@ -6,6 +6,7 @@
  * and vibrant material effects.
  */
 
+import { baselineTokens } from '../derive.js';
 import {
   appleEasing,
   borderRadiusScale,
@@ -311,8 +312,19 @@ const elevation: ElevationScale = {
 const glassEffects: GlassEffects = {
   blur: '20px',
   saturation: '180%',
-  borderOpacity: '0.3',
-  backgroundOpacity: '0.72',
+  // Translucent frosted surfaces; the opacity is part of each colour.
+  surfaces: {
+    light: {
+      surface: 'color-mix(in srgb, #ffffff 72%, transparent)',
+      surfaceStrong: 'color-mix(in srgb, #ffffff 88%, transparent)',
+      border: 'var(--smrt-hairline-color)',
+    },
+    dark: {
+      surface: 'color-mix(in srgb, #1e1e1e 72%, transparent)',
+      surfaceStrong: 'color-mix(in srgb, #1e1e1e 88%, transparent)',
+      border: 'color-mix(in srgb, #ffffff 10%, transparent)',
+    },
+  },
 };
 
 /**
@@ -329,6 +341,8 @@ export const glassTheme: Theme = {
   borderRadius: borderRadiusScale,
   duration: durationScale,
   easing: appleEasing,
+  ...baselineTokens(lightColors, darkColors),
+  shadowColor: { light: 'rgb(0 0 0)', dark: 'rgb(0 0 0)' },
   glass: glassEffects,
   fontFamily:
     '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif',

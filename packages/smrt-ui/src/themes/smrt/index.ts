@@ -12,6 +12,7 @@
  * `styles/smrt.css`, and the fonts in `styles/fonts.css`.
  */
 
+import { baselineTokens, opaqueGlass } from '../derive.js';
 import { borderRadiusScale, durationScale, spacingScale } from '../shared.js';
 import type {
   ColorPalette,
@@ -350,6 +351,11 @@ export const smrtTheme: Theme = {
   borderRadius: borderRadiusScale,
   duration: durationScale,
   easing: smrtEasing,
+  glass: { ...opaqueGlass },
+  ...baselineTokens(lightColors, darkColors),
+  shadowColor: { light: 'rgb(20 26 36)', dark: 'rgb(0 0 0)' },
+  // Inter: tabular figures and the flat-topped 1 keep columns of numbers aligned.
+  fontFeatureSettings: '"tnum" 1, "cv11" 1',
   fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
 };
 

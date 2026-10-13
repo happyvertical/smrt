@@ -5,6 +5,7 @@
  * Generates CSS variables for colors, typography, spacing, elevation, etc.
  */
 
+import { generateBaselineVariables } from './derive.js';
 import { themes } from './registry.js';
 import {
   borderRadiusAliases,
@@ -20,7 +21,6 @@ import type {
   DurationScale,
   EasingScale,
   ElevationScale,
-  GlassEffects,
   SpacingScale,
   Theme,
   TypographyScale,
@@ -188,23 +188,6 @@ function generateEasingVariables(
 }
 
 /**
- * Generate CSS custom properties for glass effects
- */
-function generateGlassVariables(
-  glass: GlassEffects | undefined,
-  prefix: string,
-): Record<string, string> {
-  if (!glass) return {};
-
-  return {
-    [`${prefix}-glass-blur`]: glass.blur,
-    [`${prefix}-glass-saturation`]: glass.saturation,
-    [`${prefix}-glass-border-opacity`]: glass.borderOpacity,
-    [`${prefix}-glass-background-opacity`]: glass.backgroundOpacity,
-  };
-}
-
-/**
  * Generate helper tokens that do not vary by color scheme (issue #1431).
  *
  * Named font weights and z-index stacking levels are identical across every
@@ -293,8 +276,10 @@ export function generateThemeVariables(
     // Theme-independent helper tokens (mono font, named weights, z-index)
     ...generateStaticTokens(prefix, theme.fontFamilyMono),
 
-    // Glass effects (if present)
-    ...generateGlassVariables(theme.glass, prefix),
+    // Premium baseline: surface ladder, hairlines, state layers, shadow colour,
+    // control geometry, focus ring, native chrome, glass, scheme motion, font
+    // features (#3865)
+    ...generateBaselineVariables(theme, isDark, prefix),
   };
 }
 

@@ -60,6 +60,7 @@
  * below AA on those surfaces — the wrong trade.
  */
 
+import { baselineTokens, opaqueGlass } from '../derive.js';
 import { spacingScale } from '../shared.js';
 import type {
   BorderRadiusScale,
@@ -440,6 +441,41 @@ export const happyverticalTheme: Theme = {
   borderRadius,
   duration,
   easing: calmEasing,
+  glass: { ...opaqueGlass },
+  ...baselineTokens(lightColors, darkColors),
+  // Day Shift roles: enamel ground, faceplate panels, bezel hairlines. The
+  // strong edge is the a11y `outline` (3:1), never the decorative bezel.
+  surfaces: {
+    light: {
+      ground: lightColors.background, // enamel
+      panel: lightColors.surface, // faceplate
+      control: lightColors.surfaceContainerLowest,
+      raised: lightColors.surfaceBright,
+      sunken: lightColors.surfaceDim,
+      overlay: lightColors.scrim,
+    },
+    dark: {
+      ground: darkColors.background,
+      panel: darkColors.surface,
+      control: darkColors.surfaceContainerHigh,
+      raised: darkColors.surfaceBright,
+      sunken: darkColors.surfaceContainerLowest,
+      overlay: darkColors.scrim,
+    },
+  },
+  hairlines: {
+    light: {
+      color: 'var(--smrt-color-outline-variant)', // bezel
+      strongColor: 'var(--smrt-color-outline)',
+      insetHighlight: 'none',
+    },
+    dark: {
+      color: 'var(--smrt-color-outline-variant)',
+      strongColor: 'var(--smrt-color-outline)',
+      insetHighlight: 'inset 0 1px 0 rgb(255 255 255 / 0.04)',
+    },
+  },
+  shadowColor: { light: 'rgb(32 39 43)', dark: 'rgb(0 0 0)' },
   fontFamily: BODY_FONT,
   fontFamilyMono: MONO_FONT,
 };
