@@ -114,6 +114,58 @@ describe('DetailScreen', () => {
     ).toHaveAttribute('href', 'mailto:ada@example.com');
   });
 
+  it('renders reference fields as labelled links when hrefFor and labels are given', () => {
+    const relations = [
+      {
+        model: '@acme/users:User',
+        field: 'ownerId',
+        label: 'Owner',
+        kind: 'reference' as const,
+      },
+    ];
+    const { rerender } = render(DetailScreen, {
+      props: {
+        definition: taskDefinition,
+        policy: taskPolicy,
+        record,
+        relations,
+        hrefFor: (field, id) =>
+          field.name === 'ownerId' ? `/users/${id}` : undefined,
+        labels: {
+          '@acme/users:User': (id) =>
+            id === record.ownerId ? 'Ada' : undefined,
+        },
+      },
+    });
+    expect(screen.getByRole('link', { name: 'Ada' })).toHaveAttribute(
+      'href',
+      `/users/${record.ownerId}`,
+    );
+    expect(document.querySelector('code')).toBeNull();
+
+    // No href: the label still replaces the raw id. No label either: raw id in <code>.
+    rerender({
+      definition: taskDefinition,
+      policy: taskPolicy,
+      record,
+      relations,
+      hrefFor: undefined,
+      labels: { '@acme/users:User': () => 'Ada' },
+    });
+    expect(screen.getByText('Ada')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Ada' })).toBeNull();
+    rerender({
+      definition: taskDefinition,
+      policy: taskPolicy,
+      record,
+      relations,
+      labels: undefined,
+    });
+    expect(document.querySelector('code')?.textContent).toBe(
+      String(record.ownerId),
+    );
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(DetailScreen, {
       props: { definition: taskDefinition, policy: taskPolicy, record },

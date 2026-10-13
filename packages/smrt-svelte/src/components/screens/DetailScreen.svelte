@@ -45,6 +45,9 @@ let {
   ondelete,
   extraActions,
   children,
+  relations = [],
+  hrefFor,
+  labels,
 }: DetailScreenProps = $props();
 
 const { t } = useI18n();
@@ -87,6 +90,18 @@ function safeHref(field: ScreenField, text: string): string | null {
   return null;
 }
 
+/** A reference field's target model, from the `reference` relations. */
+function targetModel(field: ScreenField): string | undefined {
+  return relations.find((r) => r.kind === 'reference' && r.field === field.name)
+    ?.model;
+}
+
+function referenceLabel(field: ScreenField, id: string): string {
+  const model = targetModel(field);
+  const label = model ? labels?.[model]?.(id) : undefined;
+  return label ?? id;
+}
+
 let confirmOpen = $state(false);
 let deleteError = $state(false);
 
@@ -119,7 +134,15 @@ async function confirmDelete(): Promise<void> {
               {:else if safeHref(field, text)}
                 <a href={safeHref(field, text)}>{text}</a>
               {:else if field.kind === 'reference'}
-                <code>{text}</code>
+                {@const href = hrefFor?.(field, text)}
+                {@const label = referenceLabel(field, text)}
+                {#if href}
+                  <a href={href} class="smrt-detail-screen__reference">{label}</a>
+                {:else if label !== text}
+                  <span class="smrt-detail-screen__reference">{label}</span>
+                {:else}
+                  <code>{text}</code>
+                {/if}
               {:else}
                 {text}
               {/if}

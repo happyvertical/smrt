@@ -60,7 +60,11 @@ export function humanizeFieldName(name: string): string {
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
-function humanizeLabel(name: string, definition: ScreenFieldDefinition) {
+/** Default label of a field: reference fields drop a trailing `Id`. */
+export function humanizeLabel(
+  name: string,
+  definition: ScreenFieldDefinition,
+): string {
   if (
     (definition.type === 'foreignKey' ||
       definition.type === 'crossPackageRef') &&

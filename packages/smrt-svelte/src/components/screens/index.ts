@@ -12,6 +12,7 @@ export {
 } from './fields.js';
 export { default as ListScreen } from './ListScreen.svelte';
 export { default as RecipeScreens } from './RecipeScreens.svelte';
+export { deriveScreenRelations, type ScreenRelation } from './relations.js';
 export type {
   DetailScreenProps,
   EditFormProps,
@@ -34,6 +35,8 @@ export type {
   ScreenMode,
   ScreenPolicy,
   ScreenRecord,
+  ScreenRelationshipDefinition,
+  ScreenRelationshipKind,
 } from './types.js';
 export {
   compareScreenValues,

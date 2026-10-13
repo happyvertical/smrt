@@ -1,4 +1,5 @@
 import type { Snippet } from 'svelte';
+import type { ScreenRelation } from './relations.js';
 
 /**
  * Structural types for the manifest-derived record screens (#3718).
@@ -41,8 +42,28 @@ export interface ScreenFieldDefinition {
   ui?: ScreenFieldUIHints;
 }
 
+export type ScreenRelationshipKind =
+  | 'foreignKey'
+  | 'crossPackageRef'
+  | 'oneToMany'
+  | 'manyToMany';
+
+/**
+ * One manifest-derived relationship edge, structurally the generated
+ * `SmrtWebRelationship`: `field` is the FK field on this model and
+ * `relatedCollection` the sibling collection's name (the key in
+ * `collectionDefinitions`), not a qualified model id.
+ */
+export interface ScreenRelationshipDefinition {
+  field: string;
+  kind: ScreenRelationshipKind;
+  relatedCollection: string;
+}
+
 /** Structural subset of a generated `SmrtWebCollectionDefinition`. */
 export interface ScreenCollectionDefinition {
+  /** Collection name (the key in `collectionDefinitions`); used to resolve relationships. */
+  name?: string;
   /** Canonical qualified model identity (`@package/name:ClassName`). */
   objectRef: string;
   /** Simple class name, used to derive default titles. */
@@ -50,6 +71,8 @@ export interface ScreenCollectionDefinition {
   /** Primary-key field name. Defaults to `id`. */
   idField?: string;
   fields: Readonly<Record<string, ScreenFieldDefinition>>;
+  /** Manifest-derived relationship edges; the source of `deriveScreenRelations`. */
+  relationships?: readonly ScreenRelationshipDefinition[];
 }
 
 export type ScreenFieldVisibility = 'basic' | 'advanced' | 'hidden';
@@ -205,6 +228,18 @@ export interface DetailScreenProps {
   extraActions?: Snippet;
   /** Extra content under the fields. */
   children?: Snippet;
+  /**
+   * Relations of this model (`deriveScreenRelations`). The `reference` ones
+   * map a FK field to its target model, which `labels` is keyed by.
+   */
+  relations?: readonly ScreenRelation[];
+  /** Link for a reference field's value; `undefined` renders no link. */
+  hrefFor?: (field: ScreenField, id: string) => string | undefined;
+  /**
+   * Display label for a referenced record, keyed by target model id
+   * (`relation.model`); `undefined` falls back to the raw id.
+   */
+  labels?: Readonly<Record<string, (id: string) => string | undefined>>;
 }
 
 /** What a submit handler may return to report server-side field problems. */
