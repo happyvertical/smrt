@@ -292,6 +292,22 @@ describe('Email.send with stored attachments', () => {
     });
   });
 
+  it('does not record hasAttachments when the send is rejected', async () => {
+    const email = await makeEmail();
+    email.hasAttachments = false;
+    await email.save();
+    expect((await email.send()).success).toBe(true);
+
+    const again = await email.send({
+      attachments: [{ filename: 'terms.txt', content: TERMS_BYTES }],
+    });
+
+    expect(again.success).toBe(false);
+    expect(await reload(email.id ?? '')).toMatchObject({
+      hasAttachments: false,
+    });
+  });
+
   it('fails the send and records the error when a stored file is missing', async () => {
     const filePath = join(dir, 'missing', 'PO-1042.pdf');
     const email = await makeEmail();

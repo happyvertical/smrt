@@ -404,21 +404,30 @@ export class Email extends Message {
    * `attachments`, which `EmailSender` merges with the stored rows (#3808).
    */
   override async send(options?: SendEmailOptions): Promise<MessageSendResult> {
-    await this.markHasAttachments(options);
-    return super.send(options);
+    const result = await super.send(options);
+    await this.markHasAttachments(options, result);
+    return result;
   }
 
   /** Retry a failed send; takes the same options as {@link Email.send}. */
   override async retrySend(
     options?: SendEmailOptions,
   ): Promise<MessageSendResult> {
-    await this.markHasAttachments(options);
-    return super.retrySend(options);
+    const result = await super.retrySend(options);
+    await this.markHasAttachments(options, result);
+    return result;
   }
 
-  /** Persist `hasAttachments` when send-time bytes are about to be attached. */
-  private async markHasAttachments(options?: SendEmailOptions): Promise<void> {
-    if (!options?.attachments?.length || this.hasAttachments) return;
+  /**
+   * Record `hasAttachments` once send-time bytes were actually delivered, so a
+   * rejected or failed send never claims attachments that did not go out.
+   */
+  private async markHasAttachments(
+    options: SendEmailOptions | undefined,
+    result: MessageSendResult,
+  ): Promise<void> {
+    if (!result.success || !options?.attachments?.length) return;
+    if (this.hasAttachments) return;
     this.hasAttachments = true;
     if (this.isPersisted) await this.save();
   }
