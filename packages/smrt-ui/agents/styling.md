@@ -84,6 +84,46 @@ layer, so restyling needs no `:global()` and no `!important`. The declaration is
 (`@happyvertical/smrt-ui/styles/layers.css`), injected by `ThemeProvider`. Keep
 the order exactly as written.
 
+### Host resets (universal reset, Tailwind preflight, normalize)
+
+An unlayered universal reset (`*, *::before, *::after { margin: 0; padding: 0 }`,
+Tailwind preflight, normalize.css, sanitize.css) beats every smrt layer and strips
+padding from every component. Put the reset in a layer that sorts before
+`smrt.theme`:
+
+- **(a) Plain reset:** wrap it in the reset layer.
+
+  ```css
+  @layer smrt.reset {
+    *, *::before, *::after { margin: 0; padding: 0; }
+  }
+  ```
+
+- **(b) normalize.css:** import it into the reset layer.
+
+  ```css
+  @import url("normalize.css/normalize.css") layer(smrt.reset);
+  ```
+
+- **(c) Tailwind v4 preflight:** preflight already sits in `@layer base`. Declare
+  the full order before any import: `base` sorts before the smrt layers, and
+  `components` and `utilities` sort after them so utility classes still override
+  smrt:
+
+  ```css
+  @layer theme, base, smrt.reset, smrt.structure, smrt.theme, components, utilities;
+  @import "tailwindcss";
+  ```
+
+Layer order is set by first appearance. If `base` first appears after
+`smrt.theme`, it sorts above smrt and preflight wins: in Chromium,
+`@layer smrt.reset, smrt.structure, smrt.theme; @layer base { * { padding: 0 } }
+@layer smrt.theme { .c { padding: 16px } }` computes `padding: 0`. Shortcut: import
+`@happyvertical/smrt-ui/themes/styles/base.css`, which already ships its reset in
+`smrt.reset`.
+
+Run `smrt doctor` to flag unlayered resets in a project that depends on smrt-ui.
+
 ## Restyling a component
 
 Consumers depend on three public things only: **token names** (`--smrt-*`),

@@ -1163,6 +1163,13 @@ app for `:global(` and for unlayered rules that target smrt components, then
 confirm each still renders as intended. Remove overrides that only existed to
 win a specificity fight.
 
+Also check for an unlayered universal reset (`*`, `html`/`body` with
+`margin`/`padding: 0`, or Tailwind preflight / normalize.css imported without a
+layer). It strips padding from every component. Put it in `@layer smrt.reset`, or
+import `@happyvertical/smrt-ui/themes/styles/base.css`. The recipes are in
+[agents/styling.md](agents/styling.md#host-resets-universal-reset-tailwind-preflight-normalize).
+`smrt doctor` flags these.
+
 ### Adding or changing a component stylesheet
 
 Component `<style>` blocks must be inside `@layer smrt.*`. The lint gate
