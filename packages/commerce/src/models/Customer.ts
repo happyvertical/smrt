@@ -68,6 +68,7 @@ export class Customer extends SmrtObject {
   @field({
     description:
       'The most this customer may owe you at one time. Leave it at zero if you do not set limits.',
+    ui: { format: 'money' },
   })
   creditLimit: number = 0;
 

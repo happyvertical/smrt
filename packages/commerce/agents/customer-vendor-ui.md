@@ -119,6 +119,20 @@ so the scanner can read it.
 
 Widget hints (`@field({ ui: { widget } })`, #3599) are presentation-only and
 the build rejects them on non-text fields; `currency` is a currency-code
-picker for ISO 4217 strings and is never applied to minor-unit amounts.
+picker for ISO 4217 strings and is never applied to minor-unit amounts;
+amounts take `ui: { format: 'money' }` instead (#3718).
 Behaviour tests run under jsdom: `pnpm exec vitest run --config
 vitest.selects.config.ts` (also part of `pnpm test:ui`).
+
+## Record page hints (#3718)
+
+Minor-unit amounts on Contract, Invoice, their line items, Payment,
+PaymentAllocation, `Customer.creditLimit` and `Vendor.minimumOrderAmount`
+carry `ui: { format: 'money' }` (#3718; `widget: 'currency'` stays the
+currency-code picker on the text `currency` field). Payout and Payment's
+native/USD drift amounts are not hinted: their currency is a payout rail or
+fixed USD, not the record's `currency`. The line-item FKs
+(`ContractLineItem.contractId`, `InvoiceLineItem.invoiceId`,
+`FulfillmentLineItem.fulfillmentId`) carry `role: 'items'`, so record pages
+render them as a line-items table with a totals block;
+`src/__tests__/money-hints-manifest.test.ts` pins both.

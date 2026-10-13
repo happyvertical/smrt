@@ -66,7 +66,10 @@ export class Vendor extends SmrtObject {
    * satoshis). Compared against `Contract.totalAmount`, which is also minor
    * units (#2401).
    */
-  @field({ description: 'The smallest order the vendor will accept.' })
+  @field({
+    description: 'The smallest order the vendor will accept.',
+    ui: { format: 'money' },
+  })
   minimumOrderAmount: number = 0;
 
   /**
