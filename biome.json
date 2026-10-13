@@ -5,6 +5,8 @@
       "packages/*/src/**/*.{js,ts,tsx,jsx,svelte}",
       "packages/ingestion/evaluation/**/*.{mjs,ts,json}",
       "packages/smrt-svelte/e2e/**/*.{js,ts,svelte}",
+      "packages/smrt-playground/e2e/*.{mjs,ts}",
+      "packages/smrt-playground/host/playwright.visual.config.ts",
       "packages/ingestion/e2e/**/*.{js,ts,svelte}",
       "packages/ingestion/reference/review-host.ts",
       "packages/ingestion/reference/review-summary.ts",

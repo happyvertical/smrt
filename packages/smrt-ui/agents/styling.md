@@ -203,3 +203,12 @@ Headings, role utilities (`.smrt-display-large` ... `.smrt-label-small`) and tab
 
 Built-in presets stay static (no inline token payload); only user overrides go inline: non-`md` `borderRadius` (control radius tokens), `primaryColor` (derived set via `derivePrimaryOverrides`) and `density`. `data-smrt-theme-changing` marks one `--smrt-duration-scheme` after a post-mount scheme change (not on first paint, not under reduced motion); `data-contrast` (`standard|more|forced`) and `data-forced-colors` come from `prefers-contrast`/`forced-colors` or the `contrast` prop. `themeScript()` stamps `data-contrast`/`data-density` pre-paint from the same persisted config; keep it tiny. Forced-colors contract: hairlines `CanvasText`, focus rings `Highlight`, no painting over system colours.
 
+
+
+## Visual regression
+
+Before accepting a styling change, run the playground preset screenshot matrix.
+The [playground visual-regression guide](../../smrt-playground/AGENTS.md#visual-regression-styling-wave-2)
+defines the pinned Linux renderer, baseline update/review flow and required
+`Playground Visual Regression` CI job. Baseline changes must represent intentional
+visual changes; a structure/theme split should leave them unchanged.
