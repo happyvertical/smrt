@@ -70,7 +70,7 @@ Materialized aggregate report models for SMRT.
 A runtime report is data, not code: `parseRuntimeReportSpec()` accepts a closed
 grammar (no SQL, expressions, joins, tables, or tenants), and
 `compileRuntimeReportSpec()` resolves it against a server-owned source
-allow-list, the ObjectRegistry field policy, the live principal's permissions,
+allow-list (including optional `fields`/`excludeFields`), the ObjectRegistry field policy, the live principal's permissions,
 and an explicit fail-closed tenant predicate. Stored `RuntimeReport` specs are
 re-compiled for the running principal on every run, and result rows are never
 persisted. Assistant tools are in `@happyvertical/smrt-chat`. The full
