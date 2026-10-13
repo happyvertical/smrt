@@ -28,6 +28,10 @@ import type { DomainKnowledgeManifest } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
+import {
+  RESET_RECIPE,
+  scanProjectForUnlayeredResets,
+} from './cascade-layers-reset-scan.mjs';
 import { configExportCommand } from './config-export.js';
 import {
   closeDatabaseConnection,
@@ -3744,6 +3748,29 @@ export default testManifest;
       }
 
       console.log();
+
+      // ========== Cascade Layers (smrt-ui consumers) ==========
+      // Warning-level and read-only. An unlayered universal reset (`*`,
+      // `html`, `body` with margin/padding 0, or an unlayered normalize /
+      // preflight import) beats every `@layer smrt.*` rule, so it strips
+      // padding from smrt components. Applies only when the project depends
+      // on smrt-ui or smrt-svelte.
+      const cascadeLayers = scanProjectForUnlayeredResets(cwd, {
+        packageJson,
+      });
+      if (cascadeLayers.applies) {
+        console.log('🎨 Cascade Layers\n');
+        if (cascadeLayers.findings.length === 0) {
+          passed.push('No unlayered universal resets');
+        } else {
+          for (const finding of cascadeLayers.findings) {
+            const message = `unlayered reset at ${finding.file}:${finding.line} (${finding.selector}): ${RESET_RECIPE}`;
+            warnings.push(message);
+            console.log(`   ⚠️  ${message}`);
+          }
+        }
+        console.log();
+      }
 
       // ========== Live Database Parity (opt-in) ==========
       // Off by default because it opens a connection and issues catalog

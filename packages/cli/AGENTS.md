@@ -363,3 +363,7 @@ drop `includeDroppedTables` (default `false`, both call sites explicit —
   vite.config on Vite 8+ and accepts tsconfig `experimentalDecorators` only
   below it. The old unconditional tsconfig check flagged correct Vite 8 projects
   and passed broken ones (#2368)
+- **Cascade-layer section (#3862)**: `doctor` warns on unlayered universal resets
+  (`*`, `html`/`body` margin/padding 0, unlayered reset imports) in `src/**` CSS,
+  `.svelte` styles, and root `app.css` when the project depends on smrt-ui or
+  smrt-svelte. Scanner: `src/commands/cascade-layers-reset-scan.mjs`
