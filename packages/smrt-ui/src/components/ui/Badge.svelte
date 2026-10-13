@@ -26,7 +26,8 @@ const { variant = 'default', size = 'md', children, ...rest }: Props = $props();
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-weight: var(--smrt-typography-body-medium-weight);
+    font-weight: var(--smrt-control-weight);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     white-space: nowrap;
   }

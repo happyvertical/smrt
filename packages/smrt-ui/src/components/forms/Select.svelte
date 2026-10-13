@@ -164,13 +164,14 @@ export function getElement(): HTMLSelectElement | null {
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 		line-height: var(--smrt-typography-body-medium-line-height, 1.5);
 		color: var(--smrt-color-on-surface);
-		background-color: var(--smrt-color-surface);
+		background-color: var(--smrt-surface-control);
+		font-weight: var(--smrt-control-weight);
 		background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2379747e' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
 		background-position: right 0.5rem center;
 		background-repeat: no-repeat;
 		background-size: 1.5em 1.5em;
-		border: 1px solid var(--smrt-color-outline);
-		border-radius: 0.375rem;
+		border: var(--smrt-hairline-strong);
+		border-radius: var(--smrt-control-radius);
 		appearance: none;
 		cursor: pointer;
 		transition:
@@ -179,9 +180,12 @@ export function getElement(): HTMLSelectElement | null {
 	}
 
 	.select:focus {
-		outline: none;
 		border-color: var(--smrt-color-primary);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
+	}
+
+	.select:focus-visible {
+		outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+		outline-offset: var(--smrt-focus-ring-offset);
 	}
 
 	.select[data-smrt-highlighted='true'] {
@@ -192,7 +196,7 @@ export function getElement(): HTMLSelectElement | null {
 	.select:disabled {
 		background-color: var(--smrt-color-surface-container-high);
 		cursor: not-allowed;
-		opacity: 0.7;
+		opacity: var(--smrt-state-disabled);
 	}
 
 	/* Phones: 16px text so iOS Safari doesn't zoom the page when the field
@@ -212,6 +216,6 @@ export function getElement(): HTMLSelectElement | null {
 
   .select[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .select[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .select { min-height: var(--smrt-control-target-min, 0px); }
+  .select { min-height: max(var(--smrt-control-height), var(--smrt-control-target-min, 0px)); }
 }
 </style>

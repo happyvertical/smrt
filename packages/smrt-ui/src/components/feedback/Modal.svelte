@@ -201,8 +201,8 @@ const placementClass = $derived(`modal--${placement}`);
   }
 
   .modal::backdrop {
-    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
-    backdrop-filter: blur(2px);
+    background: var(--smrt-surface-overlay);
+    backdrop-filter: blur(var(--smrt-glass-blur));
   }
 
   .modal:not([open]) {
@@ -214,9 +214,11 @@ const placementClass = $derived(`modal--${placement}`);
     flex-direction: column;
     max-height: calc(100vh - var(--smrt-spacing-8, 2rem));
     max-width: calc(100vw - var(--smrt-spacing-8, 2rem));
-    background: var(--smrt-color-surface);
+    background: var(--smrt-glass-surface-strong);
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large, 0.75rem);
-    box-shadow: var(--smrt-elevation-3, 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05));
+    box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-4);
     overflow: hidden;
     animation: modal-enter var(--smrt-duration-medium2, 300ms) var(--smrt-easing-emphasized, cubic-bezier(0.2, 0, 0, 1));
   }
@@ -312,7 +314,7 @@ const placementClass = $derived(`modal--${placement}`);
     justify-content: space-between;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     flex-shrink: 0;
   }
 
@@ -346,13 +348,13 @@ const placementClass = $derived(`modal--${placement}`);
   }
 
   .modal__close:hover {
-    background: var(--smrt-color-surface-container-highest);
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
     color: var(--smrt-color-on-surface);
   }
 
   .modal__close:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 
   /* Body */
@@ -370,7 +372,7 @@ const placementClass = $derived(`modal--${placement}`);
     justify-content: flex-end;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     flex-shrink: 0;
   }
 

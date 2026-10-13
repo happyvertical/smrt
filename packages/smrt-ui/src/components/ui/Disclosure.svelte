@@ -49,7 +49,7 @@ function handleToggle(event: Event) {
   .disclosure { border-bottom: 1px solid var(--smrt-color-outline-variant); color: var(--smrt-color-on-surface); }
   summary { display: flex; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3) 0; font: var(--smrt-typography-title-small-font); cursor: pointer; list-style: none; }
   summary::-webkit-details-marker { display: none; }
-  summary:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
+  summary:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   summary[aria-disabled='true'] { opacity: .5; cursor: not-allowed; }
   .chevron { transition: transform var(--smrt-duration-short4) var(--smrt-easing-standard); }
   details[open] .chevron { transform: rotate(180deg); }

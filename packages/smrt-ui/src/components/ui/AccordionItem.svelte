@@ -39,7 +39,7 @@ const open = $derived(context.isOpen(value));
   h3 { margin: 0; }
   button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-4); border: 0; background: transparent; color: var(--smrt-color-on-surface); font: var(--smrt-typography-title-small-font); text-align: left; cursor: pointer; }
   button:hover:not(:disabled) { background: var(--smrt-color-surface-container-low); }
-  button:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: -2px; }
+  button:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: calc(var(--smrt-focus-ring-width) * -1); }
   button:disabled { opacity: .5; cursor: not-allowed; }
   .chevron { transition: transform var(--smrt-duration-short4) var(--smrt-easing-standard); }
   button[aria-expanded='true'] .chevron { transform: rotate(180deg); }

@@ -645,7 +645,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
   input[type="checkbox"] { width: auto; }
   button { min-height: 2.25rem; padding: .4rem .75rem; color: var(--smrt-color-on-primary); background: var(--smrt-color-primary); border: 1px solid transparent; border-radius: var(--smrt-radius-small, .375rem); cursor: pointer; }
   button.secondary { color: var(--smrt-color-primary); background: transparent; border-color: var(--smrt-color-outline); }
-  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   button:disabled { cursor: not-allowed; opacity: .55; }
   .item-actions { margin-block-start: var(--smrt-spacing-3, .75rem); }
   .problem { margin-block-start: var(--smrt-spacing-2, .5rem); color: var(--smrt-color-error); }
