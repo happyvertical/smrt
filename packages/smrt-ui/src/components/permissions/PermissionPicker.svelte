@@ -206,7 +206,7 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
   .choices { display: grid; gap: var(--smrt-spacing-4); padding: 0 var(--smrt-spacing-4) var(--smrt-spacing-4); border-block-start: var(--smrt-hairline); padding-block-start: var(--smrt-spacing-4); }
   .choice { display: grid; min-inline-size: 0; gap: var(--smrt-spacing-1); }
   .choice :global([data-smrt-component="Checkbox"]) { min-inline-size: 0; }
-  .choice :global(.checkbox__label), code, .choice p { overflow-wrap: anywhere; }
+  .choice :global([data-smrt-component="Checkbox"] [data-smrt-part="label"]), code, .choice p { overflow-wrap: anywhere; }
   code { padding-inline-start: calc(1.125rem + var(--smrt-spacing-2)); }
   .choice p { padding-inline-start: calc(1.125rem + var(--smrt-spacing-2)); }
   .no-results { padding: var(--smrt-spacing-4); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface-container-low); }
