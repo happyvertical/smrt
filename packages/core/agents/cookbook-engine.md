@@ -31,6 +31,13 @@ engine.tools / engine.batchTool                      // JSON Schema tool definit
   `set_policy`, `set_theme`, `reset_theme`, `set_name`, `rename_section`,
   `rename_item`, `hide`, `show`, `validate`, `export_cookbook`, `undo`. Navigation
   and focus are not commands: they are an adapter concern.
+- **`set_theme`** takes `preset`, `primary` (a brand colour that replaces the
+  preset, see cookbook.md), `colorScheme`, `fontFamily` (`null` restores the
+  preset font), and `borderRadius` (`none|sm|md|lg|xl|full`), `density`
+  (`comfortable|touch`), `contrast` (`auto|standard|more`). Each is optional and
+  only the fields given change; repeating the same input is an unchanged
+  receipt. Values outside the enums are `invalid_input`. `snapshot().theme`
+  reports the three new fields (`null` when unset); `reset_theme` clears them.
 - **Errors** are typed (`CommandError`: `code`, `message`, `path?`, `details?`):
   `unknown_command`, `invalid_input`, `not_found`, `confirmation_required`,
   `conflict`, `id_reuse`, `batch_failed`, `failed`.

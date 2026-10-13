@@ -17,6 +17,19 @@ export const THEME_FONTS: Readonly<Record<string, string>> = {
   'ui-monospace': 'ui-monospace, "SF Mono", Menlo, monospace',
 };
 
+const RADII = ['none', 'sm', 'md', 'lg', 'xl', 'full'] as const;
+const DENSITIES = ['comfortable', 'touch'] as const;
+const CONTRASTS = ['auto', 'standard', 'more'] as const;
+
+function isOneOf<T extends string>(
+  allowed: readonly T[],
+  value: unknown,
+): value is T {
+  return (
+    typeof value === 'string' && (allowed as readonly string[]).includes(value)
+  );
+}
+
 const HEX = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
 /** `#rgb` or `#rrggbb` (with or without `#`) as lowercase `#rrggbb`; else null. */
@@ -49,6 +62,15 @@ export function resolveCookbookTheme(
     theme?.colorScheme === 'light' || theme?.colorScheme === 'dark'
       ? theme.colorScheme
       : DEFAULT_COLOR_SCHEME;
+  const shape = {
+    ...(isOneOf(RADII, theme?.borderRadius)
+      ? { borderRadius: theme.borderRadius }
+      : {}),
+    ...(isOneOf(DENSITIES, theme?.density) ? { density: theme.density } : {}),
+    ...(isOneOf(CONTRASTS, theme?.contrast)
+      ? { contrast: theme.contrast }
+      : {}),
+  };
   const primary = theme?.custom ? normalizeHex(theme.custom.primary) : null;
   const font = theme?.fontFamily ?? theme?.custom?.fontFamily;
   const fontFamily =
@@ -59,12 +81,14 @@ export function resolveCookbookTheme(
     return {
       preset: brandThemeId(primary, fontFamily),
       colorScheme,
+      ...shape,
       brand: { primary, ...(fontFamily ? { fontFamily } : {}) },
     };
   }
   return {
     preset: theme?.preset || DEFAULT_THEME_PRESET,
     colorScheme,
+    ...shape,
     ...(fontFamily ? { fontFamily } : {}),
   };
 }

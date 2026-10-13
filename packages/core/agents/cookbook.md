@@ -28,6 +28,21 @@ stylesheet after review.
 brand colour. A host that knows the key applies it; unknown keys are retained
 in the portable document. Older `theme.custom.fontFamily` values still read.
 
+`theme.borderRadius` (`none|sm|md|lg|xl|full`), `theme.density`
+(`comfortable|touch`) and `theme.contrast` (`auto|standard|more`) are optional
+and mirror the `ThemeProvider` props of the same names. Absent means the
+preset's own value (`contrast` absent is `auto`, which follows the OS). They are
+additive: a document without them validates and reads unchanged, so there is no
+version bump. Anything outside the enums is an `invalid_value` diagnostic at
+`theme.<field>`.
+
+`theme.custom.primary` and `ThemeProvider`'s `primaryColor` are different
+controls. The cookbook sets `custom.primary`: the shell builds a whole theme
+from it (`createThemeFromColor`) that REPLACES the preset, so `preset` is
+ignored while it is present. `primaryColor` instead TINTS the current preset by
+overriding only the derived primary colours (`derivePrimaryOverrides`). The
+cookbook has no `primaryColor` field and the shell never passes one.
+
 ## Rules
 
 - Versioning: add optional fields within `version: 1`; readers keep and ignore

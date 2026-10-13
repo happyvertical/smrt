@@ -2,6 +2,8 @@
 import {
   type ColorScheme,
   ColorSchemeToggle,
+  type ContrastPreference,
+  type ThemeConfig,
   type ThemePreset,
   ThemeProvider,
 } from '@happyvertical/smrt-ui/themes';
@@ -168,6 +170,12 @@ interface Props {
   preset?: ThemePreset;
   /** Light, dark or system color scheme; the user's persisted choice wins. */
   colorScheme?: ColorScheme;
+  /** Corner radius scale passed to the ThemeProvider; the user's persisted choice wins. */
+  borderRadius?: ThemeConfig['borderRadius'];
+  /** Control target density passed to the ThemeProvider; the user's persisted choice wins. */
+  density?: ThemeConfig['density'];
+  /** Contrast preference passed to the ThemeProvider (`auto` follows the OS); the user's persisted choice wins. */
+  contrast?: ContrastPreference;
   /** Extra app-panel content (e.g. selected-tenant notes). */
   appPanelDocs?: Snippet;
   /**
@@ -301,6 +309,9 @@ let {
   onlayoutchange,
   preset = 'smrt',
   colorScheme = 'system',
+  borderRadius,
+  density,
+  contrast,
   appPanelDocs,
   dock,
   dockToggles = [],
@@ -973,7 +984,14 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 
 <Provider {webmcp} user={providerUser} {permissions}>
   <RuntimeDiagnosticsWebMcp enabled={runtimeDiagnostics} />
-  <ThemeProvider {preset} {colorScheme} persist={true}>
+  <ThemeProvider
+    {preset}
+    {colorScheme}
+    {borderRadius}
+    {density}
+    {contrast}
+    persist={true}
+  >
     {#if !chrome}
       {@render children()}
     {:else}
