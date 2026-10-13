@@ -113,10 +113,22 @@ return { overview };   // LoadedOverview: JSON, serializable
 
 - A widget's `load(options, ctx)` receives **validated options only** and a
   `WidgetLoadContext` the host built from the request principal: `overviewId`, an
-  abort `signal`, `locale`, and any host capabilities (index keys). It must
+  abort `signal`, `locale`, the optional core `record` key (below), and any host
+  capabilities (index keys). It must
   authorize through `ctx` (the user's permissions and tenant filters), never
   through option values. Reports-backed chart loaders call the runtime-report
   compiler with this context; this package does not depend on it.
+- **`ctx.record = { model, id }`** is a core capability key: the record a
+  record overview is rendered on (`RecordScreen` sets it from the screen's
+  definition `objectRef` and the record's id; a host's server load sets it the
+  same way for a record page). With it comes the **parent-filter vocabulary**
+  of the core `records` and `metric` loaders: `filter: 'parent'` plus `field`
+  (the FK field on `options.model`) mean "rows of `model` whose `field` equals
+  `ctx.record.id`" — a count for `metric`, the newest rows for `records`
+  (`sort` / `direction` / `limit` as usual). A loader given `filter: 'parent'`
+  without `ctx.record` or `field` must return an empty result, never the
+  unfiltered model. The shell's own loaders need no data access: hosts
+  implement it, the same way they implement every other named filter.
 - Loads run in parallel with a per-widget timeout (default 8 s; the signal
   aborts). A thrown error, a timeout or non-serializable / oversized data
   (default 256 KB of JSON) becomes a per-widget error tile
@@ -199,7 +211,7 @@ shape. Data shapes are in `widgets/data.ts`.
 |---|---|---|
 | `metric` | `title`, `model`*, `measure`, `field`, `filter` | `{ value, format?, currency?, label?, change?, href? }` (money = integer minor units) |
 | `chart` | `title`, `model`*, `groupBy`, `measure`, `field`, `period`, `style` (bar/line), `filter` | `{ points: [{ label, value }], format?, currency?, href? }`, one measure of a runtime report |
-| `records` | `title`, `model`*, `sort`, `direction`, `limit`, `filter` | `{ rows: [{ id, title, subtitle?, meta?, href? }], total?, href? }`; the loader chooses the title field and the visible records |
+| `records` | `title`, `model`*, `sort`, `field`, `direction`, `limit`, `filter` | `{ rows: [{ id, title, subtitle?, meta?, href? }], total?, href? }`; the loader chooses the title field and the visible records; `field` is the FK for `filter: 'parent'` |
 | `shortcuts` | `title`, `section` | `{ items: [{ id, label, href, icon?, description? }] }`; `shortcutsFromNav(sections, sectionId)` maps `resolveShellNavModel` / `useShellLayout().sections` (visible entries, user renames) |
 | `note` | `title`, `body` (Markdown) | none |
 
@@ -363,6 +375,21 @@ and the person can undo the change.
   `createOverviewAssistantSurface` is wired to the stored user tier through
   `createOverviewStore(...).save` as shown there.
 - **Not built:** the activity widget (Track B, #3710) and agenda.
+
+## Record overviews (`record.ts`)
+
+`recordOverview(definition, relations, { id? })` (both entries) is the default
+overview of a record view: per `children` relation of the model
+(`deriveScreenRelations` in [screens.md](screens.md#relations)) one `metric`
+count (span 1) and one `records` panel (span 3, newest five), both with
+`filter: 'parent'` and `field` set to the child's FK, titled by the relation
+label; `models` confines added widgets to the child models and `allowed` is
+`RECORD_OVERVIEW_ALLOWED` (`records`, `metric`, `chart`, `note`). The id
+defaults to `recordOverviewId(definition.objectRef)` — `detail:<model>` with
+`@`, `/` and `:` folded to dots (`detail:acme.shop.Customer`), because a
+qualified model id is not a valid overview id — so the layout persists **per
+model kind**, not per record. `RecordScreen` renders it with
+`presentation="plain"` and extends the widget context with `record`.
 
 ## Host section presentation
 

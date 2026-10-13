@@ -66,6 +66,13 @@ export {
   registerRecipeWidgets,
 } from './recipe-widgets.js';
 export {
+  RECORD_OVERVIEW_ALLOWED,
+  RECORD_OVERVIEW_LIMIT,
+  type RecordOverviewOptions,
+  recordOverview,
+  recordOverviewId,
+} from './record.js';
+export {
   createWidgetRegistry,
   defaultWidgetRegistry,
   registerWidget,

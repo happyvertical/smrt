@@ -135,7 +135,10 @@ export function createChartWidget(
   };
 }
 
-/** Record list: the latest or top records of a model. */
+/**
+ * Record list: the latest or top records of a model. `field` names the FK on
+ * the model for `filter: 'parent'` (a record view's related-records panel).
+ */
 export function createRecordListWidget(
   load: WidgetLoad<RecordListWidgetData>,
 ): WidgetDefinition<RecordListWidgetData> {
@@ -148,6 +151,7 @@ export function createRecordListWidget(
       titleField,
       modelField,
       { key: 'sort', type: 'identifier', label: 'ui.overview.opt.sort' },
+      fieldField,
       {
         key: 'direction',
         type: 'enum',
