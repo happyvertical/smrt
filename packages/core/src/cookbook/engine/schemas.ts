@@ -206,6 +206,19 @@ export function buildCommandTools(catalog: EngineCatalog): CommandTool[] {
           minLength: 1,
           description: 'Font key. Null restores the preset font.',
         },
+        borderRadius: {
+          enum: ['none', 'sm', 'md', 'lg', 'xl', 'full'],
+          description: 'Corner roundness.',
+        },
+        density: {
+          enum: ['comfortable', 'touch'],
+          description: 'Control size: comfortable, or larger touch targets.',
+        },
+        contrast: {
+          enum: ['auto', 'standard', 'more'],
+          description:
+            'Contrast: auto follows the device, or force standard or more.',
+        },
       }),
     },
     {

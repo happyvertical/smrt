@@ -320,6 +320,40 @@ describe('ThemeProvider premium features (#3869)', () => {
     ).toBe(true);
   });
 
+  it('appends the forced-colors tokens inline only while forced, ahead of overrides', async () => {
+    mockMedia([]);
+    const std = render(ThemeProvider, {
+      props: { primaryColor: '#336699', children: child() },
+    });
+    expect(style(std.container)).not.toContain('--smrt-hairline-color');
+    std.unmount();
+
+    mockMedia(['forced-colors']);
+    const forced = render(ThemeProvider, {
+      props: {
+        primaryColor: '#336699',
+        overrides: { '--smrt-focus-ring-width': '5px' },
+        children: child(),
+      },
+    });
+    await waitFor(() =>
+      expect(style(forced.container)).toContain(
+        '--smrt-hairline-color: CanvasText',
+      ),
+    );
+    const inline = style(forced.container);
+    expect(inline).toContain('--smrt-glass-blur: 0px');
+    // Whatever the primary override emits for the ring, Highlight comes last.
+    expect(inline).toMatch(/--smrt-focus-ring-color: Highlight(;|$)/);
+    expect(inline.lastIndexOf('--smrt-focus-ring-color')).toBe(
+      inline.lastIndexOf('--smrt-focus-ring-color: Highlight'),
+    );
+    // An explicit override still wins over the forced default.
+    expect(inline.lastIndexOf('--smrt-focus-ring-width: 5px')).toBeGreaterThan(
+      inline.lastIndexOf('--smrt-focus-ring-width: 3px'),
+    );
+  });
+
   it('flags a scheme change after mount, never on first paint', async () => {
     mockMedia([]);
     const { container, rerender } = render(ThemeProvider, {

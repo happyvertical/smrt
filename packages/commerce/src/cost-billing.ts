@@ -195,3 +195,184 @@ export function calculateCostBillingTax(input: {
   });
   return { taxMinor: safe(total), components };
 }
+
+/** Caller-ordered component; only explicitly named earlier taxes enter its basis. */
+export interface OrderedCostBillingTaxComponent {
+  id: string;
+  percent: string;
+  priorComponentIds: readonly string[];
+}
+
+/** Explicit membership; an empty component list declares the category exempt. */
+export interface OrderedCostBillingTaxCategory {
+  category: string;
+  componentIds: readonly string[];
+}
+
+/** Invoice allocation is mandatory at invoice scope and forbidden at line scope. */
+export type OrderedCostBillingTaxInput = {
+  lines: readonly { id: string; amountMinor: number; category: string }[];
+  categories: readonly OrderedCostBillingTaxCategory[];
+  components: readonly OrderedCostBillingTaxComponent[];
+} & (
+  | { roundingScope: 'line'; invoiceAllocation?: never }
+  | {
+      roundingScope: 'invoice';
+      invoiceAllocation: 'signed-largest-remainder';
+    }
+);
+
+/** Component order follows policy; eligible line details use code-unit ID order. */
+export interface OrderedCostBillingTaxResult {
+  taxMinor: number;
+  components: {
+    id: string;
+    taxMinor: number;
+    lines: { id: string; basisMinor: number; taxMinor: number }[];
+  }[];
+}
+
+function compareTaxLineIds(a: { id: string }, b: { id: string }): number {
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * Calculate explicitly ordered taxes without selecting jurisdiction or persistence
+ * policy. Invoice allocation truncates exact line taxes toward zero, then assigns
+ * residual minor units by signed remainder, ties by code-unit line ID order.
+ * Full signed reversals negate allocations; caller-selected subsets use those
+ * allocations, never independently rounded prior taxes. See agents/cost-billing.md.
+ */
+export function calculateOrderedCostBillingTax(
+  input: OrderedCostBillingTaxInput,
+): OrderedCostBillingTaxResult {
+  if (input.roundingScope === 'invoice') {
+    if (input.invoiceAllocation !== 'signed-largest-remainder')
+      throw new TypeError('Explicit invoice tax allocation is required');
+  } else if (input.roundingScope === 'line') {
+    if ('invoiceAllocation' in input)
+      throw new TypeError('Invoice allocation is not valid at line scope');
+  } else {
+    throw new TypeError('Unknown tax rounding scope');
+  }
+  if (
+    !Array.isArray(input.lines) ||
+    !Array.isArray(input.categories) ||
+    !Array.isArray(input.components)
+  )
+    throw new TypeError('Tax lines, categories and components must be arrays');
+
+  const knownComponents = new Set<string>();
+  const definitions = input.components.map((component) => {
+    identifier(component.id);
+    if (knownComponents.has(component.id))
+      throw new TypeError('Duplicate tax component');
+    const rate = percentUnits(component.percent);
+    if (!Array.isArray(component.priorComponentIds))
+      throw new TypeError('Explicit prior tax component IDs are required');
+    const priorIds = new Set<string>();
+    for (const id of component.priorComponentIds) {
+      identifier(id);
+      if (!knownComponents.has(id))
+        throw new TypeError('Prior tax component must precede this component');
+      if (priorIds.has(id))
+        throw new TypeError('Duplicate prior tax component');
+      priorIds.add(id);
+    }
+    knownComponents.add(component.id);
+    return { id: component.id, rate, priorIds };
+  });
+  const categories = new Map<string, Set<string>>();
+  for (const category of input.categories) {
+    identifier(category.category);
+    if (categories.has(category.category))
+      throw new TypeError('Duplicate tax category');
+    if (!Array.isArray(category.componentIds))
+      throw new TypeError('Explicit category tax component IDs are required');
+    const ids = new Set<string>();
+    for (const id of category.componentIds) {
+      identifier(id);
+      if (!knownComponents.has(id))
+        throw new TypeError('Unknown category tax component');
+      if (ids.has(id)) throw new TypeError('Duplicate category tax component');
+      ids.add(id);
+    }
+    categories.set(category.category, ids);
+  }
+  const lineIds = new Set<string>();
+  const lines = input.lines
+    .map((line) => {
+      identifier(line.id);
+      identifier(line.category);
+      if (lineIds.has(line.id)) throw new TypeError('Duplicate tax line');
+      lineIds.add(line.id);
+      const eligible = categories.get(line.category);
+      if (!eligible)
+        throw new TypeError('Missing explicit tax category mapping');
+      return {
+        id: line.id,
+        net: money(line.amountMinor),
+        eligible,
+        taxes: new Map<string, bigint>(),
+      };
+    })
+    .sort(compareTaxLineIds);
+
+  let total = 0n;
+  const components = definitions.map((component) => {
+    const allocations = lines
+      .filter((line) => line.eligible.has(component.id))
+      .map((line) => {
+        let basis = line.net;
+        for (const id of component.priorIds) basis += line.taxes.get(id) ?? 0n;
+        const numerator = basis * component.rate;
+        return {
+          id: line.id,
+          line,
+          basisMinor: safe(basis),
+          numerator,
+          remainder: numerator % DENOMINATOR,
+          tax:
+            input.roundingScope === 'line'
+              ? rounded(numerator)
+              : numerator / DENOMINATOR,
+        };
+      });
+    let tax = allocations.reduce((sum, allocation) => sum + allocation.tax, 0n);
+    if (input.roundingScope === 'invoice') {
+      const target = rounded(
+        allocations.reduce((sum, a) => sum + a.numerator, 0n),
+      );
+      const residual = target - tax;
+      if (residual !== 0n) {
+        const direction = residual > 0n ? 1n : -1n;
+        const ranked = [...allocations].sort((a, b) => {
+          const difference = (b.remainder - a.remainder) * direction;
+          return difference < 0n
+            ? -1
+            : difference > 0n
+              ? 1
+              : compareTaxLineIds(a, b);
+        });
+        const count = residual * direction;
+        for (let index = 0; BigInt(index) < count; index++)
+          ranked[index].tax += direction;
+      }
+      tax = target;
+    }
+    total += tax;
+    return {
+      id: component.id,
+      taxMinor: safe(tax),
+      lines: allocations.map((allocation) => {
+        allocation.line.taxes.set(component.id, allocation.tax);
+        return {
+          id: allocation.id,
+          basisMinor: allocation.basisMinor,
+          taxMinor: safe(allocation.tax),
+        };
+      }),
+    };
+  });
+  return { taxMinor: safe(total), components };
+}

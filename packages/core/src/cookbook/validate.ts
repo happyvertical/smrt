@@ -78,6 +78,11 @@ export type CookbookValidation =
 const VISIBILITIES = new Set(['basic', 'advanced', 'hidden']);
 const SURFACES = new Set(['api', 'mcp', 'cli']);
 const SCHEMES = new Set(['light', 'dark', 'system']);
+const THEME_ENUMS = {
+  borderRadius: ['none', 'sm', 'md', 'lg', 'xl', 'full'],
+  density: ['comfortable', 'touch'],
+  contrast: ['auto', 'standard', 'more'],
+} as const;
 const SHELL_SLOT_VALUES = [
   'header.start',
   'header.center',
@@ -326,6 +331,21 @@ function checkTheme(value: unknown, diagnostics: CookbookDiagnostic[]) {
       'theme.colorScheme',
       'theme.colorScheme must be light, dark or system',
     );
+  }
+  for (const key of ['borderRadius', 'density', 'contrast'] as const) {
+    const allowed: readonly string[] = THEME_ENUMS[key];
+    const given = value[key];
+    if (
+      given !== undefined &&
+      !(typeof given === 'string' && allowed.includes(given))
+    ) {
+      error(
+        diagnostics,
+        'invalid_value',
+        `theme.${key}`,
+        `theme.${key} must be one of ${allowed.join(', ')}`,
+      );
+    }
   }
   const custom = value.custom;
   if (custom !== undefined) {

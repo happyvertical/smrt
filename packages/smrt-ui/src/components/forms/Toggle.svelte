@@ -223,5 +223,17 @@ const sizeClasses = {
       transition: none;
     }
   }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .toggle__thumb, .toggle:not(.toggle--disabled):hover .toggle__thumb { background: Canvas; outline: var(--smrt-hairline-strong); outline-offset: 0; }
+    .toggle__input:checked + .toggle__thumb, .toggle:not(.toggle--disabled):hover .toggle__input:checked + .toggle__thumb { background: Highlight; outline-color: Highlight; }
+    .toggle__thumb::after { background: CanvasText; }
+    .toggle__input:checked + .toggle__thumb::after { background: HighlightText; }
+    .toggle__input:focus-visible + .toggle__thumb { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
+    .toggle--disabled { opacity: 1; color: GrayText; }
+    .toggle--disabled .toggle__label { color: GrayText; }
+    .toggle--disabled .toggle__thumb, .toggle--disabled .toggle__input:checked + .toggle__thumb { background: Canvas; outline-color: GrayText; }
+    .toggle--disabled .toggle__thumb::after, .toggle--disabled .toggle__input:checked + .toggle__thumb::after { background: GrayText; }
+  }
 }
 </style>

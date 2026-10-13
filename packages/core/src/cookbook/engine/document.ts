@@ -422,6 +422,9 @@ export function compactTheme(
   const out: CookbookTheme = {};
   if (theme.preset) out.preset = theme.preset;
   if (theme.colorScheme) out.colorScheme = theme.colorScheme;
+  if (theme.borderRadius) out.borderRadius = theme.borderRadius;
+  if (theme.density) out.density = theme.density;
+  if (theme.contrast) out.contrast = theme.contrast;
   if (theme.fontFamily) out.fontFamily = theme.fontFamily;
   if (theme.custom) out.custom = { ...theme.custom };
   if (theme.customCss) out.customCss = theme.customCss;
@@ -444,6 +447,9 @@ export function withThemePatch(
     primary?: string;
     colorScheme?: CookbookTheme['colorScheme'];
     fontFamily?: string | null;
+    borderRadius?: CookbookTheme['borderRadius'];
+    density?: CookbookTheme['density'];
+    contrast?: CookbookTheme['contrast'];
   },
 ): Cookbook {
   const next: CookbookTheme = { ...(doc.theme ?? {}) };
@@ -460,6 +466,9 @@ export function withThemePatch(
     };
   }
   if (patch.colorScheme) next.colorScheme = patch.colorScheme;
+  if (patch.borderRadius) next.borderRadius = patch.borderRadius;
+  if (patch.density) next.density = patch.density;
+  if (patch.contrast) next.contrast = patch.contrast;
   if (patch.fontFamily === null) {
     // Null restores the preset font, so a legacy brand font goes too.
     delete next.fontFamily;

@@ -155,5 +155,15 @@ useControlRegistration(() => {
   .switch[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .switch[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .switch { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .switch__track { background: Canvas; border-color: CanvasText; }
+    .switch__thumb { background: CanvasText; }
+    input:checked + .switch__track { background: Highlight; border-color: Highlight; }
+    input:checked + .switch__track .switch__thumb { background: HighlightText; }
+    .switch--disabled { opacity: 1; color: GrayText; }
+    .switch--disabled .switch__track, .switch--disabled input:checked + .switch__track { background: Canvas; border-color: GrayText; }
+    .switch--disabled .switch__thumb, .switch--disabled input:checked + .switch__track .switch__thumb { background: GrayText; }
+  }
 }
 </style>

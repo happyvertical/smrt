@@ -153,6 +153,37 @@ describe('buildCookbookShell: bakery', () => {
     });
   });
 
+  it('carries the theme radius, density and contrast, dropping unknown values', () => {
+    const base = fixture('bakery');
+    const shell = buildCookbookShell({
+      cookbook: {
+        ...base,
+        theme: {
+          preset: 'glass',
+          borderRadius: 'xl',
+          density: 'touch',
+          contrast: 'more',
+        },
+      },
+      catalog,
+    });
+    expect(shell.theme).toEqual({
+      preset: 'glass',
+      colorScheme: 'system',
+      borderRadius: 'xl',
+      density: 'touch',
+      contrast: 'more',
+    });
+    const lenient = buildCookbookShell({
+      cookbook: {
+        ...base,
+        theme: { borderRadius: 'huge', density: 'x', contrast: 4 } as never,
+      },
+      catalog,
+    });
+    expect(lenient.theme).toEqual({ preset: 'smrt', colorScheme: 'system' });
+  });
+
   it('passes the app-scope field policies through for the runtime', () => {
     const shell = buildCookbookShell({ cookbook: fixture('bakery'), catalog });
     expect(shell.policies.length).toBeGreaterThan(0);

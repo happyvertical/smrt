@@ -1,0 +1,42 @@
+/*
+ * Forced colors token layer (#3908), loaded by base.css as
+ * `@import url('./forced-colors.css') (forced-colors: active)`. Deliberately
+ * UNLAYERED (and a declaration-only block): preset stylesheets declare their
+ * tokens unlayered on `[data-theme][data-color-scheme]`, and an unlayered rule
+ * always beats a layered one. The repeated `[data-theme]` out-ranks that block
+ * by one attribute. Values mirror `FORCED_COLORS_TOKENS`
+ * (src/themes/forced-colors.ts); a unit test keeps the copies in step.
+ */
+[data-theme][data-theme][data-color-scheme] {
+  --smrt-hairline-color: CanvasText;
+  --smrt-hairline-strong-color: CanvasText;
+  --smrt-hairline: 1px solid CanvasText;
+  --smrt-hairline-strong: 1px solid CanvasText;
+  --smrt-inset-highlight: inset 0 0 0 0 transparent;
+  --smrt-elevation-0: 0 0 0 0 transparent;
+  --smrt-elevation-1: 0 0 0 0 transparent;
+  --smrt-elevation-2: 0 0 0 0 transparent;
+  --smrt-elevation-3: 0 0 0 0 transparent;
+  --smrt-elevation-4: 0 0 0 0 transparent;
+  --smrt-elevation-5: 0 0 0 0 transparent;
+  --smrt-focus-ring-color: Highlight;
+  --smrt-focus-ring-width: 3px;
+  --smrt-focus-ring-offset: 2px;
+  --smrt-glass-blur: 0px;
+  --smrt-glass-saturation: 100%;
+  --smrt-glass-surface: Canvas;
+  --smrt-glass-surface-strong: Canvas;
+  --smrt-glass-border: CanvasText;
+  --smrt-surface-overlay: Canvas;
+  --smrt-state-hover: 0;
+  --smrt-state-pressed: 0;
+  --smrt-state-selected: 0;
+  --smrt-state-focus: 0;
+  --smrt-state-dragged: 0;
+  --smrt-accent-color: Highlight;
+  --smrt-caret-color: CanvasText;
+  --smrt-selection-background: Highlight;
+  --smrt-selection-color: HighlightText;
+  --smrt-scrollbar-thumb: CanvasText;
+  --smrt-scrollbar-track: Canvas;
+}

@@ -1,5 +1,31 @@
 # @happyvertical/smrt-core
 
+## 0.55.21
+
+### Patch Changes
+
+- ### Features
+  
+  - cookbook theme radius, density and contrast; forced-colors support (#3912) (theme)
+- @happyvertical/smrt-config@0.55.21
+  - @happyvertical/smrt-scanner@0.55.21
+  - @happyvertical/smrt-types@0.55.21
+
+## 0.55.20
+
+### Patch Changes
+
+- ### Features
+  
+  - add explicit ordered compound tax allocation (#3897) (commerce)
+  
+  ### Bug Fixes
+  
+  - isolate create input from persistence identity (#3894) (comments)
+- @happyvertical/smrt-config@0.55.20
+  - @happyvertical/smrt-scanner@0.55.20
+  - @happyvertical/smrt-types@0.55.20
+
 ## 0.55.19
 
 ### Patch Changes

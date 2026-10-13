@@ -1,5 +1,41 @@
 # @happyvertical/smrt-chat
 
+## 0.55.21
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.21
+  - @happyvertical/smrt-agents@0.55.21
+  - @happyvertical/smrt-assets@0.55.21
+  - @happyvertical/smrt-images@0.55.21
+  - @happyvertical/smrt-personas@0.55.21
+  - @happyvertical/smrt-profiles@0.55.21
+  - @happyvertical/smrt-reports@0.55.21
+  - @happyvertical/smrt-tenancy@0.55.21
+  - @happyvertical/smrt-users@0.55.21
+  - @happyvertical/smrt-config@0.55.21
+  - @happyvertical/smrt-ui@0.55.21
+  - @happyvertical/smrt-types@0.55.21
+
+## 0.55.20
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.20
+  - @happyvertical/smrt-agents@0.55.20
+  - @happyvertical/smrt-assets@0.55.20
+  - @happyvertical/smrt-images@0.55.20
+  - @happyvertical/smrt-personas@0.55.20
+  - @happyvertical/smrt-profiles@0.55.20
+  - @happyvertical/smrt-reports@0.55.20
+  - @happyvertical/smrt-tenancy@0.55.20
+  - @happyvertical/smrt-users@0.55.20
+  - @happyvertical/smrt-config@0.55.20
+  - @happyvertical/smrt-ui@0.55.20
+  - @happyvertical/smrt-types@0.55.20
+
 ## 0.55.19
 
 ### Patch Changes

@@ -193,5 +193,14 @@ useControlRegistration(() => {
   .checkbox[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .checkbox[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .checkbox { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .checkbox__box { background: Canvas; border-color: CanvasText; }
+    input:checked + .checkbox__box, input:indeterminate + .checkbox__box { background: Highlight; border-color: Highlight; color: HighlightText; }
+    .checkbox__dash { background: HighlightText; }
+    .checkbox--disabled { opacity: 1; color: GrayText; }
+    .checkbox--disabled .checkbox__box, .checkbox--disabled input:checked + .checkbox__box, .checkbox--disabled input:indeterminate + .checkbox__box { background: Canvas; border-color: GrayText; color: GrayText; }
+    .checkbox--disabled .checkbox__dash { background: GrayText; }
+  }
 }
 </style>

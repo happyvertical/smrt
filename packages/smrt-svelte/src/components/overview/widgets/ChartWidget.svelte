@@ -250,5 +250,23 @@ const summary = $derived(
     .smrt-chart__bar { transition: inline-size var(--smrt-duration-normal) var(--smrt-easing-standard); }
   }
   .smrt-chart__table { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+  /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
+  @media (forced-colors: active) {
+    /* Series keys: system colours cycle by slot (the user's own palette), so
+       slices and legend swatches stay distinguishable without author colours.
+       The legend always carries label, value and share as text. */
+    .smrt-chart__slice[data-slot='0'], .smrt-chart__swatch[data-slot='0'] { stroke: CanvasText; background: CanvasText; }
+    .smrt-chart__slice[data-slot='1'], .smrt-chart__swatch[data-slot='1'] { stroke: Highlight; background: Highlight; }
+    .smrt-chart__slice[data-slot='2'], .smrt-chart__swatch[data-slot='2'] { stroke: LinkText; background: LinkText; }
+    .smrt-chart__slice[data-slot='3'], .smrt-chart__swatch[data-slot='3'] { stroke: VisitedText; background: VisitedText; }
+    .smrt-chart__slice[data-slot='4'], .smrt-chart__swatch[data-slot='4'] { stroke: ActiveText; background: ActiveText; }
+    .smrt-chart__slice[data-slot='5'], .smrt-chart__swatch[data-slot='5'] { stroke: GrayText; background: GrayText; }
+    .smrt-chart__slice[data-slot='6'], .smrt-chart__swatch[data-slot='6'] { stroke: ButtonText; background: ButtonText; }
+    .smrt-chart__slice[data-slot='7'], .smrt-chart__swatch[data-slot='7'] { stroke: MarkText; background: MarkText; }
+    .smrt-chart__swatch { border: var(--smrt-hairline-strong); }
+    .smrt-chart__slice { stroke-linecap: butt; }
+    .smrt-chart__track { background: Canvas; border: var(--smrt-hairline-strong); }
+    .smrt-chart__bar { background: Highlight; }
+  }
 }
 </style>
