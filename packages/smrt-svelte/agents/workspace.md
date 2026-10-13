@@ -226,6 +226,15 @@ dialog and the global shortcut, so it mounts once. Planner-style hosts that
 rendered their own `header.end` assistant toggle should pass `dockToggles`
 (`dock:assistant`) and `user` instead.
 
+Async sign-out (#3860): `onSignOut?: () => void | Promise<void>` (AppShell,
+`WorkspaceAccountMenu`, `ShellSettingsPage`/`ShellSettingsPanel`) is awaited.
+While pending the control is busy (`aria-busy`) and disabled, so a second
+activation never fires the callback again; on success the account menu closes;
+on rejection the menu (or Account section) stays as it was and shows an inline
+`role="alert"` "Couldn't sign out. Try again." (`ui.shell_settings.sign_out_failed`).
+A rejection is caught, never an unhandled rejection; the control is usable again
+for a retry. `signOutHref` links are unchanged.
+
 `ShellLayout.placements?: Record<itemId, ShellSlot>` (additive, still version
 1) overrides default slots. Pure helpers in `layout.ts` (also `./workspace/layout`):
 `placeShellItem(layout, id, slot, defaultSlot?)` (passing the default drops a

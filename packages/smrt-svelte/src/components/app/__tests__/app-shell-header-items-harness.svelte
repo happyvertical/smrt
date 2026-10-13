@@ -32,7 +32,7 @@ let {
   commandPalette?: { providers: PaletteProvider[]; placeholder?: string };
   settingsHref?: string;
   signOutHref?: string;
-  onSignOut?: () => void;
+  onSignOut?: () => void | Promise<void>;
   config?: ShellPanelDefaults;
   layout?: ShellLayout | null;
   edgeToggles?: boolean | Record<string, boolean>;
