@@ -30,6 +30,7 @@ overrides:
   '@happyvertical/signatures': ^0.103.5
   '@happyvertical/speech': ^0.103.5
   '@happyvertical/spider': ^1.1.13
+  '@happyvertical/sql': ^0.103.5
   '@happyvertical/utils': ^0.103.5
   '@grpc/grpc-js@>=1.14.0 <1.14.5': 1.14.5
   # minimatch 9 is the last consumer of brace-expansion 2.x, which has no
