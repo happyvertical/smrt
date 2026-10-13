@@ -185,7 +185,7 @@ $effect(() => {
     padding: 0.75rem;
     font-size: var(--smrt-typography-body-large-size, 1rem);
     font-family: inherit;
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-small);
     resize: vertical;
     min-height: 80px;

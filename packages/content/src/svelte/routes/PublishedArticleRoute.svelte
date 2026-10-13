@@ -108,7 +108,7 @@ function formatTimestamp(value: string | null | undefined) {
   }
 
   .article-hero__inner {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: color-mix(
       in srgb,
       var(--smrt-color-surface) 92%,
@@ -170,7 +170,7 @@ function formatTimestamp(value: string | null | undefined) {
 
   .article-body,
   .article-sidebar {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: color-mix(
       in srgb,
       var(--smrt-color-surface) 95%,

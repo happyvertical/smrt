@@ -114,7 +114,7 @@ function handleChange(event: Event) {
   .list-sort-select__control {
     min-height: 2.75rem;
     padding: 0.25rem 0.5rem;
-    border: 1px solid var(--smrt-color-outline-variant, currentColor);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md, 0.375rem);
     background: var(--smrt-color-surface, transparent);
     color: inherit;

@@ -412,7 +412,7 @@ function formatFileSize(bytes: number): string {
     list-style: none;
     margin: 0;
     padding: 0;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md, 0.5rem);
     overflow: hidden;
   }
@@ -422,7 +422,7 @@ function formatFileSize(bytes: number): string {
     align-items: center;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .file-list__item:last-child {

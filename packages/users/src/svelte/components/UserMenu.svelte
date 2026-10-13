@@ -387,7 +387,7 @@ function getInitials(name: string): string {
   .divider {
     margin: var(--smrt-spacing-1) 0;
     border: none;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 
   @media (prefers-reduced-motion: reduce) {

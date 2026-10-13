@@ -142,7 +142,7 @@ useControlRegistration(() => {
   .switch__control::before { content: ''; position: absolute; z-index: 0; inset-block-start: 50%; inset-inline: calc((100% - var(--smrt-switch-hit)) / 2); block-size: var(--smrt-switch-hit); margin-block-start: calc(var(--smrt-switch-hit) / -2); }
   .switch__label { position: relative; z-index: 1; }
   input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-  .switch__track { position: relative; z-index: 1; width: 2.75rem; height: 1.5rem; padding: 2px; border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-highest); border: 1px solid var(--smrt-color-outline); transition: background var(--smrt-duration-short2); }
+  .switch__track { position: relative; z-index: 1; width: 2.75rem; height: 1.5rem; padding: 2px; border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-highest); border: var(--smrt-hairline-strong); transition: background var(--smrt-duration-short2); }
   .switch__thumb { display: block; width: 1.125rem; height: 1.125rem; border-radius: 50%; background: var(--smrt-color-outline); transition: transform var(--smrt-duration-short2), background var(--smrt-duration-short2); }
   input:checked + .switch__track { background: var(--smrt-color-primary); border-color: var(--smrt-color-primary); }
   input:checked + .switch__track .switch__thumb { transform: translateX(1.25rem); background: var(--smrt-color-on-primary); }

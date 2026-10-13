@@ -112,7 +112,7 @@ function toggle(key: string | number) {
 @layer smrt.theme {
   .collection { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: 0; list-style: none; }
   .collection--grid { grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr)); }
-  li { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-3); min-width: 0; padding: var(--smrt-spacing-3); border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant)); border-radius: var(--smrt-radius-medium); background: var(--smrt-card-background, var(--smrt-color-surface)); color: var(--smrt-color-on-surface); }
+  li { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-3); min-width: 0; padding: var(--smrt-spacing-3); border: var(--smrt-card-border, var(--smrt-hairline)); border-radius: var(--smrt-radius-medium); background: var(--smrt-card-background, var(--smrt-color-surface)); color: var(--smrt-color-on-surface); }
   li.selected { border-color: var(--smrt-color-primary); background: var(--smrt-color-primary-container); }
   /* The selection box and actions sit above an item's stretched link. */
   .select { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; min-width: 2.75rem; min-height: 2.75rem; }

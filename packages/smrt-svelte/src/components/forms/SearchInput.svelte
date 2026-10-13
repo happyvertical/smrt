@@ -221,7 +221,7 @@ const sizeClasses = {
     align-items: center;
     width: 100%;
     background: var(--smrt-color-surface-container-low);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md, 0.5rem);
     transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
   }

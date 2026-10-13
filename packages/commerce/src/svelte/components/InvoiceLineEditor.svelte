@@ -84,7 +84,7 @@ function refresh(event: Event) {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-.invoice-line { display: grid; grid-template-columns: minmax(0,1fr); gap: var(--smrt-spacing-3); min-width: 0; margin: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); }
+.invoice-line { display: grid; grid-template-columns: minmax(0,1fr); gap: var(--smrt-spacing-3); min-width: 0; margin: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); }
 legend { padding-inline: var(--smrt-spacing-2); }
 .totals { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-4); }
 dd { margin: 0; } p, dl { margin: 0; }

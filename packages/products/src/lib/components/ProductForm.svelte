@@ -180,7 +180,7 @@ function handleSubmit(event: Event) {
     padding: 1.5rem;
     background: var(--smrt-color-surface);
     border-radius: var(--smrt-radius-md);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
   }
 
   .form-group {
@@ -238,7 +238,7 @@ function handleSubmit(event: Event) {
     justify-content: flex-end;
     margin-top: 1.5rem;
     padding-top: 1rem;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 }
 </style>

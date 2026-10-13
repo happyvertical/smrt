@@ -330,7 +330,7 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
   .ps-textarea {
     width: 100%;
     padding: 0.5rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.375rem;
     background: var(--smrt-color-surface);
     color: inherit;

@@ -237,7 +237,7 @@ $effect(() => {
     align-items: flex-start;
     gap: 0.75rem;
     padding: 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     cursor: pointer;
     transition: border-color var(--smrt-duration-short2, 150ms),

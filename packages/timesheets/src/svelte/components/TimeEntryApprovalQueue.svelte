@@ -192,7 +192,7 @@ function formatAmount(amount: number, currency = 'USD'): string {
     flex-direction: column;
     gap: 0.375rem;
     padding: 0.5rem 0.25rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, transparent);
+    border-bottom: var(--smrt-hairline);
   }
 
   .time-approval-row:last-child {

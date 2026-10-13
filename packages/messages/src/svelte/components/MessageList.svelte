@@ -96,7 +96,7 @@ function getAccount(accountId: string): AccountData | undefined {
   .message-list {
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
     background: var(--smrt-color-surface);

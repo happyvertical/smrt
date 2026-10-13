@@ -204,7 +204,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
     background: var(--smrt-color-surface);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     flex-wrap: wrap;
   }
 
@@ -233,7 +233,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     max-width: 320px;
     height: 36px;
     background: var(--smrt-color-surface-container-low);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     transition: border-color 150ms ease;
   }
@@ -309,7 +309,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     height: 36px;
     padding: 0 var(--smrt-spacing-8, 2rem) 0 var(--smrt-spacing-3, 0.75rem);
     background-color: var(--smrt-color-surface-container-low);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
@@ -320,7 +320,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
   /* View Toggle */
   .view-toggle {
     display: flex;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
   }
@@ -338,7 +338,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
   }
 
   .view-toggle :global(.view-toggle__btn:not(:last-child)) {
-    border-right: 1px solid var(--smrt-color-outline-variant);
+    border-right: var(--smrt-hairline);
   }
 
   /* Upload Button — renders via <Button variant="primary" class="upload-btn">

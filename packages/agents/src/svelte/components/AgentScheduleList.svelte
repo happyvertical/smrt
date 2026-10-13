@@ -229,11 +229,11 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-align: left;
     white-space: nowrap;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .schedule-list__body tr {
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 

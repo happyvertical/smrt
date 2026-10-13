@@ -116,7 +116,7 @@ let {
   .smrt-plan-picker__plan {
     align-items: flex-start;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     color: inherit;
     cursor: pointer;

@@ -576,7 +576,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     gap: 1.4rem;
     padding: 1.25rem;
     overflow: hidden;
-    border-right: 1px solid var(--smrt-color-outline-variant);
+    border-right: var(--smrt-hairline);
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
   }
@@ -635,7 +635,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
   .search-field input {
     width: 100%;
     padding: 0.65rem 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.55rem;
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
@@ -678,7 +678,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     align-items: center;
     justify-content: space-between;
     padding: 0 0 0.7rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     font-size: 0.82rem;
     font-weight: 650;
   }
@@ -747,7 +747,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     align-items: end;
     gap: 0.5rem;
     padding-top: 0.8rem;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 
   .theme-controls :global(.smrt-theme-switcher__label) {
@@ -777,7 +777,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .breadcrumbs {
@@ -839,7 +839,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     display: grid;
     gap: 0.55rem;
     padding-bottom: clamp(1.75rem, 4vw, 3rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .package-landing > header p {
@@ -894,7 +894,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     gap: 1.25rem;
     padding: 1.15rem 0;
     border: 0;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     background: transparent;
     text-align: left;
     cursor: pointer;
@@ -977,7 +977,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     min-height: 30rem;
     padding: clamp(1rem, 2.2vw, 2rem);
     overflow: auto;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 1rem;
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
@@ -1032,7 +1032,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
       position: static;
       height: auto;
       border-right: 0;
-      border-bottom: 1px solid var(--smrt-color-outline-variant);
+      border-bottom: var(--smrt-hairline);
     }
 
     .catalog-scroll {

@@ -604,7 +604,7 @@ function closeTry() {
 
   .endpoints-panel {
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 1rem;
     padding: 1.5rem;
     box-shadow: var(--smrt-elevation-3, 0 2px 8px color-mix(in srgb, var(--smrt-color-shadow) 4%, transparent));
@@ -677,7 +677,7 @@ function closeTry() {
 
   .try-panel {
     margin-top: 1rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.75rem;
     overflow: hidden;
   }
@@ -688,7 +688,7 @@ function closeTry() {
     gap: 0.5rem;
     padding: 0.6rem 0.75rem;
     background: var(--smrt-color-surface-container-low);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .try-header code {

@@ -187,7 +187,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
     display: grid;
     max-block-size: min(42rem, calc(100vh - 19rem));
     overflow-y: auto;
-    border-block: 1px solid var(--smrt-color-outline-variant);
+    border-block: var(--smrt-hairline);
   }
 
   .smrt-settings-catalog__results a {
@@ -196,7 +196,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
     gap: var(--smrt-spacing-1);
     min-width: 0;
     padding: var(--smrt-spacing-3);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     color: inherit;
     text-decoration: none;
   }
@@ -260,7 +260,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
   }
 
   .smrt-settings-catalog__detail {
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-color-surface);
     padding: var(--smrt-spacing-4);

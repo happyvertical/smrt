@@ -84,7 +84,7 @@ const { t } = useI18n();
   .integration-info {
     margin-top: 3rem;
     padding-top: 2rem;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
   
   .info-cards {
@@ -97,7 +97,7 @@ const { t } = useI18n();
     background: var(--smrt-color-surface);
     padding: 1.5rem;
     border-radius: var(--smrt-radius-md);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     text-align: center;
   }
 

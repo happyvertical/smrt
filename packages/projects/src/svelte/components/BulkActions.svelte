@@ -96,7 +96,7 @@ const visible = $derived(selectedCount > 0);
     align-items: center;
     padding: 0.75rem 1rem;
     background: var(--smrt-color-secondary-container);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
     margin-bottom: 1rem;
   }

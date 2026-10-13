@@ -100,7 +100,7 @@ let { campaigns = [], selectedCampaignId, locale, onSelect }: Props = $props();
   th,
   td {
     padding: var(--smrt-spacing-3);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     text-align: left;
     vertical-align: top;
   }

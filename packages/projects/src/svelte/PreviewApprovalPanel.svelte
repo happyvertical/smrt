@@ -47,7 +47,7 @@ const { t } = useI18n();
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .preview {
-    border-block: 1px solid var(--smrt-color-outline-variant);
+    border-block: var(--smrt-hairline);
     display: grid;
     gap: var(--smrt-spacing-4);
     padding: var(--smrt-spacing-4) 0;

@@ -148,7 +148,7 @@ const customActions = [
 
   .assets-route__panel {
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 1rem;
     padding: 1.25rem;
     box-shadow: var(--smrt-elevation-5, 0 10px 30px color-mix(in srgb, var(--smrt-color-shadow) 6%, transparent));
@@ -187,7 +187,7 @@ const customActions = [
     padding: 0.625rem 0.75rem;
     border-radius: 0.75rem;
     background: var(--smrt-color-surface-container);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
   }
 
   .assets-route__selection-list code {

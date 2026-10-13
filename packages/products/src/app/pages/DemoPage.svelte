@@ -265,7 +265,7 @@ function handleCustomSubmit(data: ProductData) {
     padding: 1.5rem;
     background: var(--smrt-color-surface-container-low);
     border-radius: var(--smrt-radius-md, 0.5rem);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
   }
 
   .comparison-column h3 {

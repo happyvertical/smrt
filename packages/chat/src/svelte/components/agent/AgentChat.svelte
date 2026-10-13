@@ -404,7 +404,7 @@ $effect(() => {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     background: none;
     color: var(--smrt-color-on-surface-variant);
@@ -436,7 +436,7 @@ $effect(() => {
     align-items: center;
     justify-content: space-between;
     padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .diff-dialog__header h4 {

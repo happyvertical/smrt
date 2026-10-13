@@ -397,11 +397,11 @@ async function saveRoute() {
   h3, h4, p { margin: 0; }
   header p, small, .secret-note, .empty { color: var(--smrt-color-on-surface-variant); }
   .items { display: grid; gap: 0.5rem; }
-  :global(.item) { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.875rem; text-align: left; background: var(--smrt-color-surface); color: inherit; border: 1px solid var(--smrt-color-outline-variant); border-radius: 0.5rem; }
+  :global(.item) { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.875rem; text-align: left; background: var(--smrt-color-surface); color: inherit; border: var(--smrt-hairline); border-radius: 0.5rem; }
   :global(.item:not(:disabled)) { cursor: pointer; }
   :global(.item span:first-child) { display: grid; gap: 0.2rem; }
   .ok { color: var(--smrt-color-success); }
-  :global(.editor) { display: grid; gap: 0.65rem; padding: 1rem; border: 1px solid var(--smrt-color-outline-variant); border-radius: 0.5rem; background: var(--smrt-color-surface-container-low); }
+  :global(.editor) { display: grid; gap: 0.65rem; padding: 1rem; border: var(--smrt-hairline); border-radius: 0.5rem; background: var(--smrt-color-surface-container-low); }
   label { font-weight: var(--smrt-typography-weight-semibold, 600); }
   .checkbox { display: flex; align-items: center; gap: 0.5rem; }
   .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
