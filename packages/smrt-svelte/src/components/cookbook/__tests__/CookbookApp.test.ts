@@ -16,8 +16,8 @@ import {
   it,
   vi,
 } from 'vitest';
-import { narrowCatalog } from '../catalog.js';
 import type { ShortcutEntry } from '../../overview/widgets/data.js';
+import { narrowCatalog } from '../catalog.js';
 import type { CookbookCatalog } from '../types.js';
 import Harness from './app-harness.svelte';
 import { readFixture, workspaceCatalog } from './workspace-catalog.js';

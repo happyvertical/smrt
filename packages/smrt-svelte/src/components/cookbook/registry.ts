@@ -15,7 +15,6 @@ import {
   type WidgetRegistry,
 } from '../overview/registry.js';
 import type { WidgetLoad, WidgetLoadContext } from '../overview/types.js';
-import type { CookbookLoaders, CookbookShortcutsLoader } from './types.js';
 import { registerCoreWidgets } from '../overview/widgets/core.js';
 import {
   type ShortcutEntry,
@@ -23,6 +22,7 @@ import {
   type ShortcutsWidgetData,
   shortcutsFromNav,
 } from '../overview/widgets/data.js';
+import type { CookbookLoaders, CookbookShortcutsLoader } from './types.js';
 
 /** What a section page hands its widgets' loaders besides the host's own context. */
 export interface CookbookWidgetContext {
@@ -68,7 +68,10 @@ export function composeShortcutsLoader(
   return async (options, ctx) => {
     const base = loadShortcuts(options, ctx);
     try {
-      const entries = await host(ctx, base.items.map((item) => ({ ...item })));
+      const entries = await host(
+        ctx,
+        base.items.map((item) => ({ ...item })),
+      );
       if (!Array.isArray(entries)) return base;
       const seen = new Set<string>();
       const items: ShortcutsWidgetData['items'] = [];
