@@ -42,6 +42,7 @@ import {
 } from '../identity.js';
 import {
   executeImportPlan,
+  importParameter,
   planImportTables,
   serializeExportBundle,
   validateImportBundle,
@@ -695,5 +696,64 @@ describe('import plan', () => {
     } finally {
       await db.close?.();
     }
+  });
+
+  it('binds JSON columns as JSON text so arrays survive PostgreSQL (#3839)', async () => {
+    const json = { type: 'JSON' };
+    expect(importParameter(json, ['x'])).toBe('["x"]');
+    expect(importParameter(json, [])).toBe('[]');
+    expect(importParameter(json, { a: [] })).toBe('{"a":[]}');
+    expect(importParameter(json, 's')).toBe('"s"');
+    expect(importParameter({ type: 'jsonb' }, ['x'])).toBe('["x"]');
+    expect(importParameter(json, 42)).toBe('42');
+    expect(importParameter(json, null)).toBeNull();
+    // A local (SQLite) bundle already holds JSON text.
+    expect(importParameter(json, '["x"]', { jsonText: true })).toBe('["x"]');
+    // Every other column binds unchanged, including a real array column.
+    const labels = ['a', 'b'];
+    expect(importParameter({ type: 'TEXT' }, labels)).toBe(labels);
+    expect(importParameter(undefined, 7)).toBe(7);
+
+    const calls: unknown[][] = [];
+    const tx = {
+      query: async (sql: string, ...values: unknown[]) => {
+        if (!sql.startsWith('SELECT'))
+          calls.push([sql.split(' ')[0], ...values]);
+        return { rows: [{ count: 0 }] };
+      },
+    };
+    await executeImportPlan(
+      tx,
+      [
+        {
+          name: 'customers',
+          columns: ['id', 'aliases', 'parent_id'],
+          columnDefinitions: {
+            id: { type: 'TEXT', primaryKey: true },
+            aliases: { type: 'JSON' },
+            parent_id: { type: 'JSON' },
+          },
+          foreignKeys: [],
+          primaryKeys: ['id'],
+          deferredColumns: new Set(['parent_id']),
+        },
+      ],
+      new Map([
+        [
+          'customers',
+          {
+            rows: [
+              { id: 'c1', aliases: ['Acme'], parent_id: ['p'] },
+              { id: 'c2', aliases: [], parent_id: null },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect(calls).toEqual([
+      ['INSERT', 'c1', '["Acme"]', null],
+      ['INSERT', 'c2', '[]', null],
+      ['UPDATE', '["p"]', 'c1'],
+    ]);
   });
 });

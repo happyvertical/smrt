@@ -207,7 +207,7 @@ function clearLogs() {
 @layer smrt.theme {
   .stt-test {
     padding: var(--smrt-spacing-md);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-color-surface-container-low);
     max-width: 500px;
@@ -306,7 +306,7 @@ function clearLogs() {
     margin-top: var(--smrt-spacing-sm);
     padding: var(--smrt-spacing-md);
     background: var(--smrt-color-surface, white);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small);
     min-height: 60px;
     font: var(--smrt-typography-body-large-font, 1rem / 1.5 sans-serif);

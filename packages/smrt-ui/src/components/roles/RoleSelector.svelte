@@ -207,7 +207,7 @@ $effect(() => {
     width: 100%;
     padding: 0.5rem 0.75rem;
     background: var(--smrt-color-surface, white);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-small, 0.375rem);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
@@ -257,7 +257,7 @@ $effect(() => {
     right: 0;
     margin-top: 0.25rem;
     background: var(--smrt-color-surface, white);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small, 0.375rem);
     box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
     z-index: var(--smrt-z-index-dropdown, 1000);

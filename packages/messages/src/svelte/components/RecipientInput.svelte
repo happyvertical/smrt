@@ -96,7 +96,7 @@ export interface Props {
     align-items: flex-start;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-1) 0;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .label {

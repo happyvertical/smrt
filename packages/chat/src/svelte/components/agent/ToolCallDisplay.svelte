@@ -192,7 +192,7 @@ function formatDuration(ms: number | undefined): string {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .tool-call {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
     overflow: hidden;
     font-family: var(--smrt-font-family, system-ui);
@@ -325,7 +325,7 @@ function formatDuration(ms: number | undefined): string {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     background: var(--smrt-color-surface);
   }
 

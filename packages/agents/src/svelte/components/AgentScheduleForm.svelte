@@ -326,7 +326,7 @@ function handleCronPreset(preset: string) {
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-top: var(--smrt-spacing-lg, 1.5rem);
     padding-top: var(--smrt-spacing-md, 1rem);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 }
 </style>

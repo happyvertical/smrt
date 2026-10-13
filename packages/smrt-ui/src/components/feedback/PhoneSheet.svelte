@@ -169,7 +169,7 @@ function onkeydown(event: KeyboardEvent): void {
     min-block-size: 3.5rem;
     padding-block: 0;
     padding-inline: var(--smrt-spacing-4) var(--smrt-spacing-2);
-    border-block-end: 1px solid var(--smrt-color-outline-variant);
+    border-block-end: var(--smrt-hairline);
     touch-action: pan-x;
   }
 

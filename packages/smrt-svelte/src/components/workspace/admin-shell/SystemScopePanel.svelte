@@ -101,7 +101,7 @@ const { t } = useI18n();
     grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--smrt-spacing-1) var(--smrt-spacing-3);
     padding: var(--smrt-spacing-3) 0;
-    border-block-start: 1px solid var(--smrt-color-outline-variant);
+    border-block-start: var(--smrt-hairline);
     color: var(--smrt-color-on-surface);
     text-decoration: none;
   }

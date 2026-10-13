@@ -482,7 +482,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     height: 100dvh;
     box-sizing: border-box;
     background: var(--smrt-color-surface);
-    border-right: 1px solid var(--smrt-color-outline-variant);
+    border-right: var(--smrt-hairline);
     min-width: 0;
     overflow: hidden;
     overscroll-behavior: contain;
@@ -531,7 +531,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
      :global(.class)` (#1589). Button owns focus-visible, so those rules are
      dropped. The responsive `display` toggles below are preserved. */
   .smrt-workspace-shell :global(.shell-toggle) {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     border-radius: var(--smrt-radius-medium, 0.65rem);
@@ -573,7 +573,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     gap: 0.75rem;
     padding-top: 0.75rem;
     background: var(--smrt-color-surface);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     z-index: 1;
   }
 
@@ -597,7 +597,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     padding: 0.75rem var(--smrt-ws-page-pad);
     min-height: var(--smrt-ws-topbar-height);
     background: var(--smrt-color-surface);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     box-shadow: var(--smrt-elevation-1, 0 1px 2px rgb(0 0 0 / 0.05));
   }
 
@@ -655,7 +655,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     gap: 0.4rem;
     padding: 0.25rem 0.65rem;
     border-radius: var(--smrt-radius-full);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-label-medium-size, 0.78rem);
@@ -687,7 +687,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
 
   .smrt-workspace-shell :global(.mobile-menu) {
     display: none;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     border-radius: var(--smrt-radius-medium, 0.65rem);
@@ -721,7 +721,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     display: flex;
     flex-direction: column;
     background: var(--smrt-color-surface);
-    border-left: 1px solid var(--smrt-color-outline-variant);
+    border-left: var(--smrt-hairline);
     box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgb(0 0 0 / 0.1));
     z-index: 22;
   }
@@ -731,7 +731,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     align-items: center;
     justify-content: space-between;
     padding: 0.85rem 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .inspector-title {
@@ -781,7 +781,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     gap: 0.4rem;
     padding: 0.75rem 0.25rem;
     background: var(--smrt-color-surface);
-    border-left: 1px solid var(--smrt-color-outline-variant);
+    border-left: var(--smrt-hairline);
     z-index: 18;
   }
 

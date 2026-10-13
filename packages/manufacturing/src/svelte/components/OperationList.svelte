@@ -147,7 +147,7 @@ const showActions = $derived(Boolean(onretire || onreinstate));
   .operation-list td {
     padding: 0.5rem 0.75rem;
     text-align: left;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, transparent);
+    border-bottom: var(--smrt-hairline);
   }
 
   .operation-list thead th {

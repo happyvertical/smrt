@@ -367,7 +367,7 @@ function handleManagerDrop(event: DragEvent) {
     height: 100%;
     min-height: 400px;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large, 0.75rem);
     overflow: hidden;
     font-family: var(--smrt-font-family, inherit);

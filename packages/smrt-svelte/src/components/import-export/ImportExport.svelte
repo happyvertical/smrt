@@ -661,7 +661,7 @@ async function startExport() {
     padding: var(--smrt-spacing-2);
     text-align: start;
     vertical-align: top;
-    border-block-end: 1px solid var(--smrt-color-outline-variant, currentColor);
+    border-block-end: var(--smrt-hairline);
   }
   .smrt-import-export__actions {
     display: flex;

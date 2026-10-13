@@ -63,7 +63,7 @@ const { t } = useI18n();
   }
   header {
     align-items: start;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     display: flex;
     gap: var(--smrt-spacing-5);
     justify-content: space-between;

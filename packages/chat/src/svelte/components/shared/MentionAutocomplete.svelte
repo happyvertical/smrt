@@ -120,7 +120,7 @@ function highlightMatch(
     max-height: 240px;
     overflow-y: auto;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
     box-shadow: var(--smrt-elevation-2, 0 2px 8px rgba(0, 0, 0, 0.15));
     z-index: var(--smrt-z-index-dropdown, 1000);

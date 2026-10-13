@@ -131,7 +131,7 @@ function methodLabel(method: string): string {
     flex-direction: column;
     gap: var(--smrt-spacing-2, 0.5rem);
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     padding: var(--smrt-spacing-3, 0.75rem);
   }
@@ -196,7 +196,7 @@ function methodLabel(method: string): string {
   .timeline__step {
     padding: var(--smrt-spacing-0_5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
     border-radius: var(--smrt-radius-full);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
   }

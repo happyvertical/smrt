@@ -108,7 +108,7 @@ function cycle(delta: number) {
 
   .content-image-chooser :global(.chooser-arrow),
   .content-image-chooser :global(.chooser-preview) {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     border-radius: var(--smrt-radius-full);

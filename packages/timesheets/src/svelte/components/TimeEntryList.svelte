@@ -200,7 +200,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
     background: var(--smrt-color-surface);
     border-radius: var(--smrt-radius-large);
     overflow: hidden;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
   }
 
   .list-header {
@@ -209,7 +209,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
     align-items: center;
     padding: 0.75rem 1rem;
     background: var(--smrt-color-surface-container-low);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .select-all {
@@ -241,7 +241,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
   .entry-row {
     display: flex;
     align-items: center;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     transition: background 0.15s var(--smrt-easing-standard);
   }
 

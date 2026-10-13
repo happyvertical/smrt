@@ -103,7 +103,7 @@ export interface Props {
     flex-direction: column;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-3);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface);
     font-family: var(--smrt-font-family, system-ui);

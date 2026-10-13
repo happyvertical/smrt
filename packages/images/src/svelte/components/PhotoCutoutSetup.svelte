@@ -408,7 +408,7 @@ async function playSpeech() {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-.setup { max-width: 42rem; margin: var(--smrt-spacing-6, 1.5rem) auto; padding: var(--smrt-spacing-5, 1.25rem); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-xl); }
+.setup { max-width: 42rem; margin: var(--smrt-spacing-6, 1.5rem) auto; padding: var(--smrt-spacing-5, 1.25rem); border: var(--smrt-hairline); border-radius: var(--smrt-radius-xl); }
 .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--smrt-spacing-2, .5rem); padding: 0; margin: var(--smrt-spacing-4, 1rem) 0; list-style: none; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size, .875rem); }
 .steps li { padding-bottom: var(--smrt-spacing-1, .25rem); border-bottom: 2px solid var(--smrt-color-outline-variant); }
 .steps .current { color: var(--smrt-color-primary); border-color: var(--smrt-color-primary); font-weight: var(--smrt-typography-weight-semibold, 600); }

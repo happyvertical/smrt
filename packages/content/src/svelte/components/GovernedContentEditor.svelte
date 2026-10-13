@@ -387,7 +387,7 @@ function handleSave(data: ContentData) {
   .publish-readiness-card {
     border-radius: 0.75rem;
     padding: 1rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: var(--smrt-color-surface-container-low);
     display: flex;
     flex-direction: column;

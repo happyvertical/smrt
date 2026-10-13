@@ -355,7 +355,7 @@ function handleInput(e: Event) {
     display: flex;
     align-items: center;
     background-color: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small);
     min-height: 40px;
     padding: 0 var(--smrt-spacing-3);

@@ -67,7 +67,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
   .assistant-thread-list {
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--smrt-color-outline-variant);
+    border-right: var(--smrt-hairline);
     background: var(--smrt-color-surface-container-low);
     min-width: 160px;
     overflow-y: auto;

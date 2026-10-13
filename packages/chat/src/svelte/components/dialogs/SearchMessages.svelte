@@ -229,7 +229,7 @@ $effect(() => {
     width: 320px;
     height: 100%;
     background: var(--smrt-color-surface);
-    border-left: 1px solid var(--smrt-color-outline-variant);
+    border-left: var(--smrt-hairline);
     overflow: hidden;
   }
 
@@ -238,7 +238,7 @@ $effect(() => {
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .search-panel__title {
@@ -270,7 +270,7 @@ $effect(() => {
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
   :global(.search-form) {
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .search-input-wrap {
@@ -278,7 +278,7 @@ $effect(() => {
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-large, 1rem);
     background: var(--smrt-color-surface-container);
     transition: border-color var(--smrt-duration-short2, 150ms);

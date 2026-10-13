@@ -122,7 +122,7 @@ const labels = {
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface, inherit);
@@ -145,7 +145,7 @@ const labels = {
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
     padding: var(--smrt-spacing-1_5, 0.375rem) var(--smrt-spacing-3, 0.75rem);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-md, 0.5rem);
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface, inherit);
@@ -167,7 +167,7 @@ const labels = {
   .smrt-color-scheme-toggle__segmented {
     display: inline-flex;
     background: var(--smrt-color-surface-container-lowest);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-lg, 0.75rem);
     padding: var(--smrt-spacing-0_5, 0.125rem);
   }

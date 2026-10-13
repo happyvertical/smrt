@@ -90,7 +90,7 @@ const { t } = useI18n();
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-4);
     background: var(--smrt-color-surface-container-low);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
     cursor: pointer;
     text-align: left;

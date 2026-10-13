@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.55.18
+
+### Patch Changes
+
+- ### Features
+  
+  - premium theme baseline across presets and shell (epic #3864) (#3879) (themes)
+  - flag unlayered universal resets in doctor; document host reset recipes (#3872) (cli)
+  
+  ### Bug Fixes
+  
+  - bind JSON columns as JSON text on app import (#3839) (#3883) (cli)
+- @happyvertical/smrt-config@0.55.18
+  - @happyvertical/smrt-scanner@0.55.18
+  - @happyvertical/smrt-types@0.55.18
+
 ## 0.55.17
 
 ### Patch Changes

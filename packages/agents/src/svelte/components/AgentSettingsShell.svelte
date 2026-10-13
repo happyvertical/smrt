@@ -207,7 +207,7 @@ async function handleSave(slotId: string, config: unknown) {
 		background: var(--smrt-color-surface-container-low);
 		border-radius: var(--smrt-radius-medium);
 		padding: var(--smrt-spacing-4, 1rem);
-		border: 1px solid var(--smrt-color-outline-variant);
+		border: var(--smrt-hairline);
 	}
 
 	.sidebar-title {
@@ -218,7 +218,7 @@ async function handleSave(slotId: string, config: unknown) {
 		text-transform: uppercase;
 		letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
 		color: var(--smrt-color-on-surface-variant);
-		border-bottom: 1px solid var(--smrt-color-outline-variant);
+		border-bottom: var(--smrt-hairline);
 	}
 
 	.agents-list {
@@ -275,7 +275,7 @@ async function handleSave(slotId: string, config: unknown) {
 	.agent-header {
 		margin-bottom: 1.5rem;
 		padding-bottom: 1rem;
-		border-bottom: 1px solid var(--smrt-color-outline-variant);
+		border-bottom: var(--smrt-hairline);
 	}
 
 	.agent-title {

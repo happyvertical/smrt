@@ -204,6 +204,7 @@ Headings, role utilities (`.smrt-display-large` ... `.smrt-label-small`) and tab
 Built-in presets stay static (no inline token payload); only user overrides go inline: non-`md` `borderRadius` (control radius tokens), `primaryColor` (derived set via `derivePrimaryOverrides`) and `density`. `data-smrt-theme-changing` marks one `--smrt-duration-scheme` after a post-mount scheme change (not on first paint, not under reduced motion); `data-contrast` (`standard|more|forced`) and `data-forced-colors` come from `prefers-contrast`/`forced-colors` or the `contrast` prop. `themeScript()` stamps `data-contrast`/`data-density` pre-paint from the same persisted config; keep it tiny. Forced-colors contract: hairlines `CanvasText`, focus rings `Highlight`, no painting over system colours.
 
 
+Use `--smrt-hairline` / `--smrt-hairline-strong` for quiet / strong edges, `--smrt-hairline-color` / `--smrt-hairline-strong-color` for edge colours and matching `--smrt-inset-highlight` shadows (transparent when neutral, never `none` in shadow lists); run `node scripts/codemod-smrt-hairlines.mjs` to convert supported literals and list exceptions, and spell concrete token names in markdown because `scripts/check-svelte-tokens.mjs` scans docs under `src`.
 
 ## Visual regression
 

@@ -358,7 +358,7 @@ async function recheckFactClaims(claimIds: string[]) {
   }
 
   .tool-card {
-    border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant));
+    border: var(--smrt-card-border, var(--smrt-hairline));
     box-shadow: var(--smrt-card-shadow, none);
     border-radius: 0.65rem;
     background: var(--smrt-card-background, var(--smrt-color-surface));

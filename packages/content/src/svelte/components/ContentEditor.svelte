@@ -1584,7 +1584,7 @@ function removeAsset(id: string) {
     justify-content: space-between;
     padding-bottom: 1.5rem;
     margin-bottom: 1.5rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .editor-toolbar-left {
@@ -1623,7 +1623,7 @@ function removeAsset(id: string) {
   .mui-field :global(.mui-input) {
     padding: 0.5rem 0.75rem;
     border-radius: 0.375rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: transparent;
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
@@ -1703,7 +1703,7 @@ function removeAsset(id: string) {
     height: 600px;
     background: var(--smrt-color-surface);
     border-radius: 1rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     overflow: hidden;
   }
 
@@ -1743,7 +1743,7 @@ function removeAsset(id: string) {
     flex-direction: column;
     gap: 0.75rem;
     background: var(--smrt-color-surface-container-low);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     padding: 1rem;
     border-radius: 0.5rem;
   }
@@ -1758,7 +1758,7 @@ function removeAsset(id: string) {
     display: flex;
     align-items: center;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-full);
     padding: 0.25rem 0.25rem 0.25rem 0.75rem;
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
@@ -1794,7 +1794,7 @@ function removeAsset(id: string) {
   }
 
   .reference-detail {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: var(--smrt-color-surface);
     border-radius: 0.5rem;
     padding: 0.75rem;
@@ -1828,7 +1828,7 @@ function removeAsset(id: string) {
 
   .references-section :global(.evidence-action-button) {
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.375rem;
     color: var(--smrt-color-on-surface);
     cursor: pointer;
@@ -1845,7 +1845,7 @@ function removeAsset(id: string) {
   .evidence-bulk-toolbar {
     align-items: center;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.5rem;
     display: flex;
     flex-wrap: wrap;
@@ -1860,7 +1860,7 @@ function removeAsset(id: string) {
   }
 
   .evidence-bulk-toolbar :global(.select) {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.375rem;
     padding: 0.25rem 0.5rem;
   }
@@ -1926,7 +1926,7 @@ function removeAsset(id: string) {
   }
 
   .resource-claim {
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     padding-top: 0.65rem;
   }
 
@@ -1949,7 +1949,7 @@ function removeAsset(id: string) {
 
   .evidence-status {
     align-items: center;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     display: inline-flex;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
@@ -2043,7 +2043,7 @@ function removeAsset(id: string) {
 
   .add-reference-row :global(.add-reference-button) {
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     color: var(--smrt-color-on-surface-variant);
     padding: 0 1rem;
     border-radius: 0.5rem;
@@ -2060,7 +2060,7 @@ function removeAsset(id: string) {
     align-items: center;
     gap: 0.5rem;
     background: var(--smrt-color-surface, white);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     padding: 0.75rem 1.25rem;
     border-radius: var(--smrt-radius-md, 0.5rem);
     color: var(--smrt-color-on-surface-variant);
@@ -2112,7 +2112,7 @@ function removeAsset(id: string) {
     max-height: 60vh;
     overflow-y: auto;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     margin-top: 1rem;
     border-radius: 0.75rem;
     box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent), 0 2px 4px -1px color-mix(in srgb, var(--smrt-color-shadow) 3%, transparent));
@@ -2160,7 +2160,7 @@ function removeAsset(id: string) {
   .undo-banner :global(.undo-banner__btn) {
     background: var(--smrt-color-surface);
     color: var(--smrt-color-primary);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     padding: 0.375rem 0.875rem;
     border-radius: 0.375rem;
     font-size: var(--smrt-typography-label-large-size, 0.8125rem);

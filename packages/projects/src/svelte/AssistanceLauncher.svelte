@@ -80,7 +80,7 @@ async function submit(event: SubmitEvent) {
     gap: var(--smrt-spacing-4);
   }
   .assistance header {
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     padding-bottom: var(--smrt-spacing-3);
   }
   .assistance h2,

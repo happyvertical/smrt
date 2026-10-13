@@ -69,7 +69,7 @@ const names = $derived({
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
 .allocations { display: grid; gap: var(--smrt-spacing-4); min-width: 0; }
-fieldset { min-width: 0; margin: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); }
+fieldset { min-width: 0; margin: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); }
 p { margin: 0; }
 }
 </style>
