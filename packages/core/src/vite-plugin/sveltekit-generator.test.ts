@@ -208,6 +208,69 @@ describe('SvelteKit Route Generator', () => {
     vi.clearAllMocks();
   });
 
+  it('gates aliased actions and keeps action envelopes', async () => {
+    const manifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
+      objects: {
+        Report: {
+          className: 'Report',
+          name: 'Report',
+          filePath: '',
+          collection: 'reports',
+          fields: {},
+          methods: Object.fromEntries(
+            ['run', 'archive', 'publish'].map((name) => [
+              name,
+              {
+                name,
+                async: true,
+                isStatic: false,
+                parameters: [],
+                returnType: 'Promise<void>',
+                isPublic: true,
+              },
+            ]),
+          ),
+          decoratorConfig: {
+            operationPermissions: {
+              run: { action: 'read' },
+              archive: { action: 'create' },
+            },
+            api: {
+              include: ['run', 'archive', 'publish'],
+              routes: {
+                run: { method: 'POST' },
+                archive: { method: 'POST' },
+                publish: { method: 'POST' },
+              },
+            },
+          },
+        },
+      },
+    };
+    await generateSvelteKitRoutes(projectRoot, manifest, {
+      enabled: true,
+      routesDir: 'src/routes/api',
+      objectsDir: 'src/lib/objects',
+    });
+    for (const [action, permission] of [
+      ['run', 'read'],
+      ['archive', 'create'],
+      ['publish', 'publish'],
+    ]) {
+      const write = vi
+        .mocked(writeFileSync)
+        .mock.calls.find(([path]) =>
+          String(path).includes(`reports/[id]/${action}/+server.ts`),
+        );
+      expect(write?.[1]).toContain(
+        `requireRoutePermission(locals, "${permission}");`,
+      );
+      expect(write?.[1]).toContain(`action: '${action}',`);
+    }
+  });
+
   describe('Configuration File Generation', () => {
     it('should generate config file when it does not exist', async () => {
       vi.mocked(existsSync).mockReturnValue(false);

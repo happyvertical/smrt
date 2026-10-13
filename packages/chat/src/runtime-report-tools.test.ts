@@ -489,7 +489,7 @@ describe('createRuntimeReportTools', () => {
     });
 
     describe('apply', () => {
-      it('refuses to save without a confirmation host (propose-only)', async () => {
+      it('returns a bounded browser proposal without saving or trusting model consent', async () => {
         const tools = toolMap();
         const preview = await call(
           tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
@@ -499,7 +499,7 @@ describe('createRuntimeReportTools', () => {
             spec: SPEC,
           },
         );
-        const error = await call(
+        const proposal = await call(
           tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
           fakeRun(),
           {
@@ -509,9 +509,16 @@ describe('createRuntimeReportTools', () => {
             // A model asserting consent is not consent.
             confirmed: true,
           },
-        ).catch((e) => e);
-        expect(error).toBeInstanceOf(RuntimeReportError);
-        expect(error.message).toMatch(/confirmation/);
+        );
+        expect(proposal).toMatchObject({
+          status: 'awaiting_confirmation',
+          specHash: preview.specHash,
+          spec: preview.spec,
+          sourceLabel: expect.any(String),
+          confirmPath: '/api/_reports/runtime/confirm',
+          preview: { specHash: preview.specHash },
+        });
+        expect(proposal.preview.rows.length).toBeLessThanOrEqual(20);
         const listed = await call(
           tools.get(RUNTIME_REPORT_LIST_TOOL_SLUG),
           fakeRun(),

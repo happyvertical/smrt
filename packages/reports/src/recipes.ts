@@ -14,6 +14,7 @@
  */
 
 import { SmrtRecipe } from '@happyvertical/smrt-core';
+import { RuntimeReport } from './runtime-report.js';
 import {
   SmrtPrincipalReportRefreshTask,
   SmrtReportRefreshTask,
@@ -54,5 +55,17 @@ export class MaterializedReportsRecipe extends SmrtRecipe {
   ];
   // Aggregation runs as SQL against the app database, and scheduled refreshes
   // are queued through smrt-jobs; neither can run in a browser.
+  static runtime = 'server' as const;
+}
+
+/** Tenant-shared reports proposed by the assistant and approved by a person. */
+export class RuntimeReportsRecipe extends SmrtRecipe {
+  static id = 'reports.runtime';
+  static label = 'Reports';
+  static summary =
+    'Ask for a report, approve it, and share its live totals with your team.';
+  static help = './runtime.recipe.md';
+  static models = [RuntimeReport];
+  static nav = [{ label: 'Reports', model: RuntimeReport, icon: 'fileText' }];
   static runtime = 'server' as const;
 }

@@ -103,8 +103,17 @@ describe('reports recipes (#3719)', () => {
       expect(built.errors).toEqual([]);
     });
 
-    it('emits one recipe with qualified models, no nav and no surfaces', () => {
-      expect(built.recipes).toHaveLength(1);
+    it('emits materialized and server runtime recipes with their own navigation', () => {
+      expect(built.recipes).toHaveLength(2);
+      const runtime = built.recipes.find(
+        (recipe) => recipe.id === 'reports.runtime',
+      );
+      expect(runtime).toMatchObject({
+        runtime: 'server',
+        models: ['@happyvertical/smrt-reports:RuntimeReport'],
+      });
+      expect(runtime?.nav).toHaveLength(1);
+      expect(runtime?.surfaces ?? []).toEqual([]);
       const [recipe] = built.recipes;
       expect(recipe.id).toBe('reports.materialized');
       expect(recipe.className).toBe('MaterializedReportsRecipe');

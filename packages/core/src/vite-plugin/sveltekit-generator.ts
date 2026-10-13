@@ -1,3 +1,4 @@
+import { resolveOperationPermissionAlias } from '../operation-permission.js';
 /**
  * SvelteKit route auto-generation from SMRT objects
  * Generates real TypeScript files in src/routes/api/ based on discovered SMRT objects
@@ -3747,6 +3748,10 @@ function generateActionRouteTemplate(
         needsTenantContext,
         lookupModelType.typeName,
         hostModelType.typeName,
+        resolveOperationPermissionAlias(
+          objectDef.decoratorConfig,
+          spec.actionName,
+        )?.action,
       ),
     )
     .join('\n');
@@ -3780,7 +3785,12 @@ function generateActionRouteHandler(
   needsTenantContext: boolean,
   lookupTypeName: string,
   hostTypeName: string,
+  permissionAction?: string,
 ): string {
+  const successResponse = `  return json({
+    action: '${actionName}',
+    result: toPublicResult(result, publicJsonOptions),
+  });`;
   const handlerName = routeConfig.method;
   // Mutating verbs require auth even when reads are public (#1540). Tenant-scoped
   // objects also establish tenant context so the action runs filtered.
@@ -3789,7 +3799,7 @@ function generateActionRouteHandler(
   if (mutating) {
     // Custom mutating actions require `<collection>.<method>` (#2977).
     guardLines.push(
-      `  requireRoutePermission(locals, ${JSON.stringify(actionName)});`,
+      `  requireRoutePermission(locals, ${JSON.stringify(permissionAction ?? actionName)});`,
     );
   }
   if (needsTenantContext) {
@@ -3854,10 +3864,7 @@ ${optionsLoad}${scopedOptions.source}  let result: unknown;
     return json({ error: failure }, { status: failure.status });
   }
 
-  return json({
-    action: '${actionName}',
-    result: toPublicResult(result, publicJsonOptions),
-  });
+${successResponse}
 };
 `;
   }
@@ -3904,10 +3911,7 @@ ${optionsLoad}${scopedOptions.source}  const ClassRef = registered.constructor a
     return json({ error: failure }, { status: failure.status });
   }
 
-  return json({
-    action: '${actionName}',
-    result: toPublicResult(result, publicJsonOptions),
-  });
+${successResponse}
 };
 `;
   }
@@ -3955,10 +3959,7 @@ ${optionsLoad}  let result: unknown;
     return json({ error: failure }, { status: failure.status });
   }
 
-  return json({
-    action: '${actionName}',
-    result: toPublicResult(result, publicJsonOptions),
-  });
+${successResponse}
 };
 `;
 }

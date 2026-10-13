@@ -1257,6 +1257,13 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
     {
       "generated": false,
       "methods": [
+        "POST"
+      ],
+      "route": "_reports/runtime/confirm"
+    },
+    {
+      "generated": false,
+      "methods": [
         "GET"
       ],
       "route": "_runtime/health"

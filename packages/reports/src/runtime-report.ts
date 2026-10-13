@@ -45,6 +45,11 @@ import {
   runRuntimeReport,
 } from './runtime-compiler.js';
 import {
+  archiveRuntimeReportForPrincipal,
+  currentRuntimeReportPrincipal,
+  runRuntimeReportForPrincipal,
+} from './runtime-server.js';
+import {
   parseRuntimeReportSpec,
   RuntimeReportError,
   type RuntimeReportSpec,
@@ -67,17 +72,41 @@ const confirmedSaves = new WeakMap<object, string>();
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'runtime_reports',
-  // The exposed operations are exactly: list/get (API, CLI, MCP) and `create`
-  // (API only). `create` is enabled so the permission catalog -- and with it
-  // role grants -- know the operation the assistant's confirmed save performs
-  // (`<collection>.create`); it is NOT a way to author a report. The model layer
-  // (validateBeforeSave) refuses any insert that was not minted by
-  // saveRuntimeReport() after a human confirmed that exact spec, so a REST
-  // `create` body is always refused. `update` and `delete` are deliberately
-  // absent from every surface, so they never enter the catalog or RLS grants.
-  api: { include: ['list', 'get', 'create'] },
-  mcp: { include: ['list', 'get'] },
-  cli: { include: ['list', 'get'] },
+  indexes: [
+    {
+      name: 'idx_runtime_reports_confirm',
+      columns: ['tenantId', 'createdByUserId', 'specHash', 'status'],
+    },
+  ],
+  operationPermissions: {
+    run: { action: 'read' },
+    archive: { action: 'create', databaseActions: ['UPDATE'] },
+  },
+  // Raw create exists to catalog the confirmed-save grant; model validation
+  // still refuses every JSON-authored insert. Custom methods reuse the read
+  // and create grants; no general update/delete operation is exposed.
+  api: {
+    include: ['list', 'get', 'create', 'run', 'archive'],
+    principalContext: true,
+    routes: {
+      run: {
+        method: 'POST',
+        scope: 'item',
+        effect: 'read',
+        idempotent: true,
+        openWorld: false,
+      },
+      archive: {
+        method: 'POST',
+        scope: 'item',
+        effect: 'write',
+        idempotent: true,
+        openWorld: false,
+      },
+    },
+  },
+  mcp: { include: ['list', 'get', 'run', 'archive'] },
+  cli: { include: ['list', 'get', 'run', 'archive'] },
 })
 export class RuntimeReport extends SmrtObject {
   @tenantId()
@@ -112,6 +141,25 @@ export class RuntimeReport extends SmrtObject {
     super(options);
     const proof = (options as Record<symbol, unknown>)[CONFIRMED_SAVE];
     if (typeof proof === 'string') confirmedSaves.set(this, proof);
+  }
+
+  /** Run fresh totals using the authenticated viewer's current permissions. */
+  async run(): Promise<RuntimeReportResult> {
+    return runRuntimeReportForPrincipal(
+      this.id ?? '',
+      currentRuntimeReportPrincipal(this.db),
+    );
+  }
+
+  /** Archive or restore this definition; no report content can be changed. */
+  async archive(options: {
+    archived: boolean;
+  }): Promise<{ id: string; status: RuntimeReportStatus }> {
+    return archiveRuntimeReportForPrincipal(
+      this.id ?? '',
+      options?.archived,
+      currentRuntimeReportPrincipal(this.db),
+    );
   }
 
   /** Re-parse the stored JSON; never trust the column without validation. */

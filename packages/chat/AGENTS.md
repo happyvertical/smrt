@@ -108,8 +108,8 @@ server-owned allow-list gated by `run.assertOperation(collection, 'read')`, and
 field policy, `readPermission`, and tenancy are enforced by the compiler against
 the live run on every compile and every stored-report run. `apply` needs the
 `specHash` of the previewed spec plus an app-owned `confirmation` host that
-resolves only after a human approved that exact spec; with no host the tools are
-propose-only and a model-supplied `confirmed` flag is ignored. Saving also needs
+resolves only after a human approved that exact spec; with no host apply returns an `awaiting_confirmation` proposal for the
+same-origin browser confirm route and stores nothing and a model-supplied `confirmed` flag is ignored. Saving also needs
 `create` on the `RuntimeReport` collection, and `list`/`run` need `read`; the
 default `reportsCollection` is the `RuntimeReport` class itself, which resolves
 to the catalog slug. A string `collection`/`reportsCollection` is used verbatim
