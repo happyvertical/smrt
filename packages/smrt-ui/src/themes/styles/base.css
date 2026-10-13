@@ -227,6 +227,8 @@ time,
 [data-smrt-component="Badge"],
 .smrt-tabular {
   font-variant-numeric: tabular-nums;
+}
+}
 
 /* Native chrome and scheme crossfade (premium baseline, #3867). */
 @layer smrt.theme {
