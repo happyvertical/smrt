@@ -2,77 +2,100 @@
  * Global styles for SMRT Template standalone application
  */
 
-/* Reset and base styles */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+/* Reset and base styles live in smrt.reset so layered smrt component rules
+ * (smrt.theme) still win over them; an unlayered reset would strip their
+ * padding and margins (#3862). */
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
 
-* {
-  margin: 0;
-}
+  * {
+    margin: 0;
+  }
 
-html {
-  color-scheme: light;
-}
+  /* Host baseline (html, body, element defaults, typography scale). */
+  html {
+    color-scheme: light;
+  }
 
-body {
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  font-family: var(
-    --smrt-font-family,
-    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif
-  );
-  background-color: var(--smrt-color-surface-container-low);
-  color: var(--smrt-color-on-surface);
-}
+  body {
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-family: var(
+      --smrt-font-family,
+      "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+      "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+      sans-serif
+    );
+    background-color: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
+  }
 
-img,
-picture,
-video,
-canvas,
-svg {
-  display: block;
-  max-width: 100%;
-}
+  img,
+  picture,
+  video,
+  canvas,
+  svg {
+    display: block;
+    max-width: 100%;
+  }
 
-input,
-button,
-textarea,
-select {
-  font: inherit;
-}
+  input,
+  button,
+  textarea,
+  select {
+    font: inherit;
+  }
 
-p,
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  overflow-wrap: break-word;
-}
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    overflow-wrap: break-word;
+  }
 
-/* Typography scale */
-h1 {
-  font-size: var(--smrt-typography-display-small-size, 2.25rem);
-  font-weight: var(--smrt-typography-weight-bold, 800);
-  line-height: var(--smrt-typography-display-small-line-height, 1.2);
-}
+  /* Typography scale */
+  h1 {
+    font-size: var(--smrt-typography-display-small-size, 2.25rem);
+    font-weight: var(--smrt-typography-weight-bold, 800);
+    line-height: var(--smrt-typography-display-small-line-height, 1.2);
+  }
 
-h2 {
-  font-size: var(--smrt-typography-headline-large-size, 1.875rem);
-  font-weight: var(--smrt-typography-weight-bold, 700);
-  line-height: var(--smrt-typography-headline-large-line-height, 1.3);
-}
+  h2 {
+    font-size: var(--smrt-typography-headline-large-size, 1.875rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    line-height: var(--smrt-typography-headline-large-line-height, 1.3);
+  }
 
-h3 {
-  font-size: var(--smrt-typography-headline-small-size, 1.5rem);
-  font-weight: var(--smrt-typography-weight-semibold, 600);
-  line-height: var(--smrt-typography-headline-small-line-height, 1.4);
+  h3 {
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    line-height: var(--smrt-typography-headline-small-line-height, 1.4);
+  }
+
+  /* Focus styles */
+  *:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+  }
+
+  /* Transitions: component transitions in smrt.theme win over this. */
+
+  * {
+    transition-property:
+      color, background-color, border-color, text-decoration-color, fill,
+      stroke;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+
 }
 
 /* Utility classes */
@@ -88,18 +111,6 @@ h3 {
   border-width: 0;
 }
 
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 1rem;
-}
-
-/* Focus styles */
-*:focus-visible {
-  outline: 2px solid var(--smrt-color-primary);
-  outline-offset: 2px;
-}
-
 /* Loading animation */
 @keyframes spin {
   to {
@@ -111,10 +122,3 @@ h3 {
   animation: spin 1s linear infinite;
 }
 
-/* Transitions */
-* {
-  transition-property:
-    color, background-color, border-color, text-decoration-color, fill, stroke;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 150ms;
-}
