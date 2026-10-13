@@ -400,7 +400,6 @@ export interface ImportExecutor {
   ): Promise<{ rows: Array<Record<string, unknown>> }>;
 }
 
-/** Execute a prevalidated parent-first import against one database transaction. */
 /**
  * The bind parameter for one exported value.
  *
@@ -421,11 +420,13 @@ export function importParameter(
   options: { jsonText?: boolean } = {},
 ): unknown {
   if (value === null || value === undefined) return value;
-  if (columnDefinition?.type !== 'JSON') return value;
+  const type = columnDefinition?.type?.toUpperCase();
+  if (type !== 'JSON' && type !== 'JSONB') return value;
   if (options.jsonText && typeof value === 'string') return value;
   return JSON.stringify(value);
 }
 
+/** Execute a prevalidated parent-first import against one database transaction. */
 export async function executeImportPlan(
   tx: ImportExecutor,
   plan: PlannedImportTable[],
