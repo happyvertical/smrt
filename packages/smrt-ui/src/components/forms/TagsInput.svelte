@@ -147,7 +147,7 @@ useControlRegistration(() => {
     .tag { padding-inline-end: 0; }
     .tag button { min-inline-size: 2.75rem; min-block-size: 2.75rem; font-size: 1.25rem; }
   }
-  .tag button:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: -2px; border-radius: var(--smrt-radius-full); }
+  .tag button:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: calc(var(--smrt-focus-ring-width) * -1); border-radius: var(--smrt-radius-full); }
   .tags > input { flex: 1; min-width: 8rem; border: 0; outline: 0; background: transparent; color: inherit; }
   :global(.tags[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
 }

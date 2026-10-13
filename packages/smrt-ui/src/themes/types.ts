@@ -19,6 +19,15 @@ export type ColorScheme = 'light' | 'dark' | 'system';
 /** Resolved color scheme (never 'system') */
 export type ResolvedScheme = 'light' | 'dark';
 
+/** Control target density */
+export type ThemeDensity = 'comfortable' | 'touch';
+
+/** Contrast preference accepted by ThemeProvider (`auto` follows the OS) */
+export type ContrastPreference = 'auto' | 'standard' | 'more';
+
+/** Resolved contrast level; `forced` means `forced-colors: active` */
+export type ResolvedContrast = 'standard' | 'more' | 'forced';
+
 /** Border radius scale */
 export type BorderRadius = 'none' | 'sm' | 'md' | 'lg' | 'xl' | 'full';
 
@@ -44,6 +53,13 @@ export interface ColorPalette {
   onTertiary: string;
   tertiaryContainer: string;
   onTertiaryContainer: string;
+
+  // Info (informational status; presets without a distinct hue reuse tertiary)
+  /** Info family; a palette that omits it inherits its tertiary family. */
+  info?: string;
+  onInfo?: string;
+  infoContainer?: string;
+  onInfoContainer?: string;
 
   // Error
   error: string;
@@ -206,18 +222,101 @@ export interface EasingScale {
   emphasizedAccelerate: string;
 }
 
+/** A pair of values that depend on the resolved colour scheme. */
+export interface PerScheme<T> {
+  light: T;
+  dark: T;
+}
+
+/** Surface ladder (`--smrt-surface-*`), from the page ground up to overlays. */
+export interface SurfaceLadder {
+  /** Page ground behind everything. */
+  ground: string;
+  /** Panels, cards, sidebars sitting on the ground. */
+  panel: string;
+  /** Input and control fills. */
+  control: string;
+  /** Menus, popovers, dialogs lifted above panels. */
+  raised: string;
+  /** Wells and inset regions recessed below panels. */
+  sunken: string;
+  /** Modal scrim colour. */
+  overlay: string;
+}
+
+/** Edge tokens (`--smrt-hairline-*`, `--smrt-inset-highlight`). */
+export interface HairlineTokens {
+  /** Quiet divider colour. */
+  color: string;
+  /** Stronger edge colour (control borders). */
+  strongColor: string;
+  /** `box-shadow` value for the top inner light line (`none` on light). */
+  insetHighlight: string;
+}
+
+/** Interaction state-layer opacities (unitless, 0 to 1). */
+export interface StateLayers {
+  hover: string;
+  pressed: string;
+  selected: string;
+  focus: string;
+  dragged: string;
+  disabled: string;
+}
+
+/** Shared control geometry (`--smrt-control-*`). */
+export interface ControlTokens {
+  radius: string;
+  radiusSmall: string;
+  height: string;
+  heightSmall: string;
+  weight: string;
+  border: string;
+}
+
+/** Focus ring (`--smrt-focus-ring-*`). */
+export interface FocusRingTokens {
+  color: string;
+  width: string;
+  offset: string;
+}
+
+/** Native browser chrome colours. */
+export interface NativeChromeTokens {
+  accent: string;
+  selectionBackground: string;
+  selectionColor: string;
+  caret: string;
+  scrollbarThumb: string;
+  scrollbarTrack: string;
+}
+
+/** Translucent glass surfaces (`--smrt-glass-surface*`, `--smrt-glass-border`). */
+export interface GlassSurfaces {
+  surface: string;
+  surfaceStrong: string;
+  border: string;
+}
+
 /**
- * Glass effect configuration
+ * Glass effect configuration. Every theme has one: non-glass themes use the
+ * opaque default (`blur: 0px`, `saturation: 100%`, opaque surfaces) so
+ * components can always consume the glass tokens.
  */
 export interface GlassEffects {
   /** Backdrop blur amount */
   blur: string;
   /** Saturation adjustment */
   saturation: string;
-  /** Border opacity */
-  borderOpacity: string;
-  /** Background opacity */
-  backgroundOpacity: string;
+  /** Per-scheme surfaces; defaults to opaque panel/raised colours. */
+  surfaces?: PerScheme<GlassSurfaces>;
+  /**
+   * @deprecated Emitted as `--smrt-glass-border-opacity` for one release so
+   * consumers that read it keep working; the border colour is `surfaces.border`.
+   */
+  borderOpacity?: string;
+  /** @deprecated Emitted as `--smrt-glass-background-opacity`; use `surfaces`. */
+  backgroundOpacity?: string;
 }
 
 /**
@@ -251,8 +350,26 @@ export interface Theme {
   duration: DurationScale;
   /** Transition easings */
   easing: EasingScale;
-  /** Glass effects (for glass theme) */
+  /** Glass effects (opaque for non-glass themes) */
   glass?: GlassEffects;
+  /** Surface ladder per scheme (derived from the palette when absent) */
+  surfaces?: PerScheme<SurfaceLadder>;
+  /** Hairline edges per scheme (derived from on-surface when absent) */
+  hairlines?: PerScheme<HairlineTokens>;
+  /** State-layer opacities (M3-like defaults when absent) */
+  states?: StateLayers;
+  /** `--smrt-shadow-color` per scheme, an `rgb(r g b)` colour */
+  shadowColor?: PerScheme<string>;
+  /** Control geometry (derived from the radius scale when absent) */
+  controls?: Partial<ControlTokens>;
+  /** Focus ring (primary, 2px, 2px offset when absent) */
+  focus?: Partial<FocusRingTokens>;
+  /** Native chrome per scheme (primary-derived when absent) */
+  native?: PerScheme<NativeChromeTokens>;
+  /** `--smrt-duration-scheme`, the scheme crossfade duration */
+  schemeDuration?: string;
+  /** `--smrt-font-feature-settings`, e.g. `"tnum" 1, "cv11" 1` */
+  fontFeatureSettings?: string;
   /** Primary font family */
   fontFamily: string;
   /**
@@ -276,6 +393,10 @@ export interface ThemeConfig {
   primaryColor?: string;
   /** Border radius preference */
   borderRadius?: BorderRadius;
+  /** Default control target density; persisted alongside preset/scheme/radius */
+  density?: ThemeDensity;
+  /** Contrast preference; `auto` follows `prefers-contrast` (persisted when explicit) */
+  contrast?: ContrastPreference;
   /** Custom CSS variable overrides */
   overrides?: Record<string, string>;
   /** Persist theme preference */
@@ -307,6 +428,10 @@ export interface ThemeState {
   resolvedScheme: ResolvedScheme;
   /** Whether dark mode is active */
   isDark: boolean;
+  /** Resolved contrast level (`forced` when `forced-colors: active`) */
+  contrast: ResolvedContrast;
+  /** True for one `--smrt-duration-scheme` after the resolved scheme changes post-mount */
+  isChangingScheme: boolean;
   /** Full theme configuration */
   config: ThemeConfig;
   /** Current active theme object */

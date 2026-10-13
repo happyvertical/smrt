@@ -305,7 +305,28 @@ import '@happyvertical/smrt-ui/themes/styles/happyvertical.css';
 | `borderRadius` | `'none' \| 'sm' \| 'md' \| 'lg' \| 'xl' \| 'full'` | `'md'` | Border radius scale |
 | `overrides` | `Record<string, string>` | `{}` | Custom CSS variable overrides |
 | `persist` | `boolean` | `true` | Persist to localStorage |
+| `density` | `'comfortable' \| 'touch'` | - | Default control target size (`--smrt-control-target-min`); persisted |
+| `contrast` | `'auto' \| 'standard' \| 'more'` | `'auto'` | `auto` follows `prefers-contrast: more`; persisted when explicit |
 | `storageKey` | `string` | `'smrt-theme'` | localStorage key |
+
+Behaviour notes (state exposed on context: `contrast`, `isChangingScheme`):
+
+- `borderRadius` other than `md` is emitted inline as `--smrt-control-radius` /
+  `--smrt-control-radius-small` (one scale step smaller for the small radius);
+  `md` leaves the preset's own control radius in place. The generic
+  `--smrt-radius-*` scale is not changed.
+- `primaryColor` emits the whole derived set for the resolved scheme through
+  `derivePrimaryOverrides(color, scheme)` (also exported): `color-primary`, `on-primary`
+  (best of white/black), `primary-container`, `on-primary-container`, `inverse-primary`,
+  and the focus ring, accent, caret and selection tokens.
+- After the resolved scheme changes post-mount, `data-smrt-theme-changing` is set on
+  the root and `<html>` for one `--smrt-duration-scheme`, so styles can crossfade.
+  Never on first paint; skipped under `prefers-reduced-motion: reduce`.
+- Contrast: `data-contrast="standard|more|forced"` on `<html>` and the root;
+  `forced-colors: active` also sets `data-forced-colors`. Contract for components in
+  forced-colors mode: do not paint over system colours, hairlines become `CanvasText`
+  and focus rings `Highlight` (component side: #3867 follow-up).
+- `themeScript()` stamps `data-contrast` and (when persisted) `data-density` pre-paint.
 
 ## Theme Switching
 
@@ -629,6 +650,111 @@ The lint gate `scripts/check-smrt-token-vocabulary.mjs` runs in `pnpm lint` and 
 on any custom property outside `--smrt-*` in `packages/*/src`. The one-time rewrite
 was `scripts/codemod-smrt-tokens.mjs`; it is idempotent, so re-run it after a rebase
 instead of hand-merging renamed names.
+
+### Premium baseline token vocabulary
+
+Every preset and every `createTheme()` result defines all of these in both schemes
+(sections of `Theme` in `types.ts`; defaults derived in `derive.ts`; emitted by
+`generateThemeVariables`). Themes and presets define them; **components only consume
+them**. Do not redeclare a theme token on a component root (CSS or `style:`): the
+required-tokens scanner (`scripts/smrt-token-scan-lib.mjs`) treats any `--smrt-*` name
+a component defines on its own root as component-private and drops it from the required
+list repo-wide. A per-variant override uses a component-prefixed name that falls back to
+the theme token, for example `background: color-mix(in srgb, currentColor
+calc(var(--smrt-button-state-hover, var(--smrt-state-hover)) * 100%), transparent)`.
+
+| Token | Meaning | Consumed by |
+| --- | --- | --- |
+| `--smrt-surface-ground` | Page ground | `body`/shell background |
+| `--smrt-surface-panel` | Cards, sidebars, panels on the ground | `background` of Card, sidebars, header, footer |
+| `--smrt-surface-control` | Input and control fill | `background` of Input, Select, Textarea, Button (outlined/tonal) |
+| `--smrt-surface-raised` | Menus, popovers, dialogs above panels | `background` of overlays |
+| `--smrt-surface-sunken` | Wells and recessed regions | `background` of tables headers, code, inset areas |
+| `--smrt-surface-overlay` | Modal scrim | `background` of Modal/Drawer backdrops |
+| `--smrt-hairline-color` / `-strong-color` | Quiet and strong edge colours | `border-color`, `outline-color`, dividers |
+| `--smrt-hairline` / `--smrt-hairline-strong` | `1px solid` edge shorthands | `border`, `border-top` etc. on panels (quiet) and controls (strong) |
+| `--smrt-inset-highlight` | Top inner light line (`none` on light) | `box-shadow` (layer with an elevation) on raised dark surfaces |
+| `--smrt-state-{hover,pressed,selected,focus,dragged,disabled}` | Unitless state-layer opacities, 0 to 1 | Mix percentage of a state overlay (`calc(var(--smrt-state-hover) * 100%)`); `disabled` as `opacity` |
+| `--smrt-shadow-color` | `rgb(r g b)` shadow base, per scheme | `box-shadow` colour: `rgb(from var(--smrt-shadow-color) r g b / 0.2)` |
+| `--smrt-elevation-0..5` | Existing shadow scale | `box-shadow` |
+| `--smrt-control-radius` / `-radius-small` | Control corner radii | `border-radius` of controls |
+| `--smrt-control-height` / `-height-small` | Control heights | `min-height`/`block-size` of controls |
+| `--smrt-control-weight` | Control label weight | `font-weight` of buttons and inputs |
+| `--smrt-control-border` | Control edge shorthand (`var(--smrt-hairline-strong)`) | `border` of controls |
+| `--smrt-control-target-min` | Density-driven minimum hit size (set by ThemeProvider `density`) | `min-height`/`min-width` of interactive controls |
+| `--smrt-control-hit-size` | Hit area of small icon controls | `inline-size`/`block-size` of icon buttons |
+| `--smrt-focus-ring-{color,width,offset}` | Focus indicator | `outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color)`, `outline-offset` on `:focus-visible` |
+| `--smrt-accent-color` | Native control accent | `accent-color` (checkbox, radio, range, date pickers) |
+| `--smrt-selection-{background,color}` | Text selection | `::selection` |
+| `--smrt-caret-color` | Text caret | `caret-color` |
+| `--smrt-scrollbar-{thumb,track}` | Scrollbar colours | `scrollbar-color: thumb track` |
+| `--smrt-glass-blur` / `-saturation` | Backdrop filter amounts (`0px`/`100%` outside Glass) | `backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation))` |
+| `--smrt-glass-surface` / `-surface-strong` | Translucent (Glass) or opaque surface fills; opacity is part of the colour | `background` of floating chrome and overlays |
+| `--smrt-glass-border` | Glass edge colour | `border-color` of glass surfaces |
+| `--smrt-duration-scheme` | Scheme crossfade duration | `transition-duration` when the colour scheme changes |
+| `--smrt-font-feature-settings` | OpenType features (`"tnum" 1, "cv11" 1` on Inter presets) | `font-feature-settings` on the root and numeric cells |
+
+#### Semantic info colour
+
+`ColorPalette` carries an info family beside success, warning and error:
+`--smrt-color-info`, `--smrt-color-on-info`, `--smrt-color-info-container` and
+`--smrt-color-on-info-container`. Presets without a distinct information hue define
+it as their tertiary family (Material, Glass, Studio, Day Shift); **smrt** uses a
+steel blue (`#2c6a96` light, `#6fa8d6` dark) so Information no longer shares amber
+with Warning. `createTheme()` follows a supplied `tertiary` unless `info` is also
+given. Components that show information status (for example `Alert` `variant="info"`)
+should consume these, not tertiary.
+
+#### Preset identities on the baseline
+
+| Preset | Dark ladder (ground / panel / control / raised) | Depth | State layers (hover / pressed / selected) | Controls |
+| --- | --- | --- | --- | --- |
+| Material | `#121316` / `#1b1c20` / `#26282c` / `#34363a` (M3 tonal, no borders needed; control border is transparent) | contact + ambient; dark adds the inset highlight | .08 / .12 / .12 | radius md / sm, 2.75rem |
+| Glass | `#0b0b0f` ground; panel 72% and popover 88% frosted glass, input a recessed 28% black well; blur 20px, saturation 180% | softest, widest ambient | .10 / .14 / .14 | radius lg / md, 2.75rem |
+| Studio | `#131416` / `#131416` / `#1c1d20` / `#292a2d` (flat, crisp hairlines, panel equals ground) | elevation 1 is the hairline; tight shadows | .06 / .10 / .10 | radius 0.375rem / sm, 2.5rem |
+| smrt | `#0b0c0e` / `#121417` / `#181b1f` / `#1d2126` (instrument dark, amber signal, steel-blue info) | elevation 1 is the hairline; calm two-layer shadows (no far-spread) | .10 / .16 / .14 | radius sm, 2.5rem |
+| Day Shift | enamel ground, faceplate panel, control a hair lighter, raised = faceplate; hairlines are the bezel | elevation 1 is the bezel hairline; minimal | .06 / .10 / .10 | radius md (6px) / sm, 2.5rem |
+
+Elevation 2 to 5 are two-layer shadows built with `shadow()` in `shared.ts`: a contact
+layer (`0 1px 2px`) plus an ambient layer (`0 Npx Mpx` with negative spread), both
+`color-mix`ed from `--smrt-shadow-color`. Dark schemes prepend
+`var(--smrt-inset-highlight)`. Weight is 500 on every preset. Native chrome follows the
+baseline: accent and caret are primary, selection is the primary container, and the
+scrollbar thumb is the strong hairline over a transparent track.
+
+`--smrt-glass-border-opacity` and `--smrt-glass-background-opacity` are deprecated: still emitted (from `GlassEffects.borderOpacity`/`backgroundOpacity`, `1` when unset) for one release and removed in the next minor; the former
+tokens, and the ThemeProvider-local `--smrt-glass-surface`/`--smrt-glass-border`,
+were folded into the glass surface colours above.
+
+### Typography
+
+`themes/styles/base.css` (import once at the app entry) maps headings to type roles
+inside `@layer smrt.structure`, scoped under `body` and `.smrt-theme-root`, so presets'
+display faces reach plain markup. Hosts restyle with unlayered CSS.
+
+| Element | Role |
+| --- | --- |
+| `h1` | `display-small` |
+| `h2` | `headline-large` |
+| `h3` | `headline-medium` |
+| `h4` | `headline-small` |
+| `h5` | `title-large` |
+| `h6` | `title-medium` |
+
+Each heading takes `font-family`, `font-size`, `line-height`, `font-weight` and
+`letter-spacing` from the role's typography tokens (for example `--smrt-typography-headline-large-size`), and a `margin-block` from
+`--smrt-spacing-*` (first children lose the top margin). Utilities
+`.smrt-{display,headline,title,body,label}-{large,medium,small}` apply the same five
+properties to any element.
+
+Tabular figures: the root sets `font-feature-settings: var(--smrt-font-feature-settings)`,
+and `table`, `time`, `[data-smrt-component="DataTable"]`, `[data-smrt-component="Badge"]`
+and `.smrt-tabular` set `font-variant-numeric: tabular-nums`.
+
+Preset rhythm: display tracking tightens with size (about -0.02em at display, -0.01em at
+headline, 0 at title), labels weigh 500 (Day Shift keeps its documented bold B612 labels),
+body is 400, and display plus headline roles use the preset's display face where it has one
+(smrt: Space Grotesk; Day Shift: its documented stack).
 
 ## Advanced Usage
 

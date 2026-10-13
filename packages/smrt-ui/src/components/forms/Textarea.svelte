@@ -155,9 +155,10 @@ export function getElement(): HTMLTextAreaElement | null {
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 		line-height: var(--smrt-typography-body-medium-line-height, 1.5);
 		color: var(--smrt-color-on-surface);
-		background-color: var(--smrt-color-surface);
-		border: 1px solid var(--smrt-color-outline);
-		border-radius: 0.375rem;
+		background-color: var(--smrt-surface-control);
+		font-weight: var(--smrt-control-weight);
+		border: var(--smrt-hairline-strong);
+		border-radius: var(--smrt-control-radius);
 		resize: vertical;
 		min-height: 80px;
 		transition:
@@ -166,9 +167,12 @@ export function getElement(): HTMLTextAreaElement | null {
 	}
 
 	.textarea:focus {
-		outline: none;
 		border-color: var(--smrt-color-primary);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
+	}
+
+	.textarea:focus-visible {
+		outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+		outline-offset: var(--smrt-focus-ring-offset);
 	}
 
 	.textarea[data-smrt-highlighted='true'] {
@@ -179,7 +183,7 @@ export function getElement(): HTMLTextAreaElement | null {
 	.textarea:disabled {
 		background-color: var(--smrt-color-surface-container-high);
 		cursor: not-allowed;
-		opacity: 0.7;
+		opacity: var(--smrt-state-disabled);
 	}
 
 	.textarea::placeholder {

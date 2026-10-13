@@ -1930,20 +1930,20 @@ $effect(() => {
   }
 
   .data-table-container--overflowing:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 
   .data-table-container--highlighted {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 3px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 
   .data-table__overflow-cue {
     display: flex;
     justify-content: space-between;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-small-size, 0.75rem);
@@ -1984,7 +1984,7 @@ $effect(() => {
     font-family: var(--smrt-font-family, inherit);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface);
-    background: var(--smrt-color-surface);
+    background: var(--smrt-surface-panel);
   }
 
   .data-table__caption {
@@ -1997,7 +1997,7 @@ $effect(() => {
 
   /* Header */
   .data-table__head {
-    background: var(--smrt-color-surface-container);
+    background: var(--smrt-surface-sunken);
   }
 
   .data-table-container--sticky .data-table__head {
@@ -2007,7 +2007,7 @@ $effect(() => {
   }
 
   .data-table__row--header {
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .data-table__cell--header {
@@ -2072,8 +2072,8 @@ $effect(() => {
   }
 
   .data-table__resize-handle:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
 
   .data-table__sort-button:hover {
@@ -2092,11 +2092,11 @@ $effect(() => {
 
   /* Body */
   .data-table__body {
-    background: var(--smrt-color-surface);
+    background: var(--smrt-surface-panel);
   }
 
   .data-table__row {
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     transition: background-color var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
   }
 
@@ -2106,16 +2106,24 @@ $effect(() => {
   }
 
   .data-table--hoverable .data-table__row:hover:not(.data-table__row--loading):not(.data-table__row--empty):not(.data-table__row--selected) {
-    background: var(--smrt-color-surface-container-low);
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-on-surface) calc(var(--smrt-state-hover) * 100%),
+      var(--smrt-surface-panel)
+    );
   }
 
   .data-table__row--selected {
-    background: var(--smrt-color-primary-container);
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-primary) calc(var(--smrt-state-selected) * 100%),
+      var(--smrt-surface-panel)
+    );
   }
 
   .data-table--striped:not(.data-table--virtualized) .data-table__row:nth-child(even):not(.data-table__row--selected),
   .data-table__row--striped:not(.data-table__row--selected) {
-    background: var(--smrt-color-surface-container-lowest);
+    background: var(--smrt-surface-sunken);
   }
 
   .data-table__row--interactive {
@@ -2123,13 +2131,13 @@ $effect(() => {
   }
 
   .data-table__row--interactive:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
 
   .data-table-container--virtualized .data-table__row:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
 
   .data-table__cell {
@@ -2141,18 +2149,22 @@ $effect(() => {
   .data-table__cell--pinned-end {
     position: sticky;
     z-index: 1;
-    background: var(--smrt-color-surface);
+    background: var(--smrt-surface-panel);
   }
 
   .data-table__cell--header.data-table__cell--pinned-start,
   .data-table__cell--header.data-table__cell--pinned-end {
     z-index: 3;
-    background: var(--smrt-color-surface-container);
+    background: var(--smrt-surface-sunken);
   }
 
   .data-table__row--selected .data-table__cell--pinned-start,
   .data-table__row--selected .data-table__cell--pinned-end {
-    background: var(--smrt-color-primary-container);
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-primary) calc(var(--smrt-state-selected) * 100%),
+      var(--smrt-surface-panel)
+    );
   }
 
   .data-table__cell--checkbox {
@@ -2161,12 +2173,12 @@ $effect(() => {
   }
 
   .data-table__cell--expand { width: 2.75rem; text-align: center; }
-  .data-table__expand-button { width: 1.75rem; height: 1.75rem; border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-full); background: transparent; color: var(--smrt-color-on-surface); cursor: pointer; }
-  .data-table__expand-button:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
-  .data-table__cell--expanded { padding: var(--smrt-spacing-4); background: var(--smrt-color-surface-container-low); }
-  .data-table__footer { border-top: 2px solid var(--smrt-color-outline-variant); font-weight: var(--smrt-typography-weight-medium); }
-  .data-table__row--structural { background: var(--smrt-color-surface-container-low); }
-  .data-table__row--footer { border-top: 2px solid var(--smrt-color-outline-variant); }
+  .data-table__expand-button { width: 1.75rem; height: 1.75rem; border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-full); background: transparent; color: var(--smrt-color-on-surface); cursor: pointer; }
+  .data-table__expand-button:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
+  .data-table__cell--expanded { padding: var(--smrt-spacing-4); background: var(--smrt-surface-sunken); }
+  .data-table__footer { border-top: var(--smrt-hairline-strong); font-weight: var(--smrt-typography-weight-medium); }
+  .data-table__row--structural { background: var(--smrt-surface-sunken); }
+  .data-table__row--footer { border-top: var(--smrt-hairline-strong); }
   .data-table__cell--structural-label { font-weight: var(--smrt-typography-weight-semibold, 600); }
 
   .data-table__checkbox {
@@ -2228,7 +2240,7 @@ $effect(() => {
 
   .data-table__async-status {
     padding: var(--smrt-spacing-3, 0.75rem);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     font: var(--smrt-typography-body-small-font);
   }
 
@@ -2243,8 +2255,8 @@ $effect(() => {
   }
 
   .data-table__retry-button:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 
   /* Size variants */
@@ -2316,7 +2328,7 @@ $effect(() => {
       display: grid;
       gap: var(--smrt-spacing-1, 0.35rem);
       padding: var(--smrt-spacing-3, 0.85rem) var(--smrt-spacing-4, 1rem);
-      border-bottom: 1px solid var(--smrt-color-outline-variant);
+      border-bottom: var(--smrt-hairline);
     }
     .data-table-container--phone-cards .data-table__cell {
       display: block;

@@ -315,8 +315,8 @@ function fallbackIcon(label: string): string {
     color: var(--smrt-color-on-surface-variant);
   }
   .smrt-tenant-nav a.smrt-tenant-nav__action:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 
   .smrt-tenant-nav__heading {
@@ -326,12 +326,12 @@ function fallbackIcon(label: string): string {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-large-size);
     font-weight: var(--smrt-typography-weight-semibold);
-    border-radius: var(--smrt-radius-medium);
+    border-radius: var(--smrt-control-radius);
     cursor: pointer;
   }
   .smrt-tenant-nav__heading:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
   .smrt-tenant-nav__group-items { margin-block-start: var(--smrt-spacing-1); }
   .smrt-tenant-nav__subnav {
@@ -367,7 +367,7 @@ function fallbackIcon(label: string): string {
     gap: var(--smrt-spacing-2);
     min-inline-size: 0;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-radius: var(--smrt-radius-medium);
+    border-radius: var(--smrt-control-radius);
     color: var(--smrt-color-on-surface);
     text-decoration: none;
   }
@@ -385,8 +385,32 @@ function fallbackIcon(label: string): string {
     padding: 0;
   }
 
-  .smrt-tenant-nav a:hover {
-    background: var(--smrt-color-surface-container-high);
+  /* One state layer for every row: a currentColor veil driven by the
+     theme's hover / pressed tokens. The selected container fill and the
+     start indicator below sit under it, so hover still reads on a selected
+     row. */
+  .smrt-tenant-nav a::after,
+  .smrt-tenant-nav__heading::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .smrt-tenant-nav__heading { position: relative; }
+  .smrt-tenant-nav a:hover::after,
+  .smrt-tenant-nav__heading:hover::after {
+    opacity: var(--smrt-state-hover);
+  }
+  .smrt-tenant-nav a:active::after,
+  .smrt-tenant-nav__heading:active::after {
+    opacity: var(--smrt-state-pressed);
+  }
+  .smrt-tenant-nav a[aria-disabled='true'] {
+    opacity: var(--smrt-state-disabled);
+    pointer-events: none;
   }
   /* Selected: container fill plus a start indicator bar, not just weight. */
   .smrt-tenant-nav a[aria-current='page'],
@@ -453,7 +477,7 @@ function fallbackIcon(label: string): string {
     position: absolute;
     inset-block-start: 0.125rem;
     inset-inline-end: 0.125rem;
-    box-shadow: 0 0 0 2px var(--smrt-color-surface);
+    box-shadow: 0 0 0 var(--smrt-focus-ring-width) var(--smrt-surface-panel);
   }
 
   .smrt-tenant-nav__sr-only {

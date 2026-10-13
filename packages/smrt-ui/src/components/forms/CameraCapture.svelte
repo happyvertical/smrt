@@ -598,8 +598,8 @@ useControlRegistration(() => {
   }
   .action:focus-visible,
   .picker:has(input:focus-visible) {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
   .action:disabled,
   .picker.disabled {

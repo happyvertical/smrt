@@ -60,7 +60,14 @@
  * below AA on those surfaces — the wrong trade.
  */
 
-import { spacingScale } from '../shared.js';
+import { baselineTokens, opaqueGlass } from '../derive.js';
+import {
+  hairlineInset,
+  noInsetHighlight,
+  noShadow,
+  shadow,
+  spacingScale,
+} from '../shared.js';
 import type {
   BorderRadiusScale,
   ColorPalette,
@@ -107,6 +114,12 @@ const lightColors: ColorPalette = {
   onTertiary: '#ffffff',
   tertiaryContainer: '#d7e4ea',
   onTertiaryContainer: '#1b333e',
+
+  // Info - Shares the tertiary hue (no distinct info hue in this preset)
+  info: '#3c5a68',
+  onInfo: '#ffffff',
+  infoContainer: '#d7e4ea',
+  onInfoContainer: '#1b333e',
 
   // Error - Muted enamel-compatible red
   error: '#9b3b32',
@@ -183,6 +196,12 @@ const darkColors: ColorPalette = {
   onTertiary: '#10262e',
   tertiaryContainer: '#1e313a',
   onTertiaryContainer: '#c6dee8',
+
+  // Info - Shares the tertiary hue (no distinct info hue in this preset)
+  info: '#9cbecc',
+  onInfo: '#10262e',
+  infoContainer: '#1e313a',
+  onInfoContainer: '#c6dee8',
 
   // Error
   error: '#e89b92',
@@ -352,32 +371,59 @@ const typography: TypographyScale = {
 /**
  * Day Shift elevation (light) — flat with hairline bezels.
  *
- * Level 1 is the hairline itself; levels 2+ add the minimum soft shadow that
- * still separates an overlay from the panel underneath. Closer to studio than
- * to material — a raised faceplate, not a floating card.
+ * Level 1 is the bezel hairline itself; levels 2+ add the minimum two-layer
+ * shadow that still separates an overlay from the panel underneath. Closer to
+ * studio than to material — a raised faceplate, not a floating card.
  */
 const elevation: ElevationScale = {
-  0: 'none',
-  1: 'inset 0 0 0 1px rgba(32, 39, 43, 0.1)',
-  2: '0 1px 2px 0 rgba(32, 39, 43, 0.06)',
-  3: '0 2px 6px -2px rgba(32, 39, 43, 0.1)',
-  4: '0 6px 16px -6px rgba(32, 39, 43, 0.14)',
-  5: '0 12px 28px -12px rgba(32, 39, 43, 0.18)',
+  0: noShadow,
+  1: hairlineInset,
+  2: shadow([[1, 2, 0, 8]]),
+  3: shadow([
+    [1, 2, 0, 8],
+    [2, 6, -2, 8],
+  ]),
+  4: shadow([
+    [1, 3, 0, 10],
+    [6, 16, -6, 12],
+  ]),
+  5: shadow([
+    [2, 4, 0, 10],
+    [12, 28, -12, 16],
+  ]),
 };
 
 /**
- * Day Shift elevation (dark) — a white inset hairline over black drop shadows.
- *
- * Defined here (not only in `styles/happyvertical.css`) so the JS ThemeProvider
- * output and the static dark CSS stay in lockstep (#1586).
+ * Day Shift elevation (dark) — the bezel hairline at level 1; above it the
+ * inset top highlight over black two-layer shadows. Defined here (not only in
+ * `styles/happyvertical.css`) so the JS ThemeProvider output and the static dark
+ * CSS stay in lockstep (#1586).
  */
 const darkElevation: ElevationScale = {
-  0: 'none',
-  1: 'inset 0 0 0 1px rgba(228, 233, 231, 0.08)',
-  2: '0 1px 2px 0 rgba(0, 0, 0, 0.4)',
-  3: '0 2px 6px -2px rgba(0, 0, 0, 0.5)',
-  4: '0 6px 16px -6px rgba(0, 0, 0, 0.6)',
-  5: '0 12px 28px -12px rgba(0, 0, 0, 0.7)',
+  0: noShadow,
+  1: hairlineInset,
+  2: shadow([[1, 2, 0, 40]], 'var(--smrt-inset-highlight)'),
+  3: shadow(
+    [
+      [1, 2, 0, 40],
+      [2, 6, -2, 36],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  4: shadow(
+    [
+      [1, 3, 0, 44],
+      [6, 16, -6, 44],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  5: shadow(
+    [
+      [2, 4, 0, 46],
+      [12, 28, -12, 52],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
 };
 
 /**
@@ -440,6 +486,58 @@ export const happyverticalTheme: Theme = {
   borderRadius,
   duration,
   easing: calmEasing,
+  glass: { ...opaqueGlass },
+  ...baselineTokens(lightColors, darkColors),
+  // Day Shift roles: enamel ground, faceplate panels, bezel hairlines. The
+  // strong edge is the a11y `outline` (3:1), never the decorative bezel.
+  surfaces: {
+    light: {
+      ground: lightColors.background, // enamel
+      panel: lightColors.surface, // faceplate
+      control: lightColors.surfaceContainerLowest,
+      raised: lightColors.surface, // faceplate; the bezel hairline lifts it
+      sunken: lightColors.surfaceDim,
+      overlay: lightColors.scrim,
+    },
+    dark: {
+      ground: darkColors.background,
+      panel: darkColors.surface,
+      control: darkColors.surfaceContainerHigh,
+      raised: darkColors.surface,
+      sunken: darkColors.surfaceContainerLowest,
+      overlay: darkColors.scrim,
+    },
+  },
+  hairlines: {
+    light: {
+      color: 'var(--smrt-color-outline-variant)', // bezel
+      strongColor: 'var(--smrt-color-outline)',
+      insetHighlight: noInsetHighlight,
+    },
+    dark: {
+      color: 'var(--smrt-color-outline-variant)',
+      strongColor: 'var(--smrt-color-outline)',
+      insetHighlight: 'inset 0 1px 0 rgb(255 255 255 / 0.04)',
+    },
+  },
+  shadowColor: { light: 'rgb(32 39 43)', dark: 'rgb(0 0 0)' },
+  // Minimal state layers: calm is less to process.
+  states: {
+    hover: '0.06',
+    pressed: '0.10',
+    selected: '0.10',
+    focus: '0.10',
+    dragged: '0.12',
+    disabled: '0.38',
+  },
+  // The mock's 6px controls (radius md); small controls take the 4px step.
+  controls: {
+    radius: 'var(--smrt-radius-md)',
+    radiusSmall: 'var(--smrt-radius-sm)',
+    height: '2.5rem',
+    heightSmall: '2rem',
+    weight: '500',
+  },
   fontFamily: BODY_FONT,
   fontFamilyMono: MONO_FONT,
 };

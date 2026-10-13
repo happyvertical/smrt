@@ -9,7 +9,11 @@
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
 import { field, smrt } from '@happyvertical/smrt-core';
-import type { EmailOptions } from '../types';
+import type {
+  EmailOptions,
+  MessageSendResult,
+  SendEmailOptions,
+} from '../types';
 import { Message } from './Message';
 
 @smrt({
@@ -393,5 +397,38 @@ export class Email extends Message {
       '',
       bodyText,
     ].join('\n');
+  }
+
+  /**
+   * Send this email. Accepts {@link SendEmailOptions}, including send-time
+   * `attachments`, which `EmailSender` merges with the stored rows (#3808).
+   */
+  override async send(options?: SendEmailOptions): Promise<MessageSendResult> {
+    const result = await super.send(options);
+    await this.markHasAttachments(options, result);
+    return result;
+  }
+
+  /** Retry a failed send; takes the same options as {@link Email.send}. */
+  override async retrySend(
+    options?: SendEmailOptions,
+  ): Promise<MessageSendResult> {
+    const result = await super.retrySend(options);
+    await this.markHasAttachments(options, result);
+    return result;
+  }
+
+  /**
+   * Record `hasAttachments` once send-time bytes were actually delivered, so a
+   * rejected or failed send never claims attachments that did not go out.
+   */
+  private async markHasAttachments(
+    options: SendEmailOptions | undefined,
+    result: MessageSendResult,
+  ): Promise<void> {
+    if (!result.success || !options?.attachments?.length) return;
+    if (this.hasAttachments) return;
+    this.hasAttachments = true;
+    if (this.isPersisted) await this.save();
   }
 }

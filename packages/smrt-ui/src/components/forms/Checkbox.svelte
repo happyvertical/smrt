@@ -171,7 +171,7 @@ useControlRegistration(() => {
   .checkbox__box { position: relative; z-index: 1; width: 1.125rem; height: 1.125rem; display: grid; place-items: center; border: 2px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-extra-small); background: var(--smrt-color-surface); transition: background var(--smrt-duration-short2), border-color var(--smrt-duration-short2); }
   .checkbox__label { position: relative; z-index: 1; }
   input:checked + .checkbox__box, input:indeterminate + .checkbox__box { background: var(--smrt-color-primary); border-color: var(--smrt-color-primary); color: var(--smrt-color-on-primary); }
-  input:focus-visible + .checkbox__box { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
+  input:focus-visible + .checkbox__box { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .checkbox__check { font-size: .8rem; font-weight: 800; line-height: 1; }
   .checkbox__dash { width: .6rem; height: 2px; background: currentColor; }
   .checkbox:not(:only-child)::before { inline-size: var(--smrt-checkbox-box); margin-inline-start: calc(var(--smrt-checkbox-box) / -2); }

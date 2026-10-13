@@ -6,10 +6,16 @@
  * and vibrant material effects.
  */
 
+import { baselineTokens } from '../derive.js';
 import {
   appleEasing,
   borderRadiusScale,
+  darkInsetHighlight,
   durationScale,
+  hairlineMix,
+  noInsetHighlight,
+  noShadow,
+  shadow,
   spacingScale,
 } from '../shared.js';
 import type {
@@ -42,6 +48,12 @@ const lightColors: ColorPalette = {
   onTertiary: '#ffffff',
   tertiaryContainer: 'rgba(88, 86, 214, 0.15)',
   onTertiaryContainer: '#2a2866',
+
+  // Info - Shares the tertiary hue (no distinct info hue in this preset)
+  info: '#5856d6',
+  onInfo: '#ffffff',
+  infoContainer: 'rgba(88, 86, 214, 0.15)',
+  onInfoContainer: '#2a2866',
 
   // Error - System red
   error: '#ff3b30',
@@ -125,6 +137,12 @@ const darkColors: ColorPalette = {
   tertiaryContainer: 'rgba(94, 92, 230, 0.25)',
   onTertiaryContainer: '#d4d3ff',
 
+  // Info - Shares the tertiary hue (no distinct info hue in this preset)
+  info: '#5e5ce6',
+  onInfo: '#ffffff',
+  infoContainer: 'rgba(94, 92, 230, 0.25)',
+  onInfoContainer: '#d4d3ff',
+
   // Error
   error: '#ff453a',
   onError: '#000000',
@@ -144,7 +162,7 @@ const darkColors: ColorPalette = {
   onSuccessContainer: '#b8f5c9',
 
   // Surface - Translucent darks
-  surface: 'rgba(30, 30, 30, 0.72)',
+  surface: 'rgba(29, 29, 38, 0.72)',
   onSurface: '#ffffff',
   surfaceVariant: 'rgba(44, 44, 46, 0.65)',
   onSurfaceVariant: '#8e8e93',
@@ -157,7 +175,7 @@ const darkColors: ColorPalette = {
   surfaceBright: 'rgba(58, 58, 60, 0.9)',
 
   // Background - Deep dark with subtle tint
-  background: '#000000',
+  background: '#0b0b0f',
   onBackground: '#ffffff',
 
   // Outline — see the light-scheme note. Composited over the dark frosted
@@ -176,7 +194,7 @@ const darkColors: ColorPalette = {
   scrim: 'rgba(0, 0, 0, 0.6)',
 
   // Glass-specific
-  glassBackdrop: 'rgba(30, 30, 30, 0.72)',
+  glassBackdrop: 'rgba(29, 29, 38, 0.72)',
   glassBorder: 'rgba(255, 255, 255, 0.1)',
 };
 
@@ -286,23 +304,79 @@ const typography: TypographyScale = {
   labelSmall: {
     size: '0.6875rem',
     lineHeight: '1.3',
-    weight: '600',
+    weight: '500',
     tracking: '-0.004em',
     fontFamily: 'var(--smrt-font-family)',
   },
 };
 
 /**
- * Glass elevation
- * Softer, more diffuse shadows with color tint
+ * Glass elevation (light) — soft, diffuse two-layer shadows: a faint contact
+ * line and a wide ambient layer with negative spread so panels float without a
+ * hard edge.
  */
 const elevation: ElevationScale = {
-  0: 'none',
-  1: '0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02)',
-  2: '0 3px 6px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.03)',
-  3: '0 6px 12px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04)',
-  4: '0 12px 24px rgba(0, 0, 0, 0.1), 0 8px 16px rgba(0, 0, 0, 0.05)',
-  5: '0 24px 48px rgba(0, 0, 0, 0.12), 0 16px 32px rgba(0, 0, 0, 0.06)',
+  0: noShadow,
+  1: shadow([
+    [1, 2, 0, 5],
+    [2, 6, -2, 5],
+  ]),
+  2: shadow([
+    [1, 3, 0, 6],
+    [6, 14, -4, 8],
+  ]),
+  3: shadow([
+    [2, 4, 0, 7],
+    [12, 24, -8, 10],
+  ]),
+  4: shadow([
+    [2, 6, 0, 8],
+    [20, 40, -12, 12],
+  ]),
+  5: shadow([
+    [4, 8, 0, 8],
+    [32, 64, -16, 16],
+  ]),
+};
+
+/**
+ * Glass elevation (dark) — translucency and the inset top highlight carry the
+ * depth; the shadows only support it.
+ */
+const darkElevation: ElevationScale = {
+  0: noShadow,
+  1: shadow([
+    [1, 2, 0, 20],
+    [2, 6, -2, 14],
+  ]),
+  2: shadow(
+    [
+      [1, 3, 0, 24],
+      [6, 14, -4, 18],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  3: shadow(
+    [
+      [2, 4, 0, 26],
+      [12, 24, -8, 22],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  4: shadow(
+    [
+      [2, 6, 0, 28],
+      [20, 40, -12, 26],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
+  5: shadow(
+    [
+      [4, 8, 0, 30],
+      [32, 64, -16, 30],
+    ],
+    'var(--smrt-inset-highlight)',
+  ),
 };
 
 /**
@@ -310,9 +384,23 @@ const elevation: ElevationScale = {
  */
 const glassEffects: GlassEffects = {
   blur: '20px',
-  saturation: '180%',
+  // Deprecated aliases, still emitted for consumers of the old opacity tokens.
   borderOpacity: '0.3',
   backgroundOpacity: '0.72',
+  saturation: '180%',
+  // Translucent frosted surfaces; the opacity is part of each colour.
+  surfaces: {
+    light: {
+      surface: 'color-mix(in srgb, #ffffff 72%, transparent)',
+      surfaceStrong: 'color-mix(in srgb, #ffffff 88%, transparent)',
+      border: 'var(--smrt-hairline-color)',
+    },
+    dark: {
+      surface: 'color-mix(in srgb, #1d1d26 72%, transparent)',
+      surfaceStrong: 'color-mix(in srgb, #1d1d26 88%, transparent)',
+      border: 'color-mix(in srgb, #ffffff 10%, transparent)',
+    },
+  },
 };
 
 /**
@@ -325,10 +413,55 @@ export const glassTheme: Theme = {
   dark: darkColors,
   typography,
   elevation,
+  darkElevation,
   spacing: spacingScale,
   borderRadius: borderRadiusScale,
   duration: durationScale,
   easing: appleEasing,
+  ...baselineTokens(lightColors, darkColors),
+  shadowColor: { light: 'rgb(0 0 0)', dark: 'rgb(0 0 0)' },
+  // The ladder is expressed through translucency over the ground. Panels are
+  // frosted glass (72%), inputs are recessed glass (a tinted well that reads as
+  // pressed into the panel), and popovers are thicker glass (88%).
+  surfaces: {
+    light: {
+      ground: lightColors.background,
+      panel: 'color-mix(in srgb, #ffffff 72%, transparent)',
+      control: 'color-mix(in srgb, #767680 12%, transparent)',
+      raised: 'color-mix(in srgb, #ffffff 88%, transparent)',
+      sunken: 'color-mix(in srgb, #767680 8%, transparent)',
+      overlay: lightColors.scrim,
+    },
+    dark: {
+      ground: darkColors.background,
+      panel: 'color-mix(in srgb, #1d1d26 72%, transparent)',
+      control: 'color-mix(in srgb, #000000 28%, transparent)',
+      raised: 'color-mix(in srgb, #2a2a34 88%, transparent)',
+      sunken: 'color-mix(in srgb, #000000 38%, transparent)',
+      overlay: darkColors.scrim,
+    },
+  },
+  hairlines: {
+    light: hairlineMix(10, 26, noInsetHighlight),
+    dark: hairlineMix(12, 28, darkInsetHighlight(0.1)),
+  },
+  // Slightly stronger than Material: translucent fills need a firmer response.
+  states: {
+    hover: '0.10',
+    pressed: '0.14',
+    selected: '0.14',
+    focus: '0.14',
+    dragged: '0.18',
+    disabled: '0.38',
+  },
+  // Pill-ish controls: radius lg.
+  controls: {
+    radius: 'var(--smrt-radius-lg)',
+    radiusSmall: 'var(--smrt-radius-md)',
+    height: '2.75rem',
+    heightSmall: '2.25rem',
+    weight: '500',
+  },
   glass: glassEffects,
   fontFamily:
     '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif',

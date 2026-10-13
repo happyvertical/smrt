@@ -105,3 +105,32 @@ describe('createTheme color handling (#1586)', () => {
     ).toThrow(/unsupported color "tomato"/);
   });
 });
+
+describe('derivePrimaryOverrides', () => {
+  it('returns the full primary-dependent set and keeps on-primary legible', async () => {
+    const { derivePrimaryOverrides } = await import('../create-theme.js');
+    const light = derivePrimaryOverrides('#ffeb3b', 'light');
+    expect(light['--smrt-color-primary']).toBe('#ffeb3b');
+    expect(light['--smrt-color-on-primary']).toBe('#000000');
+    expect(Object.keys(light)).toEqual(
+      expect.arrayContaining([
+        '--smrt-color-primary-container',
+        '--smrt-color-on-primary-container',
+        '--smrt-color-inverse-primary',
+        '--smrt-focus-ring-color',
+        '--smrt-accent-color',
+        '--smrt-caret-color',
+        '--smrt-selection-background',
+        '--smrt-selection-color',
+      ]),
+    );
+    const dark = derivePrimaryOverrides('#336699', 'dark');
+    expect(dark['--smrt-color-inverse-primary']).toBe('#336699');
+    expect(dark['--smrt-color-primary']).not.toBe('#336699');
+  });
+
+  it('throws on an unparseable colour', async () => {
+    const { derivePrimaryOverrides } = await import('../create-theme.js');
+    expect(() => derivePrimaryOverrides('tomato', 'light')).toThrow();
+  });
+});

@@ -1,5 +1,20 @@
 # @happyvertical/smrt-support
 
+## 0.55.18
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.18
+  - @happyvertical/smrt-chat@0.55.18
+  - @happyvertical/smrt-jobs@0.55.18
+  - @happyvertical/smrt-messages@0.55.18
+  - @happyvertical/smrt-projects@0.55.18
+  - @happyvertical/smrt-tenancy@0.55.18
+  - @happyvertical/smrt-timesheets@0.55.18
+  - @happyvertical/smrt-users@0.55.18
+  - @happyvertical/smrt-ui@0.55.18
+
 ## 0.55.17
 
 ### Patch Changes

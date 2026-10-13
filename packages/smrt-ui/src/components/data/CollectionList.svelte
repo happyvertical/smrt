@@ -119,7 +119,7 @@ function toggle(key: string | number) {
   input { width: 1.125rem; height: 1.125rem; accent-color: var(--smrt-color-primary); }
   .main { display: grid; min-width: 0; gap: var(--smrt-spacing-1); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
   button.main { width: 100%; cursor: pointer; }
-  button.main:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
+  button.main:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--smrt-typography-title-small-font); }
   .main span { color: var(--smrt-color-on-surface-variant); }
   .actions { position: relative; z-index: 1; display: flex; gap: var(--smrt-spacing-1); }

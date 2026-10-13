@@ -72,20 +72,20 @@ const name = $derived(label ?? t(M['ui.shell_nav_toggle.navigation']));
     inline-size: 2.75rem;
     block-size: 2.75rem;
     border: 0;
-    border-radius: var(--smrt-radius-md);
+    border-radius: var(--smrt-control-radius);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
   }
 
   .smrt-shell-nav-toggle:hover {
-    background: var(--smrt-color-surface-container-high);
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
     color: var(--smrt-color-on-surface);
   }
 
   .smrt-shell-nav-toggle:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 }
 </style>

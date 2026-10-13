@@ -52,11 +52,28 @@ export interface SendMessageOptions {
 }
 
 /**
+ * Bytes attached to an email at send time, for a document rendered on demand
+ * that the host does not persist as a file. Merged after the message's stored
+ * `Attachment` rows (#3808).
+ */
+export interface SendEmailAttachment {
+  filename: string;
+  /** Defaults to `application/octet-stream`. */
+  contentType?: string;
+  content: Buffer | Uint8Array;
+  /** For inline images referenced as `<img src="cid:...">`. */
+  contentId?: string;
+  contentDisposition?: 'attachment' | 'inline';
+}
+
+/**
  * Email-specific send options
  */
 export interface SendEmailOptions extends SendMessageOptions {
   saveToCopy?: boolean;
   sentFolder?: string;
+  /** Send-time attachments, merged with the message's stored `Attachment` rows. */
+  attachments?: SendEmailAttachment[];
 }
 
 /**
@@ -236,6 +253,8 @@ export interface SendPersonaMessageOptions {
   purpose?: string;
   routeId?: string;
   correlationId?: string;
+  /** Files to attach; only email routes accept them, any other route rejects the send. */
+  attachments?: SendEmailAttachment[];
 }
 
 /**

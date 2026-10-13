@@ -280,7 +280,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 
   .tabs-nav {
     display: flex;
-    border-bottom: 1px solid var(--smrt-color-surface-variant);
+    border-bottom: var(--smrt-hairline);
     width: 100%;
   }
 
@@ -293,10 +293,11 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     padding: 0 var(--smrt-spacing-4);
     height: 48px;
     font: var(--smrt-typography-title-small-font);
-    font-weight: var(--smrt-typography-weight-medium, 500);
+    font-weight: var(--smrt-control-weight);
     color: var(--smrt-color-on-surface-variant);
     background: transparent;
     border: none;
+    border-radius: var(--smrt-control-radius) var(--smrt-control-radius) 0 0;
     cursor: pointer;
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     position: relative;
@@ -314,14 +315,35 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     font: var(--smrt-typography-title-medium-font);
   }
 
+  /* State layer: currentColor mixed at the theme's state opacity. */
+  .tab-button::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: transparent;
+    pointer-events: none;
+  }
+
   .tab-button:hover:not(:disabled) {
-    background-color: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface);
   }
 
+  .tab-button:hover:not(:disabled)::after {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+
+  .tab-button:active:not(:disabled)::after {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
+  }
+
+  .tab-button.active::after {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-selected) * 100%), transparent);
+  }
+
   .tab-button:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
 
   .tab-button.active {
@@ -329,7 +351,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
   }
 
   .tab-button:disabled {
-    opacity: 0.38;
+    opacity: var(--smrt-state-disabled);
     cursor: not-allowed;
   }
 
@@ -375,7 +397,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     min-width: 1.25rem;
     padding: 0.05rem 0.4rem;
     border-radius: 999px;
-    background: var(--smrt-color-surface-container-high);
+    background: var(--smrt-surface-sunken);
     color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-label-small-font);
     font-weight: var(--smrt-typography-weight-bold, 700);
@@ -388,7 +410,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     align-items: stretch;
     gap: var(--smrt-spacing-1);
     width: 100%;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .tabs-links-row {
@@ -405,20 +427,22 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     flex: 0 0 auto;
     align-items: center;
     gap: var(--smrt-spacing-2);
-    min-height: 44px;
+    min-height: var(--smrt-control-height);
     padding: 0 var(--smrt-spacing-4);
     margin-bottom: -1px;
+    border-radius: var(--smrt-control-radius) var(--smrt-control-radius) 0 0;
     border-bottom: 2px solid transparent;
     color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-title-small-font);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
+    font-weight: var(--smrt-control-weight);
     text-decoration: none;
     white-space: nowrap;
     cursor: pointer;
   }
 
   .tabs-links.sm .tab-link {
-    min-height: 40px;
+    min-height: var(--smrt-control-height-small);
+    border-radius: var(--smrt-control-radius-small) var(--smrt-control-radius-small) 0 0;
     font: var(--smrt-typography-label-large-font);
   }
 
@@ -429,6 +453,11 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 
   .tab-link:hover {
     color: var(--smrt-color-on-surface);
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+
+  .tab-link:active {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
   }
 
   .tab-link.active {
@@ -437,13 +466,13 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
   }
 
   .tab-link[aria-disabled='true'] {
-    opacity: 0.38;
+    opacity: var(--smrt-state-disabled);
     cursor: not-allowed;
   }
 
   .tab-link:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
 
   .tab-dot {
@@ -473,10 +502,11 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     display: grid;
     min-width: 12rem;
     padding: var(--smrt-spacing-1);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small, 0.5rem);
-    background: var(--smrt-color-surface);
-    box-shadow: var(--smrt-elevation-2);
+    background: var(--smrt-glass-surface-strong);
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3);
   }
 
   .tabs-more-menu .tab-link {

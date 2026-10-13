@@ -158,8 +158,8 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
     text-decoration: underline;
   }
   .sortable-header__control:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, var(--smrt-color-primary, currentColor));
-    outline-offset: -2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
   .sortable-header__icon {
     opacity: 0.35;

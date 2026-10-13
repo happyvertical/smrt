@@ -46,3 +46,7 @@ The `smrt playground` commands (`init`, `dev`, `list`) consume this package. The
 
 - See [`docs/ui-surfaces.md`](../../docs/ui-surfaces.md) for the full UI surface contract
 - See [`docs/content/standards.md`](../../docs/content/standards.md) for monorepo conventions
+
+## Visual baselines
+
+The host's theme gallery has Chromium-on-macOS screenshot baselines. Update with `pnpm --filter smrt-playground-host test:e2e:update-snapshots`; details in [agents/host.md](agents/host.md). The spec skips pixel comparison off darwin (CI is Linux).

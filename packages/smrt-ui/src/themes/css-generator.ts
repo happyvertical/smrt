@@ -5,6 +5,7 @@
  * Generates CSS variables for colors, typography, spacing, elevation, etc.
  */
 
+import { generateBaselineVariables } from './derive.js';
 import { themes } from './registry.js';
 import {
   borderRadiusAliases,
@@ -20,7 +21,6 @@ import type {
   DurationScale,
   EasingScale,
   ElevationScale,
-  GlassEffects,
   SpacingScale,
   Theme,
   TypographyScale,
@@ -45,7 +45,15 @@ function generateColorVariables(
 ): Record<string, string> {
   const vars: Record<string, string> = {};
 
-  for (const [key, value] of Object.entries(colors)) {
+  const withInfo: ColorPalette = {
+    ...colors,
+    info: colors.info ?? colors.tertiary,
+    onInfo: colors.onInfo ?? colors.onTertiary,
+    infoContainer: colors.infoContainer ?? colors.tertiaryContainer,
+    onInfoContainer: colors.onInfoContainer ?? colors.onTertiaryContainer,
+  };
+  for (const [key, value] of Object.entries(withInfo)) {
+    if (value === undefined) continue;
     // Convert camelCase to kebab-case: primaryContainer -> primary-container
     const cssKey = key.replace(/([A-Z])/g, '-$1').toLowerCase();
     vars[`${prefix}-color-${cssKey}`] = value;
@@ -188,23 +196,6 @@ function generateEasingVariables(
 }
 
 /**
- * Generate CSS custom properties for glass effects
- */
-function generateGlassVariables(
-  glass: GlassEffects | undefined,
-  prefix: string,
-): Record<string, string> {
-  if (!glass) return {};
-
-  return {
-    [`${prefix}-glass-blur`]: glass.blur,
-    [`${prefix}-glass-saturation`]: glass.saturation,
-    [`${prefix}-glass-border-opacity`]: glass.borderOpacity,
-    [`${prefix}-glass-background-opacity`]: glass.backgroundOpacity,
-  };
-}
-
-/**
  * Generate helper tokens that do not vary by color scheme (issue #1431).
  *
  * Named font weights and z-index stacking levels are identical across every
@@ -293,8 +284,10 @@ export function generateThemeVariables(
     // Theme-independent helper tokens (mono font, named weights, z-index)
     ...generateStaticTokens(prefix, theme.fontFamilyMono),
 
-    // Glass effects (if present)
-    ...generateGlassVariables(theme.glass, prefix),
+    // Premium baseline: surface ladder, hairlines, state layers, shadow colour,
+    // control geometry, focus ring, native chrome, glass, scheme motion, font
+    // features (#3865)
+    ...generateBaselineVariables(theme, isDark, prefix),
   };
 }
 

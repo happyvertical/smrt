@@ -317,23 +317,40 @@ $effect(() => {
     min-width: 0;
     min-height: max(2.75rem, var(--smrt-control-target-min, 0px));
     padding: var(--smrt-spacing-2);
-    border: 1px solid var(--smrt-color-outline);
-    border-radius: var(--smrt-radius-large);
-    background: var(--smrt-color-surface);
+    position: relative;
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-control-radius);
+    background: var(--smrt-surface-control);
     color: var(--smrt-color-on-surface);
     font: inherit;
     text-align: start;
     cursor: pointer;
   }
-  .smrt-workspace-account-menu__trigger:hover:not(:disabled),
-  .smrt-workspace-account-menu__trigger[aria-expanded='true'] {
-    background: var(--smrt-color-surface-container-high);
+  /* State layer: a currentColor veil over the trigger. */
+  .smrt-workspace-account-menu__trigger::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .smrt-workspace-account-menu__trigger:hover:not(:disabled)::after {
+    opacity: var(--smrt-state-hover);
+  }
+  .smrt-workspace-account-menu__trigger[aria-expanded='true']::after {
+    opacity: var(--smrt-state-selected);
+  }
+  .smrt-workspace-account-menu__trigger:active:not(:disabled)::after {
+    opacity: var(--smrt-state-pressed);
   }
   .smrt-workspace-account-menu__trigger:focus-visible {
-    outline: var(--smrt-spacing-0_5) solid var(--smrt-color-primary);
-    outline-offset: var(--smrt-spacing-0_5);
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
   .smrt-workspace-account-menu__trigger:disabled {
+    opacity: var(--smrt-state-disabled);
     cursor: default;
   }
 
@@ -350,11 +367,6 @@ $effect(() => {
     border-radius: var(--smrt-radius-full);
     background: transparent;
   }
-  .smrt-workspace-account-menu[data-compact] .smrt-workspace-account-menu__trigger:hover:not(:disabled),
-  .smrt-workspace-account-menu[data-compact] .smrt-workspace-account-menu__trigger[aria-expanded='true'] {
-    background: var(--smrt-color-surface-container-high);
-  }
-
   .smrt-workspace-account-menu[data-compact] .smrt-workspace-account-menu__identity,
   .smrt-workspace-account-menu[data-compact] .smrt-workspace-account-menu__indicator {
     display: none;
@@ -369,10 +381,10 @@ $effect(() => {
     overflow-y: auto;
     margin: var(--smrt-spacing-1) 0;
     padding: var(--smrt-spacing-1);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-surface-container);
-    box-shadow: var(--smrt-elevation-2);
+    background: var(--smrt-surface-raised);
+    box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight);
   }
   .smrt-workspace-account-menu__popover--bottom-start { inset-block-start: 100%; inset-inline-start: 0; }
   .smrt-workspace-account-menu__popover--bottom-end { inset-block-start: 100%; inset-inline-end: 0; }
@@ -388,7 +400,7 @@ $effect(() => {
     display: grid;
     gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-block-end: 1px solid var(--smrt-color-outline-variant);
+    border-block-end: var(--smrt-hairline);
     margin-block-end: var(--smrt-spacing-1);
   }
   .smrt-workspace-account-menu__name {
@@ -416,7 +428,7 @@ $effect(() => {
     min-block-size: max(2.75rem, var(--smrt-control-target-min, 0px));
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     border: none;
-    border-radius: var(--smrt-radius-small);
+    border-radius: var(--smrt-control-radius-small);
     background: none;
     color: var(--smrt-color-on-surface);
     font: inherit;
@@ -426,14 +438,17 @@ $effect(() => {
     cursor: pointer;
   }
   .smrt-workspace-account-menu__item:hover:not(:disabled) {
-    background: var(--smrt-color-surface-container-high);
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+  .smrt-workspace-account-menu__item:active:not(:disabled) {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
   }
   .smrt-workspace-account-menu__item:focus-visible {
-    outline: var(--smrt-spacing-0_5) solid var(--smrt-color-primary);
-    outline-offset: calc(-1 * var(--smrt-spacing-0_5));
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(-1 * var(--smrt-focus-ring-width));
   }
   .smrt-workspace-account-menu__item:disabled {
-    color: var(--smrt-color-on-surface-variant);
+    opacity: var(--smrt-state-disabled);
     cursor: default;
   }
 

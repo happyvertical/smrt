@@ -253,7 +253,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   .smrt-shell-layout-editor h2, .smrt-shell-layout-editor h3, .smrt-shell-layout-editor p { margin: 0; }
   .smrt-shell-layout-editor p, .smrt-shell-layout-editor__muted { color: var(--smrt-color-on-surface-variant); }
   .smrt-shell-layout-editor h3 { font: var(--smrt-typography-title-small-font); margin-block-end: var(--smrt-spacing-2); }
-  .smrt-shell-layout-editor__panels { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md); }
+  .smrt-shell-layout-editor__panels { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: var(--smrt-spacing-3); border: var(--smrt-hairline); border-radius: var(--smrt-radius-md); }
   .smrt-shell-layout-editor__panels legend { padding-inline: var(--smrt-spacing-1); font: var(--smrt-typography-title-small-font); }
   .smrt-shell-layout-editor__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-4); }
   .smrt-shell-layout-editor__body { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--smrt-spacing-4); align-items: start; }
@@ -261,7 +261,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   .smrt-shell-layout-editor__nav-head h3 { margin-block-end: 0; }
   :global(.smrt-shell-layout-editor__name) { flex: 1 1 8rem; min-inline-size: 0; }
   .smrt-shell-layout-editor__label { flex: 1 1 auto; min-inline-size: 0; }
-  .smrt-shell-layout-editor__preview-frame { padding: var(--smrt-spacing-3); border: 1px dashed var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container-low, var(--smrt-color-surface)); }
+  .smrt-shell-layout-editor__preview-frame { padding: var(--smrt-spacing-3); border: var(--smrt-hairline); border-style: dashed; border-radius: var(--smrt-radius-md); background: var(--smrt-surface-sunken); }
   /* Label on its own line (never broken mid-word); the select and Reset share the next line. */
   @media (max-width: 48rem) {
     .smrt-shell-layout-editor header { flex-direction: column; }

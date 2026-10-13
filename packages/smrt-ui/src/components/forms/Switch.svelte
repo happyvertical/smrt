@@ -146,7 +146,7 @@ useControlRegistration(() => {
   .switch__thumb { display: block; width: 1.125rem; height: 1.125rem; border-radius: 50%; background: var(--smrt-color-outline); transition: transform var(--smrt-duration-short2), background var(--smrt-duration-short2); }
   input:checked + .switch__track { background: var(--smrt-color-primary); border-color: var(--smrt-color-primary); }
   input:checked + .switch__track .switch__thumb { transform: translateX(1.25rem); background: var(--smrt-color-on-primary); }
-  input:focus-visible + .switch__track { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
+  input:focus-visible + .switch__track { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .switch--sm { font-size: .8rem; transform-origin: left center; }
   .switch--lg .switch__track { transform: scale(1.15); margin-inline: .2rem; }
   .switch[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-full); }

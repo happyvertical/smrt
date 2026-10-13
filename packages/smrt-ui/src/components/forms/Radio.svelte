@@ -43,7 +43,7 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
   .radio__mark::after { content: ''; width: .55rem; height: .55rem; border-radius: 50%; background: var(--smrt-color-primary); transform: scale(0); transition: transform var(--smrt-duration-short2); }
   input:checked + .radio__mark { border-color: var(--smrt-color-primary); }
   input:checked + .radio__mark::after { transform: scale(1); }
-  input:focus-visible + .radio__mark { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
+  input:focus-visible + .radio__mark { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .radio { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
 
   /* Table cells: grow vertically only, never into a neighbouring cell. */
