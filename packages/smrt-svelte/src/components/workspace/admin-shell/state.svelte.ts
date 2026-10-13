@@ -124,6 +124,20 @@ export class ShellState {
    * Settings UI shows the shortcuts section only while it is true.
    */
   hotkeysAvailable = $state(false);
+  /**
+   * Whether each edge's region is actually rendered right now (a header,
+   * footer or sidebar with nothing to show is skipped, and a phone may hide an
+   * edge). Read-only for consumers: `AdminShell` keeps it current from the same
+   * logic that collapses empty bands and edges. Not the same as the user's
+   * visibility choice (`panels[edge] !== 'hidden'`). Defaults to `true` until
+   * an `AdminShell` reports.
+   */
+  regionsRendered = $state<Record<PanelEdge, boolean>>({
+    top: true,
+    left: true,
+    right: true,
+    bottom: true,
+  });
 
   private activityListeners = new Set<ActivityListener>();
 
