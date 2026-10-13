@@ -7,7 +7,12 @@ Use `CommentService` on the server with a trusted `{ tenantId, userId }` actor
 from the authenticated session and an `authorizeRecord` callback. The callback
 must verify that the record belongs to that tenant and that the actor may read
 or comment on it. Both `create` and `listForRecord` require that decision; request
-bodies cannot override the actor. Direct model/collection APIs are persistence
+bodies cannot override the actor. `CreateCommentInput` contains only tenant,
+author, record type/id, body and mentions. The service ignores extra runtime
+properties, generates its own UUID/slug and inserts a new row without natural-key
+adoption. Caller-provided identity, context, database and constructor options
+never reach persistence. `CommentOptions` remains the separate trusted model
+hydration type. Direct model/collection APIs are persistence
 primitives for trusted code, not authorization boundaries. Generated API, MCP,
 and CLI access is disabled.
 

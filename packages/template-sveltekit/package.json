@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-template-sveltekit",
-  "version": "0.55.18",
+  "version": "0.55.19",
   "description": "Minimal SvelteKit project template with s-m-r-t framework integration",
   "type": "module",
   "main": "index.js",
@@ -70,6 +70,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@types/node": "24.13.6",
     "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
     "typescript": "6.0.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"

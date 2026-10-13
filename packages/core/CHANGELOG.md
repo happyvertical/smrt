@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.55.19
+
+### Patch Changes
+
+- ### Features
+  
+  - shell and cookbook follow-ups, portable engine schema (#3892) (svelte)
+  - add durable OAuth and isolated model storage (#3755) (auth)
+  
+  ### Bug Fixes
+  
+  - EmailSender sends stored and send-time attachments (#3884) (messages)
+- @happyvertical/smrt-config@0.55.19
+  - @happyvertical/smrt-scanner@0.55.19
+  - @happyvertical/smrt-types@0.55.19
+
 ## 0.55.18
 
 ### Patch Changes

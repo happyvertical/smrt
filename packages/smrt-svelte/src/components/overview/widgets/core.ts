@@ -88,7 +88,24 @@ export function createMetricWidget(
   };
 }
 
-/** Chart: values grouped by a field over a period. */
+/** Chart option-schema version: 2 added the `table`, `pie` and `stat` styles. */
+export const CHART_OPTIONS_VERSION = 2;
+
+/** Chart options written at v1 (`style` bar or line) are valid at v2 unchanged. */
+export function migrateChartOptions(
+  options: Record<string, unknown>,
+  fromVersion: number,
+): Record<string, unknown> | null {
+  return fromVersion >= 1 && fromVersion < CHART_OPTIONS_VERSION
+    ? { ...options }
+    : null;
+}
+
+/**
+ * Chart: values grouped by a field over a period, drawn as `bar`, `line`,
+ * `table`, `pie` (donut) or `stat` (headline value with its change). This is
+ * the renderer half of the runtime-report chart hints (#3878).
+ */
 export function createChartWidget(
   load: WidgetLoad<ChartWidgetData>,
 ): WidgetDefinition<ChartWidgetData> {
@@ -125,12 +142,19 @@ export function createChartWidget(
         choices: [
           { value: 'bar', label: 'ui.overview.opt.style_bar' },
           { value: 'line', label: 'ui.overview.opt.style_line' },
+          { value: 'table', label: 'ui.overview.opt.style_table' },
+          { value: 'pie', label: 'ui.overview.opt.style_pie' },
+          { value: 'stat', label: 'ui.overview.opt.style_stat' },
         ],
       },
       filterField,
     ],
     component: ChartWidget,
     load,
+    // v2 widens `style` from bar | line to bar | line | table | pie | stat
+    // (#3888). Every v1 option set is still valid, so migration is identity.
+    version: CHART_OPTIONS_VERSION,
+    migrate: migrateChartOptions,
     defaultSpan: 2,
   };
 }

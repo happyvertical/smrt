@@ -5,8 +5,8 @@ import { Comment } from '../models/Comment.js';
 import type {
   CommentActorContext,
   CommentMentionNotificationAdapter,
-  CommentOptions,
   CommentRecordAccess,
+  CreateCommentInput,
 } from '../types.js';
 
 export class CommentService {
@@ -54,39 +54,39 @@ export class CommentService {
     );
   }
 
-  async create(commentOptions: CommentOptions): Promise<Comment> {
-    if (!commentOptions.tenantId || !commentOptions.authorUserId) {
+  async create(commentOptions: CreateCommentInput): Promise<Comment> {
+    const { tenantId, authorUserId, metaType, metaId, body, mentions } =
+      commentOptions;
+    if (!tenantId || !authorUserId) {
       throw new TypeError('Comments require a tenant and author.');
     }
     if (
-      commentOptions.tenantId !== this.options.actor.tenantId ||
-      commentOptions.authorUserId !== this.options.actor.userId
+      tenantId !== this.options.actor.tenantId ||
+      authorUserId !== this.options.actor.userId
     ) {
       throw new Error('Comment actor context mismatch.');
     }
-    await this.authorize(
-      commentOptions.metaType ?? '',
-      commentOptions.metaId ?? '',
-      'comment',
-    );
-    if (!commentOptions.body?.trim())
-      throw new TypeError('Comment body is required.');
-    const { mentions, ...input } = commentOptions;
+    await this.authorize(metaType ?? '', metaId ?? '', 'comment');
+    if (!body?.trim()) throw new TypeError('Comment body is required.');
     // Validate through the model's public setter before collection.create()
     // persists. Supply its normalized JSON in that single insert.
     const prepared = new Comment();
     if (mentions !== undefined) prepared.mentionUserIds = mentions;
-    const comment = await withTenant(
-      { tenantId: commentOptions.tenantId },
-      async () => {
-        return (await CommentCollection.create({ db: this.options.db })).create(
-          {
-            ...input,
-            mentions: prepared.mentions,
-          },
-        );
-      },
-    );
+    const id = crypto.randomUUID();
+    const comment = await withTenant({ tenantId }, async () => {
+      return (await CommentCollection.create({ db: this.options.db })).create({
+        tenantId,
+        authorUserId,
+        metaType,
+        metaId,
+        body,
+        id,
+        slug: id,
+        context: '',
+        _insertOnly: true,
+        mentions: prepared.mentions,
+      });
+    });
     if (!this.options.mentionNotifications || !comment.id) return comment;
     for (const recipientUserId of comment.mentionUserIds) {
       if (recipientUserId === comment.authorUserId) continue;

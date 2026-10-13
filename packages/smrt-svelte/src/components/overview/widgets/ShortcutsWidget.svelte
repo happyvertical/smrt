@@ -13,8 +13,12 @@ import { safeHref } from '../markdown.js';
 import type { WidgetComponentProps } from '../types.js';
 import { isRecord, type ShortcutsWidgetData } from './data.js';
 
-let { data, iconComponent }: WidgetComponentProps<ShortcutsWidgetData> =
-  $props();
+let {
+  data,
+  iconComponent,
+  locale,
+  presentation = 'card',
+}: WidgetComponentProps<ShortcutsWidgetData> = $props();
 
 const { t } = useI18n();
 const MAX_ITEMS = 48;
@@ -25,7 +29,20 @@ interface Card {
   href: string;
   icon: string;
   description?: string;
+  count?: number;
 }
+
+const numberFormat = $derived(new Intl.NumberFormat(locale));
+const plural = $derived(new Intl.PluralRules(locale));
+const countLabel = (count: number): string =>
+  t(
+    M[
+      plural.select(count) === 'one'
+        ? 'ui.overview.shortcuts.records_one'
+        : 'ui.overview.shortcuts.records_other'
+    ],
+    { count: numberFormat.format(count) },
+  );
 
 const cards = $derived.by((): Card[] => {
   if (!isRecord(data) || !Array.isArray(data.items)) return [];
@@ -42,6 +59,12 @@ const cards = $derived.by((): Card[] => {
         typeof item.icon === 'string' ? item.icon : SHELL_DEFAULT_SECTION_ICON,
       description:
         typeof item.description === 'string' ? item.description : undefined,
+      count:
+        typeof item.count === 'number' &&
+        Number.isFinite(item.count) &&
+        item.count >= 0
+          ? item.count
+          : undefined,
     });
   }
   return out;
@@ -51,7 +74,7 @@ const cards = $derived.by((): Card[] => {
 {#if cards.length === 0}
   <p class="smrt-shortcuts__empty" data-smrt-component="ShortcutsWidget">{t(M['ui.overview.shortcuts.empty'])}</p>
 {:else}
-  <ul class="smrt-shortcuts" data-smrt-component="ShortcutsWidget">
+  <ul class="smrt-shortcuts" data-presentation={presentation} data-smrt-component="ShortcutsWidget">
     {#each cards as card (card.id)}
       <li class="smrt-shortcuts__card">
         <a class="smrt-shortcuts__link" href={card.href}>
@@ -60,6 +83,7 @@ const cards = $derived.by((): Card[] => {
               <ShellSectionIcon name={card.icon} size={28} {iconComponent} />
             </span>
             <span class="smrt-shortcuts__title">{card.label}</span>
+            {#if card.count !== undefined}<span class="smrt-shortcuts__count">{countLabel(card.count)}</span>{/if}
           </span>
           {#if card.description}<span class="smrt-shortcuts__desc">{card.description}</span>{/if}
         </a>
@@ -81,6 +105,11 @@ const cards = $derived.by((): Card[] => {
   .smrt-shortcuts__icon :global(.smrt-shell-section-icon) { inline-size: 28px; block-size: 28px; }
   .smrt-shortcuts__title { font-weight: var(--smrt-typography-weight-medium, 500); overflow-wrap: anywhere; }
   .smrt-shortcuts__desc { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
+  .smrt-shortcuts__count { margin-inline-start: auto; flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.75rem); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* Plain: entries sit directly on the panel, no frame per entry. */
+  .smrt-shortcuts[data-presentation='plain'] { gap: var(--smrt-spacing-1); }
+  .smrt-shortcuts[data-presentation='plain'] .smrt-shortcuts__card { border: 0; border-radius: var(--smrt-radius-medium); background: transparent; }
+  .smrt-shortcuts[data-presentation='plain'] .smrt-shortcuts__card:hover { background: color-mix(in srgb, var(--smrt-color-on-surface) calc(var(--smrt-state-hover) * 100%), transparent); }
   .smrt-shortcuts__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
 }
 </style>

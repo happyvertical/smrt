@@ -11,18 +11,31 @@ import type { WidgetComponents, WidgetRegistry } from '../overview/registry.js';
 import type { OverviewDefinition } from '../overview/types.js';
 import { useShellLayout } from '../workspace/admin-shell/layout-context.js';
 import { type CookbookOverviewStore, createSectionOverview } from './page.js';
-import type { CookbookEntry } from './types.js';
+import type {
+  CookbookEntry,
+  CookbookSectionHeadingInfo,
+  CookbookSectionPresentationProps,
+} from './types.js';
 
-interface Props {
+interface Props extends CookbookSectionPresentationProps {
+  /** The section's default overview from the cookbook; read once at mount (key the component on the section id). */
   definition: OverviewDefinition;
+  /** Widget types available on this overview, with their option schemas and loaders. */
   registry: WidgetRegistry;
+  /** Where the user's edits to this overview are read from and written back to (the cookbook override). */
   store: CookbookOverviewStore;
+  /** The section's menu entries by id, passed to loaders so shortcuts follow renames, hides and moves. */
   entries: ReadonlyMap<string, CookbookEntry>;
+  /** Svelte component that renders each widget type. */
   components: WidgetComponents;
+  /** Models the user may pick as a widget's data source in edit mode. */
   models: readonly OverviewModelChoice[];
   /** Host capabilities for widget loaders. */
   hostContext: () => Record<string, unknown>;
+  /** Accessible name of the overview grid, usually the section title. */
   label: string;
+  /** The section; needed for `heading`, which renders above the grid. */
+  section?: CookbookSectionHeadingInfo;
 }
 
 let {
@@ -34,6 +47,9 @@ let {
   models,
   hostContext,
   label,
+  presentation = 'plain',
+  heading,
+  section,
 }: Props = $props();
 
 const layout = useShellLayout();
@@ -68,4 +84,7 @@ $effect(() => {
 onDestroy(() => controller.destroy());
 </script>
 
-<OverviewGrid {controller} {components} {models} {label} />
+<div class="cookbook-section-overview" data-smrt-component="CookbookSectionOverview">
+  {#if heading && section}{@render heading({ section })}{/if}
+  <OverviewGrid {controller} {components} {models} {label} {presentation} />
+</div>

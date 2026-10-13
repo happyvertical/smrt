@@ -2,7 +2,8 @@
 /**
  * A navigation section's own page in a cookbook app (#3749). The sidebar lists
  * only sections, so this is where a section's entries are: an editable
- * overview (the entries as shortcut cards by default) with the shell's layout
+ * overview (the entries as a plain list of shortcuts by default, framed cards
+ * with `presentation="card"`) with the shell's layout
  * edit mode driving its grid. A section with no overview shows its menu.
  *
  * Render it from one route (`s/[slug]/+page.svelte`), inside `CookbookApp`.
@@ -18,7 +19,13 @@ import { getCookbookContext } from './context.js';
 import { DEFAULT_SECTION_ICON, sectionIdFromSlug } from './sections.js';
 import type { CookbookSectionPageProps } from './types.js';
 
-let { sectionId, slug, children }: CookbookSectionPageProps = $props();
+let {
+  sectionId,
+  slug,
+  children,
+  presentation = 'plain',
+  heading,
+}: CookbookSectionPageProps = $props();
 
 const { t } = useI18n();
 const cookbook = getCookbookContext();
@@ -32,6 +39,12 @@ const icon = $derived(section?.icon ?? suggested?.icon ?? DEFAULT_SECTION_ICON);
 const description = $derived(suggested?.description);
 const page = $derived(cookbook.shell.overviews[id]);
 const registry = $derived(cookbook.registry);
+const headingInfo = $derived({
+  id,
+  title,
+  icon,
+  ...(description ? { description } : {}),
+});
 const store = {
   overview: (key: string) => cookbook.overrideFor(key),
   setOverview: (key: string, override: OverviewOverride | null) =>
@@ -45,13 +58,17 @@ const store = {
 
 <main class="cookbook-section" data-smrt-component="CookbookSectionPage">
   {#if section}
-    <header>
-      <span class="mark"><ShellSectionIcon name={icon} size={28} /></span>
-      <div class="heading">
-        <h1>{title}</h1>
-        {#if description}<p>{description}</p>{/if}
-      </div>
-    </header>
+    {#if heading}
+      {@render heading({ section: headingInfo })}
+    {:else}
+      <header>
+        <span class="mark"><ShellSectionIcon name={icon} size={28} /></span>
+        <div class="heading">
+          <h1>{title}</h1>
+          {#if description}<p>{description}</p>{/if}
+        </div>
+      </header>
+    {/if}
     {#if page && registry}
       {#key id}
         <CookbookSectionOverview
@@ -63,6 +80,7 @@ const store = {
           models={cookbook.models}
           hostContext={cookbook.widgetContext}
           label={`${title} overview`}
+          {presentation}
         />
       {/key}
       {#if layout.editing}
