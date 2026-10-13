@@ -251,4 +251,7 @@ export const M = defineMessages({
   'ui.app_shell.color_scheme_toggle': 'Toggle color scheme',
   'ui.app_shell.command_palette_item': 'Search',
   'ui.app_shell.account_settings': 'Settings',
+
+  // components/app/DockToggles not-ready state (issue #3860)
+  'ui.dock_toggles.set_up': 'Set up {label}',
 });
