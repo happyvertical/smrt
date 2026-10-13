@@ -5,10 +5,10 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
   "domainTools": [
     {
       "action": "create",
-      "className": "Item",
-      "collection": "items",
+      "className": "Note",
+      "collection": "notes",
       "effect": "write",
-      "endpoint": "/items",
+      "endpoint": "/notes",
       "exposure": {
         "api": true,
         "cli": true,
@@ -22,10 +22,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         "$defs": {
           "field_0": {
             "description": "text field",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "field_1": {
             "default": "",
@@ -36,20 +33,12 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
             "default": "",
             "description": "text field",
             "type": "string"
-          },
-          "field_3": {
-            "default": "draft",
-            "description": "text field",
-            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "description": {
+          "body": {
             "$ref": "#/$defs/field_2"
-          },
-          "status": {
-            "$ref": "#/$defs/field_3"
           },
           "tenantId": {
             "$ref": "#/$defs/field_0"
@@ -58,10 +47,13 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
             "$ref": "#/$defs/field_1"
           }
         },
+        "required": [
+          "tenantId"
+        ],
         "type": "object"
       },
-      "name": "item_create",
-      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "name": "note_create",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Note",
       "openWorld": false,
       "readOnly": false,
       "relationships": [],
@@ -71,14 +63,14 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         "path": [],
         "scope": "collection"
       },
-      "tenantScope": "optional"
+      "tenantScope": "required"
     },
     {
       "action": "delete",
-      "className": "Item",
-      "collection": "items",
+      "className": "Note",
+      "collection": "notes",
       "effect": "destructive",
-      "endpoint": "/items",
+      "endpoint": "/notes",
       "exposure": {
         "api": true,
         "cli": true,
@@ -102,8 +94,8 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         ],
         "type": "object"
       },
-      "name": "item_delete",
-      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "name": "note_delete",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Note",
       "openWorld": false,
       "readOnly": false,
       "relationships": [],
@@ -113,14 +105,14 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         "path": [],
         "scope": "item"
       },
-      "tenantScope": "optional"
+      "tenantScope": "required"
     },
     {
       "action": "get",
-      "className": "Item",
-      "collection": "items",
+      "className": "Note",
+      "collection": "notes",
       "effect": "read",
-      "endpoint": "/items",
+      "endpoint": "/notes",
       "exposure": {
         "api": true,
         "cli": true,
@@ -157,8 +149,8 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         },
         "type": "object"
       },
-      "name": "item_get",
-      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "name": "note_get",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Note",
       "openWorld": false,
       "readOnly": true,
       "relationships": [],
@@ -168,14 +160,14 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         "path": [],
         "scope": "item"
       },
-      "tenantScope": "optional"
+      "tenantScope": "required"
     },
     {
       "action": "list",
-      "className": "Item",
-      "collection": "items",
+      "className": "Note",
+      "collection": "notes",
       "effect": "read",
-      "endpoint": "/items",
+      "endpoint": "/notes",
       "exposure": {
         "api": true,
         "cli": true,
@@ -213,8 +205,8 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         },
         "type": "object"
       },
-      "name": "item_list",
-      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "name": "note_list",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Note",
       "openWorld": false,
       "readOnly": true,
       "relationships": [],
@@ -224,14 +216,14 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         "path": [],
         "scope": "collection"
       },
-      "tenantScope": "optional"
+      "tenantScope": "required"
     },
     {
       "action": "update",
-      "className": "Item",
-      "collection": "items",
+      "className": "Note",
+      "collection": "notes",
       "effect": "write",
-      "endpoint": "/items",
+      "endpoint": "/notes",
       "exposure": {
         "api": true,
         "cli": true,
@@ -245,10 +237,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         "$defs": {
           "field_0": {
             "description": "text field",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "field_1": {
             "default": "",
@@ -259,25 +248,17 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
             "default": "",
             "description": "text field",
             "type": "string"
-          },
-          "field_3": {
-            "default": "draft",
-            "description": "text field",
-            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "description": {
+          "body": {
             "$ref": "#/$defs/field_2"
           },
           "id": {
             "description": "ID of the object to update",
             "format": "uuid",
             "type": "string"
-          },
-          "status": {
-            "$ref": "#/$defs/field_3"
           },
           "tenantId": {
             "$ref": "#/$defs/field_0"
@@ -291,8 +272,8 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         ],
         "type": "object"
       },
-      "name": "item_update",
-      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "name": "note_update",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Note",
       "openWorld": false,
       "readOnly": false,
       "relationships": [],
@@ -302,7 +283,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         "path": [],
         "scope": "item"
       },
-      "tenantScope": "optional"
+      "tenantScope": "required"
     },
     {
       "action": "archive",
@@ -695,15 +676,15 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
     }
   ],
   "mcpToolNames": [
-    "create_items",
+    "create_notes",
     "create_referenceworkitems",
-    "delete_items",
+    "delete_notes",
     "delete_referenceworkitems",
-    "get_items",
+    "get_notes",
     "get_referenceworkitems",
-    "list_items",
+    "list_notes",
     "list_referenceworkitems",
-    "update_items",
+    "update_notes",
     "update_referenceworkitems"
   ],
   "mcpToolSchemas": [
@@ -1286,7 +1267,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         "GET",
         "POST"
       ],
-      "route": "items"
+      "route": "notes"
     },
     {
       "generated": true,
@@ -1295,7 +1276,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         "PUT",
         "DELETE"
       ],
-      "route": "items/[id]"
+      "route": "notes/[id]"
     },
     {
       "generated": true,
@@ -1339,11 +1320,11 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
   "webMcpTools": [
     {
       "action": "create",
-      "className": "Item",
-      "collection": "items",
-      "description": "Create a new Item",
+      "className": "Note",
+      "collection": "notes",
+      "description": "Create a new Note",
       "effect": "write",
-      "endpoint": "/items",
+      "endpoint": "/notes",
       "idField": "id",
       "idType": "uuid",
       "idempotent": false,
@@ -1351,10 +1332,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         "$defs": {
           "field_0": {
             "description": "text field",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "field_1": {
             "default": "",
@@ -1365,20 +1343,12 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
             "default": "",
             "description": "text field",
             "type": "string"
-          },
-          "field_3": {
-            "default": "draft",
-            "description": "text field",
-            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "description": {
+          "body": {
             "$ref": "#/$defs/field_2"
-          },
-          "status": {
-            "$ref": "#/$defs/field_3"
           },
           "tenantId": {
             "$ref": "#/$defs/field_0"
@@ -1387,10 +1357,13 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
             "$ref": "#/$defs/field_1"
           }
         },
+        "required": [
+          "tenantId"
+        ],
         "type": "object"
       },
-      "name": "item_create",
-      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "name": "note_create",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Note",
       "openWorld": false,
       "readOnly": false,
       "relationships": [],
@@ -1402,11 +1375,11 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
     },
     {
       "action": "delete",
-      "className": "Item",
-      "collection": "items",
-      "description": "Delete a Item by ID. Records are identified by their \`title\` field.",
+      "className": "Note",
+      "collection": "notes",
+      "description": "Delete a Note by ID. Records are identified by their \`title\` field.",
       "effect": "destructive",
-      "endpoint": "/items",
+      "endpoint": "/notes",
       "idField": "id",
       "idType": "uuid",
       "idempotent": true,
@@ -1424,8 +1397,8 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         ],
         "type": "object"
       },
-      "name": "item_delete",
-      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "name": "note_delete",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Note",
       "openWorld": false,
       "readOnly": false,
       "relationships": [],
@@ -1437,11 +1410,11 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
     },
     {
       "action": "get",
-      "className": "Item",
-      "collection": "items",
-      "description": "Get a specific Item by ID or slug. Records are identified by their \`title\` field.",
+      "className": "Note",
+      "collection": "notes",
+      "description": "Get a specific Note by ID or slug. Records are identified by their \`title\` field.",
       "effect": "read",
-      "endpoint": "/items",
+      "endpoint": "/notes",
       "idField": "id",
       "idType": "uuid",
       "idempotent": true,
@@ -1472,8 +1445,8 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         },
         "type": "object"
       },
-      "name": "item_get",
-      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "name": "note_get",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Note",
       "openWorld": false,
       "readOnly": true,
       "relationships": [],
@@ -1485,11 +1458,11 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
     },
     {
       "action": "list",
-      "className": "Item",
-      "collection": "items",
-      "description": "List Item objects with optional filtering. Records are identified by their \`title\` field.",
+      "className": "Note",
+      "collection": "notes",
+      "description": "List Note objects with optional filtering. Records are identified by their \`title\` field.",
       "effect": "read",
-      "endpoint": "/items",
+      "endpoint": "/notes",
       "idField": "id",
       "idType": "uuid",
       "idempotent": true,
@@ -1521,8 +1494,8 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         },
         "type": "object"
       },
-      "name": "item_list",
-      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "name": "note_list",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Note",
       "openWorld": false,
       "readOnly": true,
       "relationships": [],
@@ -1534,11 +1507,11 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
     },
     {
       "action": "update",
-      "className": "Item",
-      "collection": "items",
-      "description": "Update an existing Item. Records are identified by their \`title\` field.",
+      "className": "Note",
+      "collection": "notes",
+      "description": "Update an existing Note. Records are identified by their \`title\` field.",
       "effect": "write",
-      "endpoint": "/items",
+      "endpoint": "/notes",
       "idField": "id",
       "idType": "uuid",
       "idempotent": true,
@@ -1546,10 +1519,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         "$defs": {
           "field_0": {
             "description": "text field",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "field_1": {
             "default": "",
@@ -1560,25 +1530,17 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
             "default": "",
             "description": "text field",
             "type": "string"
-          },
-          "field_3": {
-            "default": "draft",
-            "description": "text field",
-            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "description": {
+          "body": {
             "$ref": "#/$defs/field_2"
           },
           "id": {
             "description": "ID of the object to update",
             "format": "uuid",
             "type": "string"
-          },
-          "status": {
-            "$ref": "#/$defs/field_3"
           },
           "tenantId": {
             "$ref": "#/$defs/field_0"
@@ -1592,8 +1554,8 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
         ],
         "type": "object"
       },
-      "name": "item_update",
-      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "name": "note_update",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Note",
       "openWorld": false,
       "readOnly": false,
       "relationships": [],

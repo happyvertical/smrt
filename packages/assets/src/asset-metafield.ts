@@ -4,7 +4,7 @@
  * Lookup table for metadata field definitions with validation rules
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { AssetMetafieldOptions } from './types';
 
 @smrt({
@@ -15,7 +15,14 @@ import type { AssetMetafieldOptions } from './types';
 })
 export class AssetMetafield extends SmrtObject {
   // slug is inherited as an accessor from SmrtObject
+  @field({
+    description:
+      'The name of an additional asset detail, such as Width or Height.',
+  })
   name = ''; // Display name (e.g., 'Width', 'Height')
+  @field({
+    description: 'Rules that determine which values this asset detail accepts.',
+  })
   validation = ''; // JSON validation rules stored as text
 
   constructor(options: AssetMetafieldOptions = {}) {

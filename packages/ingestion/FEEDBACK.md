@@ -154,3 +154,9 @@ cohort demonstrates contract-level influence, not provider quality or measured
 production improvement. Real-provider evaluation belongs to #3677. There are no
 sampled automatic outcomes in this feature; reporting that stratum as unavailable
 avoids inventing correctness labels from successful jobs.
+
+When interpretation requests optional examples, an explicit denial of feedback
+retrieval degrades to generation without examples or feedback provenance. Direct
+`retrieveFeedback` calls still reject denied reads. Other authorization errors
+are not swallowed, and already selected examples must pass the normal live
+provider-boundary checks; revocation does not silently preserve selected data.

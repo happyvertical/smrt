@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-commerce",
-  "version": "0.55.12",
+  "version": "0.55.17",
   "smrtJsdoc": "strict",
   "description": "Commerce models for the SMRT framework - contracts, fulfillments, payments",
   "type": "module",
@@ -26,6 +26,10 @@
     "./invoices": {
       "types": "./dist/invoices.d.ts",
       "import": "./dist/invoices.js"
+    },
+    "./cost-billing": {
+      "types": "./dist/cost-billing.d.ts",
+      "import": "./dist/cost-billing.js"
     }
   },
   "files": [
@@ -51,7 +55,7 @@
     "test:e2e:quotes": "cd ../.. && node packages/commerce/test-support/quote-browser.mjs",
     "test:e2e:invoices": "playwright test -c e2e/invoices/playwright.config.ts",
     "test:e2e:pricing": "cd ../.. && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/pricing-browser.mjs node packages/commerce/test-support/quote-browser.mjs",
-    "test:e2e:purchasing": "cd ../.. && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/purchasing-browser-extension.mjs node packages/commerce/test-support/quote-browser.mjs"
+    "test:e2e:purchasing": "cd ../.. && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/purchasing-browser-extension.mjs node packages/commerce/test-support/quote-browser.mjs && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/purchasing-header-browser.mjs node packages/commerce/test-support/quote-browser.mjs"
   },
   "keywords": [
     "smrt",

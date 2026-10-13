@@ -450,7 +450,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   class="smrt-daterange"
   class:listening={isRecording}
   class:parsing={isParsing}
-  data-smrt-field-owner={fieldOwnerToken}
+  data-smrt-field-owner={fieldOwnerToken} data-smrt-component="DateRangeInput"
 >
   {#if label}
     <FieldLabel for={primaryControlId} {label} {required} />
@@ -567,10 +567,12 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-daterange {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   .range-wrapper {
@@ -579,88 +581,88 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   }
 
   .range-wrapper.smrt-mode {
-    border: 1px solid var(--smrt-color-tertiary, #6b5778);
-    border-radius: var(--smrt-radius-small, 6px);
-    background: var(--smrt-color-tertiary-container, #f3e5f5);
+    border: 1px solid var(--smrt-color-tertiary);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-tertiary-container);
   }
 
   .range-wrapper.invalid {
-    border-color: var(--smrt-color-error, #ba1a1a);
+    border-color: var(--smrt-color-error);
   }
 
   .voice-input-wrapper {
     display: flex;
     align-items: center;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    gap: var(--smrt-spacing-2);
   }
 
   .voice-display {
     flex: 1;
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 
   .date-value {
-    color: var(--smrt-color-on-surface, #374151);
+    color: var(--smrt-color-on-surface);
   }
 
   .range-separator {
-    color: var(--smrt-color-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .placeholder {
-    color: var(--smrt-color-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
   .date-inputs {
     display: flex;
     align-items: flex-end;
-    gap: var(--smrt-spacing-3, 12px);
+    gap: var(--smrt-spacing-3);
   }
 
   .date-field {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .field-label {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     font-weight: var(--smrt-typography-body-small-weight, 500);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: 0.025em;
   }
 
   .range-arrow {
-    color: var(--smrt-color-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-title-medium-size, 1.25rem);
-    padding-bottom: var(--smrt-spacing-2, 8px);
+    padding-bottom: var(--smrt-spacing-2);
   }
 
   .smrt-input {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     font-size: var(--smrt-typography-body-large-size, 1rem);
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: var(--smrt-radius-small, 6px);
-    background: var(--smrt-color-surface, #fff);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .smrt-input:focus {
     outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #005ac1) 10%, transparent);
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
 
   .smrt-input:disabled {
-    background: var(--smrt-color-surface-container-high, #f3f4f6);
+    background: var(--smrt-color-surface-container-high);
     cursor: not-allowed;
   }
 
@@ -672,7 +674,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
     justify-content: center;
     background: transparent;
     border: none;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
@@ -680,12 +682,12 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   }
 
   .mic-btn:hover {
-    background: var(--smrt-color-surface-container-high, #f3f4f6);
-    color: var(--smrt-color-on-surface, #374151);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
   }
 
   .mic-btn.active {
-    background: var(--smrt-color-primary, #22c55e);
+    background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary, white);
   }
 
@@ -711,48 +713,49 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   }
 
   .smrt-daterange.listening .range-wrapper.smrt-mode {
-    border-color: var(--smrt-color-success, #22c55e);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success, #22c55e) 30%, transparent);
+    border-color: var(--smrt-color-success);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success) 30%, transparent);
     animation: pulse-green 1.5s var(--smrt-easing-standard, ease-in-out) infinite;
   }
 
   .smrt-daterange.parsing .range-wrapper.smrt-mode {
-    border-color: var(--smrt-color-warning, #f59e0b);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-warning, #f59e0b) 20%, transparent);
+    border-color: var(--smrt-color-warning);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-warning) 20%, transparent);
   }
 
   @keyframes pulse-green {
     0%, 100% {
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success, #22c55e) 30%, transparent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success) 30%, transparent);
     }
     50% {
-      box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-success, #22c55e) 15%, transparent);
+      box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-success) 15%, transparent);
     }
   }
 
   .listening-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-primary, #22c55e);
+    color: var(--smrt-color-primary);
   }
 
   .parsing-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-secondary, #f59e0b);
+    color: var(--smrt-color-secondary);
   }
 
   .error-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   @media (max-width: 600px) {
     .date-inputs {
       flex-direction: column;
-      gap: var(--smrt-spacing-2, 8px);
+      gap: var(--smrt-spacing-2);
     }
 
     .range-arrow {
       display: none;
     }
   }
+}
 </style>

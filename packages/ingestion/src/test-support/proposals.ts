@@ -37,6 +37,7 @@ import type {
 import type { GenerationOutput } from '../proposal-dto.js';
 import {
   type AnalysisLease,
+  createIntakeReviewHost,
   GenerationSnapshotStaleError,
   type IngestionOptions,
   IngestionService,
@@ -563,6 +564,120 @@ export function proposalSuite(
       await service.generateProposals(input.lease);
       return { ...input, output: await output(input.lease) };
     }
+    it('publishes a scoped review host with generation, preview, saved reload and denial', async () => {
+      chooseCreate();
+      const generated = await generate();
+      const assignment = vi.fn(async () => ({ assigneeId: null, version: 0 }));
+      const assign = vi.fn(async () => {});
+      const host = createIntakeReviewHost(service, {
+        upload: async () => ({ itemId: generated.itemId }),
+        assignment,
+        assign,
+        evidence: async (part) => ({ label: part.partId }),
+      });
+      expect(host.feedback).toBeUndefined();
+      const view = await host.load(generated.itemId);
+      expect(view.generation).toEqual(generated.output);
+      expect(view.entry.state).toBe('unresolved');
+      expect((await host.list({})).items[0].item.id).toBe(generated.itemId);
+      await host.preview({
+        itemId: generated.itemId,
+        attemptId: generated.lease.attemptId,
+        index: 0,
+        requestId: randomUUID(),
+      });
+      await host.preview({
+        itemId: generated.itemId,
+        attemptId: generated.lease.attemptId,
+        index: 0,
+        requestId: randomUUID(),
+      });
+      const saved = await host.load(generated.itemId);
+      expect(saved.reviews.actions).toHaveLength(1);
+      expect(saved.reviews.actions[0].review.revision).toBe(1);
+      expect(saved.entry.state).toBe('waiting');
+      await expect(
+        host.preview({
+          itemId: generated.itemId,
+          attemptId: generated.lease.attemptId,
+          index: -1,
+          requestId: randomUUID(),
+        }),
+      ).rejects.toThrow('Invalid preview');
+      allowed = false;
+      await expect(host.load(generated.itemId)).rejects.toThrow();
+      await expect(
+        host.assign({
+          itemId: generated.itemId,
+          expectedVersion: 0,
+          assigneeId: 'reviewer',
+          requestId: randomUUID(),
+        }),
+      ).rejects.toThrow();
+      expect(assign).not.toHaveBeenCalled();
+    });
+
+    it('rejects oversized candidate limits at host service construction', () => {
+      expect(
+        () =>
+          new IngestionService({
+            ...options,
+            proposals: {
+              ...configuration,
+              limits: { ...configuration.limits, maxCandidates: 21 },
+            },
+          }),
+      ).toThrow('Invalid proposal limits');
+    });
+
+    it('generates without optional feedback when retrieval alone is denied', async () => {
+      enableFeedback();
+      options.feedback!.authorize = async ({ operation }) =>
+        operation !== 'retrieve';
+      const generated = await generate();
+      expect(generated.output.outcome).toBe('proposals');
+      expect(calls.mock.calls.at(-1)![0].examples).toBeUndefined();
+      expect(generated.output.provenance.feedback).toBeUndefined();
+    });
+
+    it('does not swallow unexpected feedback authorization failures', async () => {
+      enableFeedback();
+      options.feedback!.authorize = async () => {
+        throw new Error('Host authorization unavailable');
+      };
+      const pending = await generation();
+      await service.generateProposals(pending.lease);
+      expect(calls).not.toHaveBeenCalled();
+      expect((await output(pending.lease)).outcome).toBe('provider_error');
+      expect((await service.getItem(pending.itemId)).processingState).toBe(
+        'partial',
+      );
+    });
+
+    it('refuses generation when feedback retrieval authority is revoked after selection', async () => {
+      enableFeedback();
+      const training = await feedbackCase();
+      await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'retrieval-revocation-training',
+      });
+      const pending = await generation();
+      let receivingChecks = 0;
+      options.feedback!.authorize = async ({ operation, itemId }) =>
+        operation !== 'retrieve' ||
+        itemId !== pending.itemId ||
+        ++receivingChecks === 1;
+      calls.mockClear();
+      await service.generateProposals(pending.lease);
+      expect(receivingChecks).toBe(2);
+      expect(calls).not.toHaveBeenCalled();
+      expect((await output(pending.lease)).outcome).toBe('provider_error');
+      expect((await service.getItem(pending.itemId)).processingState).toBe(
+        'partial',
+      );
+    });
+
     function enableFeedback() {
       options.feedback = {
         version: 'feedback1',
@@ -4505,13 +4620,30 @@ export function proposalSuite(
       const input = await generate(uploaded);
       expect(input.output.outcome).toBe('proposals');
       await rejectDuplicateIndexes(input.itemId, input.lease.attemptId);
+      const host = createIntakeReviewHost(service, {
+        upload: async () => ({ itemId: input.itemId }),
+        assignment: async () => ({ assigneeId: null, version: 0 }),
+        assign: async () => {},
+        evidence: async (part) => ({ label: part.partId }),
+      });
+      const preparation = {
+        itemId: input.itemId,
+        attemptId: input.lease.attemptId,
+        index: 0,
+        requestId: 'plan-preview',
+      };
+      await host.preview(preparation);
+      await host.preview(preparation);
+      expect(
+        (await db.query('SELECT id FROM intake_actions')).rows,
+      ).toHaveLength(2);
       const [preview] = await service.previewGeneratedProposals({
         itemId: input.itemId,
         attemptId: input.lease.attemptId,
         selections: [
           {
             index: 0,
-            intentionKey: 'document-with-evidence',
+            intentionKey: 'ui:0',
             expectedRevision: 0,
             requestId: 'plan-preview',
           },
@@ -4537,7 +4669,7 @@ export function proposalSuite(
       preview.review = await service.previewPlan({
         itemId: input.itemId,
         attemptId: input.lease.attemptId,
-        planKey: 'document-with-evidence',
+        planKey: 'ui:0',
         expectedRevision: preview.review.revision,
         requestId: 'plan-edit',
         handlerId: plan.id,

@@ -53,6 +53,8 @@ to shrink; use safe alignment if aligning its contents to the end.
 
 Sidebar-only shells may set `top: false`. In that mode the configured brand is
 shown at the top of the expanded tenant panel as well as in the compact rail.
+When the top header is visible, its brand is the only copy; collapsing the
+left sidebar does not add a second logo to the rail.
 Use `tenantRailFooter` for a control pinned below collapsed navigation; it sits
 outside the rail's scroll clip so menus can open over the workspace. Pair it
 with `WorkspaceAccountMenu compact` for an avatar-only trigger that retains the
@@ -65,12 +67,52 @@ The root grid has five rows: `header` · top edge · body · bottom edge · phon
 bottom bar. The header and phone-bar tracks are `0rem` unless their snippets
 render, so hosts that pass none of the new props get the original layout; keep
 that invariant (`AdminShell.responsive.test.ts` "backward compatibility").
+
+**Empty regions render nothing.** The header band, footer band and right edge
+are skipped (and their tracks collapse to `0rem`, the grid keeps its five rows)
+when nothing would render in them: no slot content, `appBar`/`systemBar`, corners,
+toggles, focus tools, mounted drawer, or edit-mode controls. A default
+`AdminShell` still shows its brand, so its header stays; an app with no
+footer content and no dock tools has no footer and no right strip.
+
+**Phone defaults.** `phone.scrim` and `phone.swipeToClose` are on (pass `false`
+to turn one off). Opening the left or right surface collapses the other
+(`ShellState.closeExclusivePeers`, not persisted), and starting a layout edit
+closes any open surface. The Menu opener is an icon button (hamburger, name
+"Menu"); the left drawer's title is the app brand and its close control is an
+icon-only "Close menu". While the right edge has focus tools, phones get a
+"Tools" icon opener at the header end (`phoneDockOpener`, default true;
+`AppShell` turns it off when `dockToggles` already open the dock) and the edge
+presents as a drawer (or sheet) with an icon-only "Close tools". Chrome buttons,
+rail tool buttons and dock toggles use `--smrt-touch-target-min` on phones. A
+tool without an icon uses the generic tool icon, never its first letter.
 Phone drawers and the bottom drawer offset themselves by the header and phone
 bar tracks. `shell.viewport` comes from `ADMIN_SHELL_PHONE_QUERY` (48rem, the
 same boundary as the CSS media query — never make one configurable without the
 other) and `ADMIN_SHELL_DESKTOP_QUERY` (64rem); `installShellViewport` runs on
 mount and the `ShellState` constructor detects the initial class so the first
 paint is right.
+
+**Phone tab bar (`AppShell` `phoneTabBar`, default `false`).** On phones it
+fills `AdminShell`'s `phoneBottomBar` track; conceptually that is the footer
+region's phone presentation (its center slot), not a new region. Tabs, in
+order: the first N top-level nav items (flat `nav`, then group entries, or one
+per group in `navMode: 'sections'`; icon + label, `aria-current="page"` from
+`currentHref`, placeholder glyph when no icon), the dock tab (first
+`dockToggles` entry, else a "Tools" tab while the right edge has tools), then
+"More" (opens the left drawer) only when nav overflows. `N` defaults to 4 and
+includes the dock tab; `phoneTabBar={{ items: n }}` overrides. Selection is the
+pure `planPhoneTabs` in `app/phone-tabs.ts`; `PhoneTabBar.svelte` renders it
+through `PhoneBottomBar` (which now also takes `iconName` entries and an
+`iconComponent`). With the bar on, the header "Tools" opener and the header copy
+of the dock tab's toggle are not rendered on phones. `phoneDock` (`'sheet' |
+'drawer'`, default `'sheet'` with the tab bar, else `'drawer'`; an explicit value
+beats `config.right.phone`) sets the right edge's phone presentation; the sheet
+already sits between the top bars and the phone-bar track, so it rises above the
+tab bar. Both props are read once at mount (like `config`). Header-end slot
+content (`slots['header.end']`, e.g. a future account avatar) stays in the
+header band on phones. Safe-area padding is `env(safe-area-inset-bottom)` in
+the bar's CSS.
 
 Edge config: `viewportDefaults` (applied per class change; such an edge never
 stores its state), `phone: 'drawer' | 'sheet' | 'hidden'` (`sheet` is right
@@ -126,9 +168,25 @@ comes from `ShellLayout.panels.visible` and edit mode. The right edge is the
 dock: dock toggles and focus tools still open it, it just loses its button.
 `hotkeys` (default: follows the toggles) forces shortcuts on (`true`, panels
 behave as drop-downs without buttons) or off. Phones keep the Menu opener and
-the left drawer's close toggle. `showTenantToggle` is a deprecated alias for
+the left drawer's close toggle. The left edge toggle is an icon above the
+sidebar header content in both expanded and collapsed states, with a tooltip
+and accessible expand/collapse name. `showTenantToggle` is a deprecated alias for
 `edgeToggles.left`. Migration: pass `edgeToggles` (true) to keep the previous
 behaviour.
+
+The left edge's toggle is an icon-only chevron, not a labelled button: it
+points the way the panel will move (left to collapse, right to expand), its
+accessible name is `Collapse sidebar` / `Expand sidebar` (the hotkey rides
+in the tooltip, there is no visible `<kbd>`), and off phones it closes the
+navigation region: it sits at the end of the nav (`margin-block-start: auto`),
+above the `leftSidebar.footer` slot, never below it. Order top to bottom, expanded
+and collapsed: nav, chevron, footer (the account menu; the compact avatar last
+in the collapsed rail). Expanded it lives inside the sidebar body
+(`tenant-stack`) and hugs the inner edge; collapsed it is the middle row of the
+rail stack (content, chevron, `tenantRailFooter`) and is centred. Only a rail
+with neither nav nor footer content draws it alone at the bottom. Phones replace it with the drawer's
+icon-only "Close menu" at the top, so opening the drawer still focuses a close control. The
+header, footer and right toggles keep their region label and hotkey hint.
 
 ### Moving items between slots
 
@@ -139,7 +197,34 @@ layouts). `AppShell` also supplies the built-in item `item:brand` (the shell
 `logoSrc`/`logoAlt`, title and subtitle, linked to `homeHref` when set, default slot `header.start`, movable, same fallback chain
 when the header is hidden); it sets `AdminShell` `brandInSlot` so the top band
 draws no brand of its own (standalone `AdminShell` still does). The menu
-opener and account content are not items yet (#3656 step 3).
+opener and the legacy `account`/`tenantFooter` snippets are not items.
+
+`AppShell` also supplies three more built-in items (ids are stored in layouts,
+keep them stable), all movable in the layout editor like `item:brand`:
+
+| Item | Default slot | Phone | Opt out |
+| --- | --- | --- | --- |
+| `item:account` | `leftSidebar.footer` | compact avatar, last in the header band (`header.end`) | `accountMenu={false}`; `accountMenu={{ slot }}` sets the default |
+| `item:color-scheme` | `header.end` | icon-only (no label), accessible name kept | `colorSchemeToggle={false}`; `{ slot }` sets the default |
+| `item:command-palette` | `header.center` | search glyph button | off unless `commandPalette` is passed |
+
+`item:account` renders `WorkspaceAccountMenu` only when `user` is set (nothing
+for `null`). Menu: name and email (when present on the user object), a Settings
+link when `settingsHref` is set, Sign out when `onSignOut` (callback, wins) or
+`signOutHref` (link) is given; plus tenant switching when used standalone. The
+trigger carries `aria-expanded`, focus moves into the menu on open, Escape
+closes only the menu and returns focus to the trigger. In an expanded sidebar
+it shows the full identity (menu opens upward); everywhere else, and in the
+collapsed rail, it is the compact avatar. In the collapsed rail `AppShell`
+passes it as `tenantRailFooter` (outside the rail's scroll clip; the menu opens
+to the inline end over the workspace) instead of letting the footer slot fall
+back to another region. `item:color-scheme` reuses `ColorSchemeToggle` from
+`@happyvertical/smrt-ui/themes` (no second switcher). `item:command-palette`
+mounts the existing `CommandPalette` (`commandPalette: { providers, placeholder? }`,
+types `AppShellCommandPalette`/`AppShellAccountMenu` from `./app`): it owns the
+dialog and the global shortcut, so it mounts once. Planner-style hosts that
+rendered their own `header.end` assistant toggle should pass `dockToggles`
+(`dock:assistant`) and `user` instead.
 
 `ShellLayout.placements?: Record<itemId, ShellSlot>` (additive, still version
 1) overrides default slots. Pure helpers in `layout.ts` (also `./workspace/layout`):
@@ -320,6 +405,45 @@ enforce permissions.
 
 `ActivityTicker` accepts optional `statuses` restricted to queued/running; running-only remains the default. Opting into queued work adds an explicit localized Queued label without progress. Terminal outcomes belong in expanded `ActivityList`, with retention controlled by the app-owned data source.
 
+### Motion (#3858)
+
+All durations and easings are theme tokens, never literals. The CSS motion sits
+in `@media (prefers-reduced-motion: no-preference)` (or is zeroed by the reduced
+block), and `tokenDuration()` returns 0 under reduced motion. `data-motion` is
+set on the shell root after hydration and two frames, so first paint, SSR and a
+persisted layout restoring never animate; phone drawers keep their own
+`onEdgeAnimationEnd` / `waitForPanelAnimations` handshake (no track transition
+on phone, and the tracks are on the shell root, not the panel, so `inert` is
+never held by a transition).
+
+| Motion | Token | Reduced motion |
+| --- | --- | --- |
+| Left sidebar / right dock track (`grid-template-columns`, desktop push), `--smrt-easing-emphasized`; stays immediate while `data-resizing` | `--smrt-duration-short4` | none |
+| Revealed sidebar / dock content fade-in | `--smrt-duration-short2` | none |
+| Edit mode: drop zones, strips, region controls, item grips fade and scale in | `--smrt-duration-short2` | none |
+| List reorder/filter `animate:flipRow` on TenantNav rows, section-menu cards/rows, overview tiles, `Sortable` items (`ShellNavEditor` rows go through `Sortable`) | `--smrt-duration-short4` via `tokenDuration()` | duration 0 |
+| Colour-scheme crossfade of shell background/colour, while `data-smrt-theme-changing` is set for one transition | `--smrt-duration-medium1` | not set |
+| View transitions: brand, nav, dock persist while the page crossfades | browser default | `runViewTransition` skips |
+
+Host-facing helpers, exported from `@happyvertical/smrt-svelte/app` and free of
+`$app/*` (a hash router or non-SvelteKit host can use them):
+
+- `runViewTransition(update, { skip? }): Promise<void>` calls
+  `document.startViewTransition(update)` when present and reduced motion is off,
+  else awaits `update()`. Resolves when the DOM update is applied; an aborted or
+  skipped transition never throws, an error from `update` does. `AppShell`
+  wraps the edit-mode toggle in it.
+- `createOnNavigateViewTransition(options?)` returns a function for SvelteKit's
+  `onNavigate(createOnNavigateViewTransition())`. It takes the navigation
+  structurally (`{ complete, type?, willUnload? }`).
+
+While a transition runs `<html data-smrt-view-transition>` is set and only then
+does the shell assign `view-transition-name: smrt-shell-brand`, `smrt-shell-nav`
+and `smrt-shell-dock` (so they never become containing blocks otherwise).
+Names must be unique per document: hosts must not reuse them.
+`tokenDuration(name, element?)` and `flipRow` live in
+`workspace/admin-shell/motion.ts` for in-package lists.
+
 ## Shell layout customization
 
 Users can show/hide the edge panels and reorder, hide, and move navigation
@@ -389,11 +513,13 @@ control panel), wired by `app/AppShell.svelte`.
   "Rename <label>" button opening an inline field (Enter saves, Escape cancels,
   blur saves) and, once renamed, "Reset <label> to <original>"; the original shows
   as the row tooltip. Presets ("cookbooks") ship it in the stored layout.
-- **Sections-only navigation (`navMode: 'sections'`).** `AppShell` (and
-  `TenantNav` / `ShellNavEditor` directly) take `navMode?: 'items' | 'sections'`
-  (default `'items'`, unchanged). In `'sections'` the left sidebar shows one
-  link per section (icon + label), no entries; a collapsed rail (`tenantRail`)
-  shows the icons with tooltips. The link goes to `ShellNavGroup.href`, else
+- **Section navigation (`navMode: 'sections' | 'sections-with-items'`).** `AppShell`
+  (and `TenantNav` / `ShellNavEditor` directly) also support `'items'` (the
+  default). `'sections'` keeps one link per section with no entries.
+  `'sections-with-items'` adds indented entry links in the expanded drawer;
+  its collapsed rail still shows section icons with tooltips. In edit mode,
+  this variant exposes both section icons and entry editing. The section link
+  goes to `ShellNavGroup.href`, else
   `AppShell` `sectionHref(sectionId)` (user-created sections), else the first
   entry; it is `aria-current="page"` on that page and `"true"` on any of the
   section's entry pages. `AppShell` also takes `iconComponent` for host icon
@@ -403,12 +529,16 @@ control panel), wired by `app/AppShell.svelte`.
   `setSectionIcon(id, icon | null)`; `resolveShellNavModel` sections carry
   `icon` / `defaultIcon` and `applyShellLayout` emits the effective `icon`.
   Icons are shell icon names (`SHELL_SECTION_ICONS` is the picker set, drawn
-  from Material icons like the rest of `SHELL_ICON_PATHS`; `SHELL_DEFAULT_SECTION_ICON`
-  is `folder`) or host names rendered by `iconComponent` (`ShellSectionIcon`
-  tries the built-in set first). Edit mode in this mode: sections keep grip,
+  from Material icons like the rest of `SHELL_ICON_PATHS`;
+  `SHELL_DEFAULT_SECTION_ICON` is `folder`) or host names rendered by
+  `iconComponent`. Entry and action icons use built-in SVGs when no host
+  renderer is supplied, falling back to the default section glyph for unknown
+  names. Edit mode in `sections` mode: sections keep grip,
   rename, hide, delete; the title toggle is replaced by an "Icon of <label>"
   popover grid ("Use <icon> icon", `aria-pressed` on the current one; Escape
-  closes the grid before the toolbar). Entries are not in the sidebar.
+  closes the grid before the toolbar). Entries are not in the sidebar in
+  `sections` mode; `sections-with-items` shows them under their section.
+- **TenantNav rows.** `ShellNavItem.icon` renders in items mode and the collapsed rail (host `iconComponent` first, else `SHELL_ICON_PATHS`); an iconless item shows the `placeholder` glyph in the rail only. The current row has a `secondary-container` fill plus a start indicator bar (`aria-current="page"` unchanged). Row block-size is `--smrt-touch-target-min` at the phone boundary (`max-width: 48rem`) and `--smrt-control-target-min` otherwise; `ShellNavEditor` item rows use the same sizing.
 - **`ShellSectionMenu`** (`sectionId`, `controller?`, `meta(entry)`,
   `actions(entry)`, `iconComponent`, `aria-label`, `layout`): the section's page body.
   `layout="cards"` renders an auto-fill grid (min 16rem) of cards: 32px icon in a
@@ -448,6 +578,10 @@ removing the item from `source`.
 lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
 `Provider` and its tests.
 
+- `AppShell` built-in items (`item:account`, `item:color-scheme`,
+  `item:command-palette`, with `user`, `onSignOut`, `signOutHref`, `accountMenu`,
+  `colorSchemeToggle`, `commandPalette`) are documented under "Moving items
+  between slots".
 - `AppShell` composes `Provider` (`webmcp`, `user`, `permissions` pass through
   unchanged), `ThemeProvider`, the theme CSS (`themes/styles/{all,fonts}.css`
   are imported by the component — forgetting them leaves `--smrt-*` unresolved),

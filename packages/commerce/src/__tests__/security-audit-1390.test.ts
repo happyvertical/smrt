@@ -163,6 +163,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
 
   it('recomputes subtotal/tax/total from line items, overriding caller totals', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-RECOMPUTE',
       subtotal: 0,
       taxAmount: 0,
@@ -191,6 +192,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
 
   it('overwrites a forged total with the authoritative line-item total (no throw, self-heals)', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-FORGED',
       totalAmount: 0,
     });
@@ -220,6 +222,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
 
   it('self-heals a stale stored total when a line item changes (no throw)', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-SELFHEAL',
       totalAmount: 0,
     });
@@ -254,6 +257,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     // fires there.
     await expect(
       invoices.create({
+        currency: 'USD',
         invoiceNumber: 'INV-NEG',
         subtotal: -100,
         taxAmount: 0,
@@ -265,6 +269,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
   it('enforces totalAmount === subtotal + taxAmount when there are no line items', async () => {
     await expect(
       invoices.create({
+        currency: 'USD',
         invoiceNumber: 'INV-ARITH',
         subtotal: 100,
         taxAmount: 5,
@@ -275,6 +280,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
 
   it('derives amountPaid from PaymentAllocations rather than trusting the caller', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-PAID',
       subtotal: 100,
       taxAmount: 0,
@@ -290,7 +296,9 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
       amount: 40,
     });
     await alloc.save();
+    await invoice.loadFromId();
 
+    invoice.updatePaymentStatus(40);
     // Caller tries to claim the invoice is fully paid; the guard re-derives
     // amountPaid from the single $40 allocation.
     invoice.amountPaid = 100;
@@ -298,8 +306,9 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     expect(invoice.amountPaid).toBe(40);
   });
 
-  it('rejects an illegal status flip done via raw assignment', async () => {
+  it('rejects an unbacked paid status done via raw assignment', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-STATUS',
       subtotal: 100,
       taxAmount: 0,
@@ -308,9 +317,9 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     });
     await invoice.save();
 
-    // DRAFT → PAID is not a legal direct transition.
+    // DRAFT → PAID requires covering allocations even though the edge is legal.
     invoice.status = InvoiceStatus.PAID;
-    await expect(invoice.save()).rejects.toThrow(/illegal status transition/);
+    await expect(invoice.save()).rejects.toThrow(/does not cover totalAmount/);
   });
 
   it('rejects SENT → PAID when no allocations cover the total (#1390 PAID requires covering allocations)', async () => {
@@ -319,6 +328,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     // PaymentAllocations) to COVER totalAmount. A zero-allocation invoice flipped
     // to PAID must be rejected.
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-PAID-NOALLOC',
       subtotal: 100,
       taxAmount: 0,
@@ -336,6 +346,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
 
   it('rejects SENT → PAID when allocations only partially cover the total (#1390)', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-PAID-PARTIAL',
       subtotal: 100,
       taxAmount: 0,
@@ -353,6 +364,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
       amount: 40,
     });
     await alloc.save();
+    await invoice.loadFromId();
 
     // Only 40 of 100 allocated → cannot be PAID.
     invoice.status = InvoiceStatus.PAID;
@@ -361,6 +373,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
 
   it('accepts PAID once allocations fully cover the total (#1390)', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-PAID-FULL',
       subtotal: 100,
       taxAmount: 0,
@@ -378,6 +391,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
       amount: 100,
     });
     await alloc.save();
+    await invoice.loadFromId();
 
     invoice.status = InvoiceStatus.PAID;
     await expect(invoice.save()).resolves.toBeDefined();
@@ -387,6 +401,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
 
   it('allows the guarded markSent transition (DRAFT → SENT)', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-SENT',
       subtotal: 100,
       taxAmount: 0,
@@ -637,6 +652,7 @@ describe('PaymentAllocation integrity guard (#1390)', () => {
     const payment = await payments.create({ amount, currency: 'USD' });
     await payment.save();
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: `INV-ALLOC-${Math.random()}`,
       subtotal: amount,
       taxAmount: 0,
@@ -1144,6 +1160,7 @@ describe('Invoice payment-status reconciliation (#1390 round 2)', () => {
 
   it('rejects a raw SENT → PAID flip with no allocations (amountPaid stays 0)', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-SENT-PAID',
       subtotal: 100,
       taxAmount: 0,
@@ -1164,6 +1181,7 @@ describe('Invoice payment-status reconciliation (#1390 round 2)', () => {
   it('rejects a new invoice that starts PAID', async () => {
     await expect(
       invoices.create({
+        currency: 'USD',
         invoiceNumber: 'INV-NEW-PAID',
         subtotal: 100,
         taxAmount: 0,
@@ -1176,6 +1194,7 @@ describe('Invoice payment-status reconciliation (#1390 round 2)', () => {
 
   it('forces a new invoice to start with amountPaid = 0', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-NEW-UNPAID',
       subtotal: 100,
       taxAmount: 0,
@@ -1326,6 +1345,7 @@ describe('PaymentAllocation missing-Payment hard error (#1390 round 2)', () => {
 
   it('rejects an allocation whose referenced Payment does not exist', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-ALLOC-MISSING',
       subtotal: 100,
       taxAmount: 0,
@@ -1376,6 +1396,7 @@ describe('Invoice.recognizeRevenue freshness + rollback (#1390 round 2)', () => 
 
   it('recognizes revenue off the authoritative line-item total, not a forged in-memory total', async () => {
     const invoice = await invoices.create({
+      currency: 'USD',
       invoiceNumber: 'INV-REV-FORGED',
       totalAmount: 0,
     });

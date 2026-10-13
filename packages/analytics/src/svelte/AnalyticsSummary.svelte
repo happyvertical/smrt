@@ -15,7 +15,7 @@ const { stats }: Props = $props();
 </script>
 
 {#if stats}
-	<div class="analytics-summary">
+	<div class="analytics-summary" data-smrt-component="AnalyticsSummary">
 		<StatCard
 			label="Pageviews Today"
 			value={stats.todayPageviews.toLocaleString()}
@@ -38,12 +38,14 @@ const { stats }: Props = $props();
 		/>
 	</div>
 {:else}
-	<div class="analytics-empty">
+	<div class="analytics-empty" data-smrt-component="AnalyticsSummary">
 		<p>{t(M['analytics.analytics_summary.empty'])}</p>
 	</div>
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.analytics-summary {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -61,4 +63,5 @@ const { stats }: Props = $props();
 	.analytics-empty p {
 		margin: 0;
 	}
+}
 </style>

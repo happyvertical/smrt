@@ -70,6 +70,9 @@ export class AssetLibraryRecipe extends SmrtRecipe {
     },
     Folder: {
       fields: {
+        parentId: {
+          help: 'The containing folder; leave empty to place this folder at the top level.',
+        },
         name: { label: 'Name', order: 1 },
         description: { order: 2 },
       },
@@ -110,6 +113,7 @@ export class AssetAttachmentsRecipe extends SmrtRecipe {
   static nav = [
     {
       label: 'Attachments',
+      key: 'attachments',
       model: Asset,
       icon: 'fileText',
       description: 'Supporting files connected to the record you are viewing.',
@@ -128,8 +132,20 @@ export class AssetAttachmentsRecipe extends SmrtRecipe {
     AssetAssociation: {
       fields: {
         assetId: { label: 'Attachment', order: 1 },
-        role: { label: 'Role', order: 2 },
-        sortOrder: { label: 'Display order', order: 3 },
+        metaType: {
+          help: 'The kind of record this file is connected to, such as an article or event.',
+        },
+        metaId: { help: 'The specific record that this file is connected to.' },
+        role: {
+          label: 'Role',
+          order: 2,
+          help: 'How this file is used by the related record, such as a cover image or attachment.',
+        },
+        sortOrder: {
+          label: 'Display order',
+          order: 3,
+          help: 'The position of this attachment among files with the same role; lower numbers appear first.',
+        },
       },
     },
   } as const;

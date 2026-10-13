@@ -351,6 +351,8 @@ function retryPreview() {
 </Modal>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .lifecycle,
   .actions {
     display: flex;
@@ -382,6 +384,7 @@ function retryPreview() {
   }
 
   .error {
-    color: var(--smrt-color-error, #b3261e);
+    color: var(--smrt-color-error);
   }
+}
 </style>

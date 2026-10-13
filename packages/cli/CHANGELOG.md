@@ -1,5 +1,80 @@
 # @happyvertical/smrt-cli
 
+## 0.55.17
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.17
+  - @happyvertical/smrt-agents@0.55.17
+  - @happyvertical/smrt-app-runtime@0.55.17
+  - @happyvertical/smrt-ledgers@0.55.17
+  - @happyvertical/smrt-dev-mcp@0.55.17
+  - @happyvertical/smrt-users@0.55.17
+  - @happyvertical/smrt-config@0.55.17
+  - @happyvertical/smrt-playground@0.55.17
+  - @happyvertical/smrt-types@0.55.17
+
+## 0.55.16
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.16
+  - @happyvertical/smrt-agents@0.55.16
+  - @happyvertical/smrt-app-runtime@0.55.16
+  - @happyvertical/smrt-ledgers@0.55.16
+  - @happyvertical/smrt-dev-mcp@0.55.16
+  - @happyvertical/smrt-users@0.55.16
+  - @happyvertical/smrt-config@0.55.16
+  - @happyvertical/smrt-playground@0.55.16
+  - @happyvertical/smrt-types@0.55.16
+
+## 0.55.15
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.15
+  - @happyvertical/smrt-agents@0.55.15
+  - @happyvertical/smrt-app-runtime@0.55.15
+  - @happyvertical/smrt-ledgers@0.55.15
+  - @happyvertical/smrt-dev-mcp@0.55.15
+  - @happyvertical/smrt-users@0.55.15
+  - @happyvertical/smrt-config@0.55.15
+  - @happyvertical/smrt-playground@0.55.15
+  - @happyvertical/smrt-types@0.55.15
+
+## 0.55.14
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.14
+  - @happyvertical/smrt-agents@0.55.14
+  - @happyvertical/smrt-app-runtime@0.55.14
+  - @happyvertical/smrt-ledgers@0.55.14
+  - @happyvertical/smrt-dev-mcp@0.55.14
+  - @happyvertical/smrt-users@0.55.14
+  - @happyvertical/smrt-config@0.55.14
+  - @happyvertical/smrt-playground@0.55.14
+  - @happyvertical/smrt-types@0.55.14
+
+## 0.55.13
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.13
+  - @happyvertical/smrt-agents@0.55.13
+  - @happyvertical/smrt-app-runtime@0.55.13
+  - @happyvertical/smrt-ledgers@0.55.13
+  - @happyvertical/smrt-dev-mcp@0.55.13
+  - @happyvertical/smrt-users@0.55.13
+  - @happyvertical/smrt-config@0.55.13
+  - @happyvertical/smrt-playground@0.55.13
+  - @happyvertical/smrt-types@0.55.13
+
 ## 0.55.12
 
 ### Patch Changes

@@ -49,3 +49,15 @@ if (typeof HTMLDialogElement !== 'undefined') {
     };
   }
 }
+
+// jsdom has no Web Animations API. Svelte's `animate:` directive (list FLIP)
+// and transitions call `element.getAnimations()`; an empty list is accurate
+// here because jsdom never runs CSS animations.
+if (
+  typeof Element !== 'undefined' &&
+  typeof Element.prototype.getAnimations !== 'function'
+) {
+  Element.prototype.getAnimations = function getAnimations() {
+    return [];
+  };
+}

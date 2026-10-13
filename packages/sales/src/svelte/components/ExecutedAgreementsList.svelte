@@ -26,7 +26,7 @@ export interface Props {
 let { agreements = [], locale, artifactHref }: Props = $props();
 </script>
 
-<div class="sales-agreements">
+<div class="sales-agreements" data-smrt-component="ExecutedAgreementsList">
   {#if agreements.length === 0}
     <p class="empty">No agreements yet.</p>
   {:else}
@@ -105,6 +105,8 @@ let { agreements = [], locale, artifactHref }: Props = $props();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sales-agreements {
     width: 100%;
     overflow-x: auto;
@@ -112,7 +114,7 @@ let { agreements = [], locale, artifactHref }: Props = $props();
 
   .empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -126,14 +128,14 @@ let { agreements = [], locale, artifactHref }: Props = $props();
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     text-align: left;
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    background: var(--smrt-color-surface-container);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     white-space: nowrap;
   }
 
   td {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     vertical-align: top;
   }
 
@@ -149,7 +151,7 @@ let { agreements = [], locale, artifactHref }: Props = $props();
 
   .hash {
     margin-left: var(--smrt-spacing-1, 0.25rem);
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .separator {
@@ -157,6 +159,7 @@ let { agreements = [], locale, artifactHref }: Props = $props();
   }
 
   a {
-    color: var(--smrt-color-primary, #2563eb);
+    color: var(--smrt-color-primary);
   }
+}
 </style>

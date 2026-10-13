@@ -92,7 +92,7 @@ Set `SMRT_PLANNER_DIR=<packaged planner checkout>` to also run the suite against
 ## `smrt kitchen mcp` (#3752)
 
 ```
-smrt kitchen mcp [--template <t>] [--manifests <p>]... [--no-registry] [--packages <name>]... [--library <dir>]...
+smrt kitchen mcp [--template <t>] [--manifests <p>]... [--no-registry] [--packages <name>]... [--library <dir>]... [--plans-dir <dir>] [--preview-port <n> --preview-origin <local-origin>]
 ```
 
 A stdio MCP server (`@modelcontextprotocol/server`, `serveStdio`) for the local
@@ -112,10 +112,18 @@ client), `__tests__/kitchen-plugin.test.ts` (plugin files against the Agent Plug
 | `start_plan` | not read-only, not destructive | empty, or from a library cookbook; returns `planId` |
 | `run_commands` | idempotent | one atomic `engine.batch` (`id`, `expectedRevision` pass through); a lone `undo` runs as a command |
 | `get_plan`, `validate_plan`, `export_plan` | read-only | `validate_plan` = engine `validate` + `validateCookbookText` against the catalog's manifests |
+| `open_preview` | read-only | URL for the same plan in the local development app shell when the preview bridge is enabled; binds the plan so the bridge will serve it |
 | `apply_plan` | destructive, idempotent, open-world | `createCookbookApplier` (= `cookbook apply`); absolute `dir`; **writes only with `confirm: true` + the preview's `confirmCode`** (sha256 of dir, server template and exported plan, so a changed plan or dir needs a new preview), otherwise (or with `dryRun`) a preview + `confirmation_required`; template is the server's `--template` only; `install` defaults to false and its output goes to stderr; templates containing symlinks are refused |
 
-- **Plans** live in the server process, keyed by `plan-<8 hex>` (20 kept, oldest dropped); a restart
-  forgets them. `smrt.cookbook.json` in the project (written by apply) is the durable copy.
+- **Plans** are stored in `--plans-dir` as private engine-state JSON files when set. This
+  retains the revision and idempotency journal across server restarts. Undo handles
+  remain available within the running process; a restart clears them. Writes to
+  a shared plans directory use a per-plan cross-process lock so stale revisions
+  cannot both succeed. Otherwise plans live
+  in server memory (20 kept, oldest dropped). `smrt.cookbook.json` in the project
+  (written by apply) is the applied copy.
+- **Preview** binds to `127.0.0.1` and accepts only the configured loopback
+  browser origin. The app shell and MCP tools call the same `KitchenSession`.
 - **Catalog** is built lazily on first use, once: manifests are resolved for the library's recipes
   exactly like `cookbook validate` (`--manifests`, workspace, `node_modules`, registry unless
   `--no-registry`; `--packages` adds more) and turned into `EngineCatalog` (`catalog.ts`: recipes from
@@ -124,5 +132,17 @@ client), `__tests__/kitchen-plugin.test.ts` (plugin files against the Agent Plug
   (no recipe-id enums) so `tools/list` never waits on the network; `search_recipes` is the id source.
 - **Output**: every tool returns compact text for the model plus `structuredContent` that matches its
   `outputSchema` (`ok` always; `error {code,message,path?,details?}` when false, with `isError`).
-- Not here: the MCP Apps planner widget (see the plugin README), remote/HTTP transport.
+- Optional UI: `--ui-smoke` registers a static capability resource and `kitchen_ui_smoke`;
+  `--planner-ui /absolute/path/app/mcp.html` registers a content-versioned Planner resource
+  and `render_plan`. The planning tools have no UI template and keep working if
+  the optional artifact is missing. The operator supplies self-contained HTML
+  built in smrt-planner. The separate preview is loopback HTTP only.
+- `start_plan`, `get_plan`, and `run_commands` return `state: { snapshot, cookbook }`
+  atomically. Read this field for live UI state; replayed command receipts and their
+  original snapshots retain their previous meaning. The app bridge allows
+  get/run/export/validate plus its UI reload check. It sizes the app to the host frame, not its
+  content: `hostContext.containerDimensions.maxHeight`, else 720px; a host-fixed height or
+  fullscreen gets no size report.
+- Not here: public or remote HTTP transport. See the plugin README for local build/install and
+  the explicit manual desktop capability check.
 

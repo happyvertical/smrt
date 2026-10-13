@@ -32,26 +32,28 @@ const {
 <div
   class="card {variant} padding-{padding}"
   class:hoverable
-  {...rest}
+  {...rest} data-smrt-component="Card"
 >
   {#if header}
-    <div class="card-header">
+    <div class="card-header" data-smrt-part="header">
       {@render header()}
     </div>
   {/if}
 
-  <div class="card-content">
+  <div class="card-content" data-smrt-part="body">
     {@render children?.()}
   </div>
 
   {#if footer}
-    <div class="card-footer">
+    <div class="card-footer" data-smrt-part="footer">
       {@render footer()}
     </div>
   {/if}
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   /*
    * Themeable look (app-level custom properties; defaults keep the stock look):
    *   --smrt-card-border      edge of default and elevated cards
@@ -134,4 +136,5 @@ const {
   .padding-lg .card-footer {
     padding: var(--smrt-spacing-8);
   }
+}
 </style>

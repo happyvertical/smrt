@@ -35,9 +35,9 @@ function factorChips(
 </script>
 
 {#if ranking.length === 0}
-  <p class="routing-rationale-empty">{emptyMessage}</p>
+  <p class="routing-rationale-empty" data-smrt-component="RoutingRationale">{emptyMessage}</p>
 {:else}
-  <ul class="routing-rationale">
+  <ul class="routing-rationale" data-smrt-component="RoutingRationale">
     {#each ranking as entry (entry.specialistId)}
       <li class="routing-rationale-row">
         <span class="routing-rationale-main">
@@ -72,6 +72,8 @@ function factorChips(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .routing-rationale {
     list-style: none;
     margin: 0;
@@ -130,4 +132,5 @@ function factorChips(
     color: var(--smrt-color-on-surface-variant, inherit);
     padding: 1rem 0;
   }
+}
 </style>

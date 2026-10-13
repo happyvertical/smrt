@@ -27,7 +27,7 @@ const { t } = useI18n();
 let camera = $state(false);
 const id = $props.id();
 </script>
-<section class="receipt-capture" aria-label={t(M['expenses.receipt.title'])}>
+<section class="receipt-capture" aria-label={t(M['expenses.receipt.title'])} data-smrt-component="ExpenseReceiptCapture">
   <h3>{t(M['expenses.receipt.title'])}</h3>
   {#if message}<p role="alert">{message}</p>{/if}
   <p>{t(M['expenses.receipt.reselect'])}</p>
@@ -47,6 +47,9 @@ const id = $props.id();
   {/if}
 </section>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .receipt-capture { display: grid; gap: var(--smrt-spacing-3); min-width: 0; overflow-wrap: anywhere; }
   h3, p { margin: 0; }
+}
 </style>

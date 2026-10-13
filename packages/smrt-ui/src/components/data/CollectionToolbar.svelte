@@ -259,7 +259,7 @@ onDestroy(() => surfaceRegistration?.cleanup());
   class="toolbar {className}"
   class:toolbar--highlighted={surfaceHighlighted}
   role="search"
-  tabindex="-1"
+  tabindex="-1" data-smrt-component="CollectionToolbar"
 >
   <div class="search">
     <Input type="search" name="collection-search" aria-label={searchLabel} placeholder={searchPlaceholder} value={controllerState?.search ?? search} oninput={(event) => changeSearch(event.currentTarget.value)} />
@@ -275,11 +275,14 @@ onDestroy(() => surfaceRegistration?.cleanup());
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-2) 0; color: var(--smrt-color-on-surface); }
-  .toolbar--highlighted { outline: 2px solid var(--smrt-color-primary, #2563eb); outline-offset: 3px; }
+  .toolbar--highlighted { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
   .search { flex: 1 1 14rem; max-width: 24rem; }
   .filters, .actions, .bulk { display: flex; align-items: center; gap: var(--smrt-spacing-2); }
   .bulk { padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border-radius: var(--smrt-radius-small); background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); }
   .count { color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-medium-font); }
   .spacer { flex: 1; }
+}
 </style>

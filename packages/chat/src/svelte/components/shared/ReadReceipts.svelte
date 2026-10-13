@@ -25,7 +25,7 @@ function getInitial(name: string): string {
 }
 </script>
 
-<span class="read-receipts" aria-label={t(M['chat.read_receipts.read_status'], { readCount: readBy.length, total: totalParticipants })}>
+<span class="read-receipts" aria-label={t(M['chat.read_receipts.read_status'], { readCount: readBy.length, total: totalParticipants })} data-smrt-component="ReadReceipts">
   {#if readBy.length === 0}
     <!-- Single check: sent -->
     <svg class="read-receipts__icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -66,11 +66,13 @@ function getInitial(name: string): string {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .read-receipts {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   .read-receipts__icon {
@@ -78,12 +80,12 @@ function getInitial(name: string): string {
   }
 
   .read-receipts__icon--read {
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .read-receipts__count {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .read-receipts__avatars {
@@ -94,8 +96,8 @@ function getInitial(name: string): string {
   .read-receipts__mini-avatar {
     width: 16px;
     height: 16px;
-    border-radius: var(--smrt-radius-full, 9999px);
-    border: 1px solid var(--smrt-color-surface, #ffffff);
+    border-radius: var(--smrt-radius-full);
+    border: 1px solid var(--smrt-color-surface);
     margin-left: -4px;
     object-fit: cover;
     flex-shrink: 0;
@@ -109,8 +111,8 @@ function getInitial(name: string): string {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: var(--smrt-color-surface-container-high, #e1e3e8);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-small-size, 0.5rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
@@ -119,9 +121,10 @@ function getInitial(name: string): string {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-small-size, 0.5rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
+}
 </style>

@@ -23,7 +23,7 @@ function amount(value: number | null): string {
 }
 </script>
 
-<section class="pricing-summary" aria-label={version.label}>
+<section class="pricing-summary" aria-label={version.label} data-smrt-component="PricingVersionSummary">
   <h3>{version.label}</h3>
   <p>{version.counterparty} · {version.status}</p>
   <p><strong>{t(M['commerce.pricing.total'])}: {amount(version.total.amountMinor)} {version.total.currency}</strong></p>
@@ -39,8 +39,11 @@ function amount(value: number | null): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 .pricing-summary { min-width: 0; overflow-wrap: anywhere; }
 .pricing-summary ul { display: grid; gap: var(--smrt-spacing-3); padding-inline-start: var(--smrt-spacing-5); }
 .pricing-summary li { min-width: 0; }
 .pricing-summary li strong { display: block; }
+}
 </style>

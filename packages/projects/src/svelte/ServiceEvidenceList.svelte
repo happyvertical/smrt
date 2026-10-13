@@ -32,7 +32,7 @@ const money = (amount = 0, currency = 'USD') => {
 
 <section
   class="evidence"
-  aria-label={t(M['projects.service_evidence.aria'])}
+  aria-label={t(M['projects.service_evidence.aria'])} data-smrt-component="ServiceEvidenceList"
 >
   {#each entries as entry (entry.id)}
     <article>
@@ -69,6 +69,8 @@ const money = (amount = 0, currency = 'USD') => {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .evidence {
     border-top: 1px solid var(--smrt-color-outline-variant);
   }
@@ -116,4 +118,5 @@ const money = (amount = 0, currency = 'USD') => {
       text-align: left;
     }
   }
+}
 </style>

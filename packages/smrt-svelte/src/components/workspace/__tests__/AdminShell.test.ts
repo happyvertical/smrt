@@ -35,6 +35,50 @@ afterEach(() => {
 });
 
 describe('AdminShell', () => {
+  it('uses an icon above navigation to open and close the left sidebar', async () => {
+    const state = createShellState({
+      config: { top: false, left: { initial: 'expanded' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        edgeToggles: { left: true },
+        tenantPanel: textSnippet('navigation'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      const toggle = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Collapse sidebar"]',
+      );
+      const navigation = container.querySelector(
+        '.smrt-admin-shell__tenant-content',
+      );
+      expect(toggle).not.toBeNull();
+      expect(navigation).not.toBeNull();
+      expect(toggle?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+      expect(toggle?.textContent).not.toContain('Left sidebar');
+      expect(toggle).toHaveAttribute('title', 'Collapse sidebar (A)');
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      // The chevron is pinned at the bottom of the rail, after the navigation.
+      expect(navigation?.compareDocumentPosition(toggle as Node)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      toggle?.click();
+      await tick();
+      const opener = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Expand sidebar"]',
+      );
+      expect(opener?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+      expect(opener).toHaveAttribute('title', 'Expand sidebar (A)');
+      expect(opener).toHaveAttribute('aria-expanded', 'false');
+    } finally {
+      await unmount(component);
+    }
+  });
+
   it('keeps a consumer header and default phone menu opener when the top edge is unavailable', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: query.includes('max-width'),
@@ -214,9 +258,9 @@ describe('AdminShell', () => {
     }
   });
 
-  it('assigns a footer-only collapsed rail to the bottom grid row', () => {
+  it('assigns a footer-only collapsed rail to the bottom grid row, below the toggle row', () => {
     expect(adminShellSource).toMatch(
-      /\.smrt-admin-shell__tenant-rail-footer\s*\{[^}]*grid-row:\s*2;/s,
+      /\.smrt-admin-shell__tenant-rail-footer\s*\{[^}]*grid-row:\s*3;/s,
     );
   });
 
@@ -335,7 +379,7 @@ describe('AdminShell', () => {
     }
   });
 
-  it('links full and compact branding home with an accessible title', async () => {
+  it('keeps a single linked brand in the header when the sidebar is collapsed', async () => {
     const state = createShellState({
       config: { left: { initial: 'collapsed' } },
     });
@@ -354,15 +398,19 @@ describe('AdminShell', () => {
       const links = container.querySelectorAll<HTMLAnchorElement>(
         '.smrt-admin-shell__brand-link',
       );
-      expect(links).toHaveLength(2);
+      expect(links).toHaveLength(1);
       expect([...links].map((link) => link.getAttribute('href'))).toEqual([
-        '/home',
         '/home',
       ]);
       expect([...links].map((link) => link.getAttribute('aria-label'))).toEqual(
-        ['Shop', 'Shop'],
+        ['Shop'],
       );
-      expect(links[1].textContent?.trim()).toBe('S');
+      expect(
+        container.querySelector('header .smrt-admin-shell__brand-link'),
+      ).toBe(links[0]);
+      expect(
+        container.querySelector('aside .smrt-admin-shell__brand-link'),
+      ).toBeNull();
     } finally {
       unmount(component);
     }
@@ -395,7 +443,7 @@ describe('AdminShell', () => {
     }
   });
 
-  it('passes full and compact context to custom brand snippets', async () => {
+  it('keeps a custom header brand out of the collapsed sidebar', async () => {
     const brand = createRawSnippet<[{ compact: boolean }]>((context) => ({
       render: () =>
         `<span>${context().compact ? 'Compact mark' : 'Full mark'}</span>`,
@@ -413,7 +461,7 @@ describe('AdminShell', () => {
     try {
       await tick();
       expect(container.textContent).toContain('Full mark');
-      expect(container.textContent).toContain('Compact mark');
+      expect(container.textContent).not.toContain('Compact mark');
     } finally {
       unmount(component);
     }
@@ -781,10 +829,14 @@ describe('AdminShell', () => {
       const band = container.querySelector(
         '.smrt-admin-shell__band--top',
       ) as HTMLElement;
-      expect(topEdge.style.getPropertyValue('--edge-columns').trim()).toBe(
-        '0px minmax(0, 1fr) 0px',
-      );
-      expect(band.style.getPropertyValue('--band-column').trim()).toBe('2');
+      expect(
+        topEdge.style
+          .getPropertyValue('--smrt-admin-shell-edge-columns')
+          .trim(),
+      ).toBe('0px minmax(0, 1fr) 0px');
+      expect(
+        band.style.getPropertyValue('--smrt-admin-shell-band-column').trim(),
+      ).toBe('2');
     } finally {
       unmount(component);
     }
@@ -845,10 +897,14 @@ describe('AdminShell', () => {
       const band = container.querySelector(
         '.smrt-admin-shell__band--top',
       ) as HTMLElement;
-      const columns = topEdge.style.getPropertyValue('--edge-columns');
+      const columns = topEdge.style.getPropertyValue(
+        '--smrt-admin-shell-edge-columns',
+      );
       expect(columns).toContain('--smrt-admin-shell-left-collapsed');
       expect(columns).not.toContain('--smrt-admin-shell-right-collapsed');
-      expect(band.style.getPropertyValue('--band-column').trim()).toBe('2');
+      expect(
+        band.style.getPropertyValue('--smrt-admin-shell-band-column').trim(),
+      ).toBe('2');
     } finally {
       unmount(component);
     }
@@ -872,11 +928,15 @@ describe('AdminShell', () => {
       const band = container.querySelector(
         '.smrt-admin-shell__band--top',
       ) as HTMLElement;
-      const columns = topEdge.style.getPropertyValue('--edge-columns').trim();
+      const columns = topEdge.style
+        .getPropertyValue('--smrt-admin-shell-edge-columns')
+        .trim();
       expect(columns).toBe(
         '0px minmax(0, 1fr) var(--smrt-admin-shell-right-collapsed)',
       );
-      expect(band.style.getPropertyValue('--band-column').trim()).toBe('2');
+      expect(
+        band.style.getPropertyValue('--smrt-admin-shell-band-column').trim(),
+      ).toBe('2');
       expect(
         container.querySelector('.smrt-admin-shell__corner--top-right'),
       ).not.toBeNull();

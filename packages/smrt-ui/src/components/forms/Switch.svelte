@@ -118,7 +118,7 @@ useControlRegistration(() => {
 
 <label data-density={density} class="switch switch--{size} {className}" class:switch--disabled={disabled} data-smrt-hit-target data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
-  data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}>
+  data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id} data-smrt-component="Switch">
   {#if label && labelPosition === 'left'}<span class="switch__label">{label}</span>{/if}
   <span class="switch__control">
     <input bind:this={inputEl} id={resolvedId} type="checkbox" role="switch" {name} {value} {disabled} {required} checked={checked}
@@ -130,14 +130,16 @@ useControlRegistration(() => {
 </label>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .switch { display: inline-flex; align-items: center; gap: var(--smrt-spacing-2, .5rem); cursor: pointer; color: var(--smrt-color-on-surface); }
   .switch--disabled { opacity: .5; cursor: not-allowed; }
   /* Phones: the whole row (track and label) is at least a 44px touch target. */
   @media (max-width: 48rem) { .switch { min-block-size: 2.75rem; } }
   /* The 2.75rem-wide track gets a transparent 44px-tall ::before hit area (see Checkbox); the
      track and label sit above every hit area. --smrt-control-hit-size resizes it (0px = off). */
-  .switch__control { --_hit: max(var(--smrt-control-hit-size, 2.75rem), 1.5rem); position: relative; display: inline-flex; }
-  .switch__control::before { content: ''; position: absolute; z-index: 0; inset-block-start: 50%; inset-inline: calc((100% - var(--_hit)) / 2); block-size: var(--_hit); margin-block-start: calc(var(--_hit) / -2); }
+  .switch__control { --smrt-switch-hit: max(var(--smrt-control-hit-size, 2.75rem), 1.5rem); position: relative; display: inline-flex; }
+  .switch__control::before { content: ''; position: absolute; z-index: 0; inset-block-start: 50%; inset-inline: calc((100% - var(--smrt-switch-hit)) / 2); block-size: var(--smrt-switch-hit); margin-block-start: calc(var(--smrt-switch-hit) / -2); }
   .switch__label { position: relative; z-index: 1; }
   input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .switch__track { position: relative; z-index: 1; width: 2.75rem; height: 1.5rem; padding: 2px; border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-highest); border: 1px solid var(--smrt-color-outline); transition: background var(--smrt-duration-short2); }
@@ -150,7 +152,8 @@ useControlRegistration(() => {
   .switch[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-full); }
   @media (prefers-reduced-motion: reduce) { .switch__track, .switch__thumb { transition: none; } }
 
-  .switch[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .switch[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .switch[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .switch { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+}
 </style>

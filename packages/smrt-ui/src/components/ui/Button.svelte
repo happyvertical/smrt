@@ -129,12 +129,12 @@ function handleClick(event: MouseEvent) {
     aria-disabled={isDisabled}
     aria-busy={loading}
     onclick={handleClick as HTMLAnchorAttributes['onclick']}
-    {...linkProps()}
+    {...linkProps()} data-smrt-component="Button"
   >
     {#if loading}
-      <span class="spinner" aria-hidden="true"></span>
+      <span class="spinner" aria-hidden="true" data-smrt-part="spinner"></span>
     {/if}
-    <span class="content" class:loading>
+    <span class="content" class:loading data-smrt-part="label">
       {@render children?.()}
     </span>
   </a>
@@ -147,18 +147,20 @@ function handleClick(event: MouseEvent) {
     class:full-width={fullWidth}
     class:loading
     onclick={handleClick}
-    {...rest}
+    {...rest} data-smrt-component="Button"
   >
     {#if loading}
-      <span class="spinner" aria-hidden="true"></span>
+      <span class="spinner" aria-hidden="true" data-smrt-part="spinner"></span>
     {/if}
-    <span class="content" class:loading>
+    <span class="content" class:loading data-smrt-part="label">
       {@render children?.()}
     </span>
   </button>
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .button {
     display: inline-flex;
     align-items: center;
@@ -255,7 +257,7 @@ function handleClick(event: MouseEvent) {
     height: 1em;
     border: 2px solid currentColor;
     border-right-color: transparent;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.75s linear infinite;
   }
 
@@ -312,7 +314,8 @@ function handleClick(event: MouseEvent) {
     }
   }
 
-  .button[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .button[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .button[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .button { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+}
 </style>

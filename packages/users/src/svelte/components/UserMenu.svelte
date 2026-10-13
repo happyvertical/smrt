@@ -170,7 +170,7 @@ function getInitials(name: string): string {
 
 <svelte:window onclick={handleClickOutside} onkeydown={handleKeydown} />
 
-<div class="user-menu" id={menuId}>
+<div class="user-menu" id={menuId} data-smrt-component="UserMenu">
   <!-- raw-primitive-allow: WAI-ARIA menu-button trigger with bind:this focus management, aria-haspopup/aria-expanded/aria-controls and roving-tabindex keyboard nav; structural menu button no primitive owns -->
   <button
     bind:this={triggerButton}
@@ -260,6 +260,8 @@ function getInitials(name: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .user-menu {
     position: relative;
     display: inline-block;
@@ -268,11 +270,11 @@ function getInitials(name: string): string {
   .user-menu-trigger {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-3, 12px);
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    gap: var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     background: transparent;
     border: none;
-    border-radius: var(--smrt-radius-2xl, 24px);
+    border-radius: var(--smrt-radius-2xl);
     cursor: pointer;
     transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
     color: var(--smrt-color-on-surface);
@@ -317,21 +319,21 @@ function getInitials(name: string): string {
     position: absolute;
     top: 100%;
     right: 0;
-    margin-top: var(--smrt-spacing-1, 4px);
+    margin-top: var(--smrt-spacing-1);
     min-width: 200px;
     background-color: var(--smrt-color-surface-container);
-    border-radius: var(--smrt-radius-medium, 4px);
+    border-radius: var(--smrt-radius-medium);
     box-shadow: var(--smrt-elevation-2);
     z-index: var(--smrt-z-index-dropdown, 1000);
-    padding: var(--smrt-spacing-1, 4px) 0;
+    padding: var(--smrt-spacing-1) 0;
     overflow: hidden;
   }
 
   .dropdown-item {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-3, 12px);
-    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
+    gap: var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
     font: var(--smrt-typography-body-medium-font);
     color: var(--smrt-color-on-surface);
     text-decoration: none;
@@ -355,10 +357,10 @@ function getInitials(name: string): string {
   }
 
   .user-info {
-    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .user-info-name {
@@ -383,7 +385,7 @@ function getInitials(name: string): string {
   }
 
   .divider {
-    margin: var(--smrt-spacing-1, 4px) 0;
+    margin: var(--smrt-spacing-1) 0;
     border: none;
     border-top: 1px solid var(--smrt-color-outline-variant);
   }
@@ -399,4 +401,5 @@ function getInitials(name: string): string {
       transform: none;
     }
   }
+}
 </style>

@@ -313,7 +313,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
 }
 </script>
 
-<div class:page={true} class:page--embedded={embedded}>
+<div class:page={true} class:page--embedded={embedded} data-smrt-component="ContentContributionsRoute">
   <header class="page-header">
     <div class="container">
       <div class="page-header__copy">
@@ -516,6 +516,8 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   :global(body:has(.page:not(.page--embedded))) {
     margin: 0;
     font-family:
@@ -597,7 +599,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     justify-content: center;
     min-height: 2.5rem;
     padding: 0 1rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     border: 1px solid var(--smrt-color-outline-variant);
     background: color-mix(
       in srgb,
@@ -679,7 +681,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     align-items: center;
     min-height: 2rem;
     padding: 0 0.8rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: color-mix(
       in srgb,
       var(--smrt-color-surface-container-low) 90%,
@@ -739,7 +741,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
   }
 
   .inline-form-shell :global(.load-button) {
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     border: 1px solid color-mix(
       in srgb,
       var(--smrt-color-primary) 35%,
@@ -758,7 +760,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     justify-content: center;
     min-width: 2rem;
     min-height: 2rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: color-mix(
       in srgb,
       var(--smrt-color-primary) 14%,
@@ -822,4 +824,5 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
       margin-bottom: 0.85rem;
     }
   }
+}
 </style>

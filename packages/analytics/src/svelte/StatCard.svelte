@@ -17,7 +17,7 @@ interface Props {
 const { label, value, trend, trendPercent, subtitle }: Props = $props();
 </script>
 
-<div class="stat-card">
+<div class="stat-card" data-smrt-component="StatCard">
 	<div class="stat-label">{label}</div>
 	<div class="stat-row">
 		<div class="stat-value">{value}</div>
@@ -31,6 +31,8 @@ const { label, value, trend, trendPercent, subtitle }: Props = $props();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.stat-card {
 		padding: 1rem;
 		background: var(--smrt-color-surface);
@@ -65,4 +67,5 @@ const { label, value, trend, trendPercent, subtitle }: Props = $props();
 		color: var(--smrt-color-on-surface-variant);
 		margin-top: 0.25rem;
 	}
+}
 </style>

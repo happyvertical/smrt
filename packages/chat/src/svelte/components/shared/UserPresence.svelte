@@ -20,7 +20,7 @@ const labelText: Record<string, string> = {
 };
 </script>
 
-<span class="presence" aria-label={labelText[status]}>
+<span class="presence" aria-label={labelText[status]} data-smrt-component="UserPresence">
   <span class="presence__dot {status}"></span>
   {#if showLabel}
     <span class="presence__label">{labelText[status]}</span>
@@ -28,6 +28,8 @@ const labelText: Record<string, string> = {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .presence {
     display: inline-flex;
     align-items: center;
@@ -37,29 +39,30 @@ const labelText: Record<string, string> = {
   .presence__dot {
     width: 8px;
     height: 8px;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     flex-shrink: 0;
   }
 
   .presence__dot.online {
-    background: var(--smrt-color-success, #1e8e3e);
+    background: var(--smrt-color-success);
   }
 
   .presence__dot.away {
-    background: var(--smrt-color-warning, #f9ab00);
+    background: var(--smrt-color-warning);
   }
 
   .presence__dot.dnd {
-    background: var(--smrt-color-error, #b3261e);
+    background: var(--smrt-color-error);
   }
 
   .presence__dot.offline {
-    background: var(--smrt-color-outline, #74777f);
+    background: var(--smrt-color-outline);
   }
 
   .presence__label {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     line-height: 1;
   }
+}
 </style>

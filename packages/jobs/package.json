@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-jobs",
-  "version": "0.55.12",
+  "version": "0.55.17",
   "smrtJsdoc": "strict",
   "description": "Background job processing for SMRT objects with persistence and scheduling",
   "author": "HappyVertical",
@@ -61,7 +61,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run optional.test.ts",
-    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js . && pnpm exec svelte-check --tsconfig ./test-types/tsconfig.json"
   },
   "dependencies": {
     "@happyvertical/jobs": "catalog:",

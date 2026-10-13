@@ -79,7 +79,7 @@ let {
 } = $props();
 </script>
 
-<div class="smrt-plan-picker">
+<div class="smrt-plan-picker" data-smrt-component="PlanPicker">
   {#each plans as plan (plan.planKey)}
     <!-- raw-primitive-allow: pressable selection card (aria-pressed toggle with multi-line plan summary), not a standard action button -->
     <button
@@ -105,6 +105,8 @@ let {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-plan-picker {
     display: grid;
     gap: 0.75rem;
@@ -113,9 +115,9 @@ let {
 
   .smrt-plan-picker__plan {
     align-items: flex-start;
-    background: var(--smrt-color-surface, #fff);
-    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
     color: inherit;
     cursor: pointer;
     display: grid;
@@ -125,8 +127,8 @@ let {
   }
 
   .smrt-plan-picker__plan.selected {
-    border-color: var(--smrt-color-primary, #2563eb);
-    box-shadow: 0 0 0 1px var(--smrt-color-primary, #2563eb);
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 1px var(--smrt-color-primary);
   }
 
   .smrt-plan-picker__name {
@@ -141,7 +143,8 @@ let {
   .smrt-plan-picker__price small,
   .smrt-plan-picker__description,
   .smrt-plan-picker__features {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
+}
 </style>

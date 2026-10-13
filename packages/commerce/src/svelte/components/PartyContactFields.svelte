@@ -65,7 +65,7 @@ const text = $derived({
 });
 </script>
 
-<section class="contacts" aria-labelledby={headingId}>
+<section class="contacts" aria-labelledby={headingId} data-smrt-component="PartyContactFields">
   <div class="contacts-heading">
     <h2 id={headingId}>{text.heading}</h2>
     {#if !readOnly && canAdd}
@@ -132,6 +132,8 @@ const text = $derived({
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .contacts { display: grid; gap: var(--smrt-spacing-4); min-inline-size: 0; }
   .contacts-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); flex-wrap: wrap; }
   h2, h3, p { margin: 0; }
@@ -150,4 +152,5 @@ const text = $derived({
     .field-grid { grid-template-columns: minmax(0, 1fr); }
     .contact-card { padding: var(--smrt-spacing-3); }
   }
+}
 </style>

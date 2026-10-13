@@ -1,6 +1,7 @@
 <script lang="ts">
 import {
   type ColorScheme,
+  ColorSchemeToggle,
   type ThemePreset,
   ThemeProvider,
 } from '@happyvertical/smrt-ui/themes';
@@ -15,6 +16,7 @@ import { M } from '../../i18n/strings.workspace.js';
 import Provider from '../../Provider.svelte';
 import type { User } from '../../state/app-state.js';
 import type { WebMcpProviderConfig } from '../../web/webmcp-provider.js';
+import CommandPalette from '../command-palette/CommandPalette.svelte';
 import { formatSortableAnnouncement } from '../sortable/announce.js';
 import { createSortable } from '../sortable/controller.svelte.js';
 import AdminShell from '../workspace/admin-shell/AdminShell.svelte';
@@ -57,11 +59,23 @@ import {
   type ShellPanelDefaults,
   type ShellSectionActionsContext,
 } from '../workspace/admin-shell/types.js';
+import WorkspaceAccountMenu from '../workspace/admin-shell/WorkspaceAccountMenu.svelte';
 import DockSlot from './DockSlot.svelte';
 import DockToggles from './DockToggles.svelte';
 import type { DockToggle } from './dock-toggle.js';
+import PhoneTabBar from './PhoneTabBar.svelte';
+import {
+  type PhoneTabBarOptions,
+  phoneTabNavEntries,
+  resolvePhoneTabBar,
+} from './phone-tabs.js';
 import RuntimeDiagnosticsWebMcp from './RuntimeDiagnosticsWebMcp.svelte';
-import type { ShellSlotItem } from './slot-item.js';
+import type {
+  AppShellAccountMenu,
+  AppShellCommandPalette,
+  ShellSlotItem,
+} from './slot-item.js';
+import { runViewTransition } from './view-transition.js';
 
 interface Props {
   /** Application name shown in the shell brand and app panel. */
@@ -88,6 +102,38 @@ interface Props {
   environment?: string;
   /** When set, the app panel links here (e.g. a settings route). */
   settingsHref?: string;
+  /**
+   * The signed-in user's account menu: the built-in item `item:account`
+   * (shown when `user` is set). Default slot `leftSidebar.footer`: the full
+   * identity in the expanded sidebar footer, the avatar alone at the bottom of
+   * the collapsed rail; on phones the avatar sits at the end of the header
+   * band. Menu: name and email, Settings (`settingsHref`) and Sign out
+   * (`onSignOut` or `signOutHref`). `false` opts out; `{ slot }` overrides the
+   * default slot (users can still move it in the layout editor).
+   */
+  accountMenu?: AppShellAccountMenu;
+  /** Called when the account menu's Sign out is chosen (wins over `signOutHref`). */
+  onSignOut?: () => void;
+  /**
+   * Where the account menu's Sign out link goes when there is no `onSignOut`.
+   * A link is a GET: never point it at the runtime's POST-only `/sign-out`
+   * route; pass `onSignOut` for that.
+   */
+  signOutHref?: string;
+  /**
+   * The theme switcher (`ColorSchemeToggle` from `smrt-ui/themes`) as the
+   * built-in item `item:color-scheme`, default slot `header.end`. On by
+   * default; `false` opts out, `{ slot }` sets the default slot. Icon-only on
+   * phones.
+   */
+  colorSchemeToggle?: boolean | { slot?: ShellSlot };
+  /**
+   * The command palette as the built-in item `item:command-palette` (default
+   * slot `header.center`): a search-shaped trigger with the shortcut hint, a
+   * search icon button on phones. Mounts the existing `CommandPalette`
+   * (trigger, dialog and global shortcut). Off unless given.
+   */
+  commandPalette?: AppShellCommandPalette;
   /** Options for the Provider's WebMCP integration; passed through unchanged. */
   webmcp?: boolean | WebMcpProviderConfig;
   /** Authenticated user forwarded to the Provider; `null` renders the shell signed out. */
@@ -177,7 +223,7 @@ interface Props {
    * mode the sidebar edits sections (grip, rename, hide, icon); entries are
    * edited on the section page.
    */
-  navMode?: 'items' | 'sections';
+  navMode?: 'items' | 'sections' | 'sections-with-items';
   /** Section page for groups without an `href` (e.g. user-created ones). */
   sectionHref?: (sectionId: string) => string | undefined;
   /** Renders host icon names for sections and entries. */
@@ -190,6 +236,32 @@ interface Props {
   edgeToggles?: AdminShellProps['edgeToggles'];
   /** Keyboard shortcuts; default follows `edgeToggles` (see `AdminShell`). */
   hotkeys?: boolean;
+  /**
+   * Phone bottom tab bar (default `false`): on phones, the footer region's
+   * phone presentation (conceptually the footer's center slot) shows the first
+   * N navigation items as icon + label tabs (`aria-current` from
+   * `currentHref`), then a tab for the first `dockToggles` entry (or a "Tools"
+   * tab when the right edge has tools), then "More" opening the left drawer
+   * when navigation overflows. `N` defaults to 4 and counts the dock tab;
+   * `{ items }` overrides it. While on, the header "Tools" opener and the
+   * header copy of the dock tab's toggle are not rendered on phones. Read once
+   * at mount, like `config`.
+   */
+  phoneTabBar?: boolean | PhoneTabBarOptions;
+  /**
+   * How the right edge (dock tools) presents on phones: `'sheet'` rises from
+   * the bottom above the tab bar (grabber, swipe down or Escape to close),
+   * `'drawer'` slides in from the side. Default `'sheet'` when `phoneTabBar`
+   * is on, else `'drawer'`. An explicit value wins over `config.right.phone`.
+   * Read once at mount.
+   */
+  phoneDock?: 'sheet' | 'drawer';
+  /**
+   * Render the shell chrome (default). `false` mounts only the Provider and
+   * ThemeProvider around `children`: no navigation, sidebars, header, or
+   * footer, so a host can show the first-run setup route chrome-free.
+   */
+  chrome?: boolean;
   children: Snippet;
 }
 
@@ -206,6 +278,11 @@ let {
   tenantLabel = '',
   environment = 'local',
   settingsHref,
+  accountMenu = true,
+  onSignOut,
+  signOutHref,
+  colorSchemeToggle = true,
+  commandPalette,
   webmcp = false,
   user = null,
   permissions = [],
@@ -227,10 +304,17 @@ let {
   iconComponent,
   edgeToggles = false,
   hotkeys,
+  phoneTabBar = false,
+  phoneDock,
+  chrome = true,
   children,
 }: Props = $props();
 /** Stable id of the built-in brand item (title, subtitle). */
 const SHELL_BRAND_ITEM_ID = 'item:brand';
+/** Stable ids of the built-in header and account items (stored in layouts). */
+const SHELL_ACCOUNT_ITEM_ID = 'item:account';
+const SHELL_COLOR_SCHEME_ITEM_ID = 'item:color-scheme';
+const SHELL_COMMAND_PALETTE_ITEM_ID = 'item:command-palette';
 /** Stable id of the built-in edit-layout toggle item. */
 const layoutFloating = $derived(
   typeof layoutEditing === 'object' && layoutEditing.floating === true,
@@ -294,14 +378,53 @@ const entries = $derived.by(() => {
       fixed: true,
     });
   }
+  if (colorSchemeToggle !== false) {
+    add({
+      id: SHELL_COLOR_SCHEME_ITEM_ID,
+      label: t(M['ui.app_shell.color_scheme_item']),
+      slot:
+        (typeof colorSchemeToggle === 'object'
+          ? colorSchemeToggle.slot
+          : undefined) ?? 'header.end',
+      render: colorSchemeItem,
+    });
+  }
+  if (commandPalette) {
+    add({
+      id: SHELL_COMMAND_PALETTE_ITEM_ID,
+      label: t(M['ui.app_shell.command_palette_item']),
+      slot: 'header.center',
+      render: commandPaletteItem,
+    });
+  }
+  // Last, so on phones it ends the header band.
+  if (user && accountMenu !== false) {
+    add({
+      id: SHELL_ACCOUNT_ITEM_ID,
+      label: t(M['ui.app_shell.account_item']),
+      slot:
+        (typeof accountMenu === 'object' ? accountMenu.slot : undefined) ??
+        (shell.viewport === 'phone' ? 'header.end' : 'leftSidebar.footer'),
+      render: accountItem,
+    });
+  }
   return out;
 });
+/** The right edge's phone presentation from `phoneDock` / `phoneTabBar`. */
+function withPhoneDock(base: ShellPanelDefaults | undefined) {
+  const mode =
+    phoneDock ?? (resolvePhoneTabBar(phoneTabBar) ? 'sheet' : undefined);
+  const right = base?.right;
+  if (!mode || right === false) return base;
+  if (!phoneDock && right?.phone !== undefined) return base;
+  return { ...base, right: { ...right, phone: mode } };
+}
 // The shell state lives here (not inside AdminShell) so the layout can reach
 // it: panel overrides apply to it, and the user's layout is stored in it when
 // the host does not own persistence.
 const shell = untrack(() =>
   createShellState({
-    config,
+    config: withPhoneDock(config),
     storageKey,
     layoutPanels: normalizeShellLayout(layout).panels,
   }),
@@ -320,10 +443,22 @@ const applied = $derived(
 );
 const hasNav = $derived(applied.nav.length > 0 || applied.groups.length > 0);
 
+// Phone tab bar: on only when asked for and there is something to show.
+const tabBarBudget = $derived(resolvePhoneTabBar(phoneTabBar)?.items ?? 0);
+const tabEntries = $derived(
+  phoneTabNavEntries(applied.nav, applied.groups, navMode, sectionHref),
+);
+const tabBarOn = $derived(
+  tabBarBudget > 0 && (tabEntries.length > 0 || dockToggles.length > 0),
+);
+const tabDockToggle = $derived(tabBarOn ? dockToggles[0] : undefined);
+
 const slotIds = $derived(resolveShellPlacements(entries, effectiveLayout));
 const entriesFor = (name: ShellSlot): PlacedEntry[] => {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
-  return slotIds[name].flatMap((id) => byId.get(id) ?? []);
+  return slotIds[name].flatMap((id) =>
+    id === SHELL_ACCOUNT_ITEM_ID && accountInRail ? [] : (byId.get(id) ?? []),
+  );
 };
 const slotSnippets: Record<ShellSlot, Snippet> = {
   'header.start': slot_0,
@@ -340,7 +475,7 @@ const slotSnippets: Record<ShellSlot, Snippet> = {
 const shellSlots = $derived.by(() => {
   const out: Partial<Record<ShellSlot, Snippet>> = {};
   for (const name of SHELL_SLOTS) {
-    if (slotIds[name].length > 0) out[name] = slotSnippets[name];
+    if (entriesFor(name).length > 0) out[name] = slotSnippets[name];
   }
   return out;
 });
@@ -392,6 +527,55 @@ setShellLayout(layoutApi);
 // ---- In-place layout editing -------------------------------------------
 const editing = $derived(layoutApi.editing);
 let shellRoot = $state<HTMLElement | undefined>();
+
+// ---- Account menu ------------------------------------------------------
+const accountSlot = $derived(
+  SHELL_SLOTS.find((name) => slotIds[name].includes(SHELL_ACCOUNT_ITEM_ID)),
+);
+// The collapsed rail keeps the account at its bottom as the avatar alone,
+// instead of letting the sidebar footer slot fall back to another region.
+const accountInRail = $derived(
+  accountSlot === 'leftSidebar.footer' &&
+    !editing &&
+    shell.viewport !== 'phone' &&
+    shell.isEdgeShown('left') &&
+    shell.panels.left === 'collapsed',
+);
+// Full identity only inside an expanded sidebar; everywhere else the avatar.
+const accountCompact = $derived.by(() => {
+  if (shell.viewport === 'phone' || !accountSlot) return true;
+  const region = slotRegion(accountSlot);
+  return !(
+    (region === 'leftSidebar' || region === 'rightSidebar') &&
+    shell.isRegionVisible(region)
+  );
+});
+function accountPlacement(
+  slot: ShellSlot | undefined,
+  rail: boolean,
+): 'top-start' | 'top-end' | 'bottom-start' | 'bottom-end' | 'inline-end' {
+  if (rail) return 'inline-end';
+  if (!slot) return 'bottom-end';
+  // Place the menu from the slot the item actually renders in: a hidden
+  // region sends it down the fallback chain, and a stored placement may put
+  // it in any slot on any viewport. Footers and sidebar footers open upward;
+  // everything else opens downward. The menu aligns to the trigger's own
+  // edge (start slots and the left sidebar to the start) so it stays inside
+  // the viewport on a phone.
+  const rendered =
+    resolveSlot(slot, (region) => shell.isRegionVisible(region)) ?? slot;
+  const region = slotRegion(rendered);
+  const opensUp = region === 'footer' || rendered.endsWith('.footer');
+  const alignStart = rendered.endsWith('.start') || region === 'leftSidebar';
+  if (opensUp) return alignStart ? 'top-start' : 'top-end';
+  return alignStart ? 'bottom-start' : 'bottom-end';
+}
+const accountIdentity = $derived.by(() => {
+  const record = (user ?? {}) as { name?: unknown; email?: unknown };
+  const name = typeof record.name === 'string' ? record.name.trim() : '';
+  const email = typeof record.email === 'string' ? record.email.trim() : '';
+  return { name, email };
+});
 // The floating toggle sits over the header's end (header visible), the top of
 // the right sidebar (header hidden) or the top of main (neither); reserve that room so it covers no
 // control. AdminShell reads these custom properties.
@@ -565,8 +749,11 @@ $effect(() => {
 });
 
 async function toggleEditing(): Promise<void> {
-  layoutApi.setEditing(!layoutApi.editing);
-  await tick();
+  // The drop zones morph in/out under a view transition (when supported).
+  await runViewTransition(async () => {
+    layoutApi.setEditing(!layoutApi.editing);
+    await tick();
+  });
 }
 const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   header: 'top',
@@ -579,7 +766,10 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {#snippet slotBody(name: ShellSlot)}
   {#each entriesFor(name) as entry (entry.id)}
     {#if entry.toggle}
-      <DockToggles toggles={[entry.toggle]} />
+      <!-- On phones the tab bar carries this toggle. -->
+      {#if !(tabDockToggle?.tool === entry.toggle.tool && shell.viewport === 'phone')}
+        <DockToggles toggles={[entry.toggle]} />
+      {/if}
     {:else if entry.render}
       {@render entry.render()}
     {/if}
@@ -673,6 +863,52 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   {/each}
 {/snippet}
 
+{#snippet accountMenuBody(compact: boolean, rail: boolean)}
+  <WorkspaceAccountMenu
+    userName={accountIdentity.name || accountIdentity.email}
+    email={accountIdentity.email}
+    {compact}
+    {tenantLabel}
+    {onSignOut}
+    {signOutHref}
+    {settingsHref}
+    placement={accountPlacement(accountSlot, rail)}
+  />
+{/snippet}
+
+{#snippet accountItem()}
+  {@render accountMenuBody(accountCompact, false)}
+{/snippet}
+
+{#snippet railAccount()}
+  {#if accountInRail}{@render accountMenuBody(true, true)}{/if}
+{/snippet}
+
+{#snippet colorSchemeItem()}
+  <span class="smrt-app-shell-color-scheme">
+    <ColorSchemeToggle
+      variant="switch"
+      showLabels={shell.viewport !== 'phone'}
+      ariaLabel={t(M['ui.app_shell.color_scheme_toggle'])}
+    />
+  </span>
+{/snippet}
+
+{#snippet commandPaletteItem()}
+  {#if commandPalette}
+    <span
+      class="smrt-app-shell-palette"
+      data-search={shell.viewport === 'phone' ? undefined : ''}
+    >
+      <CommandPalette
+        providers={commandPalette.providers}
+        placeholder={commandPalette.placeholder}
+        compact={shell.viewport === 'phone'}
+      />
+    </span>
+  {/if}
+{/snippet}
+
 {#snippet brandItem()}
   <ShellBrand {title} {subtitle} {logoSrc} {logoAlt} {homeHref} />
 {/snippet}
@@ -703,9 +939,22 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   />
 {/snippet}
 
+{#snippet phoneTabs()}
+  <PhoneTabBar
+    entries={tabEntries}
+    {currentHref}
+    budget={tabBarBudget}
+    dockToggle={tabDockToggle}
+    {iconComponent}
+  />
+{/snippet}
+
 <Provider {webmcp} {user} {permissions}>
   <RuntimeDiagnosticsWebMcp enabled={runtimeDiagnostics} />
   <ThemeProvider {preset} {colorScheme} persist={true}>
+    {#if !chrome}
+      {@render children()}
+    {:else}
     <AdminShell
       {title}
       {subtitle}
@@ -719,6 +968,9 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       {edgeToggles}
       {hotkeys}
       brandInSlot
+      phoneDockOpener={dockToggles.length === 0 && !tabBarOn}
+      phoneBottomBar={tabBarOn ? phoneTabs : undefined}
+      tenantRailFooter={accountInRail ? railAccount : undefined}
       bind:rootElement={shellRoot}
       {floatingReserve}
     >
@@ -739,7 +991,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       {/snippet}
 
       {#snippet tenantRail()}
-        {#if navMode === 'sections' && !editing && hasNav}
+        {#if !editing && hasNav}
           <TenantNav
             collapsed
             items={applied.nav}
@@ -786,10 +1038,13 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       {/if}
       {@render children()}
     </AdminShell>
+    {/if}
   </ThemeProvider>
 </Provider>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   a {
     color: var(--smrt-color-primary);
   }
@@ -797,13 +1052,23 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   .smrt-layout-toggle--floating { position: fixed; z-index: 45; inset-block-start: max(var(--smrt-spacing-3), env(safe-area-inset-top)); inset-inline-end: max(var(--smrt-spacing-3), env(safe-area-inset-right)); border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-high); box-shadow: var(--smrt-elevation-2); }
   .smrt-layout-toggle--floating :global(.smrt-shell-icon-button) { border-radius: var(--smrt-radius-full); }
   .smrt-layout-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+  .smrt-app-shell-color-scheme { display: inline-flex; align-items: center; }
+  .smrt-app-shell-color-scheme :global(.smrt-color-scheme-toggle__switch) { min-block-size: var(--smrt-control-target-min); }
+  .smrt-app-shell-palette { display: inline-flex; min-inline-size: 0; }
+  .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger) { inline-size: min(28rem, 40vw); justify-content: flex-start; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface-variant); }
+  .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger__hint) { margin-inline-start: auto; }
   .smrt-layout-live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
   .smrt-edit-zone__label { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-small-font); white-space: nowrap; }
   .smrt-edit-item { display: inline-flex; align-items: center; min-inline-size: 0; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); }
   .smrt-edit-item--dragging { opacity: 0.55; }
+  @media (prefers-reduced-motion: no-preference) {
+    .smrt-edit-item { animation: smrt-edit-item-in var(--smrt-duration-short2) var(--smrt-easing-standard) backwards; }
+  }
+  @keyframes smrt-edit-item-in { from { opacity: 0; transform: scale(0.96); } }
   .smrt-edit-item__body { display: inline-flex; align-items: center; min-inline-size: 0; pointer-events: none; }
   .smrt-edit-item__grip { display: inline-grid; place-items: center; flex: 0 0 auto; inline-size: 1.5rem; block-size: 2rem; padding: 0; border: 0; border-radius: var(--smrt-radius-sm); background: transparent; color: var(--smrt-color-on-surface-variant); cursor: grab; touch-action: none; }
   .smrt-edit-item__grip:hover { background: var(--smrt-color-surface-container-high); }
   .smrt-edit-item__grip:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   .smrt-edit-item__grip[aria-pressed='true'] { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+}
 </style>

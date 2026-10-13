@@ -39,7 +39,7 @@ const text = $derived.by(() => {
 </script>
 
 {#if show}
-  <div class="typing" role="status" aria-live="polite">
+  <div class="typing" role="status" aria-live="polite" data-smrt-component="TypingIndicator">
     <span class="typing__text">{text}</span>
     <span class="typing__dots" aria-hidden="true">
       <span class="typing__dot"></span>
@@ -50,32 +50,34 @@ const text = $derived.by(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .typing {
     display: inline-flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border-radius: var(--smrt-radius-large, 12px);
-    background: var(--smrt-color-surface-container, #f3edf7);
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border-radius: var(--smrt-radius-large);
+    background: var(--smrt-color-surface-container);
     width: fit-content;
   }
 
   .typing__text {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
   }
 
   .typing__dots {
     display: inline-flex;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .typing__dot {
     width: 0.5rem;
     height: 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-on-surface-variant, #49454f);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-on-surface-variant);
     opacity: 0.5;
     animation: smrt-typing-bounce 1.2s ease-in-out infinite;
   }
@@ -104,4 +106,5 @@ const text = $derived.by(() => {
       animation: none;
     }
   }
+}
 </style>

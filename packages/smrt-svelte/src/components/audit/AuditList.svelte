@@ -80,7 +80,7 @@ function apply() {
 }
 </script>
 
-<section aria-label={t(M['ui.audit.list'])}>
+<section aria-label={t(M['ui.audit.list'])} data-smrt-component="AuditList">
   {#if showFilters}
     <Form onsubmit={apply} class="smrt-audit-filters">
       <FormGroup label={t(M['ui.audit.person'])}><Input bind:value={profileId} /></FormGroup>
@@ -103,5 +103,8 @@ function apply() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-audit-filters { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); align-items: end; }
+}
 </style>

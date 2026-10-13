@@ -18,6 +18,7 @@ import type {
   ReceiptResult,
 } from './dto.js';
 import { generationSnapshotRead } from './execution-internal.js';
+import { assertProposalLimits } from './proposal-limits.js';
 import './models.js';
 import type {
   IntakeExecutionOptions,
@@ -193,6 +194,7 @@ export class IngestionService {
   private readonly db: DatabaseInterface;
   private readonly scope: IngestionScope;
   constructor(private readonly options: IngestionOptions) {
+    if (options.proposals) assertProposalLimits(options.proposals.limits);
     this.db = options.db;
     this.scope = Object.freeze({ ...options.scope });
     if (!uuid.test(this.scope.tenantId))
@@ -2099,4 +2101,8 @@ export class IngestionService {
 export * from './extraction.js';
 export type * from './feedback-contracts.js';
 export { GenerationSnapshotStaleError } from './proposal-errors.js';
+export {
+  createIntakeReviewHost,
+  type IntakeReviewHostOptions,
+} from './review-host.js';
 export * from './sources/index.js';

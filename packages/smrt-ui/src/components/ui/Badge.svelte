@@ -15,11 +15,13 @@ interface Props extends Omit<HTMLAttributes<HTMLSpanElement>, 'class'> {
 const { variant = 'default', size = 'md', children, ...rest }: Props = $props();
 </script>
 
-<span class="badge {variant} {size}" {...rest}>
+<span class="badge {variant} {size}" {...rest} data-smrt-component="Badge">
   {@render children?.()}
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .badge {
     display: inline-flex;
     align-items: center;
@@ -70,4 +72,5 @@ const { variant = 'default', size = 'md', children, ...rest }: Props = $props();
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
+}
 </style>

@@ -152,7 +152,7 @@ async function confirmDelete(): Promise<void> {
   </PageHeader>
 {/if}
 
-<article class="smrt-detail-screen" aria-label={heading}>
+<article class="smrt-detail-screen" aria-label={heading} data-smrt-component="DetailScreen">
   {#if sourceError}
     <Alert variant="error">{sourceError}</Alert>
   {:else}
@@ -186,6 +186,8 @@ async function confirmDelete(): Promise<void> {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-detail-screen {
     display: flex;
     flex-direction: column;
@@ -202,7 +204,7 @@ async function confirmDelete(): Promise<void> {
     margin: 0;
   }
   .smrt-detail-screen__field dt {
-    color: var(--smrt-color-on-surface-variant, #5f6368);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
   .smrt-detail-screen__field dd {
@@ -210,11 +212,12 @@ async function confirmDelete(): Promise<void> {
     overflow-wrap: anywhere;
   }
   .smrt-detail-screen__empty {
-    color: var(--smrt-color-on-surface-variant, #5f6368);
+    color: var(--smrt-color-on-surface-variant);
   }
   .smrt-detail-screen__block {
     margin: 0;
     white-space: pre-wrap;
     font-family: inherit;
   }
+}
 </style>

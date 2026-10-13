@@ -44,7 +44,7 @@ describe('ripple action', () => {
 
   it('fills the ripple with the canonical --smrt-color-primary token (#1586)', () => {
     // Regression: the canonical theme system only emits `--smrt-color-*`; the
-    // old `--md-sys-color-primary` namespace always fell back to currentColor.
+    // old `--smrt-color-primary` namespace always fell back to currentColor.
     const node = document.createElement('button');
     document.body.appendChild(node);
     const action = ripple(node);

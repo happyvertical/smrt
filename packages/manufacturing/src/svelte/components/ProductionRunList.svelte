@@ -172,11 +172,11 @@ async function confirmAction() {
 </script>
 
 {#if runs.length === 0}
-  <p class="run-list-empty">
+  <p class="run-list-empty" data-smrt-component="ProductionRunList">
     {emptyMessage ?? t(M['manufacturing.production_run_list.empty'])}
   </p>
 {:else}
-  <div class="run-list-scroll">
+  <div class="run-list-scroll" data-smrt-component="ProductionRunList">
     <table class="run-list">
       <caption class="run-list-caption">{t(M['manufacturing.production_run_list.caption'])}</caption>
       <thead>
@@ -348,6 +348,8 @@ async function confirmAction() {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .run-list-scroll {
     overflow-x: auto;
   }
@@ -406,4 +408,5 @@ async function confirmAction() {
     margin: 0;
     color: var(--smrt-color-on-surface-variant, inherit);
   }
+}
 </style>

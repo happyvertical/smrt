@@ -43,7 +43,7 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
 }
 </script>
 
-<div class="run-history-container">
+<div class="run-history-container" data-smrt-component="AgentRunHistory">
   <table class="run-history" class:loading>
     <thead class="run-history__head">
       <tr>
@@ -117,6 +117,8 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .run-history-container {
     width: 100%;
     overflow-x: auto;
@@ -127,7 +129,7 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
     border-collapse: collapse;
     border-spacing: 0;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    background: var(--smrt-color-surface, #ffffff);
+    background: var(--smrt-color-surface);
   }
 
   .run-history.loading {
@@ -136,7 +138,7 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
   }
 
   .run-history__head {
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
   }
 
   .run-history__head th {
@@ -144,16 +146,16 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-align: left;
     white-space: nowrap;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .run-history__body tr {
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .run-history__body tr:hover:not(.run-history__row--loading):not(.run-history__row--empty) {
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
     cursor: pointer;
   }
 
@@ -177,7 +179,7 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
   }
 
   .run-history__cell--date {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
   }
 
@@ -191,13 +193,13 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
   }
 
   .error-text {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     cursor: help;
   }
 
   .no-error {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .run-history__cell--loading,
@@ -211,15 +213,15 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
     align-items: center;
     justify-content: center;
     gap: var(--smrt-spacing-sm, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .run-history__spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-top-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.8s linear infinite;
   }
 
@@ -230,6 +232,7 @@ function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
   }
 
   .run-history__empty {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

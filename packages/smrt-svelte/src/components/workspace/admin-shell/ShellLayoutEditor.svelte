@@ -114,7 +114,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 }
 </script>
 
-<section class="smrt-shell-layout-editor" aria-labelledby={headingId} bind:this={rootEl}>
+<section class="smrt-shell-layout-editor" aria-labelledby={headingId} bind:this={rootEl} data-smrt-component="ShellLayoutEditor">
   <header>
     <div>
       <h2 id={headingId}>{t(M['ui.shell_layout_editor.heading'])}</h2>
@@ -246,6 +246,8 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-shell-layout-editor { display: grid; gap: var(--smrt-spacing-4); min-inline-size: 0; overflow-wrap: anywhere; }
   .smrt-shell-layout-editor header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--smrt-spacing-3); }
   .smrt-shell-layout-editor h2, .smrt-shell-layout-editor h3, .smrt-shell-layout-editor p { margin: 0; }
@@ -265,4 +267,5 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
     .smrt-shell-layout-editor header { flex-direction: column; }
     .smrt-shell-layout-editor__body { grid-template-columns: minmax(0, 1fr); }
   }
+}
 </style>

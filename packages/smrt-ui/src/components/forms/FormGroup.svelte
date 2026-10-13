@@ -62,7 +62,7 @@ setFormGroupContext(
 );
 </script>
 
-<div class="form-group">
+<div class="form-group" data-smrt-component="FormGroup">
 	<FieldLabel for={fieldId} {label} {required} />
 	{@render children()}
 	{#if hintId}
@@ -74,6 +74,8 @@ setFormGroupContext(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.form-group {
 		margin-bottom: 1rem;
 	}
@@ -83,12 +85,13 @@ setFormGroupContext(
 	.form-hint {
 		margin: 0.25rem 0 0;
 		font-size: var(--smrt-typography-body-small-size, 0.75rem);
-		color: var(--smrt-color-on-surface-variant, #6b7280);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	.form-error {
 		margin: 0.25rem 0 0;
 		font-size: var(--smrt-typography-body-small-size, 0.75rem);
-		color: var(--smrt-color-error, #ba1a1a);
+		color: var(--smrt-color-error);
 	}
+}
 </style>

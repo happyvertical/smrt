@@ -44,7 +44,7 @@ function getFactLabel(fact: {
 }
 </script>
 
-<section class="transparency-report">
+<section class="transparency-report" data-smrt-component="ContentTransparencyReport">
   <div class="transparency-report__header">
     <div>
       <h3>{title}</h3>
@@ -215,6 +215,8 @@ function getFactLabel(fact: {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .transparency-report {
     container-type: inline-size;
     container-name: transparency-report;
@@ -251,7 +253,7 @@ function getFactLabel(fact: {
 
   .badge,
   .pill-list span {
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface);
     padding: 0.25rem 0.65rem;
@@ -324,4 +326,5 @@ function getFactLabel(fact: {
   .empty-copy {
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

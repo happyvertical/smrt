@@ -89,7 +89,7 @@ function onkeydown(event: KeyboardEvent): void {
   tabindex="-1"
   data-escape-scope
   data-testid="phone-sheet"
-  {onkeydown}
+  {onkeydown} data-smrt-component="PhoneSheet"
 >
   <header
     class="phone-sheet__header"
@@ -129,6 +129,8 @@ function onkeydown(event: KeyboardEvent): void {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .phone-sheet {
     position: absolute;
     inset: 0;
@@ -221,4 +223,5 @@ function onkeydown(event: KeyboardEvent): void {
       transition: none;
     }
   }
+}
 </style>

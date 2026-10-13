@@ -313,7 +313,7 @@ useControlRegistration(() => {
   data-smrt-control={controlId}
   data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
-  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="SignaturePad"
 >
   <canvas
     bind:this={canvasEl}
@@ -358,6 +358,8 @@ useControlRegistration(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .signature-pad {
     display: grid;
     gap: var(--smrt-spacing-3);
@@ -405,8 +407,8 @@ useControlRegistration(() => {
     flex: 1 1 auto;
     /* Capture is a touch flow: its actions are touch targets at every
        density, on the shared scale (smrt#3252). */
-    min-width: var(--smrt-touch-target-min, 48px);
-    min-height: var(--smrt-touch-target-min, 48px);
+    min-width: var(--smrt-touch-target-min);
+    min-height: var(--smrt-touch-target-min);
     padding: 0 var(--smrt-spacing-4);
     border: 1px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-small);
@@ -433,4 +435,5 @@ useControlRegistration(() => {
     outline: 3px solid var(--smrt-color-tertiary);
     outline-offset: 4px;
   }
+}
 </style>

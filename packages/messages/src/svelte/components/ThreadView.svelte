@@ -98,7 +98,7 @@ const _sortedMessages = $derived(
 );
 </script>
 
-<div class="thread-view" role="list" aria-label={t(M['messages.thread_view.conversation_thread'])}>
+<div class="thread-view" role="list" aria-label={t(M['messages.thread_view.conversation_thread'])} data-smrt-component="ThreadView">
   {#each _sortedMessages as message, i (message.id)}
     <div
       class="thread-message"
@@ -169,6 +169,8 @@ const _sortedMessages = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .thread-view {
     display: flex;
     flex-direction: column;
@@ -180,13 +182,13 @@ const _sortedMessages = $derived(
   }
 
   .thread-message--active {
-    box-shadow: -3px 0 0 0 var(--smrt-color-primary, #005ac1);
+    box-shadow: -3px 0 0 0 var(--smrt-color-primary);
   }
 
   .thread-connector {
     width: 2px;
     height: 1rem;
-    background: var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-outline-variant);
     margin-left: 1.5rem;
   }
 
@@ -208,14 +210,14 @@ const _sortedMessages = $derived(
     border: none;
     background: none;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     z-index: 1;
     padding: 0.25rem;
     border-radius: var(--smrt-radius-small, 0.25rem);
   }
 
   .message-wrapper :global(.collapse-btn):hover {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
   }
 
   .thread-message :global(.collapsed-header) {
@@ -224,16 +226,16 @@ const _sortedMessages = $derived(
     gap: 0.75rem;
     width: 100%;
     padding: 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
     text-align: left;
     color: inherit;
     font: inherit;
   }
 
   .thread-message :global(.collapsed-header):hover {
-    background: color-mix(in srgb, var(--smrt-color-surface-variant, #e1e2ec) 92%, var(--smrt-color-shadow, #000));
+    background: color-mix(in srgb, var(--smrt-color-surface-variant) 92%, var(--smrt-color-shadow));
   }
 
   .collapsed-sender {
@@ -245,7 +247,7 @@ const _sortedMessages = $derived(
   .collapsed-preview {
     flex: 1;
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -254,6 +256,7 @@ const _sortedMessages = $derived(
   .collapsed-date {
     flex-shrink: 0;
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

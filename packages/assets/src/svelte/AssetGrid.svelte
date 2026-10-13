@@ -79,7 +79,7 @@ function getAltText(asset: PersistedAsset): string {
 }
 </script>
 
-<div class="asset-grid" class:asset-grid--loading={loading}>
+<div class="asset-grid" class:asset-grid--loading={loading} data-smrt-component="AssetGrid">
   {#if loading}
     <div class="asset-grid__loading">
       <span class="spinner"></span>
@@ -165,6 +165,8 @@ function getAltText(asset: PersistedAsset): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .asset-grid {
     padding: var(--smrt-spacing-4, 1rem);
   }
@@ -185,8 +187,8 @@ function getAltText(asset: PersistedAsset): string {
     position: relative;
     display: flex;
     flex-direction: column;
-    background: var(--smrt-color-surface, #ffffff);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
     cursor: pointer;
@@ -215,14 +217,14 @@ function getAltText(asset: PersistedAsset): string {
   }
 
   .asset-card__open:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     /* Inset so the card's `overflow: hidden` doesn't clip the focus ring. */
     outline-offset: -2px;
   }
 
   .asset-card--selected {
-    border-color: var(--smrt-color-primary, #005ac1);
-    background: var(--smrt-color-primary-container, #dbeafe);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
   }
 
   /* Checkbox */
@@ -244,7 +246,7 @@ function getAltText(asset: PersistedAsset): string {
     width: 18px;
     height: 18px;
     cursor: pointer;
-    accent-color: var(--smrt-color-primary, #005ac1);
+    accent-color: var(--smrt-color-primary);
   }
 
   /* Thumbnail */
@@ -253,7 +255,7 @@ function getAltText(asset: PersistedAsset): string {
     align-items: center;
     justify-content: center;
     height: 140px;
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
     overflow: hidden;
   }
 
@@ -276,7 +278,7 @@ function getAltText(asset: PersistedAsset): string {
     display: block;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -286,13 +288,13 @@ function getAltText(asset: PersistedAsset): string {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
-    margin-top: var(--smrt-spacing-1, 4px);
+    margin-top: var(--smrt-spacing-1);
   }
 
   .asset-card__type {
     font-size: var(--smrt-typography-label-small-size, 0.7rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
   }
@@ -302,7 +304,7 @@ function getAltText(asset: PersistedAsset): string {
     position: absolute;
     top: var(--smrt-spacing-2, 0.5rem);
     right: var(--smrt-spacing-2, 0.5rem);
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
     font-size: var(--smrt-typography-label-small-size, 0.65rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     border-radius: var(--smrt-radius-small, 0.25rem);
@@ -313,8 +315,8 @@ function getAltText(asset: PersistedAsset): string {
   }
 
   .asset-card__badge--warning {
-    background: var(--smrt-color-error-container, #fef2f2);
-    color: var(--smrt-color-on-error-container, #991b1b);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 
   /* Loading */
@@ -324,15 +326,15 @@ function getAltText(asset: PersistedAsset): string {
     justify-content: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-8, 2rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--smrt-color-outline-variant, #e5e7eb);
-    border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-top-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.8s linear infinite;
   }
 
@@ -356,4 +358,5 @@ function getAltText(asset: PersistedAsset): string {
       height: 100px;
     }
   }
+}
 </style>

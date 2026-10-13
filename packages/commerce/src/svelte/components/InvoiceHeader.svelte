@@ -78,33 +78,33 @@ const statusConfig: Record<
 > = {
   draft: {
     label: 'Draft',
-    bg: 'var(--smrt-color-surface-variant, #e7e0ec)',
-    text: 'var(--smrt-color-on-surface-variant, #49454f)',
+    bg: 'var(--smrt-color-surface-variant)',
+    text: 'var(--smrt-color-on-surface-variant)',
   },
   sent: {
     label: 'Sent',
-    bg: 'var(--smrt-color-primary-container, #d3e3fd)',
-    text: 'var(--smrt-color-on-primary-container, #041e49)',
+    bg: 'var(--smrt-color-primary-container)',
+    text: 'var(--smrt-color-on-primary-container)',
   },
   viewed: {
     label: 'Viewed',
-    bg: 'var(--smrt-color-secondary-container, #e3e0f9)',
-    text: 'var(--smrt-color-on-secondary-container, #1d192b)',
+    bg: 'var(--smrt-color-secondary-container)',
+    text: 'var(--smrt-color-on-secondary-container)',
   },
   paid: {
     label: 'Paid',
-    bg: 'var(--smrt-color-tertiary-container, #ddf5e5)',
-    text: 'var(--smrt-color-on-tertiary-container, #0c1f15)',
+    bg: 'var(--smrt-color-tertiary-container)',
+    text: 'var(--smrt-color-on-tertiary-container)',
   },
   overdue: {
     label: 'Overdue',
-    bg: 'var(--smrt-color-error-container, #ffdad6)',
-    text: 'var(--smrt-color-on-error-container, #410002)',
+    bg: 'var(--smrt-color-error-container)',
+    text: 'var(--smrt-color-on-error-container)',
   },
   cancelled: {
     label: 'Cancelled',
-    bg: 'var(--smrt-color-error-container, #ffdad6)',
-    text: 'var(--smrt-color-error, #ba1a1a)',
+    bg: 'var(--smrt-color-error-container)',
+    text: 'var(--smrt-color-error)',
   },
 };
 
@@ -124,7 +124,7 @@ const isOverdue = $derived.by(() => {
 });
 </script>
 
-<div class="invoice-header">
+<div class="invoice-header" data-smrt-component="InvoiceHeader">
   <div class="header-main">
     <div class="invoice-title">
       <h2 class="invoice-number">{invoiceNumber}</h2>
@@ -184,14 +184,16 @@ const isOverdue = $derived.by(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .invoice-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: var(--smrt-spacing-6, 1.5rem);
     padding: var(--smrt-spacing-6, 1.5rem);
-    background: var(--smrt-color-surface, #ffffff);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     flex-wrap: wrap;
   }
@@ -211,7 +213,7 @@ const isOverdue = $derived.by(() => {
   .invoice-number {
     font: var(--smrt-typography-title-large-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface);
     margin: 0;
   }
 
@@ -221,7 +223,7 @@ const isOverdue = $derived.by(() => {
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-3, 0.75rem);
     font: var(--smrt-typography-label-small-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     text-transform: capitalize;
   }
 
@@ -236,7 +238,7 @@ const isOverdue = $derived.by(() => {
     align-items: center;
     gap: var(--smrt-spacing-1_5, 0.375rem);
     font: var(--smrt-typography-body-medium-font);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .context-item svg {
@@ -257,7 +259,7 @@ const isOverdue = $derived.by(() => {
 
   .meta-label {
     font: var(--smrt-typography-label-small-font);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: 0.025em;
   }
@@ -265,14 +267,15 @@ const isOverdue = $derived.by(() => {
   .meta-value {
     font: var(--smrt-typography-body-medium-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface);
   }
 
   .meta-item.overdue .meta-value {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .meta-item.paid .meta-value {
-    color: var(--smrt-color-tertiary, #006c4c);
+    color: var(--smrt-color-tertiary);
   }
+}
 </style>

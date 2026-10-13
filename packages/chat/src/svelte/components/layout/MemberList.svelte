@@ -36,13 +36,13 @@ function getStatusColor(status: string): string {
     // "online" reconciled to the success token (was --smrt-color-tertiary)
     // so it matches UserPresence and stays semantically green (T2 #1391).
     case 'online':
-      return 'var(--smrt-color-success, #1e8e3e)';
+      return 'var(--smrt-color-success)';
     case 'away':
-      return 'var(--smrt-color-warning, #f9ab00)';
+      return 'var(--smrt-color-warning)';
     case 'dnd':
-      return 'var(--smrt-color-error, #b3261e)';
+      return 'var(--smrt-color-error)';
     default:
-      return 'var(--smrt-color-outline, #74777f)';
+      return 'var(--smrt-color-outline)';
   }
 }
 
@@ -71,7 +71,7 @@ function getRoleBadgeLabel(role: string): string {
 }
 </script>
 
-<aside class="member-list" aria-label={t(M['chat.member_list.room_members'])}>
+<aside class="member-list" aria-label={t(M['chat.member_list.room_members'])} data-smrt-component="MemberList">
   <div class="member-list__header">
     <h2 class="member-list__title">Members</h2>
     <span class="member-list__count">{participants.length}</span>
@@ -209,13 +209,15 @@ function getRoleBadgeLabel(role: string): string {
 </aside>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .member-list {
     display: flex;
     flex-direction: column;
     width: 240px;
     height: 100%;
-    background: var(--smrt-color-surface-container, #f0f0f4);
-    border-left: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-surface-container);
+    border-left: 1px solid var(--smrt-color-outline-variant);
     overflow: hidden;
   }
 
@@ -224,18 +226,18 @@ function getRoleBadgeLabel(role: string): string {
     align-items: center;
     gap: 0.375rem;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .member-list__title {
     margin: 0;
     font: var(--smrt-typography-title-small-font, 600 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   .member-list__count {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
@@ -246,12 +248,12 @@ function getRoleBadgeLabel(role: string): string {
     padding: 0;
     background: none;
     border-radius: var(--smrt-radius-medium, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
   .member-list__header :global(.close-btn:hover) {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
   }
 
   .close-btn__icon {
@@ -276,13 +278,13 @@ function getRoleBadgeLabel(role: string): string {
     margin: 0;
     padding: 0.375rem 1rem;
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
 
   .member-group__count {
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   .member-group__list {
@@ -311,16 +313,16 @@ function getRoleBadgeLabel(role: string): string {
   .member-item__avatar {
     width: 2rem;
     height: 2rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     object-fit: cover;
   }
 
   .member-item__avatar-placeholder {
     width: 2rem;
     height: 2rem;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-primary-container, #d6e3ff);
-    color: var(--smrt-color-on-primary-container, #001a41);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -333,8 +335,8 @@ function getRoleBadgeLabel(role: string): string {
     right: 0;
     width: 0.625rem;
     height: 0.625rem;
-    border-radius: var(--smrt-radius-full, 9999px);
-    border: 2px solid var(--smrt-color-surface-container, #f0f0f4);
+    border-radius: var(--smrt-radius-full);
+    border: 2px solid var(--smrt-color-surface-container);
   }
 
   .member-item__info {
@@ -347,7 +349,7 @@ function getRoleBadgeLabel(role: string): string {
 
   .member-item__name {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -356,25 +358,25 @@ function getRoleBadgeLabel(role: string): string {
   .role-badge {
     flex-shrink: 0;
     padding: 0.0625rem 0.375rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
   }
 
   .role-badge--owner {
-    background: var(--smrt-color-tertiary-container, #c2f0dd);
-    color: var(--smrt-color-on-tertiary-container, #002114);
+    background: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
   }
 
   .role-badge--admin {
-    background: var(--smrt-color-secondary-container, #d7e3f7);
-    color: var(--smrt-color-on-secondary-container, #101c2b);
+    background: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
   }
 
   .member-list__empty {
     text-align: center;
     padding: 2rem 1rem;
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
 
@@ -383,4 +385,5 @@ function getRoleBadgeLabel(role: string): string {
       transition: none;
     }
   }
+}
 </style>

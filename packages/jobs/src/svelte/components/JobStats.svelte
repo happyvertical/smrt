@@ -6,14 +6,14 @@
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Card } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
-import type { JobStats, QueueStats } from './types.js';
+import type { JobStats as JobStatsData, QueueStats } from './types.js';
 import { formatDuration } from './types.js';
 
 const { t } = useI18n();
 
 export interface Props {
   /** Statistics data */
-  stats: JobStats;
+  stats: JobStatsData;
   /** Queue breakdown */
   queues?: QueueStats[];
   /** Loading state */
@@ -29,7 +29,7 @@ const successRateFormatted = $derived(
 );
 </script>
 
-<div class="job-stats" class:compact class:loading>
+<div class="job-stats" class:compact class:loading data-smrt-component="JobStats">
   <div class="job-stats__grid">
     <!-- Total Jobs -->
     <Card padding="sm">
@@ -128,6 +128,8 @@ const successRateFormatted = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .job-stats {
     width: 100%;
   }
@@ -163,24 +165,24 @@ const successRateFormatted = $derived(
 
   .stat-card__label {
     font: var(--smrt-typography-body-small-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     margin-top: var(--smrt-spacing-xs, 0.25rem);
   }
 
   .stat-card--pending .stat-card__value {
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   .stat-card--running .stat-card__value {
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .stat-card--completed .stat-card__value {
-    color: var(--smrt-color-tertiary, #006c4f);
+    color: var(--smrt-color-tertiary);
   }
 
   .stat-card--failed .stat-card__value {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .job-stats__queues {
@@ -206,7 +208,7 @@ const successRateFormatted = $derived(
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: var(--spacing-sm, 0.5rem);
+    margin-bottom: var(--smrt-spacing-sm, 0.5rem);
   }
 
   .queue-card__name {
@@ -216,7 +218,7 @@ const successRateFormatted = $derived(
 
   .queue-card__running {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .queue-card__stats {
@@ -237,6 +239,7 @@ const successRateFormatted = $derived(
 
   .queue-stat__label {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

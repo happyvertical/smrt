@@ -11,6 +11,101 @@ export class PaymentAllocationCollection extends SmrtCollection<PaymentAllocatio
   static readonly _itemClass = PaymentAllocation;
 
   /**
+   * Apply a payment to several invoices atomically. Callers supply stable UUID
+   * allocation ids: exact replays reuse rows; reusing an id with other money
+   * or parents fails. Actor authorization remains the application's job.
+   */
+  async allocatePayment(input: {
+    paymentId: string;
+    allocations: { id: string; invoiceId: string; amount: number }[];
+    allocatedBy?: string;
+  }): Promise<PaymentAllocation[]> {
+    if (
+      !input.allocations.length ||
+      new Set(input.allocations.map((item) => item.id)).size !==
+        input.allocations.length
+    ) {
+      throw new Error(
+        'Allocation batch requires distinct stable allocation ids',
+      );
+    }
+    const { PaymentCollection } = await import('./PaymentCollection.js');
+    const { InvoiceCollection } = await import('./InvoiceCollection.js');
+    const { InvoiceStatus } = await import('../types/index.js');
+    const payments = await PaymentCollection.create({ db: this.db });
+    const payment = await payments.get(
+      { id: input.paymentId },
+      { cache: false },
+    );
+    if (!payment) throw new Error('Payment does not exist');
+    const committed = await payment.withTransaction(async () => {
+      if (!payment.updated_at)
+        throw new Error('Allocation parent has no persisted revision');
+      await payment.claimRevision(payment.updated_at);
+      const allocations = await PaymentAllocationCollection.create({
+        db: payment.db,
+      });
+      const invoices = await InvoiceCollection.create({ db: payment.db });
+      const result: PaymentAllocation[] = [];
+      for (const item of [...input.allocations].sort(
+        (a, b) =>
+          a.invoiceId.localeCompare(b.invoiceId) || a.id.localeCompare(b.id),
+      )) {
+        if (!item.id) throw new Error('Allocation requires a stable id');
+        const existing = await allocations.get(
+          { id: item.id },
+          { cache: false },
+        );
+        if (existing) {
+          if (
+            existing.paymentId !== input.paymentId ||
+            existing.invoiceId !== item.invoiceId ||
+            existing.amount !== item.amount ||
+            existing.tenantId !== payment.tenantId
+          ) {
+            throw new Error(
+              'Allocation replay does not match existing allocation',
+            );
+          }
+          result.push(existing);
+        } else {
+          result.push(
+            await allocations.create({
+              ...item,
+              paymentId: input.paymentId,
+              tenantId: payment.tenantId,
+              allocatedBy: input.allocatedBy ?? '',
+              _insertOnly: true,
+            }),
+          );
+        }
+      }
+      for (const invoiceId of [
+        ...new Set(input.allocations.map((item) => item.invoiceId)),
+      ].sort()) {
+        const invoice = await invoices.get({ id: invoiceId }, { cache: false });
+        if (!invoice) throw new Error('Invoice does not exist');
+        if (invoice.status !== InvoiceStatus.WRITTEN_OFF)
+          invoice.updatePaymentStatus(
+            await allocations.getTotalAllocatedToInvoice(invoiceId),
+          );
+        await invoice.save();
+      }
+      return result;
+    });
+    // Child objects created on the transaction cannot escape with its closed
+    // executor. Hydrate results on the caller's executor (possibly an outer tx).
+    return Promise.all(
+      committed.map(async ({ id }) => {
+        const allocation = await this.get({ id: String(id) }, { cache: false });
+        if (!allocation)
+          throw new Error('Committed allocation no longer exists');
+        return allocation;
+      }),
+    );
+  }
+
+  /**
    * Find allocations by payment
    *
    * @param paymentId - Payment ID

@@ -2702,7 +2702,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 <div
   class="content-list-wrapper"
   class:data-surface-highlighted={surfaceHighlighted}
-  bind:this={surfaceRoot}
+  bind:this={surfaceRoot} data-smrt-component="ContentList"
 >
 
   <div class="content-controls">
@@ -3424,6 +3424,8 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 />
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .content-list-wrapper {
     display: flex;
     flex-direction: column;
@@ -3581,7 +3583,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   .type-pill {
     display: inline-flex;
     align-items: center;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     padding: 0.2rem 0.65rem;
     font-size: var(--smrt-typography-label-medium-size, 0.72rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
@@ -3597,13 +3599,13 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   }
 
   .type-pill--document {
-    background: color-mix(in srgb, var(--smrt-color-tertiary, #0f766e) 12%, transparent);
-    color: var(--smrt-color-tertiary, #0f766e);
+    background: color-mix(in srgb, var(--smrt-color-tertiary) 12%, transparent);
+    color: var(--smrt-color-tertiary);
   }
 
   .type-pill--mirror {
-    background: color-mix(in srgb, var(--smrt-color-secondary, #9333ea) 12%, transparent);
-    color: var(--smrt-color-secondary, #9333ea);
+    background: color-mix(in srgb, var(--smrt-color-secondary) 12%, transparent);
+    color: var(--smrt-color-secondary);
   }
 
   /* Shared Card Styles */
@@ -3628,7 +3630,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     height: 160px;
     border-bottom: 1px solid var(--smrt-color-outline-variant);
     overflow: hidden;
-    background: var(--smrt-color-surface-container-high, #242424);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .content-header {
@@ -3664,7 +3666,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
   .badge {
     padding: 0.25rem 0.6rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-transform: uppercase;
@@ -3746,17 +3748,17 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     border-color: var(--smrt-color-outline);
   }
 
-  .view-btn {
-    color: var(--smrt-color-primary) !important;
+  .content-actions .view-btn {
+    color: var(--smrt-color-primary);
   }
 
   .content-actions :global(.delete-btn) {
-    color: var(--smrt-color-error) !important;
+    color: var(--smrt-color-error);
   }
 
-  .content-actions :global(.delete-btn:hover) {
-    background: var(--smrt-color-error-container) !important;
-    border-color: var(--smrt-color-error) !important;
+  .content-actions :global(.content-action-btn.delete-btn:not(:disabled):hover) {
+    background: var(--smrt-color-error-container);
+    border-color: var(--smrt-color-error);
   }
 
   /* GRID View Specifics */
@@ -3828,7 +3830,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     justify-content: center;
     min-height: 2.4rem;
     padding: 0 0.85rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     border: 1px solid var(--smrt-color-outline-variant);
     background: transparent;
     color: var(--smrt-color-on-surface);
@@ -4105,4 +4107,5 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       transition: none;
     }
   }
+}
 </style>

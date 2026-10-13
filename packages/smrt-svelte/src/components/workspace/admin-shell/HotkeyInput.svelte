@@ -45,7 +45,7 @@ function handleKeydown(event: KeyboardEvent): void {
 }
 </script>
 
-<div class="smrt-hotkey-input">
+<div class="smrt-hotkey-input" data-smrt-component="HotkeyInput">
   <Button
     variant="secondary"
     size="sm"
@@ -63,6 +63,8 @@ function handleKeydown(event: KeyboardEvent): void {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-hotkey-input {
     display: flex;
     align-items: center;
@@ -75,4 +77,5 @@ function handleKeydown(event: KeyboardEvent): void {
     font-size: var(--smrt-typography-body-small-size);
     overflow-wrap: anywhere;
   }
+}
 </style>

@@ -93,11 +93,11 @@ function formatAmount(amount: number, currency = 'USD'): string {
 </script>
 
 {#if entries.length === 0}
-  <p class="time-approval-empty">
+  <p class="time-approval-empty" data-smrt-component="TimeEntryApprovalQueue">
     {emptyMessage ?? t(M['timesheets.approval_queue.empty'])}
   </p>
 {:else}
-  <ul class="time-approval-queue">
+  <ul class="time-approval-queue" data-smrt-component="TimeEntryApprovalQueue">
     {#each entries as entry (entry.id)}
       <li class="time-approval-row">
         <div class="time-approval-line">
@@ -176,6 +176,8 @@ function formatAmount(amount: number, currency = 'USD'): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .time-approval-queue {
     list-style: none;
     margin: 0;
@@ -260,4 +262,5 @@ function formatAmount(amount: number, currency = 'USD'): string {
     color: var(--smrt-color-on-surface-variant, inherit);
     padding: 1rem 0;
   }
+}
 </style>

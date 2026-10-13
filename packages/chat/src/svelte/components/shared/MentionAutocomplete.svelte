@@ -80,7 +80,7 @@ function highlightMatch(
   <div
     class="mention-autocomplete"
     role="listbox"
-    aria-label={t(M['chat.mention_autocomplete.suggestions'])}
+    aria-label={t(M['chat.mention_autocomplete.suggestions'])} data-smrt-component="MentionAutocomplete"
   >
     {#each suggestions as suggestion, i (suggestion.id)}
       {@const parts = highlightMatch(suggestion.name, query)}
@@ -108,21 +108,23 @@ function highlightMatch(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .mention-autocomplete {
     position: absolute;
     bottom: 100%;
     left: 0;
-    margin-bottom: var(--smrt-spacing-1, 4px);
+    margin-bottom: var(--smrt-spacing-1);
     min-width: 200px;
     max-width: 320px;
     max-height: 240px;
     overflow-y: auto;
-    background: var(--smrt-color-surface, #fefbff);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    border-radius: var(--smrt-radius-medium, 8px);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-medium);
     box-shadow: var(--smrt-elevation-2, 0 2px 8px rgba(0, 0, 0, 0.15));
     z-index: var(--smrt-z-index-dropdown, 1000);
-    padding: var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-1);
     display: flex;
     flex-direction: column;
   }
@@ -130,25 +132,25 @@ function highlightMatch(
   .mention-autocomplete__item {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     width: 100%;
-    padding: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2);
     border: none;
     background: transparent;
     cursor: pointer;
     text-align: left;
-    color: var(--smrt-color-on-surface, #1a1c1e);
-    border-radius: var(--smrt-radius-small, 4px);
+    color: var(--smrt-color-on-surface);
+    border-radius: var(--smrt-radius-small);
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
   .mention-autocomplete__item:hover,
   .mention-autocomplete__item--active {
-    background: var(--smrt-color-surface-container-high, #e6e6ea);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .mention-autocomplete__item:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
@@ -161,7 +163,7 @@ function highlightMatch(
 
   .mention-autocomplete__highlight {
     background: transparent;
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
@@ -170,4 +172,5 @@ function highlightMatch(
       transition: none;
     }
   }
+}
 </style>

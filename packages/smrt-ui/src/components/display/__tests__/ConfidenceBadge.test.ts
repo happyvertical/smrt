@@ -87,9 +87,9 @@ describe('ConfidenceBadge', () => {
       props: { confidence: value },
     });
     const badge = container.querySelector('.confidence-badge') as HTMLElement;
-    expect(badge.style.getPropertyValue('--bar-color')).toContain(
-      `smrt-color-${token}`,
-    );
+    expect(
+      badge.style.getPropertyValue('--smrt-confidence-badge-bar-color'),
+    ).toContain(`smrt-color-${token}`);
   });
 
   it('emits bare design tokens with no literal hex fallback', () => {
@@ -99,7 +99,11 @@ describe('ConfidenceBadge', () => {
       props: { confidence: 90 },
     });
     const badge = container.querySelector('.confidence-badge') as HTMLElement;
-    for (const prop of ['--badge-bg', '--badge-text', '--bar-color']) {
+    for (const prop of [
+      '--smrt-badge-bg',
+      '--smrt-badge-text',
+      '--smrt-confidence-badge-bar-color',
+    ]) {
       const value = badge.style.getPropertyValue(prop);
       expect(value).toMatch(/^var\(--smrt-color-[a-z-]+\)$/);
       expect(value).not.toContain('#');

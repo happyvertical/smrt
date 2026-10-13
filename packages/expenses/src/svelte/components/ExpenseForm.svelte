@@ -62,7 +62,7 @@ function name(field: keyof ExpenseDraftValues) {
   return fields[field] ?? field;
 }
 </script>
-<section class="expense-form" aria-labelledby={`${formId}-title`}>
+<section class="expense-form" aria-labelledby={`${formId}-title`} data-smrt-component="ExpenseForm">
   <h2 id={`${formId}-title`}>{title ?? t(M['expenses.form.title'])}</h2>
   {#if !canEdit}<p>{t(M['expenses.form.readonly'])}</p>{/if}
   <Form id={formId} {action} method="post" preventDefault={false} {onsubmit} aria-busy={busy}>
@@ -129,8 +129,11 @@ function name(field: keyof ExpenseDraftValues) {
   </Form>
 </section>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .expense-form, .fields { display: grid; gap: var(--smrt-spacing-4); min-width: 0; }
   .expense-form { max-width: 48rem; overflow-wrap: anywhere; }
   fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
   h2, p { margin: 0; }
+}
 </style>

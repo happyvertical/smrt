@@ -96,7 +96,7 @@ async function expand() {
 }
 </script>
 
-<section aria-labelledby={headingId} class="smrt-mcp-apps-bridge">
+<section aria-labelledby={headingId} class="smrt-mcp-apps-bridge" data-smrt-component="McpAppsBridge">
   <h1 id={headingId}>{title}</h1>
   {#if description}<p>{description}</p>{/if}
   {#if inlineOnly}
@@ -114,10 +114,13 @@ async function expand() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 .smrt-mcp-apps-bridge {
   display: grid;
   gap: var(--smrt-spacing-3, 0.75rem);
   min-width: 0;
   overflow-wrap: anywhere;
+}
 }
 </style>

@@ -59,7 +59,7 @@ const { t } = useI18n();
 const id = $props.id();
 </script>
 
-<section class="pricing-decision">
+<section class="pricing-decision" data-smrt-component="PricingVersionDecision">
   <PricingVersionSummary {version} />
   {#if error}<p role="alert">{error}</p>{/if}
   {#if readOnly}
@@ -82,7 +82,10 @@ const id = $props.id();
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 .pricing-decision { min-width: 0; overflow-wrap: anywhere; }
 .decisions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); margin-top: var(--smrt-spacing-3); }
 .decisions :global(button) { max-width: 100%; white-space: normal; }
+}
 </style>

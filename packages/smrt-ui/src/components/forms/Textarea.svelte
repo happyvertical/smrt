@@ -141,10 +141,12 @@ export function getElement(): HTMLTextAreaElement | null {
 		data-smrt-form={controlInteraction?.formId}
 		data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
 		data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}
-	{...rest}
+	{...rest} data-smrt-component="Textarea"
 ></textarea>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.textarea {
 		box-sizing: border-box;
 		display: block;
@@ -152,9 +154,9 @@ export function getElement(): HTMLTextAreaElement | null {
 		padding: 0.5rem 0.75rem;
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 		line-height: var(--smrt-typography-body-medium-line-height, 1.5);
-		color: var(--smrt-color-on-surface, #1f2937);
-		background-color: var(--smrt-color-surface, #fff);
-		border: 1px solid var(--smrt-color-outline, #6b7280);
+		color: var(--smrt-color-on-surface);
+		background-color: var(--smrt-color-surface);
+		border: 1px solid var(--smrt-color-outline);
 		border-radius: 0.375rem;
 		resize: vertical;
 		min-height: 80px;
@@ -165,23 +167,23 @@ export function getElement(): HTMLTextAreaElement | null {
 
 	.textarea:focus {
 		outline: none;
-		border-color: var(--smrt-color-primary, #005ac1);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #005ac1) 10%, transparent);
+		border-color: var(--smrt-color-primary);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
 	}
 
 	.textarea[data-smrt-highlighted='true'] {
-		outline: 3px solid var(--smrt-color-tertiary, #7d5260);
+		outline: 3px solid var(--smrt-color-tertiary);
 		outline-offset: 3px;
 	}
 
 	.textarea:disabled {
-		background-color: var(--smrt-color-surface-container-high, #f3f4f6);
+		background-color: var(--smrt-color-surface-container-high);
 		cursor: not-allowed;
 		opacity: 0.7;
 	}
 
 	.textarea::placeholder {
-		color: var(--smrt-color-on-surface-variant, #9ca3af);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	/* Phones: 16px text so iOS Safari doesn't zoom the page when the field
@@ -198,7 +200,8 @@ export function getElement(): HTMLTextAreaElement | null {
 		}
 	}
 
-  .textarea[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .textarea[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .textarea[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .textarea { min-height: max(80px, var(--smrt-control-target-min, 0px)); }
+}
 </style>

@@ -51,7 +51,7 @@ function cycle(delta: number) {
 </script>
 
 {#if activeImage}
-  <div class="content-image-chooser" aria-label={t(M['content.content_image_chooser.body_images'])}>
+  <div class="content-image-chooser" aria-label={t(M['content.content_image_chooser.body_images'])} data-smrt-component="ContentImageChooser">
     {#if hasMultiple}
       <Button
         variant="ghost"
@@ -97,6 +97,8 @@ function cycle(delta: number) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .content-image-chooser {
     display: inline-flex;
     align-items: center;
@@ -109,7 +111,7 @@ function cycle(delta: number) {
     border: 1px solid var(--smrt-color-outline-variant);
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     cursor: pointer;
   }
 
@@ -138,8 +140,9 @@ function cycle(delta: number) {
   .content-image-chooser :global(.chooser-preview img) {
     width: 2rem;
     height: 2rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     object-fit: cover;
     background: var(--smrt-color-surface-container-high);
   }
+}
 </style>

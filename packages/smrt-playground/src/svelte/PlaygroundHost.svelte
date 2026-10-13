@@ -346,7 +346,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
   <div
     class="playground-shell"
     class:playground-shell--embedded={embedded}
-    data-hydrated={isHydrated ? 'true' : 'false'}
+    data-hydrated={isHydrated ? 'true' : 'false'} data-smrt-component="PlaygroundHost"
   >
     {#if !embedded}
     <aside class="catalog-nav">
@@ -533,6 +533,8 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   :global(body) {
     margin: 0;
     min-height: 100vh;
@@ -1079,4 +1081,5 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
       animation: none;
     }
   }
+}
 </style>

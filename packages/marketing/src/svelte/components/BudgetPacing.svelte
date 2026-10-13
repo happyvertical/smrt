@@ -19,7 +19,7 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
 </script>
 
 {#if !pacing}
-  <p class="empty">No budget pacing is available.</p>
+  <p class="empty" data-smrt-component="BudgetPacing">No budget pacing is available.</p>
 {:else}
   <Card padding="sm" variant="outlined">
     <section class="budget-pacing">
@@ -73,6 +73,8 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .budget-pacing {
     display: flex;
     flex-direction: column;
@@ -129,4 +131,5 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
   .facts dd.negative {
     color: var(--smrt-color-error);
   }
+}
 </style>

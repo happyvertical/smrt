@@ -49,7 +49,7 @@ let {
 }: Props = $props();
 </script>
 
-<div class="job-dashboard" class:loading>
+<div class="job-dashboard" class:loading data-smrt-component="JobDashboard">
   <!-- Stats Overview -->
   <section class="job-dashboard__section">
     <JobStatsSummary {stats} {queues} {loading} />
@@ -117,6 +117,8 @@ let {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .job-dashboard {
     width: 100%;
     display: flex;
@@ -163,17 +165,17 @@ let {
   }
 
   .panel-header--error h2 {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .empty-message {
     padding: var(--smrt-spacing-md, 1rem);
     text-align: center;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .empty-message--success {
-    color: var(--smrt-color-tertiary, #006c4f);
+    color: var(--smrt-color-tertiary);
   }
-
+}
 </style>

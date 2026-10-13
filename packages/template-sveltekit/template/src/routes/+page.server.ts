@@ -1,21 +1,21 @@
 import { assertOperationPermission } from '@happyvertical/smrt-users';
 import { fail } from '@sveltejs/kit';
 
-import type { Item } from '$lib/objects/Item';
+import type { Note } from '$lib/objects/Note';
 import { runtime } from '$lib/server/smrt';
 import type { Actions, PageServerLoad } from './$types';
 
-const READ_PERMISSION = 'items.read';
-const CREATE_PERMISSION = 'items.create';
+const READ_PERMISSION = 'notes.read';
+const CREATE_PERMISSION = 'notes.create';
 
-export interface ItemRow {
+export interface NoteRow {
   id: string;
   title: string;
-  status: string;
+  body: string;
 }
 
 export const load: PageServerLoad = async ({ depends, locals }) => {
-  depends('smrt:items');
+  depends('smrt:notes');
 
   const authenticated = Boolean(locals.user);
   const hasTenant = Boolean(locals.tenantId);
@@ -26,8 +26,9 @@ export const load: PageServerLoad = async ({ depends, locals }) => {
 
   if (!canRead) {
     return {
-      items: [] as ItemRow[],
+      notes: [] as NoteRow[],
       canCreate,
+      authenticated,
       loadError: null as string | null,
       accessMessage: !authenticated
         ? 'Sign in before loading tenant data.'
@@ -38,28 +39,30 @@ export const load: PageServerLoad = async ({ depends, locals }) => {
   }
 
   try {
-    const items = await runtime.getCollection<Item>('Item');
-    const rows = await items.list({
+    const notes = await runtime.getCollection<Note>('Note');
+    const rows = await notes.list({
       orderBy: 'created_at DESC',
-      limit: 50,
+      limit: 100,
     });
 
     return {
-      items: rows.flatMap((item): ItemRow[] =>
-        item.id
-          ? [{ id: item.id, title: item.title, status: item.status }]
+      notes: rows.flatMap((note): NoteRow[] =>
+        note.id
+          ? [{ id: note.id, title: note.title, body: note.body }]
           : [],
       ),
       canCreate,
+      authenticated,
       loadError: null as string | null,
       accessMessage: null as string | null,
     };
   } catch (error) {
     return {
-      items: [] as ItemRow[],
+      notes: [] as NoteRow[],
       canCreate,
+      authenticated,
       loadError:
-        error instanceof Error ? error.message : 'Failed to load items',
+        error instanceof Error ? error.message : 'Failed to load notes',
       accessMessage: null as string | null,
     };
   }
@@ -72,9 +75,9 @@ export const actions: Actions = {
     }
 
     const decision = await assertOperationPermission({
-      ...runtime.classOptions('Item'),
+      ...runtime.classOptions('Note'),
       action: 'create',
-      collection: 'items',
+      collection: 'notes',
       onDeny: 'return',
       permissionSet: locals.permissions,
       tenantId: locals.tenantId,
@@ -86,18 +89,20 @@ export const actions: Actions = {
 
     const form = await request.formData();
     const title = String(form.get('title') ?? '').trim();
+    const body = String(form.get('body') ?? '').trim();
     if (!title) {
-      return fail(400, { title, error: 'Title is required.' });
+      return fail(400, { title, body, error: 'A title is required.' });
     }
 
     try {
-      const items = await runtime.getCollection<Item>('Item');
-      await items.create({ title });
+      const notes = await runtime.getCollection<Note>('Note');
+      await notes.create({ title, body });
       return { created: title };
     } catch (error) {
       return fail(500, {
         title,
-        error: error instanceof Error ? error.message : 'Failed to create item',
+        body,
+        error: error instanceof Error ? error.message : 'Failed to create note',
       });
     }
   },

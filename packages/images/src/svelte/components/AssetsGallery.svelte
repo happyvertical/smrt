@@ -153,7 +153,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
 }
 </script>
 
-<div class="smrt-assets-gallery">
+<div class="smrt-assets-gallery" data-smrt-component="AssetsGallery">
   <div class="gallery-header">
     <h3>{t(M['images.assets_gallery.title'])}</h3>
     
@@ -249,14 +249,16 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-assets-gallery {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
     height: 100%;
     min-height: 400px;
-    background: var(--smrt-color-surface, #121212);
-    color: var(--smrt-color-on-surface, #fff);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
   }
 
   .gallery-header {
@@ -264,9 +266,9 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     flex-direction: column;
     gap: 1rem;
     padding: 1rem;
-    background: var(--smrt-color-surface-container, #1a1a1a);
-    border-radius: var(--smrt-radius-lg, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #333);
+    background: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-lg);
+    border: 1px solid var(--smrt-color-outline-variant);
   }
 
   .gallery-header h3 {
@@ -307,10 +309,10 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
   }
 
   .error-msg {
-    color: var(--smrt-color-error, #ef4444);
+    color: var(--smrt-color-error);
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
     padding: 1rem;
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
   }
 
   .gallery-grid {
@@ -326,9 +328,9 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     flex-direction: column;
     align-items: stretch;
     padding: 0;
-    background: var(--smrt-color-surface-container, #1a1a1a);
-    border-radius: var(--smrt-radius-lg, 8px);
-    border: 1px solid var(--smrt-color-surface-container-high, #2a2a2a);
+    background: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-lg);
+    border: 1px solid var(--smrt-color-surface-container-high);
     box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 12%, transparent), 0 1px 2px color-mix(in srgb, var(--smrt-color-shadow) 24%, transparent));
     overflow: hidden;
     color: inherit;
@@ -342,7 +344,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
 
   .gallery-item.selectable:hover, .gallery-item.selectable:focus {
     transform: translateY(-2px);
-    border-color: var(--smrt-color-primary, #3b82f6);
+    border-color: var(--smrt-color-primary);
     box-shadow: var(--smrt-elevation-2, 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 16%, transparent), 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 23%, transparent));
     outline: none;
   }
@@ -350,7 +352,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
   .img-container {
     aspect-ratio: 1;
     width: 100%;
-    background: var(--smrt-color-surface-container-high, #242424);
+    background: var(--smrt-color-surface-container-high);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -378,22 +380,22 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    letter-spacing: var(--smrt-typography-title-medium-tracking, 0.1px);
+    letter-spacing: var(--smrt-typography-title-medium-tracking);
   }
 
   .item-meta {
     font-size: var(--smrt-typography-label-large-size, 0.85rem);
-    color: var(--smrt-color-outline, #888);
+    color: var(--smrt-color-outline);
   }
 
   .empty-state {
     grid-column: 1 / -1;
     text-align: center;
     padding: 3rem;
-    color: var(--smrt-color-outline, #888);
-    background: var(--smrt-color-surface-container, #1a1a1a);
-    border-radius: var(--smrt-radius-lg, 8px);
-    border: 1px dashed var(--smrt-color-outline-variant, #444);
+    color: var(--smrt-color-outline);
+    background: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-lg);
+    border: 1px dashed var(--smrt-color-outline-variant);
   }
 
   .load-more {
@@ -407,15 +409,16 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
      (see #1589 scoping rule). */
   .load-more :global(.load-more-btn--pill) {
     padding: 0.75rem 2rem;
-    background: var(--smrt-color-surface-container-high, #242424);
-    color: var(--smrt-color-primary, #3b82f6);
-    border: 1px solid var(--smrt-color-outline-variant, #444);
-    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-primary);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: background 0.2s;
   }
 
   .load-more :global(.load-more-btn--pill:hover:not(:disabled)) {
-    background: var(--smrt-color-surface-container-highest, #333);
+    background: var(--smrt-color-surface-container-highest);
   }
+}
 </style>

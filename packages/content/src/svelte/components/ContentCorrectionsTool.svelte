@@ -166,7 +166,7 @@ async function issueCorrection() {
 }
 </script>
 
-<div class="governance-tool">
+<div class="governance-tool" data-smrt-component="ContentCorrectionsTool">
   {#if error}
     <p class="tool-error" role="alert" aria-live="assertive">{error}</p>
   {/if}
@@ -254,6 +254,8 @@ async function issueCorrection() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   /* The tool lays itself out by its own width, not the viewport, so it
      fits a full page, a side panel, the assistant dock or a phone. */
   .governance-tool {
@@ -312,7 +314,7 @@ async function issueCorrection() {
   }
 
   .pill {
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     padding: 0.2rem 0.55rem;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
@@ -362,4 +364,5 @@ async function issueCorrection() {
       flex-wrap: wrap;
     }
   }
+}
 </style>

@@ -16,6 +16,95 @@ afterEach(() => {
 });
 
 describe('TenantNav', () => {
+  it('draws built-in subnav icons as SVG without a host icon component', () => {
+    const component = mount(TenantNav, {
+      target: container,
+      props: {
+        navMode: 'sections-with-items',
+        groups: [
+          {
+            heading: 'Shop',
+            href: '/shop',
+            items: [
+              {
+                href: '/orders',
+                label: 'Orders',
+                icon: 'shoppingBag',
+                action: {
+                  href: '/orders/settings',
+                  label: 'Order settings',
+                  icon: 'settings',
+                },
+                children: [
+                  {
+                    href: '/orders/open',
+                    label: 'Open orders',
+                    icon: 'receipt',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    try {
+      for (const href of ['/orders', '/orders/settings', '/orders/open']) {
+        const link = container.querySelector(`a[href="${href}"]`);
+        expect(
+          link?.querySelector('.smrt-tenant-nav__icon svg path'),
+        ).not.toBeNull();
+        expect(link?.textContent).not.toMatch(/shoppingBag|receipt|settings/);
+      }
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('keeps section-only mode and offers an expanded section subnav', () => {
+    const groups = [
+      {
+        id: 'shop',
+        heading: 'Shop',
+        href: '/shop',
+        items: [
+          { href: '/orders', label: 'Orders', icon: 'orders' },
+          { href: '/customers', label: 'Customers' },
+        ],
+      },
+    ];
+    const render = (
+      navMode: 'sections' | 'sections-with-items',
+      collapsed = false,
+    ) =>
+      mount(TenantNav, {
+        target: container,
+        props: { groups, navMode, collapsed, currentHref: '/orders' },
+      });
+
+    const sectionsOnly = render('sections');
+    expect(container.querySelectorAll('a')).toHaveLength(1);
+    unmount(sectionsOnly);
+
+    const expanded = render('sections-with-items');
+    expect(container.querySelectorAll('a')).toHaveLength(3);
+    expect(container.querySelector('a[href="/orders"]')).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(container.querySelector('a[href="/shop"]')).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+    expect(container.querySelector('.smrt-tenant-nav__subnav')).not.toBeNull();
+    unmount(expanded);
+
+    const rail = render('sections-with-items', true);
+    expect(container.querySelectorAll('a')).toHaveLength(1);
+    expect(container.querySelector('a[href="/orders"]')).toBeNull();
+    unmount(rail);
+  });
+
   it('renders named groups alongside flat links and keeps grouped active children', () => {
     const component = mount(TenantNav, {
       target: container,
@@ -219,7 +308,7 @@ describe('TenantNav', () => {
     }
   });
 
-  it('renders a visible fallback glyph for iconless collapsed items', () => {
+  it('renders a placeholder glyph for iconless collapsed items', () => {
     const component = mount(TenantNav, {
       target: container,
       props: {
@@ -231,10 +320,38 @@ describe('TenantNav', () => {
 
     try {
       const link = container.querySelector('a[href="/admin/memory"]');
-      const fallback = link?.querySelector('.smrt-tenant-nav__icon--fallback');
+      const placeholder = link?.querySelector(
+        '.smrt-tenant-nav__icon--placeholder svg path',
+      );
 
-      expect(fallback?.textContent?.trim()).toBe('M');
+      expect(placeholder).not.toBeNull();
+      expect(link?.textContent?.trim()).toBe('Memory');
       expect(link).toHaveAttribute('aria-current', 'page');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('marks the current item with aria-current and no placeholder when expanded', () => {
+    const component = mount(TenantNav, {
+      target: container,
+      props: {
+        currentHref: '/a',
+        items: [
+          { href: '/a', label: 'A', icon: 'users' },
+          { href: '/b', label: 'B' },
+        ],
+      },
+    });
+    try {
+      expect(container.querySelector('a[href="/a"]')).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+      expect(container.querySelector('a[href="/a"] svg path')).not.toBeNull();
+      expect(
+        container.querySelector('.smrt-tenant-nav__icon--placeholder'),
+      ).toBeNull();
     } finally {
       unmount(component);
     }

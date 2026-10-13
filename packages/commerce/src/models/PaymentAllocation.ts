@@ -5,6 +5,7 @@
 
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { allocationOwner, allocationTotal } from '../allocation-integrity.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import type { PaymentAllocationOptions } from '../types/index.js';
 
@@ -26,10 +27,10 @@ import type { PaymentAllocationOptions } from '../types/index.js';
  * - Split payments (one payment split across multiple invoices)
  * - Payment history per invoice
  *
- * **Note**: This model does not automatically validate that allocations
- * don't exceed the payment amount or invoice amount due. Use
- * `PaymentAllocationCollection.getUnallocatedFromPayment()` before creating
- * allocations to ensure sufficient funds are available.
+ * Saves atomically enforce parent existence, matching tenant/customer/currency,
+ * positive safe-integer amounts and both balance caps. Use
+ * `PaymentAllocationCollection.allocatePayment()` for atomic splits and replay.
+ * Direct saves retain caller-owned invoice status refresh.
  *
  * @example
  * ```typescript
@@ -52,7 +53,8 @@ import type { PaymentAllocationOptions } from '../types/index.js';
  *     allocatedBy: 'user-uuid'
  *   });
  *
- *   // Update invoice payment status
+ *   // Reload the revision advanced by the allocation, then update status.
+ *   await invoice.loadFromId();
  *   const totalAllocated = await allocations.getTotalAllocatedToInvoice(invoice.id);
  *   invoice.updatePaymentStatus(totalAllocated);
  *   await invoice.save();
@@ -144,118 +146,86 @@ export class PaymentAllocation extends SmrtObject {
     if (options.notes !== undefined) this.notes = options.notes;
   }
 
-  /**
-   * Save-time integrity guard (S5 audit #1390 + follow-up):
-   *  - allocation `amount` must be a finite, positive number,
-   *  - the sum of all allocations against the referenced Payment (this row
-   *    included) must not exceed the Payment's amount — over-applying a
-   *    payment across invoices would falsify both payment and invoice
-   *    balances, and
-   *  - the sum of all allocations against the referenced Invoice (this row
-   *    included) must not exceed the Invoice's `totalAmount`.
-   *
-   * The Payment-amount cap is enforced against the persisted Payment row. An
-   * allocation always carries a `@foreignKey('Payment')` paymentId, so a
-   * `paymentId` that doesn't resolve to a real Payment is a **hard error** (S5
-   * audit #1390 round 2): previously a missing Payment silently skipped the cap
-   * entirely, letting a caller over-apply (or fabricate) funds simply by
-   * pointing at a non-existent payment. An empty `paymentId` is still rejected
-   * by the underlying FK requirement; the positivity check always applies.
-   *
-   * The Invoice-total cap (follow-up) closes a complementary hole: the
-   * per-Payment cap lets allocations from *different* payments each pass their
-   * own check while jointly summing above the invoice total. The next
-   * `Invoice.save()` would then recompute `amountPaid` from these allocations,
-   * trip `assertNonNegativeAmounts` (amountPaid > totalAmount), and leave the
-   * invoice permanently unsaveable while the over-allocations persist. Capping
-   * here keeps allocations from ever exceeding what the invoice owes. The cap
-   * is skipped only when the invoice row can't be resolved (e.g. ledger-less /
-   * not-yet-persisted) so it never blocks an otherwise-valid allocation.
-   */
+  /** Save and validate against both claimed parent rows in one transaction. */
   override async save(): Promise<this> {
-    // Whole minor units first — every cap below is an exact integer comparison
-    // and is only sound if the value really is an integer (#2401).
     assertIntegerMinorUnits('PaymentAllocation', this.id ?? '<new>', [
       ['amount', this.amount],
     ]);
-    if (this.amount <= 0) {
-      throw new Error(
-        `PaymentAllocation ${this.id ?? '<new>'}: amount must be a positive number (got ${this.amount}).`,
-      );
-    }
-
-    if (this.paymentId) {
+    if (this.amount <= 0)
+      throw new Error('PaymentAllocation amount must be a positive number');
+    if (!this.paymentId || !this.invoiceId)
+      throw new Error('PaymentAllocation requires payment and invoice');
+    return this.withTransaction(async () => {
       const { PaymentCollection } = await import(
         '../collections/PaymentCollection.js'
       );
-      const payments = await PaymentCollection.create(this.options);
-      const payment = await payments.get({ id: this.paymentId });
-      if (!payment) {
-        throw new Error(
-          `PaymentAllocation ${this.id ?? '<new>'}: referenced Payment ` +
-            `'${this.paymentId}' does not exist — refusing to allocate against a ` +
-            'missing payment (the payment-amount cap cannot be enforced otherwise).',
-        );
-      }
-      const { PaymentAllocationCollection } = await import(
-        '../collections/PaymentAllocationCollection.js'
-      );
-      const allocations = await PaymentAllocationCollection.create(
-        this.options,
-      );
-      const existing = await allocations.findByPayment(this.paymentId);
-      const otherTotal = existing.reduce(
-        (sum: number, alloc: PaymentAllocation) =>
-          alloc.id === this.id ? sum : sum + alloc.amount,
-        0,
-      );
-      if (otherTotal + this.amount > payment.amount) {
-        throw new Error(
-          `PaymentAllocation ${this.id ?? '<new>'}: allocating ${this.amount} would over-apply ` +
-            `payment '${this.paymentId}' — already allocated ${otherTotal} of ${payment.amount}.`,
-        );
-      }
-    }
-
-    if (this.invoiceId) {
       const { InvoiceCollection } = await import(
         '../collections/InvoiceCollection.js'
       );
-      const invoices = await InvoiceCollection.create(this.options);
-      const invoice = await invoices.get({ id: this.invoiceId });
-      // Only enforce when the invoice resolves and carries a real positive
-      // total — a missing/zero-total invoice (not yet persisted, ledger-less
-      // test fixture) skips the cap rather than blocking a valid allocation.
-      // `Number.isFinite(0)` is `true`, so an `isFinite` guard here wrongly
-      // capped a freshly-created total=0 invoice at 0 and rejected every
-      // allocation against it; gate on `> 0` to match the documented
-      // "zero/missing total skips the cap" intent.
-      if (invoice && invoice.totalAmount > 0) {
-        const { PaymentAllocationCollection } = await import(
-          '../collections/PaymentAllocationCollection.js'
-        );
-        const allocations = await PaymentAllocationCollection.create(
-          this.options,
-        );
-        const existingForInvoice = await allocations.findByInvoice(
-          this.invoiceId,
-        );
-        const otherInvoiceTotal = existingForInvoice.reduce(
-          (sum: number, alloc: PaymentAllocation) =>
-            alloc.id === this.id ? sum : sum + alloc.amount,
-          0,
-        );
-        if (otherInvoiceTotal + this.amount > invoice.totalAmount) {
-          throw new Error(
-            `PaymentAllocation ${this.id ?? '<new>'}: allocating ${this.amount} would over-pay ` +
-              `invoice '${this.invoiceId}' — already allocated ${otherInvoiceTotal} of ` +
-              `${invoice.totalAmount}.`,
-          );
-        }
+      const { PaymentAllocationCollection } = await import(
+        '../collections/PaymentAllocationCollection.js'
+      );
+      const payments = await PaymentCollection.create({ db: this.db });
+      const invoices = await InvoiceCollection.create({ db: this.db });
+      const allocations = await PaymentAllocationCollection.create({
+        db: this.db,
+      });
+      const prior = this.id
+        ? await allocations.get({ id: this.id }, { cache: false })
+        : null;
+      if (
+        prior &&
+        (prior.paymentId !== this.paymentId ||
+          prior.invoiceId !== this.invoiceId ||
+          prior.tenantId !== allocationOwner(this.tenantId))
+      ) {
+        throw new Error('PaymentAllocation parent identity is immutable');
       }
-    }
-
-    return super.save() as Promise<this>;
+      const payment = await payments.get(
+        { id: this.paymentId },
+        { cache: false },
+      );
+      if (!payment)
+        throw new Error('PaymentAllocation referenced Payment does not exist');
+      if (!payment.updated_at)
+        throw new Error('Allocation parent has no persisted revision');
+      await payment.claimRevision(payment.updated_at);
+      const invoice = await invoices.get(
+        { id: this.invoiceId },
+        { cache: false },
+      );
+      if (!invoice)
+        throw new Error('PaymentAllocation referenced Invoice does not exist');
+      if (!invoice.updated_at)
+        throw new Error('Allocation parent has no persisted revision');
+      await invoice.claimRevision(invoice.updated_at);
+      const owner = allocationOwner(this.tenantId);
+      if (
+        payment.tenantId !== owner ||
+        invoice.tenantId !== owner ||
+        (payment.customerId || null) !== (invoice.customerId || null) ||
+        payment.currency !== invoice.currency
+      ) {
+        throw new Error(
+          'PaymentAllocation requires matching tenant, customer and currency',
+        );
+      }
+      const paymentTotal =
+        allocationTotal(
+          await allocations.findByPayment(this.paymentId),
+          this.id,
+        ) + BigInt(this.amount);
+      const invoiceTotal =
+        allocationTotal(
+          await allocations.findByInvoice(this.invoiceId),
+          this.id,
+        ) + BigInt(this.amount);
+      if (paymentTotal > BigInt(payment.amount))
+        throw new Error('PaymentAllocation would over-apply payment');
+      if (invoiceTotal > BigInt(invoice.totalAmount))
+        throw new Error('PaymentAllocation would over-pay invoice');
+      return (await super.save()) as this;
+    });
   }
 }
 

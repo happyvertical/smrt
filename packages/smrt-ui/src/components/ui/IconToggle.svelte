@@ -24,7 +24,7 @@ export interface Props
   pressed?: boolean;
   /** Optional count badge; included in the accessible name and tooltip. */
   count?: number;
-  /** A CSS colour (a token such as `var(--status-draft)` or a value) shown when the toggle is pressed. */
+  /** A CSS colour (a token such as `var(--smrt-color-primary)` or a value) shown when the toggle is pressed. */
   tone?: string;
   /** The icon. Decorative: it is hidden from assistive technology. */
   children: Snippet;
@@ -58,7 +58,7 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     class="icon-toggle {className}"
     class:pressed
     class:toned={tone !== undefined}
-    style:--icon-toggle-tone={tone}
+    style:--smrt-icon-toggle-tone={tone}
     aria-pressed={pressed}
     aria-label={name}
   >
@@ -68,6 +68,8 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
 </Tooltip>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .icon-toggle {
     position: relative;
     display: inline-flex;
@@ -78,7 +80,7 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     min-height: 2.75rem;
     padding: 0;
     border: 1px solid var(--smrt-color-outline-variant, var(--smrt-color-outline));
-    border-radius: var(--smrt-radius-full, 999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container, var(--smrt-color-surface));
     color: var(--smrt-color-on-surface);
     font: inherit;
@@ -100,9 +102,9 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     color: var(--smrt-color-on-surface-variant, var(--smrt-color-on-surface));
   }
   .icon-toggle.toned.pressed {
-    background: color-mix(in srgb, var(--icon-toggle-tone) 16%, var(--smrt-color-surface));
-    color: var(--icon-toggle-tone);
-    box-shadow: inset 0 0 0 2px var(--icon-toggle-tone);
+    background: color-mix(in srgb, var(--smrt-icon-toggle-tone) 16%, var(--smrt-color-surface));
+    color: var(--smrt-icon-toggle-tone);
+    box-shadow: inset 0 0 0 2px var(--smrt-icon-toggle-tone);
   }
   .icon-toggle:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
@@ -123,7 +125,7 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     box-sizing: border-box;
     min-width: 1.15rem;
     padding: 0 0.3rem;
-    border-radius: var(--smrt-radius-full, 999px);
+    border-radius: var(--smrt-radius-full);
     /* Outlined, not filled: a surface-coloured face (so the button's edge does
        not show through where the badge overlaps it), a 1px theme outline and
        neutral text, readable on light and dark themes alike. */
@@ -136,4 +138,5 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     text-align: center;
     font-variant-numeric: tabular-nums;
   }
+}
 </style>

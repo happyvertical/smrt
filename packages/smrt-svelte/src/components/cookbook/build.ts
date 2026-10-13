@@ -352,7 +352,7 @@ export function buildCookbookShell(
 
   return {
     title: options.title ?? cookbook.name ?? 'SMRT',
-    navMode: 'sections',
+    navMode: 'sections-with-items',
     navGroups,
     layout,
     sections,

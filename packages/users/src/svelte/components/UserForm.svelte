@@ -72,7 +72,7 @@ function handleSubmit() {
 }
 </script>
 
-<div class="user-form-shell">
+<div class="user-form-shell" data-smrt-component="UserForm">
   <Form class="user-form" onsubmit={handleSubmit}>
     <div class="field">
       <label for="name">Name</label>
@@ -114,6 +114,8 @@ function handleSubmit() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .user-form-shell :global(.user-form) {
     display: flex;
     flex-direction: column;
@@ -128,12 +130,12 @@ function handleSubmit() {
 
   label {
     font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .hint {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .actions {
@@ -142,4 +144,5 @@ function handleSubmit() {
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-top: var(--smrt-spacing-sm, 0.5rem);
   }
+}
 </style>

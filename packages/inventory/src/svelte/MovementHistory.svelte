@@ -5,7 +5,7 @@ export interface Props {
 }
 const { movements }: Props = $props();
 </script>
-<table>
+<table data-smrt-component="MovementHistory">
   <caption>Stock movement history</caption>
   <thead><tr><th>When</th><th>Location</th><th>SKU</th><th>From</th><th>To</th><th>Quantity</th><th>Reason</th><th>Actor</th><th>Source</th><th>Note</th></tr></thead>
   <tbody>{#each movements as movement}

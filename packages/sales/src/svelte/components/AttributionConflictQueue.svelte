@@ -98,7 +98,7 @@ function resolve(exception: AttributionExceptionView) {
 }
 </script>
 
-<section class="sales-attribution-queue">
+<section class="sales-attribution-queue" data-smrt-component="AttributionConflictQueue">
   {#if exceptions.length === 0}
     <p class="empty">No attribution exceptions to review.</p>
   {:else}
@@ -233,6 +233,8 @@ function resolve(exception: AttributionExceptionView) {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sales-attribution-queue {
     display: flex;
     flex-direction: column;
@@ -241,7 +243,7 @@ function resolve(exception: AttributionExceptionView) {
 
   .empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -261,7 +263,7 @@ function resolve(exception: AttributionExceptionView) {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     margin-right: var(--smrt-spacing-1, 0.25rem);
   }
 
@@ -285,13 +287,13 @@ function resolve(exception: AttributionExceptionView) {
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
     text-align: left;
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     white-space: nowrap;
   }
 
   .candidates td {
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .award-editor {
@@ -305,7 +307,7 @@ function resolve(exception: AttributionExceptionView) {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .award-editor__row {
@@ -321,11 +323,11 @@ function resolve(exception: AttributionExceptionView) {
   .award-editor__total {
     margin: 0;
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .award-editor__total.invalid {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 
   .award-editor :global(.form-group) {
@@ -340,7 +342,7 @@ function resolve(exception: AttributionExceptionView) {
   }
 
   .audit__item dt {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -358,4 +360,5 @@ function resolve(exception: AttributionExceptionView) {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+}
 </style>

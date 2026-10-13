@@ -16,7 +16,7 @@ const { children }: Props = $props();
 const currentYear = new Date().getFullYear();
 </script>
 
-<footer class="site-footer">
+<footer class="site-footer" data-smrt-component="Footer">
   <Container>
     <div class="footer-content">
       <p class="copyright">&copy; {currentYear} {t(M['ui.footer.all_rights_reserved'])}</p>
@@ -31,6 +31,8 @@ const currentYear = new Date().getFullYear();
 </footer>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .site-footer {
     background: var(--smrt-color-surface-container-low);
     border-top: 1px solid var(--smrt-color-outline-variant);
@@ -61,4 +63,5 @@ const currentYear = new Date().getFullYear();
   .footer-links :global(a:hover) {
     text-decoration: underline;
   }
+}
 </style>

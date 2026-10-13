@@ -43,7 +43,7 @@ const themeIcons: Record<ThemePreset, string> = {
 };
 </script>
 
-<div class="smrt-theme-switcher {variant} {className}">
+<div class="smrt-theme-switcher {variant} {className}" data-smrt-component="ThemeSwitcher">
   {#if label}
     <span class="smrt-theme-switcher__label">{label}</span>
   {/if}
@@ -101,6 +101,8 @@ const themeIcons: Record<ThemePreset, string> = {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-theme-switcher {
     display: flex;
     align-items: center;
@@ -116,7 +118,7 @@ const themeIcons: Record<ThemePreset, string> = {
   .smrt-theme-switcher__select {
     padding: var(--smrt-spacing-1_5, 0.375rem) var(--smrt-spacing-3, 0.75rem);
     border-radius: var(--smrt-radius-md, 0.5rem);
-    border: 1px solid var(--smrt-color-outline, #ccc);
+    border: 1px solid var(--smrt-color-outline);
     background: var(--smrt-color-surface, white);
     color: var(--smrt-color-on-surface, inherit);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
@@ -133,9 +135,9 @@ const themeIcons: Record<ThemePreset, string> = {
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
     padding: var(--smrt-spacing-1_5, 0.375rem) var(--smrt-spacing-3, 0.75rem);
-    border: 1px solid var(--smrt-color-outline, #ccc);
+    border: 1px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-md, 0.5rem);
-    background: var(--smrt-color-surface-container-low, #f5f5f5);
+    background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface, inherit);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
@@ -143,19 +145,19 @@ const themeIcons: Record<ThemePreset, string> = {
   }
 
   .smrt-theme-switcher__button:hover {
-    background: var(--smrt-color-surface-container, #eee);
+    background: var(--smrt-color-surface-container);
   }
 
   .smrt-theme-switcher__button.active {
-    background: var(--smrt-color-primary-container, #e3f2fd);
-    color: var(--smrt-color-on-primary-container, #1565c0);
-    border-color: var(--smrt-color-primary, #2196f3);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    border-color: var(--smrt-color-primary);
   }
 
   .smrt-theme-switcher__segmented {
     display: inline-flex;
-    background: var(--smrt-color-surface-container-lowest, #fafafa);
-    border: 1px solid var(--smrt-color-outline, #ccc);
+    background: var(--smrt-color-surface-container-lowest);
+    border: 1px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-lg, 0.75rem);
     padding: var(--smrt-spacing-0_5, 0.125rem);
   }
@@ -168,7 +170,7 @@ const themeIcons: Record<ThemePreset, string> = {
     border: none;
     border-radius: var(--smrt-radius-md, 0.5rem);
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #666);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
     transition: all 200ms ease;
@@ -187,4 +189,5 @@ const themeIcons: Record<ThemePreset, string> = {
   .smrt-theme-switcher__icon {
     font-size: var(--smrt-typography-body-large-size, 1rem);
   }
+}
 </style>

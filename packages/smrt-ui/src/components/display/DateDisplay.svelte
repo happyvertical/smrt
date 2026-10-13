@@ -163,22 +163,25 @@ const isoString = $derived(
 </script>
 
 {#if parsedDate}
-  <time class="date-display {className}" datetime={isoString}>
+  <time class="date-display {className}" datetime={isoString} data-smrt-component="DateDisplay">
     {formatted}
   </time>
 {:else}
-  <span class="date-display date-fallback {className}">
+  <span class="date-display date-fallback {className}" data-smrt-component="DateDisplay">
     {fallback}
   </span>
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .date-display {
     white-space: nowrap;
   }
 
   .date-fallback {
-    color: var(--smrt-color-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
+}
 </style>

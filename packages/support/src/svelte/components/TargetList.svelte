@@ -37,9 +37,9 @@ function formatDue(iso: string | null): string {
 </script>
 
 {#if targets.length === 0}
-  <p class="target-list-empty">{emptyMessage}</p>
+  <p class="target-list-empty" data-smrt-component="TargetList">{emptyMessage}</p>
 {:else}
-  <ul class="target-list">
+  <ul class="target-list" data-smrt-component="TargetList">
     {#each targets as target (target.id)}
       <li class="target-list-row">
         <span class="target-list-main">
@@ -69,6 +69,8 @@ function formatDue(iso: string | null): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .target-list {
     list-style: none;
     margin: 0;
@@ -126,4 +128,5 @@ function formatDue(iso: string | null): string {
     color: var(--smrt-color-on-surface-variant, inherit);
     padding: 1rem 0;
   }
+}
 </style>

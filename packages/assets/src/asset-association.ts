@@ -11,6 +11,7 @@
  */
 
 import {
+  field,
   foreignKey,
   SmrtPolymorphicAssociation,
   smrt,
@@ -38,6 +39,7 @@ export class AssetAssociation extends SmrtPolymorphicAssociation {
 
   /** FK to Asset.id */
   @foreignKey('Asset', { required: true })
+  @field({ description: 'The file attached to the related record.' })
   assetId = '';
 
   constructor(options: AssetAssociationOptions = {}) {

@@ -283,6 +283,8 @@ function handleNavigate(): void {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   /*
    * Display: contents lets the WorkspaceShell drive the grid/layout while
    * still giving us a single DOM node to hang `--smrt-role-color` off.
@@ -304,6 +306,7 @@ function handleNavigate(): void {
     margin-right: 0.4rem;
     font-size: var(--smrt-typography-title-medium-size, 1.1rem);
     line-height: 1;
-    color: var(--smrt-role-color, var(--smrt-color-on-surface, #111827));
+    color: var(--smrt-role-color, var(--smrt-color-on-surface));
   }
+}
 </style>

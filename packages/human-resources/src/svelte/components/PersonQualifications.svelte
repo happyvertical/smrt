@@ -46,11 +46,11 @@ function distance(daysUntilExpiry: number): string {
 </script>
 
 {#if qualifications.length === 0}
-  <p class="person-qualifications-empty">
+  <p class="person-qualifications-empty" data-smrt-component="PersonQualifications">
     {emptyMessage ?? t(M['human_resources.person_qualifications.empty'])}
   </p>
 {:else}
-  <ul class="person-qualifications">
+  <ul class="person-qualifications" data-smrt-component="PersonQualifications">
     {#each qualifications as qualification (qualification.id)}
       {@const state = qualificationExpiryState(qualification, expiringSoonDays)}
       <li class="person-qualification" data-state={state}>
@@ -101,6 +101,8 @@ function distance(daysUntilExpiry: number): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .person-qualifications {
     list-style: none;
     margin: 0;
@@ -153,4 +155,5 @@ function distance(daysUntilExpiry: number): string {
     color: var(--smrt-color-on-surface-variant, inherit);
     padding: 1rem 0;
   }
+}
 </style>

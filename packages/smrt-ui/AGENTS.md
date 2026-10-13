@@ -65,6 +65,8 @@ components are exempt — they *are* the primitives.
 | `./themes/styles/happyvertical.css` | static HappyVertical "Day Shift" brand CSS (enamel/faceplate calm instrument panel) + amber focus rule + `.hv-*` utilities |
 | `./themes/styles/happyvertical-fonts.css` | optional self-hosted `@font-face` for the Day Shift type stack (Archivo / B612 / B612 Mono) |
 | `./styles/tokens.css` | base token stylesheet |
+| `./styles/layers.css` | cascade-layer declaration (`smrt.reset < smrt.structure < smrt.theme`) |
+| `./styles/unstyled.css` | styleless mode: reverts component look to `smrt.structure`, keeps layout (see [agents/styling.md](agents/styling.md)) |
 
 Also internal: `actions/` (`ripple`, `permission`), `display/`, `data/`,
 `nav/`, `permissions/`, `utils/`, `test-support/`.
@@ -100,6 +102,18 @@ other text pairing clears WCAG AA in both schemes.
 
 ## Rules
 
+- **Styling hooks are public API.** Every exported component's root carries
+  `data-smrt-component="<Name>"` (enforced by `pnpm check:component-roots`, run
+  from `pnpm lint`). Internal elements use role-named `data-smrt-part` values;
+  never encode state in a part name. See [agents/styling.md](agents/styling.md).
+- **Every consumed token is theme-required.** `pnpm lint` checks that
+  `src/themes/required-tokens.generated.json` is current (regenerate with
+  `node scripts/generate-smrt-required-tokens.mjs` after adding a token
+  consumer); `src/themes/__tests__/required-tokens.test.ts` requires every preset
+  and `createTheme()` output to define each one. Do not add `var(--smrt-*, <literal>)`
+  fallbacks for theme tokens. Component-private `--smrt-<component>-*` names are
+  excluded. Style literals (`#hex`, `px`) in `.svelte` style blocks are ratcheted by
+  `scripts/smrt-style-literal-allowlist.json` via `check-smrt-token-vocabulary.mjs`.
 - **No smrt domain imports.** A `@happyvertical/smrt-*` import other than
   `smrt-types` reintroduces the cycle. Components consume `var(--smrt-*)` CSS
   tokens directly and accept identity data via `smrt-types` contracts.

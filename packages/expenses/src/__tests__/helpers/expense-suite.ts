@@ -32,6 +32,7 @@ import {
   type ExpenseOptions,
 } from '../../types.js';
 import { computeContentSha256 } from '../../validation.js';
+import { defineFinancialFactsSuite } from './financial-facts-suite.js';
 
 export const PROJECT = '@happyvertical/smrt-projects:Project';
 
@@ -176,6 +177,8 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
   afterEach(() => {
     disableTenancy();
   });
+
+  defineFinancialFactsSuite(() => world);
 
   describe('recording', () => {
     it('stores integer minor units, the incurred date, and recordedAt', async () => {

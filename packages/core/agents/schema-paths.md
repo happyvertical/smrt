@@ -657,7 +657,10 @@ blocked. Planned-parent and newly added child-column types are compared using
 the PostgreSQL DDL mapping (for example, `TIMESTAMP` becomes `TIMESTAMPTZ`,
 `INTEGER` becomes `BIGINT`); existing columns retain their live physical types. `NOT VALID` plus `VALIDATE CONSTRAINT` remains the authoritative check;
 a writer racing the preflight causes the atomic migration to roll back.
-SQLite requires a deliberate table rebuild; DuckDB reports the unsupported ALTER
+SQLite emits inline `REFERENCES` when adding a new nullable column with no
+non-NULL default or backfill (#3795): existing rows receive NULL and the database
+enforces subsequent writes. An existing-column constraint or another column
+shape still requires a deliberate table rebuild. DuckDB reports the unsupported ALTER
 path. Neither engine treats an unsupported constraint addition as a successful
 no-op.
 

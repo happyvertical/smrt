@@ -1,4 +1,5 @@
 /** Exact, transport-neutral invoice draft validation shared by browser and server. */
+import { calculateCostBillingTax } from '../../cost-billing.js';
 import { currencyMinorUnitExponent } from './currency.js';
 
 /** Unparsed editable invoice line; invalid values remain caller-owned. */
@@ -85,8 +86,18 @@ export type InvoiceLineCalculation =
 export type InvoiceDraftField =
   | Exclude<keyof InvoiceDraftValues, 'lines'>
   | 'lines'
-  | 'total';
-/** Aggregate result retains every line result for granular rendering. */
+  | 'total'
+  | 'roundingScope';
+/** Server-authorized tax rounding; absent means the historical per-line behavior. */
+export interface InvoiceDraftCalculationOptions {
+  /** Invoice scope groups equal effective percentages and rounds each group once. */
+  roundingScope?: 'line' | 'invoice';
+}
+/**
+ * Aggregate result retains standalone line calculations for validation/audit.
+ * With invoice rounding, line tax/total are estimates, NOT allocated invoice
+ * amounts, and must not be summed or persisted as authoritative invoice tax.
+ */
 export type InvoiceDraftCalculation =
   | ({
       valid: true;
@@ -382,9 +393,14 @@ function calendarDate(value: string): boolean {
 /** Validate the header and sum validated lines without floating-point arithmetic. */
 export function calculateInvoiceDraft(
   values: InvoiceDraftValues,
+  options: InvoiceDraftCalculationOptions = {},
 ): InvoiceDraftCalculation {
   const errors: Partial<Record<InvoiceDraftField, InvoiceCalculationError>> =
     {};
+  const roundingScope =
+    options.roundingScope === undefined ? 'line' : options.roundingScope;
+  if (roundingScope !== 'line' && roundingScope !== 'invoice')
+    errors.roundingScope = 'invalid-mode';
   if (!values.customerId?.trim()) errors.customerId = 'required';
   if (!calendarDate(values.issuedOn)) errors.issuedOn = 'invalid-date';
   if (!calendarDate(values.dueOn) || values.dueOn < values.issuedOn)
@@ -414,6 +430,42 @@ export function calculateInvoiceDraft(
     if (!result.valid) continue;
     for (const key of Object.keys(sums) as Array<keyof typeof sums>)
       sums[key] += BigInt(result[key]);
+  }
+  if (
+    roundingScope === 'invoice' &&
+    !Object.keys(errors).length &&
+    lineResults.every((result) => result.valid)
+  ) {
+    // Rates have already passed exact decimal validation. Normalize textual
+    // equivalents without numeric conversion before assigning component IDs.
+    const taxable = lineResults.map((result, index) => {
+      if (!result.valid) throw new Error('Validated invoice line expected');
+      const [whole, fraction = ''] = result.effectiveTaxRate.split('.');
+      const digits = fraction.replace(/0+$/, '');
+      const percent = `${BigInt(whole)}${digits ? `.${digits}` : ''}`;
+      return {
+        id: values.lines[index].key,
+        amountMinor: result.subtotalMinor,
+        category: percent,
+      };
+    });
+    try {
+      const tax = calculateCostBillingTax({
+        lines: taxable,
+        rules: [...new Set(taxable.map((row) => row.category))].map(
+          (percent) => ({
+            category: percent,
+            components: [{ id: percent, percent }],
+          }),
+        ),
+        roundingScope: 'invoice',
+      });
+      sums.taxMinor = BigInt(tax.taxMinor);
+      sums.totalMinor = sums.subtotalMinor + sums.taxMinor;
+    } catch (cause) {
+      if (!(cause instanceof RangeError)) throw cause;
+      errors.total = 'range';
+    }
   }
   if (Object.values(sums).some((value) => value > MAX_MINOR))
     errors.total = 'range';

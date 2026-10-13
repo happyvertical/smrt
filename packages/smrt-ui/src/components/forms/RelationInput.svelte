@@ -288,7 +288,7 @@ $effect(() => {
 $effect(() => () => clearTimeout(timer));
 </script>
 
-<div class="relation-input" bind:this={rootEl}>
+<div class="relation-input" bind:this={rootEl} data-smrt-component="RelationInput">
   <div class="field">
     <Combobox
       {name}
@@ -343,9 +343,11 @@ $effect(() => () => clearTimeout(timer));
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .relation-input {
     display: grid;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     min-width: 0;
   }
   .field {
@@ -353,8 +355,8 @@ $effect(() => () => clearTimeout(timer));
   }
   .field :global(.clear) {
     position: absolute;
-    right: var(--smrt-spacing-1, 4px);
-    bottom: var(--smrt-spacing-1, 4px);
+    right: var(--smrt-spacing-1);
+    bottom: var(--smrt-spacing-1);
   }
   .option-label,
   .option-detail {
@@ -375,4 +377,5 @@ $effect(() => () => clearTimeout(timer));
   .error {
     color: var(--smrt-color-error);
   }
+}
 </style>

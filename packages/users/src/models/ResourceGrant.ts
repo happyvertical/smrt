@@ -41,14 +41,47 @@ export interface ResourceGrantOptions extends SmrtObjectOptions {
 })
 export class ResourceGrant extends SmrtObject {
   @foreignKey('Tenant', { required: true }) tenantId?: string;
-  @foreignKey('User', { required: true }) userId?: string;
-  @field({ type: 'text' }) resourceType: string = '';
-  @field({ type: 'text' }) resourceId: string = '';
-  @field({ type: 'text' }) permission: string = '';
-  @field({ type: 'text' }) effect: ResourceGrantEffect = 'grant';
+  @field({
+    description: 'The person receiving this record-specific access rule.',
+  })
+  @foreignKey('User', { required: true })
+  userId?: string;
+  @field({
+    description: 'The kind of record this access rule applies to.',
+    type: 'text',
+  })
+  resourceType: string = '';
+  @field({
+    description: 'The specific record covered by this access rule.',
+    type: 'text',
+  })
+  resourceId: string = '';
+  @field({
+    description: 'The action this rule allows or denies for the record.',
+    type: 'text',
+  })
+  permission: string = '';
+  @field({
+    description:
+      'Whether this rule grants access or denies it. Denies take precedence.',
+    type: 'text',
+  })
+  effect: ResourceGrantEffect = 'grant';
+  @field({
+    description:
+      'Whether the recipient may pass this grant on to another person.',
+  })
   canDelegate: boolean = false;
-  @foreignKey('ResourceGrant') parentGrantId?: string | null;
-  @field({ type: 'text' }) revokedAt?: string | null;
+  @field({
+    description: 'The earlier grant from which this access was delegated.',
+  })
+  @foreignKey('ResourceGrant')
+  parentGrantId?: string | null;
+  @field({
+    description: 'When this access rule was revoked, if it has ended.',
+    type: 'text',
+  })
+  revokedAt?: string | null;
   constructor(options: ResourceGrantOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;

@@ -90,11 +90,14 @@ useControlRegistration(() => {
   aria-pressed={pressed} aria-label={ariaLabel} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}
-  onclick={handleClick} {...rest}>{@render children?.()}</button>
+  onclick={handleClick} {...rest} data-smrt-component="ToggleButton">{@render children?.()}</button>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .toggle-button { display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; padding: 0 var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
   .toggle-button.pressed { background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); border-color: var(--smrt-color-secondary); }
   .toggle-button:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   .toggle-button:disabled { opacity: .5; cursor: not-allowed; }
   .toggle-button[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
+}
 </style>

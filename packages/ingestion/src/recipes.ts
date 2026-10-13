@@ -47,16 +47,8 @@ export class IngestionInboxRecipe extends SmrtRecipe {
       label: 'Ingestion inbox',
     },
   ] as const;
-  static nav = [
-    {
-      label: 'Ingestion inbox',
-      model: IntakeItem,
-      icon: 'archive',
-      description: 'Incoming material that needs authenticated attention.',
-      key: 'inbox',
-      noun: 'inbox item',
-    },
-  ];
+  // These models have no generated screens; hosts mount the route above.
+  static nav = [];
 }
 
 /** Revision-bound human review of proposed actions. */
@@ -96,14 +88,6 @@ export class IngestionReviewRecipe extends SmrtRecipe {
       label: 'Ingestion review',
     },
   ] as const;
-  static nav = [
-    {
-      label: 'Ingestion review',
-      model: IntakeReviewDecision,
-      icon: 'fileText',
-      description: 'Revision-bound decisions on proposed actions.',
-      key: 'review',
-      noun: 'review decision',
-    },
-  ];
+  // These models have no generated screens; hosts mount the route above.
+  static nav = [];
 }

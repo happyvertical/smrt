@@ -7,7 +7,7 @@ export interface Props {
 }
 const { locations, onedit }: Props = $props();
 </script>
-<table>
+<table data-smrt-component="LocationList">
   <caption>Inventory locations</caption>
   <thead><tr><th>Code</th><th>Name</th><th>Kind</th><th>Status</th>{#if onedit}<th>Actions</th>{/if}</tr></thead>
   <tbody>{#each locations as location}

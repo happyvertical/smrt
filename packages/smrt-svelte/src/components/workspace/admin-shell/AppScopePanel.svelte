@@ -36,7 +36,7 @@ const { t } = useI18n();
 
 <section
   class="smrt-app-scope-panel"
-  aria-label={t(M['ui.app_scope_panel.app_scope'])}
+  aria-label={t(M['ui.app_scope_panel.app_scope'])} data-smrt-component="AppScopePanel"
 >
   <header>
     <div>
@@ -74,6 +74,8 @@ const { t } = useI18n();
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-app-scope-panel {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -110,4 +112,5 @@ const { t } = useI18n();
   .smrt-app-scope-panel__section {
     min-width: 0;
   }
+}
 </style>

@@ -86,7 +86,7 @@ function formatMoney(amount: number): string {
 }
 </script>
 
-<div class="invoice-totals" class:sm={size === 'sm'} class:lg={size === 'lg'}>
+<div class="invoice-totals" class:sm={size === 'sm'} class:lg={size === 'lg'} data-smrt-component="InvoiceTotals">
   {#if retained}
     <div class="totals-row"><span class="totals-label">Subtotal</span><span class="totals-value">{formatInvoiceMinorUnits(retained.subtotalMinor, retained.currency)}</span></div>
     {#if retained.discountMinor !== undefined}<div class="totals-row"><span class="totals-label">Discount</span><span class="totals-value">{formatInvoiceMinorUnits(retained.discountMinor, retained.currency)}</span></div>{/if}
@@ -137,6 +137,8 @@ function formatMoney(amount: number): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .invoice-totals {
     display: flex;
     flex-direction: column;
@@ -161,7 +163,7 @@ function formatMoney(amount: number): string {
     justify-content: space-between;
     align-items: center;
     font: var(--smrt-typography-body-medium-font);
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface);
   }
 
   .sm .totals-row {
@@ -173,24 +175,24 @@ function formatMoney(amount: number): string {
   }
 
   .totals-label {
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .totals-value {
     font-variant-numeric: tabular-nums;
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface);
   }
 
   .totals-row.total {
     padding-top: var(--smrt-spacing-2, 0.5rem);
-    border-top: 2px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-top: 2px solid var(--smrt-color-outline-variant);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .totals-row.total .totals-label,
   .totals-row.total .totals-value {
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-title-medium-font);
   }
 
@@ -200,26 +202,27 @@ function formatMoney(amount: number): string {
   }
 
   .totals-row.paid {
-    color: var(--smrt-color-tertiary, #006c4c);
+    color: var(--smrt-color-tertiary);
   }
 
   .totals-row.paid .totals-label {
-    color: var(--smrt-color-tertiary, #006c4c);
+    color: var(--smrt-color-tertiary);
   }
 
   .totals-row.balance {
     padding-top: var(--smrt-spacing-2, 0.5rem);
-    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-top: 1px solid var(--smrt-color-outline-variant);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .totals-row.balance.due .totals-label,
   .totals-row.balance.due .totals-value {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .totals-row.balance.credit .totals-label,
   .totals-row.balance.credit .totals-value {
-    color: var(--smrt-color-tertiary, #006c4c);
+    color: var(--smrt-color-tertiary);
   }
+}
 </style>

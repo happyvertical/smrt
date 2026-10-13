@@ -12,6 +12,10 @@ import {
 } from '@happyvertical/smrt-core';
 import type { Journal, JournalEntryData } from '@happyvertical/smrt-ledgers';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  assertAllocationParent,
+  claimAllocationParent,
+} from '../allocation-integrity.js';
 import { minorToMajorUnits } from '../billing/units.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import {
@@ -42,13 +46,15 @@ import type { InvoiceLineItem } from './InvoiceLineItem.js';
  *
  * Forward path: DRAFT → SENT → VIEWED → PARTIAL → PAID, with OVERDUE reachable
  * from any open status and CANCELLED / WRITTEN_OFF as terminal exits. Payment
- * progress (SENT/VIEWED ↔ PARTIAL ↔ PAID) is driven by `updatePaymentStatus`,
+ * progress (DRAFT/SENT/VIEWED ↔ PARTIAL ↔ PAID) is driven by `updatePaymentStatus`,
  * which can move both forward and backward as allocations change, so those
  * edges are bidirectional here.
  */
 const INVOICE_STATUS_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
   [InvoiceStatus.DRAFT]: [
     InvoiceStatus.SENT,
+    InvoiceStatus.PARTIAL,
+    InvoiceStatus.PAID,
     InvoiceStatus.CANCELLED,
     InvoiceStatus.WRITTEN_OFF,
   ],
@@ -69,6 +75,7 @@ const INVOICE_STATUS_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
     InvoiceStatus.WRITTEN_OFF,
   ],
   [InvoiceStatus.PARTIAL]: [
+    InvoiceStatus.DRAFT,
     InvoiceStatus.SENT,
     InvoiceStatus.VIEWED,
     InvoiceStatus.PAID,
@@ -88,6 +95,7 @@ const INVOICE_STATUS_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
   // removed or reversed (handled by updatePaymentStatus). It can also be
   // written off as bad debt in unusual reconciliation flows.
   [InvoiceStatus.PAID]: [
+    InvoiceStatus.DRAFT,
     InvoiceStatus.PARTIAL,
     InvoiceStatus.VIEWED,
     InvoiceStatus.SENT,
@@ -501,20 +509,25 @@ export class Invoice extends SmrtObject {
    *  - **Status transitions** are validated against the prior persisted status.
    */
   override async save(): Promise<this> {
-    const persisted = await this.isSaved();
-    const prior = await this.resolvePriorStatus(persisted);
+    return this.withTransaction(async () => {
+      await claimAllocationParent(this, 'invoice');
+      const persisted = await this.isSaved();
+      const prior = await this.resolvePriorStatus(persisted);
 
-    this.assertAmountsAreMinorUnits();
-    await this.recomputeAmountsForSave(persisted);
-    this.assertNonNegativeAmounts();
-    this.assertStatusTransition(prior);
-    this.assertPaymentStatusConsistent();
+      this.assertAmountsAreMinorUnits();
+      await this.recomputeAmountsForSave(persisted);
+      this.assertNonNegativeAmounts();
+      this.assertStatusTransition(prior);
+      this.assertPaymentStatusConsistent();
+      await this.assertDraftDeliveryHistory(persisted);
 
-    const result = (await super.save()) as this;
-    // Once written, the current status becomes the new "prior" for the next
-    // save in this instance's lifetime.
-    loadedInvoiceStatus.set(this, this.status);
-    return result;
+      await assertAllocationParent(this, 'invoice');
+      const result = (await super.save()) as this;
+      // Once written, the current status becomes the new "prior" for the next
+      // save in this instance's lifetime.
+      loadedInvoiceStatus.set(this, this.status);
+      return result;
+    });
   }
 
   /**
@@ -553,9 +566,10 @@ export class Invoice extends SmrtObject {
       const { InvoiceLineItemCollection } = await import(
         '../collections/InvoiceLineItemCollection.js'
       );
-      const lineItemCollection = await InvoiceLineItemCollection.create(
-        this.options,
-      );
+      const lineItemCollection = await InvoiceLineItemCollection.create({
+        ...this.options,
+        db: this.db,
+      });
       const lineItems = await lineItemCollection.findByInvoice(this.id);
 
       if (lineItems.length > 0) {
@@ -589,9 +603,10 @@ export class Invoice extends SmrtObject {
       const { PaymentAllocationCollection } = await import(
         '../collections/PaymentAllocationCollection.js'
       );
-      const allocationCollection = await PaymentAllocationCollection.create(
-        this.options,
-      );
+      const allocationCollection = await PaymentAllocationCollection.create({
+        ...this.options,
+        db: this.db,
+      });
       const allocated = await allocationCollection.getTotalAllocatedToInvoice(
         this.id,
       );
@@ -660,8 +675,8 @@ export class Invoice extends SmrtObject {
    * SENT → PAID is a structurally legal edge.
    *
    * Only enforced for the payment-derived statuses (PAID / PARTIAL and the
-   * unpaid open states SENT / VIEWED). Lifecycle statuses that aren't a
-   * function of amountPaid — DRAFT, OVERDUE, CANCELLED, WRITTEN_OFF — are left
+   * unpaid states DRAFT / SENT / VIEWED). Lifecycle statuses that aren't a
+   * function of amountPaid — OVERDUE, CANCELLED, WRITTEN_OFF — are left
    * to their own transition rules.
    */
   private assertPaymentStatusConsistent(): void {
@@ -669,6 +684,11 @@ export class Invoice extends SmrtObject {
     const fullyPaid = this.isFullyPaid();
     const partiallyPaid = this.isPartiallyPaid();
 
+    if (this.status === InvoiceStatus.DRAFT && this.amountPaid !== 0) {
+      throw new Error(
+        `Invoice ${label}: DRAFT requires zero derived payment allocations.`,
+      );
+    }
     if (this.status === InvoiceStatus.PAID && !fullyPaid) {
       throw new Error(
         `Invoice ${label}: status is PAID but derived amountPaid ${this.amountPaid} ` +
@@ -696,6 +716,26 @@ export class Invoice extends SmrtObject {
           `${this.amountPaid} fully covers totalAmount ${this.totalAmount}. ` +
           'Use updatePaymentStatus() so the status reflects the allocations.',
       );
+    }
+  }
+
+  /** A payment reversal cannot erase an actual delivery event. */
+  private async assertDraftDeliveryHistory(persisted: boolean): Promise<void> {
+    if (this.status !== InvoiceStatus.DRAFT) return;
+    if (this.sentAt || this.viewedAt) {
+      throw new Error('DRAFT requires an undelivered invoice');
+    }
+    if (persisted && this.id) {
+      const { InvoiceCollection } = await import(
+        '../collections/InvoiceCollection.js'
+      );
+      const invoices = await InvoiceCollection.create({ db: this.db });
+      const prior = await invoices.get({ id: this.id }, { cache: false });
+      if (prior?.sentAt || prior?.viewedAt) {
+        throw new Error(
+          'DRAFT cannot erase persisted invoice delivery history',
+        );
+      }
     }
   }
 
@@ -841,9 +881,18 @@ export class Invoice extends SmrtObject {
    * Mark invoice as sent
    */
   markSent(): void {
+    // Payment progress and actual delivery are independent. A prepaid invoice
+    // may be sent later; preserve its allocation-derived status and first send.
+    if (
+      this.status === InvoiceStatus.PARTIAL ||
+      this.status === InvoiceStatus.PAID
+    ) {
+      this.sentAt ??= new Date();
+      return;
+    }
     if (this.status !== InvoiceStatus.DRAFT) {
       throw new Error(
-        `Cannot send invoice with status '${this.status}'. Only draft invoices can be sent.`,
+        `Cannot send invoice with status '${this.status}'. Only draft or payment-progress invoices can be sent.`,
       );
     }
     this.status = InvoiceStatus.SENT;
@@ -870,7 +919,7 @@ export class Invoice extends SmrtObject {
    * Update payment amount and status.
    *
    * Called when PaymentAllocations change. Handles both forward transitions
-   * (SENT → PARTIAL → PAID) and reversals (PAID → PARTIAL → original status).
+   * (DRAFT/SENT → PARTIAL → PAID) and reversals (PAID → PARTIAL → original status).
    *
    * Terminal statuses (CANCELLED, WRITTEN_OFF) are not modified.
    */
@@ -890,16 +939,20 @@ export class Invoice extends SmrtObject {
     // exactly (e.g. 0.1×3 line items paid 0.3) is treated as PAID by both —
     // not PARTIAL here and then rejected on save (S5 audit #1390 follow-up).
     if (this.isFullyPaid()) {
+      if (this.status !== InvoiceStatus.PAID || !this.paidDate) {
+        this.paidDate = new Date();
+      }
       this.status = InvoiceStatus.PAID;
-      this.paidDate = new Date();
     } else if (amountPaid > 0) {
       this.status = InvoiceStatus.PARTIAL;
       this.paidDate = null; // Clear paidDate if no longer fully paid
     } else {
       // No payment remaining: revert to the appropriate pre-payment status
       this.paidDate = null;
-      if (this.sentAt) {
-        this.status = this.viewedAt ? InvoiceStatus.VIEWED : InvoiceStatus.SENT;
+      if (this.viewedAt) {
+        this.status = InvoiceStatus.VIEWED;
+      } else if (this.sentAt) {
+        this.status = InvoiceStatus.SENT;
       } else {
         this.status = InvoiceStatus.DRAFT;
       }

@@ -49,7 +49,7 @@ const {
   class:selected
   class:disabled
   class:selectable
-  class:closeable
+  class:closeable data-smrt-component="Chip"
 >
   {#if selectable}
     <button
@@ -93,23 +93,25 @@ const {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: var(--smrt-spacing-1, 4px);
-    border-radius: var(--smrt-radius-full, 9999px);
+    gap: var(--smrt-spacing-1);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface);
-    border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
+    border: 1px solid var(--smrt-color-outline-variant);
     max-width: 100%;
   }
 
   .chip.sm {
-    padding: 0 var(--smrt-spacing-1, 4px);
+    padding: 0 var(--smrt-spacing-1);
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
   .chip.md {
-    padding: 0 var(--smrt-spacing-2, 8px);
+    padding: 0 var(--smrt-spacing-2);
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
@@ -130,7 +132,7 @@ const {
     border: none;
     color: inherit;
     font: inherit;
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-1);
     cursor: default;
     white-space: nowrap;
     overflow: hidden;
@@ -150,8 +152,8 @@ const {
     border: none;
     color: inherit;
     cursor: pointer;
-    padding: var(--smrt-spacing-1, 4px);
-    border-radius: var(--smrt-radius-full, 9999px);
+    padding: var(--smrt-spacing-1);
+    border-radius: var(--smrt-radius-full);
     opacity: 0.7;
   }
   .chip__close:hover {
@@ -164,4 +166,5 @@ const {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 1px;
   }
+}
 </style>

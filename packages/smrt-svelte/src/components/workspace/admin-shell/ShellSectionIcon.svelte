@@ -42,7 +42,7 @@ $effect(() => {
 });
 </script>
 
-<span class="smrt-shell-section-icon" aria-hidden="true">
+<span class="smrt-shell-section-icon" aria-hidden="true" data-smrt-component="ShellSectionIcon">
   {#if isShellIconName(name)}
     <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" focusable="false"><path d={SHELL_ICON_PATHS[name]} /></svg>
   {:else if Host}
@@ -53,5 +53,8 @@ $effect(() => {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-shell-section-icon { display: inline-grid; place-items: center; flex: 0 0 auto; }
+}
 </style>

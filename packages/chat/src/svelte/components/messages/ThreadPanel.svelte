@@ -34,7 +34,7 @@ const replyCount = $derived(
 );
 </script>
 
-<aside class="thread-panel" aria-label={t(M['chat.thread_panel.thread_label'], { title: threadTitle })}>
+<aside class="thread-panel" aria-label={t(M['chat.thread_panel.thread_label'], { title: threadTitle })} data-smrt-component="ThreadPanel">
   <header class="thread-panel__header">
     <div class="thread-panel__header-text">
       <h3 class="thread-panel__title">{threadTitle}</h3>
@@ -78,13 +78,15 @@ const replyCount = $derived(
 </aside>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .thread-panel {
     display: flex;
     flex-direction: column;
     height: 100%;
     width: 100%;
-    background: var(--smrt-color-surface, #ffffff);
-    border-left: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    background: var(--smrt-color-surface);
+    border-left: 1px solid var(--smrt-color-outline-variant);
   }
 
   .thread-panel__header {
@@ -92,7 +94,7 @@ const replyCount = $derived(
     align-items: center;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-4, 1rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     flex-shrink: 0;
   }
 
@@ -105,7 +107,7 @@ const replyCount = $derived(
     margin: 0;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #1b1b1f);
+    color: var(--smrt-color-on-surface);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -113,16 +115,16 @@ const replyCount = $derived(
 
   .thread-panel__meta {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .thread-panel__resolved {
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-success-container, #2e7d32);
-    background: var(--smrt-color-success-container, #e8f5e9);
-    border-radius: var(--smrt-radius-full, 9999px);
+    color: var(--smrt-color-on-success-container);
+    background: var(--smrt-color-success-container);
+    border-radius: var(--smrt-radius-full);
     white-space: nowrap;
     flex-shrink: 0;
   }
@@ -134,13 +136,13 @@ const replyCount = $derived(
     padding: 0;
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     flex-shrink: 0;
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .thread-panel__header :global(.thread-panel__close:hover) {
-    background: var(--smrt-color-surface-container-high, #e1e3e8);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .thread-panel__messages {
@@ -153,4 +155,5 @@ const replyCount = $derived(
   .thread-panel__input {
     flex-shrink: 0;
   }
+}
 </style>

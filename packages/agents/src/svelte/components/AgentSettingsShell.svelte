@@ -116,7 +116,7 @@ async function handleSave(slotId: string, config: unknown) {
 }
 </script>
 
-<div class="agent-settings-shell" class:single-agent={agents.length === 1}>
+<div class="agent-settings-shell" class:single-agent={agents.length === 1} data-smrt-component="AgentSettingsShell">
 	{#if agents.length > 1}
 		<aside class="agents-sidebar">
 			<h3 class="sidebar-title" id="{idBase}-agents-title">Agents</h3>
@@ -190,6 +190,8 @@ async function handleSave(slotId: string, config: unknown) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.agent-settings-shell {
 		display: grid;
 		grid-template-columns: 220px 1fr;
@@ -202,10 +204,10 @@ async function handleSave(slotId: string, config: unknown) {
 	}
 
 	.agents-sidebar {
-		background: var(--smrt-color-surface-container-low, #f8fafc);
-		border-radius: var(--smrt-radius-medium, 8px);
+		background: var(--smrt-color-surface-container-low);
+		border-radius: var(--smrt-radius-medium);
 		padding: var(--smrt-spacing-4, 1rem);
-		border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+		border: 1px solid var(--smrt-color-outline-variant);
 	}
 
 	.sidebar-title {
@@ -215,8 +217,8 @@ async function handleSave(slotId: string, config: unknown) {
 		font-weight: var(--smrt-typography-weight-semibold, 600);
 		text-transform: uppercase;
 		letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
-		color: var(--smrt-color-on-surface-variant, #64748b);
-		border-bottom: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+		color: var(--smrt-color-on-surface-variant);
+		border-bottom: 1px solid var(--smrt-color-outline-variant);
 	}
 
 	.agents-list {
@@ -233,7 +235,7 @@ async function handleSave(slotId: string, config: unknown) {
 		padding: 0.625rem 0.75rem;
 		border: none;
 		background: transparent;
-		border-radius: var(--smrt-radius-md, 8px);
+		border-radius: var(--smrt-radius-md);
 		cursor: pointer;
 		text-align: left;
 		width: 100%;
@@ -243,11 +245,11 @@ async function handleSave(slotId: string, config: unknown) {
 	}
 
 	.agent-button:hover {
-		background: var(--smrt-color-surface-container-high, #e2e8f0);
+		background: var(--smrt-color-surface-container-high);
 	}
 
 	.agent-button.active {
-		background: var(--smrt-color-primary, #3b82f6);
+		background: var(--smrt-color-primary);
 	}
 
 	.agent-button.active .agent-class,
@@ -258,12 +260,12 @@ async function handleSave(slotId: string, config: unknown) {
 	.agent-class {
 		font-size: var(--smrt-typography-title-small-size, 0.875rem);
 		font-weight: var(--smrt-typography-weight-semibold, 600);
-		color: var(--smrt-color-on-surface, #1e293b);
+		color: var(--smrt-color-on-surface);
 	}
 
 	.agent-name {
 		font-size: var(--smrt-typography-body-small-size, 0.75rem);
-		color: var(--smrt-color-on-surface-variant, #64748b);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	.agent-content {
@@ -273,7 +275,7 @@ async function handleSave(slotId: string, config: unknown) {
 	.agent-header {
 		margin-bottom: 1.5rem;
 		padding-bottom: 1rem;
-		border-bottom: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+		border-bottom: 1px solid var(--smrt-color-outline-variant);
 	}
 
 	.agent-title {
@@ -286,7 +288,7 @@ async function handleSave(slotId: string, config: unknown) {
 	.agent-subtitle {
 		margin: 0.25rem 0 0;
 		font-size: var(--smrt-typography-body-medium-size, 0.9375rem);
-		color: var(--smrt-color-on-surface-variant, #64748b);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	.no-agents {
@@ -298,7 +300,7 @@ async function handleSave(slotId: string, config: unknown) {
 		text-align: center;
 		background: var(--smrt-color-surface-variant);
 		border: 1px dashed var(--smrt-color-outline-variant);
-		border-radius: var(--smrt-radius-md, 8px);
+		border-radius: var(--smrt-radius-md);
 		min-height: 300px;
 	}
 
@@ -311,13 +313,14 @@ async function handleSave(slotId: string, config: unknown) {
 	.no-agents-message {
 		margin: 0 0 0.5rem 0;
 		font-size: var(--smrt-typography-body-large-size, 1rem);
-		color: var(--smrt-color-on-surface-variant, #64748b);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	.no-agents-hint {
 		margin: 0;
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-		color: var(--smrt-color-on-surface-variant, #94a3b8);
+		color: var(--smrt-color-on-surface-variant);
 		max-width: 400px;
 	}
+}
 </style>

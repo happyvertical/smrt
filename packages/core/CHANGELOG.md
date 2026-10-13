@@ -1,11 +1,101 @@
 # @happyvertical/smrt-core
 
+## 0.55.17
+
+### Patch Changes
+
+- ### Features
+  
+  - app layout foundation on desktop and phone (epic #3850) (#3861) (shell)
+  - wave 1 styling contract — token vocabulary, cascade layers, root hooks (#3828) (styling)
+  - cookbook theme, overview and shell polish for the Planner (#3847) (kitchen)
+  - serve a live local Planner MCP app (#3838) (kitchen)
+  
+  ### Bug Fixes
+  
+  - ask MCP hosts for a stable Planner height (#3849) (kitchen)
+- @happyvertical/smrt-config@0.55.17
+  - @happyvertical/smrt-scanner@0.55.17
+  - @happyvertical/smrt-types@0.55.17
+
+## 0.55.16
+
+### Patch Changes
+
+- ### Features
+  
+  - support invoice-rounded editor totals (#3817) (commerce)
+  
+  ### Bug Fixes
+  
+  - preserve undelivered invoice payment lifecycle (#3819) (commerce)
+- @happyvertical/smrt-config@0.55.16
+  - @happyvertical/smrt-scanner@0.55.16
+  - @happyvertical/smrt-types@0.55.16
+
+## 0.55.15
+
+### Patch Changes
+
+- ### Features
+  
+  - add native purchase order header form (#3804) (commerce)
+  
+  ### Bug Fixes
+  
+  - make payment posting atomic and retry-safe (#3809) (commerce)
+  - enforce atomic payment allocation integrity (#3806) (commerce)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.103.4 (#3789) (deps)
+- @happyvertical/smrt-config@0.55.15
+  - @happyvertical/smrt-scanner@0.55.15
+  - @happyvertical/smrt-types@0.55.15
+
+## 0.55.14
+
+### Patch Changes
+
+- ### Features
+  
+  - add shared cost and pricing foundations (release 1) (#3796)
+- @happyvertical/smrt-config@0.55.14
+  - @happyvertical/smrt-scanner@0.55.14
+  - @happyvertical/smrt-types@0.55.14
+
+## 0.55.13
+
+### Patch Changes
+
+- ### Features
+  
+  - complete cookbook v1 validator contract (#3782) (core)
+  - publish the intake review host factory (#3780) (ingestion)
+  - permit explicitly authorized self-approval (#3774) (approvals)
+  
+  ### Bug Fixes
+  
+  - finish app-wide feature catalogue (#3779) (recipes)
+  - declared columns win over STI _meta_data keys (#3238) (#3781) (core)
+  - keep NULL-tenant dispatches system-only on tenant list/get reads (#3301) (#3778) (core)
+  - refuse a foreign-ambient-tenant runtime report save before confirmation (#3768) (#3777) (chat)
+  - close generated CLI CRUD on locked-down identity/RBAC models (#3776) (users)
+  - honour per-class allowSuperAdminBypass in interceptors (#2973) (#3775) (tenancy)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.103.2 (#3783) (deps)
+- @happyvertical/smrt-config@0.55.13
+  - @happyvertical/smrt-scanner@0.55.13
+  - @happyvertical/smrt-types@0.55.13
+
 ## 0.55.12
 
 ### Patch Changes
 
 - ### Bug Fixes
-  
+
   - never re-run resolve() from createSessionHandler's session fallback (#3773) (users)
   - open the one-time token as a URL fragment, not in planner.config.json (#3750) (#3772) (kitchen)
   - hosted STI subclass routes authorize the base's permission slugs (#3771) (core)

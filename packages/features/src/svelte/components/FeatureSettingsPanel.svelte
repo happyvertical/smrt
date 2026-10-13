@@ -119,7 +119,7 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
 }
 </script>
 
-<section class="feature-settings" data-testid="feature-settings-panel">
+<section class="feature-settings" data-testid="feature-settings-panel" data-smrt-component="FeatureSettingsPanel">
   {#if message}
     <p class="fs-flash" role="status">{message}</p>
   {/if}
@@ -227,6 +227,8 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .feature-settings {
     display: flex;
     flex-direction: column;
@@ -237,17 +239,17 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
     margin: 0;
     padding: 0.625rem 0.75rem;
     border-radius: 0.375rem;
-    background: var(--color-surface-muted, #f3f4f6);
+    background: var(--smrt-color-surface-variant);
   }
 
   .fs-flash-error {
-    color: var(--color-error-text, #991b1b);
-    background: var(--color-error-surface, #fef2f2);
+    color: var(--smrt-color-error);
+    background: var(--smrt-color-error-container);
   }
 
   .fs-empty {
     margin: 0;
-    color: var(--color-text-muted, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -280,14 +282,14 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
 
   .fs-description {
     margin: 0;
-    color: var(--color-text-muted, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     line-height: 1.45;
   }
 
   .fs-key,
   .fs-package {
     font-size: 0.8125rem;
-    color: var(--color-text-muted, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     overflow-wrap: anywhere;
   }
 
@@ -307,15 +309,15 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
 
   .fs-field-label {
     font-size: 0.8125rem;
-    color: var(--color-text-muted, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .fs-field select {
     width: 100%;
     padding: 0.375rem 0.5rem;
-    border: 1px solid var(--color-border, #d1d5db);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.375rem;
-    background: var(--color-surface, #fff);
+    background: var(--smrt-color-surface);
     color: inherit;
     font: inherit;
   }
@@ -335,4 +337,5 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
       align-items: stretch;
     }
   }
+}
 </style>

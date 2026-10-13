@@ -17,7 +17,7 @@ const { t } = useI18n();
 
 <section
   class="smrt-system-scope-panel"
-  aria-label={t(M['ui.system_scope_panel.system_scope'])}
+  aria-label={t(M['ui.system_scope_panel.system_scope'])} data-smrt-component="SystemScopePanel"
 >
   {#each panels as panel (panel.id)}
     <section class="smrt-system-scope-panel__group" aria-label={panel.label}>
@@ -65,6 +65,8 @@ const { t } = useI18n();
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-system-scope-panel {
     display: grid;
     gap: var(--smrt-spacing-5);
@@ -117,4 +119,5 @@ const { t } = useI18n();
   .smrt-system-scope-panel__items small {
     grid-column: 1 / -1;
   }
+}
 </style>

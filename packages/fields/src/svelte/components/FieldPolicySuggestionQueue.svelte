@@ -97,7 +97,7 @@ function description(suggestion: FieldPolicySuggestion): string {
 }
 </script>
 
-<section class="field-policy-suggestion-queue" aria-label={heading}>
+<section class="field-policy-suggestion-queue" aria-label={heading} data-smrt-component="FieldPolicySuggestionQueue">
   <header>
     <h2>{heading}</h2>
     {#if !loading}<span class="field-policy-suggestion-queue__count">{total}</span>{/if}
@@ -128,12 +128,15 @@ function description(suggestion: FieldPolicySuggestion): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .field-policy-suggestion-queue { display: grid; gap: var(--smrt-spacing-3, 0.75rem); }
   .field-policy-suggestion-queue header { align-items: center; display: flex; gap: var(--smrt-spacing-2, 0.5rem); }
   .field-policy-suggestion-queue h2, .field-policy-suggestion-queue h3 { margin: 0; }
-  .field-policy-suggestion-queue__count { border-radius: 999px; background: var(--smrt-color-secondary-container, #e8def8); min-inline-size: 1.5rem; padding: 0.125rem 0.4rem; text-align: center; }
+  .field-policy-suggestion-queue__count { border-radius: 999px; background: var(--smrt-color-secondary-container); min-inline-size: 1.5rem; padding: 0.125rem 0.4rem; text-align: center; }
   .field-policy-suggestion-queue ul { display: grid; gap: var(--smrt-spacing-3, 0.75rem); list-style: none; margin: 0; padding: 0; }
   .field-policy-suggestion-queue article { border: 1px solid var(--smrt-color-outline-variant, currentColor); border-radius: var(--smrt-radius-small, 0.25rem); display: grid; gap: var(--smrt-spacing-2, 0.5rem); padding: var(--smrt-spacing-3, 0.75rem); }
   .field-policy-suggestion-queue article p { margin: 0; }
   .field-policy-suggestion-queue__actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2, 0.5rem); }
+}
 </style>

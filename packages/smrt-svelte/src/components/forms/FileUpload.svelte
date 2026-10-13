@@ -249,7 +249,7 @@ function formatFileSize(bytes: number): string {
 }
 </script>
 
-<div class="file-upload" class:disabled>
+<div class="file-upload" class:disabled data-smrt-component="FileUpload">
   <div
     class="drop-zone"
     class:dragging={isDragging}
@@ -323,6 +323,8 @@ function formatFileSize(bytes: number): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .file-upload {
     position: relative;
     display: flex;
@@ -356,52 +358,52 @@ function formatFileSize(bytes: number): string {
     justify-content: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-8, 2rem) var(--smrt-spacing-6, 1.5rem);
-    border: 2px dashed var(--smrt-color-outline, #79747e);
+    border: 2px dashed var(--smrt-color-outline);
     border-radius: var(--smrt-radius-lg, 1rem);
-    background: var(--smrt-color-surface-container-low, #f7f2fa);
+    background: var(--smrt-color-surface-container-low);
     cursor: pointer;
     transition: all 200ms;
     text-align: center;
   }
 
   .drop-zone:hover {
-    border-color: var(--smrt-color-primary, #6750a4);
-    background: var(--smrt-color-surface-container, #f3edf7);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-surface-container);
   }
 
   .drop-zone:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #6750a4);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 
   .drop-zone.dragging {
-    border-color: var(--smrt-color-primary, #6750a4);
-    background: var(--smrt-color-primary-container, #eaddff);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
     border-style: solid;
   }
 
   .drop-zone__icon {
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .drop-zone__label {
     margin: 0;
     font: var(--smrt-typography-body-large-font);
-    color: var(--smrt-color-on-surface, #1d1b20);
+    color: var(--smrt-color-on-surface);
   }
 
   .drop-zone__hint {
     margin: 0;
     font: var(--smrt-typography-body-small-font);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .file-upload__error {
     margin: 0;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    background: var(--smrt-color-error-container, #f9dedc);
-    color: var(--smrt-color-on-error-container, #410e0b);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
     border-radius: var(--smrt-radius-sm, 0.25rem);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
@@ -410,7 +412,7 @@ function formatFileSize(bytes: number): string {
     list-style: none;
     margin: 0;
     padding: 0;
-    border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-md, 0.5rem);
     overflow: hidden;
   }
@@ -420,7 +422,7 @@ function formatFileSize(bytes: number): string {
     align-items: center;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #cac4d0);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .file-list__item:last-child {
@@ -430,7 +432,7 @@ function formatFileSize(bytes: number): string {
   .file-list__name {
     flex: 1;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface, #1d1b20);
+    color: var(--smrt-color-on-surface);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -438,7 +440,7 @@ function formatFileSize(bytes: number): string {
 
   .file-list__size {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
   }
 
@@ -450,15 +452,16 @@ function formatFileSize(bytes: number): string {
     height: 28px;
     padding: 0;
     border: none;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     transition: background-color 200ms;
   }
 
   .file-list__remove:hover {
-    background: var(--smrt-color-error-container, #f9dedc);
-    color: var(--smrt-color-error, #ba1a1a);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-error);
   }
+}
 </style>

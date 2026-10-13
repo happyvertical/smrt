@@ -29,6 +29,14 @@ describe('application shell', () => {
     expect(layout).not.toMatch(/<(Provider|ThemeProvider|AdminShell)\b/);
   });
 
+  it('drops dead AppShell props and gives nav items icons', () => {
+    expect(layout).not.toContain('subtitle=');
+    expect(layout).not.toContain('tenantLabel');
+    expect(layout).not.toContain('appPanelDocs');
+    expect(layout).toContain("icon: 'book'");
+    expect(layout).toContain("icon: 'settings'");
+  });
+
   it('registers diagnostics only for a signed-in session and generated tools read-only', () => {
     expect(layout).toContain(
       'runtimeDiagnostics={data.session.authenticated}',
@@ -37,9 +45,26 @@ describe('application shell', () => {
     expect(layout).toContain("'modelContext' in document");
   });
 
+  it('wires the account menu, sign-out, phone tab bar and chrome-free setup', () => {
+    expect(layout).toContain('user={data.session.user}');
+    expect(layout).toContain('onSignOut={signOut}');
+    expect(layout).toContain("import { signOut } from '$lib/sign-out'");
+    expect(layout).toContain('phoneTabBar');
+    expect(layout).toContain("chrome={!page.route.id?.startsWith('/setup')}");
+    expect(layout).not.toContain('TODO(');
+    expect(read('settings/+page.svelte')).toContain(
+      '<ShellSettingsPage onSignOut={signOut} />',
+    );
+    expect(read('../lib/sign-out.ts')).toContain("method: 'POST'");
+    expect(read('sign-out/+server.ts')).toContain(
+      'export const POST = createSignOutHandler(runtime)',
+    );
+    expect(read('../lib/sign-out.ts')).toContain('if (!response.ok)');
+  });
+
   it('mounts the shipped owner setup form over the runtime action', () => {
     expect(read('setup/+page.svelte')).toContain(
-      '<OwnerSetupForm {data} {form} {enhance} />',
+      '<OwnerSetupForm {data} {form} {enhance} title="s-m-r-t app" />',
     );
     expect(read('setup/+page.server.ts')).toContain(
       'createOwnerSetupPage(runtime',
@@ -47,6 +72,19 @@ describe('application shell', () => {
   });
 
   it('mounts the shipped settings page inside the shell', () => {
-    expect(read('settings/+page.svelte')).toContain('<ShellSettingsPage />');
+    expect(read('settings/+page.svelte')).toContain('<ShellSettingsPage');
+  });
+});
+
+describe('document head', () => {
+  const html = read('../app.html');
+
+  it('declares safe-area, color scheme, theme colors and an SVG icon', () => {
+    expect(html).toContain('viewport-fit=cover');
+    expect(html).toContain('name="color-scheme" content="light dark"');
+    expect(html).toContain('(prefers-color-scheme: light)');
+    expect(html).toContain('(prefers-color-scheme: dark)');
+    expect(html).toContain('rel="icon" type="image/svg+xml"');
+    expect(read('../../static/favicon.svg')).toContain('currentColor');
   });
 });

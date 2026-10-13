@@ -35,9 +35,9 @@ let {
 </script>
 
 {#if !campaign}
-  <p class="empty">Select a campaign to see its details.</p>
+  <p class="empty" data-smrt-component="CampaignDetail">Select a campaign to see its details.</p>
 {:else}
-  <article class="campaign-detail">
+  <article class="campaign-detail" data-smrt-component="CampaignDetail">
     <Card variant="outlined">
       <header class="header">
         <div>
@@ -106,6 +106,8 @@ let {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .campaign-detail {
     display: flex;
     flex-direction: column;
@@ -210,4 +212,5 @@ let {
   .channel-ref {
     font: var(--smrt-typography-body-small-font);
   }
+}
 </style>

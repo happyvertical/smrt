@@ -314,7 +314,7 @@ function handleSave(data: ContentData) {
 }
 </script>
 
-<div class="governed-editor">
+<div class="governed-editor" data-smrt-component="GovernedContentEditor">
   {#if publishReadinessState}
     <div class={`publish-readiness-card publish-readiness-card--${publishReadinessState.level}`}>
       <div class="publish-readiness-card__header">
@@ -376,6 +376,8 @@ function handleSave(data: ContentData) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .governed-editor {
     display: flex;
     flex-direction: column;
@@ -397,7 +399,7 @@ function handleSave(data: ContentData) {
   }
 
   .publish-readiness-card--advisory {
-    border-color: color-mix(in srgb, var(--smrt-color-tertiary, #d97706) 45%, transparent);
+    border-color: color-mix(in srgb, var(--smrt-color-tertiary) 45%, transparent);
   }
 
   .publish-readiness-card--blocked {
@@ -432,4 +434,5 @@ function handleSave(data: ContentData) {
     padding-left: 1.25rem;
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

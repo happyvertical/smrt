@@ -536,7 +536,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
     bind:this={reviewElement}
     class="staged-review"
     data-staged-control-review
-    aria-label={text.region}
+    aria-label={text.region} data-smrt-component="StagedControlReview"
   >
     <header>
       <div>
@@ -623,31 +623,34 @@ async function discardAll(event: MouseEvent): Promise<void> {
 {/if}
 
 {#if summary && reviewActivated}
-  <p class="status visually-hidden" role="status" aria-live="polite" aria-atomic="true">{status}</p>
+  <p class="status visually-hidden" role="status" aria-live="polite" aria-atomic="true" data-smrt-component="StagedControlReview">{status}</p>
 {/if}
 
 <style>
-  .staged-review { margin-block-start: var(--smrt-spacing-5, 1.25rem); padding: var(--smrt-spacing-4, 1rem); color: var(--smrt-color-on-surface, #1f2937); background: var(--smrt-color-surface-container-low, #f8fafc); border: 1px solid var(--smrt-color-outline-variant, #cbd5e1); border-inline-start: 4px solid var(--smrt-color-tertiary, #7d5260); border-radius: var(--smrt-radius-medium, .5rem); }
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
+  .staged-review { margin-block-start: var(--smrt-spacing-5, 1.25rem); padding: var(--smrt-spacing-4, 1rem); color: var(--smrt-color-on-surface); background: var(--smrt-color-surface-container-low); border: 1px solid var(--smrt-color-outline-variant); border-inline-start: 4px solid var(--smrt-color-tertiary); border-radius: var(--smrt-radius-medium, .5rem); }
   header, .proposal-heading, .batch-actions, .item-actions { display: flex; align-items: center; gap: var(--smrt-spacing-2, .5rem); }
   header { justify-content: space-between; align-items: flex-start; gap: var(--smrt-spacing-4, 1rem); }
   h2, p { margin: 0; } h2 { font: var(--smrt-typography-title-medium-font, 600 1rem/1.4 system-ui); }
-  header p, .proposal-heading span, dt { color: var(--smrt-color-on-surface-variant, #475569); font-size: .875rem; }
+  header p, .proposal-heading span, dt { color: var(--smrt-color-on-surface-variant); font-size: .875rem; }
   .proposal-heading strong, .proposal-heading .subject { display: block; }
   ul { display: grid; gap: var(--smrt-spacing-3, .75rem); padding: 0; list-style: none; }
-  li { padding: var(--smrt-spacing-3, .75rem); background: var(--smrt-color-surface, #fff); border: 1px solid var(--smrt-color-outline-variant, #cbd5e1); border-radius: var(--smrt-radius-small, .375rem); }
-  li.stale, li.invalid { border-color: var(--smrt-color-error, #b3261e); }
+  li { padding: var(--smrt-spacing-3, .75rem); background: var(--smrt-color-surface); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-small, .375rem); }
+  li.stale, li.invalid { border-color: var(--smrt-color-error); }
   .proposal-heading { justify-content: space-between; }
   dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-3, .75rem); }
   dt { font-weight: 600; } dd { margin: .25rem 0 0; overflow-wrap: anywhere; }
-  input, textarea { width: 100%; box-sizing: border-box; padding: .4rem .5rem; color: inherit; background: var(--smrt-color-surface, #fff); border: 1px solid var(--smrt-color-outline, #64748b); border-radius: var(--smrt-radius-small, .375rem); }
+  input, textarea { width: 100%; box-sizing: border-box; padding: .4rem .5rem; color: inherit; background: var(--smrt-color-surface); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small, .375rem); }
   input[type="checkbox"] { width: auto; }
-  button { min-height: 2.25rem; padding: .4rem .75rem; color: var(--smrt-color-on-primary, #fff); background: var(--smrt-color-primary, #005ac1); border: 1px solid transparent; border-radius: var(--smrt-radius-small, .375rem); cursor: pointer; }
-  button.secondary { color: var(--smrt-color-primary, #005ac1); background: transparent; border-color: var(--smrt-color-outline, #64748b); }
-  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--smrt-color-primary, #005ac1); outline-offset: 2px; }
+  button { min-height: 2.25rem; padding: .4rem .75rem; color: var(--smrt-color-on-primary); background: var(--smrt-color-primary); border: 1px solid transparent; border-radius: var(--smrt-radius-small, .375rem); cursor: pointer; }
+  button.secondary { color: var(--smrt-color-primary); background: transparent; border-color: var(--smrt-color-outline); }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   button:disabled { cursor: not-allowed; opacity: .55; }
   .item-actions { margin-block-start: var(--smrt-spacing-3, .75rem); }
-  .problem { margin-block-start: var(--smrt-spacing-2, .5rem); color: var(--smrt-color-error, #b3261e); }
+  .problem { margin-block-start: var(--smrt-spacing-2, .5rem); color: var(--smrt-color-error); }
   .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-  :global([data-smrt-staged='true']) { outline: 3px solid var(--smrt-color-tertiary, #7d5260); outline-offset: 3px; }
+  :global([data-smrt-staged='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 3px; }
   @media (max-width: 40rem) { header, .proposal-heading { align-items: stretch; flex-direction: column; } dl { grid-template-columns: 1fr; } }
+}
 </style>

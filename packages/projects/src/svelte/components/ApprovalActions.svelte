@@ -55,7 +55,7 @@ const canEdit = $derived(
 const canDelete = $derived(status === 'draft' && ondelete);
 </script>
 
-<div class="approval-actions" class:vertical={layout === 'vertical'}>
+<div class="approval-actions" class:vertical={layout === 'vertical'} data-smrt-component="ApprovalActions">
   {#if canSubmit}
     <Button variant="primary" onclick={onsubmit} disabled={disabled || loading}>
       {loading ? 'Submitting...' : 'Submit for Approval'}
@@ -100,6 +100,8 @@ const canDelete = $derived(status === 'draft' && ondelete);
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .approval-actions {
     display: flex;
     flex-wrap: wrap;
@@ -116,7 +118,7 @@ const canDelete = $derived(status === 'draft' && ondelete);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-label-large-weight, 500);
     padding: 0.5rem 1rem;
-    border-radius: var(--smrt-radius-small, 8px);
+    border-radius: var(--smrt-radius-small);
   }
 
   .status-message.success {
@@ -128,4 +130,5 @@ const canDelete = $derived(status === 'draft' && ondelete);
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
   }
+}
 </style>

@@ -40,7 +40,7 @@ function canWithdraw(contribution: ContentContributionData) {
 }
 </script>
 
-<section class="portal">
+<section class="portal" data-smrt-component="ContentContributionPortal">
   <header class="portal__header">
     <div>
       <h3>{t(M['content.contribution_portal.heading'])}</h3>
@@ -109,6 +109,8 @@ function canWithdraw(contribution: ContentContributionData) {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .portal {
     display: grid;
     gap: 1rem;
@@ -171,7 +173,7 @@ function canWithdraw(contribution: ContentContributionData) {
     justify-content: center;
     min-width: 1.75rem;
     padding: 0.15rem 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary-container);
   }
 
@@ -186,4 +188,5 @@ function canWithdraw(contribution: ContentContributionData) {
       grid-template-columns: 1fr;
     }
   }
+}
 </style>

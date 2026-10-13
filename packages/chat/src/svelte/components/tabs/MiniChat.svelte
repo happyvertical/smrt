@@ -56,7 +56,7 @@ $effect(() => {
 });
 </script>
 
-<div class="mini-chat">
+<div class="mini-chat" data-smrt-component="MiniChat">
   <div
     class="mini-chat__messages"
     style:max-height="{maxHeight}px"
@@ -111,6 +111,8 @@ $effect(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .mini-chat {
     display: flex;
     flex-direction: column;
@@ -120,17 +122,17 @@ $effect(() => {
   .mini-chat__messages {
     flex: 1;
     overflow-y: auto;
-    padding: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2);
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     scroll-behavior: smooth;
   }
 
   .mini-chat__msg {
     display: flex;
     align-items: flex-end;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     max-width: 85%;
   }
 
@@ -142,23 +144,23 @@ $effect(() => {
   .mini-chat__bubble {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border-radius: var(--smrt-radius-medium, 8px);
-    background: var(--smrt-color-surface-container, #f0f0f4);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
     word-break: break-word;
   }
 
   .mini-chat__bubble--own {
-    background: var(--smrt-color-primary-container, #d6e3ff);
-    color: var(--smrt-color-on-primary-container, #001a41);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .mini-chat__sender {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     line-height: 1;
   }
 
@@ -168,7 +170,7 @@ $effect(() => {
 
   .mini-chat__time {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
     align-self: flex-end;
     line-height: 1;
   }
@@ -183,24 +185,24 @@ $effect(() => {
 
   .mini-chat__empty-text {
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
   :global(.mini-chat__input-bar) {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-1, 4px);
-    padding: var(--smrt-spacing-2, 8px);
-    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    background: var(--smrt-color-surface, #fefbff);
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-2);
+    border-top: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
   }
 
   /* Layout for the Input primitive's rendered <input> (tokenised styling comes
      from the primitive; this only sizes/shapes it within the input bar). */
   :global(.mini-chat__input) {
     flex: 1;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
   }
 
   /* :global() pierces into the Button child's rendered <button> (see #1589).
@@ -209,9 +211,9 @@ $effect(() => {
     width: 32px;
     height: 32px;
     padding: 0;
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
-    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    border-radius: var(--smrt-radius-full);
     flex-shrink: 0;
     transition: opacity var(--smrt-duration-short2, 150ms);
   }
@@ -221,7 +223,7 @@ $effect(() => {
   }
 
   :global(.mini-chat__input-bar .mini-chat__send-btn:not(:disabled):hover) {
-    background: var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-primary);
     opacity: 0.85;
   }
 
@@ -234,4 +236,5 @@ $effect(() => {
       transition: none;
     }
   }
+}
 </style>

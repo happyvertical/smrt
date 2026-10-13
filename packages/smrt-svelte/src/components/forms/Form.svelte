@@ -1529,7 +1529,7 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   onsubmit={handleSubmit}
   {method}
   {action}
-  use:applyEnhance={enhance}
+  use:applyEnhance={enhance} data-smrt-component="Form"
 >
   <!--
     Screen-reader status region (L1 #1420): announces async STT / field-
@@ -1642,16 +1642,18 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
 </form>
 
 {#if isFormListening && spokenText}
-  <div class="spoken-toaster">
+  <div class="spoken-toaster" data-smrt-component="Form">
     <strong>{t(M['ui.form.you_said'])}</strong> {spokenText}
   </div>
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-form {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-4, 16px);
+    gap: var(--smrt-spacing-4);
   }
 
   /* Visually-hidden live region (L1 #1420) — announced to screen readers only. */
@@ -1670,23 +1672,23 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   .form-controls {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-4, 16px);
+    gap: var(--smrt-spacing-4);
     flex-wrap: wrap;
   }
 
   .mode-toggle {
     display: flex;
-    background: var(--smrt-color-surface-container-high, #f3f4f6);
-    padding: var(--smrt-spacing-1, 4px);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface-container-high);
+    padding: var(--smrt-spacing-1);
+    border-radius: var(--smrt-radius-md);
   }
 
   .mode-btn {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-4, 16px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-4);
     border: none;
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
-    border-radius: var(--smrt-radius-md, 8px);
+    color: var(--smrt-color-on-surface-variant);
+    border-radius: var(--smrt-radius-md);
     cursor: pointer;
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
@@ -1694,24 +1696,24 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   }
 
   .mode-btn:hover {
-    color: var(--smrt-color-on-surface, #374151);
+    color: var(--smrt-color-on-surface);
   }
 
   .mode-btn.active {
-    background: var(--smrt-color-surface, #fff);
-    color: var(--smrt-color-primary, #3b82f6);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-primary);
     box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
   }
 
   .form-listen-btn {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-5, 20px);
-    border: 2px solid var(--smrt-color-primary, #3b82f6);
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-5);
+    border: 2px solid var(--smrt-color-primary);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-primary);
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     cursor: pointer;
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
@@ -1719,20 +1721,20 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   }
 
   .form-listen-btn:hover {
-    background: var(--smrt-color-primary-container, #eff6ff);
+    background: var(--smrt-color-primary-container);
   }
 
   .form-listen-btn.listening {
-    background: var(--smrt-color-primary, #22c55e);
-    border-color: var(--smrt-color-primary, #22c55e);
-    color: var(--smrt-color-on-primary, #fff);
+    background: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     animation: pulse-btn 1.5s var(--smrt-easing-standard, ease-in-out) infinite;
   }
 
   .form-listen-btn.extracting {
-    background: var(--smrt-color-secondary, #f59e0b);
-    border-color: var(--smrt-color-secondary, #f59e0b);
-    color: var(--smrt-color-on-secondary, #fff);
+    background: var(--smrt-color-secondary);
+    border-color: var(--smrt-color-secondary);
+    color: var(--smrt-color-on-secondary);
   }
 
   .form-listen-btn:disabled {
@@ -1769,12 +1771,12 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
     bottom: 0;
     left: 0;
     right: 0;
-    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-6, 24px);
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-6);
     /* 90%-opacity primary. The old `--smrt-color-primary-rgb` channel token
        was never emitted (issue #1431); color-mix derives the alpha from the
        emitted `--smrt-color-primary` token instead. */
-    background: color-mix(in srgb, var(--smrt-color-primary, #166534) 90%, transparent);
-    color: var(--smrt-color-on-primary, #fff);
+    background: color-mix(in srgb, var(--smrt-color-primary) 90%, transparent);
+    color: var(--smrt-color-on-primary);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     box-shadow: 0 -2px 12px color-mix(in srgb, var(--smrt-color-shadow) 15%, transparent);
     z-index: var(--smrt-z-index-toast, 1500);
@@ -1784,7 +1786,7 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   }
 
   .spoken-toaster strong {
-    color: var(--smrt-color-on-primary-container, #bbf7d0);
+    color: var(--smrt-color-on-primary-container);
   }
 
   @keyframes slideUp {
@@ -1799,10 +1801,10 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   }
 
   .extract-error {
-    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
     background: var(--smrt-color-error-container);
     border: 1px solid var(--smrt-color-error);
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-error);
   }
@@ -1810,6 +1812,7 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   .form-fields {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-4, 16px);
+    gap: var(--smrt-spacing-4);
   }
+}
 </style>

@@ -17,7 +17,7 @@ let { preview, busy = false, ondecide }: Props = $props();
 const { t } = useI18n();
 </script>
 
-<section class="preview">
+<section class="preview" data-smrt-component="PreviewApprovalPanel">
   <div>
     <span>{t(M['projects.preview.label'], { id: preview.previewId })}</span>
     <strong>{preview.status}</strong>
@@ -44,6 +44,8 @@ const { t } = useI18n();
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .preview {
     border-block: 1px solid var(--smrt-color-outline-variant);
     display: grid;
@@ -63,4 +65,5 @@ const { t } = useI18n();
     gap: var(--smrt-spacing-3);
     justify-content: flex-end;
   }
+}
 </style>

@@ -14,11 +14,13 @@ interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'class'> {
 const { maxWidth = 'lg', children, ...rest }: Props = $props();
 </script>
 
-<div class="container max-w-{maxWidth}" {...rest}>
+<div class="container max-w-{maxWidth}" {...rest} data-smrt-component="Container">
   {@render children?.()}
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .container {
     box-sizing: border-box;
     width: 100%;
@@ -53,4 +55,5 @@ const { maxWidth = 'lg', children, ...rest }: Props = $props();
       padding-right: var(--smrt-spacing-6);
     }
   }
+}
 </style>

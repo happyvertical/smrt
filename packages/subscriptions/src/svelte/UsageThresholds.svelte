@@ -9,7 +9,7 @@ let {
 } = $props();
 </script>
 
-<div class="smrt-usage-thresholds">
+<div class="smrt-usage-thresholds" data-smrt-component="UsageThresholds">
   {#each evaluations as evaluation (`${evaluation.threshold.metricKey}:${evaluation.usage.windowStart.toISOString()}`)}
     <article
       class:warn={evaluation.state === 'warn'}
@@ -33,25 +33,27 @@ let {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-usage-thresholds {
     display: grid;
     gap: 0.75rem;
   }
 
   .smrt-usage-thresholds__row {
-    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
-    border-radius: var(--smrt-radius-md, 8px);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
     display: grid;
     gap: 0.45rem;
     padding: 0.875rem;
   }
 
   .smrt-usage-thresholds__row.warn {
-    border-color: var(--smrt-color-warning, #d97706);
+    border-color: var(--smrt-color-warning);
   }
 
   .smrt-usage-thresholds__row.blocked {
-    border-color: var(--smrt-color-error, #dc2626);
+    border-color: var(--smrt-color-error);
   }
 
   .smrt-usage-thresholds__header {
@@ -61,9 +63,9 @@ let {
   }
 
   .smrt-usage-thresholds p {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     margin: 0;
   }
-
+}
 </style>

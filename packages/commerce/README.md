@@ -107,6 +107,13 @@ await payment.recordPayment({
 
 `CustomerCollection`, `VendorCollection`, `ContractCollection`, `InvoiceCollection`, `InvoiceLineItemCollection`, `PaymentCollection`, `PaymentAllocationCollection`, `FulfillmentCollection`
 
+`PaymentAllocationCollection.allocatePayment()` splits a payment across invoices
+in one transaction using stable allocation IDs for retries. Direct allocation
+saves also enforce matching owners, customers and currencies and both balance
+caps. Read [payment allocation integrity](agents/payment-allocations.md) for
+replay, parent revision refresh and compatibility requirements.
+
+
 ### Enums
 
 | Export | Values |
@@ -136,6 +143,18 @@ await payment.recordPayment({
 ### Ledger Integration
 
 Invoice and Payment integrate with `@happyvertical/smrt-ledgers` via dynamic import (optional dependency). Invoice stores `arJournalId` and `revenueJournalId` as plain string references to ledger journals. `recognizeRevenue()` creates a balanced AR entry (DR: Accounts Receivable, CR: Revenue, CR: Tax Payable). `recordPayment()` creates a balanced cash receipt entry (DR: Cash, CR: Accounts Receivable). Both methods return null or throw if the ledgers package is not installed.
+
+`Payment.recordPayment()` claims the payment revision and commits the journal,
+entries, and completed payment in one database transaction. A failed completion
+rolls back the posting and restores the instance's settlement fields for retry.
+The claimed persisted status is authoritative even if a caller locally resets
+status or marks the instance failed without saving. Concurrent or stale instances
+fail instead of posting twice; reload the payment
+and retry only if it is still pending. An already completed payment retains the
+`Payment already recorded` error. A caller's enclosing transaction remains the
+owner: if it rolls back after settlement returns, reload the payment before retry.
+These guarantees cover new postings, not orphaned journals written by older
+versions. The returned journal uses the caller's database executor.
 
 ### Cross-Package References
 
@@ -576,3 +595,20 @@ for server handlers from `@happyvertical/smrt-commerce/invoices`.
 caller-owned sources and approvals. See [the editor contract](agents/invoice-preparation.md),
 [calculation rules](agents/invoice-calculations.md), and the required
 [existing-database storage migration](agents/invoice-quantity.md).
+
+## Exact cost billing
+
+The independent `@happyvertical/smrt-commerce/cost-billing` entry point provides
+exact signed reimbursement/fee calculations, ordered generic markup provenance,
+and explicit line or invoice tax rounding. See [the cost billing contract](agents/cost-billing.md).
+It does not alter Invoice persistence, editor defaults or settlement behavior.
+
+### Purchase-order header editing
+
+Import `PurchaseOrderHeaderForm` from `@happyvertical/smrt-commerce/svelte` for a
+native POST of vendor, reference, notes, expected date and ship-to fields. Pass
+`action`, `vendors` and raw `values`; return canonical field `errors` and the same
+`hiddenFields` after server validation. This header-only form leaves purchase
+allocations and totals unchanged. `PurchaseOrder` stores `expectedDate` and
+`shipTo` in existing STI metadata. See [the purchasing contract](agents/purchasing-ui.md#purchase-order-header)
+for validation, retained values and transport details.

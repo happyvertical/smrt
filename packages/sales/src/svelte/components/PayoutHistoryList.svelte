@@ -26,7 +26,7 @@ function methodLabel(method: string): string {
 }
 </script>
 
-<div class="sales-payout-history">
+<div class="sales-payout-history" data-smrt-component="PayoutHistoryList">
   {#if payouts.length === 0}
     <p class="empty">No payouts yet.</p>
   {:else}
@@ -109,9 +109,11 @@ function methodLabel(method: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -128,9 +130,9 @@ function methodLabel(method: string): string {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 0.5rem);
-    background: var(--smrt-color-surface, #fff);
-    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
     padding: var(--smrt-spacing-3, 0.75rem);
   }
 
@@ -152,7 +154,7 @@ function methodLabel(method: string): string {
   }
 
   .payout__method {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
 
@@ -164,7 +166,7 @@ function methodLabel(method: string): string {
   }
 
   .totals__item dt {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -179,7 +181,7 @@ function methodLabel(method: string): string {
   }
 
   .negative {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 
   .timeline {
@@ -193,25 +195,25 @@ function methodLabel(method: string): string {
 
   .timeline__step {
     padding: var(--smrt-spacing-0_5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
-    border-radius: var(--smrt-radius-full, 9999px);
-    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    border-radius: var(--smrt-radius-full);
+    border: 1px solid var(--smrt-color-outline-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .timeline__step--done {
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
   }
 
   .timeline__step--current {
-    border-color: var(--smrt-color-primary, #2563eb);
-    color: var(--smrt-color-primary, #2563eb);
+    border-color: var(--smrt-color-primary);
+    color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .timeline__step--current.timeline__step--failed {
-    border-color: var(--smrt-color-error, #dc2626);
-    color: var(--smrt-color-error, #dc2626);
+    border-color: var(--smrt-color-error);
+    color: var(--smrt-color-error);
   }
 
   .refs {
@@ -222,7 +224,7 @@ function methodLabel(method: string): string {
   }
 
   .refs__item dt {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -239,7 +241,8 @@ function methodLabel(method: string): string {
 
   .notes {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
+}
 </style>

@@ -37,7 +37,7 @@ function statusClass(status: string): string {
 }
 </script>
 
-<div class="events-table-wrapper">
+<div class="events-table-wrapper" data-smrt-component="EventsTable">
 	{#if displayEvents.length === 0}
 		<p class="events-empty">{t(M['analytics.events_table.empty'])}</p>
 	{:else}
@@ -71,6 +71,8 @@ function statusClass(status: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.events-table-wrapper {
 		overflow-x: auto;
 	}
@@ -142,7 +144,7 @@ function statusClass(status: string): string {
 	.status-pill {
 		display: inline-block;
 		padding: 0.125rem 0.5rem;
-		border-radius: var(--smrt-radius-full, 9999px);
+		border-radius: var(--smrt-radius-full);
 		font-size: var(--smrt-typography-label-small-size, 0.6875rem);
 		font-weight: var(--smrt-typography-weight-medium, 500);
 	}
@@ -174,4 +176,5 @@ function statusClass(status: string): string {
 		color: var(--smrt-color-on-surface-variant);
 		font-size: var(--smrt-typography-body-small-size, 0.75rem);
 	}
+}
 </style>

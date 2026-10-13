@@ -38,7 +38,7 @@ function detailsId(id: string): string {
 }
 </script>
 
-<div class="sales-commission-breakdown">
+<div class="sales-commission-breakdown" data-smrt-component="CommissionBreakdown">
   {#if commissions.length === 0}
     <p class="empty">No commissions yet.</p>
   {:else}
@@ -158,6 +158,8 @@ function detailsId(id: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sales-commission-breakdown {
     width: 100%;
     overflow-x: auto;
@@ -165,7 +167,7 @@ function detailsId(id: string): string {
 
   .empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -179,14 +181,14 @@ function detailsId(id: string): string {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     text-align: left;
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    background: var(--smrt-color-surface-container);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     white-space: nowrap;
   }
 
   td {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     vertical-align: top;
   }
 
@@ -200,7 +202,7 @@ function detailsId(id: string): string {
   }
 
   .negative {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 
   .event-kind {
@@ -210,7 +212,7 @@ function detailsId(id: string): string {
 
   .secondary {
     display: block;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
 
@@ -220,7 +222,7 @@ function detailsId(id: string): string {
   }
 
   .details-row td {
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
   }
 
   .details {
@@ -236,7 +238,7 @@ function detailsId(id: string): string {
   }
 
   .details__none {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -248,4 +250,5 @@ function detailsId(id: string): string {
   .adjustments th {
     background: transparent;
   }
+}
 </style>

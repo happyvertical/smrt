@@ -146,7 +146,7 @@ function date(value: string): string {
 }
 </script>
 
-<section aria-label={label ?? t(M['ui.audit.history'])} aria-busy={loading} class="smrt-record-history">
+<section aria-label={label ?? t(M['ui.audit.history'])} aria-busy={loading} class="smrt-record-history" data-smrt-component="RecordHistory">
   {#if error}<p role="alert">{error}</p>{/if}
   {#if loading}<p role="status">{t(M['ui.audit.loading'])}</p>{/if}
   {#if !loading && visible.length === 0}<p>{t(M['ui.audit.empty'])}</p>{/if}
@@ -180,6 +180,8 @@ function date(value: string): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-record-history > ol {
     display: grid;
     margin: 0;
@@ -231,4 +233,5 @@ function date(value: string): string {
     background: var(--smrt-color-surface-container-low);
     list-style: none;
   }
+}
 </style>

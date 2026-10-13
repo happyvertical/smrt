@@ -46,7 +46,7 @@ const duration = $derived.by(() => {
 const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
 </script>
 
-<div class="job-detail">
+<div class="job-detail" data-smrt-component="JobDetail">
   <Card>
     {#snippet header()}
       <div class="job-detail__header">
@@ -162,6 +162,8 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .job-detail {
     width: 100%;
   }
@@ -197,10 +199,10 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
   }
 
   .job-detail__section h3 {
-    margin: 0 0 var(--spacing-sm, 0.5rem) 0;
+    margin: 0 0 var(--smrt-spacing-sm, 0.5rem) 0;
     font-size: var(--smrt-typography-title-small-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-title-small-tracking, 0.05em);
   }
@@ -210,7 +212,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
   }
 
   .job-detail__section--error h3 {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 
   .job-detail__list {
@@ -221,7 +223,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
   }
 
   .job-detail__list dt {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
 
@@ -232,7 +234,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
 
   .job-detail__list code {
     padding: 0.125rem 0.375rem;
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-small, 0.25rem);
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
   }
@@ -240,7 +242,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
   .job-detail__code {
     margin: 0;
     padding: var(--smrt-spacing-md, 1rem);
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
@@ -250,7 +252,8 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
   }
 
   .job-detail__code--error {
-    background: var(--smrt-color-error-container, #ffdad6);
-    color: var(--smrt-color-on-error-container, #410002);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
+}
 </style>

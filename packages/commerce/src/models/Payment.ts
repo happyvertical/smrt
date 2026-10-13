@@ -12,6 +12,10 @@ import {
 } from '@happyvertical/smrt-core';
 import type { Journal } from '@happyvertical/smrt-ledgers';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  assertAllocationParent,
+  claimAllocationParent,
+} from '../allocation-integrity.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import {
   PaymentMethod,
@@ -62,6 +66,9 @@ const loadedPaymentStatus = new WeakMap<Payment, PaymentStatus>();
  * mass-assignment on the generated update route. Cleared after the save runs.
  */
 const settlementInProgress = new WeakSet<Payment>();
+
+/** Prevent concurrent temporary executor bindings on the same instance. */
+const recordingInProgress = new WeakSet<Payment>();
 
 /**
  * Payment represents a financial transaction against a contract.
@@ -397,64 +404,68 @@ export class Payment extends SmrtObject {
    *    must drive it through `recordPayment()` (or start non-COMPLETED).
    */
   override async save(): Promise<this> {
-    // Whole minor units on every surface (#2401). `amount` is what
-    // `PaymentAllocation.save()` and `Payout.assertCappedBySourcePayment()` cap
-    // against with exact integer comparisons, so a fractional major-unit write
-    // here would silently break both.
-    assertIntegerMinorUnits('Payment', this.id || '<new>', [
-      ['amount', this.amount],
-      ['nativeAmount', this.nativeAmount],
-      ['usdAtQuote', this.usdAtQuote],
-      ['usdAtConfirmation', this.usdAtConfirmation],
-    ]);
+    return this.withTransaction(async () => {
+      await claimAllocationParent(this, 'payment');
+      // Whole minor units on every surface (#2401). `amount` is what
+      // `PaymentAllocation.save()` and `Payout.assertCappedBySourcePayment()` cap
+      // against with exact integer comparisons, so a fractional major-unit write
+      // here would silently break both.
+      assertIntegerMinorUnits('Payment', this.id || '<new>', [
+        ['amount', this.amount],
+        ['nativeAmount', this.nativeAmount],
+        ['usdAtQuote', this.usdAtQuote],
+        ['usdAtConfirmation', this.usdAtConfirmation],
+      ]);
 
-    const priorRow = await this.loadPersistedRow();
-    const prior =
-      priorRow && priorRow.status != null
-        ? (priorRow.status as PaymentStatus)
-        : loadedPaymentStatus.get(this);
-    this.assertStatusTransition(prior);
+      const priorRow = await this.loadPersistedRow();
+      const prior =
+        priorRow && priorRow.status != null
+          ? (priorRow.status as PaymentStatus)
+          : loadedPaymentStatus.get(this);
+      this.assertStatusTransition(prior);
 
-    // Reaching COMPLETED is only legal via the verified settlement path,
-    // regardless of whether this is a create (no persisted prior) or an
-    // update of an existing row. A GENESIS create with status: COMPLETED would
-    // otherwise forge settlement proof, so we close it here at the model level
-    // — this covers EVERY surface (REST/MCP/CLI/direct), independent of any
-    // writable-allowlist gap on a given surface.
-    const reachingCompleted =
-      this.status === PaymentStatus.COMPLETED &&
-      prior !== PaymentStatus.COMPLETED;
-    if (reachingCompleted && !settlementInProgress.has(this)) {
-      throw new Error(
-        `Payment ${this.id || '<new>'}: cannot set status to COMPLETED via ` +
-          'raw assignment — a Payment is only completed through ' +
-          'recordPayment(), which posts a balanced settlement journal. Use ' +
-          'recordPayment() instead of setting status directly.',
-      );
-    }
+      // Reaching COMPLETED is only legal via the verified settlement path,
+      // regardless of whether this is a create (no persisted prior) or an
+      // update of an existing row. A GENESIS create with status: COMPLETED would
+      // otherwise forge settlement proof, so we close it here at the model level
+      // — this covers EVERY surface (REST/MCP/CLI/direct), independent of any
+      // writable-allowlist gap on a given surface.
+      const reachingCompleted =
+        this.status === PaymentStatus.COMPLETED &&
+        prior !== PaymentStatus.COMPLETED;
+      if (reachingCompleted && !settlementInProgress.has(this)) {
+        throw new Error(
+          `Payment ${this.id || '<new>'}: cannot set status to COMPLETED via ` +
+            'raw assignment — a Payment is only completed through ' +
+            'recordPayment(), which posts a balanced settlement journal. Use ' +
+            'recordPayment() instead of setting status directly.',
+        );
+      }
 
-    // Freeze the settled monetary fields once the row is already COMPLETED in
-    // the database (S5 audit #1390 round 6 — codex ROOT INSIGHT; mirrors the
-    // PaymentIntent PAID backing-field freeze). A COMPLETED Payment is
-    // settlement proof: its amount was reconciled against a balanced journal
-    // and is trusted downstream — PaymentIntent's PAID verification binds the
-    // winning option's `nativeAmount` to `Payment.amount` / `nativeAmount`. The
-    // only legal exit from COMPLETED is COMPLETED → REFUNDED, and a refund must
-    // NOT alter the settled figures. Closing this at the model level covers
-    // EVERY surface (REST/MCP/CLI/direct), independent of the per-surface
-    // writable allowlist (`amount`/`currency`/`nativeAmount`/... are writable
-    // on a *new* PENDING payment, but must be immutable once settled).
-    if (priorRow && priorRow.status === PaymentStatus.COMPLETED) {
-      this.assertSettledAmountsUnchanged(priorRow);
-    }
+      // Freeze the settled monetary fields once the row is already COMPLETED in
+      // the database (S5 audit #1390 round 6 — codex ROOT INSIGHT; mirrors the
+      // PaymentIntent PAID backing-field freeze). A COMPLETED Payment is
+      // settlement proof: its amount was reconciled against a balanced journal
+      // and is trusted downstream — PaymentIntent's PAID verification binds the
+      // winning option's `nativeAmount` to `Payment.amount` / `nativeAmount`. The
+      // only legal exit from COMPLETED is COMPLETED → REFUNDED, and a refund must
+      // NOT alter the settled figures. Closing this at the model level covers
+      // EVERY surface (REST/MCP/CLI/direct), independent of the per-surface
+      // writable allowlist (`amount`/`currency`/`nativeAmount`/... are writable
+      // on a *new* PENDING payment, but must be immutable once settled).
+      if (priorRow && priorRow.status === PaymentStatus.COMPLETED) {
+        this.assertSettledAmountsUnchanged(priorRow);
+      }
 
-    try {
-      const result = (await super.save()) as this;
-      loadedPaymentStatus.set(this, this.status);
-      return result;
-    } finally {
-      settlementInProgress.delete(this);
-    }
+      try {
+        await assertAllocationParent(this, 'payment');
+        const result = (await super.save()) as this;
+        loadedPaymentStatus.set(this, this.status);
+        return result;
+      } finally {
+        settlementInProgress.delete(this);
+      }
+    });
   }
 
   /**
@@ -619,6 +630,68 @@ export class Payment extends SmrtObject {
    * ```
    */
   async recordPayment(options: RecordPaymentOptions): Promise<Journal> {
+    if (recordingInProgress.has(this)) {
+      throw new Error('Payment recording is already in progress');
+    }
+    if (this.status === PaymentStatus.COMPLETED) {
+      throw new Error('Payment already recorded');
+    }
+    const previous = {
+      status: this.status,
+      journalId: this.journalId,
+      paidAt: this.paidAt,
+      loadedStatus: loadedPaymentStatus.get(this),
+    };
+    recordingInProgress.add(this);
+    try {
+      await this.withTransaction(async () => {
+        if (!this.isPersisted) await this.save();
+        // The revision claim is a write fence, including under PostgreSQL
+        // repeatable-read snapshots. A stale contender must reload and retry
+        // instead of posting from an earlier pending-payment snapshot.
+        if (!this.updated_at) {
+          throw new Error(
+            'Payment revision is missing; reload before recording',
+          );
+        }
+        await this.claimRevision(this.updated_at);
+        // In-memory status can be edited without saving (including markFailed).
+        // Only the claimed persisted row decides whether settlement happened.
+        const persisted = await this.db.get(this.tableName, { id: this.id });
+        if (!persisted) throw new Error('Claimed payment could not be loaded');
+        if (persisted.status === PaymentStatus.COMPLETED) {
+          throw new Error('Payment already recorded');
+        }
+        await this.postPaymentInTransaction(options);
+      });
+    } catch (error) {
+      this.status = previous.status;
+      this.journalId = previous.journalId;
+      this.paidAt = previous.paidAt;
+      if (previous.loadedStatus === undefined) loadedPaymentStatus.delete(this);
+      else loadedPaymentStatus.set(this, previous.loadedStatus);
+      throw error;
+    } finally {
+      recordingInProgress.delete(this);
+      settlementInProgress.delete(this);
+    }
+
+    // Return a journal on the caller's executor, not the now-closed transaction.
+    const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
+    const journals = await JournalCollection.create({
+      ...this.options,
+      db: this.db,
+    });
+    const journal = await journals.get({ id: this.journalId });
+    if (!journal)
+      throw new Error('Recorded payment journal could not be loaded');
+    return journal;
+  }
+
+  /** Post and complete only inside recordPayment's claimed transaction. */
+  private async postPaymentInTransaction(
+    options: RecordPaymentOptions,
+  ): Promise<Journal> {
     if (this.status === PaymentStatus.COMPLETED) {
       throw new Error('Payment already recorded');
     }

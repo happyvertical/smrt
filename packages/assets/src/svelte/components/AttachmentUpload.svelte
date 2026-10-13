@@ -72,10 +72,13 @@ const fileHelp = $derived(
     </div>
   </Form>
 {:else}
-  <p>{t(M['assets.attachments.readonly'])}</p>
+  <p data-smrt-component="AttachmentUpload">{t(M['assets.attachments.readonly'])}</p>
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .upload-fields { display: grid; gap: var(--smrt-spacing-3); min-width: 0; overflow-wrap: anywhere; }
   p { margin: 0; }
+}
 </style>

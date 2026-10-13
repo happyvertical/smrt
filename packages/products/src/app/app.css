@@ -26,8 +26,8 @@ body {
     "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
     sans-serif
   );
-  background-color: var(--smrt-color-surface-container-low, #f9fafb);
-  color: var(--smrt-color-on-surface, #1f2937);
+  background-color: var(--smrt-color-surface-container-low);
+  color: var(--smrt-color-on-surface);
 }
 
 img,
@@ -96,7 +96,7 @@ h3 {
 
 /* Focus styles */
 *:focus-visible {
-  outline: 2px solid var(--smrt-color-primary, #3b82f6);
+  outline: 2px solid var(--smrt-color-primary);
   outline-offset: 2px;
 }
 

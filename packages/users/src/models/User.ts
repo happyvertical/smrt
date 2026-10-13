@@ -79,6 +79,7 @@ export class User extends SmrtObject implements UserContract {
    * Foreign key to smrt-profiles Profile (cross-package)
    */
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { unique: true })
+  @field({ description: 'The personal profile linked to this account.' })
   profileId: string = '';
 
   /**
@@ -90,22 +91,37 @@ export class User extends SmrtObject implements UserContract {
    * that arbitrates cross-connection uniqueness, and its index does not serve
    * a read path that filters on `email` itself.
    */
-  @field({ indexed: true })
+  @field({
+    description: 'The email address used for this account.',
+    indexed: true,
+  })
   email: string = '';
 
   /** Durable normalized key for cross-connection email uniqueness. */
-  @field({ type: 'text', nullable: true, unique: true, readonly: true })
+  @field({
+    description:
+      'The standardized email address used to recognize this account; maintained automatically.',
+    type: 'text',
+    nullable: true,
+    unique: true,
+    readonly: true,
+  })
   emailKey: string | null = null;
 
   /**
    * User account status
    */
-  @field({ type: 'text' })
+  @field({
+    description:
+      'Whether this account is active, inactive, pending, or suspended.',
+    type: 'text',
+  })
   status: UserStatus = UserStatus.ACTIVE;
 
   /**
    * Last login timestamp
    */
+  @field({ description: 'When this person most recently signed in.' })
   lastLoginAt: Date | null = null;
 
   constructor(options: UserOptions = {}) {

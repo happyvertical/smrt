@@ -33,26 +33,44 @@ export class ChatParticipant extends SmrtObject {
   tenantId: string = '';
 
   @foreignKey('ChatRoom', { required: true })
+  @field({ description: 'The room to which this membership belongs.' })
   roomId: string = '';
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
+  @field({ description: 'The person or assistant participating in the room.' })
   profileId: string = '';
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'The member role that determines what they can do in the room.',
+  })
   role: ChatParticipantRole = 'member';
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'Whether this member is active, has left, was removed, or is banned.',
+  })
   status: ChatParticipantStatus = 'active';
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'The availability shown for this member, such as online or away.',
+  })
   onlineStatus: OnlineStatus = 'offline';
   @foreignKey('ChatMessage')
+  @field({ description: 'The most recent message this member has read.' })
   lastReadMessageId: string | null = null;
-  @field()
+  @field({ description: 'When this member was last seen in the conversation.' })
   lastSeenAt: Date | null = null;
-  @field()
+  @field({ description: 'When this member joined the room.' })
   joinedAt: Date | null = null;
-  @field()
+  @field({ description: 'The display name this member uses within the room.' })
   nickname: string = '';
-  @field()
+  @field({
+    description:
+      'Whether notifications for this room are muted for this member.',
+  })
   isMuted: boolean = false;
-  @field()
+  @field({ description: 'Whether this room is pinned for this member.' })
   isPinned: boolean = false;
 
   constructor(options: ChatParticipantOptions = {}) {

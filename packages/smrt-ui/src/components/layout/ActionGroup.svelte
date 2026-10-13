@@ -25,11 +25,13 @@ const {
 }: Props = $props();
 </script>
 
-<div class="action-group gap-{gap} justify-{justify} {className}" {...rest}>
+<div class="action-group gap-{gap} justify-{justify} {className}" {...rest} data-smrt-component="ActionGroup">
   {@render children()}
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .action-group {
     display: flex;
     flex-wrap: wrap;
@@ -52,4 +54,5 @@ const {
   .justify-end {
     justify-content: flex-end;
   }
+}
 </style>

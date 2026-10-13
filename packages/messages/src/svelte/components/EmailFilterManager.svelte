@@ -165,7 +165,7 @@ function getPatternPlaceholder(type: string): string {
 }
 </script>
 
-<div class="email-filter-manager">
+<div class="email-filter-manager" data-smrt-component="EmailFilterManager">
   <div class="section-toggle">
     <Button
       variant={activeSection === 'whitelist' ? 'primary' : 'ghost'}
@@ -408,6 +408,8 @@ function getPatternPlaceholder(type: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .email-filter-manager {
     display: flex;
     flex-direction: column;
@@ -417,9 +419,9 @@ function getPatternPlaceholder(type: string): string {
   .section-toggle {
     display: flex;
     gap: 0.25rem;
-    background: var(--smrt-color-surface-container, #f0f1f9);
+    background: var(--smrt-color-surface-container);
     padding: 0.25rem;
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
   }
 
   /*
@@ -433,15 +435,15 @@ function getPatternPlaceholder(type: string): string {
     display: flex;
     align-items: center;
     gap: 0.375rem;
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     font-size: var(--smrt-typography-label-large-size, 0.8125rem);
   }
 
   .count {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
-    background: var(--smrt-color-outline-variant, #c2c7cf);
+    background: var(--smrt-color-outline-variant);
     padding: 0.0625rem 0.375rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
   }
 
   .section-content {
@@ -459,7 +461,7 @@ function getPatternPlaceholder(type: string): string {
 
   .section-description {
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /*
@@ -468,14 +470,14 @@ function getPatternPlaceholder(type: string): string {
    * :global(.add-btn)` only re-asserts radius and flex-shrink (issue #1589).
    */
   .section-header-row :global(.add-btn) {
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     flex-shrink: 0;
   }
 
   .entry-form {
-    background: var(--smrt-color-surface-container, #f0f1f9);
-    border: 1px solid var(--smrt-color-primary, #005ac1);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-md);
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -485,7 +487,7 @@ function getPatternPlaceholder(type: string): string {
   .form-title {
     font-size: var(--smrt-typography-title-small-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .form-row {
@@ -503,7 +505,7 @@ function getPatternPlaceholder(type: string): string {
   .form-label {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .optional {
@@ -530,12 +532,12 @@ function getPatternPlaceholder(type: string): string {
     gap: 0.5rem;
     cursor: pointer;
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     white-space: nowrap;
   }
 
   .checkbox-label input[type="checkbox"] {
-    accent-color: var(--smrt-color-primary, #005ac1);
+    accent-color: var(--smrt-color-primary);
   }
 
   .form-actions {
@@ -553,12 +555,12 @@ function getPatternPlaceholder(type: string): string {
    */
   .form-actions :global(.cancel-btn),
   .form-actions :global(.save-btn) {
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
   }
 
   .form-actions :global(.cancel-btn) {
-    border-color: var(--smrt-color-outline-variant, #c2c7cf);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    border-color: var(--smrt-color-outline-variant);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .entries-list {
@@ -571,23 +573,23 @@ function getPatternPlaceholder(type: string): string {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: var(--smrt-color-surface-container, #f0f1f9);
-    border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
     padding: 0.75rem 1rem;
     transition: background 150ms ease, border-color 150ms ease;
   }
 
   .entry-card:hover {
-    background: var(--smrt-color-surface-container-high, #e6e7ef);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .entry-card.allow:hover {
-    border-color: var(--smrt-color-success, #16a34a);
+    border-color: var(--smrt-color-success);
   }
 
   .entry-card.block:hover {
-    border-color: var(--smrt-color-error, #ba1a1a);
+    border-color: var(--smrt-color-error);
   }
 
   .entry-main {
@@ -602,10 +604,10 @@ function getPatternPlaceholder(type: string): string {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     font-family: var(--smrt-font-family-mono, monospace);
-    background: var(--smrt-color-surface, #fefbff);
-    border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     padding: 0.25rem 0.5rem;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     flex-shrink: 0;
     min-width: 2rem;
     text-align: center;
@@ -629,24 +631,24 @@ function getPatternPlaceholder(type: string): string {
 
   .entry-description {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .category-tag {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
-    color: var(--smrt-color-tertiary, #6b5778);
-    background: var(--smrt-color-tertiary-container, #f2daff);
+    color: var(--smrt-color-tertiary);
+    background: var(--smrt-color-tertiary-container);
     padding: 0.125rem 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     flex-shrink: 0;
   }
 
   .auto-archive-tag {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
-    color: var(--smrt-color-warning, #ca8a04);
-    background: var(--smrt-color-warning-container, #fef9c3);
+    color: var(--smrt-color-warning);
+    background: var(--smrt-color-warning-container);
     padding: 0.125rem 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     flex-shrink: 0;
   }
 
@@ -660,25 +662,25 @@ function getPatternPlaceholder(type: string): string {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
     padding: 0.125rem 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     border: 1px solid transparent;
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     flex-shrink: 0;
   }
 
   .entry-card :global(.delete-btn):hover {
-    background: var(--smrt-color-error-container, #fce4ec);
-    color: var(--smrt-color-error, #ba1a1a);
-    border-color: var(--smrt-color-error, #ba1a1a);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-error);
+    border-color: var(--smrt-color-error);
   }
 
   .placeholder {
     padding: 2rem;
     text-align: center;
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    background: var(--smrt-color-surface-container, #f0f1f9);
-    border-radius: var(--smrt-radius-md, 8px);
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-md);
   }
 
   .filter-error {
@@ -687,9 +689,9 @@ function getPatternPlaceholder(type: string): string {
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
-    border-radius: var(--smrt-radius-md, 8px);
-    background: var(--smrt-color-error-container, #fce4ec);
-    color: var(--smrt-color-error, #ba1a1a);
+    border-radius: var(--smrt-radius-md);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-error);
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
 
@@ -706,4 +708,5 @@ function getPatternPlaceholder(type: string): string {
     color: inherit;
     padding: 0 0.25rem;
   }
+}
 </style>

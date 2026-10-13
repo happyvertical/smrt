@@ -38,6 +38,8 @@ const menu = [
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .workbench { display: grid; gap: var(--smrt-spacing-6); color: var(--smrt-color-on-surface); }
   header, .actions, .interaction-row { display: flex; align-items: center; gap: var(--smrt-spacing-3); } header { justify-content: space-between; padding-bottom: var(--smrt-spacing-4); border-bottom: 1px solid var(--smrt-color-outline-variant); }
   h4, h5, p { margin: 0; } h4 { font: var(--smrt-typography-headline-small-font); } h5 { margin-bottom: var(--smrt-spacing-3); font: var(--smrt-typography-title-medium-font); }
@@ -48,4 +50,5 @@ const menu = [
   .interaction-row { flex-wrap: wrap; align-items: flex-start; margin-bottom: var(--smrt-spacing-3); }
   .slider { display: grid; max-width: 24rem; gap: var(--smrt-spacing-2); } .slider label { display: flex; justify-content: space-between; } input { accent-color: var(--smrt-color-primary); }
   @media (max-width: 760px) { header { align-items: flex-start; flex-direction: column; } .progress-grid { grid-template-columns: 1fr; } }
+}
 </style>

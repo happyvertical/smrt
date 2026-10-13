@@ -30,6 +30,7 @@ let {
   id,
   title,
   values,
+  roundingScope = 'line',
   customers = [],
   errors = {},
   fields = {},
@@ -57,7 +58,7 @@ const busy = $derived(
   pending || retryStatus === 'submitting' || retryStatus === 'busy',
 );
 let draft = $derived(values);
-const calculation = $derived(calculateInvoiceDraft(draft));
+const calculation = $derived(calculateInvoiceDraft(draft, { roundingScope }));
 function refresh(event: Event) {
   const data = new FormData(event.currentTarget as HTMLFormElement);
   const text = (name: string) => String(data.get(name) ?? '');
@@ -85,7 +86,7 @@ function lineErrors(key: string) {
   ) as Partial<Record<keyof InvoiceLineFieldNames, string>>;
 }
 </script>
-<section class="invoice-editor" aria-labelledby={`${formId}-title`}>
+<section class="invoice-editor" aria-labelledby={`${formId}-title`} data-smrt-component="InvoiceEditor">
   <h2 id={`${formId}-title`}>{title ?? t(M['commerce.preparation.title'])}</h2>
   {#if review}<InvoiceReview {review} />{/if}
   {#if !canEdit}<p>{t(M['commerce.preparation.readonly'])}</p>{/if}
@@ -111,7 +112,7 @@ function lineErrors(key: string) {
       </fieldset>
       {#if draft.lines.length === 0}<p>{t(M['commerce.invoice.empty'])}</p>{/if}
       {#each draft.lines as line, index (line.key)}
-        <InvoiceLineEditor {line} currency={draft.currency} inheritedTaxRate={draft.taxRate} number={index + 1} id={`${formId}-line-${index}`} fields={rowNames} errors={lineErrors(line.key)} {canEdit} pending={busy} intentField={names.intent} {removePrefix} />
+        <InvoiceLineEditor {line} {roundingScope} currency={draft.currency} inheritedTaxRate={draft.taxRate} number={index + 1} id={`${formId}-line-${index}`} fields={rowNames} errors={lineErrors(line.key)} {canEdit} pending={busy} intentField={names.intent} {removePrefix} />
       {/each}
       {#if canEdit}<Button type="submit" name={names.intent} value={addIntent} formnovalidate disabled={busy} variant="secondary">{t(M['commerce.invoice.add'])}</Button>{/if}
       <div aria-live="polite" class="summary">
@@ -126,9 +127,12 @@ function lineErrors(key: string) {
   </Form>
 </section>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 .invoice-editor, .fields, .header-fields { display: grid; grid-template-columns: minmax(0,1fr); gap: var(--smrt-spacing-4); min-width: 0; }
 .invoice-editor { max-width: 48rem; overflow-wrap: anywhere; }
 .header-fields { margin: 0; padding: 0; border: 0; }
 h2, p, dl, dd { margin: 0; }
 .summary dl { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-4); }
+}
 </style>

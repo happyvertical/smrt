@@ -182,7 +182,7 @@ const sortColumns = $derived([
 ]);
 </script>
 
-<div class="job-list-container">
+<div class="job-list-container" data-smrt-component="JobList">
   <table class="job-list" class:loading>
     <thead class="job-list__head">
       <tr>
@@ -306,6 +306,8 @@ const sortColumns = $derived([
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .job-list-container {
     width: 100%;
     overflow-x: auto;
@@ -316,7 +318,7 @@ const sortColumns = $derived([
     border-collapse: collapse;
     border-spacing: 0;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    background: var(--smrt-color-surface, #ffffff);
+    background: var(--smrt-color-surface);
   }
 
   .job-list.loading {
@@ -325,7 +327,7 @@ const sortColumns = $derived([
   }
 
   .job-list__head {
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
   }
 
   /* Sortable headers are SortableHeader's own <th>: :global, and their
@@ -335,27 +337,28 @@ const sortColumns = $derived([
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-align: left;
     white-space: nowrap;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .job-list__head :global(th.sortable-header) {
     padding: 0;
-    --sortable-header-padding: var(--smrt-spacing-sm, 0.5rem)
+    --smrt-sortable-header-padding: var(--smrt-spacing-sm, 0.5rem)
       var(--smrt-spacing-md, 1rem);
   }
 
   .job-list__body tr {
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .job-list__body tr:hover:not(.job-list__row--loading):not(.job-list__row--empty) {
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
     cursor: pointer;
   }
 
-  .job-list__row--selected {
-    background: var(--smrt-color-primary-container, #d6e3ff) !important;
+  /* Mirrors the :hover rule's guards so selection wins the tie by source order. */
+  .job-list__body tr.job-list__row--selected:not(.job-list__row--loading):not(.job-list__row--empty) {
+    background: var(--smrt-color-primary-container);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -397,14 +400,14 @@ const sortColumns = $derived([
 
   .object-id {
     margin-left: var(--smrt-spacing-xs, 0.25rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
   }
 
   .job-list__cell--method code {
     padding: 0.125rem 0.375rem;
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-small, 0.25rem);
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
   }
@@ -419,7 +422,7 @@ const sortColumns = $derived([
   }
 
   .job-list__cell--date {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
   }
 
@@ -438,15 +441,15 @@ const sortColumns = $derived([
     align-items: center;
     justify-content: center;
     gap: var(--smrt-spacing-sm, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .job-list__spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-top-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.8s linear infinite;
   }
 
@@ -457,6 +460,7 @@ const sortColumns = $derived([
   }
 
   .job-list__empty {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

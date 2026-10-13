@@ -8,7 +8,8 @@
  * palette is always valid CSS.
  */
 import { describe, expect, it } from 'vitest';
-import { createTheme } from '../create-theme';
+import { getContrastRatio, hexToRgb } from '../../utils/theme/color';
+import { createTheme, createThemeFromColor } from '../create-theme';
 import type { ColorPalette } from '../types';
 
 const HEX6 = /^#[0-9a-fA-F]{6}$/;
@@ -32,6 +33,22 @@ function expectAllColorsValid(colors: ColorPalette) {
 }
 
 describe('createTheme color handling (#1586)', () => {
+  it('keeps a dark brand primary and its icon container readable', () => {
+    const theme = createThemeFromColor('#031149', 'navy', 'Navy');
+    expect(
+      getContrastRatio(
+        hexToRgb(theme.dark.onPrimaryContainer),
+        hexToRgb(theme.dark.primaryContainer),
+      ),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      getContrastRatio(
+        hexToRgb(theme.dark.onPrimary),
+        hexToRgb(theme.dark.primary),
+      ),
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('derives a valid primary container from a 6-digit hex primary', () => {
     const theme = createTheme({
       id: 'brand6',

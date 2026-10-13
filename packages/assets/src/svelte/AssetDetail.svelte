@@ -309,6 +309,8 @@ function formatDate(date: Date | string | undefined): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   /* Body — negative margin cancels Modal's .modal__body padding so the section
      dividers stay full-bleed (Modal owns the dialog shell + scroll container). */
   .detail__body {
@@ -317,7 +319,7 @@ function formatDate(date: Date | string | undefined): string {
 
   .detail__section {
     padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #f3f4f6);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .detail__section:last-child {
@@ -327,7 +329,7 @@ function formatDate(date: Date | string | undefined): string {
   .section-heading {
     margin: 0 0 var(--smrt-spacing-3, 0.75rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
@@ -337,7 +339,7 @@ function formatDate(date: Date | string | undefined): string {
   .detail__preview {
     border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
   }
 
   .preview-image {
@@ -372,7 +374,7 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .preview-document__link {
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-medium, 500);
     text-decoration: none;
   }
@@ -383,7 +385,7 @@ function formatDate(date: Date | string | undefined): string {
 
   .preview-generic__mime {
     font-size: var(--smrt-typography-body-small-size, 0.8rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /* Form */
@@ -402,14 +404,14 @@ function formatDate(date: Date | string | undefined): string {
   .form-label {
     font-size: var(--smrt-typography-label-medium-size, 0.8rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
   }
 
   .label-warning {
     font-weight: var(--smrt-typography-weight-normal, 400);
     font-size: var(--smrt-typography-label-small-size, 0.7rem);
-    color: var(--smrt-color-error, #dc2626);
-    margin-left: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-error);
+    margin-left: var(--smrt-spacing-1);
   }
 
   /* Metadata */
@@ -422,7 +424,7 @@ function formatDate(date: Date | string | undefined): string {
   .metadata-item {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .metadata-label {
@@ -430,12 +432,12 @@ function formatDate(date: Date | string | undefined): string {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .metadata-value {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
     word-break: break-word;
   }
 
@@ -450,25 +452,25 @@ function formatDate(date: Date | string | undefined): string {
      bespoke bordered-surface look (vs. the transparent ghost variant), so the
      overrides reach the child-rendered <button> through :global() scoping. */
   .quick-actions :global(.quick-btn) {
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     height: 32px;
     padding: 0 var(--smrt-spacing-3, 0.75rem);
     font-size: var(--smrt-typography-label-medium-size, 0.8rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    background: var(--smrt-color-surface, #ffffff);
-    color: var(--smrt-color-on-surface, #111827);
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
   }
 
   .quick-actions :global(.quick-btn:hover:not(:disabled)) {
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
     box-shadow: var(--smrt-elevation-1);
   }
 
   .copy-feedback {
     margin-top: var(--smrt-spacing-2, 0.5rem);
     font-size: var(--smrt-typography-label-medium-size, 0.8rem);
-    color: var(--smrt-color-success, #22c55e);
+    color: var(--smrt-color-success);
     font-weight: var(--smrt-typography-weight-medium, 500);
     animation: fadeIn 150ms ease;
   }
@@ -499,4 +501,5 @@ function formatDate(date: Date | string | undefined): string {
     display: flex;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
+}
 </style>

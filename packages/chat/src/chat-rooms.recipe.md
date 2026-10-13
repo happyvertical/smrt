@@ -9,7 +9,7 @@ members, and send messages through the app's authorized chat workflow.
 
 ### Find the right room
 
-1. Open **Chat Rooms** from the navigation.
+1. Open **Chat rooms** from the navigation.
 2. Search for a room by its **{field:ChatRoom.name}**, or use its
    **{field:ChatRoom.topic}** to tell similar rooms apart.
 3. Open the room and check **{field:ChatRoom.lastMessageAt}** to see where the

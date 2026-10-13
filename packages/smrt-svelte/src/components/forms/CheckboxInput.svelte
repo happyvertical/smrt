@@ -110,7 +110,7 @@ function handleChange(e: Event) {
 }
 </script>
 
-<div class="smrt-checkbox-field" class:disabled class:smrt-mode={isSmrt}>
+<div class="smrt-checkbox-field" class:disabled class:smrt-mode={isSmrt} data-smrt-component="CheckboxInput">
   <div class="container" use:ripple>
     <input
       type="checkbox"
@@ -140,11 +140,13 @@ function handleChange(e: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-checkbox-field {
     display: inline-flex;
     min-width: 0;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     cursor: pointer;
     vertical-align: middle;
     user-select: none;
@@ -157,7 +159,7 @@ function handleChange(e: Event) {
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     margin: -10px; /* Offset the 40x40 container to align 18x18 checkbox */
   }
 
@@ -175,7 +177,7 @@ function handleChange(e: Event) {
     width: 18px;
     height: 18px;
     border: 2px solid var(--smrt-color-on-surface-variant);
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -226,7 +228,7 @@ function handleChange(e: Event) {
     left: 0;
     right: 0;
     bottom: 0;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     pointer-events: none;
     transition: opacity var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
   }
@@ -235,4 +237,5 @@ function handleChange(e: Event) {
     background-color: var(--smrt-color-on-surface);
     opacity: 0.08;
   }
+}
 </style>

@@ -56,7 +56,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
 }
 </script>
 
-<section class="smrt-settings-catalog">
+<section class="smrt-settings-catalog" data-smrt-component="SettingsCatalog">
   <aside class="smrt-settings-catalog__browser">
     <Form method="GET" action={baseUrl} preventDefault={false} class="smrt-settings-catalog__search" role="search">
       {#each Object.entries(preservedParams) as [name, value] (name)}
@@ -149,6 +149,8 @@ function catalogHref(targetPage: number, selectedId?: string): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-settings-catalog {
     display: grid;
     grid-template-columns: minmax(17rem, 22rem) minmax(0, 1fr);
@@ -289,4 +291,5 @@ function catalogHref(targetPage: number, selectedId?: string): string {
       max-block-size: 18rem;
     }
   }
+}
 </style>

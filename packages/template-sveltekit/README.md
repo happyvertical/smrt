@@ -70,13 +70,13 @@ lifecycle script is `smrt app <operation>`.
 
 ## 3. Define the first object
 
-The generated `src/lib/objects/Item.ts` is one optional-tenant object with
-title, description, and status fields. Its small explicit `ItemCollection`
+The generated `src/lib/objects/Note.ts` is one required-tenant object with
+title and body fields. Its small explicit `NoteCollection`
 constructor keeps generated CLI/MCP runtime commands constructible. Its
 `@smrt()` configuration exposes CRUD to REST, MCP, WebMCP definitions, and CLI
 while using an API writable allowlist.
 
-Add objects beside Item and export them from `src/lib/objects/index.ts`.
+Add objects beside Note and export them from `src/lib/objects/index.ts`.
 `vite.config.ts` already scans that directory.
 
 ## 4. Initialize or migrate the database
@@ -121,9 +121,9 @@ points.
 
 ## 7. Load data into a SvelteKit page
 
-The home page loads Item rows in `+page.server.ts`, returns plain serialized
-data, and declares `depends('smrt:items')`. The Svelte 5 page reads hydrated
-`$props()` data and calls `invalidate('smrt:items')` after a successful form
+The home page loads Note rows in `+page.server.ts`, returns plain serialized
+data, and declares `depends('smrt:notes')`. The Svelte 5 page reads hydrated
+`$props()` data and calls `invalidate('smrt:notes')` after a successful form
 mutation. It does not fetch initial data in `onMount` or `$effect`.
 
 ## 8. Use generated REST, MCP, WebMCP, and CLI interfaces
@@ -134,7 +134,7 @@ declared dev dependency:
 
 ```bash
 pnpm smrt objects
-pnpm smrt schema Item
+pnpm smrt schema Note
 pnpm smrt generate-mcp --no-config --no-readme
 ```
 
@@ -156,7 +156,7 @@ is needed for WebMCP. Live browser collections remain opt-in per page; import
 the collection helpers only on pages that need interactive client data.
 
 The generated-project README shows the current hydration pattern:
-`createSmrtCollection(getCollectionDefinition('items'), { initialData,
+`createSmrtCollection(getCollectionDefinition('notes'), { initialData,
 basePath: '/api' })` followed by `liveCollection()`. The root layout's
 read-only WebMCP registration does not materialize live collections.
 

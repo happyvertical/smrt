@@ -47,7 +47,7 @@ const hasDocuments = $derived(
 );
 </script>
 
-<div class="meeting-view">
+<div class="meeting-view" data-smrt-component="MeetingView">
   <header class="meeting-header">
     <a href={calendarUrl} class="back-link">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -132,67 +132,69 @@ const hasDocuments = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .meeting-view {
-    --view-bg: var(--color-neutral-white, #ffffff);
-    --view-border: var(--color-neutral-gray200, #e5e7eb);
-    --header-bg: var(--color-neutral-gray100, #f5f5f5);
-    --card-hover: var(--color-neutral-gray100, #f5f5f5);
+    --smrt-meeting-view-bg: var(--smrt-color-surface);
+    --smrt-meeting-view-border: var(--smrt-color-surface-container-high);
+    --smrt-meeting-view-header-bg: var(--smrt-color-surface-variant);
+    --smrt-meeting-view-card-hover: var(--smrt-color-surface-variant);
 
-    background: var(--view-bg);
+    background: var(--smrt-meeting-view-bg);
   }
 
   .meeting-header {
-    padding: var(--spacing-lg, 1.5rem);
-    background: var(--header-bg);
-    border-bottom: 1px solid var(--view-border);
+    padding: var(--smrt-spacing-lg, 1.5rem);
+    background: var(--smrt-meeting-view-header-bg);
+    border-bottom: 1px solid var(--smrt-meeting-view-border);
   }
 
   .back-link {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-xs, 0.25rem);
-    color: var(--color-primary-main, #1976d2);
+    gap: var(--smrt-spacing-xs, 0.25rem);
+    color: var(--smrt-color-primary);
     text-decoration: none;
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    margin-bottom: var(--spacing-md, 1rem);
-    transition: color var(--transition-fast, 150ms);
+    margin-bottom: var(--smrt-spacing-md, 1rem);
+    transition: color var(--smrt-duration-fast, 150ms);
   }
 
   .back-link:hover {
-    color: var(--color-primary-dark, #0d47a1);
+    color: var(--smrt-color-primary);
   }
 
   .council-badge {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-xs, 0.25rem);
-    padding: var(--spacing-xs, 0.25rem) var(--spacing-sm, 0.5rem);
-    background: var(--view-bg);
-    border: 1px solid var(--view-border);
-    border-radius: var(--smrt-radius-full, 9999px);
+    gap: var(--smrt-spacing-xs, 0.25rem);
+    padding: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-sm, 0.5rem);
+    background: var(--smrt-meeting-view-bg);
+    border: 1px solid var(--smrt-meeting-view-border);
+    border-radius: var(--smrt-radius-full);
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    color: var(--color-text-secondary, #666);
-    margin-bottom: var(--spacing-sm, 0.5rem);
+    color: var(--smrt-color-on-surface-variant);
+    margin-bottom: var(--smrt-spacing-sm, 0.5rem);
   }
 
   .council-icon {
-    font-size: var(--smrt-typography-label-large-size, 14px);
+    font-size: var(--smrt-typography-label-large-size);
   }
 
   .meeting-title {
     margin: 0;
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--color-text-primary, #333);
+    color: var(--smrt-color-on-surface);
     line-height: var(--smrt-typography-headline-small-line-height, 1.3);
   }
 
   .meeting-meta {
     display: flex;
     align-items: center;
-    gap: var(--spacing-md, 1rem);
-    margin-top: var(--spacing-sm, 0.5rem);
-    color: var(--color-text-secondary, #666);
+    gap: var(--smrt-spacing-md, 1rem);
+    margin-top: var(--smrt-spacing-sm, 0.5rem);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 
@@ -202,42 +204,42 @@ const hasDocuments = $derived(
 
   .meeting-time::before {
     content: '\2022';
-    margin-right: var(--spacing-md, 1rem);
+    margin-right: var(--smrt-spacing-md, 1rem);
   }
 
   .meeting-content {
-    padding: var(--spacing-lg, 1.5rem);
+    padding: var(--smrt-spacing-lg, 1.5rem);
   }
 
   .section-title {
-    margin: 0 0 var(--spacing-md, 1rem) 0;
+    margin: 0 0 var(--smrt-spacing-md, 1rem) 0;
     font-size: var(--smrt-typography-title-medium-size, 1.125rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--color-text-primary, #333);
+    color: var(--smrt-color-on-surface);
   }
 
   .documents-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: var(--spacing-md, 1rem);
+    gap: var(--smrt-spacing-md, 1rem);
   }
 
   .document-card {
     display: flex;
     align-items: center;
-    gap: var(--spacing-md, 1rem);
-    padding: var(--spacing-md, 1rem);
-    background: var(--view-bg);
-    border: 1px solid var(--view-border);
-    border-radius: var(--smrt-radius-md, 8px);
+    gap: var(--smrt-spacing-md, 1rem);
+    padding: var(--smrt-spacing-md, 1rem);
+    background: var(--smrt-meeting-view-bg);
+    border: 1px solid var(--smrt-meeting-view-border);
+    border-radius: var(--smrt-radius-md);
     text-decoration: none;
-    color: var(--color-text-primary, #333);
-    transition: all var(--transition-fast, 150ms);
+    color: var(--smrt-color-on-surface);
+    transition: all var(--smrt-duration-fast, 150ms);
   }
 
   .document-card:hover {
-    background: var(--card-hover);
-    border-color: var(--color-neutral-gray300, #d1d5db);
+    background: var(--smrt-meeting-view-card-hover);
+    border-color: var(--smrt-color-outline-variant);
     transform: translateY(-1px);
   }
 
@@ -246,7 +248,7 @@ const hasDocuments = $derived(
   }
 
   .document-icon {
-    font-size: var(--smrt-typography-headline-small-size, 24px);
+    font-size: var(--smrt-typography-headline-small-size);
     flex-shrink: 0;
   }
 
@@ -264,27 +266,27 @@ const hasDocuments = $derived(
   .document-desc {
     display: block;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--color-text-secondary, #666);
-    margin-top: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-on-surface-variant);
+    margin-top: var(--smrt-spacing-1);
   }
 
   .document-arrow {
     flex-shrink: 0;
-    font-size: var(--smrt-typography-body-large-size, 16px);
-    color: var(--color-text-secondary, #666);
-    transition: transform var(--transition-fast, 150ms);
+    font-size: var(--smrt-typography-body-large-size);
+    color: var(--smrt-color-on-surface-variant);
+    transition: transform var(--smrt-duration-fast, 150ms);
   }
 
   .empty-state {
     text-align: center;
-    padding: var(--spacing-3xl, 4rem) var(--spacing-lg, 1.5rem);
-    color: var(--color-text-secondary, #666);
+    padding: var(--smrt-spacing-3xl, 4rem) var(--smrt-spacing-lg, 1.5rem);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .empty-icon {
-    font-size: var(--smrt-typography-display-medium-size, 48px);
+    font-size: var(--smrt-typography-display-medium-size);
     display: block;
-    margin-bottom: var(--spacing-md, 1rem);
+    margin-bottom: var(--smrt-spacing-md, 1rem);
     opacity: 0.5;
   }
 
@@ -295,7 +297,7 @@ const hasDocuments = $derived(
 
   @media (max-width: 640px) {
     .meeting-header {
-      padding: var(--spacing-md, 1rem);
+      padding: var(--smrt-spacing-md, 1rem);
     }
 
     .meeting-title {
@@ -305,7 +307,7 @@ const hasDocuments = $derived(
     .meeting-meta {
       flex-direction: column;
       align-items: flex-start;
-      gap: var(--spacing-xs, 0.25rem);
+      gap: var(--smrt-spacing-xs, 0.25rem);
     }
 
     .meeting-time::before {
@@ -313,11 +315,12 @@ const hasDocuments = $derived(
     }
 
     .meeting-content {
-      padding: var(--spacing-md, 1rem);
+      padding: var(--smrt-spacing-md, 1rem);
     }
 
     .documents-grid {
       grid-template-columns: 1fr;
     }
   }
+}
 </style>

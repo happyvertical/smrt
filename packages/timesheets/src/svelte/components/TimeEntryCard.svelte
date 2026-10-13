@@ -85,7 +85,7 @@ function handleKeydown(event: KeyboardEvent) {
   class="time-entry-card"
   class:selectable
   class:selected
-  class:clickable={!!href || !!onclick}
+  class:clickable={!!href || !!onclick} data-smrt-component="TimeEntryCard"
 >
   {#if selectable}
     <div class="checkbox-wrapper">
@@ -133,7 +133,7 @@ function handleKeydown(event: KeyboardEvent) {
 {#snippet cardBody()}
   <div class="entry-header">
     <span class="date">{formatDate(entry.date)}</span>
-    <span class="status-badge" style="--status-color: {statusColors[entry.status]}">
+    <span class="status-badge" style="--smrt-time-entry-card-status-color: {statusColors[entry.status]}">
       {entry.status.toUpperCase()}
     </span>
   </div>
@@ -167,12 +167,14 @@ function handleKeydown(event: KeyboardEvent) {
 {/snippet}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .time-entry-card {
     display: flex;
     align-items: stretch;
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-medium, 12px);
+    border-radius: var(--smrt-radius-medium);
     overflow: hidden;
     transition: all 0.2s var(--smrt-easing-standard);
   }
@@ -227,7 +229,7 @@ function handleKeydown(event: KeyboardEvent) {
   button.card-content:focus {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
-    border-radius: var(--smrt-radius-small, 8px);
+    border-radius: var(--smrt-radius-small);
   }
 
   .entry-header {
@@ -246,10 +248,10 @@ function handleKeydown(event: KeyboardEvent) {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     font-weight: var(--smrt-typography-label-small-weight, 500);
     padding: 0.25rem 0.5rem;
-    border-radius: var(--smrt-radius-small, 8px);
-    background: var(--status-color);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-time-entry-card-status-color);
     color: var(--smrt-color-on-primary);
-    letter-spacing: var(--smrt-typography-label-small-tracking, 0.5px);
+    letter-spacing: var(--smrt-typography-label-small-tracking);
   }
 
   .entry-body {
@@ -310,4 +312,5 @@ function handleKeydown(event: KeyboardEvent) {
     padding: 0.5rem;
     border-left: 1px solid var(--smrt-color-outline-variant);
   }
+}
 </style>

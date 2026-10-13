@@ -41,8 +41,8 @@ function activityLabel(activity: ShellActivity): string {
 }
 </script>
 
-<div class="smrt-activity-ticker-shell">
-<div class="smrt-activity-ticker" class:multiple class:paused role="region" aria-label={label ?? t(M['ui.activity_ticker.label'])} style:--activity-ticker-duration={`${Math.max(20, running.length * 10)}s`}>
+<div class="smrt-activity-ticker-shell" data-smrt-component="ActivityTicker">
+<div class="smrt-activity-ticker" class:multiple class:paused role="region" aria-label={label ?? t(M['ui.activity_ticker.label'])} style:--smrt-activity-ticker-duration={`${Math.max(20, running.length * 10)}s`}>
   {#if running.length === 0}
     <span class="smrt-activity-ticker__empty">{emptyLabel ?? t(M['ui.activity_ticker.empty'])}</span>
   {:else}
@@ -73,12 +73,14 @@ function activityLabel(activity: ShellActivity): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 .smrt-activity-ticker-shell { display:flex; align-items:center; flex:1; min-width:0; gap:var(--smrt-spacing-2); }
 .smrt-activity-ticker { flex:1; min-width:0; overflow:hidden; color:var(--smrt-color-on-surface-variant); font-size:var(--smrt-typography-body-small-size); white-space:nowrap; }
 .smrt-activity-ticker__track { display:flex; width:max-content; }
 .smrt-activity-ticker__group { display:flex; gap:var(--smrt-spacing-6); flex-shrink:0; }
 .multiple .smrt-activity-ticker__group { padding-inline-end:var(--smrt-spacing-6); }
-.multiple .smrt-activity-ticker__track { animation:smrt-activity-scroll var(--activity-ticker-duration) linear infinite; }
+.multiple .smrt-activity-ticker__track { animation:smrt-activity-scroll var(--smrt-activity-ticker-duration) linear infinite; }
 .smrt-activity-ticker.paused .smrt-activity-ticker__track,
 .smrt-activity-ticker:hover .smrt-activity-ticker__track,
 .smrt-activity-ticker-shell:focus-within .smrt-activity-ticker__track { animation-play-state:paused; }
@@ -88,5 +90,6 @@ function activityLabel(activity: ShellActivity): string {
   .smrt-activity-ticker { overflow-x:auto; }
   .multiple .smrt-activity-ticker__track { animation:none; }
   .smrt-activity-ticker__copy, .smrt-activity-ticker__control { display:none; }
+}
 }
 </style>

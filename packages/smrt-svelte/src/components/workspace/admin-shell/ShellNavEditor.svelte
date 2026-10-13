@@ -43,7 +43,7 @@ interface Props {
    * picker); their entries are edited on the section's own page with
    * `ShellSectionMenu`. Default `'items'`.
    */
-  navMode?: 'items' | 'sections';
+  navMode?: 'items' | 'sections' | 'sections-with-items';
 }
 
 let {
@@ -312,7 +312,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   data-layout-editing=""
   data-nav-mode={navMode}
   aria-label={ariaLabel || t(M['ui.shell_layout_editor.sortable_label'])}
-  bind:this={rootEl}
+  bind:this={rootEl} data-smrt-component="ShellNavEditor"
 >
   <Sortable
     {containers}
@@ -350,7 +350,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
             aria-label={t(M['ui.layout_edit.edit_section'], { label: entry.label })}
             onpointerenter={(event) => onhover(entry.id, event)}
             onclick={() => onactivate(entry.id)}
-          >{#if navMode === 'sections'}<span class="smrt-nav-editor__section-icon"><ShellSectionIcon name={entry.icon} iconComponent={IconComponent} /></span>{/if}{entry.label}</button>
+          >{#if navMode !== 'items'}<span class="smrt-nav-editor__section-icon"><ShellSectionIcon name={entry.icon} iconComponent={IconComponent} /></span>{/if}{entry.label}</button>
           <span class="smrt-nav-editor__overlay">
             {@render toggles(entry)}
             {@render actions(entry)}
@@ -377,7 +377,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
                 }}
               />
               {@render toggles(entry)}
-              {#if navMode === 'sections'}
+              {#if navMode !== 'items'}
                 <ShellIconButton
                   data-section-icon={entry.id}
                   aria-haspopup="true"
@@ -396,7 +396,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
                 />
               {/if}
               {@render actions(entry)}
-              {#if navMode === 'sections' && iconPicker === entry.id}
+              {#if navMode !== 'items' && iconPicker === entry.id}
                 <div
                   class="smrt-nav-editor__icons"
                   role="group"
@@ -432,7 +432,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
             {#if IconComponent}
               <IconComponent name={icon} size={18} />
             {:else}
-              {icon}
+              <ShellSectionIcon name={icon} size={18} />
             {/if}
           </span>
         {/if}
@@ -489,6 +489,8 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-nav-editor { display: grid; gap: var(--smrt-spacing-2); min-inline-size: 0; }
   /* Make the generic Sortable read as the real navigation. */
   .smrt-nav-editor :global(.smrt-sortable) { gap: var(--smrt-spacing-1); }
@@ -511,7 +513,10 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   .smrt-nav-editor__overlay { display: inline-flex; align-items: center; flex: 0 0 auto; }
   .smrt-nav-editor__toolbar { position: absolute; inset-block-start: 100%; inset-inline: 0; z-index: 40; display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-1); padding: var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface-container-high); box-shadow: var(--smrt-elevation-2, 0 4px 12px rgb(0 0 0 / 0.2)); }
   :global(.smrt-nav-editor__name) { flex: 1 1 100%; min-inline-size: 0; }
-  .smrt-nav-editor__row { flex: 1 1 auto; min-inline-size: 0; display: flex; align-items: center; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-2) var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }
+  .smrt-nav-editor__row { flex: 1 1 auto; min-inline-size: 0; display: flex; align-items: center; gap: var(--smrt-spacing-2); box-sizing: border-box; min-block-size: var(--smrt-control-target-min); padding: var(--smrt-spacing-2) var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }
+  @media (max-width: 48rem) {
+    .smrt-nav-editor { --smrt-control-target-min: var(--smrt-touch-target-min); }
+  }
   .smrt-nav-editor__row--muted { opacity: 0.55; }
   .smrt-nav-editor__row strong { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--smrt-typography-weight-medium, 500); }
   /* Keep editor rows inside the sidebar: the implicit grid column would size to
@@ -528,4 +533,5 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   .smrt-nav-editor__section-icon { display: inline-flex; margin-inline-end: var(--smrt-spacing-2); vertical-align: middle; }
   .smrt-nav-editor__icons { flex: 1 1 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr)); gap: var(--smrt-spacing-1); padding-block-start: var(--smrt-spacing-1); }
   .smrt-nav-editor__icons :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+}
 </style>

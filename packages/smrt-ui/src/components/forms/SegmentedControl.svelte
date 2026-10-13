@@ -236,7 +236,7 @@ useControlRegistration(() => {
 </script>
 <div bind:this={rootEl} data-density={density} class="segmented {className}" class:full-width={fullWidth} role="radiogroup" tabindex="-1" aria-label={label} aria-required={required} onkeydown={handleKeydown} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
-  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="SegmentedControl">
   {#each options as option, index (option.value)}
     <label class:selected={selectedOption === option} class:disabled={disabled || option.disabled}>
       <input type="radio" {name} value={option.value} disabled={disabled || option.disabled}
@@ -250,6 +250,8 @@ useControlRegistration(() => {
   {/each}
 </div>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .segmented { display: inline-flex; border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-full); overflow: hidden; }
   .segmented.full-width { display: flex; width: 100%; }
   label { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 1; min-height: 2.5rem; padding: 0 var(--smrt-spacing-4); border: 0; border-right: 1px solid var(--smrt-color-outline); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
@@ -257,8 +259,9 @@ useControlRegistration(() => {
   label:has(input:focus-visible) { outline: 2px solid var(--smrt-color-primary); outline-offset: -3px; } label.disabled, label:has(input:disabled) { opacity: .5; cursor: not-allowed; }
   :global(.segmented[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
 
-  .segmented[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .segmented[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .segmented[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   label { min-height: max(2.5rem, var(--smrt-control-target-min, 0px)); min-width: var(--smrt-control-target-min, 0px); }
   input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+}
 </style>

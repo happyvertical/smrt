@@ -23,7 +23,7 @@ let { model, homeHref }: Props = $props();
 const { t } = useI18n();
 </script>
 
-<div class="smrt-phone-top-bar" data-testid="phone-top-bar" data-kind={model.kind}>
+<div class="smrt-phone-top-bar" data-testid="phone-top-bar" data-kind={model.kind} data-smrt-component="PhoneTopBar">
   {#if model.kind === 'detail'}
     <a
       class="smrt-phone-top-bar__back"
@@ -52,6 +52,8 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-phone-top-bar {
     display: flex;
     align-items: center;
@@ -91,4 +93,5 @@ const { t } = useI18n();
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
 </style>

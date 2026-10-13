@@ -60,7 +60,7 @@ function getAccount(accountId: string): AccountData | undefined {
 }
 </script>
 
-<div class="message-list" role="grid" aria-label={t(M['messages.message_list.messages_label'])}>
+<div class="message-list" role="grid" aria-label={t(M['messages.message_list.messages_label'])} data-smrt-component="MessageList">
   {#if loading}
     <div class="loading" role="status" aria-live="polite">
       <p>{t(M['messages.message_list.loading'])}</p>
@@ -91,24 +91,27 @@ function getAccount(accountId: string): AccountData | undefined {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .message-list {
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
-    background: var(--smrt-color-surface, #fefbff);
+    background: var(--smrt-color-surface);
   }
 
   .loading,
   .empty {
     text-align: center;
     padding: var(--smrt-spacing-3xl, 3rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .loading p,
   .empty p {
     font: var(--smrt-typography-body-large-font, 1.125rem / 1.5 sans-serif);
   }
+}
 </style>

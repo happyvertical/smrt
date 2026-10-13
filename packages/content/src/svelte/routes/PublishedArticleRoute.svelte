@@ -35,7 +35,7 @@ function formatTimestamp(value: string | null | undefined) {
 }
 </script>
 
-<div class="article-page">
+<div class="article-page" data-smrt-component="PublishedArticleRoute">
   <header class="article-hero">
     <div class="article-hero__inner">
       <a href={backHref} class="back-link">{backLabel}</a>
@@ -74,6 +74,8 @@ function formatTimestamp(value: string | null | undefined) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   :global(body) {
     margin: 0;
     font-family:
@@ -194,4 +196,5 @@ function formatTimestamp(value: string | null | undefined) {
       top: 1.5rem;
     }
   }
+}
 </style>

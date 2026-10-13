@@ -57,7 +57,7 @@ describe('IconToggle tone', () => {
     });
     const button = screen.getByRole('button', { name: 'Draft' });
     expect(button).toHaveClass('toned');
-    expect(button.style.getPropertyValue('--icon-toggle-tone')).toBe(
+    expect(button.style.getPropertyValue('--smrt-icon-toggle-tone')).toBe(
       'var(--status-draft)',
     );
   });
@@ -66,6 +66,6 @@ describe('IconToggle tone', () => {
     render(IconToggle, { props: { label: 'Grid', children: icon } });
     const button = screen.getByRole('button', { name: 'Grid' });
     expect(button).not.toHaveClass('toned');
-    expect(button.style.getPropertyValue('--icon-toggle-tone')).toBe('');
+    expect(button.style.getPropertyValue('--smrt-icon-toggle-tone')).toBe('');
   });
 });

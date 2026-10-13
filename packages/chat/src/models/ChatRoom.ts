@@ -39,27 +39,49 @@ export class ChatRoom extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @field()
+  @field({
+    description: 'A recognizable name that helps teammates find this room.',
+  })
   name: string = '';
-  @field()
+  @field({
+    description: 'Explain the purpose of the room and who should join.',
+  })
   description: string = '';
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'Whether the room is public, private, a direct message, or an assistant conversation.',
+  })
   roomType: ChatRoomType = 'public';
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'Whether this room is active, archived, or deleted.',
+  })
   status: ChatRoomStatus = 'active';
-  @field()
+  @field({ description: 'The current subject or focus of the room.' })
   topic: string = '';
-  @field()
+  @field({
+    description: 'The address of the image used to represent this room.',
+  })
   avatarUrl: string = '';
-  @field()
+  @field({
+    description:
+      'Whether the room has been archived from active conversations.',
+  })
   isArchived: boolean = false;
-  @field()
+  @field({
+    description:
+      'The maximum number of members; zero means no configured limit.',
+  })
   maxParticipants: number = 0;
-  @field()
+  @field({
+    description: 'Additional room details maintained by the application.',
+  })
   metadata: string = '{}';
   @crossPackageRef('@happyvertical/smrt-profiles:Profile')
+  @field({ description: 'The person who originally created this room.' })
   createdByProfileId: string = '';
-  @field()
+  @field({ description: 'When the most recent message was sent in this room.' })
   lastMessageAt: Date | null = null;
 
   constructor(options: ChatRoomOptions = {}) {

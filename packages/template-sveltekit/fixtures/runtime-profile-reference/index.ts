@@ -173,7 +173,7 @@ export function copyRuntimeProfileReference(
   });
   cpSync(overlayRoot, destination, { recursive: true, force: true });
 
-  // Preserve the public template's Item export while making the overlay
+  // Preserve the public template's Note export while making the overlay
   // discoverable to a copied application's ordinary object barrel.
   const objectsIndexPath = join(destination, 'src', 'lib', 'objects', 'index.ts');
   const objectsIndex = readFileSync(objectsIndexPath, 'utf8');

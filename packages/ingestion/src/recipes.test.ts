@@ -1,3 +1,4 @@
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { describe, expect, it } from 'vitest';
 import { IngestionInboxRecipe, IngestionReviewRecipe } from './index.js';
 import {
@@ -9,6 +10,22 @@ import {
 } from './models.js';
 
 describe('ingestion recipes', () => {
+  it('offers host routes without advertising unavailable generated model screens', () => {
+    for (const recipe of [IngestionInboxRecipe, IngestionReviewRecipe]) {
+      for (const model of recipe.models) {
+        const registered = ObjectRegistry.getClass(model.name);
+        expect(registered, model.name).toBeDefined();
+        expect(registered?.config.api).toBe(false);
+        expect(registered?.config.cli).toBe(false);
+        expect(registered?.config.mcp).toBe(false);
+      }
+      expect(recipe.nav).toEqual([]);
+      expect(recipe.surfaces).toHaveLength(1);
+      expect(recipe.surfaces[0].kind).toBe('route');
+      expect(recipe.surfaces[0].path).toMatch(/^\/ingestion\//);
+    }
+  });
+
   it('exports the scoped inbox workflow declaration', () => {
     expect(IngestionInboxRecipe.id).toBe('ingestion.inbox');
     expect(IngestionInboxRecipe.models).toEqual([IntakeItem, IntakeEvidence]);
@@ -34,16 +51,7 @@ describe('ingestion recipes', () => {
     ]);
     expect(IngestionInboxRecipe.providers).toBeUndefined();
     expect(IngestionInboxRecipe.demoSeed).toBeUndefined();
-    expect(IngestionInboxRecipe.nav).toEqual([
-      {
-        label: 'Ingestion inbox',
-        model: IntakeItem,
-        icon: 'archive',
-        description: 'Incoming material that needs authenticated attention.',
-        key: 'inbox',
-        noun: 'inbox item',
-      },
-    ]);
+    expect(IngestionInboxRecipe.nav).toEqual([]);
     expect(IngestionInboxRecipe.help).toBe('./ingestion-inbox.recipe.md');
   });
 
@@ -69,16 +77,7 @@ describe('ingestion recipes', () => {
     ]);
     expect(IngestionReviewRecipe.providers).toBeUndefined();
     expect(IngestionReviewRecipe.demoSeed).toBeUndefined();
-    expect(IngestionReviewRecipe.nav).toEqual([
-      {
-        label: 'Ingestion review',
-        model: IntakeReviewDecision,
-        icon: 'fileText',
-        description: 'Revision-bound decisions on proposed actions.',
-        key: 'review',
-        noun: 'review decision',
-      },
-    ]);
+    expect(IngestionReviewRecipe.nav).toEqual([]);
     expect(IngestionReviewRecipe.help).toBe('./ingestion-review.recipe.md');
   });
 });

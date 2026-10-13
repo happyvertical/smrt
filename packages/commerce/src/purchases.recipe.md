@@ -17,7 +17,11 @@ amounts, the dates and where the order stands.
    goods or the payment are due.
 5. Add your own **{field:reference}**, such as the vendor's quote number, so
    you can match it to their paperwork.
-6. Save.
+6. Enter **{field:expectedDate}** as YYYY-MM-DD if you know when the delivery
+   should arrive. Leave it blank until a date is agreed.
+7. Use **{field:shipTo}** for the delivery address and instructions, such as
+   which entrance or loading dock to use.
+8. Save.
 
 ### Follow an order until it arrives
 

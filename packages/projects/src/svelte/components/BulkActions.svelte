@@ -42,7 +42,7 @@ const visible = $derived(selectedCount > 0);
 </script>
 
 {#if visible}
-  <div class="bulk-actions">
+  <div class="bulk-actions" data-smrt-component="BulkActions">
     <div class="selection-info">
       <span class="count">{selectedCount}</span>
       <span class="label">{selectedCount === 1 ? 'item' : 'items'} selected</span>
@@ -88,6 +88,8 @@ const visible = $derived(selectedCount > 0);
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .bulk-actions {
     display: flex;
     justify-content: space-between;
@@ -95,7 +97,7 @@ const visible = $derived(selectedCount > 0);
     padding: 0.75rem 1rem;
     background: var(--smrt-color-secondary-container);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-medium, 12px);
+    border-radius: var(--smrt-radius-medium);
     margin-bottom: 1rem;
   }
 
@@ -146,4 +148,5 @@ const visible = $derived(selectedCount > 0);
       min-width: 100px;
     }
   }
+}
 </style>

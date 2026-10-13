@@ -62,6 +62,7 @@ export class Membership extends SmrtObject implements MembershipContract {
    * Foreign key to User
    */
   @foreignKey('User', { required: true })
+  @field({ description: 'The person who belongs to this organization.' })
   userId?: string;
 
   /**
@@ -74,12 +75,16 @@ export class Membership extends SmrtObject implements MembershipContract {
    * Foreign key to Role - determines base permissions
    */
   @foreignKey('Role', { required: true })
+  @field({ description: "The role that determines this member's permissions." })
   roleId?: string;
 
   /**
    * Membership status
    */
-  @field({ type: 'text' })
+  @field({
+    description: 'Whether this membership is active, pending, or inactive.',
+    type: 'text',
+  })
   status: MembershipStatus = MembershipStatus.ACTIVE;
 
   constructor(options: MembershipOptions = {}) {

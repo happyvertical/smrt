@@ -59,7 +59,7 @@ let {
 const { t } = useI18n();
 </script>
 
-<div class="time-summary" class:horizontal={layout === 'horizontal'}>
+<div class="time-summary" class:horizontal={layout === 'horizontal'} data-smrt-component="TimeSummary">
   <div class="summary-card">
     <span class="label">{t(M['projects.time_summary.total_hours'])}</span>
     <span class="value">{hoursFormatter(totalHours)}</span>
@@ -91,6 +91,8 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .time-summary {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -111,7 +113,7 @@ const { t } = useI18n();
   .summary-card {
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-medium, 12px);
+    border-radius: var(--smrt-radius-medium);
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -133,7 +135,7 @@ const { t } = useI18n();
     font-weight: var(--smrt-typography-label-small-weight, 500);
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: var(--smrt-typography-label-small-tracking, 0.5px);
+    letter-spacing: var(--smrt-typography-label-small-tracking);
   }
 
   .value {
@@ -181,4 +183,5 @@ const { t } = useI18n();
       grid-template-columns: 1fr 1fr;
     }
   }
+}
 </style>

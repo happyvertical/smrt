@@ -46,7 +46,7 @@ const periodLabel = $derived(
 );
 </script>
 
-<section class="smrt-subscription-summary">
+<section class="smrt-subscription-summary" data-smrt-component="SubscriptionSummary">
   <div>
     <p class="smrt-subscription-summary__label">{t(M['subscriptions.summary.current_plan'])}</p>
     <h2>{resolution?.planKey ?? t(M['subscriptions.summary.no_active_plan'])}</h2>
@@ -74,6 +74,8 @@ const periodLabel = $derived(
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-subscription-summary {
     align-items: center;
     display: flex;
@@ -88,7 +90,7 @@ const periodLabel = $derived(
 
   .smrt-subscription-summary__label,
   .smrt-subscription-summary dt {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.8rem);
   }
 
@@ -102,4 +104,5 @@ const periodLabel = $derived(
     font-weight: var(--smrt-typography-weight-bold, 650);
     margin: 0;
   }
+}
 </style>

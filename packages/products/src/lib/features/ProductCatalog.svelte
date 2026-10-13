@@ -183,6 +183,8 @@ function handleCancelForm() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .product-catalog {
     max-width: 1200px;
     margin: 0 auto;
@@ -195,12 +197,12 @@ function handleCancelForm() {
     align-items: center;
     margin-bottom: 1.5rem;
     padding-bottom: 1rem;
-    border-bottom: 2px solid var(--smrt-color-outline-variant, #e2e8f0);
+    border-bottom: 2px solid var(--smrt-color-outline-variant);
   }
 
   .catalog-header h2 {
     margin: 0;
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-headline-large-size, 1.875rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
   }
@@ -209,7 +211,7 @@ function handleCancelForm() {
     display: flex;
     gap: 1.5rem;
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
   
   .catalog-controls {
@@ -248,7 +250,7 @@ function handleCancelForm() {
   .loading-state, .error-state, .empty-state {
     text-align: center;
     padding: 3rem 1rem;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /* Restore the retry button's spacing from the error message. The old
@@ -273,8 +275,8 @@ function handleCancelForm() {
   }
   
   .form-container {
-    background: var(--smrt-color-surface, #fff);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-radius-md);
     max-width: 500px;
     width: 90vw;
     max-height: 90vh;
@@ -284,8 +286,9 @@ function handleCancelForm() {
   .form-container h3 {
     margin: 0 0 1rem 0;
     padding: 1.5rem 1.5rem 0 1.5rem;
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
+}
 </style>

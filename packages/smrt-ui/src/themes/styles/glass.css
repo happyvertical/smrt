@@ -1,4 +1,5 @@
-/**
+
+@layer smrt.reset, smrt.structure, smrt.theme;/**
  * Glass Theme CSS
  *
  * Static CSS file for Glass theme.
@@ -474,6 +475,7 @@
 }
 
 /* Glass utility classes */
+@layer smrt.theme {
 .smrt-glass {
   background: var(--smrt-color-surface);
   backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
@@ -493,6 +495,7 @@
   backdrop-filter: blur(calc(var(--smrt-glass-blur) * 0.5)) saturate(var(--smrt-glass-saturation));
   -webkit-backdrop-filter: blur(calc(var(--smrt-glass-blur) * 0.5)) saturate(var(--smrt-glass-saturation));
   border: 1px solid var(--smrt-color-glass-border);
+}
 }
 
 /*

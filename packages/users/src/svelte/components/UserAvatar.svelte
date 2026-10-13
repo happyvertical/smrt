@@ -52,7 +52,7 @@ function getColor(name: string): string {
 }
 </script>
 
-<div class="user-avatar" class:sm={size === 'sm'} class:lg={size === 'lg'} class:xl={size === 'xl'}>
+<div class="user-avatar" class:sm={size === 'sm'} class:lg={size === 'lg'} class:xl={size === 'xl'} data-smrt-component="UserAvatar">
   <span class="avatar" style:background-color={getColor(profile.name ?? '')}>
     {getInitials(profile.name ?? 'U')}
   </span>
@@ -62,6 +62,8 @@ function getColor(name: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .user-avatar {
     display: inline-flex;
     align-items: center;
@@ -74,7 +76,7 @@ function getColor(name: string): string {
     justify-content: center;
     width: 2.5rem;
     height: 2.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     color: var(--smrt-color-on-primary, white);
     font: var(--smrt-typography-label-large-font, 600 0.875rem / 1.25 sans-serif);
   }
@@ -105,4 +107,5 @@ function getColor(name: string): string {
   .xl .name {
     font: var(--smrt-typography-body-large-font, 1rem / 1.5 sans-serif);
   }
+}
 </style>

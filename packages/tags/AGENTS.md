@@ -28,5 +28,5 @@ no prerequisites), emitted into the built `manifest.json` and
 `smrt-knowledge.json` `recipes`. It is the first app-wide feature recipe and the
 pipeline proof for the epic. User-facing help lives in `src/taxonomy.recipe.md`
 (#3591); keep it and the `@field({ description })` text on Tag/TagAlias in plain
-language. Surfaces, providers, and demo data come once #3708 lands. See
+language. This recipe declares no standalone surface, provider, or demo seed. See
 [core recipes](../core/agents/recipes.md).

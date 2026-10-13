@@ -40,7 +40,7 @@ function formatWhen(iso: string): string {
 }
 </script>
 
-<article class="case-detail">
+<article class="case-detail" data-smrt-component="CaseDetail">
   <header class="case-detail-header">
     <p class="case-detail-number">{caseView.caseNumber}</p>
     <h2 class="case-detail-subject">{caseView.subject}</h2>
@@ -150,6 +150,8 @@ function formatWhen(iso: string): string {
 </article>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .case-detail {
     display: flex;
     flex-direction: column;
@@ -277,4 +279,5 @@ function formatWhen(iso: string): string {
   .case-detail-empty {
     color: var(--smrt-color-on-surface-variant, inherit);
   }
+}
 </style>

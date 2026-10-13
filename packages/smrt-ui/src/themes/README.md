@@ -74,6 +74,9 @@ const autoTheme = createThemeFromColor('#6366f1', 'indigo', 'Indigo Theme');
 registerTheme(autoTheme);
 ```
 
+Generated dark themes use tonal primary colors so primary text and icon
+containers remain readable even when the brand seed is very dark.
+
 ### Full Custom Theme with All Options
 
 ```typescript
@@ -604,6 +607,28 @@ All themes expose CSS custom properties:
 --smrt-duration-normal
 --smrt-easing-standard
 ```
+
+### One vocabulary: `--smrt-*` only
+
+`--smrt-*` is the only token namespace. Component CSS consumes these tokens and
+nothing else; the legacy `--color-*`, `--spacing-*`, `--radius-*`, `--md-sys-*`
+families were removed (issue #3822). Three rules follow:
+
+- **Consume a token, don't invent one.** Use `var(--smrt-color-primary)` etc. Hard
+  colour or spacing literals belong in a theme, not a component.
+- **A component-private variable is `--smrt-<component>-<name>`**, declared on the
+  component root (for example `--smrt-toast-viewport-inset`). A parent or app may set
+  it. It is not a theme token and should not be read from outside the component.
+- **Overrides go through a theme or a documented hook**, never a `:global` rule or
+  `!important`. Unlayered app CSS still wins over the component's own styles.
+
+`packages/smrt-ui/src/styles/tokens.css` defines the theme-invariant baseline only
+(spacing, radius, duration, touch targets). Colour and typography come from a theme.
+
+The lint gate `scripts/check-smrt-token-vocabulary.mjs` runs in `pnpm lint` and fails
+on any custom property outside `--smrt-*` in `packages/*/src`. The one-time rewrite
+was `scripts/codemod-smrt-tokens.mjs`; it is idempotent, so re-run it after a rebase
+instead of hand-merging renamed names.
 
 ## Advanced Usage
 

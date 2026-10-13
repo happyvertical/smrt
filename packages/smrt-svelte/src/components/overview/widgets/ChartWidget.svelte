@@ -57,9 +57,9 @@ const summary = $derived(
 </script>
 
 {#if points.length === 0}
-  <p class="smrt-chart__empty">{t(M['ui.overview.no_data'])}</p>
+  <p class="smrt-chart__empty" data-smrt-component="ChartWidget">{t(M['ui.overview.no_data'])}</p>
 {:else if style === 'line'}
-  <div class="smrt-chart">
+  <div class="smrt-chart" data-smrt-component="ChartWidget">
     <svg class="smrt-chart__line" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label={summary}>
       <polyline points={polyline} fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" />
     </svg>
@@ -83,7 +83,7 @@ const summary = $derived(
     </table>
   </div>
 {:else}
-  <ul class="smrt-chart__bars" aria-label={summary}>
+  <ul class="smrt-chart__bars" aria-label={summary} data-smrt-component="ChartWidget">
     {#each points as point, index (index)}
       <li class="smrt-chart__row">
         <span class="smrt-chart__label">{point.label}</span>
@@ -97,15 +97,18 @@ const summary = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-chart { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-primary); }
   .smrt-chart__line { inline-size: 100%; block-size: 7rem; overflow: visible; }
   .smrt-chart__axis { display: flex; justify-content: space-between; margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.75rem); }
   .smrt-chart__bars { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: 0; list-style: none; }
   .smrt-chart__row { display: grid; grid-template-columns: minmax(4rem, 30%) minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-2); font-size: var(--smrt-typography-body-medium-size, 0.875rem); color: var(--smrt-color-on-surface); }
   .smrt-chart__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .smrt-chart__track { display: block; block-size: 0.625rem; border-radius: var(--smrt-radius-full, 9999px); background: var(--smrt-color-surface-container-high); overflow: hidden; }
+  .smrt-chart__track { display: block; block-size: 0.625rem; border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-high); overflow: hidden; }
   .smrt-chart__bar { display: block; block-size: 100%; border-radius: inherit; background: var(--smrt-color-primary); }
   .smrt-chart__value { font-variant-numeric: tabular-nums; color: var(--smrt-color-on-surface-variant); }
   .smrt-chart__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
   .smrt-chart__table { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+}
 </style>

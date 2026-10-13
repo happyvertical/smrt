@@ -4,7 +4,7 @@
  * Helper functions for creating custom themes that match the SMRT theme system.
  */
 
-import { hexToRgb, rgbToHex } from '../utils/theme/color.js';
+import { generateTheme, hexToRgb, rgbToHex } from '../utils/theme/color.js';
 import {
   hasCustomTheme,
   registerCustomTheme,
@@ -141,19 +141,16 @@ function generateDarkColors(light: ColorPalette): ColorPalette {
     }
     return rgbToHex(r * factor, g * factor, b * factor);
   };
+  // Multiplying a very dark brand seed stays dark. Use tonal primary pairs so
+  // icons and labels keep contrast against their containers in dark mode.
+  const primary = generateTheme(light.primary, 'dark');
 
   return {
     ...light,
-    primary: light.inversePrimary || adjustBrightness(light.primary, 1.2),
-    onPrimary: adjustBrightness(light.onPrimary, 0.8),
-    primaryContainer: adjustBrightness(
-      light.primaryContainer || light.primary,
-      0.3,
-    ),
-    onPrimaryContainer: adjustBrightness(
-      light.onPrimaryContainer || light.onPrimary,
-      1.2,
-    ),
+    primary: primary.primary,
+    onPrimary: primary.onPrimary,
+    primaryContainer: primary.primaryContainer,
+    onPrimaryContainer: primary.onPrimaryContainer,
     secondary: adjustBrightness(light.secondary, 1.3),
     onSecondary: adjustBrightness(light.onSecondary, 0.8),
     secondaryContainer: adjustBrightness(light.secondaryContainer, 0.3),

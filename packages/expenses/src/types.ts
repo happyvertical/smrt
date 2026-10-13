@@ -23,14 +23,16 @@ export const EXPENSE_REVIEW_STATUSES: readonly ExpenseReviewStatus[] =
 
 /**
  * Who paid for an expense: the `company` (card, account, vendor terms) or a
- * named `person` out of pocket, who may then be owed a reimbursement.
+ * named `person` out of pocket, or a named `third-party`. Only a person may
+ * be owed an employee reimbursement.
  */
-export type ExpensePayer = 'company' | 'person';
+export type ExpensePayer = 'company' | 'person' | 'third-party';
 
 /** Every {@link ExpensePayer}. */
 export const EXPENSE_PAYERS: readonly ExpensePayer[] = Object.freeze([
   'company',
   'person',
+  'third-party',
 ]);
 
 /**
@@ -49,6 +51,46 @@ export const SUGGESTED_EXPENSE_CATEGORIES: readonly string[] = Object.freeze([
   'other',
 ]);
 
+/** Explicit supplier tax in signed integer minor units; no jurisdiction defaults. */
+export interface ExpenseTaxComponent {
+  /** Unique caller-defined lower-case kebab-case identifier. */
+  code: string;
+  /** Tax charged by the supplier, negative for a refund. */
+  amount: number;
+  /** Explicit recoverable portion, same sign and no larger than amount. */
+  recoverableAmount: number;
+}
+
+/** Complete optional purchase facts; subtotal plus taxes must equal total. */
+export interface ExpenseFinancialBreakdown {
+  /** Exact ISO currency of the expense. */
+  currency: string;
+  /** Supplier amount before the explicit taxes. */
+  subtotal: number;
+  /** Explicit components; an empty array asserts no tax. */
+  taxes: ExpenseTaxComponent[];
+  /** Supplier total, exactly equal to Expense.amount. */
+  total: number;
+}
+
+/** Exact retained basis; never implies customer markup or sales tax treatment. */
+export interface ExpenseCostBasis {
+  /** Currency shared by every value. */
+  currency: string;
+  /** Supplier subtotal. */
+  subtotal: number;
+  /** Sum of supplier tax components. */
+  taxTotal: number;
+  /** Explicit recoverable supplier tax. */
+  recoverableTax: number;
+  /** Supplier tax retained as cost. */
+  nonRecoverableTax: number;
+  /** Supplier gross total. */
+  total: number;
+  /** Subtotal plus non-recoverable tax. */
+  costBasis: number;
+}
+
 /** Constructor options for {@link Expense}. */
 export interface ExpenseOptions extends SmrtObjectOptions {
   tenantId?: string | null;
@@ -58,6 +100,12 @@ export interface ExpenseOptions extends SmrtObjectOptions {
   description?: string;
   amount?: number;
   currency?: string;
+  /** Complete supplier facts as JSON text; absent means unknown. */
+  financialBreakdown?: string | null;
+  /** Required only for third-party payers. */
+  paidByName?: string | null;
+  /** Same-tenant/currency positive source required for a negative refund. */
+  refundOfId?: string | null;
   incurredOn?: string;
   recordedAt?: Date | null;
   recordedByProfileId?: string | null;

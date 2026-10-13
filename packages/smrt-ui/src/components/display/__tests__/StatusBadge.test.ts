@@ -44,8 +44,8 @@ describe('StatusBadge', () => {
       props: { status: 'awaiting_cert', tone },
     });
     const span = container.querySelector('span') as HTMLElement;
-    expect(span.style.getPropertyValue('--badge-bg')).toBe(background);
-    expect(span.style.getPropertyValue('--badge-text')).toBe(foreground);
+    expect(span.style.getPropertyValue('--smrt-badge-bg')).toBe(background);
+    expect(span.style.getPropertyValue('--smrt-badge-text')).toBe(foreground);
     expect(screen.getByText('awaiting cert')).toBeInTheDocument();
   });
 
@@ -61,17 +61,17 @@ describe('StatusBadge', () => {
       },
     });
     const span = container.querySelector('span') as HTMLElement;
-    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+    expect(span.style.getPropertyValue('--smrt-badge-bg')).toBe(
       'var(--smrt-color-success-container)',
     );
     expect(span).toHaveClass('outline', 'sm');
     expect(screen.getByText('Reviewed')).toBeInTheDocument();
     await rerender({ status: 'overdue', type: 'invoice', tone: 'warning' });
-    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+    expect(span.style.getPropertyValue('--smrt-badge-bg')).toBe(
       'var(--smrt-color-warning-container)',
     );
     await rerender({ status: 'overdue', type: 'invoice', tone: undefined });
-    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+    expect(span.style.getPropertyValue('--smrt-badge-bg')).toBe(
       'var(--smrt-color-error-container)',
     );
   });
@@ -85,7 +85,7 @@ describe('StatusBadge', () => {
       props: { status: 'paid', type: 'invoice', tone: tone as 'success' },
     });
     const span = container.querySelector('span') as HTMLElement;
-    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+    expect(span.style.getPropertyValue('--smrt-badge-bg')).toBe(
       'var(--smrt-color-primary-container)',
     );
   });
@@ -156,10 +156,10 @@ describe('StatusBadge', () => {
     });
     const span = container.querySelector('span') as HTMLElement;
     // invoice/overdue → error container scheme
-    expect(span.style.getPropertyValue('--badge-bg')).toContain(
+    expect(span.style.getPropertyValue('--smrt-badge-bg')).toContain(
       'smrt-color-error-container',
     );
-    expect(span.style.getPropertyValue('--badge-text')).toContain(
+    expect(span.style.getPropertyValue('--smrt-badge-text')).toContain(
       'smrt-color-on-error-container',
     );
   });
@@ -172,10 +172,10 @@ describe('StatusBadge', () => {
     // The neutral fallback resolves to canonical surface tokens, not a literal
     // hex. smrt-ui owns the theme system, so the tokens are always defined; a
     // hardcoded fallback would freeze the wrong color across presets (#1586).
-    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+    expect(span.style.getPropertyValue('--smrt-badge-bg')).toBe(
       'var(--smrt-color-surface-container-highest)',
     );
-    expect(span.style.getPropertyValue('--badge-text')).toBe(
+    expect(span.style.getPropertyValue('--smrt-badge-text')).toBe(
       'var(--smrt-color-on-surface-variant)',
     );
   });
@@ -188,11 +188,11 @@ describe('StatusBadge', () => {
       props: { status: 'paid', type: 'invoice' },
     });
     const span = container.querySelector('span') as HTMLElement;
-    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+    expect(span.style.getPropertyValue('--smrt-badge-bg')).toBe(
       'var(--smrt-color-primary-container)',
     );
-    expect(span.style.getPropertyValue('--badge-bg')).not.toContain('#');
-    expect(span.style.getPropertyValue('--badge-text')).not.toContain('#');
+    expect(span.style.getPropertyValue('--smrt-badge-bg')).not.toContain('#');
+    expect(span.style.getPropertyValue('--smrt-badge-text')).not.toContain('#');
   });
 
   it('normalizes spaces and hyphens when matching a scheme key', () => {
@@ -201,7 +201,7 @@ describe('StatusBadge', () => {
       props: { status: 'On-Hold', type: 'project' },
     });
     const span = container.querySelector('span') as HTMLElement;
-    expect(span.style.getPropertyValue('--badge-bg')).toContain(
+    expect(span.style.getPropertyValue('--smrt-badge-bg')).toContain(
       'smrt-color-secondary-container',
     );
   });

@@ -13,6 +13,7 @@ let {
   line,
   currency,
   inheritedTaxRate,
+  roundingScope = 'line',
   number = 1,
   id,
   fields = {},
@@ -46,7 +47,7 @@ function refresh(event: Event) {
   onchange?.(draft);
 }
 </script>
-<fieldset oninput={refresh} onchange={refresh} disabled={!canEdit} class="invoice-line">
+<fieldset oninput={refresh} onchange={refresh} disabled={!canEdit} class="invoice-line" data-smrt-component="InvoiceLineEditor">
   <legend>{t(M['commerce.invoice.line'], { number })}</legend>
   <Input type="hidden" name={names.key} value={draft.key} interaction={false} />
   {#each ['description', 'sku', 'quantity', 'unitPrice'] as field}
@@ -71,15 +72,21 @@ function refresh(event: Event) {
   {#if calculation.valid}
     <dl class="totals">
       <div><dt>{t(M['commerce.invoice.subtotal'])}</dt><dd><CurrencyDisplay amount={calculation.subtotalMinor} {currency} unit="cents" /></dd></div>
+      {#if roundingScope === 'line'}
       <div><dt>{t(M['commerce.invoice.tax'])}</dt><dd><CurrencyDisplay amount={calculation.taxMinor} {currency} unit="cents" /></dd></div>
       <div><dt>{t(M['commerce.invoice.total'])}</dt><dd><CurrencyDisplay amount={calculation.totalMinor} {currency} unit="cents" /></dd></div>
+      {/if}
     </dl>
+    {#if roundingScope === 'invoice'}<p>{t(M['commerce.invoice.invoiceRounding'])}</p>{/if}
   {:else}<p role="status">{t(M['commerce.invoice.invalid'])}</p>{/if}
   {#if canEdit}<Button type="submit" name={intentField} value={`${removePrefix}${draft.key}`} formnovalidate disabled={pending} variant="secondary">{t(M['commerce.invoice.remove'])}</Button>{/if}
 </fieldset>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 .invoice-line { display: grid; grid-template-columns: minmax(0,1fr); gap: var(--smrt-spacing-3); min-width: 0; margin: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); }
 legend { padding-inline: var(--smrt-spacing-2); }
 .totals { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-4); }
 dd { margin: 0; } p, dl { margin: 0; }
+}
 </style>

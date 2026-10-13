@@ -15,18 +15,20 @@ const label = $derived(
 );
 </script>
 
-<span class="status-badge" class:connected={status === 'active'} class:pending={status === 'pending'} class:disconnected={status === 'inactive'}>
+<span class="status-badge" class:connected={status === 'active'} class:pending={status === 'pending'} class:disconnected={status === 'inactive'} data-smrt-component="PropertyStatusBadge">
 	<span class="status-dot" aria-hidden="true"></span>
 	{label}
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.status-badge {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
 		padding: 0.25rem 0.625rem;
-		border-radius: var(--smrt-radius-full, 9999px);
+		border-radius: var(--smrt-radius-full);
 		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
 		font-weight: var(--smrt-typography-weight-medium, 500);
 	}
@@ -34,7 +36,7 @@ const label = $derived(
 	.status-dot {
 		width: 0.5rem;
 		height: 0.5rem;
-		border-radius: var(--smrt-radius-full, 9999px);
+		border-radius: var(--smrt-radius-full);
 	}
 
 	.connected {
@@ -63,4 +65,5 @@ const label = $derived(
 	.disconnected .status-dot {
 		background: var(--smrt-color-outline);
 	}
+}
 </style>

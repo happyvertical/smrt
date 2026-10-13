@@ -28,7 +28,7 @@ let {
 const summary = $derived(summarizeMarketingDashboard(campaigns));
 </script>
 
-<section class="marketing-dashboard">
+<section class="marketing-dashboard" data-smrt-component="MarketingDashboard">
   <div class="tiles">
     <Card padding="sm">
       <dl class="tile">
@@ -86,6 +86,8 @@ const summary = $derived(summarizeMarketingDashboard(campaigns));
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .marketing-dashboard {
     display: flex;
     flex-direction: column;
@@ -130,4 +132,5 @@ const summary = $derived(summarizeMarketingDashboard(campaigns));
   .surface {
     min-width: 0;
   }
+}
 </style>

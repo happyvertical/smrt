@@ -141,7 +141,7 @@ function cancelEditing() {
 }
 </script>
 
-<div class="governance-manager">
+<div class="governance-manager" data-smrt-component="ContentGovernanceManager">
   <div class="governance-manager__header">
     <div>
       <h3>{t(M['content.governance_manager.content_governance'])}</h3>
@@ -299,6 +299,8 @@ function cancelEditing() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .governance-manager {
     display: grid;
     gap: 1rem;
@@ -343,4 +345,5 @@ function cancelEditing() {
   .error {
     color: var(--smrt-color-error);
   }
+}
 </style>

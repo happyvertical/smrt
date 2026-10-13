@@ -92,11 +92,11 @@ function getEntryHref(entry: TimeEntry): string | undefined {
 </script>
 
 {#if entries.length === 0}
-  <div class="empty-state">
+  <div class="empty-state" data-smrt-component="TimeEntryList">
     <p>{emptyMessage}</p>
   </div>
 {:else}
-  <div class="time-entry-list">
+  <div class="time-entry-list" data-smrt-component="TimeEntryList">
     {#if selectable && selectableEntries.length > 0}
       <div class="list-header">
         <label class="select-all">
@@ -173,7 +173,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
   </div>
 
   <div class="status-cell">
-    <span class="status-badge" style="--status-color: {statusColors[entry.status]}">
+    <span class="status-badge" style="--smrt-time-entry-list-status-color: {statusColors[entry.status]}">
       {entry.status}
     </span>
   </div>
@@ -188,6 +188,8 @@ function getEntryHref(entry: TimeEntry): string | undefined {
 {/snippet}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .empty-state {
     padding: 3rem 1rem;
     text-align: center;
@@ -196,7 +198,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
 
   .time-entry-list {
     background: var(--smrt-color-surface);
-    border-radius: var(--smrt-radius-large, 16px);
+    border-radius: var(--smrt-radius-large);
     overflow: hidden;
     border: 1px solid var(--smrt-color-outline-variant);
   }
@@ -333,11 +335,11 @@ function getEntryHref(entry: TimeEntry): string | undefined {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     font-weight: var(--smrt-typography-label-small-weight, 500);
     padding: 0.25rem 0.5rem;
-    border-radius: var(--smrt-radius-small, 8px);
-    background: var(--status-color);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-time-entry-list-status-color);
     color: var(--smrt-color-on-primary);
     text-transform: uppercase;
-    letter-spacing: var(--smrt-typography-label-small-tracking, 0.5px);
+    letter-spacing: var(--smrt-typography-label-small-tracking);
   }
 
   .amount-cell {
@@ -367,4 +369,5 @@ function getEntryHref(entry: TimeEntry): string | undefined {
       flex: none;
     }
   }
+}
 </style>

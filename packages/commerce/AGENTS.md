@@ -31,6 +31,9 @@ recipes show carry `@field({ description })` text; keep both in plain
 language for end users and update them when a recipe's fields change. See
 [core recipes](../core/agents/recipes.md).
 
+See [payment allocation integrity](agents/payment-allocations.md) for atomic splits,
+retry identity, parent corrections and supported dialects.
+
 ## Ledger Integration
 
 `@happyvertical/smrt-ledgers` is a regular dependency, loaded lazily via dynamic `import()` so the coupling stays runtime-only (no hard static import; the package graph stays a DAG — see #1582). Invoice stores `arJournalId` and `revenueJournalId` as string references. `recognizeRevenue()` creates a balanced AR journal entry; `getArJournal()` returns null when no journal has been recognized yet.
@@ -193,3 +196,8 @@ extension conventions are documented in [agents/quote-ui.md](agents/quote-ui.md)
 `PurchaseOrderEditor` preserves allocation IDs and explicit zeroes, including
 retained reduction rows; the server validates review fingerprints before recording.
 See [agents/purchasing-ui.md](agents/purchasing-ui.md) for caller responsibilities.
+
+## Exact cost billing
+
+Pure signed cost billing and explicit tax rounding are available through the
+independent `cost-billing` subpath; see [contract](agents/cost-billing.md).

@@ -23,7 +23,7 @@ let { channels = [], currency = 'USD', locale }: Props = $props();
 const mix = $derived(calculateChannelMix(channels));
 </script>
 
-<section class="channel-mix">
+<section class="channel-mix" data-smrt-component="ChannelMix">
   <h3>Channel mix</h3>
   {#if mix.length === 0}
     <p class="empty">No channel performance yet.</p>
@@ -62,6 +62,8 @@ const mix = $derived(calculateChannelMix(channels));
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .channel-mix,
   .rows {
     display: flex;
@@ -138,4 +140,5 @@ const mix = $derived(calculateChannelMix(channels));
     color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-body-medium-font);
   }
+}
 </style>

@@ -57,7 +57,7 @@ function handleClick(value: string) {
 }
 </script>
 
-<div data-density={density} class="filter-chips" class:sm={size === 'sm'} role="radiogroup">
+<div data-density={density} class="filter-chips" class:sm={size === 'sm'} role="radiogroup" data-smrt-component="FilterChips">
   {#each allOptions as option (option.value)}
     {@const isActive = option.value === selected}
     <button
@@ -84,24 +84,26 @@ function handleClick(value: string) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .filter-chips {
     display: flex;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     flex-wrap: wrap;
   }
 
   .filter-chip {
     display: inline-flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     height: 32px;
-    padding: 0 var(--smrt-spacing-4, 16px);
+    padding: 0 var(--smrt-spacing-4);
     font: var(--smrt-typography-label-large-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant);
     background-color: transparent;
     border: 1px solid var(--smrt-color-outline);
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     cursor: pointer;
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     white-space: nowrap;
@@ -111,9 +113,9 @@ function handleClick(value: string) {
 
   .sm .filter-chip {
     height: 28px;
-    padding: 0 var(--smrt-spacing-3, 12px);
+    padding: 0 var(--smrt-spacing-3);
     font: var(--smrt-typography-label-medium-font);
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   .filter-chip:hover:not(:disabled) {
@@ -124,11 +126,11 @@ function handleClick(value: string) {
     background-color: var(--smrt-color-secondary-container);
     border-color: transparent;
     color: var(--smrt-color-on-secondary-container);
-    padding-left: var(--smrt-spacing-3, 12px);
+    padding-left: var(--smrt-spacing-3);
   }
 
   .sm .filter-chip.active {
-    padding-left: var(--smrt-spacing-2, 8px);
+    padding-left: var(--smrt-spacing-2);
   }
 
   .filter-chip:disabled {
@@ -153,7 +155,8 @@ function handleClick(value: string) {
     color: var(--smrt-color-on-secondary-container);
   }
 
-  .filter-chips[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .filter-chips[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .filter-chips[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .filter-chip { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+}
 </style>

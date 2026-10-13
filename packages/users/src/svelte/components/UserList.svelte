@@ -39,7 +39,7 @@ const {
 }: Props = $props();
 </script>
 
-<div class="user-list">
+<div class="user-list" data-smrt-component="UserList">
   {#if loading}
     <div class="loading">
       <div class="spinner"></div>
@@ -66,6 +66,8 @@ const {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .user-list {
     display: flex;
     flex-direction: column;
@@ -78,15 +80,15 @@ const {
     justify-content: center;
     gap: var(--smrt-spacing-sm, 0.75rem);
     padding: var(--smrt-spacing-xl, 2rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .spinner {
     width: 1.25rem;
     height: 1.25rem;
-    border: 2px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-top-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.6s linear infinite;
   }
 
@@ -99,9 +101,9 @@ const {
   .empty {
     padding: var(--smrt-spacing-xl, 2rem);
     text-align: center;
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-    border: 1px dashed var(--smrt-color-outline-variant, #c4c6cf);
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-container-low);
+    border: 1px dashed var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
   }
 
@@ -110,4 +112,5 @@ const {
       animation: none;
     }
   }
+}
 </style>

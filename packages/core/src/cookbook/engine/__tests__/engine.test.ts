@@ -236,6 +236,70 @@ describe('commands', () => {
     expect(e.snapshot().theme.text).toBe('glass, dark');
   });
 
+  it('keeps custom CSS source through import, theme edits, state and export', () => {
+    const css = 'form { max-width: 60ch; }\n';
+    const e = engine();
+    ok(
+      e.run({
+        name: 'import_cookbook',
+        input: { document: { ...IMPORTED, theme: { customCss: css } } },
+      }),
+    );
+    expect(e.cookbook().theme?.customCss).toBe(css);
+    ok(e.run({ name: 'set_theme', input: { preset: 'glass' } }));
+    expect(e.cookbook().theme).toEqual({ preset: 'glass', customCss: css });
+    const exported = ok(e.run({ name: 'export_cookbook', input: {} })).data as {
+      text: string;
+    };
+    expect(JSON.parse(exported.text).theme.customCss).toBe(css);
+    const restored = createCookbookEngine({ catalog, state: e.state() });
+    expect(restored.cookbook().theme?.customCss).toBe(css);
+    ok(restored.run({ name: 'reset_theme', input: {} }));
+    expect(restored.cookbook().theme).toBeUndefined();
+  });
+
+  it('edits a font without replacing the preset and preserves it through export', () => {
+    const e = engine();
+    ok(
+      e.run({
+        name: 'set_theme',
+        input: { preset: 'glass', fontFamily: 'Georgia' },
+      }),
+    );
+    expect(e.cookbook().theme).toEqual({
+      preset: 'glass',
+      fontFamily: 'Georgia',
+    });
+    ok(e.run({ name: 'set_theme', input: { colorScheme: 'dark' } }));
+    expect(e.cookbook().theme?.fontFamily).toBe('Georgia');
+    const exported = ok(e.run({ name: 'export_cookbook', input: {} })).data as {
+      text: string;
+    };
+    expect(JSON.parse(exported.text).theme.fontFamily).toBe('Georgia');
+    const restored = createCookbookEngine({ catalog, state: e.state() });
+    expect(restored.cookbook().theme?.fontFamily).toBe('Georgia');
+    ok(restored.run({ name: 'set_theme', input: { fontFamily: null } }));
+    expect(restored.cookbook().theme?.fontFamily).toBeUndefined();
+  });
+
+  it('clearing the font also clears a legacy brand font, keeping the colour', () => {
+    const e = engine();
+    ok(
+      e.run({
+        name: 'import_cookbook',
+        input: {
+          document: {
+            ...IMPORTED,
+            theme: { custom: { primary: '#c2410c', fontFamily: 'Georgia' } },
+          },
+        },
+      }),
+    );
+    ok(e.run({ name: 'set_theme', input: { fontFamily: 'Inter' } }));
+    ok(e.run({ name: 'set_theme', input: { fontFamily: null } }));
+    expect(e.cookbook().theme).toEqual({ custom: { primary: '#c2410c' } });
+  });
+
   it('layout: rename, hide and show touch only the layout and stay sparse', () => {
     const e = engine();
     ok(e.run({ name: 'add_recipes', input: { ids: ['commerce.sales'] } }));
@@ -355,23 +419,63 @@ describe('commands', () => {
         path: 'recipes[2]',
       }),
     ]);
-    const bad = diagnose(catalog, {
-      ...engine().cookbook(),
-      recipes: ['commerce.sales'],
-      features: ['@x/y:Z'],
-      theme: { preset: 'neon' },
-      layout: { version: 1, hidden: ['item:ghost'] },
-      policies: [
-        { objectRef: `${C}Vendor`, fieldName: 'name', scopeType: 'app' },
+    const staleLayout = ok(
+      engine({
+        version: 1,
+        recipes: [],
+        policies: [],
+        layout: { version: 1, hidden: ['item:ghost'] },
+      }).run({ name: 'validate', input: {} }),
+    ).data as {
+      ok: boolean;
+      diagnostics: { code: string; severity: string; path: string }[];
+    };
+    expect(staleLayout).toMatchObject({
+      ok: true,
+      diagnostics: [
+        {
+          code: 'unknown_layout_id',
+          severity: 'warning',
+          path: 'layout.hidden[0]',
+        },
       ],
     });
+    const bad = diagnose(
+      { ...catalog, placementItems: ['dock:assistant'] },
+      {
+        ...engine().cookbook(),
+        recipes: ['commerce.sales'],
+        features: ['@x/y:Z'],
+        theme: { preset: 'neon' },
+        layout: {
+          version: 1,
+          hidden: ['item:ghost'],
+          placements: {
+            'dock:assistant': 'header.end',
+            'host:missing': 'header.start',
+          },
+        },
+        policies: [
+          { objectRef: `${C}Vendor`, fieldName: 'name', scopeType: 'app' },
+        ],
+      },
+    );
     expect(bad.map((d) => d.code).sort()).toEqual([
       'missing_requirement',
       'policy_not_covered',
       'unknown_layout_id',
+      'unknown_layout_id',
       'unknown_model',
       'unknown_preset',
     ]);
+    expect(
+      bad.find((diagnostic) => diagnostic.path === 'layout.hidden[0]'),
+    ).toMatchObject({ severity: 'warning', code: 'unknown_layout_id' });
+    expect(
+      bad.find(
+        (diagnostic) => diagnostic.path === 'layout.placements.host:missing',
+      ),
+    ).toMatchObject({ severity: 'error', code: 'unknown_layout_id' });
     expect(diagnose(catalog, { version: 2 } as never)[0]).toMatchObject({
       severity: 'error',
       code: 'invalid_document',

@@ -81,11 +81,11 @@ function toggle(key: string | number) {
 </script>
 
 {#if loading}
-  <div class="loading" role="status"><span class="spinner" aria-hidden="true"></span>Loading…</div>
+  <div class="loading" role="status" data-smrt-component="CollectionList"><span class="spinner" aria-hidden="true"></span>Loading…</div>
 {:else if items.length === 0}
-  <div class="empty">{#if empty}{@render empty()}{:else}No items available{/if}</div>
+  <div class="empty" data-smrt-component="CollectionList">{#if empty}{@render empty()}{:else}No items available{/if}</div>
 {:else}
-  <ul class="collection collection--{layout} {className}">
+  <ul class="collection collection--{layout} {className}" data-smrt-component="CollectionList">
     {#each items as entry, index (keyOf(entry, index))}
       {@const key = keyOf(entry, index)}
       {@const isSelected = selected.has(key)}
@@ -108,6 +108,8 @@ function toggle(key: string | number) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .collection { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: 0; list-style: none; }
   .collection--grid { grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr)); }
   li { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-3); min-width: 0; padding: var(--smrt-spacing-3); border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant)); border-radius: var(--smrt-radius-medium); background: var(--smrt-card-background, var(--smrt-color-surface)); color: var(--smrt-color-on-surface); }
@@ -121,18 +123,19 @@ function toggle(key: string | number) {
   .main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--smrt-typography-title-small-font); }
   .main span { color: var(--smrt-color-on-surface-variant); }
   .actions { position: relative; z-index: 1; display: flex; gap: var(--smrt-spacing-1); }
-  .collection--divided { --collection-divider: color-mix(in srgb, var(--smrt-color-outline-variant) 55%, transparent); gap: 0; }
+  .collection--divided { --smrt-collection-list-divider: color-mix(in srgb, var(--smrt-color-outline-variant) 55%, transparent); gap: 0; }
   .collection--divided li { padding-inline: 0; border: none; border-radius: 0; background: transparent; }
-  .collection--divided li + li { border-block-start: 1px solid var(--collection-divider); }
-  .collection--divided li.selected { border-color: var(--collection-divider); background: transparent; }
+  .collection--divided li + li { border-block-start: 1px solid var(--smrt-collection-list-divider); }
+  .collection--divided li.selected { border-color: var(--smrt-collection-list-divider); background: transparent; }
   .collection--gallery { grid-template-columns: repeat(auto-fill, minmax(min(11rem, 100%), 1fr)); }
   .collection--gallery li { display: block; padding: 0; }
   .collection--gallery .main { gap: 0; }
-  .collection--gallery .select, .collection--gallery .actions { position: absolute; top: var(--smrt-spacing-1); z-index: 2; min-width: 2.75rem; min-height: 2.75rem; align-items: center; justify-content: center; border-radius: var(--smrt-radius-full, 999px); background: color-mix(in srgb, var(--smrt-color-surface) 82%, transparent); }
+  .collection--gallery .select, .collection--gallery .actions { position: absolute; top: var(--smrt-spacing-1); z-index: 2; min-width: 2.75rem; min-height: 2.75rem; align-items: center; justify-content: center; border-radius: var(--smrt-radius-full); background: color-mix(in srgb, var(--smrt-color-surface) 82%, transparent); }
   .collection--gallery .select { left: var(--smrt-spacing-1); }
   .collection--gallery .actions { right: var(--smrt-spacing-1); }
   .loading, .empty { display: flex; min-height: 8rem; align-items: center; justify-content: center; gap: var(--smrt-spacing-2); color: var(--smrt-color-on-surface-variant); }
   .spinner { width: 1rem; height: 1rem; border: 2px solid var(--smrt-color-outline-variant); border-top-color: var(--smrt-color-primary); border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.6s; } }
+}
 </style>

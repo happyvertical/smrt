@@ -1,9 +1,14 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import type { Component } from 'svelte';
+import { type Component, onMount } from 'svelte';
+import { fly } from 'svelte/transition';
 import { M } from '../../../i18n/strings.workspace.js';
+import { flipRow } from './motion.js';
 import ShellSectionIcon from './ShellSectionIcon.svelte';
-import { SHELL_DEFAULT_SECTION_ICON, SHELL_ICON_PATHS } from './shell-icons.js';
+import {
+  SHELL_DEFAULT_SECTION_ICON,
+  SHELL_PLACEHOLDER_ICON,
+} from './shell-icons.js';
 import type { ShellNavGroup, ShellNavItem } from './types.js';
 
 const DEFAULT_ACTION_ICON = 'settings';
@@ -27,10 +32,11 @@ interface Props {
   onNavigate?: () => void;
   /**
    * `'items'` (default) lists every group's entries. `'sections'` shows only
-   * the sections, one icon link each, to the section's own page
+   * the sections. `'sections-with-items'` also shows entries when expanded.
+   * Section links go to the section's own page
    * (`ShellNavGroup.href`, else `sectionHref(id)`, else its first entry).
    */
-  navMode?: 'items' | 'sections';
+  navMode?: 'items' | 'sections' | 'sections-with-items';
   /** Section page for groups without an `href` (e.g. user-created ones). */
   sectionHref?: (sectionId: string) => string | undefined;
 }
@@ -48,6 +54,20 @@ let {
   sectionHref,
 }: Props = $props();
 const { t } = useI18n();
+let ready = $state(false);
+onMount(() => {
+  ready = true;
+});
+
+function reveal() {
+  const reduced =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const canAnimate =
+    typeof Element !== 'undefined' &&
+    typeof Element.prototype.animate === 'function';
+  return { x: 12, duration: ready && !reduced && canAnimate ? 260 : 0 };
+}
 
 function isActive(item: ShellNavItem): boolean {
   return item.href === currentHref || currentHref.startsWith(`${item.href}/`);
@@ -106,6 +126,14 @@ function fallbackIcon(label: string): string {
 }
 </script>
 
+{#snippet glyph(name: string, size: number)}
+  {#if IconComponent}
+    <IconComponent {name} {size} />
+  {:else}
+    <ShellSectionIcon {name} {size} />
+  {/if}
+{/snippet}
+
 {#snippet attention(item: ShellNavItem)}
   {@const label = attentionLabel(item)}
   {#if label}
@@ -123,7 +151,7 @@ function fallbackIcon(label: string): string {
     {@const action = showAction(item, groupCurrent ?? isItemCurrent(item))
       ? item.action
       : undefined}
-    <div class="smrt-tenant-nav__section">
+    <div class="smrt-tenant-nav__section" in:fly={reveal()} animate:flipRow>
       <div class="smrt-tenant-nav__row">
       <a
         href={item.href}
@@ -134,18 +162,14 @@ function fallbackIcon(label: string): string {
       >
         {#if item.icon}
           <span class="smrt-tenant-nav__icon" aria-hidden="true">
-            {#if IconComponent}
-              <IconComponent name={item.icon} size={18} />
-            {:else}
-              {item.icon}
-            {/if}
+            {@render glyph(item.icon, 18)}
           </span>
         {:else if collapsed}
           <span
-            class="smrt-tenant-nav__icon smrt-tenant-nav__icon--fallback"
+            class="smrt-tenant-nav__icon smrt-tenant-nav__icon--placeholder"
             aria-hidden="true"
           >
-            {fallbackIcon(item.label)}
+            <ShellSectionIcon name={SHELL_PLACEHOLDER_ICON} size={18} />
           </span>
         {/if}
         {#if collapsed}
@@ -168,13 +192,7 @@ function fallbackIcon(label: string): string {
           onclick={onNavigate}
         >
           <span class="smrt-tenant-nav__icon" aria-hidden="true">
-            {#if IconComponent}
-              <IconComponent name={action.icon ?? DEFAULT_ACTION_ICON} size={16} />
-            {:else if action.icon}
-              {action.icon}
-            {:else}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d={SHELL_ICON_PATHS.settings} /></svg>
-            {/if}
+            {@render glyph(action.icon ?? DEFAULT_ACTION_ICON, 16)}
           </span>
         </a>
       {/if}
@@ -189,11 +207,7 @@ function fallbackIcon(label: string): string {
             >
               {#if child.icon}
                 <span class="smrt-tenant-nav__icon" aria-hidden="true">
-                  {#if IconComponent}
-                    <IconComponent name={child.icon} size={16} />
-                  {:else}
-                    {child.icon}
-                  {/if}
+                  {@render glyph(child.icon, 16)}
                 </span>
               {/if}
               <span>{child.label}</span>
@@ -213,15 +227,15 @@ function fallbackIcon(label: string): string {
   class="smrt-tenant-nav"
   data-density={density}
   class:smrt-tenant-nav--collapsed={collapsed}
-  aria-label={ariaLabel || t(M['ui.tenant_nav.tenant_navigation'])}
+  aria-label={ariaLabel || t(M['ui.tenant_nav.tenant_navigation'])} data-smrt-component="TenantNav"
 >
 
   {@render navItems(items)}
-  {#each groups as group}
-    {#if navMode === 'sections'}
+  {#each groups as group (groupId(group))}
+    {#if navMode === 'sections' || navMode === 'sections-with-items'}
       {@const href = groupHref(group)}
       {#if href}
-        <div class="smrt-tenant-nav__section" data-nav-section={groupId(group)}>
+        <div class="smrt-tenant-nav__section" data-nav-section={groupId(group)} in:fly={reveal()}>
           <div class="smrt-tenant-nav__row">
             <a
               {href}
@@ -245,6 +259,11 @@ function fallbackIcon(label: string): string {
               {/if}
             </a>
           </div>
+          {#if navMode === 'sections-with-items' && !collapsed && group.items.length}
+            <div class="smrt-tenant-nav__subnav">
+              {@render navItems(group.items, isGroupCurrent(group))}
+            </div>
+          {/if}
         </div>
       {/if}
     {:else if group.showTitle === false}
@@ -268,6 +287,8 @@ function fallbackIcon(label: string): string {
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-tenant-nav,
   .smrt-tenant-nav__section,
   .smrt-tenant-nav__children,
@@ -313,6 +334,11 @@ function fallbackIcon(label: string): string {
     outline-offset: 2px;
   }
   .smrt-tenant-nav__group-items { margin-block-start: var(--smrt-spacing-1); }
+  .smrt-tenant-nav__subnav {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    padding-inline-start: var(--smrt-spacing-4);
+  }
   .smrt-tenant-nav--collapsed .smrt-tenant-nav__heading {
     display: grid;
     place-items: center;
@@ -323,7 +349,11 @@ function fallbackIcon(label: string): string {
   }
   .smrt-tenant-nav--collapsed .smrt-tenant-nav__heading::-webkit-details-marker { display: none; }
 
-  .smrt-tenant-nav[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  /* Phone rows use the touch target; comfortable density opts back out. */
+  @media (max-width: 48rem) {
+    .smrt-tenant-nav { --smrt-control-target-min: var(--smrt-touch-target-min); }
+  }
+  .smrt-tenant-nav[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .smrt-tenant-nav[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .smrt-tenant-nav a {
     box-sizing: border-box;
@@ -355,10 +385,28 @@ function fallbackIcon(label: string): string {
     padding: 0;
   }
 
-  .smrt-tenant-nav a:hover,
+  .smrt-tenant-nav a:hover {
+    background: var(--smrt-color-surface-container-high);
+  }
+  /* Selected: container fill plus a start indicator bar, not just weight. */
   .smrt-tenant-nav a[aria-current='page'],
   .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active {
-    background: var(--smrt-color-surface-container-high);
+    background: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
+  }
+  .smrt-tenant-nav a[aria-current='page']::before,
+  .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active::before {
+    content: '';
+    position: absolute;
+    inset-block: var(--smrt-spacing-2);
+    inset-inline-start: 0;
+    inline-size: var(--smrt-spacing-1);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
+  }
+  .smrt-tenant-nav a[aria-current='page'] small,
+  .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active small {
+    color: inherit;
   }
 
   .smrt-tenant-nav__icon {
@@ -369,12 +417,8 @@ function fallbackIcon(label: string): string {
     min-inline-size: 1.25rem;
   }
 
-  .smrt-tenant-nav__icon--fallback {
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-surface-container-high);
+  .smrt-tenant-nav__icon--placeholder {
     color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-small-size);
-    font-weight: var(--smrt-typography-weight-semibold);
   }
 
   .smrt-tenant-nav strong,
@@ -423,4 +467,5 @@ function fallbackIcon(label: string): string {
     white-space: nowrap;
     border: 0;
   }
+}
 </style>

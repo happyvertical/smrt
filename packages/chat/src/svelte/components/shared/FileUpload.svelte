@@ -107,7 +107,7 @@ function getFileIcon(type: string): string {
 }
 </script>
 
-<div class="file-upload" class:file-upload--disabled={disabled}>
+<div class="file-upload" class:file-upload--disabled={disabled} data-smrt-component="FileUpload">
   {#if pendingFiles.length > 0}
     <div class="file-upload__preview" aria-label={t(M['chat.file_upload.preview'])}>
       {#each pendingFiles as file, i (file.name + i)}
@@ -194,10 +194,12 @@ function getFileIcon(type: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .file-upload {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   .file-upload--disabled {
@@ -206,9 +208,9 @@ function getFileIcon(type: string): string {
   }
 
   .file-upload__drop-zone {
-    border: 2px dashed var(--smrt-color-outline-variant, #c4c6d0);
-    border-radius: var(--smrt-radius-large, 12px);
-    padding: var(--smrt-spacing-5, 20px);
+    border: 2px dashed var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-large);
+    padding: var(--smrt-spacing-5);
     text-align: center;
     transition:
       border-color var(--smrt-duration-short2, 150ms),
@@ -216,8 +218,8 @@ function getFileIcon(type: string): string {
   }
 
   .file-upload__drop-zone--active {
-    border-color: var(--smrt-color-primary, #005ac1);
-    background: var(--smrt-color-primary-container, #d6e3ff);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
   }
 
   .file-upload__drop-zone--disabled {
@@ -228,7 +230,7 @@ function getFileIcon(type: string): string {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     cursor: pointer;
   }
 
@@ -241,36 +243,36 @@ function getFileIcon(type: string): string {
   }
 
   .file-upload__icon {
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   .file-upload__text {
     font: var(--smrt-typography-body-medium-font, 0.875rem/1.4 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   .file-upload__hint {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   .file-upload__preview {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
-    padding: var(--smrt-spacing-2, 8px);
-    background: var(--smrt-color-surface-container-low, #f7f7fb);
-    border-radius: var(--smrt-radius-medium, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-2);
+    background: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-medium);
+    border: 1px solid var(--smrt-color-outline-variant);
   }
 
   .file-upload__file {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-2, 8px);
-    border-radius: var(--smrt-radius-small, 4px);
-    background: var(--smrt-color-surface, #fefbff);
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface);
   }
 
   .file-upload__file-icon {
@@ -279,10 +281,10 @@ function getFileIcon(type: string): string {
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: var(--smrt-radius-small, 4px);
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface-variant);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     flex-shrink: 0;
   }
@@ -291,13 +293,13 @@ function getFileIcon(type: string): string {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     min-width: 0;
   }
 
   .file-upload__file-name {
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -305,7 +307,7 @@ function getFileIcon(type: string): string {
 
   .file-upload__file-size {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
@@ -314,28 +316,28 @@ function getFileIcon(type: string): string {
     height: 24px;
     padding: 0;
     background: none;
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    border-radius: var(--smrt-radius-full, 9999px);
+    color: var(--smrt-color-on-surface-variant);
+    border-radius: var(--smrt-radius-full);
     flex-shrink: 0;
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
   .file-upload__file :global(.file-upload__file-remove:hover) {
-    background: var(--smrt-color-error-container, #ffdad6);
-    color: var(--smrt-color-error, #ba1a1a);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-error);
   }
 
   .file-upload__preview-actions {
     display: flex;
-    gap: var(--smrt-spacing-2, 8px);
-    padding-top: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-2);
+    padding-top: var(--smrt-spacing-1);
   }
 
   .file-upload__error {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border-radius: var(--smrt-radius-small, 4px);
-    background: var(--smrt-color-error-container, #ffdad6);
-    color: var(--smrt-color-on-error-container, #410002);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
 
@@ -348,4 +350,5 @@ function getFileIcon(type: string): string {
       transition: none;
     }
   }
+}
 </style>

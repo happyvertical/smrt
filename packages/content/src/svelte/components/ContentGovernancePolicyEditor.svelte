@@ -46,7 +46,7 @@ function handleSubmit() {
 }
 </script>
 
-<div class="governance-editor-shell">
+<div class="governance-editor-shell" data-smrt-component="ContentGovernancePolicyEditor">
   <Form class="governance-editor" onsubmit={(event) => {
     event.preventDefault();
     handleSubmit();
@@ -88,6 +88,8 @@ function handleSubmit() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .governance-editor-shell :global(.governance-editor) {
     display: grid;
     gap: 0.75rem;
@@ -109,4 +111,5 @@ function handleSubmit() {
     display: flex;
     gap: 0.75rem;
   }
+}
 </style>

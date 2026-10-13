@@ -127,7 +127,7 @@ $effect(() => {
 });
 </script>
 
-<section class="inbox">
+<section class="inbox" data-smrt-component="ContentContributionInbox">
   <header class="inbox__header">
     <div>
       <h3>{t(M['content.contribution_inbox.heading'])}</h3>
@@ -259,6 +259,8 @@ $effect(() => {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .inbox,
   .inbox__header,
   .inbox__layout,
@@ -323,7 +325,7 @@ $effect(() => {
     justify-content: center;
     min-width: 1.75rem;
     padding: 0.15rem 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary-container);
   }
 
@@ -332,4 +334,5 @@ $effect(() => {
       grid-template-columns: 1fr;
     }
   }
+}
 </style>
