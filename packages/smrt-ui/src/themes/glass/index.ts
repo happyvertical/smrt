@@ -287,7 +287,7 @@ const typography: TypographyScale = {
   labelSmall: {
     size: '0.6875rem',
     lineHeight: '1.3',
-    weight: '600',
+    weight: '500',
     tracking: '-0.004em',
     fontFamily: 'var(--smrt-font-family)',
   },

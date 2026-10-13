@@ -274,22 +274,22 @@ const typography: TypographyScale = {
   labelLarge: {
     size: '0.8125rem',
     lineHeight: '1.4',
-    weight: '600',
-    tracking: '0.04em',
+    weight: '500',
+    tracking: '0.01em',
     fontFamily: 'var(--smrt-font-family)',
   },
   labelMedium: {
     size: '0.6875rem',
     lineHeight: '1.4',
-    weight: '600',
-    tracking: '0.08em',
+    weight: '500',
+    tracking: '0.03em',
     fontFamily: 'var(--smrt-font-family)',
   },
   labelSmall: {
     size: '0.625rem',
     lineHeight: '1.4',
-    weight: '600',
-    tracking: '0.1em',
+    weight: '500',
+    tracking: '0.05em',
     fontFamily: 'var(--smrt-font-family)',
   },
 };

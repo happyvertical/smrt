@@ -32,3 +32,200 @@ textarea {
   font: inherit;
 }
 }
+
+/*
+ * Typography (#3868). Headings and utilities consume the theme's type roles,
+ * so a preset's display face, tracking and weight reach plain markup. Hosts
+ * restyle with unlayered CSS; component styles in smrt.theme still win.
+ */
+@layer smrt.structure {
+:is(body, .smrt-theme-root) {
+  font-feature-settings: var(--smrt-font-feature-settings);
+}
+
+:is(body, .smrt-theme-root) h1 {
+  font-family: var(--smrt-typography-display-small-font-family);
+  font-size: var(--smrt-typography-display-small-size);
+  line-height: var(--smrt-typography-display-small-line-height);
+  font-weight: var(--smrt-typography-display-small-weight);
+  letter-spacing: var(--smrt-typography-display-small-tracking);
+  margin-block: var(--smrt-spacing-5) var(--smrt-spacing-3);
+}
+
+:is(body, .smrt-theme-root) h2 {
+  font-family: var(--smrt-typography-headline-large-font-family);
+  font-size: var(--smrt-typography-headline-large-size);
+  line-height: var(--smrt-typography-headline-large-line-height);
+  font-weight: var(--smrt-typography-headline-large-weight);
+  letter-spacing: var(--smrt-typography-headline-large-tracking);
+  margin-block: var(--smrt-spacing-5) var(--smrt-spacing-3);
+}
+
+:is(body, .smrt-theme-root) h3 {
+  font-family: var(--smrt-typography-headline-medium-font-family);
+  font-size: var(--smrt-typography-headline-medium-size);
+  line-height: var(--smrt-typography-headline-medium-line-height);
+  font-weight: var(--smrt-typography-headline-medium-weight);
+  letter-spacing: var(--smrt-typography-headline-medium-tracking);
+  margin-block: var(--smrt-spacing-4) var(--smrt-spacing-2);
+}
+
+:is(body, .smrt-theme-root) h4 {
+  font-family: var(--smrt-typography-headline-small-font-family);
+  font-size: var(--smrt-typography-headline-small-size);
+  line-height: var(--smrt-typography-headline-small-line-height);
+  font-weight: var(--smrt-typography-headline-small-weight);
+  letter-spacing: var(--smrt-typography-headline-small-tracking);
+  margin-block: var(--smrt-spacing-4) var(--smrt-spacing-2);
+}
+
+:is(body, .smrt-theme-root) h5 {
+  font-family: var(--smrt-typography-title-large-font-family);
+  font-size: var(--smrt-typography-title-large-size);
+  line-height: var(--smrt-typography-title-large-line-height);
+  font-weight: var(--smrt-typography-title-large-weight);
+  letter-spacing: var(--smrt-typography-title-large-tracking);
+  margin-block: var(--smrt-spacing-4) var(--smrt-spacing-2);
+}
+
+:is(body, .smrt-theme-root) h6 {
+  font-family: var(--smrt-typography-title-medium-font-family);
+  font-size: var(--smrt-typography-title-medium-size);
+  line-height: var(--smrt-typography-title-medium-line-height);
+  font-weight: var(--smrt-typography-title-medium-weight);
+  letter-spacing: var(--smrt-typography-title-medium-tracking);
+  margin-block: var(--smrt-spacing-4) var(--smrt-spacing-2);
+}
+
+:is(body, .smrt-theme-root) :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-block-start: 0;
+}
+
+.smrt-display-large {
+  font-family: var(--smrt-typography-display-large-font-family);
+  font-size: var(--smrt-typography-display-large-size);
+  line-height: var(--smrt-typography-display-large-line-height);
+  font-weight: var(--smrt-typography-display-large-weight);
+  letter-spacing: var(--smrt-typography-display-large-tracking);
+}
+
+.smrt-display-medium {
+  font-family: var(--smrt-typography-display-medium-font-family);
+  font-size: var(--smrt-typography-display-medium-size);
+  line-height: var(--smrt-typography-display-medium-line-height);
+  font-weight: var(--smrt-typography-display-medium-weight);
+  letter-spacing: var(--smrt-typography-display-medium-tracking);
+}
+
+.smrt-display-small {
+  font-family: var(--smrt-typography-display-small-font-family);
+  font-size: var(--smrt-typography-display-small-size);
+  line-height: var(--smrt-typography-display-small-line-height);
+  font-weight: var(--smrt-typography-display-small-weight);
+  letter-spacing: var(--smrt-typography-display-small-tracking);
+}
+
+.smrt-headline-large {
+  font-family: var(--smrt-typography-headline-large-font-family);
+  font-size: var(--smrt-typography-headline-large-size);
+  line-height: var(--smrt-typography-headline-large-line-height);
+  font-weight: var(--smrt-typography-headline-large-weight);
+  letter-spacing: var(--smrt-typography-headline-large-tracking);
+}
+
+.smrt-headline-medium {
+  font-family: var(--smrt-typography-headline-medium-font-family);
+  font-size: var(--smrt-typography-headline-medium-size);
+  line-height: var(--smrt-typography-headline-medium-line-height);
+  font-weight: var(--smrt-typography-headline-medium-weight);
+  letter-spacing: var(--smrt-typography-headline-medium-tracking);
+}
+
+.smrt-headline-small {
+  font-family: var(--smrt-typography-headline-small-font-family);
+  font-size: var(--smrt-typography-headline-small-size);
+  line-height: var(--smrt-typography-headline-small-line-height);
+  font-weight: var(--smrt-typography-headline-small-weight);
+  letter-spacing: var(--smrt-typography-headline-small-tracking);
+}
+
+.smrt-title-large {
+  font-family: var(--smrt-typography-title-large-font-family);
+  font-size: var(--smrt-typography-title-large-size);
+  line-height: var(--smrt-typography-title-large-line-height);
+  font-weight: var(--smrt-typography-title-large-weight);
+  letter-spacing: var(--smrt-typography-title-large-tracking);
+}
+
+.smrt-title-medium {
+  font-family: var(--smrt-typography-title-medium-font-family);
+  font-size: var(--smrt-typography-title-medium-size);
+  line-height: var(--smrt-typography-title-medium-line-height);
+  font-weight: var(--smrt-typography-title-medium-weight);
+  letter-spacing: var(--smrt-typography-title-medium-tracking);
+}
+
+.smrt-title-small {
+  font-family: var(--smrt-typography-title-small-font-family);
+  font-size: var(--smrt-typography-title-small-size);
+  line-height: var(--smrt-typography-title-small-line-height);
+  font-weight: var(--smrt-typography-title-small-weight);
+  letter-spacing: var(--smrt-typography-title-small-tracking);
+}
+
+.smrt-body-large {
+  font-family: var(--smrt-typography-body-large-font-family);
+  font-size: var(--smrt-typography-body-large-size);
+  line-height: var(--smrt-typography-body-large-line-height);
+  font-weight: var(--smrt-typography-body-large-weight);
+  letter-spacing: var(--smrt-typography-body-large-tracking);
+}
+
+.smrt-body-medium {
+  font-family: var(--smrt-typography-body-medium-font-family);
+  font-size: var(--smrt-typography-body-medium-size);
+  line-height: var(--smrt-typography-body-medium-line-height);
+  font-weight: var(--smrt-typography-body-medium-weight);
+  letter-spacing: var(--smrt-typography-body-medium-tracking);
+}
+
+.smrt-body-small {
+  font-family: var(--smrt-typography-body-small-font-family);
+  font-size: var(--smrt-typography-body-small-size);
+  line-height: var(--smrt-typography-body-small-line-height);
+  font-weight: var(--smrt-typography-body-small-weight);
+  letter-spacing: var(--smrt-typography-body-small-tracking);
+}
+
+.smrt-label-large {
+  font-family: var(--smrt-typography-label-large-font-family);
+  font-size: var(--smrt-typography-label-large-size);
+  line-height: var(--smrt-typography-label-large-line-height);
+  font-weight: var(--smrt-typography-label-large-weight);
+  letter-spacing: var(--smrt-typography-label-large-tracking);
+}
+
+.smrt-label-medium {
+  font-family: var(--smrt-typography-label-medium-font-family);
+  font-size: var(--smrt-typography-label-medium-size);
+  line-height: var(--smrt-typography-label-medium-line-height);
+  font-weight: var(--smrt-typography-label-medium-weight);
+  letter-spacing: var(--smrt-typography-label-medium-tracking);
+}
+
+.smrt-label-small {
+  font-family: var(--smrt-typography-label-small-font-family);
+  font-size: var(--smrt-typography-label-small-size);
+  line-height: var(--smrt-typography-label-small-line-height);
+  font-weight: var(--smrt-typography-label-small-weight);
+  letter-spacing: var(--smrt-typography-label-small-tracking);
+}
+
+table,
+time,
+[data-smrt-component="DataTable"],
+[data-smrt-component="Badge"],
+.smrt-tabular {
+  font-variant-numeric: tabular-nums;
+}
+}
