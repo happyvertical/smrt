@@ -154,3 +154,8 @@ Shell motion (track transitions, list flips, view transitions, theme crossfade) 
 ## Premium baseline token vocabulary
 
 See the table in [src/themes/README.md](../src/themes/README.md#premium-baseline-token-vocabulary): surface ladder, hairlines, state layers, shadow colour, control geometry, focus ring, native chrome, glass and motion/typography tokens. Themes define them; components consume them and use a component-prefixed name () that falls back to the theme token for per-variant overrides, because the required-tokens scanner drops any name a component defines on its own root.
+
+## ThemeProvider runtime features
+
+Built-in presets stay static (no inline token payload); only user overrides go inline: non-`md` `borderRadius` (control radius tokens), `primaryColor` (derived set via `derivePrimaryOverrides`) and `density`. `data-smrt-theme-changing` marks one `--smrt-duration-scheme` after a post-mount scheme change (not on first paint, not under reduced motion); `data-contrast` (`standard|more|forced`) and `data-forced-colors` come from `prefers-contrast`/`forced-colors` or the `contrast` prop. `themeScript()` stamps `data-contrast`/`data-density` pre-paint from the same persisted config; keep it tiny. Forced-colors contract: hairlines `CanvasText`, focus rings `Highlight`, no painting over system colours.
+

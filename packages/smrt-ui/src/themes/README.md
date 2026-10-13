@@ -305,7 +305,28 @@ import '@happyvertical/smrt-ui/themes/styles/happyvertical.css';
 | `borderRadius` | `'none' \| 'sm' \| 'md' \| 'lg' \| 'xl' \| 'full'` | `'md'` | Border radius scale |
 | `overrides` | `Record<string, string>` | `{}` | Custom CSS variable overrides |
 | `persist` | `boolean` | `true` | Persist to localStorage |
+| `density` | `'comfortable' \| 'touch'` | - | Default control target size (`--smrt-control-target-min`); persisted |
+| `contrast` | `'auto' \| 'standard' \| 'more'` | `'auto'` | `auto` follows `prefers-contrast: more`; persisted when explicit |
 | `storageKey` | `string` | `'smrt-theme'` | localStorage key |
+
+Behaviour notes (state exposed on context: `contrast`, `isChangingScheme`):
+
+- `borderRadius` other than `md` is emitted inline as `--smrt-control-radius` /
+  `--smrt-control-radius-small` (one scale step smaller for the small radius);
+  `md` leaves the preset's own control radius in place. The generic
+  `--smrt-radius-*` scale is not changed.
+- `primaryColor` emits the whole derived set for the resolved scheme through
+  `derivePrimaryOverrides(color, scheme)` (also exported): `color-primary`, `on-primary`
+  (best of white/black), `primary-container`, `on-primary-container`, `inverse-primary`,
+  and the focus ring, accent, caret and selection tokens.
+- After the resolved scheme changes post-mount, `data-smrt-theme-changing` is set on
+  the root and `<html>` for one `--smrt-duration-scheme`, so styles can crossfade.
+  Never on first paint; skipped under `prefers-reduced-motion: reduce`.
+- Contrast: `data-contrast="standard|more|forced"` on `<html>` and the root;
+  `forced-colors: active` also sets `data-forced-colors`. Contract for components in
+  forced-colors mode: do not paint over system colours, hairlines become `CanvasText`
+  and focus rings `Highlight` (component side: #3867 follow-up).
+- `themeScript()` stamps `data-contrast` and (when persisted) `data-density` pre-paint.
 
 ## Theme Switching
 
