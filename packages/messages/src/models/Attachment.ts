@@ -7,7 +7,6 @@
 // Register the package manifest before this module's @smrt() decorator
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
-import { basename, dirname, isAbsolute } from 'node:path';
 import {
   foreignKey,
   importOptionalDependency,
@@ -16,6 +15,21 @@ import {
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AttachmentOptions } from '../types';
+
+/**
+ * Split an absolute path into its directory and file name, or return null for
+ * a relative path. Plain string handling rather than `node:path`: the package
+ * root must stay browser-reachable (the bundle-gate forbids `node:*` there).
+ */
+function splitAbsolutePath(
+  filePath: string,
+): { dir: string; base: string } | null {
+  const absolute = filePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(filePath);
+  if (!absolute) return null;
+  const cut = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+  const dir = filePath.slice(0, cut) || filePath.slice(0, cut + 1);
+  return { dir, base: filePath.slice(cut + 1) };
+}
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -147,16 +161,13 @@ export class Attachment extends SmrtObject {
       // The SDK registers its providers asynchronously on import; make the
       // local one available before asking for it.
       await initializeProviders?.();
-      const absolute = isAbsolute(this.filePath);
+      const split = splitAbsolutePath(this.filePath);
       const files = await getFilesystem(
-        absolute
-          ? { type: 'local', basePath: dirname(this.filePath) }
-          : { type: 'local' },
+        split ? { type: 'local', basePath: split.dir } : { type: 'local' },
       );
-      const data = await files.read(
-        absolute ? basename(this.filePath) : this.filePath,
-        { raw: true },
-      );
+      const data = await files.read(split ? split.base : this.filePath, {
+        raw: true,
+      });
       return data instanceof Buffer ? data : Buffer.from(data);
     } catch {
       return null;
