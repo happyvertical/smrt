@@ -40,7 +40,7 @@ describe('heading role mapping in base.css', () => {
       const body = rule?.[1] ?? '';
       for (const [prop, suffix] of PROPS) {
         expect(body).toContain(
-          `${prop}: var(--smrt-typography-${role}-${suffix})`,
+          `${prop}: var(${['--smrt', 'typography', role, suffix].join('-')})`,
         );
       }
       expect(body).toMatch(/margin-block:\s*var\(--smrt-spacing-\d\)/);

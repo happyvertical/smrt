@@ -742,7 +742,7 @@ display faces reach plain markup. Hosts restyle with unlayered CSS.
 | `h6` | `title-medium` |
 
 Each heading takes `font-family`, `font-size`, `line-height`, `font-weight` and
-`letter-spacing` from `--smrt-typography-<role>-*`, and a `margin-block` from
+`letter-spacing` from the role's typography tokens (for example `--smrt-typography-headline-large-size`), and a `margin-block` from
 `--smrt-spacing-*` (first children lose the top margin). Utilities
 `.smrt-{display,headline,title,body,label}-{large,medium,small}` apply the same five
 properties to any element.
