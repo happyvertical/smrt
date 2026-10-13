@@ -1779,10 +1779,17 @@ describe('report refresh integration', () => {
       { next_run: '2026-01-01T00:00:00.000Z' },
     );
 
+    const sign = vi.fn(JOB_SIGNER.sign).mockImplementationOnce(() => {
+      throw new Error('password=synthetic-canary');
+    });
     const runner = new ReportScheduleRunner({
       pollInterval: 1000,
+      integritySigner: { ...JOB_SIGNER, sign },
     });
     await runner.initialize(db);
+    await runner.poll();
+    const failed = await db.get('_smrt_report_schedules', { enabled: true });
+    expect(failed?.last_error).toBe('password=***REDACTED***');
     await runner.poll();
 
     let jobs = await db.query(

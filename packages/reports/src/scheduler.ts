@@ -18,6 +18,7 @@ import {
   getNextCronDate,
   isRunnerExecutionContext,
   type JobExecutionContext,
+  redactErrorForPersistence,
   redactErrorMessage,
   type SmrtJob,
   SmrtJobCollection,
@@ -972,7 +973,7 @@ export class ReportScheduleRunner extends EventEmitter {
             SET last_error = ?,
                 updated_at = ?
           WHERE id = ?`,
-        error instanceof Error ? error.message : String(error),
+        redactErrorForPersistence(error),
         new Date().toISOString(),
         schedule.id,
       );
