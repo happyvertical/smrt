@@ -142,6 +142,7 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
   @media (forced-colors: active) {
     .icon-toggle.pressed { background: Highlight; color: HighlightText; border-color: Highlight; }
     .icon-toggle.pressed:not(:focus-visible) { outline: var(--smrt-focus-ring-width) solid CanvasText; outline-offset: calc(-2 * var(--smrt-focus-ring-width)); }
+    .icon-toggle:disabled, .icon-toggle.pressed:disabled { opacity: 1; background: Canvas; color: GrayText; border-color: GrayText; }
   }
 }
 </style>

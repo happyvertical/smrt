@@ -7,7 +7,9 @@ import Checkbox from '../src/components/forms/Checkbox.svelte';
 import Input from '../src/components/forms/Input.svelte';
 import Radio from '../src/components/forms/Radio.svelte';
 import RadioGroup from '../src/components/forms/RadioGroup.svelte';
+import SegmentedControl from '../src/components/forms/SegmentedControl.svelte';
 import Toggle from '../src/components/forms/Toggle.svelte';
+import ToggleButton from '../src/components/forms/ToggleButton.svelte';
 import Switch from '../src/components/forms/Switch.svelte';
 import Tabs from '../src/components/nav/Tabs.svelte';
 import Badge from '../src/components/ui/Badge.svelte';
@@ -50,6 +52,8 @@ const data = [
     <Tabs {tabs} {active} onchange={(id) => (active = id)} aria-label="Sections" />
     <Chip label="Plain" selectable />
     <Chip label="Selected" selectable selected />
+    <SegmentedControl label="Disabled segments" options={[{ value: 'a', label: 'Seg A' }, { value: 'b', label: 'Seg B' }]} value="a" disabled />
+    <ToggleButton pressed disabled>Pressed disabled</ToggleButton>
     <Badge variant="success">Badge</Badge>
     <Alert variant="error" title="Alert title">Alert message</Alert>
     <DataTable {data} {columns} rowKey="id" {selected} selectable caption="Rows" />

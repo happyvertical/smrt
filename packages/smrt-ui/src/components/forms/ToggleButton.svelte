@@ -102,7 +102,7 @@ useControlRegistration(() => {
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
     .toggle-button.pressed { background: Highlight; color: HighlightText; border-color: Highlight; }
-    .toggle-button:disabled { opacity: 1; color: GrayText; border-color: GrayText; }
+    .toggle-button:disabled, .toggle-button.pressed:disabled { opacity: 1; background: Canvas; color: GrayText; border-color: GrayText; }
   }
 }
 </style>

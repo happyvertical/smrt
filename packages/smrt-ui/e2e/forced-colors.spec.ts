@@ -222,6 +222,19 @@ for (const variant of ['static', 'inline'] as const) {
       const grayText = await systemColor(page, 'GrayText');
       const disabled = page.locator('.switch--disabled');
       expect(await disabled.evaluate((el) => getComputedStyle(el).color)).toBe(grayText);
+
+      // A disabled control that is also selected must not keep the enabled
+      // Highlight fill: it reads GrayText on Canvas, like every other disabled control.
+      const highlight = await systemColor(page, 'Highlight');
+      for (const el of [
+        page.locator('.segmented label.selected'),
+        page.locator('.toggle-button.pressed:disabled'),
+      ]) {
+        const style = await el.evaluate((n) => ({ bg: getComputedStyle(n).backgroundColor, color: getComputedStyle(n).color, opacity: getComputedStyle(n).opacity }));
+        expect(style.bg).not.toBe(highlight);
+        expect(style.color).toBe(grayText);
+        expect(style.opacity).toBe('1');
+      }
     });
 
     test('screenshot', async ({ page }, info) => {

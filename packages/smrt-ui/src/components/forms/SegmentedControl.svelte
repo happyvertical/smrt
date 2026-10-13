@@ -266,6 +266,7 @@ useControlRegistration(() => {
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
     label.selected { background: Highlight; color: HighlightText; }
+    label.disabled, label:has(input:disabled), label.selected.disabled, label.selected:has(input:disabled) { opacity: 1; background: Canvas; color: GrayText; }
   }
 }
 </style>

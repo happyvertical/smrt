@@ -3006,7 +3006,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
     .smrt-admin-shell__focus-tool.active { background: Highlight; color: HighlightText; border-color: Highlight; }
-    .smrt-admin-shell__focus-tool:disabled { opacity: 1; color: GrayText; }
+    .smrt-admin-shell__focus-tool:disabled, .smrt-admin-shell__focus-tool.active:disabled { opacity: 1; background: Canvas; color: GrayText; border-color: GrayText; }
   }
 }
 </style>

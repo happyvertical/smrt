@@ -80,7 +80,7 @@ let {
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
     .smrt-shell-icon-button[aria-pressed='true'] { background: Highlight; color: HighlightText; }
-    .smrt-shell-icon-button:disabled { opacity: 1; color: GrayText; }
+    .smrt-shell-icon-button:disabled, .smrt-shell-icon-button[aria-pressed='true']:disabled { opacity: 1; background: Canvas; color: GrayText; }
   }
 }
 </style>

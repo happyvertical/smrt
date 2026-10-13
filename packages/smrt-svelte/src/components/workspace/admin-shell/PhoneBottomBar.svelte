@@ -216,7 +216,8 @@ function accessibleName(item: PhoneBottomBarEntry): string {
     .smrt-phone-bottom-bar__item.active .smrt-phone-bottom-bar__icon { background: Highlight; color: HighlightText; }
     .smrt-phone-bottom-bar__badge { background: CanvasText; color: Canvas; }
     .smrt-phone-bottom-bar__dot { background: Highlight; border-color: Canvas; }
-    .smrt-phone-bottom-bar__item:disabled { opacity: 1; color: GrayText; }
+    .smrt-phone-bottom-bar__item:disabled, .smrt-phone-bottom-bar__item.active:disabled { opacity: 1; color: GrayText; font-weight: inherit; }
+    .smrt-phone-bottom-bar__item.active:disabled .smrt-phone-bottom-bar__icon { background: Canvas; color: GrayText; }
   }
 }
 </style>

@@ -161,7 +161,7 @@ function handleClick(value: string) {
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
     .filter-chip.active { background-color: Highlight; color: HighlightText; border-color: Highlight; }
-    .filter-chip:disabled { opacity: 1; color: GrayText; border-color: GrayText; }
+    .filter-chip:disabled, .filter-chip.active:disabled { opacity: 1; background: Canvas; color: GrayText; border-color: GrayText; }
   }
 }
 </style>
