@@ -1092,5 +1092,10 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   .smrt-edit-item__grip:hover { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); }
   .smrt-edit-item__grip:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .smrt-edit-item__grip[aria-pressed='true'] { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+  /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
+  @media (forced-colors: active) {
+    .smrt-layout-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) { background: Highlight; color: HighlightText; }
+    .smrt-edit-item__grip[aria-pressed='true'] { background: Highlight; color: HighlightText; }
+  }
 }
 </style>

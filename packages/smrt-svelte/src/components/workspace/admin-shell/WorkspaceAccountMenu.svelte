@@ -542,5 +542,10 @@ $effect(() => {
     white-space: nowrap;
     border: 0;
   }
+  /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
+  @media (forced-colors: active) {
+    .smrt-workspace-account-menu__trigger[aria-expanded='true']:not(:focus-visible) { outline: 2px solid Highlight; outline-offset: -2px; }
+    .smrt-workspace-account-menu__trigger:disabled { opacity: 1; color: GrayText; }
+  }
 }
 </style>

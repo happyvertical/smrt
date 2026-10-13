@@ -77,5 +77,10 @@ let {
   .smrt-shell-icon-button[aria-pressed='true'] { color: var(--smrt-color-on-surface); }
   .smrt-shell-icon-button:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .smrt-shell-icon-button:disabled { opacity: var(--smrt-state-disabled); cursor: not-allowed; }
+  /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
+  @media (forced-colors: active) {
+    .smrt-shell-icon-button[aria-pressed='true'] { background: Highlight; color: HighlightText; }
+    .smrt-shell-icon-button:disabled { opacity: 1; color: GrayText; }
+  }
 }
 </style>
