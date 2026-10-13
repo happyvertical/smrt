@@ -14,6 +14,17 @@ export { default as ListScreen } from './ListScreen.svelte';
 export { default as RecipeScreens } from './RecipeScreens.svelte';
 export { default as RecordScreen } from './RecordScreen.svelte';
 export { deriveScreenRelations, type ScreenRelation } from './relations.js';
+export {
+  currencyCodeField,
+  deriveFieldRoles,
+  FIELD_ROLES,
+  type FieldRole,
+  fieldsWithRole,
+  fieldWithRole,
+  hasLineItemRoles,
+  isDocumentLike,
+  type ScreenFieldRoles,
+} from './roles.js';
 export type {
   DetailScreenProps,
   EditFormProps,
@@ -30,6 +41,7 @@ export type {
   ScreenField,
   ScreenFieldDefinition,
   ScreenFieldErrorCode,
+  ScreenFieldFormat,
   ScreenFieldPolicy,
   ScreenFieldType,
   ScreenFieldUIHints,

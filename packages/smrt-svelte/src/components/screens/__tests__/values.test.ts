@@ -291,3 +291,35 @@ describe('compareScreenValues', () => {
     expect(compareScreenValues('a', 'b', null)).toBe(0);
   });
 });
+
+describe('formatScreenValue formats', () => {
+  it('shows a business date without a time and a rate as a percent', () => {
+    expect(
+      formatScreenValue(
+        { kind: 'datetime', definition: { ui: { format: 'date' } } },
+        '2025-02-07T12:00:00.000Z',
+        { locale: 'en-US', timeZone: 'UTC' },
+      ),
+    ).toBe('Feb 7, 2025');
+    expect(
+      formatScreenValue(
+        { kind: 'decimal', definition: { format: 'percent' } },
+        0.0825,
+        { locale: 'en-US' },
+      ),
+    ).toBe('8.25%');
+  });
+
+  it('keeps empty optional select values as empty text', () => {
+    const fields = deriveScreenFields(
+      {
+        objectRef: 'x:Y',
+        className: 'Y',
+        fields: { status: { type: 'text', enum: ['a', 'b'] } },
+      },
+      null,
+      { mode: 'edit' },
+    );
+    expect(parseDraft(fields, { status: '' }).values).toEqual({ status: '' });
+  });
+});

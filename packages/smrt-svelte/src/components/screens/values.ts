@@ -189,7 +189,8 @@ export function parseDraft(
           field.kind === 'textarea' ||
           field.kind === 'email' ||
           field.kind === 'url' ||
-          field.kind === 'tel') &&
+          field.kind === 'tel' ||
+          field.kind === 'select') &&
         field.definition.nullable !== true
       ) {
         values[field.name] = '';
@@ -271,10 +272,13 @@ export interface FormatValueContext extends ScreenValueContext {
 
 /** A record value as display text for a list cell or a view row. */
 export function formatScreenValue(
-  field: Pick<ScreenField, 'kind'>,
+  field: Pick<ScreenField, 'kind'> & {
+    definition?: Pick<ScreenField['definition'], 'format' | 'ui'>;
+  },
   value: unknown,
   context: FormatValueContext = {},
 ): string {
+  const format = field.definition?.format ?? field.definition?.ui?.format;
   if (field.kind === 'boolean') {
     if (value === null || value === undefined) return '';
     return value === true || value === 'true'
@@ -291,6 +295,12 @@ export function formatScreenValue(
             }).format(value)
           : String(value);
       case 'decimal':
+        if (format === 'percent' && typeof value === 'number') {
+          return new Intl.NumberFormat(context.locale, {
+            style: 'percent',
+            maximumFractionDigits: 4,
+          }).format(value);
+        }
         return typeof value === 'number'
           ? new Intl.NumberFormat(context.locale, {
               maximumFractionDigits: 6,
@@ -313,9 +323,10 @@ export function formatScreenValue(
         const date =
           value instanceof Date ? value : new Date(value as string | number);
         if (Number.isNaN(date.getTime())) return String(value);
+        // A business date (`format: 'date'`) shows no time of day.
         return new Intl.DateTimeFormat(context.locale, {
           dateStyle: 'medium',
-          timeStyle: 'short',
+          ...(format === 'date' ? {} : { timeStyle: 'short' }),
           ...(context.timeZone ? { timeZone: context.timeZone } : {}),
         }).format(date);
       }

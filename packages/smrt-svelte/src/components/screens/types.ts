@@ -7,6 +7,7 @@ import type {
 } from '../overview/types.js';
 import type { CoreWidgetLoaders } from '../overview/widgets/core.js';
 import type { ScreenRelation } from './relations.js';
+import type { FieldRole } from './roles.js';
 
 /**
  * Structural types for the manifest-derived record screens (#3718).
@@ -29,13 +30,26 @@ export type ScreenFieldType =
   | 'foreignKey'
   | 'crossPackageRef';
 
+/**
+ * How a value is presented: `money` (integer minor units), `date` (a
+ * business date, shown without a time), `datetime`, `percent` (a rate, `0.08`
+ * shows as `8%`).
+ */
+export type ScreenFieldFormat = 'money' | 'date' | 'datetime' | 'percent';
+
 /** Static `@field({ ui })` presentation hints from the manifest. */
 export interface ScreenFieldUIHints {
   basic?: boolean;
   group?: string;
   order?: number;
   locked?: boolean;
+  /**
+   * `currency` on a TEXT field is the currency-code picker (the manifest
+   * meaning); on an INTEGER field it is read as the legacy money hint.
+   */
   widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
+  /** Manifest presentation format (`@field({ ui: { format } })`). */
+  format?: ScreenFieldFormat;
 }
 
 /** Browser-safe subset of one generated web field definition. */
@@ -47,6 +61,17 @@ export interface ScreenFieldDefinition {
   /** Developer-authored `@field({ description })`; the code-seed help text. */
   description?: string;
   ui?: ScreenFieldUIHints;
+  /**
+   * What the field means on a record page (`deriveFieldRoles`). Explicit
+   * roles are authoritative: name heuristics never add to them.
+   */
+  role?: FieldRole | readonly FieldRole[];
+  /** Allowed values; a text field with an enum edits as a select. */
+  enum?: readonly string[];
+  /** Presentation format; wins over `ui.format`. */
+  format?: ScreenFieldFormat;
+  /** This field is the record's display label (the `title` role). */
+  display?: boolean;
 }
 
 export type ScreenRelationshipKind =
@@ -65,6 +90,12 @@ export interface ScreenRelationshipDefinition {
   field: string;
   kind: ScreenRelationshipKind;
   relatedCollection: string;
+  /**
+   * `items`: the declaring (child) model is the line items of the target
+   * (`@foreignKey(Order, { role: 'items' })`); `deriveScreenRelations`
+   * classifies the relation `items`.
+   */
+  role?: 'items';
 }
 
 /** Structural subset of a generated `SmrtWebCollectionDefinition`. */
@@ -121,7 +152,8 @@ export type ScreenInputKind =
   | 'boolean'
   | 'datetime'
   | 'json'
-  | 'reference';
+  | 'reference'
+  | 'select';
 
 /** A field selected and decorated for one screen. */
 export interface ScreenField {
@@ -137,6 +169,10 @@ export interface ScreenField {
   group: string | null;
   order: number | null;
   definition: ScreenFieldDefinition;
+  /** The field's roles (`deriveFieldRoles`); set by `deriveScreenFields`. */
+  roles?: readonly FieldRole[];
+  /** Choices of a `select` field (the definition's `enum`). */
+  options?: readonly string[];
 }
 
 /** Why a draft value could not become a payload value. */
