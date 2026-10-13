@@ -64,6 +64,22 @@ describe('findUnlayeredResets', () => {
     expect(findUnlayeredResets('* { box-sizing: border-box; }')).toEqual([]);
   });
 
+  it('does not flag an anonymous layer import of a reset stylesheet', () => {
+    expect(findUnlayeredResets('@import "normalize.css" layer;')).toEqual([]);
+  });
+
+  it('scans a large minified stylesheet quickly and still finds the reset', () => {
+    const rules = Array.from(
+      { length: 20000 },
+      (_, i) => `.r${i}{color:red}`,
+    ).join('\n');
+    const started = Date.now();
+    const findings = findUnlayeredResets(`${rules}\n${UNIVERSAL_RESET}`);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].line).toBe(20001);
+  });
+
   it('flags a reset inside an unlayered @media group', () => {
     const css = `@media (min-width: 40rem) {\n  *, *::before { padding: 0; }\n}`;
     const findings = findUnlayeredResets(css);
@@ -96,6 +112,29 @@ describe('findUnlayeredResetsInSvelte', () => {
     const findings = findUnlayeredResetsInSvelte(source);
     expect(findings).toHaveLength(1);
     expect(findings[0].line).toBe(3);
+  });
+
+  it('flags a :global(...) reset, which Svelte does not scope', () => {
+    const source =
+      '<style>\n:global(*), :global(*::before) { margin: 0; padding: 0; }\n</style>';
+    const findings = findUnlayeredResetsInSvelte(source);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].line).toBe(2);
+  });
+
+  it('flags rules inside a :global { ... } block', () => {
+    const source = '<style>\n:global {\n  * { padding: 0; }\n}\n</style>';
+    const findings = findUnlayeredResetsInSvelte(source);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].line).toBe(3);
+  });
+
+  it('does not flag a scoped element that only :global wraps in a non-universal selector', () => {
+    expect(
+      findUnlayeredResetsInSvelte(
+        '<style>\n:global(body) h1 { margin: 0; }\n</style>',
+      ),
+    ).toEqual([]);
   });
 
   it('is quiet for a layered style block', () => {

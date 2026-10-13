@@ -14,6 +14,7 @@ export interface ProjectResetFinding extends ResetFinding {
 
 export declare function stripCssComments(css: string): string;
 export declare function findUnlayeredResets(css: string): ResetFinding[];
+export declare function unwrapSvelteGlobal(body: string): string;
 export declare function findUnlayeredResetsInSvelte(source: string): ResetFinding[];
 export declare function listCascadeSources(root: string): string[];
 export declare function dependsOnSmrtUi(packageJson: Record<string, any> | null | undefined): boolean;

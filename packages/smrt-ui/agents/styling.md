@@ -106,10 +106,12 @@ padding from every component. Put the reset in a layer that sorts before
   ```
 
 - **(c) Tailwind v4 preflight:** preflight already sits in `@layer base`. Declare
-  the full order before any import, so `base` sorts before the smrt layers:
+  the full order before any import: `base` sorts before the smrt layers, and
+  `components` and `utilities` sort after them so utility classes still override
+  smrt:
 
   ```css
-  @layer theme, base, components, utilities, smrt.reset, smrt.structure, smrt.theme;
+  @layer theme, base, smrt.reset, smrt.structure, smrt.theme, components, utilities;
   @import "tailwindcss";
   ```
 

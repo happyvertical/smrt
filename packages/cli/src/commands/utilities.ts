@@ -3755,9 +3755,20 @@ export default testManifest;
       // preflight import) beats every `@layer smrt.*` rule, so it strips
       // padding from smrt components. Applies only when the project depends
       // on smrt-ui or smrt-svelte.
-      const cascadeLayers = scanProjectForUnlayeredResets(cwd, {
-        packageJson,
-      });
+      // A scan I/O error (unreadable file, file removed mid-walk) is a warning,
+      // never a reason to abort the rest of doctor.
+      let cascadeLayers: ReturnType<typeof scanProjectForUnlayeredResets> = {
+        applies: false,
+        filesScanned: 0,
+        findings: [],
+      };
+      try {
+        cascadeLayers = scanProjectForUnlayeredResets(cwd, { packageJson });
+      } catch (error) {
+        warnings.push(
+          `cascade-layer scan skipped: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       if (cascadeLayers.applies) {
         console.log('🎨 Cascade Layers\n');
         if (cascadeLayers.findings.length === 0) {

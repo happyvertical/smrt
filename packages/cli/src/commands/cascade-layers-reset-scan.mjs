@@ -64,13 +64,62 @@ export function stripCssComments(css) {
   return out;
 }
 
-/** 1-based line number of the character at `index`. */
-function lineAt(source, index) {
-  let line = 1;
-  for (let i = 0; i < index && i < source.length; i += 1) {
-    if (source[i] === '\n') line += 1;
+/**
+ * 1-based line lookup for `source`: newline offsets are indexed once, then each
+ * lookup is a binary search, so large minified stylesheets stay linear-ish.
+ *
+ * @param {string} source
+ * @returns {(index: number) => number}
+ */
+function lineIndex(source) {
+  const starts = [0];
+  for (let i = 0; i < source.length; i += 1) {
+    if (source[i] === '\n') starts.push(i + 1);
   }
-  return line;
+  return (index) => {
+    let lo = 0;
+    let hi = starts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= index) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo + 1;
+  };
+}
+
+/**
+ * Svelte scoping: `:global(X)` is the unscoped selector X, and `:global { … }`
+ * is a block of unscoped rules. Both are rewritten so the global form is
+ * matched. Newlines are kept, so line numbers do not move.
+ *
+ * @param {string} body
+ * @returns {string}
+ */
+export function unwrapSvelteGlobal(body) {
+  const token = ':global(';
+  let out = '';
+  let cursor = 0;
+  for (;;) {
+    const start = body.indexOf(token, cursor);
+    if (start === -1) break;
+    out += body.slice(cursor, start);
+    let depth = 1;
+    let end = start + token.length;
+    while (end < body.length && depth > 0) {
+      if (body[end] === '(') depth += 1;
+      else if (body[end] === ')') depth -= 1;
+      end += 1;
+    }
+    if (depth > 0) {
+      out += body.slice(start);
+      return out.replace(/:global\s*\{/g, '@global {');
+    }
+    out += body.slice(start + token.length, end - 1);
+    cursor = end;
+  }
+  out += body.slice(cursor);
+  return out.replace(/:global\s*\{/g, '@global {');
 }
 
 /**
@@ -83,6 +132,7 @@ function lineAt(source, index) {
  */
 export function findUnlayeredResets(css) {
   const src = stripCssComments(css);
+  const lineOf = lineIndex(src);
   const findings = [];
   /** @type {Array<{ kind: 'layer' | 'rule' | 'group', head: string, headLine: number, decls: string[] }>} */
   const stack = [];
@@ -122,7 +172,7 @@ export function findUnlayeredResets(css) {
       let kind = 'rule';
       if (/^@layer\b/i.test(head)) kind = 'layer';
       else if (head.startsWith('@')) kind = 'group';
-      stack.push({ kind, head, headLine: lineAt(src, headIndex), decls: [] });
+      stack.push({ kind, head, headLine: lineOf(headIndex), decls: [] });
       prelude = '';
       preludeStart = -1;
       continue;
@@ -150,11 +200,13 @@ export function findUnlayeredResets(css) {
     if (c === ';') {
       const head = prelude.trim();
       if (stack.length === 0 && /^@import\b/i.test(head)) {
-        const layered = /\blayer\s*\(/i.test(head);
         const url = head.match(/@import\s+(?:url\(\s*)?["']?([^"')\s;]+)/i);
+        // `layer(name)` and an anonymous `layer` both place the import in a layer.
+        const rest = head.replace(/url\([^)]*\)|"[^"]*"|'[^']*'/gi, ' ');
+        const layered = /\blayer\b/i.test(rest);
         if (!layered && url && RESET_IMPORT_NAME.test(url[1])) {
           findings.push({
-            line: lineAt(src, preludeStart === -1 ? i : preludeStart),
+            line: lineOf(preludeStart === -1 ? i : preludeStart),
             kind: 'import',
             selector: head,
             detail: `unlayered import of ${url[1]}`,
@@ -178,12 +230,13 @@ export function findUnlayeredResets(css) {
  */
 export function findUnlayeredResetsInSvelte(source) {
   const findings = [];
+  const lineOf = lineIndex(source);
   const pattern = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
   let match;
   while ((match = pattern.exec(source)) !== null) {
     const bodyStart = match.index + match[0].indexOf('>') + 1;
-    for (const finding of findUnlayeredResets(match[1])) {
-      findings.push({ ...finding, line: lineAt(source, bodyStart) + finding.line - 1 });
+    for (const finding of findUnlayeredResets(unwrapSvelteGlobal(match[1]))) {
+      findings.push({ ...finding, line: lineOf(bodyStart) + finding.line - 1 });
     }
   }
   return findings;
