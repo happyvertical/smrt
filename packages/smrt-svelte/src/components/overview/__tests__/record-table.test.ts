@@ -70,7 +70,12 @@ describe('lineItemColumns', () => {
     ).toEqual([
       { key: 'description', label: 'Description' },
       { key: 'quantity', label: 'Quantity', role: 'quantity' },
-      { key: 'unitPrice', label: 'Unit price', role: 'money' },
+      {
+        key: 'unitPrice',
+        label: 'Unit price',
+        role: 'money',
+        summarize: false,
+      },
       { key: 'amount', label: 'Amount', role: 'money' },
     ]);
   });

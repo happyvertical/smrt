@@ -24,7 +24,12 @@ import type {
   RecordListRow,
   RecordStatusTone,
 } from './data.js';
-import { formatRecordCell, isSummedRole, statusTone } from './record-table.js';
+import {
+  formatRecordCell,
+  isSummedColumn,
+  isSummedRole,
+  statusTone,
+} from './record-table.js';
 
 interface Props {
   rows: readonly RecordListRow[];
@@ -105,7 +110,7 @@ const tableSummaries = $derived.by(() => {
       });
   }
   for (const column of columns) {
-    if (!isSummedRole(column.role)) continue;
+    if (!isSummedColumn(column)) continue;
     const hosted = summaryValues?.[column.key];
     if (typeof hosted === 'number' && Number.isFinite(hosted)) {
       out[column.key] = () => formatRecordCell(column, hosted, context);

@@ -24,10 +24,12 @@ import type {
 } from '../types.js';
 import {
   isRecord,
+  type LineItemsWidgetData,
   type RecordListWidgetData,
   type RelatedWidgetData,
   type RelatedWidgetTab,
 } from './data.js';
+import type { LineItemsTotals } from './line-totals.js';
 import {
   formatColumnsOption,
   parseColumnsOption,
@@ -47,7 +49,17 @@ export interface RecordWidgetsOptions {
   records: WidgetLoad<RecordListWidgetData>;
   /** A tab's "View all" link; else the loaded data's `href`. */
   viewAllHref?: (relation: ScreenRelation) => string | undefined;
+  /**
+   * `line-items`: the parent record's own subtotal / discount / tax / total
+   * (read when the widget loads; `RecordScreen` reads them by role).
+   */
+  totals?: () => LineItemsTotals | undefined;
+  /** `line-items`: the currency of the parent's amounts. */
+  currency?: () => string | undefined;
 }
+
+/** Lines a `line-items` widget loads by default (and at most). */
+export const LINE_ITEMS_LIMIT = 50;
 
 /** The relations a `related` widget lists: `children` (never `items`), or the named ones. */
 export function relatedRelations(
@@ -159,5 +171,72 @@ export function createRelatedLoader(
     });
     if (tabs.length === 0 && failure !== undefined) throw failure;
     return { tabs };
+  };
+}
+
+/** The `items` relation a `line-items` widget shows: the named one, else the first. */
+export function lineItemsRelation(
+  relations: readonly ScreenRelation[],
+  key: unknown,
+): ScreenRelation | undefined {
+  const items = relations.filter((r) => r.kind === 'items');
+  if (typeof key === 'string' && key !== '') {
+    return items.find((r) => relationKey(r) === key);
+  }
+  return items[0];
+}
+
+/** The `records` loader options the line items load with. */
+export function lineItemsOptions(
+  relation: ScreenRelation,
+  limit: number,
+): OverviewOptions {
+  return {
+    title: relation.label,
+    model: relation.model,
+    field: relation.field,
+    filter: 'parent',
+    sort: relation.sort ?? 'createdAt',
+    direction: 'asc',
+    limit,
+    columns: formatColumnsOption((relation.columns ?? []).map((c) => c.key)),
+  };
+}
+
+/**
+ * The `line-items` widget's load: one `records` load of the `items`
+ * relation (`filter: 'parent'`, in line order, up to {@link LINE_ITEMS_LIMIT}),
+ * plus the parent's totals. No `items` relation is an empty result.
+ */
+export function createLineItemsLoader(
+  options: RecordWidgetsOptions,
+): WidgetLoad<LineItemsWidgetData> {
+  return async (widgetOptions, ctx: WidgetLoadContext) => {
+    const relation = lineItemsRelation(
+      options.relations,
+      widgetOptions.relation,
+    );
+    const totals = options.totals?.();
+    const currency = options.currency?.();
+    if (!relation) {
+      return { rows: [], columns: [], ...(totals ? { totals } : {}) };
+    }
+    const limit =
+      typeof widgetOptions.limit === 'number'
+        ? widgetOptions.limit
+        : LINE_ITEMS_LIMIT;
+    const data = await options.records(lineItemsOptions(relation, limit), ctx);
+    const tab = toTab(relation, data, undefined);
+    return {
+      rows: tab.rows,
+      columns: tab.columns,
+      ...(tab.total !== undefined ? { total: tab.total } : {}),
+      ...(totals ? { totals } : {}),
+      ...((tab.currency ?? currency)
+        ? { currency: tab.currency ?? currency }
+        : {}),
+      ...(tab.summaries ? { summaries: tab.summaries } : {}),
+      ...(tab.href ? { href: tab.href } : {}),
+    };
   };
 }

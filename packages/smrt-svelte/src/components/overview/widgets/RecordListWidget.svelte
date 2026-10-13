@@ -17,7 +17,7 @@ import type { WidgetComponentProps } from '../types.js';
 import { isRecord, type RecordListWidgetData } from './data.js';
 import RecordTable from './RecordTable.svelte';
 import {
-  isSummedRole,
+  isSummedColumn,
   parseColumnsOption,
   readRecordRows,
   resolveRecordColumns,
@@ -75,7 +75,7 @@ const tableRows = $derived(readRecordRows(data));
 const showSummaries = $derived(
   typeof options?.summaries === 'boolean'
     ? options.summaries
-    : columns.some((c) => isSummedRole(c.role)),
+    : columns.some((c) => isSummedColumn(c)),
 );
 const dataTotal = $derived(
   isRecord(data) &&

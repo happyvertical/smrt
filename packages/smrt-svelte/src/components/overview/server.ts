@@ -91,7 +91,20 @@ export {
 } from './schema.js';
 export * from './types.js';
 export {
+  type LineItemsTotals,
+  type LineTotalKey,
+  type LineTotalLine,
+  type LineTotalsMismatch,
+  type LineTotalsResult,
+  lineItemTotals,
+  sumLineAmounts,
+} from './widgets/line-totals.js';
+export {
+  createLineItemsLoader,
   createRelatedLoader,
+  LINE_ITEMS_LIMIT,
+  lineItemsOptions,
+  lineItemsRelation,
   RELATED_WIDGET_LIMIT,
   RELATED_WIDGET_MAX_TABS,
   type RecordWidgetsOptions,

@@ -50,6 +50,12 @@ export interface RecordListColumn {
   key: string;
   label: string;
   role?: FieldRole;
+  /**
+   * Sum this column in the footer. Defaults to true for `money` and
+   * `quantity`; a unit price sets `false` (a sum of unit prices means
+   * nothing).
+   */
+  summarize?: boolean;
 }
 
 /** One listed record. `cells` carries the column values, keyed by column key. */
@@ -112,6 +118,31 @@ export interface RelatedWidgetTab {
 /** `related`: one tab per `children` relation; empty relations are hidden. */
 export interface RelatedWidgetData {
   tabs: RelatedWidgetTab[];
+}
+
+/**
+ * `line-items`: a document's lines (item, quantity, unit price, amount)
+ * with a footer, then the totals block from the parent record's own
+ * subtotal / discount / tax / total (`totals`), computed from the lines
+ * where the record has none, and flagged where they disagree.
+ */
+export interface LineItemsWidgetData {
+  rows: RecordListRow[];
+  columns: RecordListColumn[];
+  /** Every line; more than `rows` means the rows are a page. */
+  total?: number;
+  /** The parent record's own totals, integer minor units. */
+  totals?: {
+    subtotal?: number | null;
+    discount?: number | null;
+    tax?: number | null;
+    total?: number | null;
+  };
+  currency?: string;
+  /** Footer values over every line (money in minor units). */
+  summaries?: Record<string, number>;
+  /** Link to every line. */
+  href?: string;
 }
 
 /** `shortcuts`: cards that link to pages. */

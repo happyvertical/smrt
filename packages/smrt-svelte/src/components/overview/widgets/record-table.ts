@@ -156,6 +156,13 @@ export function isSummedRole(role: FieldRole | undefined): boolean {
   return role === 'money' || role === 'quantity';
 }
 
+/** True when the footer sums this column (`summarize`, else by role). */
+export function isSummedColumn(
+  column: Pick<RecordListColumn, 'role' | 'summarize'>,
+): boolean {
+  return column.summarize ?? isSummedRole(column.role);
+}
+
 /**
  * Rows of untrusted widget data, validated: a row needs a string `title`
  * (or any cells), ids default to the position, `cells` must be an object.
@@ -215,6 +222,9 @@ export function resolveRecordColumns(
             : humanizeFieldName(entry.key),
         ...(typeof entry.role === 'string' && ROLES.has(entry.role)
           ? { role: entry.role as FieldRole }
+          : {}),
+        ...(typeof entry.summarize === 'boolean'
+          ? { summarize: entry.summarize }
           : {}),
       });
     }

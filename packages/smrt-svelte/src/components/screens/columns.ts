@@ -125,6 +125,7 @@ export function lineItemColumns(
       key: unit,
       label: humanizeColumnLabel(unit, definition),
       role: 'money',
+      summarize: false,
     });
   if (amount && amount !== unit)
     out.push({

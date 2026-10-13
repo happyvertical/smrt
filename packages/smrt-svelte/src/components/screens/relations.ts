@@ -3,16 +3,17 @@
  * definitions (#3718 record view).
  *
  * A `children` relation is another collection whose `foreignKey` /
- * `crossPackageRef` edge targets this model (its newest records make one
- * panel on the record view); a `reference` relation is one of this model's
+ * `crossPackageRef` edge targets this model (a tab of the record page's
+ * related records); an `items` relation is a `children` one whose rows are
+ * this record's line items (the line-items table); a `reference` relation is one of this model's
  * own FK fields (rendered as a link on the detail). Edges whose target or
  * source is not in `definitions` are skipped: an unexposed model has neither
  * a definition nor a route, so nothing could be linked.
  */
 import type { RecordListColumn } from '../overview/widgets/data.js';
-import { relatedColumns } from './columns.js';
+import { lineItemColumns, relatedColumns } from './columns.js';
 import { humanizeLabel, screenTitles } from './fields.js';
-import { deriveFieldRoles } from './roles.js';
+import { deriveFieldRoles, hasLineItemRoles } from './roles.js';
 import type {
   ScreenCollectionDefinition,
   ScreenRelationshipDefinition,
@@ -24,14 +25,23 @@ export interface ScreenRelation {
   /** FK field name on the child (`children`) or on this model (`reference`). */
   field: string;
   label: string;
-  kind: 'children' | 'reference';
   /**
-   * `children` only: the columns a related-records table shows for the child
-   * model, chosen by role (`relatedColumns`, the FK back to this model
-   * excluded).
+   * `items` is a `children` relation whose children are this record's line
+   * items: the edge says so (`relationships[].role: 'items'`), or the child
+   * has line-item roles (a quantity and a money field).
+   */
+  kind: 'children' | 'reference' | 'items';
+  /**
+   * `children` / `items` only: the table columns for the child model, chosen
+   * by role (`relatedColumns`; `lineItemColumns` for items), the FK back to
+   * this model excluded.
    */
   columns?: readonly RecordListColumn[];
+  /** `items` only: the child field lines are ordered by (`sortOrder`, ..., else `createdAt`). */
+  sort?: string;
 }
+
+const LINE_ORDER_FIELDS = ['sortOrder', 'position', 'lineNumber', 'sequence'];
 
 /**
  * A relation's stable key, `<Class>-<field>` (`Order-customerId`): what the
@@ -71,9 +81,10 @@ function targetOf(
 
 /**
  * Relations of `model` (a qualified `objectRef`, or a key of `definitions`).
- * `children` come first, sorted by label; `reference` relations follow in
- * declaration order. A child with two FKs to the same parent yields two
- * relations, labelled `Orders (Owner)` / `Orders (Approver)`.
+ * `items` come first, then `children`, each sorted by label; `reference`
+ * relations follow in declaration order. A child with two FKs to the same
+ * parent yields two relations, labelled `Orders (Owner)` /
+ * `Orders (Approver)` (and is only `items` when an edge says so).
  */
 export function deriveScreenRelations(
   definitions: Readonly<Record<string, ScreenCollectionDefinition>>,
@@ -96,20 +107,40 @@ export function deriveScreenRelations(
     );
     const titles = screenTitles(child);
     const roles = edges.length > 0 ? deriveFieldRoles(child) : {};
-    const list: ScreenRelation[] = edges.map((edge) => ({
-      model: child.objectRef,
-      field: edge.field,
-      label:
+    const lineLike = hasLineItemRoles(roles);
+    const list: ScreenRelation[] = edges.map((edge) => {
+      const label =
         edges.length > 1
           ? `${titles.plural} (${fieldLabel(edge.field, child)})`
-          : titles.plural,
-      kind: 'children',
-      columns: relatedColumns(child, roles, { exclude: [edge.field] }),
-    }));
+          : titles.plural;
+      if (edge.role === 'items' || (lineLike && edges.length === 1)) {
+        return {
+          model: child.objectRef,
+          field: edge.field,
+          label,
+          kind: 'items',
+          columns: lineItemColumns(child, roles, { exclude: [edge.field] }),
+          sort:
+            LINE_ORDER_FIELDS.find((name) => name in child.fields) ??
+            'createdAt',
+        };
+      }
+      return {
+        model: child.objectRef,
+        field: edge.field,
+        label,
+        kind: 'children',
+        columns: relatedColumns(child, roles, { exclude: [edge.field] }),
+      };
+    });
     if (list.length > 0) perChild.set(child.objectRef, list);
   }
   for (const list of perChild.values()) children.push(...list);
-  children.sort((a, b) => a.label.localeCompare(b.label));
+  children.sort(
+    (a, b) =>
+      Number(b.kind === 'items') - Number(a.kind === 'items') ||
+      a.label.localeCompare(b.label),
+  );
 
   const references: ScreenRelation[] = [];
   const seen = new Set<string>();
