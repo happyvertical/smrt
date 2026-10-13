@@ -343,6 +343,13 @@ Every theme (presets and `createTheme()` output) must define these names. Genera
 
 <!-- smrt-required-tokens:end -->
 
+## Runtime overrides
+
+`ThemeProvider` layers user choices over a theme without touching the theme itself:
+`borderRadius` (control radius tokens), `primaryColor` (full derived primary set, also
+available as `derivePrimaryOverrides(color, scheme)`), `density` and `contrast`. See the
+ThemeProvider props table in the README for the exact behaviour.
+
 ## Best Practices
 
 1. **Extend a base theme**: Start with `extend: 'material'` or another base to get sensible defaults

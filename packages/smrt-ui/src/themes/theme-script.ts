@@ -54,7 +54,9 @@ function inlineJSON(value: unknown): string {
  * Returns the JS body (no `<script>` tags) of a pre-paint bootstrap that
  * mirrors ThemeProvider's persistence: reads the stored config, resolves
  * 'system' via matchMedia, then stamps `data-theme`, `data-color-scheme`,
- * the `dark` class, and `color-scheme` style on <html>. Variable values are
+ * the `dark` class, and `color-scheme` style on <html>, plus `data-contrast`
+ * (`standard|more|forced`, from the persisted preference and
+ * `prefers-contrast`/`forced-colors`) and `data-density` (persisted only). Variable values are
  * delivered by the static stylesheets selected by those attributes, so the
  * persisted preset/scheme paints correctly before hydration with no inline
  * variable payload.
@@ -78,5 +80,8 @@ export function themeScript(options: ThemeScriptOptions = {}): string {
   // Keep this dependency-free and ES5-ish: it runs inline in every browser
   // before any framework code. Must stay in sync with
   // ThemeProvider.svelte's loadPersistedConfig()/resolvedScheme.
-  return `(function(){try{var presets=${inlineJSON(presetNames)};var scheme=${inlineJSON(fallback)};var preset=${inlineJSON(preset)};${persist ? `try{var raw=localStorage.getItem(${inlineJSON(storageKey)});if(raw){var data=JSON.parse(raw);if(data&&typeof data==='object'){if(data.colorScheme==='light'||data.colorScheme==='dark'||data.colorScheme==='system')scheme=data.colorScheme;if(typeof data.preset==='string'&&presets.indexOf(data.preset)!==-1)preset=data.preset;}}}catch(_){}` : ''}if(scheme==='system'){scheme=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}var el=document.documentElement;el.setAttribute('data-theme',preset);el.setAttribute('data-color-scheme',scheme);el.classList.toggle('dark',scheme==='dark');el.style.colorScheme=scheme;}catch(_){}})();`;
+  const read = persist
+    ? `try{var raw=localStorage.getItem(${inlineJSON(storageKey)});if(raw){var d=JSON.parse(raw);if(d&&typeof d==='object'){var s=d.colorScheme;if(s==='light'||s==='dark'||s==='system')scheme=s;if(typeof d.preset==='string'&&presets.indexOf(d.preset)!==-1)preset=d.preset;if(d.density==='comfortable'||d.density==='touch')den=d.density;if(d.contrast==='standard'||d.contrast==='more')con=d.contrast;}}}catch(_){}`
+    : '';
+  return `(function(){try{var presets=${inlineJSON(presetNames)},scheme=${inlineJSON(fallback)},preset=${inlineJSON(preset)},den,con,m=function(q){return window.matchMedia(q).matches};${read}if(scheme==='system')scheme=m('(prefers-color-scheme: dark)')?'dark':'light';var forced=m('(forced-colors: active)'),el=document.documentElement;el.setAttribute('data-theme',preset);el.setAttribute('data-color-scheme',scheme);el.setAttribute('data-contrast',forced?'forced':con==='more'||(con!=='standard'&&m('(prefers-contrast: more)'))?'more':'standard');if(forced)el.setAttribute('data-forced-colors','');if(den)el.setAttribute('data-density',den);el.classList.toggle('dark',scheme==='dark');el.style.colorScheme=scheme;}catch(_){}})();`;
 }

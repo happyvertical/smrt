@@ -4,7 +4,12 @@
  * Helper functions for creating custom themes that match the SMRT theme system.
  */
 
-import { generateTheme, hexToRgb, rgbToHex } from '../utils/theme/color.js';
+import {
+  generateTheme,
+  getContrastRatio,
+  hexToRgb,
+  rgbToHex,
+} from '../utils/theme/color.js';
 import { baselineTokens, opaqueGlass } from './derive.js';
 import {
   hasCustomTheme,
@@ -544,3 +549,52 @@ export function createThemeFromColor(
 }
 
 // Types are exported from index.ts
+
+/**
+ * Derive the primary-dependent token overrides for a user-chosen primary colour
+ * in one resolved scheme, using the same derivation as `createThemeFromColor`
+ * (light: the colour itself with a ~12.5% container; dark: the tonal primary
+ * pair from `generateTheme`). `on-primary` is the higher-contrast of white and
+ * black on the final primary so an override never leaves it mismatched. Focus,
+ * accent, caret and selection tokens follow the primary via `var()`.
+ *
+ * Returns `--smrt-*` declarations; throws on an unparseable colour.
+ */
+export function derivePrimaryOverrides(
+  color: string,
+  scheme: 'light' | 'dark',
+): Record<string, string> {
+  const seed = normalizeHex(color);
+  let primary = seed;
+  let onPrimary: string;
+  let container = `${seed}20`;
+  let onContainer = seed;
+  if (scheme === 'dark') {
+    const tonal = generateTheme(seed, 'dark');
+    primary = tonal.primary;
+    onPrimary = tonal.onPrimary;
+    container = tonal.primaryContainer;
+    onContainer = tonal.onPrimaryContainer;
+  } else {
+    onPrimary = '#ffffff';
+  }
+  const bg = hexToRgb(primary);
+  const white = getContrastRatio(hexToRgb('#ffffff'), bg);
+  const black = getContrastRatio(hexToRgb('#000000'), bg);
+  const tonalOn = hexToRgb(onPrimary);
+  if (getContrastRatio(tonalOn, bg) < 4.5) {
+    onPrimary = white >= black ? '#ffffff' : '#000000';
+  }
+  return {
+    '--smrt-color-primary': primary,
+    '--smrt-color-on-primary': onPrimary,
+    '--smrt-color-primary-container': container,
+    '--smrt-color-on-primary-container': onContainer,
+    '--smrt-color-inverse-primary': seed,
+    '--smrt-focus-ring-color': 'var(--smrt-color-primary)',
+    '--smrt-accent-color': 'var(--smrt-color-primary)',
+    '--smrt-caret-color': 'var(--smrt-color-primary)',
+    '--smrt-selection-background': 'var(--smrt-color-primary-container)',
+    '--smrt-selection-color': 'var(--smrt-color-on-primary-container)',
+  };
+}

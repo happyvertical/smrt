@@ -3,10 +3,13 @@ import type { Snippet } from 'svelte';
 import { onMount, untrack } from 'svelte';
 import { SMRT_CASCADE_LAYERS_CSS } from '../styles/layers.js';
 import { setThemeContext, type ThemeContext } from './context.svelte.js';
+import { derivePrimaryOverrides } from './create-theme.js';
 import { generateThemeVariables } from './css-generator.js';
 import { availablePresets, getTheme, isValidPreset } from './registry.js';
 import type {
   ColorScheme,
+  ContrastPreference,
+  ResolvedContrast,
   Theme,
   ThemeConfig,
   ThemePreset,
@@ -16,7 +19,12 @@ import { defaultThemeConfig } from './types.js';
 
 interface Props {
   /** Default control target density for descendants; individual controls may override. */
-  density?: 'comfortable' | 'touch';
+  density?: ThemeConfig['density'];
+  /**
+   * Contrast preference. `auto` (default) follows `prefers-contrast: more`;
+   * `forced-colors: active` always wins. Persisted when set explicitly.
+   */
+  contrast?: ContrastPreference;
   /** Theme preset to use */
   preset?: ThemePreset;
   /** Color scheme preference */
@@ -63,6 +71,7 @@ let {
   inlineVariables,
   children,
   density,
+  contrast = 'auto',
 }: Props = $props();
 
 // Internal state — seed from the props (which already default to
@@ -78,6 +87,8 @@ let config = $state<ThemeConfig>(
     colorScheme,
     primaryColor,
     borderRadius,
+    density,
+    contrast,
     overrides,
     persist,
     storageKey,
@@ -85,7 +96,32 @@ let config = $state<ThemeConfig>(
 );
 
 let systemPrefersDark = $state(false);
+let systemContrastMore = $state(false);
+let systemForcedColors = $state(false);
+let isChangingScheme = $state(false);
 let mounted = $state(false);
+
+/** Control radius per `borderRadius` choice: [control, small]. `md` is the preset default. */
+const CONTROL_RADIUS: Record<
+  NonNullable<ThemeConfig['borderRadius']>,
+  [string, string]
+> = {
+  none: ['var(--smrt-radius-none)', 'var(--smrt-radius-none)'],
+  sm: ['var(--smrt-radius-sm)', 'var(--smrt-radius-sm)'],
+  md: ['var(--smrt-radius-md)', 'var(--smrt-radius-sm)'],
+  lg: ['var(--smrt-radius-lg)', 'var(--smrt-radius-md)'],
+  xl: ['var(--smrt-radius-xl)', 'var(--smrt-radius-lg)'],
+  full: ['var(--smrt-radius-full)', 'var(--smrt-radius-full)'],
+};
+
+const resolvedContrast = $derived<ResolvedContrast>(
+  systemForcedColors
+    ? 'forced'
+    : config.contrast === 'more' ||
+        (config.contrast !== 'standard' && systemContrastMore)
+      ? 'more'
+      : 'standard',
+);
 
 // Derived state
 const currentTheme = $derived<Theme>(getTheme(config.preset));
@@ -123,15 +159,34 @@ const styleString = $derived.by(() => {
     }
   }
 
-  // Apply primary color override
-  if (config.primaryColor) {
-    declarations.push(`--smrt-color-primary: ${config.primaryColor}`);
-    // Recalculate dependent colors would go here in a full implementation
+  // Border radius: only a non-default choice is emitted, so `md` keeps the
+  // preset's own control radius from the static stylesheet.
+  if (config.borderRadius && config.borderRadius !== 'md') {
+    const [control, small] = CONTROL_RADIUS[config.borderRadius];
+    declarations.push(
+      `--smrt-control-radius: ${control}`,
+      `--smrt-control-radius-small: ${small}`,
+    );
   }
 
-  if (density !== undefined) {
+  // Primary colour override: the whole derived set for the resolved scheme so
+  // on-primary / container / focus / accent never stay mismatched.
+  if (config.primaryColor) {
+    try {
+      for (const [key, value] of Object.entries(
+        derivePrimaryOverrides(config.primaryColor, resolvedScheme),
+      )) {
+        declarations.push(`${key}: ${value}`);
+      }
+    } catch {
+      // Unparseable colour (e.g. a named colour): keep the single variable.
+      declarations.push(`--smrt-color-primary: ${config.primaryColor}`);
+    }
+  }
+
+  if (config.density !== undefined) {
     declarations.push(
-      `--smrt-control-target-min: ${density === 'touch' ? 'var(--smrt-touch-target-min)' : '0px'}`,
+      `--smrt-control-target-min: ${config.density === 'touch' ? 'var(--smrt-touch-target-min)' : '0px'}`,
     );
   }
 
@@ -149,6 +204,8 @@ const themeState = $derived<ThemeStateType>({
   colorScheme: config.colorScheme,
   resolvedScheme,
   isDark,
+  contrast: resolvedContrast,
+  isChangingScheme,
   config,
   theme: currentTheme,
 });
@@ -183,6 +240,10 @@ function persistConfig(): void {
       preset: config.preset,
       colorScheme: config.colorScheme,
       borderRadius: config.borderRadius,
+      ...(config.density ? { density: config.density } : {}),
+      ...(config.contrast && config.contrast !== 'auto'
+        ? { contrast: config.contrast }
+        : {}),
     });
     localStorage.setItem(config.storageKey!, data);
   } catch {
@@ -222,6 +283,15 @@ function loadPersistedConfig(): void {
       ) {
         config.borderRadius = persisted.borderRadius;
       }
+      if (
+        persisted.density === 'comfortable' ||
+        persisted.density === 'touch'
+      ) {
+        config.density = persisted.density;
+      }
+      if (persisted.contrast === 'standard' || persisted.contrast === 'more') {
+        config.contrast = persisted.contrast;
+      }
     }
   } catch {
     // Ignore storage errors (e.g., corrupted data, JSON parse errors)
@@ -253,6 +323,20 @@ onMount(() => {
     };
     mediaQuery.addEventListener('change', handler);
 
+    // Contrast preferences (guarded: matchMedia stubs may omit these queries)
+    const moreQuery = window.matchMedia('(prefers-contrast: more)');
+    const forcedQuery = window.matchMedia('(forced-colors: active)');
+    systemContrastMore = !!moreQuery?.matches;
+    systemForcedColors = !!forcedQuery?.matches;
+    const moreHandler = (e: MediaQueryListEvent) => {
+      systemContrastMore = e.matches;
+    };
+    const forcedHandler = (e: MediaQueryListEvent) => {
+      systemForcedColors = e.matches;
+    };
+    moreQuery?.addEventListener?.('change', moreHandler);
+    forcedQuery?.addEventListener?.('change', forcedHandler);
+
     // Load persisted preferences
     loadPersistedConfig();
 
@@ -260,6 +344,9 @@ onMount(() => {
 
     return () => {
       mediaQuery.removeEventListener('change', handler);
+      moreQuery?.removeEventListener?.('change', moreHandler);
+      forcedQuery?.removeEventListener?.('change', forcedHandler);
+      if (schemeTimer) clearTimeout(schemeTimer);
     };
   }
 });
@@ -278,7 +365,59 @@ $effect(() => {
 
     // Color scheme for browser UI
     html.style.colorScheme = resolvedScheme;
+
+    // Contrast / density contract (themeScript stamps the same pre-paint)
+    html.setAttribute('data-contrast', resolvedContrast);
+    html.toggleAttribute('data-forced-colors', resolvedContrast === 'forced');
+    if (config.density) html.setAttribute('data-density', config.density);
+    else html.removeAttribute('data-density');
   }
+});
+
+// Scheme crossfade: flag the root for one --smrt-duration-scheme after the
+// resolved scheme CHANGES post-mount (never on first paint, never under
+// prefers-reduced-motion) so base.css/components can transition colours.
+const FALLBACK_SCHEME_MS = 250;
+let schemeTimer: ReturnType<typeof setTimeout> | undefined;
+let lastScheme: 'light' | 'dark' | undefined;
+
+function parseDurationMs(value: string): number | undefined {
+  const m = /^\s*(\d*\.?\d+)(ms|s)\s*$/.exec(value);
+  if (!m) return undefined;
+  return Number(m[1]) * (m[2] === 's' ? 1000 : 1);
+}
+
+function schemeDurationMs(): number {
+  const style = getComputedStyle(rootEl ?? document.documentElement);
+  return (
+    parseDurationMs(style.getPropertyValue('--smrt-duration-scheme')) ??
+    parseDurationMs(style.getPropertyValue('--smrt-duration-medium1')) ??
+    FALLBACK_SCHEME_MS
+  );
+}
+
+$effect(() => {
+  const scheme = resolvedScheme;
+  if (!mounted || typeof document === 'undefined') return;
+  const previous = lastScheme;
+  lastScheme = scheme;
+  if (previous === undefined || previous === scheme) return;
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+  const ms = untrack(schemeDurationMs);
+  isChangingScheme = true;
+  if (schemeTimer) clearTimeout(schemeTimer);
+  schemeTimer = setTimeout(() => {
+    isChangingScheme = false;
+    schemeTimer = undefined;
+  }, ms);
+});
+
+$effect(() => {
+  if (typeof document === 'undefined' || !mounted) return;
+  document.documentElement.toggleAttribute(
+    'data-smrt-theme-changing',
+    isChangingScheme,
+  );
 });
 
 // Sync props to state — but only on actual prop changes. config is seeded
@@ -289,6 +428,9 @@ let prevPreset = untrack(() => preset);
 let prevColorScheme = untrack(() => colorScheme);
 let prevPrimaryColor = untrack(() => primaryColor);
 let prevBorderRadius = untrack(() => borderRadius);
+let prevDensity = untrack(() => density);
+let prevContrast = untrack(() => contrast);
+let rootEl = $state<HTMLElement | undefined>();
 
 $effect(() => {
   if (preset !== prevPreset) {
@@ -328,6 +470,24 @@ $effect(() => {
   }
 });
 
+$effect(() => {
+  if (density !== prevDensity) {
+    prevDensity = density;
+    untrack(() => {
+      config.density = density;
+    });
+  }
+});
+
+$effect(() => {
+  if (contrast !== prevContrast) {
+    prevContrast = contrast;
+    untrack(() => {
+      config.contrast = contrast;
+    });
+  }
+});
+
 // Sync overrides prop to state
 $effect(() => {
   config.overrides = overrides;
@@ -348,13 +508,19 @@ $effect(() => {
 </svelte:head>
 
 <div
+  bind:this={rootEl}
   class="smrt-theme-root"
   class:dark={isDark}
   class:no-paint={!paintSurface}
   class:smrt-theme-glass={config.preset === 'glass'}
   style={styleString || undefined}
   data-theme={config.preset}
-  data-color-scheme={resolvedScheme} data-smrt-component="ThemeProvider"
+  data-color-scheme={resolvedScheme}
+  data-contrast={resolvedContrast}
+  data-forced-colors={resolvedContrast === 'forced' ? '' : undefined}
+  data-density={config.density}
+  data-smrt-theme-changing={isChangingScheme ? '' : undefined}
+  data-smrt-component="ThemeProvider"
 >
   {@render children()}
 </div>

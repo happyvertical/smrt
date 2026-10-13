@@ -19,6 +19,15 @@ export type ColorScheme = 'light' | 'dark' | 'system';
 /** Resolved color scheme (never 'system') */
 export type ResolvedScheme = 'light' | 'dark';
 
+/** Control target density */
+export type ThemeDensity = 'comfortable' | 'touch';
+
+/** Contrast preference accepted by ThemeProvider (`auto` follows the OS) */
+export type ContrastPreference = 'auto' | 'standard' | 'more';
+
+/** Resolved contrast level; `forced` means `forced-colors: active` */
+export type ResolvedContrast = 'standard' | 'more' | 'forced';
+
 /** Border radius scale */
 export type BorderRadius = 'none' | 'sm' | 'md' | 'lg' | 'xl' | 'full';
 
@@ -376,6 +385,10 @@ export interface ThemeConfig {
   primaryColor?: string;
   /** Border radius preference */
   borderRadius?: BorderRadius;
+  /** Default control target density; persisted alongside preset/scheme/radius */
+  density?: ThemeDensity;
+  /** Contrast preference; `auto` follows `prefers-contrast` (persisted when explicit) */
+  contrast?: ContrastPreference;
   /** Custom CSS variable overrides */
   overrides?: Record<string, string>;
   /** Persist theme preference */
@@ -407,6 +420,10 @@ export interface ThemeState {
   resolvedScheme: ResolvedScheme;
   /** Whether dark mode is active */
   isDark: boolean;
+  /** Resolved contrast level (`forced` when `forced-colors: active`) */
+  contrast: ResolvedContrast;
+  /** True for one `--smrt-duration-scheme` after the resolved scheme changes post-mount */
+  isChangingScheme: boolean;
   /** Full theme configuration */
   config: ThemeConfig;
   /** Current active theme object */

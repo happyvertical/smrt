@@ -7,9 +7,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTheme, registerTheme } from '../create-theme.js';
 import { themeScript } from '../theme-script.js';
 
-function mockSystemDark(matches: boolean) {
+function mockSystemDark(matches: boolean, extra: string[] = []) {
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-    matches,
+    matches: query.includes('prefers-color-scheme')
+      ? matches
+      : extra.some((q) => query.includes(q)),
     media: query,
   })) as unknown as typeof window.matchMedia;
 }
@@ -25,6 +27,9 @@ describe('themeScript', () => {
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.removeAttribute('data-color-scheme');
+    for (const a of ['data-contrast', 'data-density', 'data-forced-colors']) {
+      document.documentElement.removeAttribute(a);
+    }
     document.documentElement.classList.remove('dark');
   });
 
@@ -68,7 +73,7 @@ describe('themeScript', () => {
     // the static per-preset stylesheets selected by those attributes.
     expect(script).not.toContain('--smrt-');
     expect(script).not.toContain('bootstrap');
-    expect(script.length).toBeLessThan(1024);
+    expect(script.length).toBeLessThan(1400);
 
     run(script);
     for (const property of Array.from(document.documentElement.style)) {
@@ -186,5 +191,42 @@ describe('themeScript', () => {
     expect(script).not.toContain('\u2028');
     expect(script).not.toContain('\u2029');
     expect(script).toContain('\\u003c/script>');
+  });
+
+  it('stamps contrast and persisted density pre-paint', () => {
+    mockSystemDark(false, ['prefers-contrast: more']);
+    localStorage.setItem('smrt-theme', JSON.stringify({ density: 'touch' }));
+    run(themeScript());
+    const el = document.documentElement;
+    expect(el.getAttribute('data-contrast')).toBe('more');
+    expect(el.getAttribute('data-density')).toBe('touch');
+    expect(el.hasAttribute('data-forced-colors')).toBe(false);
+  });
+
+  it('lets an explicit persisted contrast beat the media query, but not forced-colors', () => {
+    mockSystemDark(false, ['prefers-contrast: more']);
+    localStorage.setItem(
+      'smrt-theme',
+      JSON.stringify({ contrast: 'standard' }),
+    );
+    run(themeScript());
+    expect(document.documentElement.getAttribute('data-contrast')).toBe(
+      'standard',
+    );
+    mockSystemDark(false, ['forced-colors']);
+    run(themeScript());
+    expect(document.documentElement.getAttribute('data-contrast')).toBe(
+      'forced',
+    );
+    expect(document.documentElement.hasAttribute('data-forced-colors')).toBe(
+      true,
+    );
+  });
+
+  it('ignores invalid persisted density', () => {
+    mockSystemDark(false);
+    localStorage.setItem('smrt-theme', JSON.stringify({ density: 'huge' }));
+    run(themeScript());
+    expect(document.documentElement.hasAttribute('data-density')).toBe(false);
   });
 });
