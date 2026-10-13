@@ -108,8 +108,8 @@ function nameFor(emoji: string): string {
     transform: scale(1.15);
   }
   .reactions__btn:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 1px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 
   @media (prefers-reduced-motion: reduce) {

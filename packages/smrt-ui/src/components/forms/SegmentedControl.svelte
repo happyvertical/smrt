@@ -256,7 +256,7 @@ useControlRegistration(() => {
   .segmented.full-width { display: flex; width: 100%; }
   label { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 1; min-height: 2.5rem; padding: 0 var(--smrt-spacing-4); border: 0; border-right: 1px solid var(--smrt-color-outline); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
   label:last-child { border-right: 0; } label.selected { background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); }
-  label:has(input:focus-visible) { outline: 2px solid var(--smrt-color-primary); outline-offset: -3px; } label.disabled, label:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+  label:has(input:focus-visible) { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: calc(var(--smrt-focus-ring-width) * -1); } label.disabled, label:has(input:disabled) { opacity: .5; cursor: not-allowed; }
   :global(.segmented[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
 
   .segmented[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }

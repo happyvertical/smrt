@@ -32,3 +32,31 @@ textarea {
   font: inherit;
 }
 }
+
+/* Native chrome and scheme crossfade (premium baseline, #3867). */
+@layer smrt.theme {
+:root,
+.smrt-theme-root {
+  accent-color: var(--smrt-accent-color);
+  caret-color: var(--smrt-caret-color);
+  scrollbar-color: var(--smrt-scrollbar-thumb) var(--smrt-scrollbar-track);
+}
+
+::selection {
+  background: var(--smrt-selection-background);
+  color: var(--smrt-selection-color);
+}
+
+/* ThemeProvider sets data-smrt-theme-changing for the length of a scheme switch. */
+@media (prefers-reduced-motion: no-preference) {
+  .smrt-theme-root[data-smrt-theme-changing],
+  .smrt-theme-root[data-smrt-theme-changing] * {
+    transition:
+      background-color var(--smrt-duration-scheme) var(--smrt-easing-standard),
+      color var(--smrt-duration-scheme) var(--smrt-easing-standard),
+      border-color var(--smrt-duration-scheme) var(--smrt-easing-standard),
+      fill var(--smrt-duration-scheme) var(--smrt-easing-standard),
+      stroke var(--smrt-duration-scheme) var(--smrt-easing-standard);
+  }
+}
+}

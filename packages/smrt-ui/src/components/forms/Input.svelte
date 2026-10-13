@@ -230,20 +230,24 @@ export function getElement(): HTMLInputElement | null {
 		width: 100%;
 		padding: 0.5rem 0.75rem;
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+		font-weight: var(--smrt-control-weight);
 		line-height: var(--smrt-typography-body-medium-line-height, 1.5);
 		color: var(--smrt-color-on-surface);
-		background-color: var(--smrt-color-surface);
-		border: 1px solid var(--smrt-color-outline);
-		border-radius: var(--smrt-radius-small, 0.375rem);
+		background-color: var(--smrt-surface-control);
+		border: var(--smrt-hairline-strong);
+		border-radius: var(--smrt-control-radius);
 		transition:
 			border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease-in-out),
 			box-shadow var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease-in-out);
 	}
 
 	.input:focus {
-		outline: none;
 		border-color: var(--smrt-color-primary);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
+	}
+
+	.input:focus-visible {
+		outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+		outline-offset: var(--smrt-focus-ring-offset);
 	}
 
 	.input[data-smrt-highlighted='true'] {
@@ -255,7 +259,7 @@ export function getElement(): HTMLInputElement | null {
 	.input:disabled {
 		background-color: var(--smrt-color-surface-container-high);
 		cursor: not-allowed;
-		opacity: 0.7;
+		opacity: var(--smrt-state-disabled);
 	}
 
 	.input::placeholder {
@@ -279,6 +283,6 @@ export function getElement(): HTMLInputElement | null {
 
   .input[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .input[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .input { min-height: var(--smrt-control-target-min, 0px); }
+  .input { min-height: max(var(--smrt-control-height), var(--smrt-control-target-min, 0px)); }
 }
 </style>

@@ -201,7 +201,7 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
   .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr)); gap: var(--smrt-spacing-4); align-items: start; }
   .group { min-inline-size: 0; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); }
   summary { display: flex; min-block-size: 2.75rem; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3) var(--smrt-spacing-4); color: var(--smrt-color-on-surface); font: var(--smrt-typography-title-medium-font); cursor: pointer; }
-  summary:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
+  summary:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .selected-count { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-medium-font); }
   .choices { display: grid; gap: var(--smrt-spacing-4); padding: 0 var(--smrt-spacing-4) var(--smrt-spacing-4); border-block-start: 1px solid var(--smrt-color-outline-variant); padding-block-start: var(--smrt-spacing-4); }
   .choice { display: grid; min-inline-size: 0; gap: var(--smrt-spacing-1); }

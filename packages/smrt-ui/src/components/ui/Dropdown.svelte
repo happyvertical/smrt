@@ -205,14 +205,15 @@ $effect(() => {
     font: inherit;
     cursor: pointer;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-radius: var(--smrt-radius-medium);
-    border: 1px solid var(--smrt-color-outline);
-    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-control-radius);
+    border: var(--smrt-hairline-strong);
+    background: var(--smrt-surface-control);
     color: var(--smrt-color-on-surface);
+    font-weight: var(--smrt-control-weight);
   }
   .dropdown__trigger:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
   /* Icon trigger: a 44px round "more" button in the surrounding text colour. */
   .dropdown__trigger--icon {
@@ -230,10 +231,10 @@ $effect(() => {
   }
   .dropdown__trigger--icon:hover:not(:disabled),
   .dropdown__trigger--icon[aria-expanded='true'] {
-    background: color-mix(in srgb, currentColor 10%, transparent);
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
   }
   .dropdown__trigger:disabled {
-    opacity: 0.5;
+    opacity: var(--smrt-state-disabled);
     cursor: not-allowed;
   }
 
@@ -247,9 +248,10 @@ $effect(() => {
     flex-direction: column;
     gap: var(--smrt-spacing-1);
     border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-surface-container);
-    border: 1px solid var(--smrt-color-outline-variant);
-    box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.15));
+    background: var(--smrt-glass-surface-strong);
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    border: var(--smrt-hairline);
+    box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3);
   }
 
   .dropdown__menu--bottom-start {
@@ -293,7 +295,10 @@ $effect(() => {
     color: var(--smrt-color-on-surface-variant);
   }
   .dropdown__item:hover:not(:disabled) {
-    background: var(--smrt-color-surface-container-high);
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+  .dropdown__item:active:not(:disabled) {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
   }
   /* Keyboard focus needs its own indicator: the hover background alone is a
      ~1.1:1 change against the menu surface in every preset (1.00:1 in glass
@@ -301,12 +306,12 @@ $effect(() => {
      sits inside the item's padding box rather than overlapping the neighbouring
      item or the menu's edge (#2322). */
   .dropdown__item:focus-visible {
-    background: var(--smrt-color-surface-container-high);
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
   .dropdown__item:disabled {
-    opacity: 0.5;
+    opacity: var(--smrt-state-disabled);
     cursor: not-allowed;
   }
 }

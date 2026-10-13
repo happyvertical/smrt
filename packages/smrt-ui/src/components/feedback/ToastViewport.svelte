@@ -189,7 +189,7 @@ async function runAction(toast: Toast) {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .viewport { position: fixed; z-index: var(--smrt-z-index-toast, 1200); display: grid; width: min(24rem, calc(var(--smrt-toast-viewport-region-width, 100vw) - 2 * var(--smrt-toast-viewport-inset))); gap: var(--smrt-spacing-2); pointer-events: none; }
-  .viewport :global(.alert) { pointer-events: auto; box-shadow: var(--smrt-elevation-3); }
+  .viewport :global(.alert) { pointer-events: auto; background: color-mix(in srgb, var(--smrt-alert-color) 8%, var(--smrt-glass-surface-strong)); backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation)); box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3); }
   .viewport--top-start { top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset)); left: calc(var(--smrt-toast-viewport-left, 0px) + var(--smrt-toast-viewport-inset)); }
   .viewport--top-end { top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset)); right: calc(var(--smrt-toast-viewport-right, 0px) + var(--smrt-toast-viewport-inset)); }
   .viewport--bottom-start { bottom: calc(var(--smrt-toast-viewport-bottom, 0px) + var(--smrt-toast-viewport-inset)); left: calc(var(--smrt-toast-viewport-left, 0px) + var(--smrt-toast-viewport-inset)); }

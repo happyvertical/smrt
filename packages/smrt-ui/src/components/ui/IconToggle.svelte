@@ -107,8 +107,8 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     box-shadow: inset 0 0 0 2px var(--smrt-icon-toggle-tone);
   }
   .icon-toggle:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
   .icon-toggle:disabled {
     opacity: 0.5;

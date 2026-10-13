@@ -287,8 +287,8 @@ $effect(() => {
      (#2322). */
   .option:focus-visible {
     background: var(--smrt-color-surface-container-high);
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
 
   .option.selected {

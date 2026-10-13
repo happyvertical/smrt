@@ -122,7 +122,7 @@ useControlRegistration(() => {
   .file-picker.dropzone { width: 100%; min-height: 8rem; align-items: center; justify-content: center; border-style: dashed; text-align: center; }
   .file-picker.dragging { border-color: var(--smrt-color-primary); background: var(--smrt-color-primary-container); }
   .file-picker.disabled { opacity: .5; cursor: not-allowed; } input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-  input:focus-visible ~ .label { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
+  input:focus-visible ~ .label { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .label { font: var(--smrt-typography-label-large-font); } .description { font: var(--smrt-typography-body-small-font); color: var(--smrt-color-on-surface-variant); }
   .file-picker[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
 }

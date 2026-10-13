@@ -181,8 +181,8 @@ function onItemKeydown(event: KeyboardEvent, index: number, item: FlatNode) {
     background: var(--smrt-color-surface-container-high);
   }
   .tree__item:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
   .tree__item.selected {
     background: var(--smrt-color-primary-container);

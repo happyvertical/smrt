@@ -207,8 +207,8 @@ function onkeydown(event: KeyboardEvent): void {
   }
 
   .phone-sheet__close:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
 
   .phone-sheet__body {

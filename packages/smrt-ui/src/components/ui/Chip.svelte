@@ -96,21 +96,45 @@ const {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .chip {
+    position: relative;
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-surface-container-high);
+    border-radius: var(--smrt-control-radius);
+    background: var(--smrt-surface-control);
     color: var(--smrt-color-on-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
+    font-weight: var(--smrt-control-weight);
     max-width: 100%;
+  }
+
+  /* State layer: currentColor mixed at the theme's state opacity. */
+  .chip::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: transparent;
+    pointer-events: none;
+  }
+
+  .chip.selectable:hover::after {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+
+  .chip.selectable:active::after {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
   }
 
   .chip.sm {
     padding: 0 var(--smrt-spacing-1);
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
+  .chip.sm {
+    border-radius: var(--smrt-control-radius-small);
+  }
   .chip.md {
+    min-block-size: var(--smrt-control-height-small);
     padding: 0 var(--smrt-spacing-2);
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
@@ -122,7 +146,7 @@ const {
   }
 
   .chip.disabled {
-    opacity: 0.5;
+    opacity: var(--smrt-state-disabled);
     pointer-events: none;
   }
 
@@ -158,13 +182,13 @@ const {
   }
   .chip__close:hover {
     opacity: 1;
-    background: color-mix(in srgb, currentColor 12%, transparent);
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
   }
 
   .chip__body:focus-visible,
   .chip__close:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 1px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 }
 </style>
