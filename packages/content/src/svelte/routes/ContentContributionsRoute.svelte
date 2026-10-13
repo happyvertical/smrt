@@ -731,7 +731,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     align-items: center;
   }
 
-  .inline-form-shell :global(.input) {
+  .inline-form-shell :global([data-smrt-component="Input"]) {
     min-width: min(22rem, 100%);
     padding: 0.7rem 0.85rem;
     border-radius: 0.75rem;

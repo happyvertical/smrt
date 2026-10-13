@@ -257,7 +257,7 @@ function handleCancelForm() {
      `.error-state button` rule can't reach the <button> rendered inside the
      smrt-ui <Button>, so pierce into it with `:global` (#1589); the danger
      variant already supplies the background/color the old rule set. */
-  .error-state :global(.button) {
+  .error-state :global([data-smrt-component="Button"]) {
     margin-top: 0.5rem;
   }
 

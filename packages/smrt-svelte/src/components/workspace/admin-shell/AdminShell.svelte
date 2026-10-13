@@ -2317,7 +2317,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     font-size: var(--smrt-typography-body-small-size);
   }
 
-  :global(.smrt-admin-shell__edge-toggle--left.button.ghost) {
+  :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]) {
     flex: 0 0 auto;
     inline-size: max(2.75rem, var(--smrt-control-target-min, 0px));
     block-size: max(2.75rem, var(--smrt-control-target-min, 0px));
@@ -2325,16 +2325,16 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     color: var(--smrt-color-on-surface-variant);
   }
 
-  :global(.smrt-admin-shell__edge-toggle--left.button.ghost) {
+  :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]) {
     border-radius: var(--smrt-control-radius);
   }
 
-  :global(.smrt-admin-shell__edge-toggle--left.button.ghost:hover) {
+  :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]:hover) {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
     color: var(--smrt-color-on-surface);
   }
 
-  :global(.smrt-admin-shell__edge-toggle--left.button.ghost:active) {
+  :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]:active) {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
   }
 

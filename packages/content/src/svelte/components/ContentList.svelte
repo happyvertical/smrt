@@ -3457,8 +3457,8 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     align-items: center;
   }
 
-  .search-filters :global(.input),
-  .search-filters :global(.select) {
+  .search-filters :global([data-smrt-component="Input"]),
+  .search-filters :global([data-smrt-component="Select"]) {
     padding: 0.5rem 0.9rem;
     border: var(--smrt-hairline-strong);
     border-radius: 0.5rem;
@@ -4085,8 +4085,8 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       width: 100%;
     }
 
-    .search-filters :global(.input),
-    .search-filters :global(.select),
+    .search-filters :global([data-smrt-component="Input"]),
+    .search-filters :global([data-smrt-component="Select"]),
     .add-button {
       width: 100%;
     }

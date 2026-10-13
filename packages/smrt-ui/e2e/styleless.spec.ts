@@ -91,3 +91,72 @@ test('unstyled.css reverts themed look and keeps layout in Chromium', async ({
     .poll(async () => (await computed(page, badge, ['background-color']))['background-color'])
     .toBe(themed.badge['background-color']);
 });
+
+const PILOT = ['Button', 'Badge', 'Chip', 'Card', 'Alert', 'Input', 'Select', 'Checkbox', 'Switch', 'Tabs'];
+
+for (const preset of ['material', 'glass', 'studio', 'smrt', 'happyvertical']) {
+for (const scheme of ['light', 'dark']) {
+for (const allProperties of [false, true]) {
+  test(`ten pilot primitives ${preset}/${scheme} preserve structure with ${allProperties ? 'all' : 'explicit'} reset`, async ({ page }) => {
+    await page.goto('/e2e/styleless.html');
+    await page.addStyleTag({ content: '* , *::before, *::after { transition: none; animation: none; }' });
+    await page.evaluate(({ preset, scheme }) => {
+      document.documentElement.dataset.theme = preset;
+      document.documentElement.dataset.colorScheme = scheme;
+    }, { preset, scheme });
+    const root = (name: string) => `[data-smrt-component="${name}"]`;
+    const geometry = ['display', 'position', 'padding-top', 'padding-right', 'gap', 'min-height'];
+    const before = new Map<string, Record<string, string>>();
+    for (const name of PILOT) before.set(name, await computed(page, root(name), geometry));
+    const cardBody = `${root('Card')} [data-smrt-part="body"]`;
+    const bodyPadding = await computed(page, cardBody, ['padding-top']);
+    if (allProperties) await page.getByRole('checkbox', { name: 'Try all: revert-layer' }).check();
+    await page.getByRole('checkbox', { name: 'Apply unstyled.css' }).check();
+    for (const name of PILOT) {
+      await expect.poll(() => computed(page, root(name), geometry)).toEqual(before.get(name));
+      await expect.poll(async () => (await computed(page, root(name), ['background-color']))['background-color']).toBe(TRANSPARENT);
+    }
+    expect(await computed(page, cardBody, ['padding-top'])).toEqual(bodyPadding);
+    for (const name of ['Checkbox', 'Switch']) {
+      expect(await computed(page, `${root(name)} [data-smrt-part="input"]`, ['opacity', 'position'])).toEqual({ opacity: '0', position: 'absolute' });
+      await page.locator(root(name)).click();
+      await expect(page.locator(`${root(name)} input`)).toBeChecked();
+    }
+    const track = `${root('Switch')} [data-smrt-part="thumb"]`;
+    expect((await computed(page, track, ['transform'])).transform).not.toBe('none');
+    await page.getByRole('tab', { name: 'Activity' }).click();
+    await expect(page.getByRole('tab', { name: 'Activity' })).toHaveAttribute('aria-selected', 'true');
+    await page.addStyleTag({ content: `${cardBody} { padding: 13px; background: rgb(1, 2, 3); }` });
+    expect(await computed(page, cardBody, ['padding-top', 'background-color'])).toEqual({ 'padding-top': '13px', 'background-color': 'rgb(1, 2, 3)' });
+  });
+}
+
+}
+}
+
+test('generic consumer classes cannot reach pilot-owned elements; parts can', async ({ page }) => {
+  await page.goto('/e2e/styleless.html');
+  await page.addStyleTag({ content: '.button, .badge, .card, .input, .select, .checkbox, .switch, .content, .label, .header, .actions, .icon, .active, .primary, .md { display: none; }' });
+  for (const name of PILOT) await expect(page.locator(`[data-smrt-component="${name}"]`).first()).toBeVisible();
+  for (const [name, part] of [['Button', 'label'], ['Card', 'body'], ['Chip', 'body'], ['Alert', 'body'], ['Checkbox', 'label'], ['Switch', 'track'], ['Tabs', 'tab']]) {
+    await expect(page.locator(`[data-smrt-component="${name}"] [data-smrt-part="${part}"]`).first()).toBeVisible();
+  }
+});
+
+test('all reset cannot roll out to pilot subtrees containing unsorted components', async ({ page }) => {
+  await page.goto('/e2e/styleless.html');
+  // A consumer slot may contain any other component. Model its still-unsorted
+  // layout in smrt.theme; no production component needs a synthetic test prop.
+  await page.locator('[data-smrt-component="Card"] [data-smrt-part="body"]').evaluate((body) => {
+    const nested = document.createElement('div');
+    nested.dataset.smrtComponent = 'UnsortedFixture';
+    nested.textContent = 'Nested component';
+    body.append(nested);
+  });
+  const selector = '[data-smrt-component="UnsortedFixture"]';
+  await page.addStyleTag({ content: `@layer smrt.theme { ${selector} { display: flex; gap: 17px; } }` });
+  await page.getByRole('checkbox', { name: 'Apply unstyled.css' }).check();
+  expect(await computed(page, selector, ['display', 'gap'])).toEqual({ display: 'flex', gap: '17px' });
+  await page.getByRole('checkbox', { name: 'Try all: revert-layer' }).check();
+  expect((await computed(page, selector, ['display'])).display).toBe('block');
+});

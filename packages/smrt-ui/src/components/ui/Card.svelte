@@ -30,22 +30,22 @@ const {
 </script>
 
 <div
-  class="card {variant} padding-{padding}"
-  class:hoverable
+  class="smrt-card__root smrt-card__{variant} smrt-card__padding-{padding}"
+  class:smrt-card__hoverable={hoverable}
   {...rest} data-smrt-component="Card"
 >
   {#if header}
-    <div class="card-header" data-smrt-part="header">
+    <div class="smrt-card__header" data-smrt-part="header">
       {@render header()}
     </div>
   {/if}
 
-  <div class="card-content" data-smrt-part="body">
+  <div class="smrt-card__content" data-smrt-part="body">
     {@render children?.()}
   </div>
 
   {#if footer}
-    <div class="card-footer" data-smrt-part="footer">
+    <div class="smrt-card__footer" data-smrt-part="footer">
       {@render footer()}
     </div>
   {/if}
@@ -53,6 +53,38 @@ const {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.structure {
+  .smrt-card__padding-none .smrt-card__content {
+    padding: var(--smrt-spacing-0);
+  }
+  .smrt-card__padding-sm .smrt-card__content {
+    padding: var(--smrt-spacing-4);
+  }
+  .smrt-card__padding-md .smrt-card__content {
+    padding: var(--smrt-spacing-6);
+  }
+  .smrt-card__padding-lg .smrt-card__content {
+    padding: var(--smrt-spacing-8);
+  }
+  .smrt-card__header {
+    padding: var(--smrt-spacing-6);
+  }
+  .smrt-card__padding-sm .smrt-card__header {
+    padding: var(--smrt-spacing-4);
+  }
+  .smrt-card__padding-lg .smrt-card__header {
+    padding: var(--smrt-spacing-8);
+  }
+  .smrt-card__footer {
+    padding: var(--smrt-spacing-6);
+  }
+  .smrt-card__padding-sm .smrt-card__footer {
+    padding: var(--smrt-spacing-4);
+  }
+  .smrt-card__padding-lg .smrt-card__footer {
+    padding: var(--smrt-spacing-8);
+  }
+}
 @layer smrt.theme {
   /*
    * Themeable look (app-level custom properties; defaults keep the stock look):
@@ -62,80 +94,35 @@ const {
    *   --smrt-card-divider     rule between the header/footer and the content
    * The `outlined` variant always draws its outline.
    */
-  .card {
+  .smrt-card__root {
     background: var(--smrt-card-background, var(--smrt-surface-panel));
     border-radius: var(--smrt-radius-medium);
     transition: all var(--smrt-duration-short2) var(--smrt-easing-standard);
   }
-
-  /* Variants */
-  .default {
+  .smrt-card__default {
     border: var(--smrt-card-border, var(--smrt-hairline));
     box-shadow: var(--smrt-card-shadow, var(--smrt-inset-highlight));
   }
-
-  .outlined {
+  .smrt-card__outlined {
     border: var(--smrt-hairline-strong);
     box-shadow: var(--smrt-inset-highlight);
   }
-
-  .elevated {
+  .smrt-card__elevated {
     border: var(--smrt-card-border, var(--smrt-hairline));
     box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-2);
   }
-
-  /* Hoverable state */
-  .hoverable:hover {
+  .smrt-card__hoverable:hover {
     box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3);
     transform: translateY(-2px);
   }
-
-  /* Padding */
-  .padding-none .card-content {
-    padding: var(--smrt-spacing-0);
-  }
-
-  .padding-sm .card-content {
-    padding: var(--smrt-spacing-4);
-  }
-
-  .padding-md .card-content {
-    padding: var(--smrt-spacing-6);
-  }
-
-  .padding-lg .card-content {
-    padding: var(--smrt-spacing-8);
-  }
-
-  /* Header */
-  .card-header {
-    padding: var(--smrt-spacing-6);
+  .smrt-card__header {
     border-bottom: var(--smrt-card-divider, var(--smrt-hairline));
   }
-
-  .padding-sm .card-header {
-    padding: var(--smrt-spacing-4);
-  }
-
-  .padding-lg .card-header {
-    padding: var(--smrt-spacing-8);
-  }
-
-  /* Footer */
-  .card-footer {
-    padding: var(--smrt-spacing-6);
+  .smrt-card__footer {
     border-top: var(--smrt-card-divider, var(--smrt-hairline));
     background: var(--smrt-surface-sunken);
     border-bottom-left-radius: var(--smrt-radius-medium);
     border-bottom-right-radius: var(--smrt-radius-medium);
-  }
-
-  .padding-sm .card-footer {
-    padding: var(--smrt-spacing-4);
-  }
-
-  .padding-lg .card-footer {
-    padding: var(--smrt-spacing-8);
   }
 }
 </style>

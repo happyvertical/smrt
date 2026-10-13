@@ -26,9 +26,9 @@ describe('Badge', () => {
     const { container } = render(Badge, {
       props: { children: textSnippet('Default') },
     });
-    const badge = container.querySelector('.badge');
-    expect(badge).toHaveClass('default');
-    expect(badge).toHaveClass('md');
+    const badge = container.querySelector('.smrt-badge__root');
+    expect(badge).toHaveClass('smrt-badge__default');
+    expect(badge).toHaveClass('smrt-badge__md');
   });
 
   it.each([
@@ -41,14 +41,18 @@ describe('Badge', () => {
     const { container } = render(Badge, {
       props: { variant, children: textSnippet('Status') },
     });
-    expect(container.querySelector('.badge')).toHaveClass(variant);
+    expect(container.querySelector('.smrt-badge__root')).toHaveClass(
+      `smrt-badge__${variant}`,
+    );
   });
 
   it('reflects the sm size as a class', () => {
     const { container } = render(Badge, {
       props: { size: 'sm', children: textSnippet('Small') },
     });
-    expect(container.querySelector('.badge')).toHaveClass('sm');
+    expect(container.querySelector('.smrt-badge__root')).toHaveClass(
+      'smrt-badge__sm',
+    );
   });
 
   it('forwards rest attributes (e.g. aria-label, data-testid) to the span', () => {
@@ -59,7 +63,7 @@ describe('Badge', () => {
         children: textSnippet('3'),
       },
     });
-    const badge = container.querySelector('.badge');
+    const badge = container.querySelector('.smrt-badge__root');
     expect(badge).toHaveAttribute('aria-label', 'Unread count: 3');
     expect(badge).toHaveAttribute('data-testid', 'unread-badge');
   });

@@ -116,7 +116,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
   }
 
   /* The Button's inner row: title left (clipped with an ellipsis), count right. */
-  :global(.assistant-thread-list-item > .content) {
+  :global(.assistant-thread-list-item > [data-smrt-part="label"]) {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;

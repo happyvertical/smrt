@@ -22,7 +22,7 @@ for (const width of [390, 768]) {
       ).toBeVisible();
       const sizes = await page
         .locator(
-          '.input:not([data-density="comfortable"]), .select, .textarea, .checkbox, .switch, .radio, .button, .filter-chip, .segmented label, .data-table__sort-button',
+          '[data-smrt-component="Input"]:not([data-density="comfortable"]), [data-smrt-component="Select"], .textarea, [data-smrt-component="Checkbox"], [data-smrt-component="Switch"], .radio, [data-smrt-component="Button"], .filter-chip, .segmented label, .data-table__sort-button',
         )
         .evaluateAll((elements) =>
           elements.map((element) => ({

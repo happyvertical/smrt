@@ -410,7 +410,7 @@ onMount(() => {
     color: var(--smrt-color-on-surface-variant);
   }
 
-  .search-field :global(.input) {
+  .search-field :global([data-smrt-component="Input"]) {
     min-height: 2.85rem;
     border-radius: 0.85rem;
     border: var(--smrt-hairline);

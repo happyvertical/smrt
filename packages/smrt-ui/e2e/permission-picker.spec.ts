@@ -20,7 +20,7 @@ for (const width of [320, 390]) {
       const slug = page.locator('code').filter({ hasText: 'extraordinarily_long_unbroken' });
       await expect(slug).toBeVisible();
       expect(await slug.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-      const hitSize = await page.locator('.choice .checkbox').first().evaluate((element) => getComputedStyle(element, '::before').blockSize);
+      const hitSize = await page.locator('.choice [data-smrt-component="Checkbox"]').first().evaluate((element) => getComputedStyle(element, '::before').blockSize);
       expect(Number.parseFloat(hitSize)).toBeGreaterThanOrEqual(44);
       const surface = await page.locator('main').evaluate((element) => ({
         background: getComputedStyle(element).backgroundColor,

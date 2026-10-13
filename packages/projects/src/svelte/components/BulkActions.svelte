@@ -143,7 +143,7 @@ const visible = $derived(selectedCount > 0);
       flex-wrap: wrap;
     }
 
-    .actions :global(.button) {
+    .actions :global([data-smrt-component="Button"]) {
       flex: 1;
       min-width: 100px;
     }

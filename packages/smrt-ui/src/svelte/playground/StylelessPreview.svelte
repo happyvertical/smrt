@@ -1,7 +1,9 @@
 <script lang="ts">
 import Alert from '../../components/feedback/Alert.svelte';
+import Checkbox from '../../components/forms/Checkbox.svelte';
 import Input from '../../components/forms/Input.svelte';
 import Select from '../../components/forms/Select.svelte';
+import Switch from '../../components/forms/Switch.svelte';
 import Tabs from '../../components/nav/Tabs.svelte';
 import Badge from '../../components/ui/Badge.svelte';
 import Button from '../../components/ui/Button.svelte';
@@ -11,6 +13,30 @@ import unstyledCss from '../../styles/unstyled.css?inline';
 
 // Native checkbox, outside the catalogue, so the toggle itself is never stripped.
 let styleless = $state(false);
+let allProperties = $state(false);
+// Experimental wave-2 reset. Keep production unstyled.css on its explicit
+// property list until unsorted components nested inside these roots migrate.
+const pilotRoots = [
+  'Button',
+  'Badge',
+  'Chip',
+  'Card',
+  'Alert',
+  'Input',
+  'Select',
+  'Checkbox',
+  'Switch',
+  'Tabs',
+]
+  .map((name) => `[data-smrt-component="${name}"]`)
+  .join(', ');
+const pilotScope = `:is(${pilotRoots})`;
+const pilotSelector = `:is(${pilotScope}, ${pilotScope} *):not(#\\#):not(#\\#):not(#\\#)`;
+const pilotCss = `@layer smrt.theme {
+  ${pilotSelector}, ${pilotSelector}::before, ${pilotSelector}::after {
+    all: revert-layer;
+  }
+}`;
 let active = $state('overview');
 
 // Svelte does not interpolate text inside a style element, so the stylesheet is
@@ -19,7 +45,7 @@ $effect(() => {
   if (!styleless) return;
   const style = document.createElement('style');
   style.setAttribute('data-smrt-styleless', '');
-  style.textContent = unstyledCss;
+  style.textContent = unstyledCss + (allProperties ? pilotCss : '');
   document.head.appendChild(style);
   return () => style.remove();
 });
@@ -48,6 +74,11 @@ const tabs = [
     With the toggle on, every component below keeps its layout and loses its
     themed look. The page chrome is not a smrt component, so it is unaffected.
   </p>
+
+  <label class="toggle">
+    <input type="checkbox" bind:checked={allProperties} />
+    Try all: revert-layer on the ten pilot primitives
+  </label>
 
   <div class="catalogue">
     <section>
@@ -82,6 +113,8 @@ const tabs = [
           <option value="owner">Owner</option>
           <option value="member">Member</option>
         </Select>
+        <Checkbox label="Send updates" />
+        <Switch label="Enable alerts" />
       </div>
     </section>
 
