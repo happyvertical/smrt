@@ -225,7 +225,7 @@ const sizeClasses = {
   }
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
-    .toggle__thumb, .toggle:not(.toggle--disabled):hover .toggle__thumb { background: Canvas; outline: 1px solid CanvasText; outline-offset: -1px; }
+    .toggle__thumb, .toggle:not(.toggle--disabled):hover .toggle__thumb { background: Canvas; outline: var(--smrt-hairline-strong); outline-offset: 0; }
     .toggle__input:checked + .toggle__thumb, .toggle:not(.toggle--disabled):hover .toggle__input:checked + .toggle__thumb { background: Highlight; outline-color: Highlight; }
     .toggle__thumb::after { background: CanvasText; }
     .toggle__input:checked + .toggle__thumb::after { background: HighlightText; }

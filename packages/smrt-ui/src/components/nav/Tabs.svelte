@@ -530,7 +530,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     .tab-link { border-bottom-color: Canvas; }
     .tab-link.active { border-bottom-color: Highlight; }
     .tab-dot { background: CanvasText; }
-    .tab-badge { background: Canvas; border: 1px solid CanvasText; }
+    .tab-badge { background: Canvas; border: var(--smrt-hairline-strong); }
     .tab-button:disabled, .tab-link[aria-disabled='true'] { opacity: 1; color: GrayText; }
   }
 }
