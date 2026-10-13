@@ -8,12 +8,13 @@
  * `@happyvertical/smrt-svelte/cookbook/server` to load the cookbook and the
  * installed packages' manifests in a `+layout.server.ts`.
  */
+
+export type { ShortcutEntry } from '../overview/widgets/data.js';
 export { applyCookbookTheme } from './brand-theme.js';
 export { buildCookbookShell, humanize, pluralize } from './build.js';
 export { default as CookbookApp } from './CookbookApp.svelte';
 export { default as CookbookSectionOverview } from './CookbookSectionOverview.svelte';
 export { default as CookbookSectionPage } from './CookbookSectionPage.svelte';
-export type { ShortcutEntry } from '../overview/widgets/data.js';
 export {
   type CookbookManifest,
   catalogFromManifests,
