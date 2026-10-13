@@ -59,7 +59,7 @@
     }
   },
   "dependencies": {
-    "@happyvertical/auth": "^0.102.3",
+    "@happyvertical/auth": "catalog:",
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",

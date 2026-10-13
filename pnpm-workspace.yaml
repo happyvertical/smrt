@@ -187,6 +187,7 @@ catalog:
   '@google-cloud/tasks': ^7.1.1
   '@happyvertical/accounting': ^0.103.4
   '@happyvertical/ai': ^0.103.4
+  '@happyvertical/auth': ^0.103.4
   '@happyvertical/cache': ^0.103.4
   '@happyvertical/documents': ^0.103.4
   '@happyvertical/email': ^0.103.4
