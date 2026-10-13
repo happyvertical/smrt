@@ -489,6 +489,7 @@ jobs:
           filters: |
             visual:
               - 'packages/*/src/**/*.svelte'
+              - 'packages/*/src/**/playground.ts'
               - 'packages/smrt-ui/src/themes/**'
               - 'packages/smrt-ui/src/styles/**'
               - 'packages/smrt-playground/**'

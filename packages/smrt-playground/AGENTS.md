@@ -57,7 +57,8 @@ The host's theme gallery has Chromium-on-macOS screenshot baselines. Update with
 Chromium screenshots: Base Controls, Feedback & Overlays, Collections & Content
 Lists, Data Table, Calendar and Styleless Mode × Material/Glass/Studio/SMRT/
 HappyVertical × light/dark × styled/unstyled. It is a required gate when
-`packages/*/src/**/*.svelte`, `smrt-ui/src/themes/**`, `smrt-ui/src/styles/**`,
+`packages/*/src/**/*.svelte`, `packages/*/src/**/playground.ts`,
+`smrt-ui/src/themes/**`, `smrt-ui/src/styles/**`,
 playground files, the workflow/setup action, or dependency manifests change.
 The job has a six-minute wall-clock budget and uploads `playground-visual-diffs`
 (expected/actual/diff PNGs, HTML report and traces) on failure.
