@@ -27,6 +27,12 @@ export interface ChartWidgetData {
   format?: WidgetValueFormat;
   currency?: string;
   href?: string;
+  /**
+   * `stat` style: percent change of the headline (the last point) against the
+   * period before (12.5 means +12.5%). Absent, it is derived from the last two
+   * points.
+   */
+  delta?: number | null;
 }
 
 /** `records`: the rows to list. The loader chooses the title field. */
