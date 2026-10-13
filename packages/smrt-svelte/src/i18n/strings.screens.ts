@@ -23,6 +23,8 @@ export const M = defineMessages({
   'ui.screens.save_failed': 'Could not save your changes.',
   'ui.screens.delete_failed': 'Could not delete this record.',
   'ui.screens.not_found': 'This record no longer exists.',
+  'ui.screens.view_all': 'View all',
+  'ui.screens.related': 'Related records',
   'ui.screens.error.required': 'This field is required.',
   'ui.screens.error.invalid_integer': 'Enter a whole number.',
   'ui.screens.error.invalid_decimal': 'Enter a number.',

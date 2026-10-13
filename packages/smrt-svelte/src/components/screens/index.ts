@@ -12,6 +12,7 @@ export {
 } from './fields.js';
 export { default as ListScreen } from './ListScreen.svelte';
 export { default as RecipeScreens } from './RecipeScreens.svelte';
+export { default as RecordScreen } from './RecordScreen.svelte';
 export { deriveScreenRelations, type ScreenRelation } from './relations.js';
 export type {
   DetailScreenProps,
@@ -21,6 +22,8 @@ export type {
   RecipeScreensProps,
   RecipeScreensSource,
   RecipeScreenView,
+  RecordScreenMode,
+  RecordScreenProps,
   ScreenCollectionDefinition,
   ScreenDraft,
   ScreenDraftValue,

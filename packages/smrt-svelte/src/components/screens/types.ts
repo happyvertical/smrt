@@ -1,4 +1,11 @@
 import type { Snippet } from 'svelte';
+import type { WidgetRegistry } from '../overview/registry.js';
+import type {
+  OverviewDefinition,
+  OverviewOverride,
+  WidgetLoadContext,
+} from '../overview/types.js';
+import type { CoreWidgetLoaders } from '../overview/widgets/core.js';
 import type { ScreenRelation } from './relations.js';
 
 /**
@@ -275,6 +282,86 @@ export interface EditFormProps {
   oncancel?: () => void;
 }
 
+export type RecordScreenMode = 'view' | 'edit';
+
+/**
+ * Props of `RecordScreen`: the record view (#3718 record view). The detail
+ * header and fields sit at the top, a customizable overview of related
+ * records below; `mode: 'edit'` opens the edit form beside the header on
+ * desktop and in a full-screen sheet on phones.
+ */
+export interface RecordScreenProps {
+  definition: ScreenCollectionDefinition;
+  /** Resolved field policy for the same object; omit for the code seed. */
+  policy?: ScreenPolicy | null;
+  record: ScreenRecord;
+  /** Relations of this model (`deriveScreenRelations`). */
+  relations?: readonly ScreenRelation[];
+  mode: RecordScreenMode;
+  /**
+   * Loaders of the core widgets; the shell registers them on a registry of
+   * its own and runs them in the browser with the record context. A widget
+   * without a loader is not offered (and a default using it is dropped).
+   */
+  loaders?: CoreWidgetLoaders;
+  /** An explicit registry (recipe widgets included) instead of one built from `loaders`. */
+  registry?: WidgetRegistry;
+  /**
+   * Host capabilities for the widget loads (a `fetch`, a client, the
+   * locale). `overviewId` and `record` are set by the screen.
+   */
+  widgetContext?: Omit<WidgetLoadContext, 'overviewId' | 'record'>;
+  /** The overview to render; defaults to `recordOverview(definition, relations)`. */
+  overview?: OverviewDefinition;
+  /** The stored layout override for this model kind (host-owned when given). */
+  override?: OverviewOverride | null;
+  /** Receives the override after each layout edit (`null` = defaults). */
+  onoverviewchange?: (
+    override: OverviewOverride | null,
+  ) => void | Promise<void>;
+  /** Layout edit mode; omit to follow the shell's layout editor. */
+  layoutEditing?: boolean;
+  /** Whether the viewer may customize the layout (default true). */
+  canCustomize?: boolean;
+  /** Link for a reference field's value. */
+  hrefFor?: (field: ScreenField, id: string) => string | undefined;
+  /** Display labels for referenced records, keyed by target model id. */
+  labels?: Readonly<Record<string, (id: string) => string | undefined>>;
+  /** "View all" link of a related-records panel; `undefined` renders none. */
+  viewAllHref?: (relation: ScreenRelation) => string | undefined;
+  /** Page title. Defaults to the first basic text field, else the class name. */
+  title?: string;
+  /** Explicit field names, in order (overrides the derived set). */
+  fields?: readonly string[];
+  /** ISO 4217 code used by money fields. */
+  currency?: string;
+  /** BCP-47 locale for number and date formatting. */
+  locale?: string;
+  /** Label for the back action; defaults to the pluralized class name. */
+  backLabel?: string;
+  /** Mutation in flight; locks the delete confirmation. */
+  deleting?: boolean;
+  /** True while the host is persisting the edit; locks the form. */
+  submitting?: boolean;
+  /** Server-reported field messages for the edit form, keyed by field name. */
+  fieldErrors?: Readonly<Record<string, string>>;
+  /** A form-level failure message from the host. */
+  error?: string | null;
+  onback?: () => void;
+  /** When set, an Edit action is offered (the host switches `mode`). */
+  onedit?: () => void;
+  /** Closes the edit form (Cancel, the sheet's close button, Escape). */
+  oncancel?: () => void;
+  /** Receives the edit form's wire-ready values; `EditFormProps['onsubmit']`. */
+  onsave?: EditFormProps['onsubmit'];
+  /** When set, a Delete action with a confirmation is offered. */
+  ondelete?: () => void | Promise<void>;
+  /** Extra header actions, rendered before Edit and Delete. */
+  extraActions?: Snippet;
+  /** Extra content between the fields and the overview. */
+  children?: Snippet;
+}
+
 export interface RecipeScreensProps {
   definition: ScreenCollectionDefinition;
   /** Resolved field policy for the same object; omit for the code seed. */
@@ -296,4 +383,24 @@ export interface RecipeScreensProps {
   can?: { create?: boolean; update?: boolean; delete?: boolean };
   /** Called on every user navigation, for router synchronization. */
   onnavigate?: (view: RecipeScreenView, recordId: string | null) => void;
+  /**
+   * Every exposed collection definition, keyed by collection name; the
+   * record view derives this model's relations from it. Omit for none.
+   */
+  definitions?: Readonly<Record<string, ScreenCollectionDefinition>>;
+  /** Passed to `RecordScreen` for the record view and edit. */
+  record?: Pick<
+    RecordScreenProps,
+    | 'loaders'
+    | 'registry'
+    | 'widgetContext'
+    | 'overview'
+    | 'override'
+    | 'onoverviewchange'
+    | 'layoutEditing'
+    | 'canCustomize'
+    | 'hrefFor'
+    | 'labels'
+    | 'viewAllHref'
+  >;
 }
