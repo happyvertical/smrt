@@ -200,7 +200,7 @@ shape. Data shapes are in `widgets/data.ts`.
 | `metric` | `title`, `model`*, `measure`, `field`, `filter` | `{ value, format?, currency?, label?, change?, href? }` (money = integer minor units) |
 | `chart` | `title`, `model`*, `groupBy`, `measure`, `field`, `period`, `style` (bar/line), `filter` | `{ points: [{ label, value }], format?, currency?, href? }`, one measure of a runtime report |
 | `records` | `title`, `model`*, `sort`, `direction`, `limit`, `filter` | `{ rows: [{ id, title, subtitle?, meta?, href? }], total?, href? }`; the loader chooses the title field and the visible records |
-| `shortcuts` | `title`, `section` | `{ items: [{ id, label, href, icon?, description? }] }`; `shortcutsFromNav(sections, sectionId)` maps `resolveShellNavModel` / `useShellLayout().sections` (visible entries, user renames) |
+| `shortcuts` | `title`, `section` | `{ items: [{ id, label, href, icon?, description?, count? }] }` (`count` draws as "N records"; widgets also receive the grid's `presentation` and the shortcuts widget drops its entry frame under `plain`); `shortcutsFromNav(sections, sectionId)` maps `resolveShellNavModel` / `useShellLayout().sections` (visible entries, user renames) |
 | `note` | `title`, `body` (Markdown) | none |
 
 `note` renders `parseMarkdown` output as elements (headings, paragraphs, lists,
