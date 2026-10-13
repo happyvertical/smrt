@@ -249,13 +249,14 @@ function onmove(move: SortableItemMove<SortableItem>): void {
 @layer smrt.theme {
   .smrt-section-menu { min-inline-size: 0; }
   .smrt-section-menu__list { display: grid; gap: var(--smrt-spacing-1); margin: 0; padding: 0; list-style: none; }
-  .smrt-section-menu__item { position: relative; display: flex; align-items: center; gap: var(--smrt-spacing-3); min-inline-size: 0; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
-  .smrt-section-menu__item:hover { background: var(--smrt-color-surface-container-high); }
+  .smrt-section-menu__item { position: relative; display: flex; align-items: center; gap: var(--smrt-spacing-3); min-inline-size: 0; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: var(--smrt-hairline); border-radius: var(--smrt-control-radius); background: var(--smrt-surface-panel); color: var(--smrt-color-on-surface); }
+  .smrt-section-menu__item:hover { background: color-mix(in srgb, var(--smrt-surface-panel), currentColor calc(var(--smrt-state-hover) * 100%)); }
+  .smrt-section-menu__item:active { background: color-mix(in srgb, var(--smrt-surface-panel), currentColor calc(var(--smrt-state-pressed) * 100%)); }
   .smrt-section-menu__link { flex: 1 1 auto; display: flex; align-items: center; gap: var(--smrt-spacing-3); min-inline-size: 0; min-block-size: var(--smrt-control-target-min, 2rem); color: inherit; text-decoration: none; }
   /* The whole row follows the link; actions sit above the stretched target. */
   .smrt-section-menu__link::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
   .smrt-section-menu__link:focus-visible { outline: none; }
-  .smrt-section-menu__link:focus-visible::after { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
+  .smrt-section-menu__link:focus-visible::after { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .smrt-section-menu__label { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--smrt-typography-weight-medium, 500); }
   .smrt-section-menu__meta { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size); }
   .smrt-section-menu__actions { position: relative; z-index: 1; flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); }
@@ -265,12 +266,13 @@ function onmove(move: SortableItemMove<SortableItem>): void {
   .smrt-section-menu__card-icon :global(.smrt-shell-section-icon) { inline-size: 28px; block-size: 28px; }
   /* Cards: a responsive grid; the whole card is one stretched link. */
   .smrt-section-menu__cards, .smrt-section-menu--cards :global(.smrt-sortable__items) { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr)); gap: var(--smrt-spacing-3); margin: 0; padding: 0; list-style: none; }
-  .smrt-section-menu__card { position: relative; display: flex; flex-direction: column; gap: var(--smrt-spacing-3); min-inline-size: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); transition: background-color 120ms, border-color 120ms, transform 120ms; }
-  .smrt-section-menu__card:hover { background: var(--smrt-color-surface-container-high); border-color: var(--smrt-color-outline); transform: translateY(-2px); }
+  .smrt-section-menu__card { position: relative; display: flex; flex-direction: column; gap: var(--smrt-spacing-3); min-inline-size: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-surface-panel); color: var(--smrt-color-on-surface); transition: background-color var(--smrt-duration-short2), border-color var(--smrt-duration-short2), transform var(--smrt-duration-short2); }
+  .smrt-section-menu__card:hover { background: color-mix(in srgb, var(--smrt-surface-panel), currentColor calc(var(--smrt-state-hover) * 100%)); border-color: var(--smrt-hairline-strong-color); }
+  .smrt-section-menu__card:active { background: color-mix(in srgb, var(--smrt-surface-panel), currentColor calc(var(--smrt-state-pressed) * 100%)); }
   .smrt-section-menu__card-link { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--smrt-spacing-2); color: inherit; text-decoration: none; }
   .smrt-section-menu__card-link::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
   .smrt-section-menu__card-link:focus-visible { outline: none; }
-  .smrt-section-menu__card-link:focus-visible::after { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
+  .smrt-section-menu__card-link:focus-visible::after { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .smrt-section-menu__card-heading { display: flex; align-items: center; gap: var(--smrt-spacing-2); min-inline-size: 0; }
   .smrt-section-menu__card-icon { display: inline-grid; place-items: center; flex: 0 0 28px; inline-size: 28px; block-size: 28px; color: var(--smrt-color-primary); }
   .smrt-section-menu__card-title { font-size: var(--smrt-typography-title-medium-size, 1rem); font-weight: var(--smrt-typography-weight-medium, 500); overflow-wrap: anywhere; }
@@ -285,7 +287,7 @@ function onmove(move: SortableItemMove<SortableItem>): void {
   .smrt-section-menu :global(.smrt-sortable__container) { padding: 0; border: 0; background: transparent; gap: var(--smrt-spacing-1); }
   .smrt-section-menu :global(.smrt-sortable__header) { display: none; }
   .smrt-section-menu :global(.smrt-sortable__items) { gap: var(--smrt-spacing-1); }
-  .smrt-section-menu :global(.smrt-sortable__item) { border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); }
+  .smrt-section-menu :global(.smrt-sortable__item) { border: var(--smrt-hairline); border-radius: var(--smrt-control-radius); background: var(--smrt-surface-panel); }
   .smrt-section-menu :global(.smrt-sortable__handle) { inline-size: 1.5rem; block-size: 2rem; }
   .smrt-section-menu__row { flex: 1 1 auto; min-inline-size: 0; display: flex; align-items: center; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-2) var(--smrt-spacing-1); }
   .smrt-section-menu__row--muted { opacity: 0.55; }

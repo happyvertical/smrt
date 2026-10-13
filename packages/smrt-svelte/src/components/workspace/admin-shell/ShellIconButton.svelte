@@ -63,18 +63,19 @@ let {
     display: inline-grid;
     place-items: center;
     box-sizing: border-box;
-    inline-size: max(2rem, var(--smrt-control-target-min, 0px));
-    block-size: max(2rem, var(--smrt-control-target-min, 0px));
+    inline-size: max(var(--smrt-control-height-small), var(--smrt-control-target-min, 0px));
+    block-size: max(var(--smrt-control-height-small), var(--smrt-control-target-min, 0px));
     padding: 0;
     border: 0;
-    border-radius: var(--smrt-radius-medium, 0.5rem);
+    border-radius: var(--smrt-control-radius);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
   }
-  .smrt-shell-icon-button:hover { background: var(--smrt-color-surface-container-high); color: var(--smrt-color-on-surface); }
+  .smrt-shell-icon-button:hover { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); color: var(--smrt-color-on-surface); }
+  .smrt-shell-icon-button:active { background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent); }
   .smrt-shell-icon-button[aria-pressed='true'] { color: var(--smrt-color-on-surface); }
-  .smrt-shell-icon-button:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
-  .smrt-shell-icon-button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .smrt-shell-icon-button:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
+  .smrt-shell-icon-button:disabled { opacity: var(--smrt-state-disabled); cursor: not-allowed; }
 }
 </style>

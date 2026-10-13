@@ -104,8 +104,10 @@ function accessibleName(item: PhoneBottomBarEntry): string {
     box-sizing: content-box;
     block-size: 3.5rem;
     padding: 0 var(--smrt-spacing-2) env(safe-area-inset-bottom);
-    border-block-start: 1px solid var(--smrt-color-outline-variant);
-    background: var(--smrt-color-surface);
+    border-block-start: var(--smrt-hairline);
+    background: var(--smrt-glass-surface);
+    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
   }
 
   .smrt-phone-bottom-bar__item {
@@ -117,13 +119,42 @@ function accessibleName(item: PhoneBottomBarEntry): string {
     min-block-size: var(--smrt-touch-target-min);
     padding: var(--smrt-spacing-1) 0;
     border: 0;
-    border-radius: var(--smrt-radius-lg);
+    border-radius: var(--smrt-control-radius);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
     font: inherit;
     text-decoration: none;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  .smrt-phone-bottom-bar__item {
+    position: relative;
+  }
+
+  /* State layer over the whole tab; the selected indicator pill keeps its
+     container fill. */
+  .smrt-phone-bottom-bar__item::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .smrt-phone-bottom-bar__item:hover::after {
+    opacity: var(--smrt-state-hover);
+  }
+
+  .smrt-phone-bottom-bar__item:active::after {
+    opacity: var(--smrt-state-pressed);
+  }
+
+  .smrt-phone-bottom-bar__item:disabled,
+  .smrt-phone-bottom-bar__item[aria-disabled='true'] {
+    opacity: var(--smrt-state-disabled);
   }
 
   .smrt-phone-bottom-bar__item.active {
@@ -136,8 +167,8 @@ function accessibleName(item: PhoneBottomBarEntry): string {
   }
 
   .smrt-phone-bottom-bar__item:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(-1 * var(--smrt-focus-ring-width));
   }
 
   .smrt-phone-bottom-bar__icon {
@@ -175,7 +206,7 @@ function accessibleName(item: PhoneBottomBarEntry): string {
     inset-inline-end: 1rem;
     inline-size: 0.6rem;
     block-size: 0.6rem;
-    border: 2px solid var(--smrt-color-surface);
+    border: var(--smrt-focus-ring-width) solid var(--smrt-surface-panel);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary);
   }
