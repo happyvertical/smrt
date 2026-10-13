@@ -27,7 +27,11 @@ const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const LAYERS_CSS = join(ROOT, 'packages/smrt-ui/src/styles/layers.css');
 
 /** App surfaces the monorepo owns; scanned fail-level for unlayered resets (#3862). */
-const OWN_APP_SURFACES = ['packages/template-sveltekit/template', 'packages/smrt-playground/host'];
+const OWN_APP_SURFACES = [
+  'packages/template-sveltekit/template',
+  'packages/smrt-playground/host',
+  'packages/products/src/app',
+];
 
 /**
  * Svelte files whose `<style>` still carries `!important`, with the exact count
