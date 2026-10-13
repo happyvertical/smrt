@@ -1,5 +1,11 @@
 # @happyvertical/smrt-assets-ergot
 
+## 0.55.21
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.55.21
+
 ## 0.55.20
 
 ### Patch Changes

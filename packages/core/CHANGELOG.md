@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.55.21
+
+### Patch Changes
+
+- ### Features
+  
+  - cookbook theme radius, density and contrast; forced-colors support (#3912) (theme)
+- @happyvertical/smrt-config@0.55.21
+  - @happyvertical/smrt-scanner@0.55.21
+  - @happyvertical/smrt-types@0.55.21
+
 ## 0.55.20
 
 ### Patch Changes
