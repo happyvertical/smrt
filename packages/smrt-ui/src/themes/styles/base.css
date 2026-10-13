@@ -263,16 +263,17 @@ time,
  * active` maps the theme onto the system palette. These two token blocks are
  * deliberately UNLAYERED: preset stylesheets declare their tokens unlayered on
  * `[data-theme][data-color-scheme]`, and an unlayered rule always beats a
- * layered one, so a layered override would never apply. `:is(html,
- * .smrt-theme-root)` raises specificity above the preset block and covers the
- * document root and the ThemeProvider root. The same values ship as
+ * layered one, so a layered override would never apply. The selectors match
+ * whichever element carries the theme attributes (document root, ThemeProvider
+ * root or a consumer wrapper) with one more attribute selector than the preset
+ * block (a repeated `[data-theme]` in the media block). The same values ship as
  * `FORCED_COLORS_TOKENS` (src/themes/forced-colors.ts): ThemeProvider appends
  * them inline so runtime themes cannot win; a unit test keeps both in step.
  * `[data-forced-colors]` is stamped by ThemeProvider and `themeScript()`;
  * tests can set it without media emulation. Components only consume tokens.
  */
 @media (forced-colors: active) {
-:is(html, .smrt-theme-root)[data-theme][data-color-scheme] {
+[data-theme][data-theme][data-color-scheme] {
   --smrt-hairline-color: CanvasText;
   --smrt-hairline-strong-color: CanvasText;
   --smrt-hairline: 1px solid CanvasText;
@@ -307,7 +308,7 @@ time,
 }
 }
 
-:is(html, .smrt-theme-root)[data-forced-colors][data-theme][data-color-scheme] {
+[data-forced-colors][data-theme][data-color-scheme] {
   --smrt-hairline-color: CanvasText;
   --smrt-hairline-strong-color: CanvasText;
   --smrt-hairline: 1px solid CanvasText;
@@ -355,6 +356,13 @@ time,
 
   :where(:disabled, [aria-disabled="true"]) {
     color: GrayText;
+  }
+
+  /* Elements that rely on the UA focus ring get the token ring instead (a
+     solid Highlight ring of a stated width); component rules still win. */
+  :where(a[href], button, summary, input, select, textarea, [tabindex], [role="tab"], [role="menuitem"], [role="option"]):where(:focus-visible) {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 }
 }
