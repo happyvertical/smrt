@@ -126,9 +126,8 @@ describe('importing providers/email enables the email client boundary', () => {
       '@happyvertical/smrt-core'
     );
     const read = vi.fn(async () => Buffer.from('attachment-bytes'));
-    registerOptionalDependency('@happyvertical/files', {
-      getFilesystem: async () => ({ read }),
-    });
+    const getFilesystem = vi.fn(async () => ({ read }));
+    registerOptionalDependency('@happyvertical/files', { getFilesystem });
     try {
       const { Attachment } = await import('../models/Attachment');
       const attachment = new Attachment({});
@@ -137,7 +136,12 @@ describe('importing providers/email enables the email client boundary', () => {
       const content = await attachment.readContent();
 
       expect(content?.toString()).toBe('attachment-bytes');
-      expect(read).toHaveBeenCalledWith('/stored/file.bin');
+      // An absolute path is rooted at its own directory and read raw (#3808).
+      expect(getFilesystem).toHaveBeenCalledWith({
+        type: 'local',
+        basePath: '/stored',
+      });
+      expect(read).toHaveBeenCalledWith('file.bin', { raw: true });
     } finally {
       // Restore runtime resolution for any later test in this worker.
       registerOptionalDependency('@happyvertical/files', undefined);
