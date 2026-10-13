@@ -90,6 +90,29 @@ describe('edge toggles are opt-in (default off)', () => {
     );
   });
 
+  it('names the left chevron after a host-configured panel label', () => {
+    render(Harness, {
+      edgeToggles: true,
+      config: { left: { initial: 'expanded', label: 'Packages' } },
+    });
+    const chevron = document.querySelector(
+      '.smrt-admin-shell__edge--left .smrt-admin-shell__edge-toggle--left',
+    );
+    expect(chevron?.getAttribute('aria-label')).toBe('Collapse Packages');
+    cleanup();
+    render(Harness, {
+      edgeToggles: true,
+      config: { left: { initial: 'expanded' } },
+    });
+    expect(
+      document
+        .querySelector(
+          '.smrt-admin-shell__edge--left .smrt-admin-shell__edge-toggle--left',
+        )
+        ?.getAttribute('aria-label'),
+    ).toBe('Collapse sidebar');
+  });
+
   it('accepts a per-edge map', () => {
     render(Harness, { edgeToggles: { bottom: true } });
     expect(

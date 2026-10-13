@@ -66,7 +66,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     watchFormActionBar,
   } from './mobile-shell-dom.js';
   import { tokenDuration } from './motion.js';
-  import { clampPanelSize, resolveHotkey } from './settings.js';
+  import {
+    clampPanelSize,
+    DEFAULT_PANEL_CONFIG,
+    resolveHotkey,
+  } from './settings.js';
   import { createShellState, type ShellState } from './state.svelte.js';
   import {
     resolveSlot,
@@ -917,6 +921,25 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     return shell.config.panels[edge].label;
   }
 
+  /**
+   * Accessible name of the left chevron. A host-configured panel label
+   * ("Packages") names the panel; the default region name ("Left sidebar")
+   * is a developer term, so the name is then just "Collapse sidebar".
+   */
+  function leftEdgeToggleName(): string {
+    const label = labelFor('left');
+    const expanded = edgeExpanded('left');
+    if (label && label !== DEFAULT_PANEL_CONFIG.left.label) {
+      return t(
+        M[expanded ? 'ui.admin_shell.collapse_panel' : 'ui.admin_shell.expand_panel'],
+        { panel: label },
+      );
+    }
+    return t(
+      M[expanded ? 'ui.admin_shell.collapse_sidebar' : 'ui.admin_shell.expand_sidebar'],
+    );
+  }
+
   function toggleMenu(): void {
     shell.setPanelState('left', edgeExpanded('left') ? 'collapsed' : 'expanded');
   }
@@ -1047,7 +1070,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     <!-- The left toggle is an icon-only chevron: it points the way the panel
          will move (left to collapse, right to expand). Its accessible name
          carries the action and the hotkey rides in the tooltip. -->
-    {@const name = t(M[edgeExpanded('left') ? 'ui.admin_shell.collapse_sidebar' : 'ui.admin_shell.expand_sidebar'])}
+    {@const name = leftEdgeToggleName()}
     <Button
       variant="ghost"
       size="sm"
