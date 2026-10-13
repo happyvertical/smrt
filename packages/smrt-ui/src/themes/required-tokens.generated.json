@@ -4,6 +4,8 @@
     "--smrt-color-background",
     "--smrt-color-error",
     "--smrt-color-error-container",
+    "--smrt-color-info",
+    "--smrt-color-info-container",
     "--smrt-color-inverse-on-surface",
     "--smrt-color-inverse-surface",
     "--smrt-color-on-background",
