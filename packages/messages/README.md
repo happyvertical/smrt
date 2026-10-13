@@ -54,15 +54,22 @@ if (!result.success) {
 // `send({ attachments })`. Both reach the transport together; a stored file
 // that cannot be read fails the send (sendStatus 'failed', sendError set)
 // instead of being dropped.
+const order = await emails.create({
+  accountId: account.id,
+  subject: 'Purchase order PO-1042',
+  toAddresses: JSON.stringify([{ address: 'orders@vendor.example' }]),
+  textBody: 'Please find our purchase order attached.',
+  hasAttachments: true,
+});
 const attachments = await AttachmentCollection.create({ db });
 await attachments.create({
-  messageId: email.id,
+  messageId: order.id,
   filename: 'PO-1042.pdf',
   contentType: 'application/pdf',
   size: pdfBytes.length,
   filePath: '/data/po/PO-1042.pdf',
 });
-await email.send({
+await order.send({
   attachments: [
     { filename: 'terms.txt', contentType: 'text/plain', content: termsBytes },
   ],

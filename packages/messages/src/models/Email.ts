@@ -403,12 +403,23 @@ export class Email extends Message {
    * Send this email. Accepts {@link SendEmailOptions}, including send-time
    * `attachments`, which `EmailSender` merges with the stored rows (#3808).
    */
-  override send(options?: SendEmailOptions): Promise<MessageSendResult> {
+  override async send(options?: SendEmailOptions): Promise<MessageSendResult> {
+    await this.markHasAttachments(options);
     return super.send(options);
   }
 
   /** Retry a failed send; takes the same options as {@link Email.send}. */
-  override retrySend(options?: SendEmailOptions): Promise<MessageSendResult> {
+  override async retrySend(
+    options?: SendEmailOptions,
+  ): Promise<MessageSendResult> {
+    await this.markHasAttachments(options);
     return super.retrySend(options);
+  }
+
+  /** Persist `hasAttachments` when send-time bytes are about to be attached. */
+  private async markHasAttachments(options?: SendEmailOptions): Promise<void> {
+    if (!options?.attachments?.length || this.hasAttachments) return;
+    this.hasAttachments = true;
+    if (this.isPersisted) await this.save();
   }
 }

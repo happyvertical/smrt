@@ -266,6 +266,8 @@ describe('Email.send with stored attachments', () => {
     const filePath = join(dir, 'PO-1042.pdf');
     writeFileSync(filePath, PDF_BYTES);
     const email = await makeEmail();
+    email.hasAttachments = false;
+    await email.save();
     await storeAttachment(email.id ?? '', { filePath });
 
     const result = await email.send({
@@ -285,6 +287,9 @@ describe('Email.send with stored attachments', () => {
       'terms.txt',
     ]);
     expect(payload.attachments?.[1].content?.equals(TERMS_BYTES)).toBe(true);
+    expect(await reload(email.id ?? '')).toMatchObject({
+      hasAttachments: true,
+    });
   });
 
   it('fails the send and records the error when a stored file is missing', async () => {
