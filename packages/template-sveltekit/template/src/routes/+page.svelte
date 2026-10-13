@@ -19,7 +19,12 @@
     data.canCreate && (data.notes.length > 0 || composing),
   );
 
-  const submit: SubmitFunction = () => {
+  // Match `enhance`'s generics: a SubmitFunction with SvelteKit's default
+  // `Record<string, any>` params is not assignable to the action's argument.
+  const submit: SubmitFunction<
+    Record<string, unknown> | undefined,
+    Record<string, unknown> | undefined
+  > = () => {
     creating = true;
     return async ({ result, update }) => {
       try {

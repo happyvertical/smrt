@@ -3728,6 +3728,9 @@ importers:
       svelte:
         specifier: ^5.57.1
         version: 5.57.1
+      svelte-check:
+        specifier: ^4.7.6
+        version: 4.7.6(picomatch@4.0.5)(svelte@5.57.1)(typescript@6.0.3)
       typescript:
         specifier: 6.0.3
         version: 6.0.3
