@@ -185,6 +185,14 @@ database-backed dimension facets. A descriptor marks group/time fields as
 combine the two scopes, but an OR or NOT cannot mix them, because moving either
 side across a source `WHERE`/`HAVING` boundary would change its meaning.
 
+Materialized query results normalize hydrated values against their declared
+column types. Objects in scalar columns become JSON text; JSON columns retain
+structured values. Date-only and timezone-less timestamps use UTC, matching
+SQLite storage, and temporal facet buckets follow the same rule. Strings over
+4096 characters are shortened with `truncated` and a warning, except row IDs:
+identities are never rewritten, and unsupported IDs fail validation. Unsafe bigint
+values fail instead of silently losing precision.
+
 The materialized collection executes the normalized, allowlisted predicate as
 parameterized SQL and applies it identically to rows, totals, and facets. It
 never accepts raw SQL, source field paths, tenant ids, or principal ids.
