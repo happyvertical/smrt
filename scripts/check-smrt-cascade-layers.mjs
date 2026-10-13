@@ -18,9 +18,16 @@ import {
   hasOrderDeclaration,
 } from './cascade-layers-lib.mjs';
 import { listCssStylesheets, listSvelteSources } from './codemod-smrt-layers.mjs';
+import {
+  RESET_RECIPE,
+  scanProjectForUnlayeredResets,
+} from '../packages/cli/src/commands/cascade-layers-reset-scan.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const LAYERS_CSS = join(ROOT, 'packages/smrt-ui/src/styles/layers.css');
+
+/** App surfaces the monorepo owns; scanned fail-level for unlayered resets (#3862). */
+const OWN_APP_SURFACES = ['packages/template-sveltekit/template', 'packages/smrt-playground/host'];
 
 /**
  * Svelte files whose `<style>` still carries `!important`, with the exact count
@@ -111,6 +118,17 @@ function main() {
   }
 
   const violations = findViolations(files);
+
+  // Our own app surfaces (#3862): an unlayered universal reset in an app we
+  // ship would beat every smrt layer in that app, so it fails here.
+  for (const surface of OWN_APP_SURFACES) {
+    const result = scanProjectForUnlayeredResets(join(ROOT, surface), { requireSmrtDependency: false });
+    for (const finding of result.findings) {
+      violations.push(
+        `${surface}/${finding.file}:${finding.line}: unlayered universal reset (${finding.selector}); ${RESET_RECIPE}`,
+      );
+    }
+  }
 
   try {
     const layersCss = readFileSync(LAYERS_CSS, 'utf8');
