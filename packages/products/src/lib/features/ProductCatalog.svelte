@@ -172,7 +172,7 @@ function handleCancelForm() {
       <div class="form-container">
         <h3>{editingProduct ? 'Edit Product' : 'Create New Product'}</h3>
         <ProductForm
-          product={editingProduct}
+          product={editingProduct ?? undefined}
           onSubmit={handleSubmitProduct}
           onCancel={handleCancelForm}
           loading={productStore.loading}

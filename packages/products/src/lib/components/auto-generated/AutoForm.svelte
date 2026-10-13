@@ -125,7 +125,7 @@ function _getFieldType(
           value={formData[field.name]}
           label={field.label}
           placeholder={field.placeholder}
-          required={field.required || false}
+          required={'required' in field && field.required}
           {readonly}
           onUpdate={(value) => updateField(field.name, value)}
         />

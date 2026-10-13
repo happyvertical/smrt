@@ -52,7 +52,7 @@ const { product, onEdit, onDelete }: Props = $props();
     {/if}
 
     {#if onDelete}
-      <Button type="button" variant="danger" size="sm" onclick={() => onDelete?.(product.id)}>
+      <Button type="button" variant="danger" size="sm" onclick={() => product.id && onDelete?.(product.id)}>
         Delete
       </Button>
     {/if}

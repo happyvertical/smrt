@@ -118,7 +118,7 @@ async function addProduct() {
       name="name"
       bind:value={newName}
       placeholder={t(M['products.live_list.name_placeholder'])}
-      aria-label={t(M['products.live_list.name_placeholder'])}
+      label={t(M['products.live_list.name_placeholder'])}
       disabled={submitting}
     />
     <Button type="submit" variant="primary" disabled={submitting || !newName.trim()}>
