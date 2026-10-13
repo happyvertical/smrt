@@ -15,7 +15,7 @@ let {
   layoutEditing?: boolean;
   user?: { id: string; name: string; email: string } | null;
   signOutHref?: string;
-  onSignOut?: () => void;
+  onSignOut?: () => void | Promise<void>;
 } = $props();
 </script>
 

@@ -185,7 +185,11 @@ presented as WebMCP execution.
   and fails with a named error if the binary is missing, so a host-global
   `smrt` cannot make a local run pass where CI fails. Identity and state-root
   values it checks come from `@happyvertical/smrt-app-runtime`.
-- `pnpm test:e2e` runs the browser half.
+- `pnpm test:e2e` runs the browser half. `e2e/typecheck.spec.ts` also runs the
+  copied app's own `svelte-kit sync` + `svelte-check` after setup, because the
+  package `typecheck` (`tsc` over `tsconfig.fixture.json`) never sees the
+  template's `.svelte` files; `svelte-check` is a devDependency so the harness
+  links it into the copy (#3860).
 - `pnpm test:m5` runs the whole aggregate gate through
   `e2e/support/gate.mjs`, which requires a PostgreSQL service and fails when a
   required profile case is missing rather than merely absent from the log.

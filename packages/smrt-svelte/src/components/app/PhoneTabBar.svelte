@@ -18,7 +18,11 @@ import {
   SHELL_PLACEHOLDER_ICON,
 } from '../workspace/admin-shell/shell-icons.js';
 import type { PhoneBottomBarEntry } from '../workspace/admin-shell/types.js';
-import type { DockToggle } from './dock-toggle.js';
+import {
+  type DockToggle,
+  resolveDockToggle,
+  runDockTogglePress,
+} from './dock-toggle.js';
 import {
   isTabCurrent,
   type PhoneTabNavEntry,
@@ -93,17 +97,38 @@ const items = $derived.by(() => {
   }));
   if (dockToggle) {
     const tool = dockToggle.tool;
-    out.push({
-      id: `dock:${tool}`,
-      label: dockToggle.label,
-      iconName: dockIcon(dockToggle),
-      active: dock.isOpen(tool),
-      expanded: dock.isOpen(tool),
-      controls: 'smrt-admin-shell-right-panel',
-      onclick: () => {
-        if (dock.has(tool) && dock.available) dock.toggle(tool);
-      },
-    });
+    const resolution = resolveDockToggle(
+      dockToggle,
+      dock.has(tool) && dock.available,
+    );
+    const toggling = resolution.mode === 'toggle';
+    const label = resolution.notReady
+      ? (dockToggle.labelNotReady ??
+        t(M['ui.dock_toggles.set_up'], { label: dockToggle.label }))
+      : dockToggle.label;
+    const press = (event: MouseEvent) => {
+      if (!runDockTogglePress(dockToggle, event, resolution)) return;
+      if (toggling) dock.toggle(tool);
+    };
+    out.push(
+      resolution.mode === 'link'
+        ? {
+            id: `dock:${tool}`,
+            label,
+            iconName: dockIcon(dockToggle),
+            href: dockToggle.href,
+            onclick: press,
+          }
+        : {
+            id: `dock:${tool}`,
+            label,
+            iconName: dockIcon(dockToggle),
+            active: toggling && dock.isOpen(tool),
+            expanded: toggling ? dock.isOpen(tool) : undefined,
+            controls: toggling ? 'smrt-admin-shell-right-panel' : undefined,
+            onclick: press,
+          },
+    );
   } else if (toolsTab) {
     out.push({
       id: 'tools',

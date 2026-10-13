@@ -10,8 +10,8 @@ interface Props {
    * `onSignOut` for that.
    */
   signOutHref?: string;
-  /** Called by the sign-out control instead of following `signOutHref`. */
-  onSignOut?: () => void;
+  /** Called by the sign-out control instead of following `signOutHref`; may be async (busy while pending, inline error on rejection). */
+  onSignOut?: () => unknown;
 }
 
 const { signOutHref, onSignOut }: Props = $props();

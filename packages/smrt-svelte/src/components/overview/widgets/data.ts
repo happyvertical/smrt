@@ -27,6 +27,12 @@ export interface ChartWidgetData {
   format?: WidgetValueFormat;
   currency?: string;
   href?: string;
+  /**
+   * `stat` style: percent change of the headline (the last point) against the
+   * period before (12.5 means +12.5%). Absent, it is derived from the last two
+   * points.
+   */
+  delta?: number | null;
 }
 
 /** `records`: the rows to list. The loader chooses the title field. */
@@ -44,15 +50,18 @@ export interface RecordListWidgetData {
   href?: string;
 }
 
+/** One page a shortcut links to (#3888). `count` is the record count, when known. */
+export interface ShortcutEntry {
+  href: string;
+  label: string;
+  icon?: string;
+  description?: string;
+  count?: number;
+}
+
 /** `shortcuts`: cards that link to pages. */
 export interface ShortcutsWidgetData {
-  items: {
-    id: string;
-    label: string;
-    href: string;
-    icon?: string;
-    description?: string;
-  }[];
+  items: (ShortcutEntry & { id: string })[];
 }
 
 /** The part of a shell nav model section `shortcutsFromNav` reads. */

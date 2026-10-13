@@ -135,6 +135,7 @@ export const M = defineMessages({
   'ui.shell_settings.account_email': 'Email',
   'ui.shell_settings.account_signed_out': 'You are not signed in.',
   'ui.shell_settings.sign_out': 'Sign out',
+  'ui.shell_settings.sign_out_failed': "Couldn't sign out. Try again.",
   'ui.shell_settings.layout': 'Layout',
   'ui.shell_settings.hide': 'Hide',
   'ui.shell_settings.show': 'Show',
@@ -250,4 +251,7 @@ export const M = defineMessages({
   'ui.app_shell.color_scheme_toggle': 'Toggle color scheme',
   'ui.app_shell.command_palette_item': 'Search',
   'ui.app_shell.account_settings': 'Settings',
+
+  // components/app/DockToggles not-ready state (issue #3860)
+  'ui.dock_toggles.set_up': 'Set up {label}',
 });
