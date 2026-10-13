@@ -109,3 +109,12 @@ See [core recipes](../core/agents/recipes.md).
 - Raw aggregate refreshes must explicitly filter `tenant_id`; the tenancy interceptor only protects normal collection reads.
 - Scheduled/on-change refreshes enqueue `SmrtReportRefreshTask.run()` through `@happyvertical/smrt-jobs`; do not add a separate report queue.
 - `SmrtReportCollection` is a framework collection base (core's `SMRT_COLLECTION_BASE_NAMES`): a report collection never owns its model's table, even when an app manifest attributes the two to different packages. `pnpm test:postgres` runs the `*.optional.test.ts` lane (#3110).
+
+## Package registration
+
+`src/__smrt-register__.ts` embeds the provider manifest during library builds.
+Import it before model decorators, including model-bearing subpaths (`state`
+and `scheduler`), so consumer SSR bundles retain reports-qualified identities.
+The bundle gate executes these public entries in a fresh consumer process.
+Audit #3525 found no other published domain model package missing its shim;
+packages without one contain framework utilities or example/test decorators.
