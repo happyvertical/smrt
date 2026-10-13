@@ -24,12 +24,14 @@ function phoneBlock(source: string): string {
 describe('phone touch targets', () => {
   it('Button is at least 44px tall on phones, in every size', () => {
     const phone = phoneBlock(read('ui/Button.svelte'));
-    expect(phone).toMatch(/\.button\s*\{[^}]*min-block-size:\s*2\.75rem/);
+    expect(phone).toMatch(
+      /\.smrt-button__root\s*\{[^}]*min-block-size:\s*2\.75rem/,
+    );
   });
 
   it('Switch is at least 44px tall on phones', () => {
     expect(read('forms/Switch.svelte')).toMatch(
-      /@media \(max-width: 48rem\)\s*\{\s*\.switch\s*\{\s*min-block-size:\s*2\.75rem/,
+      /@media \(max-width: 48rem\)\s*\{\s*\.smrt-switch__root\s*\{\s*min-block-size:\s*2\.75rem/,
     );
   });
 

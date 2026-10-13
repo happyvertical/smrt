@@ -2031,7 +2031,7 @@ function handleEditorDragEnd() {
     color: var(--smrt-color-on-surface-variant);
   }
 
-  .format-select :global(.select) {
+  .format-select :global([data-smrt-component="Select"]) {
     min-height: 2rem;
     border: var(--smrt-hairline);
     border-radius: 0.45rem;

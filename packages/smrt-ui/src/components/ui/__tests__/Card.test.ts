@@ -28,9 +28,9 @@ describe('Card', () => {
     const { container } = render(Card, {
       props: { children: textSnippet('Body') },
     });
-    const card = container.querySelector('.card');
-    expect(card).toHaveClass('default');
-    expect(card).toHaveClass('padding-md');
+    const card = container.querySelector('.smrt-card__root');
+    expect(card).toHaveClass('smrt-card__default');
+    expect(card).toHaveClass('smrt-card__padding-md');
   });
 
   it('reflects an explicit variant and padding', () => {
@@ -41,21 +41,25 @@ describe('Card', () => {
         children: textSnippet('Body'),
       },
     });
-    const card = container.querySelector('.card');
-    expect(card).toHaveClass('elevated');
-    expect(card).toHaveClass('padding-lg');
+    const card = container.querySelector('.smrt-card__root');
+    expect(card).toHaveClass('smrt-card__elevated');
+    expect(card).toHaveClass('smrt-card__padding-lg');
   });
 
   it('adds the hoverable class only when hoverable is true', () => {
     const { container: plain } = render(Card, {
       props: { children: textSnippet('Body') },
     });
-    expect(plain.querySelector('.card')).not.toHaveClass('hoverable');
+    expect(plain.querySelector('.smrt-card__root')).not.toHaveClass(
+      'smrt-card__hoverable',
+    );
 
     const { container: hover } = render(Card, {
       props: { hoverable: true, children: textSnippet('Body') },
     });
-    expect(hover.querySelector('.card')).toHaveClass('hoverable');
+    expect(hover.querySelector('.smrt-card__root')).toHaveClass(
+      'smrt-card__hoverable',
+    );
   });
 
   it('renders header and footer slots when provided', () => {
@@ -66,8 +70,8 @@ describe('Card', () => {
         children: textSnippet('Body'),
       },
     });
-    expect(container.querySelector('.card-header')).toBeInTheDocument();
-    expect(container.querySelector('.card-footer')).toBeInTheDocument();
+    expect(container.querySelector('.smrt-card__header')).toBeInTheDocument();
+    expect(container.querySelector('.smrt-card__footer')).toBeInTheDocument();
     expect(screen.getByText('Header')).toBeInTheDocument();
     expect(screen.getByText('Footer')).toBeInTheDocument();
   });
@@ -76,8 +80,8 @@ describe('Card', () => {
     const { container } = render(Card, {
       props: { children: textSnippet('Body') },
     });
-    expect(container.querySelector('.card-header')).toBeNull();
-    expect(container.querySelector('.card-footer')).toBeNull();
+    expect(container.querySelector('.smrt-card__header')).toBeNull();
+    expect(container.querySelector('.smrt-card__footer')).toBeNull();
   });
 
   it('forwards rest attributes (e.g. data-testid, aria-label) to the root', () => {
@@ -88,7 +92,7 @@ describe('Card', () => {
         children: textSnippet('Body'),
       },
     });
-    const card = container.querySelector('.card');
+    const card = container.querySelector('.smrt-card__root');
     expect(card).toHaveAttribute('data-testid', 'profile-card');
     expect(card).toHaveAttribute('aria-label', 'Profile');
   });

@@ -45,16 +45,16 @@ const {
 </script>
 
 <span
-  class="chip {size}"
-  class:selected
-  class:disabled
-  class:selectable
-  class:closeable data-smrt-component="Chip"
+  class="smrt-chip__root smrt-chip__{size}"
+  class:smrt-chip__selected={selected}
+  class:smrt-chip__disabled={disabled}
+  class:smrt-chip__selectable={selectable}
+  class:smrt-chip__closeable={closeable} data-smrt-component="Chip"
 >
   {#if selectable}
     <button
       type="button"
-      class="chip__body"
+      class="smrt-chip__body" data-smrt-part="body"
       aria-pressed={selected}
       {disabled}
       onclick={() => onselect?.()}
@@ -62,7 +62,7 @@ const {
       {#if children}{@render children()}{:else}{label}{/if}
     </button>
   {:else}
-    <span class="chip__body">
+    <span class="smrt-chip__body" data-smrt-part="body">
       {#if children}{@render children()}{:else}{label}{/if}
     </span>
   {/if}
@@ -70,7 +70,7 @@ const {
   {#if closeable}
     <button
       type="button"
-      class="chip__close"
+      class="smrt-chip__close" data-smrt-part="close"
       aria-label={label ? `Remove ${label}` : 'Remove'}
       {disabled}
       onclick={() => onclose?.()}
@@ -94,99 +94,104 @@ const {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .chip {
+@layer smrt.structure {
+  .smrt-chip__root {
     position: relative;
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
-    border-radius: var(--smrt-control-radius);
-    background: var(--smrt-surface-control);
-    color: var(--smrt-color-on-surface);
-    border: var(--smrt-hairline);
-    font-weight: var(--smrt-control-weight);
     max-width: 100%;
   }
-
-  /* State layer: currentColor mixed at the theme's state opacity. */
-  .chip::after {
+  .smrt-chip__root::after {
     content: '';
     position: absolute;
     inset: 0;
-    border-radius: inherit;
-    background: transparent;
     pointer-events: none;
   }
-
-  .chip.selectable:hover::after {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
-  }
-
-  .chip.selectable:active::after {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
-  }
-
-  .chip.sm {
+  .smrt-chip__root.smrt-chip__sm {
     padding: 0 var(--smrt-spacing-1);
-    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
-  .chip.sm {
-    border-radius: var(--smrt-control-radius-small);
-  }
-  .chip.md {
+  .smrt-chip__root.smrt-chip__md {
     min-block-size: var(--smrt-control-height-small);
     padding: 0 var(--smrt-spacing-2);
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
-
-  .chip.selected {
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
-    border-color: var(--smrt-color-primary);
-  }
-
-  .chip.disabled {
-    opacity: var(--smrt-state-disabled);
+  .smrt-chip__root.smrt-chip__disabled {
     pointer-events: none;
   }
-
-  .chip__body {
-    appearance: none;
-    background: none;
-    border: none;
-    color: inherit;
-    font: inherit;
+  .smrt-chip__body {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-1);
     cursor: default;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .chip.selectable .chip__body {
+  .smrt-chip__root.smrt-chip__selectable .smrt-chip__body {
     cursor: pointer;
   }
-
-  .chip__close {
-    appearance: none;
+  .smrt-chip__close {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    cursor: pointer;
+    padding: var(--smrt-spacing-1);
+  }
+}
+@layer smrt.theme {
+  .smrt-chip__root {
+    border-radius: var(--smrt-control-radius);
+    background: var(--smrt-surface-control);
+    color: var(--smrt-color-on-surface);
+    border: var(--smrt-hairline);
+    font-weight: var(--smrt-control-weight);
+  }
+  .smrt-chip__root::after {
+    border-radius: inherit;
+    background: transparent;
+  }
+  .smrt-chip__root.smrt-chip__selectable:hover::after {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+  .smrt-chip__root.smrt-chip__selectable:active::after {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
+  }
+  .smrt-chip__root.smrt-chip__sm {
+    font-size: var(--smrt-typography-label-small-size);
+  }
+  .smrt-chip__root.smrt-chip__sm {
+    border-radius: var(--smrt-control-radius-small);
+  }
+  .smrt-chip__root.smrt-chip__md {
+    font-size: var(--smrt-typography-label-large-size);
+  }
+  .smrt-chip__root.smrt-chip__selected {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-chip__root.smrt-chip__disabled {
+    opacity: var(--smrt-state-disabled);
+  }
+  .smrt-chip__body {
+    appearance: none;
     background: none;
     border: none;
     color: inherit;
-    cursor: pointer;
-    padding: var(--smrt-spacing-1);
+    font: inherit;
+  }
+  .smrt-chip__close {
+    appearance: none;
+    background: none;
+    border: none;
+    color: inherit;
     border-radius: var(--smrt-radius-full);
     opacity: 0.7;
   }
-  .chip__close:hover {
+  .smrt-chip__close:hover {
     opacity: 1;
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
   }
-
-  .chip__body:focus-visible,
-  .chip__close:focus-visible {
+  .smrt-chip__body:focus-visible,
+  .smrt-chip__close:focus-visible {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }

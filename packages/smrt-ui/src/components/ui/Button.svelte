@@ -29,7 +29,7 @@ export interface Props extends Omit<HTMLButtonAttributes, 'class' | 'href'> {
   /** Loading state */
   loading?: boolean;
   /**
-   * Extra class(es) appended after the base `button {variant} {size}` styling.
+   * Extra class(es) appended after the base `button smrt-button__{variant} smrt-button__{size}` styling.
    * Lets callers adopt Button for custom-styled buttons without losing their
    * own CSS (issue #1589) — the base button styling still applies.
    */
@@ -121,10 +121,10 @@ function handleClick(event: MouseEvent) {
     {target}
     {rel}
     {download}
-    data-density={density} class="button {variant} {size} {className}"
-    class:disabled={isDisabled}
-    class:full-width={fullWidth}
-    class:loading
+    data-density={density} class="smrt-button__root smrt-button__{variant} smrt-button__{size} {className}"
+    class:smrt-button__disabled={isDisabled}
+    class:smrt-button__full-width={fullWidth}
+    class:smrt-button__loading={loading}
     tabindex={isDisabled ? -1 : undefined}
     aria-disabled={isDisabled}
     aria-busy={loading}
@@ -132,9 +132,9 @@ function handleClick(event: MouseEvent) {
     {...linkProps()} data-smrt-component="Button"
   >
     {#if loading}
-      <span class="spinner" aria-hidden="true" data-smrt-part="spinner"></span>
+      <span class="smrt-button__spinner" aria-hidden="true" data-smrt-part="spinner"></span>
     {/if}
-    <span class="content" class:loading data-smrt-part="label">
+    <span class="smrt-button__content" class:smrt-button__loading={loading} data-smrt-part="label">
       {@render children?.()}
     </span>
   </a>
@@ -143,16 +143,16 @@ function handleClick(event: MouseEvent) {
     {type}
     disabled={isDisabled}
     aria-busy={loading}
-    data-density={density} class="button {variant} {size} {className}"
-    class:full-width={fullWidth}
-    class:loading
+    data-density={density} class="smrt-button__root smrt-button__{variant} smrt-button__{size} {className}"
+    class:smrt-button__full-width={fullWidth}
+    class:smrt-button__loading={loading}
     onclick={handleClick}
     {...rest} data-smrt-component="Button"
   >
     {#if loading}
-      <span class="spinner" aria-hidden="true" data-smrt-part="spinner"></span>
+      <span class="smrt-button__spinner" aria-hidden="true" data-smrt-part="spinner"></span>
     {/if}
-    <span class="content" class:loading data-smrt-part="label">
+    <span class="smrt-button__content" class:smrt-button__loading={loading} data-smrt-part="label">
       {@render children?.()}
     </span>
   </button>
@@ -160,171 +160,157 @@ function handleClick(event: MouseEvent) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .button {
+@layer smrt.structure {
+  .smrt-button__root {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: var(--smrt-spacing-2);
     position: relative;
-    font-weight: var(--smrt-control-weight);
-    border-radius: var(--smrt-control-radius);
-    transition: all var(--smrt-duration-short2) var(--smrt-easing-standard);
     cursor: pointer;
-    text-decoration: none;
-    border: 1px solid transparent;
   }
-
-  /* One state layer for every variant: currentColor mixed at the theme's
-     state opacity. Per-variant tweaks use --smrt-button-state-* names. */
-  .button::after {
+  .smrt-button__root::after {
     content: '';
     position: absolute;
     inset: 0;
-    border-radius: inherit;
-    background: transparent;
     pointer-events: none;
-    transition: background-color var(--smrt-duration-short2) var(--smrt-easing-standard);
   }
-
-  .button:hover:not(:disabled):not(.disabled)::after {
-    background: color-mix(
-      in srgb,
-      currentColor calc(var(--smrt-state-hover) * 100%),
-      transparent
-    );
-  }
-
-  .button:active:not(:disabled):not(.disabled)::after {
-    background: color-mix(
-      in srgb,
-      currentColor calc(var(--smrt-state-pressed) * 100%),
-      transparent
-    );
-  }
-
-  /* Sizes */
-  .sm {
-    border-radius: var(--smrt-control-radius-small);
+  .smrt-button__sm {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    font-size: var(--smrt-typography-body-medium-size);
   }
-
-  .md {
+  .smrt-button__md {
     padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
-    font-size: var(--smrt-typography-body-large-size);
   }
-
-  .lg {
+  .smrt-button__lg {
     padding: var(--smrt-spacing-4) var(--smrt-spacing-6);
-    font-size: var(--smrt-typography-title-medium-size);
   }
-
-  /* Variants */
-  .primary {
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-  }
-
-
-  .secondary {
-    background: var(--smrt-surface-control);
-    color: var(--smrt-color-primary);
-    border-color: var(--smrt-color-primary);
-  }
-
-
-  .ghost {
-    background: transparent;
-    color: var(--smrt-color-primary);
-  }
-
-
-  .danger {
-    background: var(--smrt-color-error);
-    color: var(--smrt-color-on-error);
-  }
-
-
-  /* Full width */
-  .full-width {
+  .smrt-button__full-width {
     width: 100%;
   }
-
-  /* Loading state */
-  .loading {
+  .smrt-button__loading {
     position: relative;
   }
-
-  .spinner {
+  .smrt-button__spinner {
     position: absolute;
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
     width: 1em;
     height: 1em;
-    border: 2px solid currentColor;
-    border-right-color: transparent;
-    border-radius: var(--smrt-radius-full);
-    animation: spin 0.75s linear infinite;
   }
-
-  @keyframes spin {
-    from { transform: translate(-50%, -50%) rotate(0deg); }
-    to { transform: translate(-50%, -50%) rotate(360deg); }
-  }
-
-  /* Lay out the button's own children. The children render inside this wrapper
-     span, so the button-level `gap` never reaches them — without making the
-     wrapper itself a flex row, an icon + label (`<Button><svg/>Save</Button>`)
-     would render with no gap. Making `.content` a centered flex row lays out
-     multi-child buttons (icon+text, label+count) correctly after the #1589
-     migration, instead of needing per-button CSS to reach into `.content`. The
-     wrapper is shrink-to-fit, so a caller wanting a spread layout must also give
-     it width — e.g. a full-width button with
-     `.x :global(.content) { width: 100%; justify-content: space-between }`. */
-  .content {
+  .smrt-button__content {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: var(--smrt-spacing-2);
   }
-
-  .content.loading {
+  .smrt-button__content.smrt-button__loading {
     opacity: 0;
   }
-
-  /* Disabled state */
-  .button:disabled,
-  .button.disabled {
-    opacity: var(--smrt-state-disabled);
+  .smrt-button__root:disabled,
+  .smrt-button__root.smrt-button__disabled {
     cursor: not-allowed;
     pointer-events: none;
   }
-
-  /* Focus state */
-  .button:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-
-  /* Phones: every size is at least a 44px touch target. */
   @media (max-width: 48rem) {
-    .button {
+    .smrt-button__root {
       min-block-size: 2.75rem;
     }
   }
-
-  /* Reduced motion */
+  .smrt-button__root[data-density='touch'] {
+    --smrt-button-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-button__root[data-density='comfortable'] {
+    --smrt-button-target-min: 0px;
+  }
+  .smrt-button__root {
+    min-height: max(var(--smrt-control-height), var(--smrt-button-target-min, var(--smrt-control-target-min)));
+    min-width: var(--smrt-button-target-min, var(--smrt-control-target-min));
+  }
+  .smrt-button__root.smrt-button__sm {
+    min-height: max(var(--smrt-control-height-small), var(--smrt-button-target-min, var(--smrt-control-target-min)));
+  }
+}
+@layer smrt.theme {
+  .smrt-button__root {
+    font-weight: var(--smrt-control-weight);
+    border-radius: var(--smrt-control-radius);
+    transition: all var(--smrt-duration-short2) var(--smrt-easing-standard);
+    text-decoration: none;
+    border: 1px solid transparent;
+  }
+  .smrt-button__root::after {
+    border-radius: inherit;
+    background: transparent;
+    transition: background-color var(--smrt-duration-short2) var(--smrt-easing-standard);
+  }
+  .smrt-button__root:hover:not(:disabled):not(.smrt-button__disabled)::after {
+    background: color-mix(
+      in srgb,
+      currentColor calc(var(--smrt-state-hover) * 100%),
+      transparent
+    );
+  }
+  .smrt-button__root:active:not(:disabled):not(.smrt-button__disabled)::after {
+    background: color-mix(
+      in srgb,
+      currentColor calc(var(--smrt-state-pressed) * 100%),
+      transparent
+    );
+  }
+  .smrt-button__sm {
+    border-radius: var(--smrt-control-radius-small);
+    font-size: var(--smrt-typography-body-medium-size);
+  }
+  .smrt-button__md {
+    font-size: var(--smrt-typography-body-large-size);
+  }
+  .smrt-button__lg {
+    font-size: var(--smrt-typography-title-medium-size);
+  }
+  .smrt-button__primary {
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+  }
+  .smrt-button__secondary {
+    background: var(--smrt-surface-control);
+    color: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-button__ghost {
+    background: transparent;
+    color: var(--smrt-color-primary);
+  }
+  .smrt-button__danger {
+    background: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
+  }
+  .smrt-button__spinner {
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: var(--smrt-radius-full);
+    animation: spin 0.75s linear infinite;
+  }
+  @keyframes spin {
+    from {
+      transform: translate(-50%, -50%) rotate(0deg);
+    }
+    to {
+      transform: translate(-50%, -50%) rotate(360deg);
+    }
+  }
+  .smrt-button__root:disabled,
+  .smrt-button__root.smrt-button__disabled {
+    opacity: var(--smrt-state-disabled);
+  }
+  .smrt-button__root:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
   @media (prefers-reduced-motion: reduce) {
-    .spinner {
+    .smrt-button__spinner {
       animation: none;
     }
   }
-
-  .button[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .button[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .button { min-height: max(var(--smrt-control-height), var(--smrt-control-target-min, 0px)); min-width: var(--smrt-control-target-min, 0px); }
-  .button.sm { min-height: max(var(--smrt-control-height-small), var(--smrt-control-target-min, 0px)); }
 }
 </style>

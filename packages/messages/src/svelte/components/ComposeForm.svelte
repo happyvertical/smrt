@@ -318,14 +318,14 @@ export interface Props {
   /*
    * The From <Select> and Subject/Channel <Input>s now render through smrt-ui's
    * form primitives. These are naked, borderless inline fields that sit on the
-   * `.field` row's bottom-border, so `.field :global(.select)` /
+   * `.field` row's bottom-border, so `.field :global([data-smrt-component="Select"])` /
    * `.field :global(.text-input)` pierce the child scopes to strip the
    * primitives' border / background / focus box-shadow and restore the flush
    * inline look. `appearance: auto` brings back the Select's native arrow (the
    * primitive paints a chevron on its own background, which we've cleared) —
    * issue #1589.
    */
-  .field :global(.select),
+  .field :global([data-smrt-component="Select"]),
   .field :global(.text-input) {
     flex: 1;
     border: none;
@@ -338,12 +338,12 @@ export interface Props {
     color: var(--smrt-color-on-surface);
   }
 
-  .field :global(.select) {
+  .field :global([data-smrt-component="Select"]) {
     appearance: auto;
     cursor: pointer;
   }
 
-  .field :global(.select):focus,
+  .field :global([data-smrt-component="Select"]):focus,
   .field :global(.text-input):focus {
     border: none;
     box-shadow: none;

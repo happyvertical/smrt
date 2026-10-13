@@ -15,7 +15,10 @@ import Switch from '../Switch.svelte';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = (name: string) =>
-  readFileSync(resolve(here, '..', `${name}.svelte`), 'utf8');
+  readFileSync(resolve(here, '..', `${name}.svelte`), 'utf8').replace(
+    /\s+/g,
+    ' ',
+  );
 
 describe.each(['Checkbox', 'Radio', 'Switch'])('%s hit area', (name) => {
   const css = source(name).slice(source(name).indexOf('<style>'));
@@ -35,7 +38,7 @@ describe.each(['Checkbox', 'Radio', 'Switch'])('%s hit area', (name) => {
 describe.each(['Checkbox', 'Radio'])('%s in table cells', (name) => {
   it('never grows horizontally out of the cell', () => {
     expect(source(name)).toMatch(
-      /:global\(:is\(td, th\)\) \.(checkbox|radio)::before \{ inline-size: var\(--smrt-(checkbox|radio)-box\)/,
+      /:global\(:is\(td, th\)\) \.(smrt-checkbox__root|radio)::before \{ inline-size: var\(--smrt-(checkbox|radio)-box\)/,
     );
   });
 });
@@ -43,7 +46,7 @@ describe.each(['Checkbox', 'Radio'])('%s in table cells', (name) => {
 describe.each(['Checkbox', 'Radio'])('%s beside other content', (name) => {
   it('keeps to its own column unless it stands alone, so it never covers a neighbouring link or text', () => {
     expect(source(name)).toMatch(
-      /\.(checkbox|radio):not\(:only-child\)::before \{ inline-size: var\(--smrt-(checkbox|radio)-box\); margin-inline-start: calc\(var\(--smrt-(checkbox|radio)-box\) \/ -2\)/,
+      /\.(smrt-checkbox__root|radio):not\(:only-child\)::before \{ inline-size: var\(--smrt-(checkbox|radio)-box\); margin-inline-start: calc\(var\(--smrt-(checkbox|radio)-box\) \/ -2\)/,
     );
   });
 });

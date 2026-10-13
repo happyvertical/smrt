@@ -204,7 +204,7 @@ function handleSubmit(event: Event) {
   /* Error border on the migrated <Input>. The primitive renders the inner
      <input class="input error"> inside its own component, so the scoped class
      can't reach it without :global (#1589). */
-  .product-form-shell :global(.input.error) {
+  .product-form-shell :global([data-smrt-component="Input"].error) {
     border-color: var(--smrt-color-error);
   }
 

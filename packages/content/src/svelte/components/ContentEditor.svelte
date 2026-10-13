@@ -1859,7 +1859,7 @@ function removeAsset(id: string) {
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
 
-  .evidence-bulk-toolbar :global(.select) {
+  .evidence-bulk-toolbar :global([data-smrt-component="Select"]) {
     border: var(--smrt-hairline);
     border-radius: 0.375rem;
     padding: 0.25rem 0.5rem;
@@ -2037,7 +2037,7 @@ function removeAsset(id: string) {
     gap: 0.5rem;
   }
   
-  .add-reference-row :global(.input) {
+  .add-reference-row :global([data-smrt-component="Input"]) {
     flex: 1;
   }
 
