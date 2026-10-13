@@ -20,6 +20,7 @@ import {
   type JobExecutionContext,
   type SmrtJob,
   SmrtJobCollection,
+  type TaskRunner,
   validateCronExpression,
 } from '@happyvertical/smrt-jobs';
 import {
@@ -27,9 +28,13 @@ import {
   TenantScoped,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
-import type { DatabaseInterface, SqlAdapterType } from '@happyvertical/sql';
+import {
+  type DatabaseInterface,
+  type SqlAdapterType,
+  validateColumnName,
+} from '@happyvertical/sql';
 import { buildReportDefinition } from './compiler.js';
-import { refreshReport } from './refresh.js';
+import { refreshReport, tenantColumn } from './refresh.js';
 import {
   assertReportTablesReady,
   REPORT_SCHEDULER_TABLES,
@@ -474,12 +479,57 @@ export class SmrtReportRefreshTask extends SmrtObject {
       jobTenantId = tenantIdFromInstance(this);
     }
     await authorizeReportRefreshExecution(args, reportClass, jobTenantId);
+    let tenantIds = args.tenantIds;
+    // Only a signed global schedule can discover scopes. Tenant-bound jobs
+    // (including older queued static schedules) retain their single scope.
+    if (trigger === 'schedule' && jobTenantId === null) {
+      const definition = await buildReportDefinition(reportCtor);
+      if (definition.refresh?.tenantFanout === 'discover') {
+        if (tenantIds !== undefined) {
+          throw new Error(
+            'Discovered report refresh cannot also specify tenantIds',
+          );
+        }
+        const sourceTenant = await tenantColumn(definition.sourceClassName);
+        const reportTenant = await tenantColumn(definition.reportClassName);
+        if (!sourceTenant || !reportTenant) {
+          throw new Error(
+            'Tenant discovery requires tenant columns on the source and report',
+          );
+        }
+        const column = validateColumnName(sourceTenant);
+        const table = validateColumnName(definition.sourceTable);
+        const result = await this.db.query(
+          `SELECT DISTINCT CAST(${column} AS TEXT) AS tenant_id FROM ${table} WHERE ${column} IS NOT NULL ORDER BY tenant_id`,
+        );
+        tenantIds = result.rows.map((row) => {
+          if (
+            typeof row.tenant_id !== 'string' ||
+            row.tenant_id.trim().length === 0
+          ) {
+            throw new Error('Invalid tenant id discovered in report source');
+          }
+          return row.tenant_id;
+        });
+        // An empty array otherwise means a global refresh in refreshReport.
+        if (tenantIds.length === 0) {
+          return {
+            rowCount: 0,
+            refreshedAt: new Date(),
+            mode,
+            tenantId: null,
+            changedGroupCount: 0,
+            tenantResults: [],
+          };
+        }
+      }
+    }
     return refreshReport(reportCtor, {
       db: this.db,
       mode,
       trigger,
       tenantId: jobTenantId,
-      tenantIds: args.tenantIds,
+      tenantIds,
       adapterType: args.adapterType,
       scheduleId: args.scheduleId ?? args._scheduleId,
       changedRows: args.changedRows,
@@ -588,11 +638,12 @@ export async function ensureReportRefreshSchedules(
     if (!refresh || refresh.manual) continue;
 
     const reportClass = canonicalClassName(reportCtor);
-    const targetTenants = refresh.tenantFanout
-      ? options.tenantIds
-      : [null as string | null];
+    const targetTenants =
+      refresh.tenantFanout === true
+        ? options.tenantIds
+        : [null as string | null];
     if (
-      refresh.tenantFanout &&
+      refresh.tenantFanout === true &&
       (!targetTenants || targetTenants.length === 0)
     ) {
       throw new Error(
@@ -633,36 +684,39 @@ export async function ensureReportRefreshSchedules(
           schedule.mode,
         ]);
         const now = new Date().toISOString();
-        await options.db.upsert(
-          REPORT_SCHEDULES_TABLE,
-          ['report_class', 'scope_key', 'cron', 'mode'],
-          {
-            id,
-            slug: id,
-            context: scopeKey,
-            tenant_id: tenantId,
-            scope_key: scopeKey,
-            report_class: reportClass,
-            cron: schedule.cron,
-            trigger: schedule.trigger,
-            mode: schedule.mode,
-            enabled: true,
-            status: 'active',
-            next_run: getNextCronDate(schedule.cron).toISOString(),
-            last_run: null,
-            last_status: null,
-            last_error: null,
-            run_count: 0,
-            success_count: 0,
-            failure_count: 0,
-            running_count: 0,
-            max_concurrent: 1,
-            queue: options.queue ?? 'reports',
-            priority: options.priority ?? 70,
-            timeout: options.timeout ?? 3600000,
-            created_at: now,
-            updated_at: now,
-          },
+        const values = {
+          id,
+          slug: id,
+          context: scopeKey,
+          tenant_id: tenantId,
+          scope_key: scopeKey,
+          report_class: reportClass,
+          cron: schedule.cron,
+          trigger: schedule.trigger,
+          mode: schedule.mode,
+          enabled: true,
+          status: 'active',
+          next_run: getNextCronDate(schedule.cron).toISOString(),
+          last_run: null,
+          last_status: null,
+          last_error: null,
+          run_count: 0,
+          success_count: 0,
+          failure_count: 0,
+          running_count: 0,
+          max_concurrent: 1,
+          queue: options.queue ?? 'reports',
+          priority: options.priority ?? 70,
+          timeout: options.timeout ?? 3600000,
+          created_at: now,
+          updated_at: now,
+        };
+        const columns = Object.keys(values);
+        await options.db.query(
+          `INSERT INTO ${REPORT_SCHEDULES_TABLE} (${columns.join(', ')})
+           VALUES (${columns.map((_, index) => `$${index + 1}`).join(', ')})
+           ON CONFLICT (report_class, scope_key, cron, mode) DO NOTHING`,
+          ...Object.values(values),
         );
       }
     }
@@ -678,6 +732,7 @@ export class ReportScheduleRunner extends EventEmitter {
   private db: DatabaseInterface | null = null;
   private running = false;
   private pollTimer: NodeJS.Timeout | null = null;
+  private readonly taskBindings = new WeakMap<object, () => void>();
 
   constructor(config: ReportScheduleRunnerConfig = {}) {
     super();
@@ -719,6 +774,61 @@ export class ReportScheduleRunner extends EventEmitter {
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  /** Bind terminal report-job events once; call the returned function on shutdown. */
+  bindTaskRunner(taskRunner: Pick<TaskRunner, 'on' | 'off'>): () => void {
+    if (!this.db)
+      throw new Error(
+        'ReportScheduleRunner not initialized. Call initialize() first.',
+      );
+    const existing = this.taskBindings.get(taskRunner);
+    if (existing) return existing;
+    const complete = (job: SmrtJob, success: boolean, error?: Error) => {
+      if (
+        job.objectType !== canonicalClassName(SmrtReportRefreshTask) ||
+        job.method !== 'run'
+      )
+        return;
+      const args = job.args;
+      if (!args || typeof args !== 'object' || Array.isArray(args)) return;
+      // The compatibility _scheduleId is unsigned; only the signed id may
+      // identify the schedule whose counters this event is allowed to change.
+      const scheduleId = args.scheduleId;
+      if (typeof scheduleId !== 'string' || !scheduleId) return;
+      try {
+        assertReportRefreshJobIntegrity(args);
+        if ((args.tenantId ?? null) !== (job.tenantId ?? null)) {
+          throw new Error('Invalid report refresh completion tenant');
+        }
+      } catch (error) {
+        this.emit(
+          'runner:error',
+          error instanceof Error ? error : new Error(String(error)),
+        );
+        return;
+      }
+      void this.handleJobCompletion(scheduleId, success, error?.message).catch(
+        (failure) => {
+          this.emit(
+            'runner:error',
+            failure instanceof Error ? failure : new Error(String(failure)),
+          );
+        },
+      );
+    };
+    const completed = (job: SmrtJob) => complete(job, true);
+    const failed = (job: SmrtJob, error: Error) => complete(job, false, error);
+    taskRunner.on('job:completed', completed);
+    taskRunner.on('job:failed', failed);
+    const unbind = () => {
+      if (this.taskBindings.get(taskRunner) !== unbind) return;
+      taskRunner.off('job:completed', completed);
+      taskRunner.off('job:failed', failed);
+      this.taskBindings.delete(taskRunner);
+    };
+    this.taskBindings.set(taskRunner, unbind);
+    return unbind;
   }
 
   async handleJobCompletion(

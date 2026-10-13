@@ -246,6 +246,30 @@ payloads use the same integrity boundary. Only a registered `SmrtReportCollectio
 synchronously refresh a stale read, and only when its TTL policy is positive and
 not manual.
 
+### Scheduled refresh lifecycle
+
+Declare `refresh: { schedule: '*/5 * * * *', tenantFanout: 'discover' }`
+on a tenant-scoped report to discover distinct non-null source tenants each
+scheduled run. Provision schedules with `ensureReportRefreshSchedules({ db,
+reports })`; an empty source does no work and never refreshes the global slice.
+The worker uses the registered source/report tenant columns and its supplied
+maintenance executor. Discovery does not grant database privileges or widen a
+tenant-bound or manual job. Keep `tenantFanout: true` with explicit `tenantIds`
+when the host owns a fixed tenant list.
+
+Initialize a `ReportScheduleRunner` and a jobs `TaskRunner` against the migrated
+database, then call `const unbind = schedules.bindTaskRunner(tasks)` before
+starting them. This connects terminal job events to schedule counters, freeing
+the concurrency slot after success or failure. Repeated binding is idempotent;
+call `unbind()` on shutdown. Listen for `runner:error` to detect failed counter
+updates. Durable payload signing and execution-time authority checks remain
+required; completion accounting uses the signed schedule identity.
+
+Repeated schedule provisioning inserts missing identities and preserves existing
+history, next-run time, running count, and operator settings. A different cron,
+mode, or tenant scope identifies a different schedule; explicitly disable obsolete
+schedules when changing those settings.
+
 ### Saved views and snapshot exports
 
 `normalizeReportSavedView()` and `restoreReportSavedView()` provide the

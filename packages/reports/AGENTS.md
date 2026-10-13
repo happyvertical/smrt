@@ -118,3 +118,12 @@ and `scheduler`), so consumer SSR bundles retain reports-qualified identities.
 The bundle gate executes these public entries in a fresh consumer process.
 Audit #3525 found no other published domain model package missing its shim;
 packages without one contain framework utilities or example/test decorators.
+
+## Schedule lifecycle
+
+`tenantFanout: 'discover'` resolves non-null source tenants at execution time
+only for signed global scheduled maintenance. Empty discovery must not call
+refresh with an empty tenant array, which would select the global slice.
+Schedule provisioning preserves existing state. Hosts bind terminal job events
+with `ReportScheduleRunner.bindTaskRunner()` and dispose the returned binding
+on shutdown; see [scheduled refresh lifecycle](README.md#scheduled-refresh-lifecycle).
