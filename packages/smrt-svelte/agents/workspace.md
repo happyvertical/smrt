@@ -622,3 +622,13 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   form is a plain `method="POST"`; pass `enhance` from `$app/forms` to enhance
   it. The token is a hidden field only and is never stored, logged or shown.
   Single-use, loopback-only enforcement stays server-side.
+
+## Theme (premium baseline)
+
+The shell only consumes theme tokens; CSS and tokens changed, DOM and behaviour did not.
+
+- Surface ladder: main and phone top bar on `--smrt-surface-ground`; header, footer and top/bottom bands, corners and the left sidebar on `--smrt-surface-panel`; the dock (right edge), drawers, phone sheet and phone drawers, popovers, toasts and the shortcuts dialog on raised glass (`--smrt-glass-surface-strong`, `--smrt-elevation-3`, drawers and sheet `--smrt-elevation-4`, plus `--smrt-inset-highlight`). Edit-mode strips use `--smrt-surface-sunken`.
+- Region edges are `--smrt-hairline`; no solid outline-variant borders remain in the shell. Edit-mode drop zones and strips use the hairline with `border-style: dashed` and state tokens for fill. The resize separator keeps its own primary affordance.
+- Glass: the header, phone top bar, phone tab bar, dock, drawers, sheet and popovers set `backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation))` over `--smrt-glass-surface` (`-strong` for raised regions). Outside the Glass preset the tokens are opaque with blur 0. `backdrop-filter` makes the element a containing block for fixed descendants; the e2e suite covers the account menu and the floating layout toggle.
+- State layers: rows, tabs, rail buttons, toggles and the account trigger use one `::after` veil (`background: currentColor`, opacity from `--smrt-state-hover` / `-pressed` / `-selected`); transparent icon buttons use the equivalent `color-mix`. The selected nav row keeps its container fill and start indicator under the veil. Disabled uses `--smrt-state-disabled`. Focus rings come from `--smrt-focus-ring-*`; control radius and heights from `--smrt-control-*`.
+- E2E fixture: `ShellFixture` accepts `?theme=glass|material|studio|smrt` and `?scheme=dark` (all presets are imported) for per-preset screenshots.

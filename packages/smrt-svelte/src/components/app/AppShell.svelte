@@ -1049,26 +1049,26 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
     color: var(--smrt-color-primary);
   }
   .smrt-layout-toggle { display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); }
-  .smrt-layout-toggle--floating { position: fixed; z-index: 45; inset-block-start: max(var(--smrt-spacing-3), env(safe-area-inset-top)); inset-inline-end: max(var(--smrt-spacing-3), env(safe-area-inset-right)); border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-high); box-shadow: var(--smrt-elevation-2); }
+  .smrt-layout-toggle--floating { position: fixed; z-index: 45; inset-block-start: max(var(--smrt-spacing-3), env(safe-area-inset-top)); inset-inline-end: max(var(--smrt-spacing-3), env(safe-area-inset-right)); border: var(--smrt-hairline); border-radius: var(--smrt-radius-full); background: var(--smrt-surface-raised); box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight); }
   .smrt-layout-toggle--floating :global(.smrt-shell-icon-button) { border-radius: var(--smrt-radius-full); }
   .smrt-layout-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
   .smrt-app-shell-color-scheme { display: inline-flex; align-items: center; }
   .smrt-app-shell-color-scheme :global(.smrt-color-scheme-toggle__switch) { min-block-size: var(--smrt-control-target-min); }
   .smrt-app-shell-palette { display: inline-flex; min-inline-size: 0; }
-  .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger) { inline-size: min(28rem, 40vw); justify-content: flex-start; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface-variant); }
+  .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger) { inline-size: min(28rem, 40vw); justify-content: flex-start; border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-full); background: var(--smrt-surface-control); color: var(--smrt-color-on-surface-variant); }
   .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger__hint) { margin-inline-start: auto; }
   .smrt-layout-live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
   .smrt-edit-zone__label { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-small-font); white-space: nowrap; }
-  .smrt-edit-item { display: inline-flex; align-items: center; min-inline-size: 0; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); }
-  .smrt-edit-item--dragging { opacity: 0.55; }
+  .smrt-edit-item { display: inline-flex; align-items: center; min-inline-size: 0; border: var(--smrt-hairline); border-radius: var(--smrt-control-radius); background: var(--smrt-surface-raised); }
+  .smrt-edit-item--dragging { opacity: var(--smrt-state-disabled); }
   @media (prefers-reduced-motion: no-preference) {
     .smrt-edit-item { animation: smrt-edit-item-in var(--smrt-duration-short2) var(--smrt-easing-standard) backwards; }
   }
   @keyframes smrt-edit-item-in { from { opacity: 0; transform: scale(0.96); } }
   .smrt-edit-item__body { display: inline-flex; align-items: center; min-inline-size: 0; pointer-events: none; }
   .smrt-edit-item__grip { display: inline-grid; place-items: center; flex: 0 0 auto; inline-size: 1.5rem; block-size: 2rem; padding: 0; border: 0; border-radius: var(--smrt-radius-sm); background: transparent; color: var(--smrt-color-on-surface-variant); cursor: grab; touch-action: none; }
-  .smrt-edit-item__grip:hover { background: var(--smrt-color-surface-container-high); }
-  .smrt-edit-item__grip:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
+  .smrt-edit-item__grip:hover { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); }
+  .smrt-edit-item__grip:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .smrt-edit-item__grip[aria-pressed='true'] { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
 }
 </style>

@@ -23,7 +23,7 @@ function ruleBody(source: string, selector: string): string {
 describe('AdminShell theme hooks', () => {
   it('reads its page background from --smrt-admin-shell-background', () => {
     expect(ruleBody(shell, '.smrt-admin-shell')).toMatch(
-      /background:\s*var\(--smrt-admin-shell-background,\s*var\(--smrt-color-surface\)\)/,
+      /background:\s*var\(--smrt-admin-shell-background,\s*var\(--smrt-surface-ground\)\)/,
     );
   });
 
