@@ -89,6 +89,36 @@ export default defineConfig({
         ),
       },
       {
+        // The theme gallery route composes the app shell from workspace source.
+        find: /^@happyvertical\/smrt-svelte\/app$/,
+        replacement: resolve(
+          __dirname,
+          '../../smrt-svelte/src/components/app/index.ts',
+        ),
+      },
+      {
+        find: /^@happyvertical\/smrt-svelte\/workspace$/,
+        replacement: resolve(
+          __dirname,
+          '../../smrt-svelte/src/components/workspace/index.ts',
+        ),
+      },
+      {
+        find: /^@happyvertical\/smrt-ui\/data$/,
+        replacement: resolve(__dirname, '../../smrt-ui/src/components/data/index.ts'),
+      },
+      {
+        find: /^@happyvertical\/smrt-ui\/feedback$/,
+        replacement: resolve(
+          __dirname,
+          '../../smrt-ui/src/components/feedback/index.ts',
+        ),
+      },
+      {
+        find: /^@happyvertical\/smrt-ui\/forms$/,
+        replacement: resolve(__dirname, '../../smrt-ui/src/components/forms/index.ts'),
+      },
+      {
         find: /^@happyvertical\/smrt-ui\/themes\/styles\/(.*)$/,
         replacement: resolve(__dirname, '../../smrt-ui/src/themes/styles/$1'),
       },
