@@ -210,5 +210,14 @@ function accessibleName(item: PhoneBottomBarEntry): string {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary);
   }
+  /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
+  @media (forced-colors: active) {
+    .smrt-phone-bottom-bar__item.active { color: CanvasText; font-weight: var(--smrt-typography-weight-bold); }
+    .smrt-phone-bottom-bar__item.active .smrt-phone-bottom-bar__icon { background: Highlight; color: HighlightText; }
+    .smrt-phone-bottom-bar__badge { background: CanvasText; color: Canvas; }
+    .smrt-phone-bottom-bar__dot { background: Highlight; border-color: Canvas; }
+    .smrt-phone-bottom-bar__item:disabled, .smrt-phone-bottom-bar__item.active:disabled { opacity: 1; color: GrayText; font-weight: inherit; }
+    .smrt-phone-bottom-bar__item.active:disabled .smrt-phone-bottom-bar__icon { background: Canvas; color: GrayText; }
+  }
 }
 </style>

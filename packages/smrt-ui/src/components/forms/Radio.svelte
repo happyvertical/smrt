@@ -48,5 +48,14 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
 
   /* Table cells: grow vertically only, never into a neighbouring cell. */
   :global(:is(td, th)) .radio::before { inline-size: var(--smrt-radio-box); margin-inline-start: calc(var(--smrt-radio-box) / -2); }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .radio__mark { border-color: CanvasText; }
+    .radio__mark::after { background: Highlight; }
+    input:checked + .radio__mark { border-color: Highlight; }
+    .radio.disabled { opacity: 1; color: GrayText; }
+    .radio.disabled .radio__mark, .radio.disabled input:checked + .radio__mark { border-color: GrayText; }
+    .radio.disabled .radio__mark::after { background: GrayText; }
+  }
 }
 </style>

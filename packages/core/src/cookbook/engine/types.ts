@@ -111,6 +111,9 @@ export interface CommandInputs {
     primary?: string;
     colorScheme?: 'light' | 'dark' | 'system';
     fontFamily?: string | null;
+    borderRadius?: 'none' | 'sm' | 'md' | 'lg' | 'xl' | 'full';
+    density?: 'comfortable' | 'touch';
+    contrast?: 'auto' | 'standard' | 'more';
   };
   reset_theme: Record<string, never>;
   /** Name (and describe) the app; null clears. */
@@ -188,6 +191,9 @@ export interface PlanSnapshot {
     preset: string | null;
     primary: string | null;
     colorScheme: string;
+    borderRadius: string | null;
+    density: string | null;
+    contrast: string | null;
   };
   sections: {
     id: string;

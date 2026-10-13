@@ -60,5 +60,10 @@ const role = $derived(
   .dismiss { width: 2rem; height: 2rem; margin: -.35rem; border: 0; border-radius: var(--smrt-radius-full); background: transparent; color: inherit; font-size: 1.25rem; cursor: pointer; }
   .dismiss:hover { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); }
   .dismiss:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .alert { background: Canvas; border-color: CanvasText; }
+    .marker { background: CanvasText; }
+  }
 }
 </style>

@@ -68,5 +68,12 @@ const displayValue = $derived(
   .progress--circular > span { position: absolute; font: var(--smrt-typography-label-small-font); }
   @keyframes linear-progress { from { left: -40%; } to { left: 105%; } } @keyframes spin { to { transform: rotate(270deg); } }
   @media (prefers-reduced-motion: reduce) { .progress--linear .indicator, .progress--circular .indicator { transition: none; } .progress--linear.indeterminate .indicator { animation-duration: 2.5s; } }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .progress--linear .track { background: Canvas; border: var(--smrt-hairline-strong); }
+    .progress--linear .indicator { background: Highlight; }
+    .progress--circular .track { stroke: CanvasText; }
+    .progress--circular .indicator { stroke: Highlight; }
+  }
 }
 </style>
