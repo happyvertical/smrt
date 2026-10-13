@@ -70,6 +70,7 @@ import {
   resolvePhoneTabBar,
 } from './phone-tabs.js';
 import RuntimeDiagnosticsWebMcp from './RuntimeDiagnosticsWebMcp.svelte';
+import type { ShellUser } from './shell-user.js';
 import type {
   AppShellAccountMenu,
   AppShellCommandPalette,
@@ -112,8 +113,12 @@ interface Props {
    * default slot (users can still move it in the layout editor).
    */
   accountMenu?: AppShellAccountMenu;
-  /** Called when the account menu's Sign out is chosen (wins over `signOutHref`). */
-  onSignOut?: () => void;
+  /**
+   * Called when the account menu's Sign out is chosen (wins over
+   * `signOutHref`). May be async: the menu awaits it, shows a busy state, and
+   * on rejection stays open with an inline error.
+   */
+  onSignOut?: () => unknown;
   /**
    * Where the account menu's Sign out link goes when there is no `onSignOut`.
    * A link is a GET: never point it at the runtime's POST-only `/sign-out`
@@ -136,8 +141,12 @@ interface Props {
   commandPalette?: AppShellCommandPalette;
   /** Options for the Provider's WebMCP integration; passed through unchanged. */
   webmcp?: boolean | WebMcpProviderConfig;
-  /** Authenticated user forwarded to the Provider; `null` renders the shell signed out. */
-  user?: User | null;
+  /**
+   * The signed-in identity (`ShellUser`): the runtime's `SessionLayoutUser`
+   * (`data.session.user`) or a full `User` both fit without a cast. It is
+   * forwarded to the Provider unchanged; `null` renders the shell signed out.
+   */
+  user?: ShellUser;
   /** The user's resolved permission slugs, forwarded to the Provider for permission-gated UI. */
   permissions?: string[];
   /** Register the read-only runtime diagnostics WebMCP tool. */
@@ -571,11 +580,23 @@ function accountPlacement(
   return alignStart ? 'bottom-start' : 'bottom-end';
 }
 const accountIdentity = $derived.by(() => {
-  const record = (user ?? {}) as { name?: unknown; email?: unknown };
+  const record = (user ?? {}) as {
+    name?: unknown;
+    email?: unknown;
+    avatarUrl?: unknown;
+  };
   const name = typeof record.name === 'string' ? record.name.trim() : '';
   const email = typeof record.email === 'string' ? record.email.trim() : '';
-  return { name, email };
+  const avatarUrl =
+    typeof record.avatarUrl === 'string' && record.avatarUrl
+      ? record.avatarUrl
+      : undefined;
+  return { name, email, avatarUrl };
 });
+// The Provider is typed for the full `User`. The shell hands it exactly the
+// object the host passed (no fields added or invented), so a minimal session
+// projection reaches it just as it did when the prop was typed as `User`.
+const providerUser = $derived(user as unknown as User | null);
 // The floating toggle sits over the header's end (header visible), the top of
 // the right sidebar (header hidden) or the top of main (neither); reserve that room so it covers no
 // control. AdminShell reads these custom properties.
@@ -867,6 +888,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   <WorkspaceAccountMenu
     userName={accountIdentity.name || accountIdentity.email}
     email={accountIdentity.email}
+    avatarUrl={accountIdentity.avatarUrl}
     {compact}
     {tenantLabel}
     {onSignOut}
@@ -949,7 +971,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   />
 {/snippet}
 
-<Provider {webmcp} {user} {permissions}>
+<Provider {webmcp} user={providerUser} {permissions}>
   <RuntimeDiagnosticsWebMcp enabled={runtimeDiagnostics} />
   <ThemeProvider {preset} {colorScheme} persist={true}>
     {#if !chrome}

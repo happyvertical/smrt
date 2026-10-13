@@ -18,7 +18,7 @@ sample data source are not part of it.
 | Entry | Contents |
 |---|---|
 | `./cookbook/server` | Svelte-free and Node-safe. `loadCookbookApp` (file + manifests + validation), `readInstalledManifests`, `hasCookbook`, and the pure builder/catalog/theme functions and types. Use it in `+layout.server.ts`. |
-| `./cookbook` | Everything above that is browser-safe, plus `CookbookApp`, `CookbookSectionPage`, `applyCookbookTheme`, `createCookbookRegistry`, `createSectionOverview`. |
+| `./cookbook` | Everything above that is browser-safe, plus `CookbookApp`, `CookbookSectionPage`, `CookbookSectionOverview`, `applyCookbookTheme`, `createCookbookRegistry`, `createSectionOverview`. |
 
 ## Pure core (no DOM, Node-testable)
 
@@ -84,7 +84,8 @@ sample data source are not part of it.
 `slotItems`, `settingsHref`, ...), and:
 
 - `loaders` (`metric` / `records` / `chart` data loaders; with `metric` and
-  `records` the section pages add the count and latest records),
+  `records` the section pages add the count and latest records; `shortcuts`
+  is a `CookbookShortcutsLoader`, below),
 - `widgetContext` (host capabilities for browser-side widget loads),
 - `resolveExport` (a static map of dynamic imports; turns a recipe export
   reference into a component, used for `shell-widget` slot items and recipe
@@ -107,6 +108,19 @@ registry, recipe widgets and slot items are resolved in effects (a bundled
 `resolveExport` is async), so a section page's overview appears after hydration,
 not in the server HTML.
 
+## Host shortcuts loader (#3888)
+
+`CookbookApp loaders.shortcuts` is `(ctx, defaults: ShortcutEntry[]) =>
+Promise<ShortcutEntry[]>` (`ShortcutEntry = { href, label, icon?, description?,
+count? }`, exported from `./cookbook` and `./overview`).
+`createCookbookRegistry` computes the default entries from the shell's resolved
+sections, then, when the host supplies `shortcuts`, passes them through it
+(`composeShortcutsLoader`); with no host loader the registry's loader is
+unchanged. The host returns the entries to show (add `count`, reorder, add or
+drop). If it throws, that load keeps the defaults (the page never empties
+because a count query failed) unless the load itself was aborted. The shortcuts
+widget renders `count` as "N records" (plural-aware i18n, tabular figures).
+
 ## `CookbookSectionPage`
 
 A section's own page: title, icon and description (the user's renames win over
@@ -116,6 +130,16 @@ outside the overview id pattern) shows its menu as cards. Mount it from one
 route: `s/[slug]/+page.svelte` renders
 `<CookbookSectionPage slug={page.params.slug} />`. It must be inside
 `CookbookApp`.
+
+Props (also on `CookbookSectionOverview`, #3888): `presentation?: 'plain' | 'card'`
+(default `'plain'`) is passed to `OverviewGrid`, so the default section body
+lists shortcut entries as unframed rows on the panel surface (the shortcuts
+widget receives the grid's `presentation` and drops its per-entry frame); `'card'`
+keeps the framed look, and editing always keeps its frame.
+`heading?: Snippet<[{ section: CookbookSectionHeadingInfo }]>` replaces the
+default title block (`{ id, title, description?, icon }`) on the page; on a
+standalone `CookbookSectionOverview` it renders above the grid and needs the
+`section` prop.
 
 ## Using it in an app
 

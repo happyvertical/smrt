@@ -12,7 +12,11 @@ import {
   type MessagingPrincipal,
   SEND_MESSAGES_PERMISSION,
 } from '../permissions.js';
-import type { MessageSendResult, SendPersonaMessageOptions } from '../types.js';
+import type {
+  MessageSendResult,
+  SendEmailOptions,
+  SendPersonaMessageOptions,
+} from '../types.js';
 
 export interface PersonaMessageSendResult {
   routeId: string;
@@ -75,6 +79,10 @@ export class PersonaMessagingService {
         );
       }
 
+      if (input.attachments?.length && endpoint.channel !== 'email') {
+        throw new Error('Attachments are only supported on email routes.');
+      }
+
       let message: Message;
       const base = {
         db: this.options.db,
@@ -93,7 +101,11 @@ export class PersonaMessagingService {
         }
         const address = endpoint.getAddress<{ email?: string }>();
         if (!address.email) throw new Error('Email endpoint has no address.');
-        const email = new Email({ ...base, textBody: base.body });
+        const email = new Email({
+          ...base,
+          textBody: base.body,
+          hasAttachments: Boolean(input.attachments?.length),
+        });
         email.setToAddresses([{ address: address.email }]);
         message = email;
       } else {
@@ -101,7 +113,11 @@ export class PersonaMessagingService {
       }
       await message.initialize();
       await message.save();
-      const delivery = await message.send();
+      const sendOptions: SendEmailOptions | undefined = input.attachments
+        ?.length
+        ? { attachments: input.attachments }
+        : undefined;
+      const delivery = await message.send(sendOptions);
       return {
         routeId: route.id ?? '',
         messageId: message.id ?? '',

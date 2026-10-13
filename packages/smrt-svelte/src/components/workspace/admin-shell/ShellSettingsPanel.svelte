@@ -22,8 +22,12 @@ interface Props {
   account?: boolean;
   /** Where the sign-out control goes; the control is hidden when neither this nor `onSignOut` is given. */
   signOutHref?: string;
-  /** Called by the sign-out control instead of following `signOutHref`. */
-  onSignOut?: () => void;
+  /**
+   * Called by the sign-out control instead of following `signOutHref`. May
+   * return a promise: the control is busy and disabled while it is pending;
+   * a rejection shows an inline error and leaves the section as it was.
+   */
+  onSignOut?: () => unknown;
 }
 
 const {
@@ -52,18 +56,49 @@ const REGION_OF_EDGE: Record<PanelEdge, ShellRegion> = {
 const regionLabel = (edge: PanelEdge) =>
   t(SHELL_REGION_MESSAGES[REGION_OF_EDGE[edge]]);
 
-/** The areas this shell offers; hidden ones stay listed when a layout can restore them. */
+/**
+ * The areas this shell offers. A region the user hid stays listed so Show can
+ * restore it; a region that is shown but not rendered (nothing to put in it, or
+ * not presented at this width) is left out because its row would do nothing.
+ */
 const rows = $derived(
   layout
     ? layout.panels
-        .filter((panel) => panel.available)
+        .filter(
+          (panel) =>
+            panel.available &&
+            (!panel.visible || shell.regionsRendered[panel.edge]),
+        )
         .map((panel) => ({ edge: panel.edge, visible: panel.visible }))
     : edges
-        .filter((edge) => shell.panels[edge] !== 'hidden')
+        .filter(
+          (edge) =>
+            shell.panels[edge] !== 'hidden' && shell.regionsRendered[edge],
+        )
         .map((edge) => ({ edge, visible: true })),
 );
-const visibleCount = $derived(rows.filter((row) => row.visible).length);
+/** Counts every shown region, rendered or not, so the last real one can't be hidden. */
+const visibleCount = $derived(
+  layout
+    ? layout.panels.filter((panel) => panel.available && panel.visible).length
+    : rows.length,
+);
 const shortcutRows = $derived(rows.filter((row) => row.visible));
+let signingOut = $state(false);
+let signOutFailed = $state(false);
+
+async function runSignOut() {
+  if (signingOut || !onSignOut) return;
+  signingOut = true;
+  signOutFailed = false;
+  try {
+    await onSignOut();
+  } catch {
+    signOutFailed = true;
+  } finally {
+    signingOut = false;
+  }
+}
 const canSignOut = $derived(Boolean(signOutHref || onSignOut));
 const hotkeysEnabled = $derived(shell.settings.hotkeysEnabled !== false);
 
@@ -118,9 +153,19 @@ function conflictFor(edge: PanelEdge): string | null {
       {/if}
       {#if canSignOut}
         {#if onSignOut}
-          <Button variant="secondary" size="sm" onclick={onSignOut}>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={signingOut}
+            onclick={runSignOut}
+          >
             {t(M['ui.shell_settings.sign_out'])}
           </Button>
+          {#if signOutFailed}
+            <p role="alert" data-smrt-part="error">
+              {t(M['ui.shell_settings.sign_out_failed'])}
+            </p>
+          {/if}
         {:else}
           <Button variant="secondary" size="sm" href={signOutHref}>
             {t(M['ui.shell_settings.sign_out'])}

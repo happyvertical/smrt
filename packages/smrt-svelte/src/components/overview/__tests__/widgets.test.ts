@@ -225,4 +225,39 @@ describe('core widget components', () => {
     expect(container.querySelector('table')).toBeNull();
     expect(screen.getByText('Plain')).toBeInTheDocument();
   });
+
+  it('shortcuts show a plural-aware record count with tabular figures', () => {
+    render(ShortcutsWidget, {
+      props: {
+        ...base,
+        data: {
+          items: [
+            { id: 'a', label: 'Orders', href: '/orders/', count: 1234 },
+            { id: 'b', label: 'Notes', href: '/notes/', count: 1 },
+            { id: 'c', label: 'Empty', href: '/empty/', count: 0 },
+            { id: 'd', label: 'Unknown', href: '/unknown/' },
+          ],
+        },
+      },
+    });
+    expect(screen.getByText('1,234 records')).toBeTruthy();
+    expect(screen.getByText('1 record')).toBeTruthy();
+    expect(screen.getByText('0 records')).toBeTruthy();
+    expect(document.querySelectorAll('.smrt-shortcuts__count')).toHaveLength(3);
+  });
+
+  it('shortcuts drop the per-entry frame under plain presentation', () => {
+    render(ShortcutsWidget, {
+      props: {
+        ...base,
+        presentation: 'plain',
+        data: { items: [{ id: 'a', label: 'Orders', href: '/orders/' }] },
+      },
+    });
+    expect(
+      document
+        .querySelector('[data-smrt-component="ShortcutsWidget"]')
+        ?.getAttribute('data-presentation'),
+    ).toBe('plain');
+  });
 });

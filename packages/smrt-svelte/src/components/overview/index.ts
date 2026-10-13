@@ -64,6 +64,7 @@ export {
   type RecordStatusTone,
   type RelatedWidgetData,
   type RelatedWidgetTab,
+  type ShortcutEntry,
   type ShortcutNavSection,
   type ShortcutsWidgetData,
   shortcutsFromNav,

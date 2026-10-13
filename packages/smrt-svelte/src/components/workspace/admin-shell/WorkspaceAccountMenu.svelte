@@ -48,8 +48,13 @@ export interface Props {
   signOutHref?: string;
   /** Called when the user selects a different tenant. */
   onTenantSelect?: (tenantId: string) => void;
-  /** Called when the user clicks sign out. */
-  onSignOut?: () => void;
+  /**
+   * Called when the user clicks sign out. May return a promise: the item shows
+   * a busy state (`aria-busy`, disabled against double submit) while it is
+   * pending, the menu closes on success, and stays open with an inline error
+   * when it rejects.
+   */
+  onSignOut?: () => unknown;
 }
 
 let {
@@ -133,6 +138,8 @@ const entries = $derived.by(() => {
 });
 
 let open = $state(false);
+let signingOut = $state(false);
+let signOutFailed = $state(false);
 let wrapEl = $state<HTMLElement | null>(null);
 let triggerEl = $state<HTMLButtonElement | null>(null);
 let itemEls = $state<Array<HTMLElement | null>>([]);
@@ -152,10 +159,39 @@ function closeMenu(refocus = true) {
   if (refocus) triggerEl?.focus();
 }
 
+async function runSignOut() {
+  if (signingOut || !onSignOut) return;
+  signingOut = true;
+  signOutFailed = false;
+  try {
+    // A synchronous callback closes the menu in the same turn.
+    const pending = onSignOut();
+    // Any return value is accepted (a plain `() => void` callback may return
+    // something); only a thenable is awaited.
+    if (
+      typeof pending === 'object' &&
+      pending !== null &&
+      typeof (pending as PromiseLike<unknown>).then === 'function'
+    ) {
+      await pending;
+    }
+  } catch {
+    signOutFailed = true;
+    signingOut = false;
+    return;
+  }
+  signingOut = false;
+  closeMenu();
+}
+
 function select(entry: Entry) {
   if (entry.disabled) return;
-  if (entry.id === SIGN_OUT_ID) onSignOut?.();
-  else if (entry.id.startsWith(TENANT_PREFIX)) {
+  if (entry.id === SIGN_OUT_ID && onSignOut) {
+    // The callback owns the menu: it closes on success only.
+    void runSignOut();
+    return;
+  }
+  if (entry.id.startsWith(TENANT_PREFIX)) {
     onTenantSelect?.(entry.id.slice(TENANT_PREFIX.length));
   }
   // A link navigates on its own: leave focus to the destination.
@@ -278,12 +314,18 @@ $effect(() => {
               type="button"
               role="menuitem"
               class="smrt-workspace-account-menu__item"
-              disabled={entry.disabled}
+              disabled={entry.disabled || (entry.id === SIGN_OUT_ID && signingOut)}
+              aria-busy={entry.id === SIGN_OUT_ID && signingOut ? 'true' : undefined}
               tabindex="-1"
               onclick={() => select(entry)}
             >{entry.label}</button>
           {/if}
         {/each}
+        {#if signOutFailed}
+          <p class="smrt-workspace-account-menu__error" role="alert" data-smrt-part="error">
+            {t(M['ui.shell_settings.sign_out_failed'])}
+          </p>
+        {/if}
       </div>
     </div>
   {/if}
@@ -450,6 +492,13 @@ $effect(() => {
   .smrt-workspace-account-menu__item:disabled {
     opacity: var(--smrt-state-disabled);
     cursor: default;
+  }
+
+  .smrt-workspace-account-menu__error {
+    margin: 0;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    color: var(--smrt-color-error);
+    font-size: var(--smrt-typography-label-small-size);
   }
 
   .smrt-workspace-account-menu__identity {

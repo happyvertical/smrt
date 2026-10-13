@@ -214,16 +214,26 @@ shape. Data shapes are in `widgets/data.ts`.
 | Type | Options | Data |
 |---|---|---|
 | `metric` | `title`, `model`*, `measure`, `field`, `filter`, `parentField` | `{ value, format?, currency?, label?, change?, href? }` (money = integer minor units) |
-| `chart` | `title`, `model`*, `groupBy`, `measure`, `field`, `period`, `style` (bar/line), `filter` | `{ points: [{ label, value }], format?, currency?, href? }`, one measure of a runtime report |
+| `chart` | `title`, `model`*, `groupBy`, `measure`, `field`, `period`, `style` (bar/line/table/pie/stat), `filter` | `{ points: [{ label, value }], format?, currency?, href?, delta? }`, one measure of a runtime report |
 | `records` | `title`, `model`*, `sort`, `field`, `direction`, `limit`, `filter`, `columns`, `summaries` | `{ rows: [{ id, title, subtitle?, meta?, href?, cells? }], total?, href?, columns?, currency?, timeZone?, summaries? }`; the loader chooses the title field and the visible records; `field` is the FK for `filter: 'parent'`; with columns (the option, else `data.columns`) the rows are a table — see "Records tables" |
-| `shortcuts` | `title`, `section` | `{ items: [{ id, label, href, icon?, description? }] }`; `shortcutsFromNav(sections, sectionId)` maps `resolveShellNavModel` / `useShellLayout().sections` (visible entries, user renames) |
+| `shortcuts` | `title`, `section` | `{ items: [{ id, label, href, icon?, description?, count? }] }` (`count` draws as "N records"; widgets also receive the grid's `presentation` and the shortcuts widget drops its entry frame under `plain`); `shortcutsFromNav(sections, sectionId)` maps `resolveShellNavModel` / `useShellLayout().sections` (visible entries, user renames) |
 | `note` | `title`, `body` (Markdown) | none |
 
 `note` renders `parseMarkdown` output as elements (headings, paragraphs, lists,
 quotes, fenced code, bold/italic/code/links). There is no `{@html}`; raw HTML is
 literal text and `safeHref` limits links to http(s), mailto, same-site paths and
 fragments. Record and shortcut hrefs pass `safeHref` too. Charts carry their
-numbers as text (inline for bars, a visually hidden table for the line).
+numbers as text (inline for bars, a visually hidden table for the line and the
+donut, a visible table for `table`, the value itself for `stat`).
+
+Chart styles (#3888, the renderer half of #3878's runtime-report chart hints):
+`table` is a plain table of the series (tabular figures); `pie` is an SVG donut
+with a legend (value and share) and a visually hidden data table, slices cycling
+through the primary/secondary/tertiary/info tokens then their containers;
+`stat` is the last point as a headline value with its change (`delta`, percent,
+else derived from the last two points). Motion honours `prefers-reduced-motion`.
+The chart option schema is **version 2**: v1 (`style` bar or line, or no version)
+migrates by identity (`migrateChartOptions`), so saved overviews keep validating.
 
 ## Records tables (`widgets/RecordTable.svelte`, `widgets/record-table.ts`)
 

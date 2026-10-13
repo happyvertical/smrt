@@ -4,7 +4,6 @@
  * Extracted from registry.ts as part of issue #1006.
  */
 
-import { ConfigurationError } from '../errors';
 import { ObjectRegistry } from '../registry';
 import type { FieldDefinition } from '../scanner/types.js';
 import { normalizeBackfill } from '../schema/backfill.js';
@@ -34,10 +33,6 @@ import type {
   SQLDataType,
 } from '../schema/types.js';
 import { classnameToTablename, toSnakeCase } from '../utils';
-import {
-  isQualifiedName,
-  parseQualifiedName,
-} from '../utils/qualified-names.js';
 import { sha256Hex } from '../utils/sha256.js';
 import {
   type CollectionRegistrationLookup,
@@ -47,6 +42,11 @@ import { isFrameworkBaseClass } from './framework-base-classes';
 import { readFieldAttribute } from './manifest-field-merge';
 import { findClass } from './name-resolver';
 import { getClasses, getCollectionTableNames } from './shared-state';
+import {
+  assertRuntimeTableBindings,
+  assertTableFamilies,
+  mappedSchema,
+} from './table-mappings.js';
 import type { RegisteredClass } from './types';
 
 type ForeignKeyAction = NonNullable<
@@ -237,7 +237,7 @@ function createBaseColumns(
 export function getSchema(name: string): SchemaDefinition | undefined {
   // Issue #951: Use findClass for multi-strategy lookup
   const registered = findClass(name);
-  return registered?.schema;
+  return registered ? mappedSchema(registered) : undefined;
 }
 
 /**
@@ -531,6 +531,10 @@ function resolveContributorTable(
   registered: RegisteredClass,
   fallbackName: string,
 ): { tableName: string; contributor: TableContributor } | undefined {
+  const boundSchema = mappedSchema(registered);
+  if (boundSchema !== registered.schema) {
+    registered = { ...registered, schema: boundSchema };
+  }
   const simpleName = registered.name || fallbackName;
   const qualifiedName = registered.qualifiedName ?? simpleName;
 
@@ -542,7 +546,10 @@ function resolveContributorTable(
     if (ObjectRegistry.getTableStrategy(qualifiedName) === 'sti') {
       const stiBaseName = ObjectRegistry.getSTIBase(qualifiedName);
       if (stiBaseName && stiBaseName !== qualifiedName) {
-        const stiBaseClass = findClass(stiBaseName);
+        const baseRegistration = findClass(stiBaseName);
+        const stiBaseClass = baseRegistration
+          ? { ...baseRegistration, schema: mappedSchema(baseRegistration) }
+          : undefined;
         if (stiBaseClass?.schema?.tableName) {
           if (!registered.schema) {
             registered.schema = {
@@ -580,7 +587,10 @@ function resolveContributorTable(
         isSTIBase = false;
         // STI subclasses serialize to the base class's table even when they
         // carry a tableName of their own (issue #693).
-        const stiBaseClass = findClass(stiBaseName);
+        const baseRegistration = findClass(stiBaseName);
+        const stiBaseClass = baseRegistration
+          ? { ...baseRegistration, schema: mappedSchema(baseRegistration) }
+          : undefined;
         if (stiBaseClass?.schema?.tableName) {
           tableName = stiBaseClass.schema.tableName;
         }
@@ -617,37 +627,10 @@ function assertSingleTableFamily(
   tableName: string,
   contributors: TableContributor[],
 ): void {
-  const families = new Map<string, { className: string; pkg?: string }>();
-  for (const contributor of contributors) {
-    const familyKey = contributor.conflictKey;
-    if (families.has(familyKey)) continue;
-    families.set(
-      familyKey,
-      isQualifiedName(familyKey)
-        ? (() => {
-            const parsed = parseQualifiedName(familyKey);
-            return { className: parsed.className, pkg: parsed.packageName };
-          })()
-        : { className: familyKey },
-    );
-  }
-  const distinct = [...families.entries()];
-  for (let i = 0; i < distinct.length; i++) {
-    for (let j = i + 1; j < distinct.length; j++) {
-      const [leftKey, left] = distinct[i];
-      const [rightKey, right] = distinct[j];
-      const sameClass =
-        left.className === right.className &&
-        (!left.pkg || !right.pkg || left.pkg === right.pkg);
-      if (sameClass) continue;
-      throw new ConfigurationError(
-        `Table '${tableName}' is claimed by unrelated classes ${leftKey} and ${rightKey}. ` +
-          'Classes share a table only as one single-table-inheritance family; give one of them its own @smrt({ tableName }).',
-        'CONFIG_TABLE_NAME_COLLISION',
-        { tableName, classes: [leftKey, rightKey] },
-      );
-    }
-  }
+  assertTableFamilies(
+    tableName,
+    contributors.map((contributor) => contributor.conflictKey),
+  );
 }
 
 /**
@@ -683,6 +666,7 @@ function sortTableContributors(contributors: TableContributor[]) {
  * registered, never on the order it was registered in.
  */
 function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
+  assertRuntimeTableBindings();
   // Pass 1: group contributing classes by physical table.
   const contributorsByTable = new Map<string, TableContributor[]>();
 

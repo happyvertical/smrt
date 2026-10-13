@@ -110,6 +110,9 @@ export const M = defineMessages({
   'ui.overview.opt.style': 'Style',
   'ui.overview.opt.style_bar': 'Bars',
   'ui.overview.opt.style_line': 'Line',
+  'ui.overview.opt.style_table': 'Table',
+  'ui.overview.opt.style_pie': 'Donut',
+  'ui.overview.opt.style_stat': 'Headline number',
   'ui.overview.opt.sort': 'Sort by',
   'ui.overview.opt.direction': 'Direction',
   'ui.overview.opt.direction_desc': 'Newest or largest first',
@@ -159,6 +162,8 @@ export const M = defineMessages({
     'The recorded subtotal is {amount}.',
   'ui.overview.line_items.mismatch_total': 'The recorded total is {amount}.',
   'ui.overview.shortcuts.empty': 'No pages to show.',
+  'ui.overview.shortcuts.records_one': '{count} record',
+  'ui.overview.shortcuts.records_other': '{count} records',
 
   // Cookbook section page
   'ui.cookbook.menu_entries': 'Menu entries',

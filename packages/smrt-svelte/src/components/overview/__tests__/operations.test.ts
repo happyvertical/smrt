@@ -112,7 +112,7 @@ describe('planOverviewOperations', () => {
       {
         op: 'add',
         type: 'chart',
-        options: { model: 'events:Event', style: 'pie' },
+        options: { model: 'events:Event', style: 'radar' },
       },
       'invalid_options',
     ],
@@ -239,6 +239,9 @@ describe('describeOverview', () => {
     expect(chart?.options.find((o) => o.key === 'style')?.choices).toEqual([
       'bar',
       'line',
+      'table',
+      'pie',
+      'stat',
     ]);
     expect(described.widgets.map((w) => [w.id, w.index])).toEqual([
       ['w1', 0],

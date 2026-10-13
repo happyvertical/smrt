@@ -1024,6 +1024,52 @@ describe('portability', () => {
   });
 });
 
+describe('schema portability', () => {
+  const emitted: Array<[string, unknown]> = [
+    ...buildCommandTools(catalog).map((t): [string, unknown] => [
+      t.name,
+      t.inputSchema,
+    ]),
+    ['batch', buildBatchTool(catalog)],
+  ];
+  const nullableAnyOf: string[] = [];
+  const walk = (node: unknown, path: string) => {
+    if (Array.isArray(node)) {
+      for (const [i, v] of node.entries()) walk(v, `${path}[${i}]`);
+    } else if (node && typeof node === 'object') {
+      const any = (node as { anyOf?: Array<{ type?: unknown }> }).anyOf;
+      if (
+        Array.isArray(any) &&
+        any.length === 2 &&
+        any.some((b) => b.type === 'null') &&
+        any.some((b) => typeof b.type === 'string' && b.type !== 'null')
+      ) {
+        nullableAnyOf.push(path);
+      }
+      for (const [k, v] of Object.entries(node)) walk(v, `${path}.${k}`);
+    }
+  };
+
+  it('never spells nullability as anyOf', () => {
+    expect(emitted.length).toBeGreaterThan(10);
+    for (const [name, schema] of emitted) walk(schema, name);
+    expect(nullableAnyOf).toEqual([]);
+  });
+
+  it('uses portable type arrays for set_name and set_theme.fontFamily', () => {
+    const tool = (n: string) =>
+      buildCommandTools(catalog).find((t) => t.name === n)?.inputSchema as {
+        properties: Record<string, Record<string, unknown>>;
+      };
+    expect(tool('set_name').properties.name).toMatchObject({
+      type: ['string', 'null'],
+    });
+    const font = tool('set_theme').properties.fontFamily;
+    expect(font).toMatchObject({ type: ['string', 'null'], minLength: 1 });
+    expect(font).not.toHaveProperty('anyOf');
+  });
+});
+
 describe('the ./cookbook/engine package export', () => {
   it('names a file the build emits (one dist/<export>.js per entry)', () => {
     const pkg = JSON.parse(

@@ -226,6 +226,52 @@ dialog and the global shortcut, so it mounts once. Planner-style hosts that
 rendered their own `header.end` assistant toggle should pass `dockToggles`
 (`dock:assistant`) and `user` instead.
 
+Async sign-out (#3860): `onSignOut?: () => void | Promise<void>` (AppShell,
+`WorkspaceAccountMenu`, `ShellSettingsPage`/`ShellSettingsPanel`) is awaited.
+While pending the control is busy (`aria-busy`) and disabled, so a second
+activation never fires the callback again; on success the account menu closes;
+on rejection the menu (or Account section) stays as it was and shows an inline
+`role="alert"` "Couldn't sign out. Try again." (`ui.shell_settings.sign_out_failed`).
+A rejection is caught, never an unhandled rejection; the control is usable again
+for a retry. `signOutHref` links are unchanged.
+
+Unrendered regions in settings (#3860): `ShellState.regionsRendered:
+Record<PanelEdge, boolean>` (read-only for consumers; `AdminShell` writes it
+from the same `topRendered`/`bottomRendered`/`rightRendered`/`isEdgeShown('left')`
+logic that collapses empty bands and edges, default all `true`) says whether a
+region is actually on screen, distinct from the user's visibility choice. The
+Layout rows in `ShellSettingsPanel` list a region when it is rendered, or when
+the user hid it (so Show can always restore it); a shown region that is not
+rendered (empty band, edge not presented at this width) has no row. The
+"cannot hide the last region" guard still counts every shown region. In edit
+mode every band renders, so every available region is listed.
+
+`user` prop type (#3860): `AppShell`'s `user` is `ShellUser` (exported from
+`./app`): `null` or `{ id: string | null | undefined; email?; name?; avatarUrl?
+(string | null) }`, all readonly. The runtime's `SessionLayoutUser`
+(`data.session.user`) and a full `User` both assign without a cast
+(`__tests__/shell-user.test.ts` proves it with `expectTypeOf`). `id` stays
+required but accepts `null`/`undefined` because an unsaved `User` carries
+that. The shell reads `name`, `email` and `avatarUrl` for the account menu
+(the avatar now shows) and forwards the same object to `Provider` untouched
+(one internal cast; the Provider is typed for the full `User`), so nothing is
+added or invented on the way.
+
+DockToggle fallback (#3860): a `dockToggles` entry also takes `href?`, `ready?`
+(reactive, default `true`), `labelNotReady?` and `onpress?(event, { registered,
+ready }) => boolean | void`. Precedence on activation: (1) `onpress` runs first;
+returning `false` or calling `event.preventDefault()` stops everything (no
+toggle, no navigation). (2) If the tool is registered with `useShellDock()`
+(and the dock is available) and `ready !== false`, the dock toggles as before.
+(3) Otherwise `href` is followed, else nothing happens (the inert
+`aria-disabled` button, unchanged). With an `href` in state 3 the toggle renders
+as an `<a>` (middle-click and open-in-new-tab work) with no `aria-pressed` /
+`aria-expanded`. Its name and tooltip are `labelNotReady`, else "Set up {label}"
+(`ui.dock_toggles.set_up`), whenever it is not ready or links. The phone tab
+bar's dock tab (the first toggle) follows the same resolution through the shared
+`resolveDockToggle` / `runDockTogglePress` helpers in `dock-toggle.ts`; that tab
+becomes a link entry. `PhoneBottomBarItem.onclick` now receives the click event.
+
 `ShellLayout.placements?: Record<itemId, ShellSlot>` (additive, still version
 1) overrides default slots. Pure helpers in `layout.ts` (also `./workspace/layout`):
 `placeShellItem(layout, id, slot, defaultSlot?)` (passing the default drops a
