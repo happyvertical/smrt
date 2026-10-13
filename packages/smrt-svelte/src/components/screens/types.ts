@@ -319,6 +319,11 @@ export interface EditFormProps {
   fieldErrors?: Readonly<Record<string, string>>;
   /** A form-level failure message from the host. */
   error?: string | null;
+  /**
+   * Fields computed elsewhere (a subtotal / tax / total worked out from the
+   * line items): shown read-only with a hint and never part of the payload.
+   */
+  derivedFields?: readonly string[];
   /** Receives wire-ready values for the displayed fields. */
   onsubmit: (
     values: Record<string, unknown>,
@@ -411,6 +416,18 @@ export interface RecordScreenProps {
   statusTones?: Readonly<Record<string, RecordStatusTone>>;
   /** Extra content under the fields, inside the details card. */
   children?: Snippet;
+  /**
+   * The edit form's derived (read-only, never submitted) fields. Defaults
+   * to the subtotal / discount / tax / total role fields when the model has
+   * an `items` relation, else none.
+   */
+  derivedFields?: readonly string[];
+  /**
+   * Editable line items (the host's own editor), rendered under the edit
+   * form: in the edit column on desktop and inside the edit sheet on
+   * phones, so lines are editable on a phone too.
+   */
+  items?: Snippet;
 }
 
 export interface RecipeScreensProps {

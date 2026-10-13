@@ -87,6 +87,8 @@ let {
   ondelete,
   extraActions,
   statusTones,
+  derivedFields,
+  items,
   children,
 }: RecordScreenProps = $props();
 
@@ -131,6 +133,10 @@ const recordCurrency = $derived.by(() => {
  * (every amount is formatted in it) and, when line items carry the totals
  * block, the subtotal / discount / tax / total fields.
  */
+/** Derived fields of the edit form: the host's, else the totals under line items. */
+const formDerived = $derived(
+  derivedFields ?? (hasItems ? totalsFields(roles) : []),
+);
 const detailExclude = $derived([
   ...header.shown,
   ...(currencyField ? [currencyField] : []),
@@ -312,8 +318,14 @@ function cancel(): void {
         {error}
         onsubmit={onsave}
         oncancel={cancel}
+        derivedFields={formDerived}
       />
     {/key}
+  {/if}
+  {#if items}
+    <section class="smrt-record-screen__items" aria-label={t(M['ui.screens.items'])}>
+      {@render items()}
+    </section>
   {/if}
 {/snippet}
 
@@ -432,6 +444,9 @@ function cancel(): void {
     background: var(--smrt-color-surface-container-low, var(--smrt-color-surface));
     animation: smrt-record-screen-in var(--smrt-duration-medium1)
       var(--smrt-easing-standard) both;
+  }
+  .smrt-record-screen__items {
+    min-inline-size: 0;
   }
   .smrt-record-screen__aside-title {
     margin: 0;

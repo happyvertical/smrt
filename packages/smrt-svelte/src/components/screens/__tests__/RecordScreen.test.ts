@@ -391,4 +391,29 @@ describe('RecordScreen (record page anatomy)', () => {
       screen.getByRole('button', { name: 'Duplicate' }),
     ).toBeInTheDocument();
   });
+
+  it('makes the totals derived in the edit form and puts the items editor in the column or sheet', async () => {
+    const items = createRawSnippet(() => ({
+      render: () => '<p>Lines editor</p>',
+    }));
+    const desktop = mountOrder({ mode: 'edit', onsave: vi.fn(), items });
+    const aside = screen.getByRole('complementary', { name: 'Edit order' });
+    expect(within(aside).getByLabelText(/Total amount/)).toHaveAttribute(
+      'readonly',
+    );
+    expect(within(aside).getByText('Lines editor')).toBeInTheDocument();
+    expect(
+      within(aside).getByRole('region', { name: 'Line items' }),
+    ).toBeInTheDocument();
+    desktop.unmount();
+
+    stubViewport(false);
+    mountOrder({ mode: 'edit', onsave: vi.fn(), items });
+    const sheet = await waitFor(() => {
+      const node = document.querySelector('[data-testid="phone-sheet"]');
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    expect(within(sheet).getByText('Lines editor')).toBeInTheDocument();
+  });
 });
