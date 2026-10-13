@@ -13,6 +13,8 @@ import {
   darkInsetHighlight,
   durationScale,
   hairlineMix,
+  noInsetHighlight,
+  noShadow,
   shadow,
   spacingScale,
 } from '../shared.js';
@@ -314,7 +316,7 @@ const typography: TypographyScale = {
  * hard edge.
  */
 const elevation: ElevationScale = {
-  0: 'none',
+  0: noShadow,
   1: shadow([
     [1, 2, 0, 5],
     [2, 6, -2, 5],
@@ -342,7 +344,7 @@ const elevation: ElevationScale = {
  * depth; the shadows only support it.
  */
 const darkElevation: ElevationScale = {
-  0: 'none',
+  0: noShadow,
   1: shadow([
     [1, 2, 0, 20],
     [2, 6, -2, 14],
@@ -382,6 +384,9 @@ const darkElevation: ElevationScale = {
  */
 const glassEffects: GlassEffects = {
   blur: '20px',
+  // Deprecated aliases, still emitted for consumers of the old opacity tokens.
+  borderOpacity: '0.3',
+  backgroundOpacity: '0.72',
   saturation: '180%',
   // Translucent frosted surfaces; the opacity is part of each colour.
   surfaces: {
@@ -437,7 +442,7 @@ export const glassTheme: Theme = {
     },
   },
   hairlines: {
-    light: hairlineMix(10, 26, 'none'),
+    light: hairlineMix(10, 26, noInsetHighlight),
     dark: hairlineMix(12, 28, darkInsetHighlight(0.1)),
   },
   // Slightly stronger than Material: translucent fills need a firmer response.

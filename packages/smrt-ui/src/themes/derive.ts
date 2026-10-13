@@ -9,10 +9,12 @@
  */
 
 import { hexToRgb } from '../utils/theme/color.js';
+import { noInsetHighlight } from './shared.js';
 import type {
   ColorPalette,
   ControlTokens,
   FocusRingTokens,
+  GlassEffects,
   GlassSurfaces,
   HairlineTokens,
   NativeChromeTokens,
@@ -69,7 +71,9 @@ export function deriveHairlines(
   return {
     color: `color-mix(in srgb, var(${prefix}-color-on-surface) 12%, transparent)`,
     strongColor: `color-mix(in srgb, var(${prefix}-color-on-surface) 20%, transparent)`,
-    insetHighlight: isDark ? 'inset 0 1px 0 rgb(255 255 255 / 0.06)' : 'none',
+    insetHighlight: isDark
+      ? 'inset 0 1px 0 rgb(255 255 255 / 0.06)'
+      : noInsetHighlight,
   };
 }
 
@@ -112,7 +116,7 @@ export function deriveGlassSurfaces(prefix = '--smrt'): GlassSurfaces {
 }
 
 /** Opaque glass default for themes that are not glass. */
-export const opaqueGlass = { blur: '0px', saturation: '100%' } as const;
+export const opaqueGlass: GlassEffects = { blur: '0px', saturation: '100%' };
 
 /**
  * Complete set of baseline sections derived from a palette pair. Presets spread
@@ -219,6 +223,9 @@ export function generateBaselineVariables(
     [`${prefix}-glass-surface`]: glassSurfaces.surface,
     [`${prefix}-glass-surface-strong`]: glassSurfaces.surfaceStrong,
     [`${prefix}-glass-border`]: glassSurfaces.border,
+    // Deprecated aliases kept for one release (see GlassEffects).
+    [`${prefix}-glass-border-opacity`]: glass.borderOpacity ?? '1',
+    [`${prefix}-glass-background-opacity`]: glass.backgroundOpacity ?? '1',
     // Motion and typography
     [`${prefix}-duration-scheme`]:
       theme.schemeDuration ?? defaultSchemeDuration,

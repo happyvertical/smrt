@@ -722,7 +722,7 @@ layer (`0 1px 2px`) plus an ambient layer (`0 Npx Mpx` with negative spread), bo
 baseline: accent and caret are primary, selection is the primary container, and the
 scrollbar thumb is the strong hairline over a transparent track.
 
-The former `--smrt-glass-border-opacity` and `--smrt-glass-background-opacity`
+`--smrt-glass-border-opacity` and `--smrt-glass-background-opacity` are deprecated: still emitted (from `GlassEffects.borderOpacity`/`backgroundOpacity`, `1` when unset) for one release and removed in the next minor; the former
 tokens, and the ThemeProvider-local `--smrt-glass-surface`/`--smrt-glass-border`,
 were folded into the glass surface colours above.
 

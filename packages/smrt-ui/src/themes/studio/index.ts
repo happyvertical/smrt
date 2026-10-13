@@ -13,6 +13,8 @@ import {
   durationScale,
   hairlineInset,
   hairlineMix,
+  noInsetHighlight,
+  noShadow,
   shadow,
   spacingScale,
   studioEasing,
@@ -302,7 +304,7 @@ const typography: TypographyScale = {
  * without softness.
  */
 const elevation: ElevationScale = {
-  0: 'none',
+  0: noShadow,
   1: hairlineInset,
   2: shadow([
     [1, 2, 0, 10],
@@ -329,7 +331,7 @@ const elevation: ElevationScale = {
  * stay in lockstep (#1586).
  */
 const darkElevation: ElevationScale = {
-  0: 'none',
+  0: noShadow,
   1: hairlineInset,
   2: shadow(
     [
@@ -400,7 +402,7 @@ export const studioTheme: Theme = {
     },
   },
   hairlines: {
-    light: hairlineMix(12, 32, 'none'),
+    light: hairlineMix(12, 32, noInsetHighlight),
     dark: hairlineMix(14, 32, darkInsetHighlight(0.05)),
   },
   states: {

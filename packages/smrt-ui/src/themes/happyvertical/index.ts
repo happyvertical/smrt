@@ -61,7 +61,13 @@
  */
 
 import { baselineTokens, opaqueGlass } from '../derive.js';
-import { hairlineInset, shadow, spacingScale } from '../shared.js';
+import {
+  hairlineInset,
+  noInsetHighlight,
+  noShadow,
+  shadow,
+  spacingScale,
+} from '../shared.js';
 import type {
   BorderRadiusScale,
   ColorPalette,
@@ -370,7 +376,7 @@ const typography: TypographyScale = {
  * studio than to material — a raised faceplate, not a floating card.
  */
 const elevation: ElevationScale = {
-  0: 'none',
+  0: noShadow,
   1: hairlineInset,
   2: shadow([[1, 2, 0, 8]]),
   3: shadow([
@@ -394,7 +400,7 @@ const elevation: ElevationScale = {
  * CSS stay in lockstep (#1586).
  */
 const darkElevation: ElevationScale = {
-  0: 'none',
+  0: noShadow,
   1: hairlineInset,
   2: shadow([[1, 2, 0, 40]], 'var(--smrt-inset-highlight)'),
   3: shadow(
@@ -506,7 +512,7 @@ export const happyverticalTheme: Theme = {
     light: {
       color: 'var(--smrt-color-outline-variant)', // bezel
       strongColor: 'var(--smrt-color-outline)',
-      insetHighlight: 'none',
+      insetHighlight: noInsetHighlight,
     },
     dark: {
       color: 'var(--smrt-color-outline-variant)',

@@ -194,7 +194,7 @@
   --smrt-radius-medium: 0.5rem;
   --smrt-radius-large: 0.75rem;
   --smrt-radius-extra-large: 1rem;
-  --smrt-elevation-0: none;
+  --smrt-elevation-0: 0 0 0 0 transparent;
   --smrt-elevation-1: inset 0 0 0 1px var(--smrt-hairline-color);
   --smrt-elevation-2: 0 1px 2px 0 color-mix(in srgb, var(--smrt-shadow-color) 10%, transparent), 0 2px 4px -2px color-mix(in srgb, var(--smrt-shadow-color) 8%, transparent);
   --smrt-elevation-3: 0 1px 2px 0 color-mix(in srgb, var(--smrt-shadow-color) 12%, transparent), 0 4px 8px -3px color-mix(in srgb, var(--smrt-shadow-color) 10%, transparent);
@@ -247,7 +247,7 @@
   --smrt-hairline-strong-color: color-mix(in srgb, var(--smrt-color-on-surface) 32%, transparent);
   --smrt-hairline: 1px solid var(--smrt-hairline-color);
   --smrt-hairline-strong: 1px solid var(--smrt-hairline-strong-color);
-  --smrt-inset-highlight: none;
+  --smrt-inset-highlight: inset 0 1px 0 transparent;
   --smrt-state-hover: 0.06;
   --smrt-state-pressed: 0.10;
   --smrt-state-selected: 0.10;
@@ -275,6 +275,8 @@
   --smrt-glass-surface: var(--smrt-surface-panel);
   --smrt-glass-surface-strong: var(--smrt-surface-raised);
   --smrt-glass-border: var(--smrt-hairline-color);
+  --smrt-glass-border-opacity: 1;
+  --smrt-glass-background-opacity: 1;
   --smrt-duration-scheme: var(--smrt-duration-medium1);
   --smrt-font-feature-settings: normal;
 }
@@ -465,7 +467,7 @@
   --smrt-radius-medium: 0.5rem;
   --smrt-radius-large: 0.75rem;
   --smrt-radius-extra-large: 1rem;
-  --smrt-elevation-0: none;
+  --smrt-elevation-0: 0 0 0 0 transparent;
   --smrt-elevation-1: inset 0 0 0 1px var(--smrt-hairline-color);
   --smrt-elevation-2: var(--smrt-inset-highlight), 0 1px 2px 0 color-mix(in srgb, var(--smrt-shadow-color) 28%, transparent), 0 2px 4px -2px color-mix(in srgb, var(--smrt-shadow-color) 20%, transparent);
   --smrt-elevation-3: var(--smrt-inset-highlight), 0 1px 2px 0 color-mix(in srgb, var(--smrt-shadow-color) 30%, transparent), 0 4px 8px -3px color-mix(in srgb, var(--smrt-shadow-color) 24%, transparent);
@@ -546,6 +548,8 @@
   --smrt-glass-surface: var(--smrt-surface-panel);
   --smrt-glass-surface-strong: var(--smrt-surface-raised);
   --smrt-glass-border: var(--smrt-hairline-color);
+  --smrt-glass-border-opacity: 1;
+  --smrt-glass-background-opacity: 1;
   --smrt-duration-scheme: var(--smrt-duration-medium1);
   --smrt-font-feature-settings: normal;
 }

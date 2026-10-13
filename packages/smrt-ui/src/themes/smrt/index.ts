@@ -22,6 +22,8 @@ import {
   durationScale,
   hairlineInset,
   hairlineMix,
+  noInsetHighlight,
+  noShadow,
   shadow,
   spacingScale,
 } from '../shared.js';
@@ -324,7 +326,7 @@ const typography: TypographyScale = {
  * short ambient layer.
  */
 const elevation: ElevationScale = {
-  0: 'none',
+  0: noShadow,
   1: hairlineInset,
   2: shadow([
     [1, 2, 0, 10],
@@ -351,7 +353,7 @@ const elevation: ElevationScale = {
  * ThemeProvider output and the static dark CSS stay in lockstep (#1586).
  */
 const darkElevation: ElevationScale = {
-  0: 'none',
+  0: noShadow,
   1: hairlineInset,
   2: shadow(
     [
@@ -434,7 +436,7 @@ export const smrtTheme: Theme = {
     },
   },
   hairlines: {
-    light: hairlineMix(12, 30, 'none'),
+    light: hairlineMix(12, 30, noInsetHighlight),
     dark: hairlineMix(9, 24, darkInsetHighlight(0.05)),
   },
   states: {

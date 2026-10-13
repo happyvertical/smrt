@@ -45,7 +45,15 @@ function generateColorVariables(
 ): Record<string, string> {
   const vars: Record<string, string> = {};
 
-  for (const [key, value] of Object.entries(colors)) {
+  const withInfo: ColorPalette = {
+    ...colors,
+    info: colors.info ?? colors.tertiary,
+    onInfo: colors.onInfo ?? colors.onTertiary,
+    infoContainer: colors.infoContainer ?? colors.tertiaryContainer,
+    onInfoContainer: colors.onInfoContainer ?? colors.onTertiaryContainer,
+  };
+  for (const [key, value] of Object.entries(withInfo)) {
+    if (value === undefined) continue;
     // Convert camelCase to kebab-case: primaryContainer -> primary-container
     const cssKey = key.replace(/([A-Z])/g, '-$1').toLowerCase();
     vars[`${prefix}-color-${cssKey}`] = value;

@@ -12,6 +12,8 @@ import {
   durationScale,
   hairlineMix,
   materialEasing,
+  noInsetHighlight,
+  noShadow,
   shadow,
   spacingScale,
 } from '../shared.js';
@@ -296,7 +298,7 @@ const typography: TypographyScale = {
  * ambient shadow with negative spread, tinted by `--smrt-shadow-color`.
  */
 const elevation: ElevationScale = {
-  0: 'none',
+  0: noShadow,
   1: shadow([
     [1, 2, 0, 8],
     [2, 4, -1, 6],
@@ -325,7 +327,7 @@ const elevation: ElevationScale = {
  * highlight.
  */
 const darkElevation: ElevationScale = {
-  0: 'none',
+  0: noShadow,
   1: shadow([
     [1, 2, 0, 24],
     [1, 3, -1, 16],
@@ -399,7 +401,7 @@ export const materialTheme: Theme = {
     },
   },
   hairlines: {
-    light: hairlineMix(10, 30, 'none'),
+    light: hairlineMix(10, 30, noInsetHighlight),
     dark: hairlineMix(10, 30, darkInsetHighlight(0.05)),
   },
   // M3 state layers.

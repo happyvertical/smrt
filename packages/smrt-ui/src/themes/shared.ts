@@ -244,6 +244,15 @@ export function hairlineMix(
   };
 }
 
+/**
+ * Neutral values that are still valid box-shadow layers. Components combine
+ * `var(--smrt-inset-highlight)` with an elevation (`box-shadow: a, b`); the
+ * keyword `none` is invalid inside a list and drops the whole declaration, so
+ * the "no highlight" and "no elevation" values are transparent shadows.
+ */
+export const noInsetHighlight = 'inset 0 1px 0 transparent';
+export const noShadow = '0 0 0 0 transparent';
+
 /** Top inner light line for dark surfaces (`--smrt-inset-highlight`). */
 export const darkInsetHighlight = (alpha: number): string =>
   `inset 0 1px 0 rgb(255 255 255 / ${alpha})`;

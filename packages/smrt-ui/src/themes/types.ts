@@ -55,10 +55,11 @@ export interface ColorPalette {
   onTertiaryContainer: string;
 
   // Info (informational status; presets without a distinct hue reuse tertiary)
-  info: string;
-  onInfo: string;
-  infoContainer: string;
-  onInfoContainer: string;
+  /** Info family; a palette that omits it inherits its tertiary family. */
+  info?: string;
+  onInfo?: string;
+  infoContainer?: string;
+  onInfoContainer?: string;
 
   // Error
   error: string;
@@ -309,6 +310,13 @@ export interface GlassEffects {
   saturation: string;
   /** Per-scheme surfaces; defaults to opaque panel/raised colours. */
   surfaces?: PerScheme<GlassSurfaces>;
+  /**
+   * @deprecated Emitted as `--smrt-glass-border-opacity` for one release so
+   * consumers that read it keep working; the border colour is `surfaces.border`.
+   */
+  borderOpacity?: string;
+  /** @deprecated Emitted as `--smrt-glass-background-opacity`; use `surfaces`. */
+  backgroundOpacity?: string;
 }
 
 /**
@@ -343,7 +351,7 @@ export interface Theme {
   /** Transition easings */
   easing: EasingScale;
   /** Glass effects (opaque for non-glass themes) */
-  glass: GlassEffects;
+  glass?: GlassEffects;
   /** Surface ladder per scheme (derived from the palette when absent) */
   surfaces?: PerScheme<SurfaceLadder>;
   /** Hairline edges per scheme (derived from on-surface when absent) */

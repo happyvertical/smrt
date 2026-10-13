@@ -196,7 +196,7 @@
   --smrt-radius-medium: 0.5rem;
   --smrt-radius-large: 0.75rem;
   --smrt-radius-extra-large: 1rem;
-  --smrt-elevation-0: none;
+  --smrt-elevation-0: 0 0 0 0 transparent;
   --smrt-elevation-1: 0 1px 2px 0 color-mix(in srgb, var(--smrt-shadow-color) 5%, transparent), 0 2px 6px -2px color-mix(in srgb, var(--smrt-shadow-color) 5%, transparent);
   --smrt-elevation-2: 0 1px 3px 0 color-mix(in srgb, var(--smrt-shadow-color) 6%, transparent), 0 6px 14px -4px color-mix(in srgb, var(--smrt-shadow-color) 8%, transparent);
   --smrt-elevation-3: 0 2px 4px 0 color-mix(in srgb, var(--smrt-shadow-color) 7%, transparent), 0 12px 24px -8px color-mix(in srgb, var(--smrt-shadow-color) 10%, transparent);
@@ -249,7 +249,7 @@
   --smrt-hairline-strong-color: color-mix(in srgb, var(--smrt-color-on-surface) 26%, transparent);
   --smrt-hairline: 1px solid var(--smrt-hairline-color);
   --smrt-hairline-strong: 1px solid var(--smrt-hairline-strong-color);
-  --smrt-inset-highlight: none;
+  --smrt-inset-highlight: inset 0 1px 0 transparent;
   --smrt-state-hover: 0.10;
   --smrt-state-pressed: 0.14;
   --smrt-state-selected: 0.14;
@@ -277,6 +277,8 @@
   --smrt-glass-surface: color-mix(in srgb, #ffffff 72%, transparent);
   --smrt-glass-surface-strong: color-mix(in srgb, #ffffff 88%, transparent);
   --smrt-glass-border: var(--smrt-hairline-color);
+  --smrt-glass-border-opacity: 0.3;
+  --smrt-glass-background-opacity: 0.72;
   --smrt-duration-scheme: var(--smrt-duration-medium1);
   --smrt-font-feature-settings: normal;
 }
@@ -469,7 +471,7 @@
   --smrt-radius-medium: 0.5rem;
   --smrt-radius-large: 0.75rem;
   --smrt-radius-extra-large: 1rem;
-  --smrt-elevation-0: none;
+  --smrt-elevation-0: 0 0 0 0 transparent;
   --smrt-elevation-1: 0 1px 2px 0 color-mix(in srgb, var(--smrt-shadow-color) 20%, transparent), 0 2px 6px -2px color-mix(in srgb, var(--smrt-shadow-color) 14%, transparent);
   --smrt-elevation-2: var(--smrt-inset-highlight), 0 1px 3px 0 color-mix(in srgb, var(--smrt-shadow-color) 24%, transparent), 0 6px 14px -4px color-mix(in srgb, var(--smrt-shadow-color) 18%, transparent);
   --smrt-elevation-3: var(--smrt-inset-highlight), 0 2px 4px 0 color-mix(in srgb, var(--smrt-shadow-color) 26%, transparent), 0 12px 24px -8px color-mix(in srgb, var(--smrt-shadow-color) 22%, transparent);
@@ -550,6 +552,8 @@
   --smrt-glass-surface: color-mix(in srgb, #1d1d26 72%, transparent);
   --smrt-glass-surface-strong: color-mix(in srgb, #1d1d26 88%, transparent);
   --smrt-glass-border: color-mix(in srgb, #ffffff 10%, transparent);
+  --smrt-glass-border-opacity: 0.3;
+  --smrt-glass-background-opacity: 0.72;
   --smrt-duration-scheme: var(--smrt-duration-medium1);
   --smrt-font-feature-settings: normal;
 }

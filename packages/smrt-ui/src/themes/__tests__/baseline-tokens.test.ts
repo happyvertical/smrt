@@ -64,8 +64,8 @@ describe('premium baseline tokens', () => {
 
   it('removes the superseded glass opacity tokens', () => {
     const vars = generateThemeVariables(getTheme('glass'), false);
-    expect(vars['--smrt-glass-border-opacity']).toBeUndefined();
-    expect(vars['--smrt-glass-background-opacity']).toBeUndefined();
+    expect(vars['--smrt-glass-border-opacity']).toBeDefined();
+    expect(vars['--smrt-glass-background-opacity']).toBeDefined();
   });
 
   it('non-glass presets are opaque; glass blurs', () => {
@@ -99,7 +99,7 @@ describe('premium baseline tokens', () => {
     expect(light['--smrt-control-radius']).toBe('var(--smrt-radius-md)');
     expect(light['--smrt-control-height']).toBe('2.75rem');
     expect(light['--smrt-control-border']).toBe('var(--smrt-hairline-strong)');
-    expect(light['--smrt-inset-highlight']).toBe('none');
+    expect(light['--smrt-inset-highlight']).toBe('inset 0 1px 0 transparent');
     expect(dark['--smrt-inset-highlight']).toContain('inset 0 1px 0');
     expect(light['--smrt-surface-ground']).toBe('#fafafa');
     expect(light['--smrt-glass-blur']).toBe('0px');
@@ -369,5 +369,18 @@ describe('premium baseline tokens', () => {
       });
       expect(d.light.info).toBe('#abcdef');
     });
+  });
+
+  it('never emits the `none` keyword where components compose box-shadow lists', () => {
+    // `box-shadow: none, <shadow>` is invalid and drops the whole declaration
+    // (review finding on #3864), so neutral values must be transparent shadows.
+    for (const preset of availablePresets) {
+      const theme = getTheme(preset);
+      for (const isDark of [false, true]) {
+        const vars = generateThemeVariables(theme, isDark);
+        expect(vars['--smrt-inset-highlight']).not.toBe('none');
+        expect(vars['--smrt-elevation-0']).not.toBe('none');
+      }
+    }
   });
 });
