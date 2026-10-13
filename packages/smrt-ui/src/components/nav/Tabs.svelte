@@ -282,6 +282,9 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     display: flex;
     border-bottom: var(--smrt-hairline);
     width: 100%;
+    /* Tabs keep their minimum width; a row wider than a phone scrolls. */
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
 
   .tab-button {
