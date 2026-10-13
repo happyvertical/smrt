@@ -1,6 +1,12 @@
 name: Pull Request Validation
 
 on:
+  workflow_dispatch:
+    inputs:
+      update_visual_baselines:
+        description: 'Generate Linux visual baselines for download and review (never commits)'
+        type: boolean
+        default: false
   # This event always loads workflow YAML from the trusted base branch, so an
   # external fork cannot modify runner selection in its merge commit.
   pull_request_target:
@@ -460,9 +466,87 @@ jobs:
       contents: read
       packages: read
 
+  visual-scope:
+    name: Detect Visual Regression Scope
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    outputs:
+      visual: ${{ steps.filter.outputs.visual }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          base: ${{ github.event.merge_group.base_sha || github.event.repository.default_branch }}
+          filters: |
+            visual:
+              - 'packages/*/src/**/*.svelte'
+              - 'packages/*/src/**/playground.ts'
+              - 'packages/smrt-ui/src/themes/**'
+              - 'packages/smrt-ui/src/styles/**'
+              - 'packages/smrt-playground/**'
+              - '.github/workflows/on-pull-request.yml'
+              - '.github/actions/setup-environment/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+
+  visual-regression:
+    name: Playground Visual Regression
+    needs: visual-scope
+    if: >-
+      needs.visual-scope.outputs.visual == 'true' ||
+      github.event_name == 'workflow_dispatch'
+    # Same AMD64 Noble browser/font image as the documented container command.
+    runs-on: ubuntu-latest
+    # The acceptance budget includes setup, build, rendering and artifacts.
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.10.0'
+          setup-playwright: 'false'
+          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build playground dependencies
+        run: pnpm turbo run build --filter='@happyvertical/smrt-playground...'
+      - name: Compare visual baselines
+        if: github.event_name != 'workflow_dispatch' || !inputs.update_visual_baselines
+        run: pnpm --filter smrt-playground-host test:visual:container
+      - name: Generate visual baselines
+        if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+        run: pnpm --filter smrt-playground-host test:visual:container --update-snapshots
+      - name: Upload visual differences
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: playground-visual-diffs
+          path: |
+            packages/smrt-playground/test-results/visual
+            packages/smrt-playground/playwright-report/visual
+          retention-days: 14
+      - name: Upload generated baselines
+        if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: playground-visual-baselines
+          path: packages/smrt-playground/e2e/__screenshots__
+          if-no-files-found: error
+
   required-ci:
     name: Required CI
-    if: always()
+    if: always() && github.event_name != 'workflow_dispatch'
     needs:
       - validate-commits
       - validate-workflows
@@ -472,6 +556,8 @@ jobs:
       - dependency-audit
       - test
       - publish-dry-run
+      - visual-scope
+      - visual-regression
     runs-on: ubuntu-latest
     # Deliberately below the 45-minute standard. This aggregator does no
     # checkout and no work beyond reading `needs.*.result`, and it is
@@ -490,6 +576,9 @@ jobs:
           DEPENDENCY_AUDIT: ${{ needs.dependency-audit.result }}
           TEST_SUITE: ${{ needs.test.result }}
           PUBLISH_DRY_RUN: ${{ needs.publish-dry-run.result }}
+          VISUAL_SCOPE: ${{ needs.visual-scope.result }}
+          VISUAL_SELECTED: ${{ needs.visual-scope.outputs.visual }}
+          VISUAL_RESULT: ${{ needs.visual-regression.result }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
@@ -502,6 +591,20 @@ jobs:
               exit 1
             fi
           done
+
+          if [ "$VISUAL_SCOPE" != success ] && [ "$VISUAL_SCOPE" != skipped ]; then
+            echo "::error::visual scope detection failed"
+            exit 1
+          fi
+          if [ "$VISUAL_SELECTED" = true ]; then
+            if [ "$VISUAL_RESULT" != success ]; then
+              echo "::error::playground visual regression did not succeed"
+              exit 1
+            fi
+          elif [ "$VISUAL_RESULT" != skipped ]; then
+            echo "::error::unexpected visual regression result: $VISUAL_RESULT"
+            exit 1
+          fi
 
           # Publish Dry Run is merge-queue only (#2214 item 4), so it reports
           # `skipped` on a pull request. Require success where it actually runs,

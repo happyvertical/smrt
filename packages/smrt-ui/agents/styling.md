@@ -193,7 +193,7 @@ Shell motion (track transitions, list flips, view transitions, theme crossfade) 
 
 ## Premium baseline token vocabulary
 
-See the table in [src/themes/README.md](../src/themes/README.md#premium-baseline-token-vocabulary): surface ladder, hairlines, state layers, shadow colour, control geometry, focus ring, native chrome, glass and motion/typography tokens. Themes define them; components consume them and use a component-prefixed name () that falls back to the theme token for per-variant overrides, because the required-tokens scanner drops any name a component defines on its own root.
+See the table in [src/themes/README.md](../src/themes/README.md#premium-baseline-token-vocabulary): surface ladder, hairlines, state layers, shadow colour, control geometry, focus ring, native chrome, glass and motion/typography tokens. Themes define them; components consume them and use a component-prefixed name that falls back to the theme token for per-variant overrides, because the required-tokens scanner drops any name a component defines on its own root.
 
 ## Typography
 
@@ -205,3 +205,11 @@ Built-in presets stay static (no inline token payload); only user overrides go i
 
 
 Use `--smrt-hairline` / `--smrt-hairline-strong` for quiet / strong edges, `--smrt-hairline-color` / `--smrt-hairline-strong-color` for edge colours and matching `--smrt-inset-highlight` shadows (transparent when neutral, never `none` in shadow lists); run `node scripts/codemod-smrt-hairlines.mjs` to convert supported literals and list exceptions, and spell concrete token names in markdown because `scripts/check-svelte-tokens.mjs` scans docs under `src`.
+
+## Visual regression
+
+Before accepting a styling change, run the playground preset screenshot matrix.
+The [playground visual-regression guide](../../smrt-playground/AGENTS.md#visual-regression-styling-wave-2)
+defines the pinned Linux renderer, baseline update/review flow and required
+`Playground Visual Regression` CI job. Baseline changes must represent intentional
+visual changes; a structure/theme split should leave them unchanged.
