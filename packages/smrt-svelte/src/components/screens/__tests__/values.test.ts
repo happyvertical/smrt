@@ -6,9 +6,11 @@ import {
   draftForCreate,
   draftFromRecord,
   formatScreenValue,
+  jsonScreenEntries,
   majorStringToMinorUnits,
   minorUnitsToMajorString,
   parseDraft,
+  shortScreenId,
   toDatetimeLocal,
 } from '../values.js';
 import { taskDefinition, taskPolicy, taskRows } from './fixtures.js';
@@ -221,11 +223,62 @@ describe('formatScreenValue', () => {
     expect(formatScreenValue(kind('title'), null)).toBe('');
   });
 
+  it('formats an empty JSON object or array as empty, like an empty scalar', () => {
+    const payload = kind('payload');
+    expect(formatScreenValue(payload, {})).toBe('');
+    expect(formatScreenValue(payload, [])).toBe('');
+    expect(formatScreenValue(payload, '{}')).toBe('');
+    expect(formatScreenValue(payload, ' [] ')).toBe('');
+    expect(formatScreenValue(payload, { line1: '', city: null })).toBe('');
+    expect(formatScreenValue(payload, '{"a":1}')).toBe('{"a":1}');
+    expect(formatScreenValue(payload, [1, 2])).toBe('[1,2]');
+    expect(formatScreenValue(payload, 'plain text')).toBe('plain text');
+  });
+
   it('never throws on an unsupported currency or a bad date', () => {
     expect(formatScreenValue(kind('budget'), 100, { currency: 'zz' })).toBe(
       '100',
     );
     expect(formatScreenValue(kind('dueAt'), 'soon')).toBe('soon');
+  });
+});
+
+describe('jsonScreenEntries', () => {
+  it('lists a non-empty object as key/value rows, skipping blank values', () => {
+    expect(
+      jsonScreenEntries({
+        line1: '12 Main St',
+        line2: '',
+        city: 'Calgary',
+        geo: { lat: 1 },
+        primary: true,
+      }),
+    ).toEqual([
+      { key: 'line1', value: '12 Main St' },
+      { key: 'city', value: 'Calgary' },
+      { key: 'geo', value: '{"lat":1}' },
+      { key: 'primary', value: 'true' },
+    ]);
+    expect(jsonScreenEntries('{"city":"Calgary"}')).toEqual([
+      { key: 'city', value: 'Calgary' },
+    ]);
+  });
+
+  it('is null for empty objects, arrays, scalars and unparseable text', () => {
+    expect(jsonScreenEntries({})).toBeNull();
+    expect(jsonScreenEntries({ city: '' })).toBeNull();
+    expect(jsonScreenEntries([{ a: 1 }])).toBeNull();
+    expect(jsonScreenEntries('{nope')).toBeNull();
+    expect(jsonScreenEntries(null)).toBeNull();
+  });
+});
+
+describe('shortScreenId', () => {
+  it('shortens a long id to its first eight characters', () => {
+    expect(shortScreenId('dccb8ee7-f176-43f0-ab58-676daeef61b3')).toBe(
+      'dccb8ee7…',
+    );
+    expect(shortScreenId('t-1')).toBe('t-1');
   });
 });
 

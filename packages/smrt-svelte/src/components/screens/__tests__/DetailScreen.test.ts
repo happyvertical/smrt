@@ -143,7 +143,7 @@ describe('DetailScreen', () => {
     );
     expect(document.querySelector('code')).toBeNull();
 
-    // No href: the label still replaces the raw id. No label either: raw id in <code>.
+    // No href: the label still replaces the raw id. No label either: a short id in <code>.
     rerender({
       definition: taskDefinition,
       policy: taskPolicy,
@@ -161,9 +161,47 @@ describe('DetailScreen', () => {
       relations,
       labels: undefined,
     });
-    expect(document.querySelector('code')?.textContent).toBe(
-      String(record.ownerId),
-    );
+    const code = document.querySelector('code');
+    expect(code?.textContent).toBe('0b0c7b5e…');
+    expect(code).toHaveAttribute('title', String(record.ownerId));
+
+    // A link without a label shows the short id inside the link.
+    rerender({
+      definition: taskDefinition,
+      policy: taskPolicy,
+      record,
+      relations,
+      hrefFor: (_field, id) => `/users/${id}`,
+      labels: undefined,
+    });
+    const link = screen.getByRole('link', { name: '0b0c7b5e…' });
+    expect(link).toHaveAttribute('href', `/users/${record.ownerId}`);
+    expect(link.querySelector('code')).not.toBeNull();
+  });
+
+  it('shows an empty JSON object as Not set and a filled one as a key/value list', () => {
+    const { rerender, container } = render(DetailScreen, {
+      props: {
+        definition: taskDefinition,
+        policy: taskPolicy,
+        record: { ...record, payload: {} },
+      },
+    });
+    const field = () =>
+      [...container.querySelectorAll('.smrt-detail-screen__field')].find(
+        (el) => el.querySelector('dt')?.textContent === 'Payload',
+      ) as HTMLElement;
+    expect(within(field()).getByText('Not set')).toBeInTheDocument();
+    expect(field().textContent).not.toContain('{}');
+
+    rerender({
+      definition: taskDefinition,
+      policy: taskPolicy,
+      record: { ...record, payload: { line1: '12 Main St', postalCode: '' } },
+    });
+    expect(within(field()).getByText('Line1')).toBeInTheDocument();
+    expect(within(field()).getByText('12 Main St')).toBeInTheDocument();
+    expect(within(field()).queryByText('Postal code')).toBeNull();
   });
 
   it('is axe-clean', async () => {

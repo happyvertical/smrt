@@ -40,13 +40,17 @@ stays below the domain layer, and the app passes both in as props.
   with exact string math (`majorStringToMinorUnits`), never `* 100`; integers are
   rejected unless JavaScript-safe; datetimes go out as ISO strings (an unchanged datetime keeps the
   loaded record's full precision via `parseDraft`'s `record` context; the control
-  only shows minutes); JSON as parsed values. Empty optional text becomes `null` when the field is nullable and `''`
+  only shows minutes); JSON as parsed values. For display an empty JSON
+  object/array (or one whose values are all blank) formats as `''`, the
+  "Not set" placeholder, and `DetailScreen` lists a non-empty object as
+  key/value rows (`jsonScreenEntries`). Empty optional text becomes `null` when the field is nullable and `''`
   otherwise (unset text persists as `''`); every other empty optional field is
   `null`. Errors are codes, mapped to messages by the component via `useI18n`.
 - **Reference fields link (`relations`, `hrefFor`, `labels`).** `DetailScreen`
   renders a `foreignKey` / `crossPackageRef` value as `<a href={hrefFor(field,
   id)}>{labels[model](id)}</a>`; without an href the label alone, without a
-  label the raw id in `<code>`. `labels` is keyed by the **target model id**,
+  label a shortened id (`shortScreenId`: first eight characters and `…`) in
+  `<code>` with the full id as its tooltip, inside the link when there is one. `labels` is keyed by the **target model id**,
   which the screen finds through the `reference` relations (below), so pass
   `relations` whenever you pass `labels`.
 - **Transport-neutral.** `RecipeScreens` drives a `RecipeScreensSource`
