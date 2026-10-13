@@ -32,23 +32,23 @@ import { Icon, ripple } from '@happyvertical/smrt-ui';
   h2 {
     font-size: 1.25rem;
     margin-bottom: 16px;
-    color: var(--md-sys-color-primary);
+    color: var(--smrt-color-primary);
   }
   .demo-grid {
     display: flex;
     gap: 16px;
   }
   .btn-primary {
-    background: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     border: none;
     padding: 10px 20px;
     border-radius: var(--smrt-radius-2xl, 24px);
     cursor: pointer;
   }
   .btn-secondary {
-    background: var(--md-sys-color-secondary-container);
-    color: var(--md-sys-color-on-secondary-container);
+    background: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
     border: none;
     padding: 10px 20px;
     border-radius: var(--smrt-radius-2xl, 24px);
@@ -57,7 +57,7 @@ import { Icon, ripple } from '@happyvertical/smrt-ui';
   .surface {
     width: 150px;
     height: 100px;
-    background: var(--md-sys-color-surface-container);
+    background: var(--smrt-color-surface-container);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -75,7 +75,7 @@ import { Icon, ripple } from '@happyvertical/smrt-ui';
     align-items: center;
     gap: 8px;
     padding: 16px;
-    background: var(--md-sys-color-surface-container-low);
+    background: var(--smrt-color-surface-container-low);
     border-radius: var(--smrt-radius-md, 8px);
   }
   .icon-item span {

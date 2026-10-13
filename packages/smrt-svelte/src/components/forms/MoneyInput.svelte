@@ -308,7 +308,7 @@ function handleBlur() {
 }
 </script>
 
-<div class="smrt-money">
+<div class="smrt-money" data-smrt-component="MoneyInput">
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
@@ -353,10 +353,12 @@ function handleBlur() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-money {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .input-wrapper {
@@ -368,7 +370,7 @@ function handleBlur() {
   .currency-code {
     position: absolute;
     right: 12px;
-    color: var(--smrt-color-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     pointer-events: none;
@@ -376,42 +378,43 @@ function handleBlur() {
 
   .smrt-input {
     flex: 1;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-12, 48px) var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-12) var(--smrt-spacing-2) var(--smrt-spacing-3);
     font-size: var(--smrt-typography-body-large-size, 1rem);
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: var(--smrt-radius-small, 6px);
-    background: var(--smrt-color-surface, #fff);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
     text-align: right;
   }
 
   .smrt-input:focus {
     outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #005ac1) 10%, transparent);
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
 
   .smrt-input:disabled {
-    background: var(--smrt-color-surface-container-high, #f3f4f6);
+    background: var(--smrt-color-surface-container-high);
     cursor: not-allowed;
   }
 
   .smrt-input.smrt-mode {
-    border-color: var(--smrt-color-tertiary, #6b5778);
+    border-color: var(--smrt-color-tertiary);
   }
 
   .smrt-input.invalid {
-    border-color: var(--smrt-color-error, #ba1a1a);
+    border-color: var(--smrt-color-error);
   }
 
   .smrt-input.invalid:focus {
     border-color: var(--smrt-color-error);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-error, #ba1a1a) 10%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
   }
 
   .validation-error {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-error, #ba1a1a);
-    margin-top: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-error);
+    margin-top: var(--smrt-spacing-1);
   }
+}
 </style>

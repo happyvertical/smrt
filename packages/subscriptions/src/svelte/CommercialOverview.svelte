@@ -41,7 +41,7 @@ function formatCharge(metric: CommercialMetricView): string {
 }
 </script>
 
-<section class="commercial-overview" aria-label={t(M['subscriptions.commercial.overview_label'])}>
+<section class="commercial-overview" aria-label={t(M['subscriptions.commercial.overview_label'])} data-smrt-component="CommercialOverview">
   {#each metrics as metric (metric.metricKey)}
     <article>
       <header><strong>{metric.metricKey}</strong><span class:blocked={metric.thresholdState === 'blocked'}>{metric.thresholdState ?? 'ok'}</span></header>
@@ -56,11 +56,14 @@ function formatCharge(metric: CommercialMetricView): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 .commercial-overview { display:grid; gap:.75rem; }
-article { border:1px solid var(--smrt-color-outline-variant,#d8dde6); border-radius:var(--smrt-radius-md,8px); padding:1rem; }
+article { border:1px solid var(--smrt-color-outline-variant); border-radius:var(--smrt-radius-md); padding:1rem; }
 header, dl, dl div { display:flex; justify-content:space-between; gap:1rem; }
 dl { flex-wrap:wrap; margin:.75rem 0 0; }
-dt { color:var(--smrt-color-on-surface-variant,#64748b); }
+dt { color:var(--smrt-color-on-surface-variant); }
 dd { margin:0; }
-.blocked { color:var(--smrt-color-error,#dc2626); }
+.blocked { color:var(--smrt-color-error); }
+}
 </style>

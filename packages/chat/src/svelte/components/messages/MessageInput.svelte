@@ -60,7 +60,7 @@ function handleInput(event: Event) {
 }
 </script>
 
-<div class="message-input" class:disabled>
+<div class="message-input" class:disabled data-smrt-component="MessageInput">
   {#if replyTo}
     <div class="message-input__reply">
       <div class="message-input__reply-body">
@@ -115,11 +115,13 @@ function handleInput(event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .message-input {
     display: flex;
     flex-direction: column;
-    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    background: var(--smrt-color-surface, #ffffff);
+    border-top: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
   }
 
   .message-input.disabled {
@@ -132,29 +134,29 @@ function handleInput(event: Event) {
     align-items: center;
     gap: var(--smrt-spacing-2, 0.375rem);
     padding: var(--smrt-spacing-2, 0.375rem) var(--smrt-spacing-4, 1rem);
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    background: var(--smrt-color-surface-container-low);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .message-input__reply-body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     min-width: 0;
-    border-left: 2px solid var(--smrt-color-primary, #005ac1);
+    border-left: 2px solid var(--smrt-color-primary);
     padding-left: var(--smrt-spacing-2, 0.375rem);
   }
 
   .message-input__reply-name {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .message-input__reply-text {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -170,13 +172,13 @@ function handleInput(event: Event) {
     border: 0;
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     flex-shrink: 0;
   }
 
   .message-input__reply-close:hover {
-    background: var(--smrt-color-surface-container-high, #e1e3e8);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .message-input__bar {
@@ -205,21 +207,22 @@ function handleInput(event: Event) {
     height: 36px;
     padding: 0;
     border: 0;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     cursor: pointer;
     flex-shrink: 0;
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .message-input__send:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--smrt-color-primary, #005ac1) 85%, var(--smrt-color-shadow, #000));
+    background: color-mix(in srgb, var(--smrt-color-primary) 85%, var(--smrt-color-shadow));
   }
 
   .message-input__send:disabled {
-    background: var(--smrt-color-surface-container-high, #e1e3e8);
-    color: var(--smrt-color-outline, #74777f);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-outline);
     cursor: default;
   }
+}
 </style>

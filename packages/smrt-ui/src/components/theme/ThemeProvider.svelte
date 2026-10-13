@@ -36,11 +36,11 @@ $effect(() => {
 const cssVariables = $derived.by(() => {
   const themeVars = Object.entries(themeState.theme)
     .map(([key, value]) => {
-      // camelCase to kebab-case: onPrimary -> --md-sys-color-on-primary
+      // camelCase to kebab-case: onPrimary -> --smrt-color-on-primary
       const kebab = key
         .replace(/([a-z0-9]|(?=[A-Z]))([A-Z])/g, '$1-$2')
         .toLowerCase();
-      return `--md-sys-color-${kebab}: ${value};`;
+      return `--smrt-color-${kebab}: ${value};`;
     })
     .join('\n');
 
@@ -61,11 +61,14 @@ const cssVariables = $derived.by(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-theme-provider {
     display: contents;
     /* Base typography and other global resets can go here later */
-    color: var(--md-sys-color-on-background);
-    background-color: var(--md-sys-color-background);
+    color: var(--smrt-color-on-background);
+    background-color: var(--smrt-color-background);
     font-family: var(--smrt-font-family, Roboto, sans-serif);
   }
+}
 </style>

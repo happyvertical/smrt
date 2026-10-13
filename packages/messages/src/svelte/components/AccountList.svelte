@@ -56,7 +56,7 @@ function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
 }
 </script>
 
-<div class="account-list" role="list" aria-label={t(M['messages.account_list.accounts'])}>
+<div class="account-list" role="list" aria-label={t(M['messages.account_list.accounts'])} data-smrt-component="AccountList">
   {#if loading}
     <div class="loading" role="status" aria-live="polite">
       <p>{t(M['messages.account_list.loading'])}</p>
@@ -90,15 +90,18 @@ function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .loading,
   .empty {
     text-align: center;
     padding: var(--smrt-spacing-3xl, 3rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .loading p,
   .empty p {
     font: var(--smrt-typography-body-large-font, 1.125rem / 1.5 sans-serif);
   }
+}
 </style>

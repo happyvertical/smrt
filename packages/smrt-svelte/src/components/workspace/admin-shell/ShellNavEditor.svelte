@@ -312,7 +312,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   data-layout-editing=""
   data-nav-mode={navMode}
   aria-label={ariaLabel || t(M['ui.shell_layout_editor.sortable_label'])}
-  bind:this={rootEl}
+  bind:this={rootEl} data-smrt-component="ShellNavEditor"
 >
   <Sortable
     {containers}
@@ -489,6 +489,8 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-nav-editor { display: grid; gap: var(--smrt-spacing-2); min-inline-size: 0; }
   /* Make the generic Sortable read as the real navigation. */
   .smrt-nav-editor :global(.smrt-sortable) { gap: var(--smrt-spacing-1); }
@@ -528,4 +530,5 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   .smrt-nav-editor__section-icon { display: inline-flex; margin-inline-end: var(--smrt-spacing-2); vertical-align: middle; }
   .smrt-nav-editor__icons { flex: 1 1 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr)); gap: var(--smrt-spacing-1); padding-block-start: var(--smrt-spacing-1); }
   .smrt-nav-editor__icons :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+}
 </style>

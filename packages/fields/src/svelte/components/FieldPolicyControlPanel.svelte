@@ -223,7 +223,7 @@ async function suggestionChanged(): Promise<void> {
 </script>
 
 {#if canManage}
-  <section class="field-policy-control-panel" aria-label={heading}>
+  <section class="field-policy-control-panel" aria-label={heading} data-smrt-component="FieldPolicyControlPanel">
     <header>
       <h1>{heading}</h1>
       <p>Manage inherited defaults, visibility, help, labels, order, and locks for every registered field.</p>
@@ -281,13 +281,16 @@ async function suggestionChanged(): Promise<void> {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .field-policy-control-panel { display: grid; gap: var(--smrt-spacing-4); }
   .field-policy-control-panel header p, .field-policy-control-panel__detail > p { color: var(--smrt-color-on-surface-variant); }
-  .field-policy-control-panel__error { color: var(--smrt-color-error, #b42318); }
+  .field-policy-control-panel__error { color: var(--smrt-color-error); }
   .field-policy-control-panel__layers { display: grid; gap: var(--smrt-spacing-2); }
   .field-policy-control-panel__layers div { display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: var(--smrt-spacing-2); }
   .field-policy-control-panel__layers dt { font-weight: 600; }
   .field-policy-control-panel__layers dd { margin: 0; }
   .field-policy-control-panel__actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); }
   .field-policy-control-panel__drift ul { display: grid; gap: var(--smrt-spacing-2); padding-inline-start: var(--smrt-spacing-5); }
+}
 </style>

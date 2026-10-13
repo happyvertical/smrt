@@ -110,7 +110,7 @@ function handleEscape(event: KeyboardEvent) {
 />
 
 {#if message.messageType === 'system' || message.messageType === 'action'}
-  <div class="message-item message-item--system">
+  <div class="message-item message-item--system" data-smrt-component="MessageItem">
     <MessageBubble content={message.content} own={false} variant="system" />
   </div>
 {:else}
@@ -121,7 +121,7 @@ function handleEscape(event: KeyboardEvent) {
     aria-label={t(M['chat.message_item.message_from'], { name: message.senderName })}
     onmouseenter={() => showActions = true}
     onmouseleave={() => { showActions = false; showReactionPicker = false; }}
-    onfocusout={handleFocusOut}
+    onfocusout={handleFocusOut} data-smrt-component="MessageItem"
   >
     {#if !isOwn}
       <div class="message-item__avatar">
@@ -279,6 +279,8 @@ function handleEscape(event: KeyboardEvent) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .message-item {
     display: flex;
     align-items: flex-start;
@@ -316,18 +318,18 @@ function handleEscape(event: KeyboardEvent) {
   .message-item__sender {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     padding-left: var(--smrt-spacing-1, 0.25rem);
   }
 
   .message-item__reply-preview {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-3, 0.75rem);
-    border-left: 2px solid var(--smrt-color-primary, #005ac1);
+    border-left: 2px solid var(--smrt-color-primary);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     max-width: 100%;
     overflow: hidden;
@@ -335,11 +337,11 @@ function handleEscape(event: KeyboardEvent) {
 
   .message-item__reply-name {
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .message-item__reply-text {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -350,7 +352,7 @@ function handleEscape(event: KeyboardEvent) {
     align-items: center;
     gap: var(--smrt-spacing-2, 0.375rem);
     padding: var(--smrt-spacing-2, 0.375rem) var(--smrt-spacing-3, 0.75rem);
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-small, 0.25rem);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
@@ -358,11 +360,11 @@ function handleEscape(event: KeyboardEvent) {
 
   .message-item__tool-name {
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #1b1b1f);
+    color: var(--smrt-color-on-surface);
   }
 
   .message-item__tool-status {
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
     border-radius: var(--smrt-radius-small, 0.25rem);
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     text-transform: uppercase;
@@ -370,31 +372,31 @@ function handleEscape(event: KeyboardEvent) {
   }
 
   .message-item__tool-status.pending {
-    background: var(--smrt-color-surface-container-high, #e1e3e8);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .message-item__tool-status.running {
-    background: var(--smrt-color-primary-container, #e3f2fd);
-    color: var(--smrt-color-on-primary-container, #1565c0);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .message-item__tool-status.success {
-    background: var(--smrt-color-success-container, #e8f5e9);
-    color: var(--smrt-color-on-success-container, #2e7d32);
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
   }
 
   .message-item__tool-status.error {
-    background: var(--smrt-color-error-container, #ffebee);
-    color: var(--smrt-color-on-error-container, #c62828);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 
   .message-item__tool-duration {
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   .message-item__tool-error {
-    color: var(--smrt-color-on-error-container, #c62828);
+    color: var(--smrt-color-on-error-container);
   }
 
   .message-item__reactions {
@@ -405,22 +407,22 @@ function handleEscape(event: KeyboardEvent) {
 
   /* :global() pierces into each Button's rendered <button> (see #1589). */
   .message-item__reactions :global(.message-item__reaction) {
-    gap: var(--smrt-spacing-1, 4px);
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-surface, #ffffff);
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .message-item__reactions :global(.message-item__reaction:hover) {
-    background: var(--smrt-color-surface-container-high, #e1e3e8);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .message-item__reactions :global(.message-item__reaction--active) {
-    border-color: var(--smrt-color-primary, #005ac1);
-    background: var(--smrt-color-primary-container, #d6e3ff);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
   }
 
   .message-item__reaction-emoji {
@@ -430,7 +432,7 @@ function handleEscape(event: KeyboardEvent) {
 
   .message-item__reaction-count {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .message-item__meta {
@@ -442,12 +444,12 @@ function handleEscape(event: KeyboardEvent) {
 
   .message-item__time {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   .message-item__edited {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
     font-style: italic;
   }
 
@@ -459,10 +461,10 @@ function handleEscape(event: KeyboardEvent) {
     position: absolute;
     top: 0;
     right: var(--smrt-spacing-4, 1rem);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    background: var(--smrt-color-surface, #ffffff);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface-variant);
     opacity: 0;
     transition: opacity var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
@@ -482,7 +484,7 @@ function handleEscape(event: KeyboardEvent) {
 
   .message-item :global(.message-item__more-btn:focus-visible) {
     opacity: 1;
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 1px;
   }
 
@@ -495,14 +497,14 @@ function handleEscape(event: KeyboardEvent) {
   .message-item__actions {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     position: absolute;
     top: 0;
     right: var(--smrt-spacing-4, 1rem);
-    background: var(--smrt-color-surface, #ffffff);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    padding: var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-1);
     box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.12));
     z-index: 1;
   }
@@ -519,12 +521,12 @@ function handleEscape(event: KeyboardEvent) {
     padding: 0;
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .message-item__actions :global(.message-item__action-btn:hover) {
-    background: var(--smrt-color-surface-container-high, #e1e3e8);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .message-item__picker-popover {
@@ -551,4 +553,5 @@ function handleEscape(event: KeyboardEvent) {
       transition: none;
     }
   }
+}
 </style>

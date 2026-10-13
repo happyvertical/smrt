@@ -35,7 +35,7 @@ describe.each(['Checkbox', 'Radio', 'Switch'])('%s hit area', (name) => {
 describe.each(['Checkbox', 'Radio'])('%s in table cells', (name) => {
   it('never grows horizontally out of the cell', () => {
     expect(source(name)).toMatch(
-      /:global\(:is\(td, th\)\) \.(checkbox|radio)::before \{ inline-size: var\(--_box\)/,
+      /:global\(:is\(td, th\)\) \.(checkbox|radio)::before \{ inline-size: var\(--smrt-(checkbox|radio)-box\)/,
     );
   });
 });
@@ -43,7 +43,7 @@ describe.each(['Checkbox', 'Radio'])('%s in table cells', (name) => {
 describe.each(['Checkbox', 'Radio'])('%s beside other content', (name) => {
   it('keeps to its own column unless it stands alone, so it never covers a neighbouring link or text', () => {
     expect(source(name)).toMatch(
-      /\.(checkbox|radio):not\(:only-child\)::before \{ inline-size: var\(--_box\); margin-inline-start: calc\(var\(--_box\) \/ -2\)/,
+      /\.(checkbox|radio):not\(:only-child\)::before \{ inline-size: var\(--smrt-(checkbox|radio)-box\); margin-inline-start: calc\(var\(--smrt-(checkbox|radio)-box\) \/ -2\)/,
     );
   });
 });

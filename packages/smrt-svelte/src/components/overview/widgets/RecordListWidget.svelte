@@ -49,9 +49,9 @@ const viewAll = $derived(
 </script>
 
 {#if rows.length === 0}
-  <p class="smrt-records__empty">{t(M['ui.overview.records.empty'])}</p>
+  <p class="smrt-records__empty" data-smrt-component="RecordListWidget">{t(M['ui.overview.records.empty'])}</p>
 {:else}
-  <ul class="smrt-records">
+  <ul class="smrt-records" data-smrt-component="RecordListWidget">
     {#each rows as row (row.id)}
       <li class="smrt-records__row">
         <span class="smrt-records__main">
@@ -68,7 +68,7 @@ const viewAll = $derived(
   </ul>
 {/if}
 {#if total !== null || viewAll}
-  <p class="smrt-records__foot">
+  <p class="smrt-records__foot" data-smrt-component="RecordListWidget">
     {#if total !== null}
       <span>{t(M['ui.overview.records.total'], { count: new Intl.NumberFormat(locale).format(total) })}</span>
     {/if}
@@ -77,6 +77,8 @@ const viewAll = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-records { display: grid; margin: 0; padding: 0; list-style: none; }
   .smrt-records__row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-2) 0; border-block-end: 1px solid var(--smrt-color-outline-variant); }
   .smrt-records__row:last-child { border-block-end: 0; }
@@ -88,4 +90,5 @@ const viewAll = $derived(
   .smrt-records__foot { display: flex; justify-content: space-between; gap: var(--smrt-spacing-3); margin: var(--smrt-spacing-2) 0 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
   .smrt-records__foot a { color: var(--smrt-color-primary); }
   .smrt-records__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
+}
 </style>

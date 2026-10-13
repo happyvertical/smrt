@@ -10,11 +10,13 @@ interface Props {
 let { side, children }: Props = $props();
 </script>
 
-<div class="smrt-shell-corner" data-side={side}>
+<div class="smrt-shell-corner" data-side={side} data-smrt-component="ShellCorner">
   {@render children()}
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-shell-corner {
     inline-size: var(--smrt-admin-shell-left-track);
     min-inline-size: 0;
@@ -23,4 +25,5 @@ let { side, children }: Props = $props();
   .smrt-shell-corner[data-side='right'] {
     inline-size: var(--smrt-admin-shell-right-track);
   }
+}
 </style>

@@ -68,7 +68,7 @@ function handleScroll(event: Event) {
   bind:this={scrollContainer}
   onscroll={handleScroll}
   role="log"
-  aria-label={t(M['chat.message_list.messages_label'])}
+  aria-label={t(M['chat.message_list.messages_label'])} data-smrt-component="MessageList"
 >
   {#if messages.length === 0}
     <div class="message-list__empty">
@@ -92,6 +92,8 @@ function handleScroll(event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .message-list {
     display: flex;
     flex-direction: column;
@@ -107,7 +109,7 @@ function handleScroll(event: Event) {
     align-items: center;
     justify-content: center;
     flex: 1;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
@@ -121,9 +123,10 @@ function handleScroll(event: Event) {
   .message-list__date-label {
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-3, 0.75rem);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    border-radius: var(--smrt-radius-full, 9999px);
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-full);
     white-space: nowrap;
   }
+}
 </style>

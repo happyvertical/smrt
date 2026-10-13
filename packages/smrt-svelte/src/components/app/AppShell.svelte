@@ -790,6 +790,8 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 </Provider>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   a {
     color: var(--smrt-color-primary);
   }
@@ -806,4 +808,5 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   .smrt-edit-item__grip:hover { background: var(--smrt-color-surface-container-high); }
   .smrt-edit-item__grip:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   .smrt-edit-item__grip[aria-pressed='true'] { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+}
 </style>

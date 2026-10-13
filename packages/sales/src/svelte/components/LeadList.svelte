@@ -105,7 +105,7 @@ function handleAssign(leadId: string, event: Event) {
 }
 </script>
 
-<div class="sales-lead-list">
+<div class="sales-lead-list" data-smrt-component="LeadList">
   <nav class="inbox-controls" aria-label="Lead inbox filters">
     <div class="filters" role="group" aria-label="Filter leads">
       {#each filters as filter (filter.value)}
@@ -256,6 +256,8 @@ function handleAssign(leadId: string, event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sales-lead-list {
     width: 100%;
     overflow-x: auto;
@@ -263,15 +265,15 @@ function handleAssign(leadId: string, event: Event) {
 
   .sales-lead-list__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
   .inbox-controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--smrt-spacing-3, 0.75rem); margin-bottom: var(--smrt-spacing-3, 0.75rem); }
   .filters { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-1, 0.25rem); }
-  .filters :global(.filter-tab) { border: 1px solid var(--smrt-color-outline-variant, #d8dde6); border-radius: var(--smrt-radius-sm, 0.25rem); padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem); background: var(--smrt-color-surface, #fff); color: var(--smrt-color-on-surface, #111827); cursor: pointer; }
-  .filters :global(.filter-tab.active) { background: var(--smrt-color-primary-container, #dbeafe); border-color: var(--smrt-color-primary, #2563eb); }
-  .count { margin-left: var(--smrt-spacing-1, 0.25rem); color: var(--smrt-color-on-surface-variant, #64748b); }
+  .filters :global(.filter-tab) { border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-sm, 0.25rem); padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
+  .filters :global(.filter-tab.active) { background: var(--smrt-color-primary-container); border-color: var(--smrt-color-primary); }
+  .count { margin-left: var(--smrt-spacing-1, 0.25rem); color: var(--smrt-color-on-surface-variant); }
   .sort-control { display: flex; align-items: center; gap: var(--smrt-spacing-2, 0.5rem); }
   .pagination { display: flex; align-items: center; justify-content: flex-end; gap: var(--smrt-spacing-3, 0.75rem); padding-top: var(--smrt-spacing-3, 0.75rem); }
 
@@ -285,14 +287,14 @@ function handleAssign(leadId: string, event: Event) {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     text-align: left;
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    background: var(--smrt-color-surface-container);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     white-space: nowrap;
   }
 
   td {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     vertical-align: top;
   }
 
@@ -307,17 +309,17 @@ function handleAssign(leadId: string, event: Event) {
   a.lead-name { color: inherit; text-decoration: none; }
   a.lead-name:hover, :global(.select-lead:hover) { text-decoration: underline; }
   :global(.select-lead) { padding: 0; border: 0; background: none; text-align: left; cursor: pointer; color: inherit; }
-  tr.selected td { background: var(--smrt-color-primary-container, #eff6ff); }
+  tr.selected td { background: var(--smrt-color-primary-container); }
 
   .secondary {
     display: block;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
 
   .merged-note {
     display: block;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
 
@@ -330,7 +332,7 @@ function handleAssign(leadId: string, event: Event) {
   }
 
   .next-action.overdue {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
@@ -347,4 +349,5 @@ function handleAssign(leadId: string, event: Event) {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+}
 </style>

@@ -25,7 +25,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
 
 <nav
   class="assistant-thread-list"
-  aria-label={t(M['chat.assistant_thread_list.conversations_label'])}
+  aria-label={t(M['chat.assistant_thread_list.conversations_label'])} data-smrt-component="AssistantThreadList"
 >
   {#if oncreate}
     <Button
@@ -62,52 +62,54 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .assistant-thread-list {
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    background: var(--smrt-color-surface-container-low, #f7f7fb);
+    border-right: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container-low);
     min-width: 160px;
     overflow-y: auto;
   }
 
   :global(.assistant-thread-list-new) {
-    margin: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border: 1px dashed var(--smrt-color-outline-variant, #c4c6cf);
-    border-radius: var(--smrt-radius-medium, 8px);
+    margin: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border: 1px dashed var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-medium);
     background: transparent;
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     font: var(--smrt-typography-label-medium-font, 500 0.8125rem/1.3 sans-serif);
     cursor: pointer;
     text-align: left;
   }
 
   :global(.assistant-thread-list-new:hover) {
-    background: var(--smrt-color-surface-container, #f0f0f4);
+    background: var(--smrt-color-surface-container);
   }
 
   .assistant-thread-list ul {
     list-style: none;
     margin: 0;
-    padding: 0 var(--smrt-spacing-2, 8px) var(--smrt-spacing-2, 8px);
+    padding: 0 var(--smrt-spacing-2) var(--smrt-spacing-2);
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   :global(.assistant-thread-list-item) {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     width: 100%;
     min-width: 0;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     border: none;
-    border-radius: var(--smrt-radius-medium, 8px);
+    border-radius: var(--smrt-radius-medium);
     background: transparent;
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-body-medium-font, 0.875rem/1.4 sans-serif);
     text-align: left;
     cursor: pointer;
@@ -120,16 +122,16 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   :global(.assistant-thread-list-item:hover) {
-    background: var(--smrt-color-surface-container, #f0f0f4);
+    background: var(--smrt-color-surface-container);
   }
 
   :global(.assistant-thread-list-item.active) {
-    background: var(--smrt-color-secondary-container, #d7e3f8);
-    color: var(--smrt-color-on-secondary-container, #0e1d31);
+    background: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
@@ -143,6 +145,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
   .count {
     flex-shrink: 0;
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

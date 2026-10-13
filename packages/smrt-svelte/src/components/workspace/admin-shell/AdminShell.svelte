@@ -1018,7 +1018,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   data-phone-top={showPhoneTop ? '' : undefined}
   data-chrome-hidden={chromeHidden ? '' : undefined}
   data-resizing={resizing ?? undefined}
-  style={`${layoutStyle}; ${chromeStyle}; ${reserveStyle}`}
+  style={`${layoutStyle}; ${chromeStyle}; ${reserveStyle}`} data-smrt-component="AdminShell"
 >
   {#if showHeader}
     <div
@@ -1037,7 +1037,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       class="smrt-admin-shell__edge smrt-admin-shell__edge--top"
       data-state={panelState('top')}
       data-presentation={shell.config.panels.top.presentation}
-      style:--edge-columns={topEdgeColumns}
+      style:--smrt-admin-shell-edge-columns={topEdgeColumns}
     >
       {#if topLeftCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--top-left">
@@ -1046,7 +1046,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {/if}
       <div
         class="smrt-admin-shell__band smrt-admin-shell__band--top"
-        style:--band-column={2}
+        style:--smrt-admin-shell-band-column={2}
       >
         {#if appBar}
           {@render appBar()}
@@ -1347,7 +1347,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       class="smrt-admin-shell__edge smrt-admin-shell__edge--bottom"
       data-state={panelState('bottom')}
       data-presentation={shell.config.panels.bottom.presentation}
-      style:--edge-columns={bottomEdgeColumns}
+      style:--smrt-admin-shell-edge-columns={bottomEdgeColumns}
     >
       {#if bottomLeftCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--bottom-left">
@@ -1356,7 +1356,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {/if}
       <div
         class="smrt-admin-shell__band smrt-admin-shell__band--bottom"
-        style:--band-column={2}
+        style:--smrt-admin-shell-band-column={2}
       >
         {@render slotGroup('footer.start')}
         {@render slotGroup('footer.center')}
@@ -1443,6 +1443,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-admin-shell {
     --smrt-shell-floating-reserve-inline: 0px;
     --smrt-shell-floating-reserve-block: 0px;
@@ -1508,7 +1510,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     background-color: var(--smrt-admin-shell-scrollbar-thumb, color-mix(in srgb, var(--smrt-color-on-surface) 26%, transparent));
     background-clip: padding-box;
     border: 2px solid transparent;
-    border-radius: var(--smrt-radius-full, 999px);
+    border-radius: var(--smrt-radius-full);
   }
 
   .smrt-admin-shell :global(*)::-webkit-scrollbar-thumb:hover {
@@ -1553,7 +1555,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-row: 2;
     display: grid;
     grid-template-columns: var(
-      --edge-columns,
+      --smrt-admin-shell-edge-columns,
       var(--smrt-admin-shell-left-collapsed) minmax(0, 1fr)
         var(--smrt-admin-shell-right-collapsed)
     );
@@ -1589,7 +1591,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-row: 4;
     display: grid;
     grid-template-columns: var(
-      --edge-columns,
+      --smrt-admin-shell-edge-columns,
       var(--smrt-admin-shell-left-collapsed) minmax(0, 1fr)
         var(--smrt-admin-shell-right-collapsed)
     );
@@ -1619,7 +1621,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   .smrt-admin-shell__band--top,
   .smrt-admin-shell__band--bottom {
-    grid-column: var(--band-column, 2);
+    grid-column: var(--smrt-admin-shell-band-column, 2);
   }
 
   /* The header's slots can render in the top band too: keep the floating
@@ -1666,7 +1668,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     width: 2.35rem;
     height: 2.35rem;
     border: 1px solid transparent;
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
@@ -1694,8 +1696,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-2, 0.5rem);
     border: 1px solid var(--smrt-color-outline-variant);
     border-inline-end: 0;
-    border-start-start-radius: var(--smrt-radius-md, 8px);
-    border-end-start-radius: var(--smrt-radius-md, 8px);
+    border-start-start-radius: var(--smrt-radius-md);
+    border-end-start-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface-variant);
     font: inherit;
@@ -1718,7 +1720,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     inset-block-start: -0.25rem;
     inset-inline-end: -0.25rem;
     min-width: 1rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-error);
     color: var(--smrt-color-on-error);
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
@@ -1759,7 +1761,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__tenant-stack[hidden],
   .smrt-admin-shell__panel[hidden],
   .smrt-admin-shell__drawer[hidden] {
-    display: none !important;
+    display: none;
   }
 
   .smrt-admin-shell__tenant-stack {
@@ -2164,7 +2166,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     z-index: 25;
     box-shadow: var(
       --smrt-elevation-3,
-      0 0.5rem 1.5rem color-mix(in srgb, var(--smrt-color-shadow, #000) 24%, transparent)
+      0 0.5rem 1.5rem color-mix(in srgb, var(--smrt-color-shadow) 24%, transparent)
     );
     outline: none;
   }
@@ -2499,4 +2501,5 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       animation: none;
     }
   }
+}
 </style>

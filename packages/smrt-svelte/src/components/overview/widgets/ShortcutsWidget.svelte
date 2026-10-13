@@ -49,9 +49,9 @@ const cards = $derived.by((): Card[] => {
 </script>
 
 {#if cards.length === 0}
-  <p class="smrt-shortcuts__empty">{t(M['ui.overview.shortcuts.empty'])}</p>
+  <p class="smrt-shortcuts__empty" data-smrt-component="ShortcutsWidget">{t(M['ui.overview.shortcuts.empty'])}</p>
 {:else}
-  <ul class="smrt-shortcuts">
+  <ul class="smrt-shortcuts" data-smrt-component="ShortcutsWidget">
     {#each cards as card (card.id)}
       <li class="smrt-shortcuts__card">
         <a class="smrt-shortcuts__link" href={card.href}>
@@ -69,6 +69,8 @@ const cards = $derived.by((): Card[] => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-shortcuts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(12rem, 100%), 1fr)); gap: var(--smrt-spacing-3); margin: 0; padding: 0; list-style: none; }
   .smrt-shortcuts__card { position: relative; display: flex; min-inline-size: 0; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-color-surface); transition: background-color 120ms, border-color 120ms; }
   .smrt-shortcuts__card:hover { background: var(--smrt-color-surface-container-high); border-color: var(--smrt-color-outline); }
@@ -80,4 +82,5 @@ const cards = $derived.by((): Card[] => {
   .smrt-shortcuts__title { font-weight: var(--smrt-typography-weight-medium, 500); overflow-wrap: anywhere; }
   .smrt-shortcuts__desc { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
   .smrt-shortcuts__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
+}
 </style>

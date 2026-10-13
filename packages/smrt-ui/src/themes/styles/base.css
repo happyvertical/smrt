@@ -1,10 +1,12 @@
-/**
+
+@layer smrt.reset, smrt.structure, smrt.theme;/**
  * Application baseline for SMRT interfaces.
  *
  * Import this once at an application entry point, alongside the selected
  * theme stylesheet. Components remain independently usable without it.
  */
 
+@layer smrt.reset {
 *,
 *::before,
 *::after {
@@ -28,4 +30,5 @@ input,
 select,
 textarea {
   font: inherit;
+}
 }

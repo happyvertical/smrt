@@ -84,7 +84,7 @@ $effect(() => {
 </script>
 
 {#if open}
-  <div class="dialog-backdrop">
+  <div class="dialog-backdrop" data-smrt-component="RejectDialog">
     <!-- raw-primitive-allow: click-catching modal backdrop; structural overlay, not a primitive -->
     <button
       type="button"
@@ -135,6 +135,8 @@ $effect(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .dialog-backdrop {
     position: fixed;
     inset: 0;
@@ -156,7 +158,7 @@ $effect(() => {
   .dialog {
     position: relative;
     background: var(--smrt-color-surface);
-    border-radius: var(--smrt-radius-extra-large, 28px);
+    border-radius: var(--smrt-radius-extra-large);
     box-shadow: var(--smrt-elevation-3);
     width: 100%;
     max-width: 28rem;
@@ -184,7 +186,7 @@ $effect(() => {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     font-family: inherit;
     border: 1px solid var(--smrt-color-outline);
-    border-radius: var(--smrt-radius-small, 8px);
+    border-radius: var(--smrt-radius-small);
     resize: vertical;
     min-height: 80px;
     background: var(--smrt-color-surface);
@@ -216,4 +218,5 @@ $effect(() => {
     gap: 0.5rem;
     margin-top: 1.5rem;
   }
+}
 </style>

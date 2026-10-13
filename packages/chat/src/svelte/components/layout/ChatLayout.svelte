@@ -58,10 +58,10 @@ function handlePointerUp() {
 }
 </script>
 
-<div class="chat-layout" class:chat-layout--resizing={isResizing}>
+<div class="chat-layout" class:chat-layout--resizing={isResizing} data-smrt-component="ChatLayout">
   <aside
     class="chat-layout__sidebar"
-    style:width="{sidebarWidth}px"
+    style:--smrt-chat-layout-sidebar-width="{sidebarWidth}px"
     aria-label={t(M['chat.chat_layout.rooms_label'])}
   >
     <RoomList
@@ -92,13 +92,15 @@ function handlePointerUp() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .chat-layout {
     display: flex;
     height: 100%;
     width: 100%;
     overflow: hidden;
-    background: var(--smrt-color-surface, #fefbff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
   }
 
   .chat-layout--resizing {
@@ -108,10 +110,11 @@ function handlePointerUp() {
 
   .chat-layout__sidebar {
     flex-shrink: 0;
+    width: var(--smrt-chat-layout-sidebar-width);
     display: flex;
     flex-direction: column;
-    background: var(--smrt-color-surface-container, #f0f0f4);
-    border-right: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-surface-container);
+    border-right: 1px solid var(--smrt-color-outline-variant);
     overflow-y: auto;
     overflow-x: hidden;
   }
@@ -128,12 +131,12 @@ function handlePointerUp() {
 
   .chat-layout__resize-handle:hover,
   .chat-layout__resize-handle:active {
-    background: var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-primary);
     opacity: 0.4;
   }
 
   .chat-layout__resize-handle:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
@@ -151,14 +154,15 @@ function handlePointerUp() {
     }
 
     .chat-layout__sidebar {
-      width: 100% !important;
+      width: 100%;
       max-height: 14rem;
       border-right: 0;
-      border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+      border-bottom: 1px solid var(--smrt-color-outline-variant);
     }
 
     .chat-layout__resize-handle {
       display: none;
     }
   }
+}
 </style>

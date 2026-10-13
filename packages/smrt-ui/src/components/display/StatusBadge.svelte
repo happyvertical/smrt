@@ -251,24 +251,26 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
   class:sm={size === 'sm'}
   class:lg={size === 'lg'}
   class:outline={variant === 'outline'}
-  style:--badge-bg={colors.bg}
-  style:--badge-text={colors.text}
+  style:--smrt-badge-bg={colors.bg}
+  style:--smrt-badge-text={colors.text} data-smrt-component="StatusBadge"
 >
   {displayLabel}
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .status-badge {
     display: inline-flex;
     align-items: center;
     padding: 0.25rem 0.75rem;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-label-medium-weight, 500);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     white-space: nowrap;
     text-transform: capitalize;
-    background-color: var(--badge-bg);
-    color: var(--badge-text);
+    background-color: var(--smrt-badge-bg);
+    color: var(--smrt-badge-text);
     line-height: 1.25;
   }
 
@@ -284,6 +286,7 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
 
   .status-badge.outline {
     background-color: transparent;
-    border: 1px solid var(--badge-text);
+    border: 1px solid var(--smrt-badge-text);
   }
+}
 </style>

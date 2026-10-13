@@ -175,7 +175,7 @@ useControlRegistration(() => {
 </script>
 <div bind:this={rootEl} class="range-slider {className}" class:disabled data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
-  data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id} role="group" aria-label={label ?? formGroup?.().label ?? 'Range'}>
+  data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id} role="group" aria-label={label ?? formGroup?.().label ?? 'Range'} data-smrt-component="RangeSlider">
   {#if label}<div class="range-slider__header"><span>{label}</span><output>{value.min}{unit ?? ''} – {value.max}{unit ?? ''}</output></div>{/if}
   <div class="range-slider__track">
     <input bind:this={minEl} id={minId} type="range" name={name ? `${name}[min]` : undefined} {min} max={value.max} {step} {disabled} value={value.min}
@@ -189,6 +189,8 @@ useControlRegistration(() => {
   </div>
 </div>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .range-slider { display: grid; gap: var(--smrt-spacing-3); color: var(--smrt-color-on-surface); }
   .range-slider.disabled { opacity: .5; }
   .range-slider__header { display: flex; justify-content: space-between; font: var(--smrt-typography-label-large-font); }
@@ -202,4 +204,5 @@ useControlRegistration(() => {
   .range-slider__inputs input { width: 100%; padding: var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
   input:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
   :global(.range-slider[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-small); }
+}
 </style>

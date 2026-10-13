@@ -46,7 +46,7 @@ const statusLabel: Record<string, string> = {
 };
 </script>
 
-<aside class="session-panel" aria-label={t(M['chat.agent_session_panel.sessions'])}>
+<aside class="session-panel" aria-label={t(M['chat.agent_session_panel.sessions'])} data-smrt-component="AgentSessionPanel">
   <div class="session-panel__header">
     <h2 class="session-panel__title">Sessions</h2>
     {#if onnewsession}
@@ -130,13 +130,15 @@ const statusLabel: Record<string, string> = {
 </aside>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .session-panel {
     display: flex;
     flex-direction: column;
     height: 100%;
     width: 280px;
-    background: var(--smrt-color-surface-container, #f0f0f4);
-    border-right: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-surface-container);
+    border-right: 1px solid var(--smrt-color-outline-variant);
     overflow: hidden;
   }
 
@@ -144,14 +146,14 @@ const statusLabel: Record<string, string> = {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--smrt-spacing-4, 16px);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    padding: var(--smrt-spacing-4);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     flex-shrink: 0;
   }
 
   .session-panel__title {
     font: var(--smrt-typography-title-medium-font, 600 1rem/1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     margin: 0;
   }
 
@@ -160,55 +162,55 @@ const statusLabel: Record<string, string> = {
     width: 36px;
     height: 36px;
     padding: 0;
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
-    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    border-radius: var(--smrt-radius-full);
     transition: opacity var(--smrt-duration-short2, 150ms);
   }
 
   .session-panel__header :global(.session-panel__new-btn:hover) {
-    background: var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-primary);
     opacity: 0.85;
   }
 
   .session-panel__list {
     flex: 1;
     overflow-y: auto;
-    padding: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2);
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .session-panel__item {
     display: flex;
     align-items: flex-start;
-    gap: var(--smrt-spacing-3, 12px);
+    gap: var(--smrt-spacing-3);
     width: 100%;
-    padding: var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-3);
     border: none;
     background: transparent;
-    border-radius: var(--smrt-radius-medium, 8px);
+    border-radius: var(--smrt-radius-medium);
     cursor: pointer;
     text-align: left;
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
   .session-panel__item:hover {
-    background: var(--smrt-color-surface-container-high, #e6e6ea);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .session-panel__item--active {
-    background: var(--smrt-color-secondary-container, #d7e3f7);
+    background: var(--smrt-color-secondary-container);
   }
 
   .session-panel__item--active:hover {
-    background: var(--smrt-color-secondary-container, #d7e3f7);
+    background: var(--smrt-color-secondary-container);
   }
 
   .session-panel__item:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
@@ -216,7 +218,7 @@ const statusLabel: Record<string, string> = {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     min-width: 0;
   }
 
@@ -224,7 +226,7 @@ const statusLabel: Record<string, string> = {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   .session-panel__item-name {
@@ -236,64 +238,64 @@ const statusLabel: Record<string, string> = {
 
   .session-panel__item-date {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
     flex-shrink: 0;
   }
 
   .session-panel__item-meta {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
   }
 
   .session-panel__item-status {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-surface-variant, #e1e2ec);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .session-panel__item-status--active {
-    background: var(--smrt-color-success-container, #e8f5e9);
-    color: var(--smrt-color-on-success-container, #2e7d32);
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
   }
 
   .session-panel__item-status--closed {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .session-panel__item-status--expired {
-    background: var(--smrt-color-error-container, #ffdad6);
-    color: var(--smrt-color-on-error-container, #410002);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 
   .session-panel__item-count {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   .session-panel__item-tools {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--smrt-spacing-1, 4px);
-    margin-top: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
+    margin-top: var(--smrt-spacing-1);
   }
 
   .session-panel__tool-chip {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    border-radius: var(--smrt-radius-small, 4px);
-    background: var(--smrt-color-surface-container-highest, #dddde1);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface-container-highest);
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
   }
 
   .session-panel__tool-chip--more {
-    background: var(--smrt-color-primary-container, #d6e3ff);
-    color: var(--smrt-color-on-primary-container, #001a41);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .session-panel__empty {
@@ -306,7 +308,7 @@ const statusLabel: Record<string, string> = {
 
   .session-panel__empty-text {
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -318,4 +320,5 @@ const statusLabel: Record<string, string> = {
       transition: none;
     }
   }
+}
 </style>

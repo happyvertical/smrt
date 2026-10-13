@@ -252,7 +252,7 @@ const formError = $derived(
   <PageHeader title={heading} />
 {/if}
 
-<section class="smrt-edit-form" aria-label={heading}>
+<section class="smrt-edit-form" aria-label={heading} data-smrt-component="EditForm">
   {#if sourceError}
     <Alert variant="error">{sourceError}</Alert>
   {:else}
@@ -284,6 +284,8 @@ const formError = $derived(
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-edit-form {
     max-width: 40rem;
   }
@@ -305,9 +307,10 @@ const formError = $derived(
     gap: var(--smrt-spacing-xs, 0.25rem);
   }
   .smrt-edit-form__hint {
-    color: var(--smrt-color-on-surface-variant, #5f6368);
+    color: var(--smrt-color-on-surface-variant);
   }
   .smrt-edit-form__error {
-    color: var(--smrt-color-error, #b42318);
+    color: var(--smrt-color-error);
   }
+}
 </style>

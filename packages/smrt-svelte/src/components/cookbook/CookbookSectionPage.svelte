@@ -43,7 +43,7 @@ const store = {
   {#if title}<title>{title}</title>{/if}
 </svelte:head>
 
-<main class="cookbook-section">
+<main class="cookbook-section" data-smrt-component="CookbookSectionPage">
   {#if section}
     <header>
       <span class="mark"><ShellSectionIcon name={icon} size={28} /></span>
@@ -82,6 +82,8 @@ const store = {
 </main>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .cookbook-section {
     display: grid;
     gap: var(--smrt-spacing-6);
@@ -130,4 +132,5 @@ const store = {
     margin: 0;
     font-size: var(--smrt-typography-title-medium-size, 1rem);
   }
+}
 </style>

@@ -71,7 +71,7 @@ function handleSubmit(event: Event) {
 }
 </script>
 
-<div class="product-form-shell">
+<div class="product-form-shell" data-smrt-component="ProductForm">
   <Form onsubmit={handleSubmit} class="product-form">
     <div class="form-group">
       <label for="name">{t(M['products.product_form.name_label'])}</label>
@@ -173,12 +173,14 @@ function handleSubmit(event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .product-form-shell :global(.product-form) {
     max-width: 500px;
     padding: 1.5rem;
-    background: var(--smrt-color-surface, #fff);
-    border-radius: var(--smrt-radius-md, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-radius-md);
+    border: 1px solid var(--smrt-color-outline-variant);
   }
 
   .form-group {
@@ -195,7 +197,7 @@ function handleSubmit(event: Event) {
     display: block;
     margin-bottom: 0.25rem;
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #374151);
+    color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
@@ -203,7 +205,7 @@ function handleSubmit(event: Event) {
      <input class="input error"> inside its own component, so the scoped class
      can't reach it without :global (#1589). */
   .product-form-shell :global(.input.error) {
-    border-color: var(--smrt-color-error, #dc2626);
+    border-color: var(--smrt-color-error);
   }
 
   .checkbox-label {
@@ -218,13 +220,13 @@ function handleSubmit(event: Event) {
   }
   
   .form-hint {
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     margin-top: 0.25rem;
   }
 
   .error-message {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     margin-top: 0.25rem;
     display: block;
@@ -236,6 +238,7 @@ function handleSubmit(event: Event) {
     justify-content: flex-end;
     margin-top: 1.5rem;
     padding-top: 1rem;
-    border-top: 1px solid var(--smrt-color-outline-variant, #f3f4f6);
+    border-top: 1px solid var(--smrt-color-outline-variant);
   }
+}
 </style>

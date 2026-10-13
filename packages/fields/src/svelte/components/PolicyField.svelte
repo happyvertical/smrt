@@ -289,7 +289,7 @@ $effect(() => {
 {#if renderSnippet}
   {@render renderSnippet(snippetProps)}
 {:else if visible}
-  <div class="policy-field {className}" bind:this={rootEl}>
+  <div class="policy-field {className}" bind:this={rootEl} data-smrt-component="PolicyField">
     {#if label !== null}
       <!-- `for` tracks the repaired label↔control association: the `name`
            convention before the first effect pass (SSR / first paint), the
@@ -314,6 +314,8 @@ $effect(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .policy-field {
     display: flex;
     flex-direction: column;
@@ -326,7 +328,7 @@ $effect(() => {
   }
 
   .policy-field__required {
-    color: var(--smrt-color-error, #b3261e);
+    color: var(--smrt-color-error);
     margin-left: 0.25em;
   }
 
@@ -335,4 +337,5 @@ $effect(() => {
     color: var(--smrt-color-on-surface-variant, currentColor);
     margin: 0;
   }
+}
 </style>

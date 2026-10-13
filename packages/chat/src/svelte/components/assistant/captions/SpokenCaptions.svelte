@@ -35,7 +35,7 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
 </script>
 
 {#snippet surface()}
-  <section class="spoken-captions" aria-label={speakerLabel}>
+  <section class="spoken-captions" aria-label={speakerLabel} data-smrt-component="SpokenCaptions">
     <p class="speaker"><span aria-hidden="true">◈</span> {speakerLabel}</p>
     <div class="caption-lines" aria-live={announce ? 'polite' : 'off'} aria-atomic="false">
       {#each visibleLines as line (line.id)}
@@ -57,9 +57,12 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
 {/if}
 
 <style>
-  .spoken-captions { box-sizing: border-box; min-inline-size: 0; max-inline-size: min(42rem, calc(100vw - 2rem)); overflow-wrap: anywhere; padding: .7rem .9rem; border: 2px solid var(--smrt-color-outline, #533b72); background: var(--smrt-color-inverse-surface, #221c2c); color: var(--smrt-color-inverse-on-surface, #fff7ff); border-radius: 1rem; box-shadow: var(--smrt-elevation-4, 0 .35rem 1.2rem color-mix(in srgb, var(--smrt-color-shadow, black) 28%, transparent)); }
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
+  .spoken-captions { box-sizing: border-box; min-inline-size: 0; max-inline-size: min(42rem, calc(100vw - 2rem)); overflow-wrap: anywhere; padding: .7rem .9rem; border: 2px solid var(--smrt-color-outline); background: var(--smrt-color-inverse-surface); color: var(--smrt-color-inverse-on-surface); border-radius: 1rem; box-shadow: var(--smrt-elevation-4, 0 .35rem 1.2rem color-mix(in srgb, var(--smrt-color-shadow, black) 28%, transparent)); }
   .speaker { margin: 0 0 .3rem; font-weight: var(--smrt-typography-weight-bold, 700); font-size: var(--smrt-typography-label-medium-size, .8rem); }
   .caption-lines p, .interim { margin: .18rem 0 0; }
   .interim { opacity: .8; }
   @media (prefers-reduced-motion: reduce) { .spoken-captions { scroll-behavior: auto; } }
+}
 </style>

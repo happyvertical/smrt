@@ -39,7 +39,7 @@ function enhanceForm(form: HTMLFormElement) {
 }
 </script>
 
-<main class="smrt-owner-setup">
+<main class="smrt-owner-setup" data-smrt-component="OwnerSetupForm">
   <h1>{t(M['ui.owner_setup.heading'])}</h1>
   {#if !data.available}
     <p data-owner-setup="unavailable">{t(M['ui.owner_setup.unavailable'])}</p>
@@ -70,6 +70,8 @@ function enhanceForm(form: HTMLFormElement) {
 </main>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-owner-setup {
     max-width: 36rem;
     margin: 4rem auto;
@@ -84,6 +86,7 @@ function enhanceForm(form: HTMLFormElement) {
     gap: 0.35rem;
   }
   [role='alert'] {
-    color: var(--smrt-color-error, #b3261e);
+    color: var(--smrt-color-error);
   }
+}
 </style>

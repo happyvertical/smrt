@@ -41,7 +41,7 @@ const name = $derived(label ?? t(M['ui.shell_nav_toggle.navigation']));
   aria-expanded={expanded}
   aria-controls={controls}
   data-testid="shell-nav-toggle"
-  {onclick}
+  {onclick} data-smrt-component="ShellNavToggle"
 >
   <svg
     viewBox="0 0 24 24"
@@ -63,6 +63,8 @@ const name = $derived(label ?? t(M['ui.shell_nav_toggle.navigation']));
 </button>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-shell-nav-toggle {
     display: inline-grid;
     place-items: center;
@@ -85,4 +87,5 @@ const name = $derived(label ?? t(M['ui.shell_nav_toggle.navigation']));
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
+}
 </style>

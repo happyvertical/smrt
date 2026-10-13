@@ -93,7 +93,7 @@ onMount(() => {
 });
 </script>
 
-<div class:page={true} class:page--embedded={embedded}>
+<div class:page={true} class:page--embedded={embedded} data-smrt-component="ContentFactsRoute">
   <header class="page-header">
     <div class="container">
       <div class="page-header__copy">
@@ -240,6 +240,8 @@ onMount(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   :global(body:has(.page:not(.page--embedded))) {
     margin: 0;
     font-family:
@@ -329,7 +331,7 @@ onMount(() => {
     justify-content: center;
     min-height: 2.5rem;
     padding: 0 1rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     border: 1px solid var(--smrt-color-outline-variant);
     background: color-mix(
       in srgb,
@@ -474,7 +476,7 @@ onMount(() => {
     align-items: center;
     min-height: 1.9rem;
     padding: 0 0.7rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container-low);
     font-size: var(--smrt-typography-label-large-size, 0.82rem);
   }
@@ -532,7 +534,7 @@ onMount(() => {
     align-items: center;
     min-height: 1.65rem;
     padding: 0 0.6rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: color-mix(
       in srgb,
       var(--smrt-color-primary) 12%,
@@ -621,4 +623,5 @@ onMount(() => {
       grid-template-columns: 1fr;
     }
   }
+}
 </style>

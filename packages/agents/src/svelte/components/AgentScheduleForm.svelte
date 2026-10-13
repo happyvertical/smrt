@@ -274,6 +274,8 @@ function handleCronPreset(preset: string) {
 </Card>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .schedule-form-shell :global(.schedule-form) {
     padding: var(--smrt-spacing-sm, 0.5rem) 0;
   }
@@ -303,12 +305,12 @@ function handleCronPreset(preset: string) {
   .form-field label {
     font-weight: var(--smrt-typography-weight-medium, 500);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   .form-field small {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .cron-presets {
@@ -324,6 +326,7 @@ function handleCronPreset(preset: string) {
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-top: var(--smrt-spacing-lg, 1.5rem);
     padding-top: var(--smrt-spacing-md, 1rem);
-    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-top: 1px solid var(--smrt-color-outline-variant);
   }
+}
 </style>

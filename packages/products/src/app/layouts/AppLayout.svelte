@@ -52,17 +52,19 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .app-layout {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
   }
 
   .app-header {
-    background: var(--smrt-color-surface, #fff);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
-    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
+    background: var(--smrt-color-surface);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
     position: sticky;
     top: 0;
     z-index: var(--smrt-z-index-sticky, 1100);
@@ -84,7 +86,7 @@ const { t } = useI18n();
     gap: 0.5rem;
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
   }
   
   .logo {
@@ -97,17 +99,17 @@ const { t } = useI18n();
   }
   
   .nav-link {
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     text-decoration: none;
     font-weight: var(--smrt-typography-weight-medium, 500);
     padding: 0.5rem 1rem;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     transition: all 0.2s;
   }
 
   .nav-link:hover {
-    color: var(--smrt-color-primary, #3b82f6);
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    color: var(--smrt-color-primary);
+    background: var(--smrt-color-surface-container);
   }
   
   .header-actions {
@@ -121,17 +123,17 @@ const { t } = useI18n();
     align-items: center;
     gap: 0.5rem;
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
   
   .status-dot {
     width: 8px;
     height: 8px;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
   }
   
   .status-dot.online {
-    background: var(--smrt-color-success, #10b981);
+    background: var(--smrt-color-success);
     animation: pulse 2s infinite;
   }
   
@@ -146,8 +148,8 @@ const { t } = useI18n();
   }
   
   .app-footer {
-    background: var(--smrt-color-surface, #fff);
-    border-top: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+    background: var(--smrt-color-surface);
+    border-top: 1px solid var(--smrt-color-outline-variant);
     margin-top: auto;
   }
   
@@ -162,7 +164,7 @@ const { t } = useI18n();
   
   .footer-content p {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
   
@@ -172,14 +174,14 @@ const { t } = useI18n();
   }
   
   .footer-links a {
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     text-decoration: none;
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     transition: color 0.2s;
   }
 
   .footer-links a:hover {
-    color: var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-primary);
   }
   
   @media (max-width: 768px) {
@@ -199,4 +201,5 @@ const { t } = useI18n();
       justify-content: center;
     }
   }
+}
 </style>

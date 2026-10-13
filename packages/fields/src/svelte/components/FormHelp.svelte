@@ -79,7 +79,7 @@ const glossary = $derived.by(() => {
 });
 </script>
 
-<details class="form-help {className}">
+<details class="form-help {className}" data-smrt-component="FormHelp">
   <summary class="form-help__toggle">
     <span class="form-help__icon" aria-hidden="true">?</span>
     <span class="form-help__label">{label}</span>
@@ -102,6 +102,8 @@ const glossary = $derived.by(() => {
 </details>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .form-help {
     display: inline-block;
   }
@@ -121,9 +123,9 @@ const glossary = $derived.by(() => {
   }
 
   .form-help__toggle:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #6750a4);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm);
   }
 
   .form-help__icon {
@@ -169,4 +171,5 @@ const glossary = $derived.by(() => {
     font: var(--smrt-typography-body-small-font, inherit);
     color: var(--smrt-color-on-surface-variant, currentColor);
   }
+}
 </style>

@@ -251,7 +251,7 @@ function handleManagerDrop(event: DragEvent) {
   onpaste={handlePaste}
   ondragover={handleManagerDragOver}
   ondragleave={handleManagerDragLeave}
-  ondrop={handleManagerDrop}
+  ondrop={handleManagerDrop} data-smrt-component="AssetManager"
 >
   {#if actionError}
     <p class="asset-manager__error" role="alert" aria-live="assertive">
@@ -349,12 +349,14 @@ function handleManagerDrop(event: DragEvent) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .asset-manager__error {
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     border-radius: var(--smrt-radius-medium, 0.5rem);
-    background: var(--smrt-color-error-container, #fde8e6);
-    color: var(--smrt-color-on-error-container, #410002);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
     font-size: var(--smrt-typography-body-small-size, 0.8rem);
   }
 
@@ -364,15 +366,15 @@ function handleManagerDrop(event: DragEvent) {
     flex-direction: column;
     height: 100%;
     min-height: 400px;
-    background: var(--smrt-color-surface, #ffffff);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-large, 0.75rem);
     overflow: hidden;
     font-family: var(--smrt-font-family, inherit);
   }
 
   .asset-manager--drag-over {
-    border-color: var(--smrt-color-primary, #005ac1);
+    border-color: var(--smrt-color-primary);
   }
 
   .asset-manager__content {
@@ -388,7 +390,7 @@ function handleManagerDrop(event: DragEvent) {
     align-items: center;
     justify-content: center;
     background: color-mix(in srgb, var(--smrt-color-primary) 8%, transparent);
-    border: 2px dashed var(--smrt-color-primary, #005ac1);
+    border: 2px dashed var(--smrt-color-primary);
     border-radius: var(--smrt-radius-large, 0.75rem);
     z-index: 10;
     pointer-events: none;
@@ -399,7 +401,7 @@ function handleManagerDrop(event: DragEvent) {
     flex-direction: column;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
@@ -407,4 +409,5 @@ function handleManagerDrop(event: DragEvent) {
     margin: 0;
     font-size: var(--smrt-typography-body-large-size, 1.1rem);
   }
+}
 </style>

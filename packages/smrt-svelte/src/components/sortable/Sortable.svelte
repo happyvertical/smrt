@@ -278,7 +278,7 @@ function containerRank(id: string): number {
   bind:this={root}
   class="smrt-sortable"
   role="group"
-  aria-label={label ?? t(M['ui.sortable.label'])}
+  aria-label={label ?? t(M['ui.sortable.label'])} data-smrt-component="Sortable"
 >
   {#each fixed as container (container.id)}
     {@render containerBlock(container, false)}
@@ -311,6 +311,8 @@ function containerRank(id: string): number {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-sortable { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-3); min-width: 0; position: relative; }
   .smrt-sortable__containers { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-3); min-width: 0; }
   .smrt-sortable__container { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container); min-width: 0; }
@@ -329,4 +331,5 @@ function containerRank(id: string): number {
   .smrt-sortable__marker { block-size: 0.1875rem; border-radius: var(--smrt-radius-full); background: var(--smrt-color-primary); }
   .smrt-sortable__empty { margin: 0; padding: var(--smrt-spacing-2); color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-body-small-font); }
   .smrt-sortable__live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+}
 </style>

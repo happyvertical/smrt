@@ -127,14 +127,14 @@ function onItemKeydown(event: KeyboardEvent, index: number, item: FlatNode) {
 }
 </script>
 
-<div role="tree" aria-label={ariaLabel} class="tree">
+<div role="tree" aria-label={ariaLabel} class="tree" data-smrt-component="Tree">
   {#each flat as item, i (item.node.id)}
     <div
       bind:this={itemEls[i]}
       role="treeitem"
       class="tree__item"
       class:selected={selectedId === item.node.id}
-      style:padding-left="calc({item.depth} * var(--smrt-spacing-4, 16px) + var(--smrt-spacing-2, 8px))"
+      style:padding-left="calc({item.depth} * var(--smrt-spacing-4) + var(--smrt-spacing-2))"
       aria-level={item.depth + 1}
       aria-selected={selectedId === item.node.id}
       aria-expanded={item.hasChildren ? item.isExpanded : undefined}
@@ -158,6 +158,8 @@ function onItemKeydown(event: KeyboardEvent, index: number, item: FlatNode) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .tree {
     display: flex;
     flex-direction: column;
@@ -166,11 +168,11 @@ function onItemKeydown(event: KeyboardEvent, index: number, item: FlatNode) {
   .tree__item {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-1, 4px);
-    padding-top: var(--smrt-spacing-1, 4px);
-    padding-bottom: var(--smrt-spacing-1, 4px);
-    padding-right: var(--smrt-spacing-2, 8px);
-    border-radius: var(--smrt-radius-small, 4px);
+    gap: var(--smrt-spacing-1);
+    padding-top: var(--smrt-spacing-1);
+    padding-bottom: var(--smrt-spacing-1);
+    padding-right: var(--smrt-spacing-2);
+    border-radius: var(--smrt-radius-small);
     cursor: pointer;
     color: var(--smrt-color-on-surface);
     user-select: none;
@@ -206,4 +208,5 @@ function onItemKeydown(event: KeyboardEvent, index: number, item: FlatNode) {
       transition: none;
     }
   }
+}
 </style>

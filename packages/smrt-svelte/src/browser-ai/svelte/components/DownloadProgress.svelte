@@ -28,7 +28,7 @@ function formatBytes(bytes: number): string {
 }
 </script>
 
-<div class="download-progress">
+<div class="download-progress" data-smrt-component="DownloadProgress">
   <div class="label">
     <span>{label}</span>
     {#if showPercent && progress}
@@ -39,7 +39,7 @@ function formatBytes(bytes: number): string {
   <div class="progress-bar">
     <div
       class="progress-fill"
-      style:width="{progress?.percent ?? 0}%"
+      style:width={progress && progress.state !== 'idle' ? `${progress.percent ?? 0}%` : undefined}
       class:indeterminate={!progress || progress.state === 'idle'}
     ></div>
   </div>
@@ -60,11 +60,13 @@ function formatBytes(bytes: number): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .download-progress {
     width: 100%;
-    padding: var(--smrt-spacing-md, 12px);
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-    border-radius: var(--smrt-radius-medium, 8px);
+    padding: var(--smrt-spacing-md);
+    background: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-medium);
   }
 
   .label {
@@ -72,32 +74,32 @@ function formatBytes(bytes: number): string {
     justify-content: space-between;
     align-items: center;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
-    margin-bottom: var(--smrt-spacing-sm, 8px);
+    color: var(--smrt-color-on-surface);
+    margin-bottom: var(--smrt-spacing-sm);
   }
 
   .percent {
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .progress-bar {
     width: 100%;
     height: 8px;
-    background: var(--smrt-color-outline-variant, #c4c6cf);
-    border-radius: var(--smrt-radius-small, 4px);
+    background: var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-small);
     overflow: hidden;
   }
 
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--smrt-color-primary, #005ac1), var(--smrt-color-primary-container, #d6e3ff));
-    border-radius: var(--smrt-radius-small, 4px);
+    background: linear-gradient(90deg, var(--smrt-color-primary), var(--smrt-color-primary-container));
+    border-radius: var(--smrt-radius-small);
     transition: width var(--smrt-duration-medium1, 300ms) var(--smrt-easing-standard, ease);
   }
 
   .progress-fill.indeterminate {
-    width: 30% !important;
+    width: 30%;
     animation: indeterminate 1.5s infinite linear;
   }
 
@@ -108,15 +110,15 @@ function formatBytes(bytes: number): string {
 
   .bytes {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    margin-top: var(--smrt-spacing-2, 8px);
+    color: var(--smrt-color-on-surface-variant);
+    margin-top: var(--smrt-spacing-2);
     text-align: center;
   }
 
   .current-file {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-outline, #74777f);
-    margin-top: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-outline);
+    margin-top: var(--smrt-spacing-1);
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
@@ -125,8 +127,8 @@ function formatBytes(bytes: number): string {
 
   .error {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-error, #ba1a1a);
-    margin-top: var(--smrt-spacing-2, 8px);
+    color: var(--smrt-color-error);
+    margin-top: var(--smrt-spacing-2);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -138,4 +140,5 @@ function formatBytes(bytes: number): string {
       animation: none;
     }
   }
+}
 </style>

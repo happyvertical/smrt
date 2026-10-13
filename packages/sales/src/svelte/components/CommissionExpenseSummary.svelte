@@ -26,7 +26,7 @@ let { rows = [], periodLabel, locale }: Props = $props();
 const totals = $derived(sumExpenseRowsByCurrency(rows));
 </script>
 
-<div class="sales-expense-summary">
+<div class="sales-expense-summary" data-smrt-component="CommissionExpenseSummary">
   <header class="head">
     <h3>Commission expense{periodLabel ? ` — ${periodLabel}` : ''}</h3>
     <p class="note">
@@ -96,6 +96,8 @@ const totals = $derived(sumExpenseRowsByCurrency(rows));
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sales-expense-summary {
     display: flex;
     flex-direction: column;
@@ -111,13 +113,13 @@ const totals = $derived(sumExpenseRowsByCurrency(rows));
 
   .note {
     margin: var(--smrt-spacing-1, 0.25rem) 0 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
 
   .empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -129,18 +131,18 @@ const totals = $derived(sumExpenseRowsByCurrency(rows));
   }
 
   .tile {
-    background: var(--smrt-color-surface, #fff);
-    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
     padding: var(--smrt-spacing-3, 0.75rem);
   }
 
   .tile--net {
-    border-color: var(--smrt-color-primary, #2563eb);
+    border-color: var(--smrt-color-primary);
   }
 
   .tile dt {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -152,7 +154,7 @@ const totals = $derived(sumExpenseRowsByCurrency(rows));
   }
 
   .negative {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 
   table {
@@ -165,14 +167,14 @@ const totals = $derived(sumExpenseRowsByCurrency(rows));
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     text-align: left;
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    background: var(--smrt-color-surface-container);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     white-space: nowrap;
   }
 
   td {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .num {
@@ -183,4 +185,5 @@ const totals = $derived(sumExpenseRowsByCurrency(rows));
   .net {
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
+}
 </style>

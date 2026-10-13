@@ -13,54 +13,57 @@ export interface Props {
   const statusConfig = $derived.by(() => {
     switch (status) {
       case 'draft':
-        return { label: 'Draft', color: 'var(--smrt-color-outline, #79747e)', icon: '✎' };
+        return { label: 'Draft', color: 'var(--smrt-color-outline)', icon: '✎' };
       case 'pending':
-        return { label: 'Pending', color: 'var(--smrt-color-tertiary, #7d5260)', icon: '◷' };
+        return { label: 'Pending', color: 'var(--smrt-color-tertiary)', icon: '◷' };
       case 'sending':
-        return { label: 'Sending', color: 'var(--smrt-color-primary, #6750a4)', icon: '↑' };
+        return { label: 'Sending', color: 'var(--smrt-color-primary)', icon: '↑' };
       case 'sent':
-        return { label: 'Sent', color: 'var(--smrt-color-success, #006d3b)', icon: '✓' };
+        return { label: 'Sent', color: 'var(--smrt-color-success)', icon: '✓' };
       case 'failed':
-        return { label: 'Failed', color: 'var(--smrt-color-error, #ba1a1a)', icon: '✕' };
+        return { label: 'Failed', color: 'var(--smrt-color-error)', icon: '✕' };
       case 'scheduled':
-        return { label: 'Scheduled', color: 'var(--smrt-color-secondary, #625b71)', icon: '⏰' };
+        return { label: 'Scheduled', color: 'var(--smrt-color-secondary)', icon: '⏰' };
       default:
-        return { label: status, color: 'var(--smrt-color-outline, #79747e)', icon: '?' };
+        return { label: status, color: 'var(--smrt-color-outline)', icon: '?' };
     }
   });
 </script>
 
 <span
   class="send-status-badge {size}"
-  style="--badge-color: {statusConfig.color}"
+  style="--smrt-send-status-badge-color: {statusConfig.color}" data-smrt-component="SendStatusBadge"
 >
   <span class="icon">{statusConfig.icon}</span>
   <span class="label">{statusConfig.label}</span>
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .send-status-badge {
     display: inline-flex;
     align-items: center;
-    gap: var(--smrt-spacing-1, 4px);
-    border-radius: var(--smrt-radius-sm, 8px);
-    border: 1px solid var(--badge-color);
-    color: var(--badge-color);
+    gap: var(--smrt-spacing-1);
+    border-radius: var(--smrt-radius-sm);
+    border: 1px solid var(--smrt-send-status-badge-color);
+    color: var(--smrt-send-status-badge-color);
     font-family: var(--smrt-font-family, system-ui);
     white-space: nowrap;
   }
 
   .sm {
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    font-size: var(--smrt-typography-label-small-size, 11px);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    font-size: var(--smrt-typography-label-small-size);
   }
 
   .md {
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-3, 12px);
-    font-size: var(--smrt-typography-label-large-size, 13px);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-3);
+    font-size: var(--smrt-typography-label-large-size);
   }
 
   .icon {
     font-size: inherit;
   }
+}
 </style>

@@ -36,7 +36,7 @@ function handleToggle(event: Event) {
 }
 </script>
 
-<details class="disclosure {className}" bind:open ontoggle={handleToggle}>
+<details class="disclosure {className}" bind:open ontoggle={handleToggle} data-smrt-component="Disclosure">
   <summary aria-disabled={disabled} onclick={(event) => disabled && event.preventDefault()}>
     <span>{title}</span><span class="chevron" aria-hidden="true">⌄</span>
   </summary>
@@ -44,6 +44,8 @@ function handleToggle(event: Event) {
 </details>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .disclosure { border-bottom: 1px solid var(--smrt-color-outline-variant); color: var(--smrt-color-on-surface); }
   summary { display: flex; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3) 0; font: var(--smrt-typography-title-small-font); cursor: pointer; list-style: none; }
   summary::-webkit-details-marker { display: none; }
@@ -53,4 +55,5 @@ function handleToggle(event: Event) {
   details[open] .chevron { transform: rotate(180deg); }
   .content { padding: 0 0 var(--smrt-spacing-4); color: var(--smrt-color-on-surface-variant); }
   @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
+}
 </style>

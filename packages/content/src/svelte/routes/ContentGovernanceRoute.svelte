@@ -34,7 +34,7 @@ const workspaceHref = $derived(
 const { t } = useI18n();
 </script>
 
-<div class:page={true} class:page--embedded={embedded}>
+<div class:page={true} class:page--embedded={embedded} data-smrt-component="ContentGovernanceRoute">
   <header class="page-header">
     <div class="container">
       <div class="page-header__copy">
@@ -79,6 +79,8 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   :global(body:has(.page:not(.page--embedded))) {
     margin: 0;
     font-family:
@@ -160,7 +162,7 @@ const { t } = useI18n();
     justify-content: center;
     min-height: 2.5rem;
     padding: 0 1rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     border: 1px solid var(--smrt-color-outline-variant);
     background: color-mix(
       in srgb,
@@ -222,4 +224,5 @@ const { t } = useI18n();
   .callout a {
     color: var(--smrt-color-primary);
   }
+}
 </style>

@@ -38,11 +38,11 @@ function distance(daysUntilExpiry: number): string {
 </script>
 
 {#if sorted.length === 0}
-  <p class="expiring-qualifications-empty">
+  <p class="expiring-qualifications-empty" data-smrt-component="ExpiringQualificationsList">
     {emptyMessage ?? t(M['human_resources.expiring_qualifications_list.empty'])}
   </p>
 {:else}
-  <ul class="expiring-qualifications">
+  <ul class="expiring-qualifications" data-smrt-component="ExpiringQualificationsList">
     {#each sorted as item (item.id)}
       <li class="expiring-qualification">
         <div class="expiring-qualification-main">
@@ -70,6 +70,8 @@ function distance(daysUntilExpiry: number): string {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .expiring-qualifications {
     list-style: none;
     margin: 0;
@@ -123,4 +125,5 @@ function distance(daysUntilExpiry: number): string {
     color: var(--smrt-color-on-surface-variant, inherit);
     padding: 1rem 0;
   }
+}
 </style>

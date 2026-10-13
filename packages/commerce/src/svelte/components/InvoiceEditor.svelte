@@ -86,7 +86,7 @@ function lineErrors(key: string) {
   ) as Partial<Record<keyof InvoiceLineFieldNames, string>>;
 }
 </script>
-<section class="invoice-editor" aria-labelledby={`${formId}-title`}>
+<section class="invoice-editor" aria-labelledby={`${formId}-title`} data-smrt-component="InvoiceEditor">
   <h2 id={`${formId}-title`}>{title ?? t(M['commerce.preparation.title'])}</h2>
   {#if review}<InvoiceReview {review} />{/if}
   {#if !canEdit}<p>{t(M['commerce.preparation.readonly'])}</p>{/if}
@@ -127,9 +127,12 @@ function lineErrors(key: string) {
   </Form>
 </section>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 .invoice-editor, .fields, .header-fields { display: grid; grid-template-columns: minmax(0,1fr); gap: var(--smrt-spacing-4); min-width: 0; }
 .invoice-editor { max-width: 48rem; overflow-wrap: anywhere; }
 .header-fields { margin: 0; padding: 0; border: 0; }
 h2, p, dl, dd { margin: 0; }
 .summary dl { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-4); }
+}
 </style>

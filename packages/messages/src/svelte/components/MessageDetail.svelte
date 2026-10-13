@@ -90,7 +90,7 @@ const _displayBody = $derived.by(() => {
 });
 </script>
 
-<article class="message-detail">
+<article class="message-detail" data-smrt-component="MessageDetail">
   <Card padding="lg">
     <header class="detail-header">
       <div class="header-top">
@@ -190,6 +190,8 @@ const _displayBody = $derived.by(() => {
 </article>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .message-detail {
     max-width: 100%;
   }
@@ -199,7 +201,7 @@ const _displayBody = $derived.by(() => {
     flex-direction: column;
     gap: 0.75rem;
     padding-bottom: 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .header-top {
@@ -211,7 +213,7 @@ const _displayBody = $derived.by(() => {
   .subject {
     margin: 0;
     font: var(--smrt-typography-title-large-font, 600 1.375rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   .meta-grid {
@@ -229,12 +231,12 @@ const _displayBody = $derived.by(() => {
   .meta-label {
     flex-shrink: 0;
     width: 4rem;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .meta-value {
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -244,7 +246,7 @@ const _displayBody = $derived.by(() => {
     gap: 1rem;
     padding: 0.75rem 0;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .type-detail {
@@ -257,7 +259,7 @@ const _displayBody = $derived.by(() => {
 
   .body-text {
     font: var(--smrt-typography-body-large-font, 1rem / 1.5 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     white-space: pre-wrap;
     word-break: break-word;
     margin: 0;
@@ -266,13 +268,13 @@ const _displayBody = $derived.by(() => {
 
   .attachments {
     padding-top: 0.75rem;
-    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-top: 1px solid var(--smrt-color-outline-variant);
   }
 
   .attachments-label {
     margin: 0 0 0.5rem;
     font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .attachments-list {
@@ -285,7 +287,7 @@ const _displayBody = $derived.by(() => {
     display: flex;
     gap: 0.5rem;
     padding-top: 1rem;
-    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-top: 1px solid var(--smrt-color-outline-variant);
   }
 
   /*
@@ -298,24 +300,25 @@ const _displayBody = $derived.by(() => {
    */
   .actions :global(.action-btn) {
     padding: 0.5rem 1rem;
-    border: 1px solid var(--smrt-color-outline, #72787e);
+    border: 1px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    background: var(--smrt-color-surface, #fefbff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
   .actions :global(.action-btn):hover {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
   }
 
   .actions :global(.action-btn--danger) {
-    color: var(--smrt-color-error, #ba1a1a);
-    border-color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
+    border-color: var(--smrt-color-error);
   }
 
   .actions :global(.action-btn--danger):hover {
-    background: var(--smrt-color-error-container, #ffdad6);
+    background: var(--smrt-color-error-container);
   }
+}
 </style>

@@ -15,18 +15,20 @@ const arrow = $derived(
 const display = $derived(percent === null ? 'new' : `${Math.abs(percent)}%`);
 </script>
 
-<span class="trend-badge" class:up={trend === 'up'} class:down={trend === 'down'} class:flat={trend === 'flat'}>
+<span class="trend-badge" class:up={trend === 'up'} class:down={trend === 'down'} class:flat={trend === 'flat'} data-smrt-component="TrendBadge">
 	<span class="trend-arrow" aria-hidden="true">{arrow}</span>
 	<span class="trend-percent">{display}</span>
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.trend-badge {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
 		padding: 0.125rem 0.5rem;
-		border-radius: var(--smrt-radius-full, 9999px);
+		border-radius: var(--smrt-radius-full);
 		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
 		font-weight: var(--smrt-typography-weight-semibold, 600);
 		line-height: 1;
@@ -50,4 +52,5 @@ const display = $derived(percent === null ? 'new' : `${Math.abs(percent)}%`);
 	.trend-arrow {
 		font-size: var(--smrt-typography-label-large-size, 0.875rem);
 	}
+}
 </style>

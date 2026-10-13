@@ -33,12 +33,14 @@ const { t } = useI18n();
   role="group"
   aria-label={label ?? t(M['ui.form_action_bar.label'])}
   data-form-action-bar
-  data-testid="form-action-bar"
+  data-testid="form-action-bar" data-smrt-component="FormActionBar"
 >
   {@render children()}
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .form-action-bar {
     display: flex;
     flex-wrap: wrap;
@@ -81,4 +83,5 @@ const { t } = useI18n();
       display: none;
     }
   }
+}
 </style>

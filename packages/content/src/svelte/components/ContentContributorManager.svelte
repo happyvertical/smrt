@@ -44,7 +44,7 @@ function handleSubmit() {
 }
 </script>
 
-<section class="manager">
+<section class="manager" data-smrt-component="ContentContributorManager">
   <header>
     <div>
       <h3>Contributors</h3>
@@ -105,6 +105,8 @@ function handleSubmit() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .manager,
   .layout,
   .list,
@@ -144,4 +146,5 @@ function handleSubmit() {
       grid-template-columns: 1fr;
     }
   }
+}
 </style>

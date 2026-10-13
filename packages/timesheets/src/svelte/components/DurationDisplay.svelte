@@ -40,7 +40,7 @@ const formattedValue = $derived(
 const unit = $derived(format === 'hhmm' ? '' : 'h');
 </script>
 
-<span class="duration" class:sm={size === 'sm'} class:lg={size === 'lg'}>
+<span class="duration" class:sm={size === 'sm'} class:lg={size === 'lg'} data-smrt-component="DurationDisplay">
   <span class="value">{formattedValue}</span>
   {#if showLabel && unit}
     <span class="unit">{unit}</span>
@@ -48,6 +48,8 @@ const unit = $derived(format === 'hhmm' ? '' : 'h');
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .duration {
     display: inline-flex;
     align-items: baseline;
@@ -78,4 +80,5 @@ const unit = $derived(format === 'hhmm' ? '' : 'h');
   .duration.lg {
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
   }
+}
 </style>

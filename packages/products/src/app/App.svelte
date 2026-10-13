@@ -53,6 +53,8 @@ onMount(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .app {
     width: 100%;
     min-height: 100vh;
@@ -68,12 +70,13 @@ onMount(() => {
   .placeholder-page h2 {
     margin: 0 0 1rem 0;
     font-size: var(--smrt-typography-headline-large-size, 2rem);
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
   }
 
   .placeholder-page p {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-large-size, 1.125rem);
   }
+}
 </style>

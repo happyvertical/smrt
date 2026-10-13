@@ -58,7 +58,7 @@ function onKeydown(event: KeyboardEvent) {
   onmouseleave={hide}
   onfocusin={show}
   onfocusout={hide}
-  onkeydown={onKeydown}
+  onkeydown={onKeydown} data-smrt-component="Tooltip"
 >
   <span class="tooltip-trigger" aria-describedby={tipId}>
     {@render children()}
@@ -69,6 +69,8 @@ function onKeydown(event: KeyboardEvent) {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .tooltip-wrap {
     position: relative;
     display: inline-flex;
@@ -80,10 +82,10 @@ function onKeydown(event: KeyboardEvent) {
     display: none;
     width: max-content;
     max-width: 16rem;
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    border-radius: var(--smrt-radius-small, 4px);
-    background: var(--smrt-color-inverse-surface, #313033);
-    color: var(--smrt-color-inverse-on-surface, #f4eff4);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-inverse-surface);
+    color: var(--smrt-color-inverse-on-surface);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     line-height: var(--smrt-typography-body-small-line-height, 1.4);
     pointer-events: none;
@@ -97,24 +99,25 @@ function onKeydown(event: KeyboardEvent) {
     bottom: 100%;
     left: 50%;
     transform: translateX(-50%);
-    margin-bottom: var(--smrt-spacing-1, 4px);
+    margin-bottom: var(--smrt-spacing-1);
   }
   .tooltip--bottom {
     top: 100%;
     left: 50%;
     transform: translateX(-50%);
-    margin-top: var(--smrt-spacing-1, 4px);
+    margin-top: var(--smrt-spacing-1);
   }
   .tooltip--left {
     right: 100%;
     top: 50%;
     transform: translateY(-50%);
-    margin-right: var(--smrt-spacing-1, 4px);
+    margin-right: var(--smrt-spacing-1);
   }
   .tooltip--right {
     left: 100%;
     top: 50%;
     transform: translateY(-50%);
-    margin-left: var(--smrt-spacing-1, 4px);
+    margin-left: var(--smrt-spacing-1);
   }
+}
 </style>

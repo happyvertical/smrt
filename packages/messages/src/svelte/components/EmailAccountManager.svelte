@@ -172,7 +172,7 @@ function getProviderLabel(type: string): string {
 }
 </script>
 
-<div class="email-account-manager">
+<div class="email-account-manager" data-smrt-component="EmailAccountManager">
   <div class="section-header-row">
     <div class="section-description">
       {t(M['messages.email_account_manager.section_description'])}
@@ -367,6 +367,8 @@ function getProviderLabel(type: string): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .email-account-manager {
     display: flex;
     flex-direction: column;
@@ -382,7 +384,7 @@ function getProviderLabel(type: string): string {
 
   .section-description {
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /*
@@ -392,14 +394,14 @@ function getProviderLabel(type: string): string {
    * keeps its place in the header row (issue #1589).
    */
   .section-header-row :global(.add-btn) {
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     flex-shrink: 0;
   }
 
   .entry-form {
-    background: var(--smrt-color-surface-container, #f0f1f9);
-    border: 1px solid var(--smrt-color-primary, #005ac1);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-md);
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -409,13 +411,13 @@ function getProviderLabel(type: string): string {
   .form-title {
     font-size: var(--smrt-typography-title-small-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .form-section-label {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
     padding-top: 0.25rem;
@@ -436,7 +438,7 @@ function getProviderLabel(type: string): string {
   .form-label {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /*
@@ -458,12 +460,12 @@ function getProviderLabel(type: string): string {
     gap: 0.5rem;
     cursor: pointer;
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     white-space: nowrap;
   }
 
   .checkbox-label input[type="checkbox"] {
-    accent-color: var(--smrt-color-primary, #005ac1);
+    accent-color: var(--smrt-color-primary);
   }
 
   .form-actions {
@@ -481,17 +483,17 @@ function getProviderLabel(type: string): string {
    */
   .form-actions :global(.cancel-btn),
   .form-actions :global(.save-btn) {
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
   }
 
   .form-actions :global(.cancel-btn) {
-    border-color: var(--smrt-color-outline-variant, #c2c7cf);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    border-color: var(--smrt-color-outline-variant);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .test-result {
     padding: 0.5rem 0.75rem;
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     display: flex;
     align-items: center;
@@ -499,13 +501,13 @@ function getProviderLabel(type: string): string {
   }
 
   .test-result.success {
-    background: var(--smrt-color-success-container, #dcfce7);
-    color: var(--smrt-color-success, #16a34a);
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-success);
   }
 
   .test-result.failure {
-    background: var(--smrt-color-error-container, #fce4ec);
-    color: var(--smrt-color-error, #ba1a1a);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-error);
   }
 
   /*
@@ -532,25 +534,25 @@ function getProviderLabel(type: string): string {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: var(--smrt-color-surface-container, #f0f1f9);
-    border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
     padding: 0.75rem 1rem;
     cursor: pointer;
     transition: background 150ms ease, border-color 150ms ease;
   }
 
   .entry-card:hover {
-    background: var(--smrt-color-surface-container-high, #e6e7ef);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .entry-card.mail-account:hover {
-    border-color: var(--smrt-color-primary, #005ac1);
+    border-color: var(--smrt-color-primary);
   }
 
   .entry-card.editing {
-    border-color: var(--smrt-color-primary, #005ac1);
-    background: var(--smrt-color-surface-container-high, #e6e7ef);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .entry-card.inactive {
@@ -576,10 +578,10 @@ function getProviderLabel(type: string): string {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     font-family: var(--smrt-font-family-mono, monospace);
-    background: var(--smrt-color-surface, #fefbff);
-    border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     padding: 0.25rem 0.5rem;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     flex-shrink: 0;
     min-width: 2rem;
     text-align: center;
@@ -590,8 +592,8 @@ function getProviderLabel(type: string): string {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
-    background: var(--smrt-color-primary-container, #d8e2ff);
-    color: var(--smrt-color-primary, #005ac1);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-primary);
     border-color: transparent;
     min-width: 3rem;
   }
@@ -614,25 +616,25 @@ function getProviderLabel(type: string): string {
 
   .entry-description {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .host-tag {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     font-family: var(--smrt-font-family-mono, monospace);
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    background: var(--smrt-color-surface, #fefbff);
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface);
     padding: 0.125rem 0.5rem;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     flex-shrink: 0;
   }
 
   .inactive-tag {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    background: var(--smrt-color-surface-container-high, #e6e7ef);
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-container-high);
     padding: 0.125rem 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     flex-shrink: 0;
   }
 
@@ -645,40 +647,41 @@ function getProviderLabel(type: string): string {
    */
   .entry-actions :global(.test-btn) {
     padding: 0.25rem 0.5rem;
-    border-radius: var(--smrt-radius-sm, 4px);
-    border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
+    border-radius: var(--smrt-radius-sm);
+    border: 1px solid var(--smrt-color-outline-variant);
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
 
   .entry-actions :global(.test-btn):hover:not(:disabled) {
-    border-color: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-primary, #005ac1);
+    border-color: var(--smrt-color-primary);
+    color: var(--smrt-color-primary);
   }
 
   .entry-actions :global(.delete-btn) {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
     padding: 0.125rem 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     border: 1px solid transparent;
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     flex-shrink: 0;
   }
 
   .entry-actions :global(.delete-btn):hover {
-    background: var(--smrt-color-error-container, #fce4ec);
-    color: var(--smrt-color-error, #ba1a1a);
-    border-color: var(--smrt-color-error, #ba1a1a);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-error);
+    border-color: var(--smrt-color-error);
   }
 
   .placeholder {
     padding: 2rem;
     text-align: center;
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    background: var(--smrt-color-surface-container, #f0f1f9);
-    border-radius: var(--smrt-radius-md, 8px);
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-md);
   }
+}
 </style>

@@ -113,7 +113,7 @@ $effect(() => {
   <div
     class="search-panel"
     role="search"
-    aria-label={t(M['chat.search_messages.search'])}
+    aria-label={t(M['chat.search_messages.search'])} data-smrt-component="SearchMessages"
   >
     <div class="search-panel__header">
       <h2 class="search-panel__title">{t(M['chat.search_messages.title'])}</h2>
@@ -221,13 +221,15 @@ $effect(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .search-panel {
     display: flex;
     flex-direction: column;
     width: 320px;
     height: 100%;
-    background: var(--smrt-color-surface, #fefbff);
-    border-left: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-surface);
+    border-left: 1px solid var(--smrt-color-outline-variant);
     overflow: hidden;
   }
 
@@ -236,13 +238,13 @@ $effect(() => {
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .search-panel__title {
     margin: 0;
     font: var(--smrt-typography-title-small-font, 600 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
@@ -252,12 +254,12 @@ $effect(() => {
     padding: 0;
     background: none;
     border-radius: var(--smrt-radius-medium, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
   .search-panel__header :global(.close-btn:hover) {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
   }
 
   .close-btn__icon {
@@ -268,7 +270,7 @@ $effect(() => {
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
   :global(.search-form) {
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .search-input-wrap {
@@ -276,22 +278,22 @@ $effect(() => {
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--smrt-color-outline, #74777f);
+    border: 1px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-large, 1rem);
-    background: var(--smrt-color-surface-container, #f0f0f4);
+    background: var(--smrt-color-surface-container);
     transition: border-color var(--smrt-duration-short2, 150ms);
   }
 
   .search-input-wrap:focus-within {
-    border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 1px var(--smrt-color-primary, #005ac1);
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 1px var(--smrt-color-primary);
   }
 
   .search-icon {
     flex-shrink: 0;
     width: 1.125rem;
     height: 1.125rem;
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /* The Input primitive sits inside the bordered .search-input-wrap, which owns
@@ -305,7 +307,7 @@ $effect(() => {
     background: transparent;
     box-shadow: none;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   :global(.search-input:focus) {
@@ -321,13 +323,13 @@ $effect(() => {
     height: 1.25rem;
     padding: 0;
     background: none;
-    border-radius: var(--smrt-radius-full, 9999px);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    border-radius: var(--smrt-radius-full);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .search-input-wrap :global(.clear-btn:hover) {
     background: none;
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   .clear-btn__icon {
@@ -356,7 +358,7 @@ $effect(() => {
     margin: 0;
     padding: 0.375rem 1rem;
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
@@ -375,11 +377,11 @@ $effect(() => {
   }
 
   .result-item:hover {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
   }
 
   .result-item:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
@@ -392,16 +394,16 @@ $effect(() => {
   .result-item__avatar {
     width: 1.25rem;
     height: 1.25rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     object-fit: cover;
   }
 
   .result-item__avatar-placeholder {
     width: 1.25rem;
     height: 1.25rem;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-primary-container, #d6e3ff);
-    color: var(--smrt-color-on-primary-container, #001a41);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -410,19 +412,19 @@ $effect(() => {
 
   .result-item__sender {
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
   }
 
   .result-item__date {
     margin-left: auto;
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .result-item__content {
     margin: 0;
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -431,9 +433,9 @@ $effect(() => {
   }
 
   .result-item__content :global(.highlight) {
-    background: var(--smrt-color-tertiary-container, #c2f0dd);
-    color: var(--smrt-color-on-tertiary-container, #002114);
-    border-radius: var(--smrt-radius-sm, 4px);
+    background: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
+    border-radius: var(--smrt-radius-sm);
     padding: 0 0.125rem;
   }
 
@@ -450,13 +452,13 @@ $effect(() => {
   .search-empty__text {
     margin: 0;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .search-empty__hint {
     margin: 0;
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-outline, #74777f);
+    color: var(--smrt-color-outline);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -469,4 +471,5 @@ $effect(() => {
       transition: none;
     }
   }
+}
 </style>

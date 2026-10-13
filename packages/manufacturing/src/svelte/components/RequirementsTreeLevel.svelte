@@ -83,6 +83,8 @@ function componentText(line: RequirementLineView): string {
 </ul>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .requirements-tree {
     list-style: none;
     margin: 0;
@@ -117,4 +119,5 @@ function componentText(line: RequirementLineView): string {
     padding-left: 0.75rem;
     border-left: 2px solid var(--smrt-color-outline-variant, transparent);
   }
+}
 </style>

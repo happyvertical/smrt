@@ -49,6 +49,8 @@ const { t } = useI18n();
 </AppLayout>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .products-page {
     max-width: 1200px;
     margin: 0 auto;
@@ -63,13 +65,13 @@ const { t } = useI18n();
     margin: 0 0 0.5rem 0;
     font-size: var(--smrt-typography-display-small-size, 2.25rem);
     font-weight: var(--smrt-typography-weight-bold, 800);
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
   }
 
   .page-description {
     margin: 0;
     font-size: var(--smrt-typography-body-large-size, 1.125rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     max-width: 600px;
     margin: 0 auto;
     line-height: var(--smrt-typography-body-large-line-height, 1.6);
@@ -82,7 +84,7 @@ const { t } = useI18n();
   .integration-info {
     margin-top: 3rem;
     padding-top: 2rem;
-    border-top: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+    border-top: 1px solid var(--smrt-color-outline-variant);
   }
   
   .info-cards {
@@ -92,10 +94,10 @@ const { t } = useI18n();
   }
   
   .info-card {
-    background: var(--smrt-color-surface, #fff);
+    background: var(--smrt-color-surface);
     padding: 1.5rem;
-    border-radius: var(--smrt-radius-md, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+    border-radius: var(--smrt-radius-md);
+    border: 1px solid var(--smrt-color-outline-variant);
     text-align: center;
   }
 
@@ -103,13 +105,14 @@ const { t } = useI18n();
     margin: 0 0 0.5rem 0;
     font-size: var(--smrt-typography-title-medium-size, 1.125rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
   }
 
   .info-card p {
     margin: 0;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     line-height: var(--smrt-typography-body-medium-line-height, 1.5);
   }
+}
 </style>

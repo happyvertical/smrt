@@ -370,7 +370,7 @@ async function playSpeech() {
 }
 </script>
 
-<section class="setup" aria-busy={busy !== null} aria-labelledby="cutout-title">
+<section class="setup" aria-busy={busy !== null} aria-labelledby="cutout-title" data-smrt-component="PhotoCutoutSetup">
   <h2 id="cutout-title">{t(M['images.photo_cutout_setup.title'])}</h2>
   <ol class="steps" aria-label={t(M['images.photo_cutout_setup.steps_label'])}>
     <li class:current={!source && !ready} class:complete={source !== null || ready} aria-current={!source && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_choose'])}</li>
@@ -406,15 +406,17 @@ async function playSpeech() {
 </section>
 
 <style>
-.setup { max-width: 42rem; margin: var(--smrt-spacing-6, 1.5rem) auto; padding: var(--smrt-spacing-5, 1.25rem); border: 1px solid var(--smrt-color-outline-variant, #64748b); border-radius: var(--smrt-radius-xl, 12px); }
-.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--smrt-spacing-2, .5rem); padding: 0; margin: var(--smrt-spacing-4, 1rem) 0; list-style: none; color: var(--smrt-color-on-surface-variant, #475569); font-size: var(--smrt-typography-body-small-size, .875rem); }
-.steps li { padding-bottom: var(--smrt-spacing-1, .25rem); border-bottom: 2px solid var(--smrt-color-outline-variant, #64748b); }
-.steps .current { color: var(--smrt-color-primary, #1d4ed8); border-color: var(--smrt-color-primary, #1d4ed8); font-weight: var(--smrt-typography-weight-semibold, 600); }
-.steps .complete { color: var(--smrt-color-success, #166534); }
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
+.setup { max-width: 42rem; margin: var(--smrt-spacing-6, 1.5rem) auto; padding: var(--smrt-spacing-5, 1.25rem); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-xl); }
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--smrt-spacing-2, .5rem); padding: 0; margin: var(--smrt-spacing-4, 1rem) 0; list-style: none; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size, .875rem); }
+.steps li { padding-bottom: var(--smrt-spacing-1, .25rem); border-bottom: 2px solid var(--smrt-color-outline-variant); }
+.steps .current { color: var(--smrt-color-primary); border-color: var(--smrt-color-primary); font-weight: var(--smrt-typography-weight-semibold, 600); }
+.steps .complete { color: var(--smrt-color-success); }
 .workflow-actions { margin: var(--smrt-spacing-4, 1rem) 0; }
 .primary-action, .secondary-actions, .speech { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-3, .75rem); }
 .secondary-actions { margin-top: var(--smrt-spacing-3, .75rem); }
-.save-hint { margin: var(--smrt-spacing-2, .5rem) 0 0; color: var(--smrt-color-on-surface-variant, #475569); font-size: var(--smrt-typography-body-small-size, .875rem); }
+.save-hint { margin: var(--smrt-spacing-2, .5rem) 0 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size, .875rem); }
 .speech { margin-top: var(--smrt-spacing-4, 1rem); }
 .previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-4, 1rem); align-items: start; }
 figure { margin: 0; }
@@ -422,11 +424,12 @@ figure figcaption { margin-bottom: var(--smrt-spacing-2, .5rem); font-size: var(
 .setup img, .preview :global(svg) { display: block; width: 100%; height: auto; max-height: 18rem; object-fit: contain; }
 .preview, .preview-target { min-width: 0; }
 .preview-target:not(.preview) { display: none; }
-.checkerboard { background-color: var(--smrt-color-surface, #fff); background-image: linear-gradient(45deg, var(--smrt-color-surface-container-highest, #ddd) 25%, transparent 25%), linear-gradient(-45deg, var(--smrt-color-surface-container-highest, #ddd) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--smrt-color-surface-container-highest, #ddd) 75%), linear-gradient(-45deg, transparent 75%, var(--smrt-color-surface-container-highest, #ddd) 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
-.error { color: var(--smrt-color-error, #b91c1c); font-weight: var(--smrt-typography-weight-semibold, 600); }
-.success { color: var(--smrt-color-success, #166534); }
-.spinner { width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: var(--smrt-radius-full, 9999px); animation: spin .7s linear infinite; }
+.checkerboard { background-color: var(--smrt-color-surface); background-image: linear-gradient(45deg, var(--smrt-color-surface-container-highest) 25%, transparent 25%), linear-gradient(-45deg, var(--smrt-color-surface-container-highest) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--smrt-color-surface-container-highest) 75%), linear-gradient(-45deg, transparent 75%, var(--smrt-color-surface-container-highest) 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
+.error { color: var(--smrt-color-error); font-weight: var(--smrt-typography-weight-semibold, 600); }
+.success { color: var(--smrt-color-success); }
+.spinner { width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: var(--smrt-radius-full); animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-right-color: currentColor; } }
 @media (max-width: 40rem) { .steps { grid-template-columns: repeat(2, 1fr); } .previews { grid-template-columns: 1fr; } }
+}
 </style>

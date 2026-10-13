@@ -64,7 +64,7 @@ async function toggle(line: BomEditorLine) {
 }
 </script>
 
-<ul class="bom-tree" aria-label={label}>
+<ul class="bom-tree" aria-label={label} data-smrt-component="BomStructureTree">
   {#each lines as line (line.id)}
     {@const canOpen =
       line.kind === 'assembly' &&
@@ -126,6 +126,8 @@ async function toggle(line: BomEditorLine) {
 </ul>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .bom-tree {
     list-style: none;
     margin: 0;
@@ -161,4 +163,5 @@ async function toggle(line: BomEditorLine) {
     padding-left: 0.75rem;
     border-left: 2px solid var(--smrt-color-outline-variant, transparent);
   }
+}
 </style>

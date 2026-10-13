@@ -69,7 +69,7 @@ let {
 {/snippet}
 
 {#if items.length > 0}
-  <div class="content-review-status-tray" role="group" aria-label={label}>
+  <div class="content-review-status-tray" role="group" aria-label={label} data-smrt-component="ContentReviewStatusTray">
     {#each items as item (item.id)}
       <Button
         variant="ghost"
@@ -90,6 +90,8 @@ let {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .content-review-status-tray {
     display: inline-flex;
     align-items: center;
@@ -133,7 +135,7 @@ let {
     bottom: 0.35rem;
     width: 0.45rem;
     height: 0.45rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-outline);
   }
 
@@ -142,7 +144,7 @@ let {
   }
 
   .content-review-status-tray :global(.tray-button--warning .tray-button__indicator) {
-    background: var(--smrt-color-tertiary, #d97706);
+    background: var(--smrt-color-tertiary);
   }
 
   .content-review-status-tray :global(.tray-button--success .tray-button__indicator) {
@@ -157,4 +159,5 @@ let {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
   }
+}
 </style>

@@ -163,7 +163,7 @@ function closeForms() {
 }
 </script>
 
-<div class:workspace-shell={true} class:workspace-shell--embedded={embedded}>
+<div class:workspace-shell={true} class:workspace-shell--embedded={embedded} data-smrt-component="ContentWorkspaceRoute">
   <header class="workspace-header">
     <div class="workspace-header__copy">
       <div class="eyebrow">{t(M['content.workspace.eyebrow'])}</div>
@@ -266,6 +266,8 @@ function closeForms() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   :global(body:has(.workspace-shell:not(.workspace-shell--embedded))) {
     margin: 0;
     font-family:
@@ -342,7 +344,7 @@ function closeForms() {
     justify-content: center;
     min-height: 2.5rem;
     padding: 0 1rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     border: 1px solid var(--smrt-color-outline-variant);
     background: color-mix(
       in srgb,
@@ -430,7 +432,7 @@ function closeForms() {
     background: transparent;
     color: var(--smrt-color-primary);
     padding: 0.65rem 0.95rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     cursor: pointer;
   }
@@ -445,4 +447,5 @@ function closeForms() {
   .workspace-nav a:hover {
     text-decoration: underline;
   }
+}
 </style>

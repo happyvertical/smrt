@@ -1215,6 +1215,8 @@ onMount(() => {
 </ThemeProvider>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   :global(body) {
     margin: 0;
     min-height: 100vh;
@@ -1273,7 +1275,7 @@ onMount(() => {
     display: inline-flex;
     padding: 0.16rem;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface-container-high);
   }
 
@@ -1281,7 +1283,7 @@ onMount(() => {
     min-height: 2rem;
     padding: 0 0.68rem;
     border: 0;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
@@ -1299,7 +1301,7 @@ onMount(() => {
     min-height: 2rem;
     padding: 0 0.7rem;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface-container-lowest);
     color: var(--smrt-color-on-surface);
     text-decoration: none;
@@ -1325,7 +1327,7 @@ onMount(() => {
     height: calc(100vh - 5.1rem);
     overflow: hidden;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface);
   }
 
@@ -1342,7 +1344,7 @@ onMount(() => {
     padding: 0.55rem 0.7rem;
     align-self: flex-start;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
@@ -1355,7 +1357,7 @@ onMount(() => {
     height: max-content;
     padding: 0.9rem;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
   }
@@ -1420,7 +1422,7 @@ onMount(() => {
     width: 0.6rem;
     height: 0.6rem;
     flex: 0 0 auto;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-outline);
   }
 
@@ -1437,7 +1439,7 @@ onMount(() => {
     margin: 0;
     padding: 0.7rem;
     border: 1px solid var(--smrt-color-warning);
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-warning-container);
     color: var(--smrt-color-on-warning-container);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
@@ -1472,4 +1474,5 @@ onMount(() => {
       min-height: 28rem;
     }
   }
+}
 </style>

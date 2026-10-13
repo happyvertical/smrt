@@ -37,7 +37,7 @@ const {
 }: Props = $props();
 </script>
 
-<div class="membership-list">
+<div class="membership-list" data-smrt-component="MembershipList">
   {#if loading}
     <div class="loading">
       <div class="spinner"></div>
@@ -63,6 +63,8 @@ const {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .membership-list {
     display: flex;
     flex-direction: column;
@@ -83,7 +85,7 @@ const {
     height: 1.25rem;
     border: 2px solid var(--smrt-color-outline-variant);
     border-top-color: var(--smrt-color-primary);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.6s linear infinite;
   }
 
@@ -101,4 +103,5 @@ const {
     border: 1px dashed var(--smrt-color-outline);
     border-radius: 0.5rem;
   }
+}
 </style>

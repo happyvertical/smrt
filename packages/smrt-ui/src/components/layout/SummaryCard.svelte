@@ -76,7 +76,7 @@ const valueColorClass = $derived.by(() => {
     class:highlight 
     class:clickable={true}
     {href}
-    use:ripple
+    use:ripple data-smrt-component="SummaryCard"
   >
     {@render cardIcon()}
     <div class="card-content">
@@ -93,7 +93,7 @@ const valueColorClass = $derived.by(() => {
     </div>
   </a>
 {:else}
-  <div class="summary-card" class:highlight>
+  <div class="summary-card" class:highlight data-smrt-component="SummaryCard">
     {@render cardIcon()}
     <div class="card-content">
       <span class="card-label">
@@ -108,13 +108,15 @@ const valueColorClass = $derived.by(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .summary-card {
     display: flex;
     align-items: center;
     gap: 1rem;
     padding: 1rem 1.25rem;
     background-color: var(--smrt-color-surface-container-low);
-    border-radius: var(--smrt-radius-lg, 12px);
+    border-radius: var(--smrt-radius-lg);
     text-decoration: none;
     color: var(--smrt-color-on-surface);
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
@@ -140,7 +142,7 @@ const valueColorClass = $derived.by(() => {
     width: 3rem;
     height: 3rem;
     background-color: var(--smrt-color-surface-container-high);
-    border-radius: var(--smrt-radius-lg, 12px);
+    border-radius: var(--smrt-radius-lg);
     color: var(--smrt-color-primary);
     flex-shrink: 0;
   }
@@ -154,7 +156,7 @@ const valueColorClass = $derived.by(() => {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .card-label {
@@ -180,7 +182,7 @@ const valueColorClass = $derived.by(() => {
     font: var(--smrt-typography-label-small-font);
     background-color: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
   }
 
   .card-value {
@@ -202,4 +204,5 @@ const valueColorClass = $derived.by(() => {
     opacity: 1;
     color: var(--smrt-color-primary);
   }
+}
 </style>

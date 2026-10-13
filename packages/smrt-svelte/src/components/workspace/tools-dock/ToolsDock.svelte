@@ -241,10 +241,10 @@
 {/snippet}
 
 <!-- Polite live region announces tool transitions for screen readers. -->
-<div class="tools-dock__sr-only" role="status" aria-live="polite">{announcement}</div>
+<div class="tools-dock__sr-only" role="status" aria-live="polite" data-smrt-component="ToolsDock">{announcement}</div>
 
 {#if dock.layout === 'topbar'}
-  <div class="tools-dock tools-dock--topbar">
+  <div class="tools-dock tools-dock--topbar" data-smrt-component="ToolsDock">
     <nav class="tools-dock__topbar" aria-label={t(M['ui.tools_dock.workspace_tools'])}>
       {#each dock.availableTools as tool (tool.id)}
         {@render toolButton(tool, 'topbar')}
@@ -255,7 +255,7 @@
     {/if}
   </div>
 {:else}
-  <aside class="tools-dock tools-dock--rail" class:tools-dock--open={dock.isOpen}>
+  <aside class="tools-dock tools-dock--rail" class:tools-dock--open={dock.isOpen} data-smrt-component="ToolsDock">
     {#if dock.isOpen}
       <!-- raw-primitive-allow: click-catching overlay/backdrop that closes the dock; a structural full-bleed surface, not a styled action button -->
       <button
@@ -275,10 +275,12 @@
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .tools-dock {
-    --tools-dock-rail-width: 3.25rem;
-    --tools-dock-panel-width: 420px;
-    color: var(--smrt-color-on-surface, #f8fafc);
+    --smrt-tools-dock-rail-width: 3.25rem;
+    --smrt-tools-dock-panel-width: 420px;
+    color: var(--smrt-color-on-surface);
     box-sizing: border-box;
   }
 
@@ -290,23 +292,23 @@
     align-self: flex-start;
     z-index: 20;
     height: 100vh;
-    width: var(--tools-dock-rail-width);
-    flex: 0 0 var(--tools-dock-rail-width);
+    width: var(--smrt-tools-dock-rail-width);
+    flex: 0 0 var(--smrt-tools-dock-rail-width);
     display: block;
   }
 
   .tools-dock__rail {
     position: relative;
     z-index: 2;
-    width: var(--tools-dock-rail-width);
+    width: var(--smrt-tools-dock-rail-width);
     height: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 0.35rem;
     padding: 0.6rem 0.45rem;
-    background: var(--smrt-color-surface-container-low, #11161b);
-    border-left: 1px solid var(--smrt-color-outline-variant, #30343a);
+    background: var(--smrt-color-surface-container-low);
+    border-left: 1px solid var(--smrt-color-outline-variant);
   }
 
   .tools-dock__rail-button {
@@ -319,19 +321,19 @@
     border: 1px solid transparent;
     border-radius: 0.45rem;
     background: transparent;
-    color: var(--smrt-color-on-surface-variant, #aab2bd);
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
   }
 
   .tools-dock__rail-button:hover,
   .tools-dock__rail-button.active {
-    background: var(--smrt-color-surface-container-high, #1d2228);
-    color: var(--smrt-color-on-surface, #f8fafc);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
   }
 
   .tools-dock__rail-button:focus-visible,
   .tools-dock__topbar-button:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #7dd3fc);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 
@@ -351,9 +353,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-primary, #7dd3fc);
-    color: var(--smrt-color-on-primary, #061014);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     font-size: var(--smrt-typography-label-small-size, 0.58rem);
     font-weight: var(--smrt-typography-weight-bold, 750);
     line-height: 1;
@@ -363,22 +365,22 @@
 
   .tools-dock__panel {
     position: absolute;
-    inset: 0 var(--tools-dock-rail-width) 0 auto;
+    inset: 0 var(--smrt-tools-dock-rail-width) 0 auto;
     height: 100%;
-    width: var(--tools-dock-panel-width);
-    min-width: var(--tools-dock-panel-width);
+    width: var(--smrt-tools-dock-panel-width);
+    min-width: var(--smrt-tools-dock-panel-width);
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
     padding: 1rem;
-    background: var(--smrt-color-surface, #101214);
-    color: var(--smrt-color-on-surface, #f8fafc);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
     overflow: hidden;
-    border-left: 1px solid var(--smrt-color-outline-variant, #30343a);
-    border-right: 1px solid var(--smrt-color-outline-variant, #30343a);
+    border-left: 1px solid var(--smrt-color-outline-variant);
+    border-right: 1px solid var(--smrt-color-outline-variant);
     box-shadow: -24px 0 40px
       color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
-    transform: translateX(calc(100% + var(--tools-dock-rail-width)));
+    transform: translateX(calc(100% + var(--smrt-tools-dock-rail-width)));
     opacity: 0;
     pointer-events: none;
     transition:
@@ -421,9 +423,9 @@
     height: 2rem;
     display: inline-grid;
     place-items: center;
-    border: 1px solid var(--smrt-color-outline-variant, #30343a);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.5rem;
-    background: var(--smrt-color-surface-container-high, #1d2228);
+    background: var(--smrt-color-surface-container-high);
     color: inherit;
     font-size: var(--smrt-typography-title-large-size, 1.2rem);
     line-height: 1;
@@ -435,12 +437,12 @@
     gap: 0.45rem;
     min-height: 12rem;
     padding: 1rem;
-    color: var(--smrt-color-on-surface-variant, #aab2bd);
+    color: var(--smrt-color-on-surface-variant);
     text-align: center;
   }
 
   .tools-dock__empty strong {
-    color: var(--smrt-color-on-surface, #f8fafc);
+    color: var(--smrt-color-on-surface);
   }
 
   .tools-dock__empty p {
@@ -469,9 +471,9 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    border: 1px solid var(--smrt-color-outline-variant, #30343a);
-    background: var(--smrt-color-surface-container-low, #11161b);
-    color: var(--smrt-color-on-surface-variant, #aab2bd);
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
     border-radius: 0.6rem;
     padding: 0.45rem 0.7rem;
     cursor: pointer;
@@ -481,8 +483,8 @@
 
   .tools-dock__topbar-button.active,
   .tools-dock__topbar-button:hover {
-    background: var(--smrt-color-surface-container-high, #1d2228);
-    color: var(--smrt-color-on-surface, #f8fafc);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
   }
 
   /* Leading glyph in the topbar layout. Sized to match the surrounding
@@ -539,11 +541,11 @@
       top: 0;
       right: 0;
       bottom: 0;
-      width: var(--tools-dock-rail-width);
+      width: var(--smrt-tools-dock-rail-width);
       height: 100vh;
       height: 100dvh;
       z-index: var(--smrt-z-index-modal, 1300);
-      --tools-dock-panel-width: min(420px, calc(100vw - var(--tools-dock-rail-width)));
+      --smrt-tools-dock-panel-width: min(420px, calc(100vw - var(--smrt-tools-dock-rail-width)));
     }
 
     /* Mobile: keep panel and rail above the close overlay so taps reach the
@@ -561,11 +563,12 @@
 
   @media (max-width: 640px) {
     .tools-dock--rail {
-      --tools-dock-panel-width: calc(100vw - var(--tools-dock-rail-width));
+      --smrt-tools-dock-panel-width: calc(100vw - var(--smrt-tools-dock-rail-width));
     }
 
     .tools-dock__panel {
       padding: 0.85rem;
     }
   }
+}
 </style>

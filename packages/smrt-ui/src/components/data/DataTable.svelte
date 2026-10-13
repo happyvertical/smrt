@@ -1444,7 +1444,7 @@ $effect(() => {
 });
 </script>
 
-{#if toolbar}<div class="data-table-toolbar">{@render toolbar()}</div>{/if}
+{#if toolbar}<div class="data-table-toolbar" data-smrt-component="DataTable">{@render toolbar()}</div>{/if}
 <!-- svelte-ignore a11y_no_noninteractive_tabindex: the region provides horizontal or virtual keyboard scrolling. -->
 <div
   bind:this={tableContainer}
@@ -1473,7 +1473,7 @@ $effect(() => {
   onkeydown={(event) => {
     handleVirtualizationKeydown(event);
     if (!event.defaultPrevented) handleOverflowKeydown(event);
-  }}
+  }} data-smrt-component="DataTable"
 >
   <table role={cardsRole('table')}
     class="data-table {sizeClasses[size]}"
@@ -1486,7 +1486,7 @@ $effect(() => {
     aria-rowcount={virtualizationWindow.enabled
       ? virtualRowCount + headerRowCount + structuralRowCount
       : undefined}
-    style={`--data-table-caption-height: ${virtualCaptionHeight}px`}
+    style={`--smrt-data-table-caption-height: ${virtualCaptionHeight}px`}
   >
     {#if caption}
       <caption bind:this={tableCaption} class="data-table__caption">{caption}</caption>
@@ -1913,7 +1913,7 @@ $effect(() => {
   {/if}
 </div>
 {#if hasHorizontalOverflow}
-  <div class="data-table__overflow-cue" aria-hidden="true">
+  <div class="data-table__overflow-cue" aria-hidden="true" data-smrt-component="DataTable">
     {#if canScrollLeft}<span>← {t(M['ui.data_table.more_columns'])}</span>{/if}
     {#if canScrollRight}<span>{t(M['ui.data_table.more_columns'])} →</span>{/if}
   </div>
@@ -1921,6 +1921,8 @@ $effect(() => {
 {#if tableState.pageSize && totalPages && totalPages > 1}<Pagination currentPage={tableState.page} {totalPages} onPageChange={handlePageChange} aria-label={t(M['ui.data_table.pagination'])} />{/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .data-table-container {
     position: relative;
     width: 100%;
@@ -1928,12 +1930,12 @@ $effect(() => {
   }
 
   .data-table-container--overflowing:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #3b82f6);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 
   .data-table-container--highlighted {
-    outline: 2px solid var(--smrt-color-primary, #2563eb);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 3px;
   }
 
@@ -1941,9 +1943,9 @@ $effect(() => {
     display: flex;
     justify-content: space-between;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    border-top: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-small-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     pointer-events: none;
@@ -1971,7 +1973,7 @@ $effect(() => {
 
   .data-table-container--sticky.data-table-container--virtualized .data-table__head {
     position: sticky;
-    top: var(--data-table-caption-height, 0px);
+    top: var(--smrt-data-table-caption-height, 0px);
     z-index: 1;
   }
 
@@ -1981,21 +1983,21 @@ $effect(() => {
     border-spacing: 0;
     font-family: var(--smrt-font-family, inherit);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface, #111827);
-    background: var(--smrt-color-surface, #ffffff);
+    color: var(--smrt-color-on-surface);
+    background: var(--smrt-color-surface);
   }
 
   .data-table__caption {
     padding: var(--smrt-spacing-3, 0.75rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     text-align: left;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     caption-side: top;
   }
 
   /* Header */
   .data-table__head {
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
   }
 
   .data-table-container--sticky .data-table__head {
@@ -2005,7 +2007,7 @@ $effect(() => {
   }
 
   .data-table__row--header {
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .data-table__cell--header {
@@ -2014,7 +2016,7 @@ $effect(() => {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-align: left;
     white-space: nowrap;
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
   }
 
   .data-table__cell--sortable {
@@ -2042,7 +2044,7 @@ $effect(() => {
   }
 
   .data-table__cell--header-group {
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-label-medium-font);
     letter-spacing: 0.02em;
   }
@@ -2065,17 +2067,17 @@ $effect(() => {
     right: 0.3rem;
     width: 1px;
     height: 60%;
-    background: var(--smrt-color-outline, #9ca3af);
+    background: var(--smrt-color-outline);
     content: '';
   }
 
   .data-table__resize-handle:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #3b82f6);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
   .data-table__sort-button:hover {
-    color: var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-primary);
   }
 
   .data-table__sort-icon {
@@ -2085,16 +2087,16 @@ $effect(() => {
 
   .data-table__cell--sorted .data-table__sort-icon {
     opacity: 1;
-    color: var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-primary);
   }
 
   /* Body */
   .data-table__body {
-    background: var(--smrt-color-surface, #ffffff);
+    background: var(--smrt-color-surface);
   }
 
   .data-table__row {
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     transition: background-color var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
   }
 
@@ -2103,17 +2105,17 @@ $effect(() => {
     border: 0;
   }
 
-  .data-table--hoverable .data-table__row:hover:not(.data-table__row--loading):not(.data-table__row--empty) {
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+  .data-table--hoverable .data-table__row:hover:not(.data-table__row--loading):not(.data-table__row--empty):not(.data-table__row--selected) {
+    background: var(--smrt-color-surface-container-low);
   }
 
   .data-table__row--selected {
-    background: var(--smrt-color-primary-container, #dbeafe) !important;
+    background: var(--smrt-color-primary-container);
   }
 
-  .data-table--striped:not(.data-table--virtualized) .data-table__row:nth-child(even),
-  .data-table__row--striped {
-    background: var(--smrt-color-surface-container-lowest, #fafafa);
+  .data-table--striped:not(.data-table--virtualized) .data-table__row:nth-child(even):not(.data-table__row--selected),
+  .data-table__row--striped:not(.data-table__row--selected) {
+    background: var(--smrt-color-surface-container-lowest);
   }
 
   .data-table__row--interactive {
@@ -2121,12 +2123,12 @@ $effect(() => {
   }
 
   .data-table__row--interactive:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #3b82f6);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
   .data-table-container--virtualized .data-table__row:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #3b82f6);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
@@ -2139,18 +2141,18 @@ $effect(() => {
   .data-table__cell--pinned-end {
     position: sticky;
     z-index: 1;
-    background: var(--smrt-color-surface, #ffffff);
+    background: var(--smrt-color-surface);
   }
 
   .data-table__cell--header.data-table__cell--pinned-start,
   .data-table__cell--header.data-table__cell--pinned-end {
     z-index: 3;
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
   }
 
   .data-table__row--selected .data-table__cell--pinned-start,
   .data-table__row--selected .data-table__cell--pinned-end {
-    background: var(--smrt-color-primary-container, #dbeafe);
+    background: var(--smrt-color-primary-container);
   }
 
   .data-table__cell--checkbox {
@@ -2163,7 +2165,7 @@ $effect(() => {
   .data-table__expand-button:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   .data-table__cell--expanded { padding: var(--smrt-spacing-4); background: var(--smrt-color-surface-container-low); }
   .data-table__footer { border-top: 2px solid var(--smrt-color-outline-variant); font-weight: var(--smrt-typography-weight-medium); }
-  .data-table__row--structural { background: var(--smrt-color-surface-container-low, #f9fafb); }
+  .data-table__row--structural { background: var(--smrt-color-surface-container-low); }
   .data-table__row--footer { border-top: 2px solid var(--smrt-color-outline-variant); }
   .data-table__cell--structural-label { font-weight: var(--smrt-typography-weight-semibold, 600); }
 
@@ -2171,7 +2173,7 @@ $effect(() => {
     width: 18px;
     height: 18px;
     cursor: pointer;
-    accent-color: var(--smrt-color-primary, #3b82f6);
+    accent-color: var(--smrt-color-primary);
   }
 
   /* Loading */
@@ -2187,15 +2189,15 @@ $effect(() => {
     align-items: center;
     justify-content: center;
     gap: var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .data-table__spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--smrt-color-outline-variant, #e5e7eb);
-    border-top-color: var(--smrt-color-primary, #3b82f6);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-top-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.8s linear infinite;
   }
 
@@ -2206,7 +2208,7 @@ $effect(() => {
   }
 
   .data-table__empty-state {
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .data-table__error-state,
@@ -2216,17 +2218,17 @@ $effect(() => {
     justify-content: center;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-3, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .data-table__error-state,
   .data-table__async-status--error {
-    color: var(--smrt-color-error, #b3261e);
+    color: var(--smrt-color-error);
   }
 
   .data-table__async-status {
     padding: var(--smrt-spacing-3, 0.75rem);
-    border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border-top: 1px solid var(--smrt-color-outline-variant);
     font: var(--smrt-typography-body-small-font);
   }
 
@@ -2241,7 +2243,7 @@ $effect(() => {
   }
 
   .data-table__retry-button:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #3b82f6);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 
@@ -2308,13 +2310,13 @@ $effect(() => {
       display: block;
       font-size: var(--smrt-typography-label-small-size, 0.75rem);
       font-weight: 600;
-      color: var(--smrt-color-on-surface-variant, #4b5563);
+      color: var(--smrt-color-on-surface-variant);
     }
     .data-table-container--phone-cards .data-table__row {
       display: grid;
       gap: var(--smrt-spacing-1, 0.35rem);
       padding: var(--smrt-spacing-3, 0.85rem) var(--smrt-spacing-4, 1rem);
-      border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+      border-bottom: 1px solid var(--smrt-color-outline-variant);
     }
     .data-table-container--phone-cards .data-table__cell {
       display: block;
@@ -2331,10 +2333,11 @@ $effect(() => {
       animation: none;
     }
   }
-  .data-table-container[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .data-table-container[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .data-table-container[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .data-table__sort-button { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
   .data-table-container--narrow .data-table { table-layout: fixed; }
   .data-table-container--narrow .data-table__cell { white-space: normal; overflow-wrap: anywhere; }
   .data-table-container--narrow .data-table__sort-button { max-width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+}
 </style>

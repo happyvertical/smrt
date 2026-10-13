@@ -159,13 +159,15 @@ async function addProduct() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .live-products {
     max-width: 640px;
     margin: 0 auto;
     padding: 1.5rem;
-    background: var(--smrt-color-surface, #fff);
-    border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
-    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
   }
 
   .live-products__header {
@@ -176,13 +178,13 @@ async function addProduct() {
     margin: 0 0 0.25rem 0;
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
   }
 
   .live-products__hint {
     margin: 0;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /* smrt-ui <Form> renders its own inner <form> with the forwarded class, so
@@ -200,7 +202,7 @@ async function addProduct() {
 
   .live-products__error {
     margin: 0 0 1rem 0;
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
@@ -208,7 +210,7 @@ async function addProduct() {
     margin: 0;
     padding: 1rem 0;
     text-align: center;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .live-products__list {
@@ -225,17 +227,18 @@ async function addProduct() {
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem 1rem;
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-    border-radius: var(--smrt-radius-sm, 4px);
+    background: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-sm);
   }
 
   .live-products__item-name {
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
   }
 
   .live-products__item-price {
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
+}
 </style>

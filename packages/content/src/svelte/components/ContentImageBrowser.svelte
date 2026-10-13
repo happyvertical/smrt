@@ -76,7 +76,7 @@ function handleSelect(selected: ImageLike | File | string) {
 }
 </script>
 
-<div class="content-image-browser">
+<div class="content-image-browser" data-smrt-component="ContentImageBrowser">
   {#if assets.length}
     <div class="asset-grid">
       {#each assets as asset, index (asset.id || `${getAssetLabel(asset)}-${index}`)}
@@ -131,6 +131,8 @@ function handleSelect(selected: ImageLike | File | string) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .content-image-browser {
     display: grid;
     gap: 1rem;
@@ -251,4 +253,5 @@ function handleSelect(selected: ImageLike | File | string) {
     border-radius: 0.5rem;
     overflow: hidden;
   }
+}
 </style>

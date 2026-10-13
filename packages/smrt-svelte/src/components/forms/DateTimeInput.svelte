@@ -349,7 +349,7 @@ function handleNativeChange(e: Event) {
 }
 </script>
 
-<div class="smrt-datetime" class:listening={isHolding} class:parsing={isParsing}>
+<div class="smrt-datetime" class:listening={isHolding} class:parsing={isParsing} data-smrt-component="DateTimeInput">
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
@@ -450,12 +450,14 @@ function handleNativeChange(e: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-datetime {
     display: flex;
     flex-direction: column;
     width: 100%;
     min-width: 0;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     position: relative;
   }
 
@@ -469,47 +471,47 @@ function handleNativeChange(e: Event) {
     box-sizing: border-box;
     min-width: 0;
     width: 100%;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     font-size: var(--smrt-typography-body-large-size, 1rem);
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: var(--smrt-radius-small, 6px);
-    background: var(--smrt-color-surface, #fff);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .smrt-input:focus {
     outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #005ac1) 10%, transparent);
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
 
   .smrt-input.smrt-mode {
-    padding-right: var(--smrt-spacing-11, 44px);
+    padding-right: var(--smrt-spacing-11);
     cursor: pointer;
   }
 
   .smrt-input:disabled {
-    background: var(--smrt-color-surface-container-high, #f3f4f6);
+    background: var(--smrt-color-surface-container-high);
     cursor: not-allowed;
   }
 
   .smrt-datetime.listening .smrt-input {
-    border-color: var(--smrt-color-success, #22c55e);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success, #22c55e) 30%, transparent);
+    border-color: var(--smrt-color-success);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success) 30%, transparent);
     animation: pulse-green 1.5s var(--smrt-easing-standard, ease-in-out) infinite;
   }
 
   .smrt-datetime.parsing .smrt-input {
-    border-color: var(--smrt-color-warning, #f59e0b);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-warning, #f59e0b) 20%, transparent);
+    border-color: var(--smrt-color-warning);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-warning) 20%, transparent);
   }
 
   @keyframes pulse-green {
     0%, 100% {
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success, #22c55e) 30%, transparent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success) 30%, transparent);
     }
     50% {
-      box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-success, #22c55e) 15%, transparent);
+      box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-success) 15%, transparent);
     }
   }
 
@@ -525,19 +527,19 @@ function handleNativeChange(e: Event) {
     justify-content: center;
     background: transparent;
     border: none;
-    border-radius: var(--smrt-radius-sm, 4px);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    border-radius: var(--smrt-radius-sm);
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .mic-btn:hover {
     background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-on-surface, #374151);
+    color: var(--smrt-color-on-surface);
   }
 
   .mic-btn.active {
-    background: var(--smrt-color-primary, #22c55e);
+    background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary, white);
   }
 
@@ -564,19 +566,20 @@ function handleNativeChange(e: Event) {
 
   .listening-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-primary, #22c55e);
-    margin-top: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-primary);
+    margin-top: var(--smrt-spacing-1);
   }
 
   .parsing-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-secondary, #f59e0b);
-    margin-top: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-secondary);
+    margin-top: var(--smrt-spacing-1);
   }
 
   .error-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-error, #ba1a1a);
-    margin-top: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-error);
+    margin-top: var(--smrt-spacing-1);
   }
+}
 </style>

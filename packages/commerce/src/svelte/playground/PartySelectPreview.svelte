@@ -96,13 +96,16 @@ const match = <T extends { profile: { name: string } }>(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .preview {
     display: grid;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     max-width: 28rem;
     color: var(--smrt-color-on-surface);
   }
   p {
     margin: 0;
   }
+}
 </style>

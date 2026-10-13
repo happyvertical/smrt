@@ -61,7 +61,7 @@ function updateField(key: string, value: unknown) {
 }
 </script>
 
-<div class="content-status-fields" class:simple>
+<div class="content-status-fields" class:simple data-smrt-component="ContentStatusFields">
   {#if shown.has('type')}
     <FormGroup label={t(M['content.content_fields.type'])} id="{idPrefix}-type">
       <Select name="type" value={data.type || 'article'} onchange={(event) => updateField('type', event.currentTarget.value)}>
@@ -104,6 +104,8 @@ function updateField(key: string, value: unknown) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .content-status-fields {
     display: flex;
     align-items: end;
@@ -128,4 +130,5 @@ function updateField(key: string, value: unknown) {
   .content-status-fields.simple :global(.form-label) {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
+}
 </style>

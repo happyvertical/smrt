@@ -147,6 +147,8 @@ function handleObjectInput(event: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .field-renderer {
     display: flex;
     flex-direction: column;
@@ -156,12 +158,12 @@ function handleObjectInput(event: Event) {
 
   .field-label {
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #374151);
+    color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
   .required {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 
   .field-checkbox {
@@ -171,7 +173,8 @@ function handleObjectInput(event: Event) {
 
   .field-hint {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
+}
 </style>

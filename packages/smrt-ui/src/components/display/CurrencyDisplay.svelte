@@ -203,12 +203,14 @@ const colorClass = $derived.by(() => {
   class:lg={size === 'lg'}
   class:negative={colorClass === 'negative'}
   class:positive={colorClass === 'positive'}
-  class:invalid={formatted.invalidCode !== null}
+  class:invalid={formatted.invalidCode !== null} data-smrt-component="CurrencyDisplay"
 >
   {formatted.text}
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .currency-display {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -224,14 +226,15 @@ const colorClass = $derived.by(() => {
   }
 
   .currency-display.negative {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 
   .currency-display.positive {
-    color: var(--smrt-color-tertiary, #16a34a);
+    color: var(--smrt-color-tertiary);
   }
 
   .currency-display.invalid {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
+}
 </style>

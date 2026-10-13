@@ -338,7 +338,7 @@ async function customSaved(offering: HelperOffering) {
 }
 </script>
 
-<section class="helper-panel" aria-busy={loading || saving} aria-labelledby="helper-panel-title">
+<section class="helper-panel" aria-busy={loading || saving} aria-labelledby="helper-panel-title" data-smrt-component="HelperControlPanel">
   <h2 id="helper-panel-title">{t(M['chat.helper.title'])}</h2>
   {#if message}<p class="message" role={messageIsError ? 'alert' : 'status'} aria-live={messageIsError ? 'assertive' : 'polite'}>{message}</p>{/if}
   {#if snapshot?.recovery}<p class="message" role="status">{snapshot.recovery.message}</p>{/if}
@@ -387,6 +387,8 @@ async function customSaved(offering: HelperOffering) {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .helper-panel { display: grid; gap: var(--smrt-spacing-4); max-width: 42rem; padding: var(--smrt-spacing-4); color: var(--smrt-color-on-surface); }
   fieldset { display: grid; gap: var(--smrt-spacing-3); border: 0; margin: 0; padding: 0; }
   label { display: grid; gap: var(--smrt-spacing-1); font: var(--smrt-typography-label-large-font); }
@@ -398,4 +400,5 @@ async function customSaved(offering: HelperOffering) {
   .setup-actions, .actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); }
   .custom-setup { display: grid; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-small); }
   .message { margin: 0; color: var(--smrt-color-on-surface-variant); }
+}
 </style>

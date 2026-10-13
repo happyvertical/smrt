@@ -46,7 +46,7 @@ function approve(proposal: DirectiveProposalView): void {
 }
 </script>
 
-<section class="directive-review-queue">
+<section class="directive-review-queue" data-smrt-component="DirectiveReviewQueue">
   {#if proposals.length === 0}
     <p class="dq-empty">No directive proposals awaiting review.</p>
   {:else}
@@ -115,6 +115,8 @@ function approve(proposal: DirectiveProposalView): void {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .directive-review-queue {
     display: flex;
     flex-direction: column;
@@ -122,7 +124,7 @@ function approve(proposal: DirectiveProposalView): void {
   }
 
   .dq-empty {
-    color: var(--color-text-muted, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -164,7 +166,7 @@ function approve(proposal: DirectiveProposalView): void {
     font-size: 0.8125rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--color-text-muted, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .dq-pre {
@@ -172,7 +174,7 @@ function approve(proposal: DirectiveProposalView): void {
     padding: 0.5rem;
     white-space: pre-wrap;
     word-break: break-word;
-    background: var(--color-surface-muted, #f3f4f6);
+    background: var(--smrt-color-surface-variant);
     border-radius: 0.375rem;
     font-size: 0.875rem;
   }
@@ -182,4 +184,5 @@ function approve(proposal: DirectiveProposalView): void {
     gap: 0.5rem;
     margin-top: 0.75rem;
   }
+}
 </style>

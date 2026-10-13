@@ -132,7 +132,7 @@ function vendorMeta(vendor: VendorDisplayData): string {
 }
 </script>
 
-<section class="party-directory">
+<section class="party-directory" data-smrt-component="VendorDirectory">
   <PageHeader title={plural} subtitle={labels.plural ? t(M['commerce.party.manage_named'], { plural }) : t(M['commerce.vendor.manage'])}>
     {#snippet actions()}
       {#if canCreate && addHref}<Button href={addHref}>{labels.add ?? (labels.singular ? t(M['commerce.party.add_named'], { singular }) : t(M['commerce.vendor.add']))}</Button>{/if}
@@ -199,6 +199,8 @@ function vendorMeta(vendor: VendorDisplayData): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .party-directory { display: grid; gap: var(--smrt-spacing-5); max-inline-size: 64rem; min-inline-size: 0; }
   :global(.directory-search) { display: grid; grid-template-columns: minmax(12rem, 2fr) minmax(10rem, 1fr) auto; align-items: end; gap: var(--smrt-spacing-3); }
   :global(.directory-search .form-group) { margin: 0; min-inline-size: 0; }
@@ -212,4 +214,5 @@ function vendorMeta(vendor: VendorDisplayData): string {
   .meta { margin-block-start: var(--smrt-spacing-2); color: var(--smrt-color-on-surface-variant); }
   .pagination { display: flex; align-items: center; justify-content: center; gap: var(--smrt-spacing-3); }
   @media (max-width: 42rem) { :global(.directory-search) { grid-template-columns: minmax(0, 1fr); } :global(.directory-search .button) { inline-size: 100%; } .party-row { align-items: start; } }
+}
 </style>

@@ -10,9 +10,11 @@ interface Props {
 let { title, href }: Props = $props();
 </script>
 
-<a class="smrt-shell-title" {href} data-testid="shell-title">{title}</a>
+<a class="smrt-shell-title" {href} data-testid="shell-title" data-smrt-component="ShellTitle">{title}</a>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-shell-title {
     display: inline-flex;
     align-items: center;
@@ -39,4 +41,5 @@ let { title, href }: Props = $props();
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
+}
 </style>

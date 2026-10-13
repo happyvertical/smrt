@@ -54,7 +54,7 @@ const roomTypeLabel = $derived.by(() => {
 });
 </script>
 
-<header class="room-header" aria-label={t(M['chat.room_header.room_label'], { name: room.name })}>
+<header class="room-header" aria-label={t(M['chat.room_header.room_label'], { name: room.name })} data-smrt-component="RoomHeader">
   <div class="room-header__info">
     <div class="room-header__title-row">
       {#if room.roomType !== 'dm'}
@@ -118,14 +118,16 @@ const roomTypeLabel = $derived.by(() => {
 </header>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .room-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     padding: 0.75rem 1rem;
-    background: var(--smrt-color-surface, #fefbff);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-surface);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     min-height: 3.5rem;
   }
 
@@ -147,14 +149,14 @@ const roomTypeLabel = $derived.by(() => {
     flex-shrink: 0;
     font-size: var(--smrt-typography-title-medium-size, 1.125rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .room-header__avatar {
     flex-shrink: 0;
     width: 1.75rem;
     height: 1.75rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     object-fit: cover;
   }
 
@@ -162,9 +164,9 @@ const roomTypeLabel = $derived.by(() => {
     flex-shrink: 0;
     width: 1.75rem;
     height: 1.75rem;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-primary-container, #d6e3ff);
-    color: var(--smrt-color-on-primary-container, #001a41);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -174,7 +176,7 @@ const roomTypeLabel = $derived.by(() => {
   .room-header__name {
     margin: 0;
     font: var(--smrt-typography-title-medium-font, 600 1rem / 1.5 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -183,16 +185,16 @@ const roomTypeLabel = $derived.by(() => {
   .room-header__type-badge {
     flex-shrink: 0;
     padding: 0.125rem 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-surface-container, #f0f0f4);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
   }
 
   .room-header__topic {
     margin: 0;
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -212,12 +214,12 @@ const roomTypeLabel = $derived.by(() => {
     padding: 0.375rem 0.5rem;
     background: none;
     border-radius: var(--smrt-radius-medium, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
   .room-header__actions :global(.header-btn:hover) {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
   }
 
   .header-btn__icon {
@@ -227,7 +229,7 @@ const roomTypeLabel = $derived.by(() => {
 
   .header-btn__count {
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -235,4 +237,5 @@ const roomTypeLabel = $derived.by(() => {
       transition: none;
     }
   }
+}
 </style>

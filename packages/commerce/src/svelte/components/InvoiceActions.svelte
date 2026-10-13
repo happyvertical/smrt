@@ -55,7 +55,7 @@ const canMarkPaid = $derived(
 const canDelete = $derived(status === 'draft');
 </script>
 
-<div class="invoice-actions">
+<div class="invoice-actions" data-smrt-component="InvoiceActions">
   {#if canSend && onsend}
     <Button variant="primary" {size} onclick={onsend} disabled={loading}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -114,9 +114,12 @@ const canDelete = $derived(status === 'draft');
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .invoice-actions {
     display: flex;
     gap: var(--smrt-spacing-2, 0.5rem);
     flex-wrap: wrap;
   }
+}
 </style>

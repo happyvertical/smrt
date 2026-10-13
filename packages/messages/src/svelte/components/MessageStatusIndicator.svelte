@@ -29,7 +29,7 @@ const {
 }: Props = $props();
 </script>
 
-<span class="status-indicators" role="group" aria-label={t(M['messages.message_status_indicator.status'])}>
+<span class="status-indicators" role="group" aria-label={t(M['messages.message_status_indicator.status'])} data-smrt-component="MessageStatusIndicator">
   {#if !isRead}
     <span class="indicator unread" title={t(M['messages.message_status_indicator.unread'])} aria-label={t(M['messages.message_status_indicator.unread'])}>
       <span class="dot"></span>
@@ -50,6 +50,8 @@ const {
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .status-indicators {
     display: inline-flex;
     align-items: center;
@@ -65,23 +67,24 @@ const {
   .unread .dot {
     width: 0.5rem;
     height: 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-primary, #005ac1);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
   }
 
   .flagged {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
   }
 
   .attachment {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .answered {
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .draft {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

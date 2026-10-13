@@ -60,7 +60,7 @@ onDestroy(() => {
 </script>
 
 {#if toasts.length > 0}
-  <div class="smrt-activity-toasts" aria-live="polite">
+  <div class="smrt-activity-toasts" aria-live="polite" data-smrt-component="ActivityToasts">
     {#each toasts as toast (toast.id)}
       <article class="smrt-activity-toast" data-status={toast.activity.status}>
         <div>
@@ -81,6 +81,8 @@ onDestroy(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-activity-toasts {
     position: fixed;
     inset-block-start: var(--smrt-spacing-4);
@@ -138,4 +140,5 @@ onDestroy(() => {
       transform: translateY(0);
     }
   }
+}
 </style>

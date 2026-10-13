@@ -1016,7 +1016,7 @@ function removeAsset(id: string) {
 }
 </script>
 
-<div class="form-container">
+<div class="form-container" data-smrt-component="ContentEditor">
   <div class="editor-grid" class:editor-grid--with-sidebar={showChatSidebar}>
     <!-- LEFT COLUMN (Document Canvas) -->
     <Form
@@ -1521,6 +1521,8 @@ function removeAsset(id: string) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .form-container {
     width: 100%;
     margin: 0 auto;
@@ -1712,8 +1714,8 @@ function removeAsset(id: string) {
     padding: 1.25rem;
     height: 100%;
     box-sizing: border-box;
-    background: var(--smrt-color-surface-container-low, #f8fafc);
-    color: var(--smrt-color-on-surface, #1f2937);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
   }
 
   .chat-sidebar-empty-state h3,
@@ -1757,7 +1759,7 @@ function removeAsset(id: string) {
     align-items: center;
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     padding: 0.25rem 0.25rem 0.25rem 0.75rem;
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     color: var(--smrt-color-on-surface);
@@ -1948,7 +1950,7 @@ function removeAsset(id: string) {
   .evidence-status {
     align-items: center;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     display: inline-flex;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-bold, 800);
@@ -2050,7 +2052,7 @@ function removeAsset(id: string) {
   }
 
   .add-reference-row :global(.add-reference-button:hover) {
-    background: var(--smrt-color-surface-container-low, #f1f5f9);
+    background: var(--smrt-color-surface-container-low);
   }
   
   .media-gallery :global(.add-image-btn) {
@@ -2058,19 +2060,19 @@ function removeAsset(id: string) {
     align-items: center;
     gap: 0.5rem;
     background: var(--smrt-color-surface, white);
-    border: 1px solid var(--smrt-color-outline, #cbd5e1);
+    border: 1px solid var(--smrt-color-outline);
     padding: 0.75rem 1.25rem;
     border-radius: var(--smrt-radius-md, 0.5rem);
-    color: var(--smrt-color-on-surface-variant, #475569);
+    color: var(--smrt-color-on-surface-variant);
     font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: all 0.2s;
   }
 
   .media-gallery :global(.add-image-btn:hover) {
-    border-color: var(--smrt-color-primary, #94a3b8);
-    color: var(--smrt-color-on-surface, #1e293b);
-    background: var(--smrt-color-surface-container-low, #f1f5f9);
+    border-color: var(--smrt-color-primary);
+    color: var(--smrt-color-on-surface);
+    background: var(--smrt-color-surface-container-low);
   }
 
   .editor-toolbar-right :global(.save-button) {
@@ -2101,7 +2103,7 @@ function removeAsset(id: string) {
 
   .save-notice {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-primary);
   }
 
   .inline-uploader-container {
@@ -2110,7 +2112,7 @@ function removeAsset(id: string) {
     max-height: 60vh;
     overflow-y: auto;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+    border: 1px solid var(--smrt-color-outline-variant);
     margin-top: 1rem;
     border-radius: 0.75rem;
     box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent), 0 2px 4px -1px color-mix(in srgb, var(--smrt-color-shadow) 3%, transparent));
@@ -2185,7 +2187,7 @@ function removeAsset(id: string) {
     border-radius: 0.5rem;
     overflow: hidden;
     border: 2px solid transparent;
-    background: var(--smrt-color-surface-container-high, #242424);
+    background: var(--smrt-color-surface-container-high);
     transition: border-color 0.2s;
   }
 
@@ -2198,7 +2200,7 @@ function removeAsset(id: string) {
   }
 
   .media-item.is-thumbnail {
-    border-color: var(--smrt-color-primary, #3b82f6);
+    border-color: var(--smrt-color-primary);
   }
 
   .media-item-image {
@@ -2244,18 +2246,18 @@ function removeAsset(id: string) {
     background: var(--smrt-color-surface);
   }
 
-  .media-item-overlay :global(.btn-remove-asset:hover) {
-    background: var(--smrt-color-error-container) !important;
-    color: var(--smrt-color-error) !important;
-    border-color: var(--smrt-color-error) !important;
+  .media-item-overlay :global(.btn-remove-asset:hover:not(:disabled):not(.disabled)) {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-error);
+    border-color: var(--smrt-color-error);
   }
 
   .thumbnail-badge {
     position: absolute;
     top: 0.25rem;
     left: 0.25rem;
-    background: var(--smrt-color-primary, #3b82f6);
-    color: var(--smrt-color-on-primary, #ffffff);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     font-size: var(--smrt-typography-label-small-size, 0.65rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     padding: 0.15rem 0.4rem;
@@ -2268,14 +2270,14 @@ function removeAsset(id: string) {
   .drop-zone {
     position: relative;
     transition: border-color 0.2s, background 0.2s;
-    border: 2px dashed var(--smrt-color-outline-variant, #e2e8f0);
+    border: 2px dashed var(--smrt-color-outline-variant);
     border-radius: 0.75rem;
     padding: 1.5rem;
   }
 
   .drop-zone-active {
-    border-color: var(--smrt-color-primary, #3b82f6);
-    background: color-mix(in srgb, var(--smrt-color-primary, #3b82f6) 6%, transparent);
+    border-color: var(--smrt-color-primary);
+    background: color-mix(in srgb, var(--smrt-color-primary) 6%, transparent);
   }
 
   .drop-overlay {
@@ -2287,14 +2289,14 @@ function removeAsset(id: string) {
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
-    background: color-mix(in srgb, var(--smrt-color-primary, #3b82f6) 12%, var(--smrt-color-surface, white) 88%);
+    background: color-mix(in srgb, var(--smrt-color-primary) 12%, var(--smrt-color-surface, white) 88%);
     border-radius: 0.5rem;
     pointer-events: none;
     animation: drop-pulse 0.3s ease-out;
   }
 
   .drop-overlay svg {
-    color: var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-primary);
     opacity: 0.8;
   }
 
@@ -2302,4 +2304,5 @@ function removeAsset(id: string) {
     from { opacity: 0; transform: scale(0.96); }
     to { opacity: 1; transform: scale(1); }
   }
+}
 </style>

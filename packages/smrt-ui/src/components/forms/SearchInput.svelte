@@ -112,7 +112,7 @@ function clear() {
 onDestroy(cancel);
 </script>
 
-<div class="search-input {className}" role="search">
+<div class="search-input {className}" role="search" data-smrt-component="SearchInput">
   <label class="search-input__label" for={inputId}>{label}</label>
   <span class="search-input__icon" aria-hidden="true">
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
@@ -137,6 +137,8 @@ onDestroy(cancel);
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .search-input {
     position: relative;
     display: flex;
@@ -185,7 +187,7 @@ onDestroy(cancel);
     block-size: 2.75rem;
     padding: 0;
     border: none;
-    border-radius: var(--smrt-radius-full, 999px);
+    border-radius: var(--smrt-radius-full);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
@@ -204,4 +206,5 @@ onDestroy(cancel);
       max-inline-size: none;
     }
   }
+}
 </style>

@@ -28,7 +28,7 @@ const delta = $derived.by(() => {
   }
 });
 </script>
-<section class="quote-comparison" aria-label={title ?? t(Q['commerce.quote.compare'])}>
+<section class="quote-comparison" aria-label={title ?? t(Q['commerce.quote.compare'])} data-smrt-component="QuoteRevisionComparison">
   <h2>{title ?? t(Q['commerce.quote.compare'])}</h2>
   <div class="versions">
     <QuoteRevisionHistory revisions={[previous]} title={t(Q['commerce.quote.before'])} />
@@ -39,6 +39,9 @@ const delta = $derived.by(() => {
   {:else}<p>{t(Q['commerce.quote.incomparable'])}</p>{/if}
 </section>
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 .quote-comparison { min-width: 0; color: var(--smrt-color-on-surface); overflow-wrap: anywhere; }
 .versions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: var(--smrt-spacing-4, 1rem); }
+}
 </style>

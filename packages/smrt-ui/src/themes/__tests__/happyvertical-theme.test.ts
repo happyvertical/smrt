@@ -212,8 +212,8 @@ describe('happyvertical preset — brand invariants (#2318)', () => {
     // (a fill, with its own ink) from reading as a hit.
     const declaration = /(?<![-\w])color\s*:\s*([^;{}]*)/g;
     const successToken = /--smrt-color-success(?![\w-])/;
-    // One level of indirection: `--alert-color: var(--smrt-color-success)` and
-    // then `color: var(--alert-color)` is Alert.svelte's exact shape today, one
+    // One level of indirection: `--smrt-alert-color: var(--smrt-color-success)` and
+    // then `color: var(--smrt-alert-color)` is Alert.svelte's exact shape today, one
     // edit away from painting text green invisibly.
     const customProperty = /(--[\w-]+)\s*:\s*([^;{}]*)/g;
 

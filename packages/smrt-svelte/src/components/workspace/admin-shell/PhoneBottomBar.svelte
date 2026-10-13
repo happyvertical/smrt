@@ -50,7 +50,7 @@ function accessibleName(item: PhoneBottomBarItem): string {
 <nav
   class="smrt-phone-bottom-bar"
   aria-label={label ?? t(M['ui.phone_bottom_bar.label'])}
-  data-testid="phone-bottom-bar"
+  data-testid="phone-bottom-bar" data-smrt-component="PhoneBottomBar"
 >
   {#each items as item (item.id)}
     {#if item.href}
@@ -84,6 +84,8 @@ function accessibleName(item: PhoneBottomBarItem): string {
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-phone-bottom-bar {
     display: grid;
     grid-auto-columns: minmax(0, 1fr);
@@ -167,4 +169,5 @@ function accessibleName(item: PhoneBottomBarItem): string {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary);
   }
+}
 </style>

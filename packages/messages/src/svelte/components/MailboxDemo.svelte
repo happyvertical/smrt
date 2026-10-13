@@ -52,9 +52,9 @@ function open(message: MessageData) {
   wasRead = true;
 }
 </script>
-<p>{t(M['messages.mailbox_demo.disclaimer'])}</p>
+<p data-smrt-component="MailboxDemo">{t(M['messages.mailbox_demo.disclaimer'])}</p>
 <Button onclick={() => { composing = true; sentSubject = null; }}>{t(M['messages.mailbox_demo.compose'])}</Button>
-{#if sentSubject !== null}<p role="status">{t(M['messages.mailbox_demo.sent'], { subject: sentSubject })}</p>{/if}
+{#if sentSubject !== null}<p role="status" data-smrt-component="MailboxDemo">{t(M['messages.mailbox_demo.sent'], { subject: sentSubject })}</p>{/if}
 {#if composing}
   <ComposeForm {accounts} onsend={send} ondiscard={() => (composing = false)} />
 {:else if selected}

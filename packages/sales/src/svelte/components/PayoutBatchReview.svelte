@@ -86,7 +86,7 @@ function methodLabel(method: string): string {
 }
 </script>
 
-<section class="sales-payout-review">
+<section class="sales-payout-review" data-smrt-component="PayoutBatchReview">
   {#if payouts.length === 0}
     <p class="empty">No payout batches to review.</p>
   {:else}
@@ -254,6 +254,8 @@ function methodLabel(method: string): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sales-payout-review {
     display: flex;
     flex-direction: column;
@@ -262,7 +264,7 @@ function methodLabel(method: string): string {
 
   .empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -286,7 +288,7 @@ function methodLabel(method: string): string {
   }
 
   .facts__item dt {
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -301,7 +303,7 @@ function methodLabel(method: string): string {
   }
 
   .negative {
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 
   .settled {
@@ -310,7 +312,7 @@ function methodLabel(method: string): string {
 
   .failed-note {
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-error);
   }
 
   .actions {
@@ -329,4 +331,5 @@ function methodLabel(method: string): string {
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
+}
 </style>

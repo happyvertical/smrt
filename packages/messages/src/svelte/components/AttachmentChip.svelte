@@ -47,7 +47,7 @@ const _formattedSize = $derived.by(() => {
     <span class="size">{_formattedSize}</span>
   </Button>
 {:else}
-  <span class="chip" title={`${attachment.filename} (${_formattedSize})`}>
+  <span class="chip" title={`${attachment.filename} (${_formattedSize})`} data-smrt-component="AttachmentChip">
     <span class="icon">{_icon}</span>
     <span class="name">{attachment.filename}</span>
     <span class="size">{_formattedSize}</span>
@@ -55,14 +55,16 @@ const _formattedSize = $derived.by(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .chip {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
     padding: 0.25rem 0.625rem;
     border-radius: var(--smrt-radius-small, 0.25rem);
-    background: var(--smrt-color-surface-variant, #e1e2ec);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
     border: none;
     cursor: default;
@@ -84,8 +86,8 @@ const _formattedSize = $derived.by(() => {
     gap: 0.375rem;
     padding: 0.25rem 0.625rem;
     border-radius: var(--smrt-radius-small, 0.25rem);
-    background: var(--smrt-color-surface-variant, #e1e2ec);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
     cursor: pointer;
     max-width: 200px;
@@ -93,11 +95,11 @@ const _formattedSize = $derived.by(() => {
   }
 
   :global(.chip.chip--button):hover {
-    background: color-mix(in srgb, var(--smrt-color-surface-variant, #e1e2ec) 92%, var(--smrt-color-shadow, #000));
+    background: color-mix(in srgb, var(--smrt-color-surface-variant) 92%, var(--smrt-color-shadow));
   }
 
   :global(.chip.chip--button):focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 1px;
   }
 
@@ -117,4 +119,5 @@ const _formattedSize = $derived.by(() => {
     opacity: 0.7;
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
+}
 </style>

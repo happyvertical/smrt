@@ -88,8 +88,11 @@ $effect(() => {
 </fieldset>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .address-fields { min-inline-size: 0; margin: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); }
   legend { padding-inline: var(--smrt-spacing-2); font: var(--smrt-typography-title-medium-font); color: var(--smrt-color-on-surface); }
   .address-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--smrt-spacing-4); }
   @media (max-width: 30rem) { .address-grid { grid-template-columns: minmax(0, 1fr); } }
+}
 </style>

@@ -106,7 +106,7 @@ function handleSelect(id: string): void {
 }
 </script>
 
-<div data-density={density} data-compact={compact ? '' : undefined} class="smrt-workspace-account-menu" title={summaryTitle}>
+<div data-density={density} data-compact={compact ? '' : undefined} class="smrt-workspace-account-menu" title={summaryTitle} data-smrt-component="WorkspaceAccountMenu">
   <Dropdown
     {items}
     {placement}
@@ -131,13 +131,15 @@ function handleSelect(id: string): void {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-workspace-account-menu {
     min-width: 0;
     width: 100%;
   }
 
   .smrt-workspace-account-menu[data-density='touch'] {
-    --smrt-control-target-min: var(--smrt-touch-target-min, 48px);
+    --smrt-control-target-min: var(--smrt-touch-target-min);
   }
   .smrt-workspace-account-menu[data-density='comfortable'] {
     --smrt-control-target-min: 0px;
@@ -227,4 +229,5 @@ function handleSelect(id: string): void {
     white-space: nowrap;
     border: 0;
   }
+}
 </style>

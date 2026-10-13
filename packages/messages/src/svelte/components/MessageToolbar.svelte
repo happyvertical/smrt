@@ -35,7 +35,7 @@ const {
 }: Props = $props();
 </script>
 
-<div class="toolbar" role="toolbar" aria-label={t(M['messages.message_toolbar.actions_label'])}>
+<div class="toolbar" role="toolbar" aria-label={t(M['messages.message_toolbar.actions_label'])} data-smrt-component="MessageToolbar">
   <div class="selection-info">
     {#if selectedCount > 0}
       <span class="count">{t(M['messages.message_toolbar.count_selected'], { selectedCount, totalCount })}</span>
@@ -79,12 +79,14 @@ const {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0.5rem 0.75rem;
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
     border-radius: var(--smrt-radius-small, 0.25rem);
     gap: 1rem;
     flex-wrap: wrap;
@@ -98,7 +100,7 @@ const {
 
   .count {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
-    color: var(--smrt-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /*
@@ -114,7 +116,7 @@ const {
     border: none;
     background: none;
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     text-decoration: underline;
     padding: 0;
   }
@@ -127,19 +129,20 @@ const {
 
   .actions :global(.action-btn) {
     padding: 0.25rem 0.625rem;
-    border: 1px solid var(--smrt-color-outline, #72787e);
+    border: 1px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    background: var(--smrt-color-surface, #fefbff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
   }
 
   .actions :global(.action-btn):hover {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
+    background: var(--smrt-color-surface-variant);
   }
 
   .actions :global(.action-btn--danger) {
-    color: var(--smrt-color-error, #ba1a1a);
-    border-color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error);
+    border-color: var(--smrt-color-error);
   }
+}
 </style>

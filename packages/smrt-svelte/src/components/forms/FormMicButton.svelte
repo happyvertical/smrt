@@ -65,7 +65,7 @@ function handleKeydown(e: KeyboardEvent) {
     onkeydown={handleKeydown}
     role="button"
     tabindex="0"
-    aria-label={isListening ? 'Stop listening' : 'Click to speak'}
+    aria-label={isListening ? 'Stop listening' : 'Click to speak'} data-smrt-component="FormMicButton"
   >
     {#if isExtracting}
       <svg
@@ -102,12 +102,14 @@ function handleKeydown(e: KeyboardEvent) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .form-mic-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     position: relative;
-    color: var(--smrt-color-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     transition: color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
     vertical-align: middle;
@@ -115,16 +117,16 @@ function handleKeydown(e: KeyboardEvent) {
   }
 
   .form-mic-icon:hover {
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .form-mic-icon.listening {
-    color: var(--smrt-color-primary, #22c55e);
+    color: var(--smrt-color-primary);
     animation: pulse 1.5s ease-in-out infinite;
   }
 
   .form-mic-icon.extracting {
-    color: var(--smrt-color-primary, #22c55e);
+    color: var(--smrt-color-primary);
   }
 
   .tooltip {
@@ -134,8 +136,8 @@ function handleKeydown(e: KeyboardEvent) {
     transform: translateX(-50%);
     margin-top: 0.5rem;
     padding: 0.5rem 0.75rem;
-    background: var(--smrt-color-inverse-surface, var(--smrt-color-on-surface, #1f2937));
-    color: var(--smrt-color-inverse-on-surface, #fff);
+    background: var(--smrt-color-inverse-surface, var(--smrt-color-on-surface));
+    color: var(--smrt-color-inverse-on-surface);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-normal, 400);
     border-radius: 0.375rem;
@@ -179,4 +181,5 @@ function handleKeydown(e: KeyboardEvent) {
       animation: none;
     }
   }
+}
 </style>

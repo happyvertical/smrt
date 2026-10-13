@@ -144,10 +144,10 @@ function handleKeydown(event: KeyboardEvent) {
 }
 </script>
 
-<div class="working-strip__live" aria-live="polite" aria-atomic="true">
+<div class="working-strip__live" aria-live="polite" aria-atomic="true" data-smrt-component="WorkingStrip">
   {politeText}
 </div>
-<div class="working-strip__live" aria-live="assertive" aria-atomic="true">
+<div class="working-strip__live" aria-live="assertive" aria-atomic="true" data-smrt-component="WorkingStrip">
   {visible && assertive ? accessibleSummary : ''}
 </div>
 
@@ -157,7 +157,7 @@ function handleKeydown(event: KeyboardEvent) {
     class="working-strip working-strip--{variant}"
     data-phase={phase}
     data-testid="working-strip"
-    onkeydown={handleKeydown}
+    onkeydown={handleKeydown} data-smrt-component="WorkingStrip"
   >
     {#snippet content()}
       <span class="working-strip__icon" aria-hidden="true">
@@ -243,6 +243,8 @@ function handleKeydown(event: KeyboardEvent) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .working-strip__live,
   .working-strip__sr {
     position: absolute;
@@ -423,4 +425,5 @@ function handleKeydown(event: KeyboardEvent) {
       border-inline-start-color: currentColor;
     }
   }
+}
 </style>

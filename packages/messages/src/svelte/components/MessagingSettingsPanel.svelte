@@ -239,7 +239,7 @@ async function saveRoute() {
 }
 </script>
 
-<div class="messaging-settings">
+<div class="messaging-settings" data-smrt-component="MessagingSettingsPanel">
   <section>
     <header>
       <div><h3>{t(M['messages.messaging_settings.accounts_title'])}</h3><p>{t(M['messages.messaging_settings.accounts_description'])}</p></div>
@@ -389,19 +389,22 @@ async function saveRoute() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .messaging-settings { display: grid; gap: 1.5rem; }
   section { display: grid; gap: 0.75rem; }
   header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
   h3, h4, p { margin: 0; }
-  header p, small, .secret-note, .empty { color: var(--smrt-color-on-surface-variant, #64748b); }
+  header p, small, .secret-note, .empty { color: var(--smrt-color-on-surface-variant); }
   .items { display: grid; gap: 0.5rem; }
-  :global(.item) { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.875rem; text-align: left; background: var(--smrt-color-surface, #fff); color: inherit; border: 1px solid var(--smrt-color-outline-variant, #e2e8f0); border-radius: 0.5rem; }
+  :global(.item) { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.875rem; text-align: left; background: var(--smrt-color-surface); color: inherit; border: 1px solid var(--smrt-color-outline-variant); border-radius: 0.5rem; }
   :global(.item:not(:disabled)) { cursor: pointer; }
   :global(.item span:first-child) { display: grid; gap: 0.2rem; }
-  .ok { color: var(--smrt-color-success, #15803d); }
-  :global(.editor) { display: grid; gap: 0.65rem; padding: 1rem; border: 1px solid var(--smrt-color-outline-variant, #e2e8f0); border-radius: 0.5rem; background: var(--smrt-color-surface-container-low, #f8fafc); }
+  .ok { color: var(--smrt-color-success); }
+  :global(.editor) { display: grid; gap: 0.65rem; padding: 1rem; border: 1px solid var(--smrt-color-outline-variant); border-radius: 0.5rem; background: var(--smrt-color-surface-container-low); }
   label { font-weight: var(--smrt-typography-weight-semibold, 600); }
   .checkbox { display: flex; align-items: center; gap: 0.5rem; }
   .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
-  .error { color: var(--smrt-color-error, #b91c1c); }
+  .error { color: var(--smrt-color-error); }
+}
 </style>

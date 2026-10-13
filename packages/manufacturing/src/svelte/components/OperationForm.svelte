@@ -107,7 +107,7 @@ function handleSubmit() {
 }
 </script>
 
-<div class="operation-form-shell">
+<div class="operation-form-shell" data-smrt-component="OperationForm">
   <Form class="operation-form" onsubmit={handleSubmit}>
     <div class="field">
       <label for="{uid}-code">
@@ -214,6 +214,8 @@ function handleSubmit() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .operation-form-shell :global(.operation-form) {
     display: flex;
     flex-direction: column;
@@ -255,4 +257,5 @@ function handleSubmit() {
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-top: var(--smrt-spacing-sm, 0.5rem);
   }
+}
 </style>

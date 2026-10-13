@@ -107,7 +107,7 @@ const isOverdue = $derived.by(() => {
 </script>
 
 {#if href}
-  <a class="invoice-card" {href} use:ripple>
+  <a class="invoice-card" {href} use:ripple data-smrt-component="InvoiceCard">
     <div class="card-header">
       <span class="invoice-number">{invoice.invoiceNumber}</span>
       <span class="status-badge {isOverdue ? 'status-error' : statusClass}">
@@ -133,7 +133,7 @@ const isOverdue = $derived.by(() => {
     {#if retained}{@render details?.(retained)}{/if}
   </a>
 {:else if retained}
-  <article class="invoice-card">
+  <article class="invoice-card" data-smrt-component="InvoiceCard">
     <div class="card-header">
       <span class="invoice-number">{invoice.invoiceNumber}</span>
       <span class="status-badge {statusClass}">{retained.statusLabel}</span>
@@ -150,7 +150,7 @@ const isOverdue = $derived.by(() => {
   </article>
 {:else}
   <!-- raw-primitive-allow: large pressable invoice card wrapping rich header/body/footer content with use:ripple, a structural selection control no Button primitive should own (mirrors the href anchor branch) -->
-  <button type="button" class="invoice-card" onclick={onclick} use:ripple>
+  <button type="button" class="invoice-card" onclick={onclick} use:ripple data-smrt-component="InvoiceCard">
     <div class="card-header">
       <span class="invoice-number">{invoice.invoiceNumber}</span>
       <span class="status-badge {isOverdue ? 'status-error' : statusClass}">
@@ -177,13 +177,15 @@ const isOverdue = $derived.by(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .invoice-card {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-3, 12px);
-    padding: var(--smrt-spacing-4, 16px);
+    gap: var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-4);
     background-color: var(--smrt-color-surface-container-low);
-    border-radius: var(--smrt-radius-large, 12px);
+    border-radius: var(--smrt-radius-large);
     text-decoration: none;
     color: var(--smrt-color-on-surface);
     cursor: pointer;
@@ -223,12 +225,12 @@ const isOverdue = $derived.by(() => {
 
   .status-badge {
     display: inline-flex;
-    padding: 0 var(--smrt-spacing-2, 8px);
+    padding: 0 var(--smrt-spacing-2);
     height: 20px;
     align-items: center;
     font: var(--smrt-typography-label-small-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    border-radius: var(--smrt-radius-full, 10px);
+    border-radius: var(--smrt-radius-full);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -254,7 +256,7 @@ const isOverdue = $derived.by(() => {
   .card-body {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
   }
 
   .customer-name {
@@ -282,4 +284,5 @@ const isOverdue = $derived.by(() => {
     color: var(--smrt-color-error);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
+}
 </style>

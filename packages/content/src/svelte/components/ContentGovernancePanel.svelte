@@ -1088,7 +1088,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 }
 </script>
 
-<div class="factual-workflow">
+<div class="factual-workflow" data-smrt-component="ContentGovernancePanel">
   {#if isSectionVisible('factAudit')}
     <details class="editor-drawer" open={(factAudit?.counts.total ?? 0) > 0}>
     <summary class="editor-drawer-header">
@@ -1848,6 +1848,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 />
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .editor-drawer {
     margin: 0 0 2rem 0;
     padding: 0;
@@ -2070,9 +2072,13 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   }
 
   .fact-chip :global(.fact-chip__remove) {
-    background: transparent !important;
-    color: var(--smrt-color-error) !important;
-    padding: 0 !important;
+    background: transparent;
+    color: var(--smrt-color-error);
+    padding: 0;
+  }
+
+  .fact-chip :global(.fact-chip__remove:hover:not(:disabled):not(.disabled)) {
+    background: transparent;
   }
 
   .review-card {
@@ -2225,7 +2231,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   }
 
   .pill {
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     padding: 0.2rem 0.55rem;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
@@ -2279,4 +2285,5 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
     color: var(--smrt-color-on-primary-container);
   }
+}
 </style>

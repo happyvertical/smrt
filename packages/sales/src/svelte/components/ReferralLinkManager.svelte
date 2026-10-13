@@ -54,7 +54,7 @@ function submitCreate() {
 }
 </script>
 
-<div class="sales-referral-links">
+<div class="sales-referral-links" data-smrt-component="ReferralLinkManager">
   {#if onCreate}
     <Form class="sales-referral-links-create" onsubmit={submitCreate}>
       <FormGroup
@@ -139,6 +139,8 @@ function submitCreate() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sales-referral-links {
     display: flex;
     flex-direction: column;
@@ -161,7 +163,7 @@ function submitCreate() {
 
   .empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, #64748b);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
@@ -175,14 +177,14 @@ function submitCreate() {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     text-align: left;
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    background: var(--smrt-color-surface-container);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     white-space: nowrap;
   }
 
   td {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     vertical-align: middle;
   }
 
@@ -213,4 +215,5 @@ function submitCreate() {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+}
 </style>

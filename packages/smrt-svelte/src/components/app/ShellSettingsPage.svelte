@@ -6,7 +6,7 @@ import ShellSettingsPanel from '../workspace/admin-shell/ShellSettingsPanel.svel
 const { t } = useI18n();
 </script>
 
-<section class="smrt-shell-settings-page">
+<section class="smrt-shell-settings-page" data-smrt-component="ShellSettingsPage">
   <header>
     <h1>{t(M['ui.shell_settings_page.heading'])}</h1>
     <p>{t(M['ui.shell_settings_page.description'])}</p>
@@ -15,6 +15,8 @@ const { t } = useI18n();
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-shell-settings-page {
     display: grid;
     gap: var(--smrt-spacing-6, 1.5rem);
@@ -29,4 +31,5 @@ const { t } = useI18n();
   p {
     margin: 0;
   }
+}
 </style>

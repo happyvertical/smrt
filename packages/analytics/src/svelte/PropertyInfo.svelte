@@ -47,7 +47,7 @@ const lastSyncFormatted = $derived.by(() => {
 });
 </script>
 
-<div class="property-info">
+<div class="property-info" data-smrt-component="PropertyInfo">
 	<div class="property-header">
 		<h3>{t(M['analytics.property_info.title'])}</h3>
 		<PropertyStatusBadge {status} />
@@ -82,6 +82,8 @@ const lastSyncFormatted = $derived.by(() => {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
 	.property-info {
 		padding: 1rem;
 		background: var(--smrt-color-surface);
@@ -142,4 +144,5 @@ const lastSyncFormatted = $derived.by(() => {
 		color: var(--smrt-color-on-surface-variant);
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 	}
+}
 </style>

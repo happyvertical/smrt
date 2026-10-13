@@ -219,7 +219,7 @@ const showActions = $derived(Boolean(onupdate || onremove));
 const ancestors = $derived(bomId ? [bomId] : []);
 </script>
 
-<div class="bom-editor">
+<div class="bom-editor" data-smrt-component="BomEditor">
   {#if error}
     <Alert variant="error">{error}</Alert>
   {/if}
@@ -474,6 +474,8 @@ const ancestors = $derived(bomId ? [bomId] : []);
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .bom-editor {
     display: flex;
     flex-direction: column;
@@ -572,4 +574,5 @@ const ancestors = $derived(bomId ? [bomId] : []);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, inherit);
   }
+}
 </style>

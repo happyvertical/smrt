@@ -14,7 +14,7 @@ interface Props {
 const { product, onEdit, onDelete }: Props = $props();
 </script>
 
-<div class="product-card">
+<div class="product-card" data-smrt-component="ProductCard">
   <div class="product-header">
     <h3 class="product-name">{product.name}</h3>
     {#if product.manufacturer}
@@ -60,17 +60,19 @@ const { product, onEdit, onDelete }: Props = $props();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .product-card {
-    border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
-    border-radius: var(--smrt-radius-md, 8px);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
     padding: 1rem;
-    background: var(--smrt-color-surface, #fff);
-    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
+    background: var(--smrt-color-surface);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
     transition: box-shadow 0.2s;
   }
 
   .product-card:hover {
-    box-shadow: var(--smrt-elevation-2, 0 4px 6px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
+    box-shadow: var(--smrt-elevation-2, 0 4px 6px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
   }
   
   .product-header {
@@ -84,35 +86,35 @@ const { product, onEdit, onDelete }: Props = $props();
     margin: 0;
     font-size: var(--smrt-typography-title-medium-size, 1.125rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #1f2937);
+    color: var(--smrt-color-on-surface);
   }
 
   .product-manufacturer {
     font-size: var(--smrt-typography-title-small-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .product-model {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 0.5rem;
   }
 
   .product-category {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface, #374151);
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    color: var(--smrt-color-on-surface);
+    background: var(--smrt-color-surface-container);
     padding: 0.25rem 0.5rem;
-    border-radius: var(--smrt-radius-sm, 4px);
+    border-radius: var(--smrt-radius-sm);
     display: inline-block;
     margin-bottom: 0.5rem;
   }
   
   .product-description {
     margin: 0.5rem 0;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     line-height: var(--smrt-typography-body-medium-line-height, 1.4);
   }
@@ -130,10 +132,10 @@ const { product, onEdit, onDelete }: Props = $props();
   }
   
   .tag {
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    color: var(--smrt-color-on-surface, #374151);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
     padding: 0.125rem 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
 
@@ -142,6 +144,7 @@ const { product, onEdit, onDelete }: Props = $props();
     gap: 0.5rem;
     margin-top: 1rem;
     padding-top: 0.75rem;
-    border-top: 1px solid var(--smrt-color-outline-variant, #f3f4f6);
+    border-top: 1px solid var(--smrt-color-outline-variant);
   }
+}
 </style>

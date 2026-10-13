@@ -227,7 +227,7 @@ function fallbackIcon(label: string): string {
   class="smrt-tenant-nav"
   data-density={density}
   class:smrt-tenant-nav--collapsed={collapsed}
-  aria-label={ariaLabel || t(M['ui.tenant_nav.tenant_navigation'])}
+  aria-label={ariaLabel || t(M['ui.tenant_nav.tenant_navigation'])} data-smrt-component="TenantNav"
 >
 
   {@render navItems(items)}
@@ -287,6 +287,8 @@ function fallbackIcon(label: string): string {
 </nav>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-tenant-nav,
   .smrt-tenant-nav__section,
   .smrt-tenant-nav__children,
@@ -347,7 +349,7 @@ function fallbackIcon(label: string): string {
   }
   .smrt-tenant-nav--collapsed .smrt-tenant-nav__heading::-webkit-details-marker { display: none; }
 
-  .smrt-tenant-nav[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .smrt-tenant-nav[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .smrt-tenant-nav[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .smrt-tenant-nav a {
     box-sizing: border-box;
@@ -447,4 +449,5 @@ function fallbackIcon(label: string): string {
     white-space: nowrap;
     border: 0;
   }
+}
 </style>

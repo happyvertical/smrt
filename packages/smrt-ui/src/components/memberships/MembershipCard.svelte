@@ -43,7 +43,7 @@ function formatDate(date: Date | string | null | undefined): string {
 }
 </script>
 
-<div class="membership-card">
+<div class="membership-card" data-smrt-component="MembershipCard">
   <div class="main">
     <div class="tenant-info">
       <span class="tenant-name">{tenant.name}</span>
@@ -72,6 +72,8 @@ function formatDate(date: Date | string | null | undefined): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .membership-card {
     padding: 1rem;
     background: var(--smrt-color-surface);
@@ -100,7 +102,7 @@ function formatDate(date: Date | string | null | undefined): string {
   .status {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     padding: 0.125rem 0.375rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     text-transform: uppercase;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
@@ -165,4 +167,5 @@ function formatDate(date: Date | string | null | undefined): string {
   .action-btn.danger:hover {
     background: var(--smrt-color-error-container);
   }
+}
 </style>

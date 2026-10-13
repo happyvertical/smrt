@@ -20,7 +20,7 @@ const edges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
 
 <section
   class="smrt-shortcuts-overlay"
-  aria-label={t(M['ui.admin_shell.shell_shortcuts'])}
+  aria-label={t(M['ui.admin_shell.shell_shortcuts'])} data-smrt-component="ShortcutsOverlay"
 >
   <header>
     <h2>{t(M['ui.admin_shell.shell_shortcuts'])}</h2>
@@ -56,6 +56,8 @@ const edges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-shortcuts-overlay {
     display: grid;
     gap: var(--smrt-spacing-4);
@@ -79,4 +81,5 @@ const edges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
     display: grid;
     gap: var(--smrt-spacing-3);
   }
+}
 </style>

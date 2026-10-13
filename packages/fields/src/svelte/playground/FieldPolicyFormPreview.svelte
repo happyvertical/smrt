@@ -164,6 +164,8 @@ function handleSubmit() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .field-policy-preview {
     display: flex;
     flex-direction: column;
@@ -213,6 +215,7 @@ function handleSubmit() {
 
   .status {
     font: var(--smrt-typography-body-medium-font, inherit);
-    color: var(--smrt-color-primary, #6750a4);
+    color: var(--smrt-color-primary);
   }
+}
 </style>

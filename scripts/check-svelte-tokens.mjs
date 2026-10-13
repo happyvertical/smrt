@@ -34,76 +34,21 @@
  */
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
+import {
+  allPackageSrcDirs,
+  collectConsumedByPackage,
+  collectDefinedInCss,
+  collectInlineByPackage,
+  OVERRIDE_HOOKS,
+  PACKAGES,
+} from './smrt-token-scan-lib.mjs';
 
-const ROOT = resolve(import.meta.dirname, '..');
-const PACKAGES = join(ROOT, 'packages');
 // The theme system (static preset CSS, JS generator, simple ThemeProvider
 // tokens) lives in the smrt-ui leaf (#1582 Phase 2); emitted tokens are
 // collected from there.
 const PKG = join(PACKAGES, 'smrt-ui');
 const SRC = join(PKG, 'src');
-
-/** Generated/build output that mirrors src — never the source of truth. */
-const SKIP_DIRS = new Set(['node_modules', 'dist', '.svelte-kit', 'build', '.turbo']);
-
-/** Recursively list files under `dir` whose name ends in one of `exts`. */
-function listFiles(dir, exts) {
-  const out = [];
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return out;
-  }
-  for (const entry of entries) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) continue;
-      out.push(...listFiles(full, exts));
-    } else if (exts.some((e) => entry.name.endsWith(e))) {
-      out.push(full);
-    }
-  }
-  return out;
-}
-
-/** Every `packages/<pkg>/src` that exists, as `{ pkg, dir }`. */
-function allPackageSrcDirs() {
-  const out = [];
-  for (const entry of readdirSync(PACKAGES, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const dir = join(PACKAGES, entry.name, 'src');
-    if (existsSync(dir)) out.push({ pkg: entry.name, dir });
-  }
-  return out;
-}
-
-const VAR_RE = /var\(\s*(--smrt-[a-z0-9_-]+)/gi;
-
-/** Collect every `--smrt-*` token referenced via var() across all packages. */
-function collectConsumed() {
-  const consumed = new Map(); // token -> count
-  const byPackage = new Map(); // token -> Set(pkg)
-  for (const { pkg, dir } of allPackageSrcDirs()) {
-    for (const file of listFiles(dir, ['.svelte', '.ts', '.css'])) {
-      const text = readFileSync(file, 'utf8');
-      for (const m of text.matchAll(VAR_RE)) {
-        consumed.set(m[1], (consumed.get(m[1]) ?? 0) + 1);
-        if (!byPackage.has(m[1])) byPackage.set(m[1], new Set());
-        byPackage.get(m[1]).add(pkg);
-      }
-    }
-  }
-  return { consumed, byPackage };
-}
-
-const DEFINE_RE = /(--smrt-[a-z0-9_-]+)\s*:/gi;
-
-/** Collect every `--smrt-*` token DEFINED (`--smrt-x: value`) in a CSS string. */
-function collectDefinedInCss(text, into) {
-  for (const m of text.matchAll(DEFINE_RE)) into.add(m[1]);
-}
 
 /**
  * The theme scale KEYS the generator iterates over. Mirrors
@@ -302,48 +247,7 @@ function collectEmitted() {
   return emitted;
 }
 
-/**
- * Per-package inline token definitions (`--smrt-x: value` in a package's own
- * component CSS, e.g. --smrt-ws-* / --smrt-role-color). These satisfy consumers
- * only WITHIN the same package — a component-scoped custom property, not a theme
- * token (codex review on #1467).
- */
-function collectInlineByPackage() {
-  const byPkg = new Map(); // pkg -> Set(token)
-  for (const { pkg, dir } of allPackageSrcDirs()) {
-    const defined = new Set();
-    for (const file of listFiles(dir, ['.svelte', '.css'])) {
-      collectDefinedInCss(readFileSync(file, 'utf8'), defined);
-    }
-    byPkg.set(pkg, defined);
-  }
-  return byPkg;
-}
-
-/**
- * Override hooks: tokens a component reads as `var(--smrt-x, <default>)` so an
- * app can set them once in its own theme layer. They are deliberately not
- * emitted by any preset (unset, the component keeps its stock look), so they
- * are not dangling references. Keep this list explicit: a typo in a token name
- * must still fail the check.
- */
-const OVERRIDE_HOOKS = new Set([
-  '--smrt-card-background',
-  '--smrt-card-border',
-  '--smrt-card-divider',
-  '--smrt-card-shadow',
-  '--smrt-content-editor-icon-size',
-  '--smrt-admin-shell-background',
-  '--smrt-admin-shell-scrollbar-thumb',
-  '--smrt-admin-shell-scrollbar-thumb-hover',
-  '--smrt-admin-shell-scrollbar-track',
-  '--smrt-shell-title-font-family',
-  '--smrt-control-hit-size',
-  '--smrt-popover-panel-padding',
-  '--smrt-popover-panel-width',
-]);
-
-const { consumed, byPackage } = collectConsumed();
+const { consumed, byPackage } = collectConsumedByPackage();
 const emitted = collectEmitted();
 const inlineByPackage = collectInlineByPackage();
 const staticMissingByPreset = collectStaticPresetMissing();

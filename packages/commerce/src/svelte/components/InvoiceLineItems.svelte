@@ -87,7 +87,7 @@ const sourceLabels: Record<string, string> = {
 const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
 </script>
 
-<div class="line-items-container">
+<div class="line-items-container" data-smrt-component="InvoiceLineItems">
   {#if retained}
     {#if retained.lines.length === 0}
       <div class="empty-state"><p>{emptyMessage}</p></div>
@@ -199,6 +199,8 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .line-items-container {
     width: 100%;
   }
@@ -208,14 +210,14 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     flex-direction: column;
     align-items: center;
     padding: var(--smrt-spacing-8, 2rem) var(--smrt-spacing-4, 1rem);
-    background: var(--smrt-color-surface-container-low, #f7f2fa);
-    border: 1px dashed var(--smrt-color-outline, #79747e);
+    background: var(--smrt-color-surface-container-low);
+    border: 1px dashed var(--smrt-color-outline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     text-align: center;
   }
 
   .empty-state p {
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
     margin: 0 0 var(--smrt-spacing-4, 1rem);
   }
 
@@ -228,14 +230,14 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
   .line-items-table th {
     text-align: left;
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-2, 0.5rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .line-items-table td {
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-2, 0.5rem);
-    border-bottom: 1px solid var(--smrt-color-surface-variant, #e7e0ec);
+    border-bottom: 1px solid var(--smrt-color-surface-variant);
     vertical-align: top;
   }
 
@@ -267,13 +269,13 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
   .item-category {
     display: block;
     font: var(--smrt-typography-label-small-font);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: 0.025em;
   }
 
   .item-description {
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface);
   }
 
   .source-badge {
@@ -281,26 +283,26 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     padding: var(--smrt-spacing-0_5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
     font: var(--smrt-typography-label-small-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
   }
 
   .source-expense {
-    background: var(--smrt-color-tertiary-container, #ddf5e5);
-    color: var(--smrt-color-on-tertiary-container, #0c1f15);
+    background: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
   }
 
   .source-time {
-    background: var(--smrt-color-primary-container, #d3e3fd);
-    color: var(--smrt-color-on-primary-container, #041e49);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .source-manual {
-    background: var(--smrt-color-surface-variant, #e7e0ec);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .total-row td {
-    border-top: 2px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-top: 2px solid var(--smrt-color-outline-variant);
     border-bottom: none;
     font-weight: var(--smrt-typography-weight-semibold, 600);
     padding-top: var(--smrt-spacing-4, 1rem);
@@ -308,7 +310,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
 
   .total-label {
     text-align: right;
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface);
   }
 
   /*
@@ -328,7 +330,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     background: transparent;
     border: none;
     border-radius: var(--smrt-radius-extra-small, 0.25rem);
-    color: var(--smrt-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant);
     transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
@@ -339,13 +341,13 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
   }
 
   .line-items-container :global(.action-btn:hover) {
-    background: var(--smrt-color-surface-variant, #e7e0ec);
-    color: var(--smrt-color-on-surface, #1c1b1f);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface);
   }
 
   .line-items-container :global(.action-btn.delete:hover) {
-    background: var(--smrt-color-error-container, #ffdad6);
-    color: var(--smrt-color-error, #ba1a1a);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-error);
   }
 
   .line-items-container :global(.add-btn) {
@@ -355,9 +357,9 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
     font: var(--smrt-typography-label-large-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
     background: transparent;
-    border: 1px dashed var(--smrt-color-primary, #005ac1);
+    border: 1px dashed var(--smrt-color-primary);
     border-radius: var(--smrt-radius-small, 0.375rem);
     transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
@@ -369,10 +371,11 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
   }
 
   .line-items-container :global(.add-btn:hover) {
-    background: var(--smrt-color-primary-container, #d3e3fd);
+    background: var(--smrt-color-primary-container);
   }
 
   .line-items-container :global(.add-btn-below) {
     margin-top: var(--smrt-spacing-3, 0.75rem);
   }
+}
 </style>

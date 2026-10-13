@@ -50,15 +50,18 @@ const pxSize = $derived(typeof size === 'number' ? `${size}px` : size);
   fill={color}
   aria-hidden={!isInformative}
   aria-label={ariaLabel}
-  role={isInformative ? 'img' : undefined}
+  role={isInformative ? 'img' : undefined} data-smrt-component="Icon"
 >
   <path d={finalPath} />
 </svg>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   svg {
     display: inline-block;
     flex-shrink: 0;
     vertical-align: middle;
   }
+}
 </style>

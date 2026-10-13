@@ -93,7 +93,7 @@ async function confirmRemove() {
   </div>
 {/snippet}
 
-<section class="attachment-list" aria-label={title ?? t(M['assets.attachments.title'])} aria-busy={loading}>
+<section class="attachment-list" aria-label={title ?? t(M['assets.attachments.title'])} aria-busy={loading} data-smrt-component="AttachmentList">
   <h3>{title ?? t(M['assets.attachments.title'])}</h3>
   {#if message}<p role="alert">{message}</p>{/if}
   {#if loading}<p role="status">{t(M['assets.attachments.loading'])}</p>{/if}
@@ -137,6 +137,8 @@ async function confirmRemove() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .attachment-list { min-width: 0; overflow-wrap: anywhere; }
   ul { list-style: none; padding: 0; }
   ul, ol { display: grid; gap: var(--smrt-spacing-4); }
@@ -146,4 +148,5 @@ async function confirmRemove() {
   .metadata { color: var(--smrt-color-on-surface-variant); }
   h3, h4, p { margin: 0; }
   .links :global(a) { max-width: 100%; white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+}
 </style>

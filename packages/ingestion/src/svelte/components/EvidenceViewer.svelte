@@ -10,7 +10,7 @@ export interface Props {
 let { evidence }: Props = $props();
 const { t } = useI18n();
 </script>
-<section data-testid="evidence-viewer" aria-label={t(M['ingestion.evidence'])}>
+<section data-testid="evidence-viewer" aria-label={t(M['ingestion.evidence'])} data-smrt-component="EvidenceViewer">
 <h2>{t(M['ingestion.evidence'])}</h2>
 {#each evidence as view (view.evidence.id)}
 {@const url = evidenceUrl(view.viewUrl)}
@@ -27,5 +27,8 @@ const { t } = useI18n();
 {/each}
 </section>
 <style>
-section,article{min-width:0}article{margin-block:1rem}img,iframe,audio{display:block;max-width:100%;width:100%;margin-block:.5rem}img{object-fit:contain;max-height:32rem}iframe{height:32rem;border:1px solid var(--smrt-color-outline-variant,#ccc)}pre{white-space:pre-wrap;overflow-wrap:anywhere}
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
+section,article{min-width:0}article{margin-block:1rem}img,iframe,audio{display:block;max-width:100%;width:100%;margin-block:.5rem}img{object-fit:contain;max-height:32rem}iframe{height:32rem;border:1px solid var(--smrt-color-outline-variant)}pre{white-space:pre-wrap;overflow-wrap:anywhere}
+}
 </style>

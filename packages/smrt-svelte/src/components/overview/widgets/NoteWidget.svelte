@@ -24,9 +24,9 @@ const blocks = $derived(
 {/snippet}
 
 {#if blocks.length === 0}
-  <p class="smrt-note__empty">{t(M['ui.overview.no_data'])}</p>
+  <p class="smrt-note__empty" data-smrt-component="NoteWidget">{t(M['ui.overview.no_data'])}</p>
 {:else}
-  <div class="smrt-note">
+  <div class="smrt-note" data-smrt-component="NoteWidget">
     {#each blocks as block, index (index)}
       {#if block.type === 'heading'}
         <p class="smrt-note__heading" data-level={block.level}><strong>{@render inline(block.children)}</strong></p>
@@ -48,6 +48,8 @@ const blocks = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-note { display: grid; gap: var(--smrt-spacing-2); color: var(--smrt-color-on-surface); font-size: var(--smrt-typography-body-medium-size, 0.875rem); overflow-wrap: anywhere; }
   .smrt-note p, .smrt-note ul, .smrt-note ol, .smrt-note blockquote, .smrt-note pre { margin: 0; }
   .smrt-note ul, .smrt-note ol { padding-inline-start: var(--smrt-spacing-5, 1.25rem); }
@@ -58,4 +60,5 @@ const blocks = $derived(
   .smrt-note__heading[data-level='1'] { font-size: var(--smrt-typography-title-large-size, 1.25rem); }
   .smrt-note__heading[data-level='2'] { font-size: var(--smrt-typography-title-medium-size, 1.125rem); }
   .smrt-note__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
+}
 </style>

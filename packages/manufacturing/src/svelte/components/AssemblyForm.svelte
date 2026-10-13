@@ -270,7 +270,7 @@ function handleSubmit(event?: Event) {
 }
 </script>
 
-<div class="assembly-form-shell">
+<div class="assembly-form-shell" data-smrt-component="AssemblyForm">
   <Form class="assembly-form" onsubmit={handleSubmit}>
     {#if shown('name')}
       <div class="field">
@@ -477,6 +477,8 @@ function handleSubmit(event?: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .assembly-form-shell :global(.assembly-form) {
     display: flex;
     flex-direction: column;
@@ -518,4 +520,5 @@ function handleSubmit(event?: Event) {
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-top: var(--smrt-spacing-sm, 0.5rem);
   }
+}
 </style>

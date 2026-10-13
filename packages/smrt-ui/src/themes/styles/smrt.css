@@ -1,4 +1,5 @@
-/**
+
+@layer smrt.reset, smrt.structure, smrt.theme;/**
  * SMRT Theme CSS
  *
  * Static CSS for the SMRT theme — a dark-first "engineering instrument panel"
@@ -481,6 +482,7 @@
 
 /* Faint engineering-grid background with a radial fade.
  * Put on a full-bleed section or a fixed underlay element. */
+@layer smrt.theme {
 .smrt-grid-bg {
   position: relative;
 }
@@ -647,4 +649,5 @@
   .smrt-scope-fill {
     transition: none;
   }
+}
 }

@@ -411,17 +411,17 @@ function inputFor(field: ObjectFormField): FieldInputComponent {
 {/snippet}
 
 {#if sourceLoading}
-  <div class="object-form__status" role="status" aria-live="polite">Loading form…</div>
+  <div class="object-form__status" role="status" aria-live="polite" data-smrt-component="ObjectForm">Loading form…</div>
 {:else if sourceError}
-  <div class="object-form__status" role="alert">{sourceError}</div>
+  <div class="object-form__status" role="alert" data-smrt-component="ObjectForm">{sourceError}</div>
 {:else if resolvedPolicy}
 <FieldPolicyProvider policy={resolvedPolicy}>
   {#if showModeSwitch || (showPolicyGear && fieldPolicyGear)}
     {#if showModeSwitch}
-      <div class="object-form__mode"><ModeSwitch /></div>
+      <div class="object-form__mode" data-smrt-component="ObjectForm"><ModeSwitch /></div>
     {/if}
     {#if showPolicyGear && fieldPolicyGear}
-      <div class="object-form__gear"><FieldPolicyGearButton /></div>
+      <div class="object-form__gear" data-smrt-component="ObjectForm"><FieldPolicyGearButton /></div>
     {/if}
   {/if}
   <Form class="object-form {className}" onsubmit={handleSubmit}>
@@ -437,9 +437,12 @@ function inputFor(field: ObjectFormField): FieldInputComponent {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   :global(.object-form) { display: grid; gap: var(--smrt-spacing-4, 1rem); }
   .object-form__mode, .object-form__gear { display: inline-flex; justify-content: flex-end; margin-bottom: var(--smrt-spacing-3, 0.75rem); }
   .object-form__group { display: grid; gap: var(--smrt-spacing-3, 0.75rem); border: 0; margin: 0; min-inline-size: 0; padding: 0; }
   .object-form__group legend { font: var(--smrt-typography-title-small-font, inherit); margin-bottom: var(--smrt-spacing-2, 0.5rem); }
   .object-form__status { color: var(--smrt-color-on-surface-variant, currentColor); }
+}
 </style>

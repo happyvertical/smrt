@@ -40,7 +40,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
 }
 </script>
 
-<section class="social-settings">
+<section class="social-settings" data-smrt-component="SocialAccountSettings">
   <header class="toolbar">
     <div>
       <h2>{t(M['social.account_settings.heading'])}</h2>
@@ -109,6 +109,8 @@ function statusLabel(account: SocialAccountSettingsItem): string {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .social-settings {
     display: grid;
     gap: 1rem;
@@ -130,16 +132,16 @@ function statusLabel(account: SocialAccountSettingsItem): string {
 
   h2 {
     font-size: var(--smrt-typography-title-medium-size, 1.1rem);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
   }
 
   h3 {
     font-size: var(--smrt-typography-title-medium-size, 0.95rem);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
   }
 
   p {
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
@@ -155,9 +157,9 @@ function statusLabel(account: SocialAccountSettingsItem): string {
   }
 
   .account-row {
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: var(--smrt-radius-md, 8px);
-    background: var(--smrt-color-surface, #fff);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
+    background: var(--smrt-color-surface);
     padding: 1rem;
   }
 
@@ -169,9 +171,9 @@ function statusLabel(account: SocialAccountSettingsItem): string {
 
   .account-title span,
   .status {
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    color: var(--smrt-color-on-surface-variant, #4b5563);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     padding: 0.15rem 0.5rem;
     text-transform: capitalize;
@@ -179,7 +181,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
 
   .status.attention,
   .warning {
-    color: var(--smrt-color-error, #b91c1c);
+    color: var(--smrt-color-error);
   }
 
   .account-actions {
@@ -191,9 +193,9 @@ function statusLabel(account: SocialAccountSettingsItem): string {
   }
 
   .empty {
-    border: 1px dashed var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: var(--smrt-radius-md, 8px);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    border: 1px dashed var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
+    color: var(--smrt-color-on-surface-variant);
     padding: 1.25rem;
     text-align: center;
   }
@@ -208,4 +210,5 @@ function statusLabel(account: SocialAccountSettingsItem): string {
       justify-content: flex-start;
     }
   }
+}
 </style>

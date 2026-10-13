@@ -14,6 +14,7 @@ describe('smrt-ui playground', () => {
       'data-table',
       'calendar',
       'capture',
+      'styleless-mode',
     ]);
 
     for (const entry of playground.entries) {

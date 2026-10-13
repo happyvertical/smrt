@@ -106,7 +106,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 }
 </script>
 
-<div class="asset-list" class:asset-list--loading={loading}>
+<div class="asset-list" class:asset-list--loading={loading} data-smrt-component="AssetList">
   <table class="list-table">
     <thead class="list-table__head">
       <tr>
@@ -221,6 +221,8 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .asset-list {
     overflow-x: auto;
   }
@@ -234,15 +236,15 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     width: 100%;
     border-collapse: collapse;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
   }
 
   .list-table__head {
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
   }
 
   .list-table__head tr {
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .list-table__head th {
@@ -250,20 +252,21 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     text-align: left;
     font-weight: var(--smrt-typography-weight-semibold, 600);
     white-space: nowrap;
-    color: var(--smrt-color-on-surface, #111827);
+    color: var(--smrt-color-on-surface);
   }
 
   .list-table__row {
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     transition: background 150ms ease;
   }
 
   .list-table__row:hover {
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low);
   }
 
-  .list-table__row--selected {
-    background: var(--smrt-color-primary-container, #dbeafe) !important;
+  /* Doubled class: ties :hover above on specificity and wins by source order. */
+  .list-table__row.list-table__row--selected {
+    background: var(--smrt-color-primary-container);
   }
 
   .list-table__row td {
@@ -280,7 +283,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     width: 16px;
     height: 16px;
     cursor: pointer;
-    accent-color: var(--smrt-color-primary, #005ac1);
+    accent-color: var(--smrt-color-primary);
   }
 
   .col-thumb {
@@ -300,11 +303,11 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     justify-content: center;
     width: 40px;
     height: 40px;
-    background: var(--smrt-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-small, 0.25rem);
     font-size: var(--smrt-typography-label-small-size, 0.6rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .col-name {
@@ -340,7 +343,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   .row-desc {
     display: block;
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -349,19 +352,19 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 
   .type-badge {
     display: inline-block;
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
     font-size: var(--smrt-typography-label-small-size, 0.65rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
     text-transform: uppercase;
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
     border-radius: var(--smrt-radius-small, 0.25rem);
     letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
   }
 
   .col-date {
     white-space: nowrap;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .col-status {
@@ -373,20 +376,20 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     display: inline-block;
     width: 8px;
     height: 8px;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-outline, #9ca3af);
-    margin-right: var(--smrt-spacing-1, 4px);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-outline);
+    margin-right: var(--smrt-spacing-1);
     vertical-align: middle;
   }
 
   .status-dot--active {
-    background: var(--smrt-color-success, #22c55e);
+    background: var(--smrt-color-success);
   }
 
   /* Sort — renders via <Button class="sort-btn"> (issue #1589). Overrides reset
      it to an inline header-text button and reach the child <button> via :global(). */
   .list-table__head :global(.sort-btn) {
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     padding: 0;
     border: none;
     background: transparent;
@@ -396,7 +399,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   }
 
   .list-table__head :global(.sort-btn:hover) {
-    color: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-primary);
   }
 
   .sort-indicator {
@@ -411,15 +414,15 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     justify-content: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-8, 2rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--smrt-color-outline-variant, #e5e7eb);
-    border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: var(--smrt-radius-full, 9999px);
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-top-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-full);
     animation: spin 0.8s linear infinite;
   }
 
@@ -432,4 +435,5 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
       animation: none;
     }
   }
+}
 </style>

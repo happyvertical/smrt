@@ -51,7 +51,7 @@ $effect(() => {
 });
 </script>
 
-<section bind:this={group} class="caption-overlay" aria-label={label}>
+<section bind:this={group} class="caption-overlay" aria-label={label} data-smrt-component="CaptionOverlay">
   <div bind:this={viewport} class="caption-overlay-viewport" onscroll={updatePosition}>
     <div bind:this={content} class="caption-overlay-content">
       {@render children()}
@@ -66,6 +66,8 @@ $effect(() => {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .caption-overlay {
     position: fixed;
     z-index: var(--smrt-z-index-sticky, 1100);
@@ -102,4 +104,5 @@ $effect(() => {
     padding-block-start: var(--smrt-spacing-2, .5rem);
     background: var(--smrt-color-surface, Canvas);
   }
+}
 </style>

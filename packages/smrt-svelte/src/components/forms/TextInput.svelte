@@ -265,7 +265,7 @@ function handleInput(e: Event) {
   class:invalid={showInvalid}
   class:disabled
   class:has-value={!!value}
-  class:listening={isHolding}
+  class:listening={isHolding} data-smrt-component="TextInput"
 >
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
@@ -337,10 +337,12 @@ function handleInput(e: Event) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-text-field {
-    --field-color: var(--smrt-color-on-surface-variant);
-    --field-bg: var(--smrt-color-surface-container-highest);
-    --field-active: var(--smrt-color-primary);
+    --smrt-text-input-field-color: var(--smrt-color-on-surface-variant);
+    --smrt-text-input-field-bg: var(--smrt-color-surface-container-highest);
+    --smrt-text-input-field-active: var(--smrt-color-primary);
     
     display: flex;
     flex-direction: column;
@@ -352,11 +354,11 @@ function handleInput(e: Event) {
     position: relative;
     display: flex;
     align-items: center;
-    background-color: var(--smrt-color-surface, #fff);
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: var(--smrt-radius-small, 6px);
+    background-color: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-small);
     min-height: 40px;
-    padding: 0 var(--smrt-spacing-3, 12px);
+    padding: 0 var(--smrt-spacing-3);
     transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
@@ -378,7 +380,7 @@ function handleInput(e: Event) {
     background: transparent;
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: var(--smrt-typography-body-large-line-height, 1.5);
-    letter-spacing: var(--smrt-typography-body-large-tracking, 0.5px);
+    letter-spacing: var(--smrt-typography-body-large-tracking);
     color: var(--smrt-color-on-surface);
     width: 100%;
     padding: 0;
@@ -393,8 +395,8 @@ function handleInput(e: Event) {
   .active-indicator { display: none; }
 
   .focused .container {
-    border-color: var(--field-active);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--field-active) 10%, transparent);
+    border-color: var(--smrt-text-input-field-active);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-text-input-field-active) 10%, transparent);
   }
 
   .mic-btn {
@@ -405,8 +407,8 @@ function handleInput(e: Event) {
     justify-content: center;
     border: none;
     background: transparent;
-    color: var(--field-color);
-    border-radius: var(--smrt-radius-full, 9999px);
+    color: var(--smrt-text-input-field-color);
+    border-radius: var(--smrt-radius-full);
     cursor: pointer;
     margin-right: -8px;
     transition: all 200ms;
@@ -418,7 +420,7 @@ function handleInput(e: Event) {
   }
 
   .supporting-text {
-    padding: var(--smrt-spacing-1, 4px) 0 0;
+    padding: var(--smrt-spacing-1) 0 0;
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     min-height: 16px;
   }
@@ -429,8 +431,8 @@ function handleInput(e: Event) {
 
   /* States */
   .invalid {
-    --field-active: var(--smrt-color-error);
-    --field-color: var(--smrt-color-error);
+    --smrt-text-input-field-active: var(--smrt-color-error);
+    --smrt-text-input-field-color: var(--smrt-color-error);
   }
 
   .listening {
@@ -441,4 +443,5 @@ function handleInput(e: Event) {
     opacity: 0.38;
     pointer-events: none;
   }
+}
 </style>

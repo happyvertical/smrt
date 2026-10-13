@@ -84,15 +84,15 @@ const valueText = $derived(
   class="confidence-badge {className}"
   class:sm={size === 'sm'}
   class:lg={size === 'lg'}
-  style:--badge-bg={colors.bg}
-  style:--badge-text={colors.text}
-  style:--bar-color={colors.bar}
+  style:--smrt-badge-bg={colors.bg}
+  style:--smrt-badge-text={colors.text}
+  style:--smrt-confidence-badge-bar-color={colors.bar}
   role="meter"
   aria-valuenow={clampedConfidence}
   aria-valuemin={0}
   aria-valuemax={100}
   aria-valuetext={valueText}
-  aria-label={ariaLabel ?? defaultLabel}
+  aria-label={ariaLabel ?? defaultLabel} data-smrt-component="ConfidenceBadge"
 >
   <span class="confidence-bar" style:width="{clampedConfidence}%"></span>
   {#if showPercent}
@@ -101,6 +101,8 @@ const valueText = $derived(
 </span>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .confidence-badge {
     display: inline-flex;
     align-items: center;
@@ -108,9 +110,9 @@ const valueText = $derived(
     padding: 0.25rem 0.5rem;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    border-radius: var(--smrt-radius-sm, 4px);
-    background-color: var(--badge-bg);
-    color: var(--badge-text);
+    border-radius: var(--smrt-radius-sm);
+    background-color: var(--smrt-badge-bg);
+    color: var(--smrt-badge-text);
     position: relative;
     overflow: hidden;
     min-width: 60px;
@@ -133,7 +135,7 @@ const valueText = $derived(
     left: 0;
     top: 0;
     bottom: 0;
-    background-color: var(--bar-color);
+    background-color: var(--smrt-confidence-badge-bar-color);
     opacity: 0.3;
     transition: width var(--smrt-duration-short4, 300ms) var(--smrt-easing-standard, ease);
   }
@@ -143,4 +145,5 @@ const valueText = $derived(
     z-index: 1;
     font-variant-numeric: tabular-nums;
   }
+}
 </style>

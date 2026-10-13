@@ -1,0 +1,8 @@
+/*
+ * smrt cascade layers (#3823). Import this first, before any other smrt
+ * stylesheet, or let ThemeProvider inject it. Layers are ordered lowest to
+ * highest: reset < structure < theme. Every smrt component <style> block is
+ * wrapped in smrt.theme. Unlayered consumer CSS always beats every smrt layer,
+ * so restyling needs no :global() and no !important.
+ */
+@layer smrt.reset, smrt.structure, smrt.theme;

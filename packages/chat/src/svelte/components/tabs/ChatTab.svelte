@@ -42,7 +42,7 @@ const {
 </script>
 
 {#if tab.isExpanded}
-  <div class="chat-tab chat-tab--expanded" aria-label={t(M['chat.chat_tab.chat_with'], { name: tab.room.name })}>
+  <div class="chat-tab chat-tab--expanded" aria-label={t(M['chat.chat_tab.chat_with'], { name: tab.room.name })} data-smrt-component="ChatTab">
     <div class="chat-tab__header">
       <!-- raw-primitive-allow: pressable header title wrapping rich content (room avatar component and name) that collapses the chat window on click; no Button primitive owns this structural avatar-header pattern -->
       <button
@@ -104,7 +104,7 @@ const {
     class="chat-tab chat-tab--collapsed"
     type="button"
     onclick={onexpand}
-    aria-label={t(M['chat.chat_tab.open_chat_with'], { name: tab.room.name })}
+    aria-label={t(M['chat.chat_tab.open_chat_with'], { name: tab.room.name })} data-smrt-component="ChatTab"
   >
     <Avatar
       name={tab.room.name}
@@ -119,12 +119,14 @@ const {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .chat-tab--expanded {
     display: flex;
     flex-direction: column;
     width: 328px;
-    background: var(--smrt-color-surface, #fefbff);
-    border-radius: var(--smrt-radius-large, 12px) var(--smrt-radius-large, 12px) 0 0;
+    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-radius-large) var(--smrt-radius-large) 0 0;
     box-shadow: var(--smrt-elevation-3, 0 4px 8px rgba(0, 0, 0, 0.15));
     overflow: hidden;
   }
@@ -133,16 +135,16 @@ const {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     min-height: 44px;
   }
 
   .chat-tab__header-btn {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     background: none;
     border: none;
     color: inherit;
@@ -152,9 +154,9 @@ const {
   }
 
   .chat-tab__header-btn:focus-visible {
-    outline: 2px solid var(--smrt-color-on-primary, #ffffff);
+    outline: 2px solid var(--smrt-color-on-primary);
     outline-offset: 2px;
-    border-radius: var(--smrt-radius-small, 4px);
+    border-radius: var(--smrt-radius-small);
   }
 
   .chat-tab__name {
@@ -167,7 +169,7 @@ const {
   .chat-tab__actions {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     flex-shrink: 0;
   }
 
@@ -178,7 +180,7 @@ const {
     padding: 0;
     background: none;
     color: inherit;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
@@ -194,24 +196,24 @@ const {
   .chat-tab--collapsed {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    background: var(--smrt-color-surface-container, #f0f0f4);
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    background: var(--smrt-color-surface-container);
     border: none;
-    border-radius: var(--smrt-radius-large, 12px) var(--smrt-radius-large, 12px) 0 0;
+    border-radius: var(--smrt-radius-large) var(--smrt-radius-large) 0 0;
     cursor: pointer;
     box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.1));
-    color: var(--smrt-color-on-surface, #1a1c1e);
+    color: var(--smrt-color-on-surface);
     transition: background var(--smrt-duration-short2, 150ms);
     white-space: nowrap;
   }
 
   .chat-tab--collapsed:hover {
-    background: var(--smrt-color-surface-container-high, #e6e6ea);
+    background: var(--smrt-color-surface-container-high);
   }
 
   .chat-tab--collapsed:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
@@ -221,10 +223,10 @@ const {
     justify-content: center;
     min-width: 18px;
     height: 18px;
-    padding: 0 var(--smrt-spacing-1, 4px);
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-error, #ba1a1a);
-    color: var(--smrt-color-on-error, #ffffff);
+    padding: 0 var(--smrt-spacing-1);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     line-height: 1;
@@ -239,4 +241,5 @@ const {
       transition: none;
     }
   }
+}
 </style>

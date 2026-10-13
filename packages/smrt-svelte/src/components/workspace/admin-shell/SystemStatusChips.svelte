@@ -15,7 +15,7 @@ const { t } = useI18n();
 
 <div
   class="smrt-system-status-chips"
-  aria-label={t(M['ui.system_status_chips.system_status'])}
+  aria-label={t(M['ui.system_status_chips.system_status'])} data-smrt-component="SystemStatusChips"
 >
   {#each chips as chip (chip.id)}
     {#if chip.href}
@@ -41,6 +41,8 @@ const { t } = useI18n();
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .smrt-system-status-chips {
     display: flex;
     flex-wrap: nowrap;
@@ -77,7 +79,7 @@ const { t } = useI18n();
     flex: none;
     inline-size: 0.5rem;
     block-size: 0.5rem;
-    border-radius: var(--smrt-radius-full, 9999px);
+    border-radius: var(--smrt-radius-full);
   }
 
   .smrt-system-status-chips [data-tone='success']::before {
@@ -91,4 +93,5 @@ const { t } = useI18n();
   .smrt-system-status-chips [data-tone='error']::before {
     background: var(--smrt-color-error);
   }
+}
 </style>

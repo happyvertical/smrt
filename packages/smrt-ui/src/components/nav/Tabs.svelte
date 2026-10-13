@@ -154,6 +154,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 {#snippet linkTab(tab: Tab)}
   <a
     class="tab-link"
+    data-smrt-part="tab"
     class:active={tab.id === active}
     href={tab.disabled ? undefined : tab.href}
     aria-current={tab.id === active ? 'page' : undefined}
@@ -167,20 +168,20 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
       handleClick(tab.id);
     }}
   >
-    <span class="tab-label">{tab.label}</span>
+    <span class="tab-label" data-smrt-part="label">{tab.label}</span>
     {#if tab.count !== undefined}
-      <span class="tab-count">{tab.count}</span>
+      <span class="tab-count" data-smrt-part="count">{tab.count}</span>
     {/if}
     {#if hasBadge(tab)}
-      <span class="tab-badge">{tab.badge}</span>
+      <span class="tab-badge" data-smrt-part="badge">{tab.badge}</span>
     {/if}
   </a>
 {/snippet}
 
 {#if linkMode}
-<div class="tabs-container">
+<div class="tabs-container" data-smrt-component="Tabs">
   <nav
-    class="tabs-links"
+    class="tabs-links" data-smrt-part="list"
     class:sm={size === 'sm'}
     class:lg={size === 'lg'}
     aria-label={ariaLabel}
@@ -193,14 +194,14 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     </div>
     {#if split.overflow.length > 0}
       <details class="tabs-more" bind:this={moreMenu}>
-        <summary class="tab-link">
-          <span class="tab-label">{moreLabel}</span>
+        <summary class="tab-link" data-smrt-part="trigger">
+          <span class="tab-label" data-smrt-part="label">{moreLabel}</span>
           {#if overflowHasBadge}
             <span class="tab-dot" aria-hidden="true"></span>
             <span class="visually-hidden">({moreBadgeLabel})</span>
           {/if}
         </summary>
-        <div class="tabs-more-menu">
+        <div class="tabs-more-menu" data-smrt-part="menu">
           {#each split.overflow as tab (tab.id)}
             {@render linkTab(tab)}
           {/each}
@@ -209,15 +210,15 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     {/if}
   </nav>
   {#if children}
-    <div class="tab-panel">
+    <div class="tab-panel" data-smrt-part="panel">
       {@render children()}
     </div>
   {/if}
 </div>
 {:else}
-<div class="tabs-container">
+<div class="tabs-container" data-smrt-component="Tabs">
   <div
-    class="tabs-nav"
+    class="tabs-nav" data-smrt-part="list"
     class:sm={size === 'sm'}
     class:lg={size === 'lg'}
     class:secondary={variant === 'secondary'}
@@ -228,7 +229,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     {#each tabs as tab (tab.id)}
       <button
         type="button"
-        class="tab-button"
+        class="tab-button" data-smrt-part="tab"
         class:active={tab.id === active}
         disabled={tab.disabled}
         role="tab"
@@ -242,12 +243,12 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
         use:ripple
       >
         <span class="tab-content-wrapper">
-          <span class="tab-label">{tab.label}</span>
+          <span class="tab-label" data-smrt-part="label">{tab.label}</span>
           {#if tab.count !== undefined}
-            <span class="tab-count">{tab.count}</span>
+            <span class="tab-count" data-smrt-part="count">{tab.count}</span>
           {/if}
           {#if hasBadge(tab)}
-            <span class="tab-badge">{tab.badge}</span>
+            <span class="tab-badge" data-smrt-part="badge">{tab.badge}</span>
           {/if}
         </span>
         <div class="active-indicator"></div>
@@ -257,7 +258,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 
   {#if children}
     <div 
-      class="tab-panel" 
+      class="tab-panel" data-smrt-part="panel" 
       role="tabpanel" 
       id="tab-panel-{instanceId}"
       aria-labelledby="tab-{instanceId}-{active}"
@@ -269,6 +270,8 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .tabs-container {
     display: flex;
     flex-direction: column;
@@ -287,7 +290,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 0 var(--smrt-spacing-4, 16px);
+    padding: 0 var(--smrt-spacing-4);
     height: 48px;
     font: var(--smrt-typography-title-small-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
@@ -333,7 +336,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
   .tab-content-wrapper {
     display: flex;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     height: 100%;
   }
 
@@ -347,7 +350,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     bottom: 0;
     height: 3px;
     background-color: var(--smrt-color-primary);
-    border-radius: var(--smrt-radius-sm, 4px) var(--smrt-radius-sm, 4px) 0 0;
+    border-radius: var(--smrt-radius-sm) var(--smrt-radius-sm) 0 0;
     transition: width 200ms, opacity 200ms;
     width: 0;
     opacity: 0;
@@ -383,7 +386,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
   .tabs-links {
     display: flex;
     align-items: stretch;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     width: 100%;
     border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
@@ -392,7 +395,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     display: flex;
     flex: 1 1 auto;
     min-width: 0;
-    gap: var(--smrt-spacing-1, 4px);
+    gap: var(--smrt-spacing-1);
     overflow-x: auto;
     scrollbar-width: thin;
   }
@@ -401,9 +404,9 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     display: inline-flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
+    gap: var(--smrt-spacing-2);
     min-height: 44px;
-    padding: 0 var(--smrt-spacing-4, 16px);
+    padding: 0 var(--smrt-spacing-4);
     margin-bottom: -1px;
     border-bottom: 2px solid transparent;
     color: var(--smrt-color-on-surface-variant);
@@ -469,7 +472,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     z-index: var(--smrt-z-index-dropdown, 20);
     display: grid;
     min-width: 12rem;
-    padding: var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-1);
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-small, 0.5rem);
     background: var(--smrt-color-surface);
@@ -490,4 +493,5 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+}
 </style>

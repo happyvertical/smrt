@@ -47,7 +47,7 @@ async function submit(event: SubmitEvent) {
 }
 </script>
 
-<section class="assistance">
+<section class="assistance" data-smrt-component="AssistanceLauncher">
   <Form onsubmit={submit}>
     <header>
       <h2>{t(M['projects.assistance.title'])}</h2>
@@ -70,6 +70,8 @@ async function submit(event: SubmitEvent) {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .assistance {
     max-width: 42rem;
   }
@@ -98,4 +100,5 @@ async function submit(event: SubmitEvent) {
     display: flex;
     justify-content: flex-end;
   }
+}
 </style>
