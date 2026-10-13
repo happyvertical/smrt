@@ -246,6 +246,17 @@ rendered (empty band, edge not presented at this width) has no row. The
 "cannot hide the last region" guard still counts every shown region. In edit
 mode every band renders, so every available region is listed.
 
+`user` prop type (#3860): `AppShell`'s `user` is `ShellUser` (exported from
+`./app`): `null` or `{ id: string | null | undefined; email?; name?; avatarUrl?
+(string | null) }`, all readonly. The runtime's `SessionLayoutUser`
+(`data.session.user`) and a full `User` both assign without a cast
+(`__tests__/shell-user.test.ts` proves it with `expectTypeOf`). `id` stays
+required but accepts `null`/`undefined` because an unsaved `User` carries
+that. The shell reads `name`, `email` and `avatarUrl` for the account menu
+(the avatar now shows) and forwards the same object to `Provider` untouched
+(one internal cast; the Provider is typed for the full `User`), so nothing is
+added or invented on the way.
+
 `ShellLayout.placements?: Record<itemId, ShellSlot>` (additive, still version
 1) overrides default slots. Pure helpers in `layout.ts` (also `./workspace/layout`):
 `placeShellItem(layout, id, slot, defaultSlot?)` (passing the default drops a
