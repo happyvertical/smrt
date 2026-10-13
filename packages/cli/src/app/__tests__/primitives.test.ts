@@ -704,6 +704,7 @@ describe('import plan', () => {
     expect(importParameter(json, [])).toBe('[]');
     expect(importParameter(json, { a: [] })).toBe('{"a":[]}');
     expect(importParameter(json, 's')).toBe('"s"');
+    expect(importParameter({ type: 'jsonb' }, ['x'])).toBe('["x"]');
     expect(importParameter(json, 42)).toBe('42');
     expect(importParameter(json, null)).toBeNull();
     // A local (SQLite) bundle already holds JSON text.
