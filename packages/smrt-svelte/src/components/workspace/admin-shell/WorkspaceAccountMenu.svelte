@@ -164,7 +164,9 @@ async function runSignOut() {
   signingOut = true;
   signOutFailed = false;
   try {
-    await onSignOut();
+    // A synchronous callback closes the menu in the same turn.
+    const pending = onSignOut();
+    if (pending && typeof pending.then === 'function') await pending;
   } catch {
     signOutFailed = true;
     signingOut = false;

@@ -235,6 +235,17 @@ on rejection the menu (or Account section) stays as it was and shows an inline
 A rejection is caught, never an unhandled rejection; the control is usable again
 for a retry. `signOutHref` links are unchanged.
 
+Unrendered regions in settings (#3860): `ShellState.regionsRendered:
+Record<PanelEdge, boolean>` (read-only for consumers; `AdminShell` writes it
+from the same `topRendered`/`bottomRendered`/`rightRendered`/`isEdgeShown('left')`
+logic that collapses empty bands and edges, default all `true`) says whether a
+region is actually on screen, distinct from the user's visibility choice. The
+Layout rows in `ShellSettingsPanel` list a region when it is rendered, or when
+the user hid it (so Show can always restore it); a shown region that is not
+rendered (empty band, edge not presented at this width) has no row. The
+"cannot hide the last region" guard still counts every shown region. In edit
+mode every band renders, so every available region is listed.
+
 `ShellLayout.placements?: Record<itemId, ShellSlot>` (additive, still version
 1) overrides default slots. Pure helpers in `layout.ts` (also `./workspace/layout`):
 `placeShellItem(layout, id, slot, defaultSlot?)` (passing the default drops a

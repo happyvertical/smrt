@@ -79,7 +79,9 @@ describe('ShellSettingsPage', () => {
     expect(button).toHaveAttribute('aria-busy', 'true');
     expect(button).toBeDisabled();
     resolve();
-    await waitFor(() => expect(button).not.toHaveAttribute('aria-busy', 'true'));
+    await waitFor(() =>
+      expect(button).not.toHaveAttribute('aria-busy', 'true'),
+    );
   });
 
   it('shows an inline error in the Account section when sign-out rejects', async () => {
@@ -111,12 +113,52 @@ describe('ShellSettingsPage', () => {
   it('describes inline regions without collapse / expand wording and uses user-facing names', () => {
     render(Harness, {});
     const layout = part('layout') as HTMLElement;
-    for (const edge of ['top', 'left', 'bottom']) {
-      const row = layout.querySelector(`[data-edge="${edge}"]`);
-      expect(row?.textContent).not.toMatch(/collapse|expand/i);
+    const rows = layout.querySelectorAll('[data-edge]');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      if (row.getAttribute('data-edge') === 'right') continue;
+      expect(row.textContent).not.toMatch(/collapse|expand/i);
     }
     expect(layout.textContent).toContain('Left sidebar');
     expect(layout.textContent).toContain('Shown');
+  });
+
+  it('leaves regions that are not rendered out of the Layout rows', () => {
+    // The harness has no footer or right-sidebar content, so those are skipped.
+    render(Harness, {});
+    const layout = part('layout') as HTMLElement;
+    expect(layout.querySelector('[data-edge="left"]')).not.toBeNull();
+    expect(layout.querySelector('[data-edge="top"]')).not.toBeNull();
+    expect(layout.querySelector('[data-edge="bottom"]')).toBeNull();
+    expect(layout.querySelector('[data-edge="right"]')).toBeNull();
+  });
+
+  it('keeps a region the user hid listed so Show can restore it', async () => {
+    render(Harness, {});
+    const layout = within(part('layout') as HTMLElement);
+    await fireEvent.click(layout.getByRole('button', { name: 'Edit layout' }));
+    // Editing renders every band, so the footer has a row.
+    await waitFor(() =>
+      expect(
+        part('layout')?.querySelector('[data-edge="bottom"]'),
+      ).not.toBeNull(),
+    );
+    await fireEvent.click(layout.getByRole('button', { name: 'Hide Footer' }));
+    await fireEvent.click(
+      layout.getByRole('button', { name: 'Editing layout' }),
+    );
+    await waitFor(() =>
+      expect(
+        layout.queryByRole('button', { name: 'Editing layout' }),
+      ).toBeNull(),
+    );
+    // Not rendered (empty) yet hidden by the user: still listed.
+    expect(
+      part('layout')?.querySelector('[data-edge="bottom"]'),
+    ).not.toBeNull();
+    expect(
+      layout.getByRole('button', { name: 'Show Footer' }),
+    ).toBeInTheDocument();
   });
 
   it('offers collapse / expand only for drop-down regions', () => {

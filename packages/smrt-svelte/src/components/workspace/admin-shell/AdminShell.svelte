@@ -1007,6 +1007,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
 
   $effect(() => {
+    const next = {
+      top: topRendered,
+      left: shell.isEdgeShown('left'),
+      right: rightRendered,
+      bottom: bottomRendered,
+    };
+    const prev = untrack(() => shell.regionsRendered);
+    if ((Object.keys(next) as PanelEdge[]).some((e) => next[e] !== prev[e])) {
+      shell.regionsRendered = next;
+    }
+  });
+
+  $effect(() => {
     shell.hotkeysAvailable = (['top', 'left', 'right', 'bottom'] as const).some(
       hotkeyActive,
     );
