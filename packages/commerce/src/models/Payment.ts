@@ -158,7 +158,7 @@ export class Payment extends SmrtObject {
    * Contract this payment is for
    */
   @field({ description: 'The order or agreement this payment is for, if any.' })
-  @foreignKey('Contract')
+  @foreignKey('SalesContract', { validateSubtype: true })
   contractId: string | null = null;
 
   /**

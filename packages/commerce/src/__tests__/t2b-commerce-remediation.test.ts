@@ -308,7 +308,10 @@ describe('Fulfillment status-transition guard (#1389 major)', () => {
   async function seedFulfillment(status: FulfillmentStatus) {
     const customer = await customers.create({ profileId: 'fg' });
     await customer.save();
-    const contract = await contracts.create({ customerId: customer.id });
+    const contract = await contracts.create({
+      _meta_type: 'Order',
+      customerId: customer.id,
+    });
     await contract.save();
     const f = await fulfillments.create({
       contractId: contract.id,
@@ -398,7 +401,10 @@ describe('FulfillmentLineItem over-fulfillment cap (#1389 major)', () => {
   async function seed() {
     const customer = await customers.create({ profileId: 'of' });
     await customer.save();
-    const contract = await contracts.create({ customerId: customer.id });
+    const contract = await contracts.create({
+      _meta_type: 'Order',
+      customerId: customer.id,
+    });
     await contract.save();
 
     const lineItems = await ContractLineItemCollection.create({
@@ -486,7 +492,10 @@ describe('FulfillmentLineItem over-fulfillment cap (#1389 major)', () => {
 
     const customerB = await customers.create({ profileId: 'of-b' });
     await customerB.save();
-    const contractB = await contracts.create({ customerId: customerB.id });
+    const contractB = await contracts.create({
+      _meta_type: 'Order',
+      customerId: customerB.id,
+    });
     await contractB.save();
     const fulfillmentForB = await fulfillments.create({
       contractId: contractB.id,
@@ -517,7 +526,10 @@ describe('FulfillmentLineItem over-fulfillment cap (#1389 major)', () => {
         async () => {
           const customer = await customers.create({ profileId: 'of-ta' });
           await customer.save();
-          const contract = await contracts.create({ customerId: customer.id });
+          const contract = await contracts.create({
+            _meta_type: 'Order',
+            customerId: customer.id,
+          });
           await contract.save();
 
           const lineItems = await ContractLineItemCollection.create({
@@ -570,7 +582,10 @@ describe('FulfillmentLineItem over-fulfillment cap (#1389 major)', () => {
       await withTenant({ tenantId: 'tenant-a' }, async () => {
         const customer = await customers.create({ profileId: 'of-happy' });
         await customer.save();
-        const contract = await contracts.create({ customerId: customer.id });
+        const contract = await contracts.create({
+          _meta_type: 'Order',
+          customerId: customer.id,
+        });
         await contract.save();
 
         const lineItems = await ContractLineItemCollection.create({

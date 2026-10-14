@@ -26,7 +26,9 @@ export {
   LicenseSale,
   Order,
   ProductionOrder,
+  PurchaseContract,
   PurchaseOrder,
+  SalesContract,
   WholesaleOrder,
 } from './Contract.js';
 export { ContractLineItem } from './ContractLineItem.js';

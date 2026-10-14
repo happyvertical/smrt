@@ -12,7 +12,7 @@ Ad delivery with priority waterfall, weighted A/B testing, and immutable event t
 
 ## Cross-Package References (all plain string IDs)
 
-`contractId` → smrt-commerce, `zoneId`/`siteId` → smrt-properties, `assetId` → smrt-assets, `verticalSlug` → smrt-tags
+`contractId` → smrt-commerce `SalesContract`, `zoneId`/`siteId` → smrt-properties, `assetId` → smrt-assets, `verticalSlug` → smrt-tags
 
 ## Tenancy
 

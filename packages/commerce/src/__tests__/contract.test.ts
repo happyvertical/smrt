@@ -15,6 +15,7 @@ import { SmrtCollection } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
+import { VendorCollection } from '../collections/VendorCollection.js';
 import { PurchaseOrder } from '../models/Contract.js';
 import { ContractLineItem } from '../models/ContractLineItem.js';
 import { ContractStatus, ContractType } from '../types/index.js';
@@ -32,6 +33,10 @@ describe('Contract', () => {
     customers = await CustomerCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
+    const vendors = await VendorCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    await vendors.create({ id: 'vendor-header', name: 'Header vendor' });
   });
 
   afterEach(() => {
@@ -78,6 +83,7 @@ describe('Contract', () => {
     it('round-trips the header without changing contract financial fields', async () => {
       const order = await contracts.create({
         _meta_type: 'PurchaseOrder',
+        vendorId: 'vendor-header',
         expectedDate: '2026-11-02',
         shipTo: 'Dock 2\nEdmonton',
         reference: 'PO-7',
@@ -106,6 +112,7 @@ describe('Contract', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         totalAmount: 1500.0,
         currency: 'USD',
@@ -122,6 +129,7 @@ describe('Contract', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         subtotal: 1000.0,
         taxAmount: 80.0,
@@ -173,6 +181,7 @@ describe('Contract', () => {
 
       await (
         await contracts.create({
+          _meta_type: 'Order',
           customerId: customer.id,
           contractType: ContractType.ESTIMATE,
           totalAmount: 1000,
@@ -180,6 +189,7 @@ describe('Contract', () => {
       ).save();
       await (
         await contracts.create({
+          _meta_type: 'Order',
           customerId: customer.id,
           contractType: ContractType.ORDER,
           totalAmount: 2000,
@@ -187,6 +197,7 @@ describe('Contract', () => {
       ).save();
       await (
         await contracts.create({
+          _meta_type: 'Order',
           customerId: customer.id,
           contractType: ContractType.ORDER,
           totalAmount: 3000,
@@ -207,6 +218,7 @@ describe('Contract', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         status: ContractStatus.DRAFT,
       });
@@ -228,18 +240,21 @@ describe('Contract', () => {
       await customer.save();
 
       const pastDue = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         status: ContractStatus.ACCEPTED,
         dueDate: new Date(Date.now() - 86400000), // Yesterday
       });
 
       const notDue = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         status: ContractStatus.ACCEPTED,
         dueDate: new Date(Date.now() + 86400000), // Tomorrow
       });
 
       const completed = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         status: ContractStatus.COMPLETED,
         dueDate: new Date(Date.now() - 86400000), // Past but completed
@@ -255,12 +270,14 @@ describe('Contract', () => {
       await customer.save();
 
       const expired = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         contractType: ContractType.ESTIMATE,
         expiryDate: new Date(Date.now() - 86400000), // Yesterday
       });
 
       const valid = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         contractType: ContractType.ESTIMATE,
         expiryDate: new Date(Date.now() + 86400000), // Tomorrow
@@ -280,18 +297,21 @@ describe('Contract', () => {
 
       await (
         await contracts.create({
+          _meta_type: 'Order',
           customerId: customer1.id,
           totalAmount: 100,
         })
       ).save();
       await (
         await contracts.create({
+          _meta_type: 'Order',
           customerId: customer1.id,
           totalAmount: 200,
         })
       ).save();
       await (
         await contracts.create({
+          _meta_type: 'Order',
           customerId: customer2.id,
           totalAmount: 300,
         })
@@ -310,18 +330,21 @@ describe('Contract', () => {
 
       await (
         await contracts.create({
+          _meta_type: 'Order',
           customerId: customer.id,
           status: ContractStatus.DRAFT,
         })
       ).save();
       await (
         await contracts.create({
+          _meta_type: 'Order',
           customerId: customer.id,
           status: ContractStatus.DRAFT,
         })
       ).save();
       await (
         await contracts.create({
+          _meta_type: 'Order',
           customerId: customer.id,
           status: ContractStatus.ACCEPTED,
         })
@@ -374,6 +397,7 @@ describe('ContractLineItem', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -399,6 +423,7 @@ describe('ContractLineItem', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -424,6 +449,7 @@ describe('ContractLineItem', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         contractType: ContractType.LEASE,
       });
@@ -450,6 +476,7 @@ describe('ContractLineItem', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();

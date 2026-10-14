@@ -155,11 +155,47 @@ own releases.
 
 ### Models
 
+#### Upgrading contract parties (#3898)
+
+`Contract` no longer declares `customerId` or `vendorId`. Narrow a contract to
+`SalesContract` to read `customerId`, or to `PurchaseContract` to read `vendorId`.
+The nine leaf qualified names and the `contracts` table stay the same; a
+`db:migrate --dry-run` against a v0.55.19 schema reports no DDL changes on
+SQLite or PostgreSQL. Sales leaves no longer accept `vendorId`; purchase leaves
+no longer accept `customerId`. `Order`, `Estimate`, `Agreement`, `Lease`, and
+`WholesaleOrder` require a customer on save. `PurchaseOrder` requires a vendor.
+`Cart`, `LicenseSale`, and `ProductionOrder` retain optional parties on their side.
+
+Before upgrading existing data, run the read-only
+`preflightCommercePartyLinks(db)` and inspect its stray party links, missing
+required parties, base-typed rows, discriminator mismatches, and invalid
+document references. Its `unqualifiedDiscriminatorRows` lists legacy simple
+`_meta_type` values such as `Order` and `PurchaseOrder`; retype them to the
+qualified class name before upgrading, since branch collections cannot read
+them. The report checks invoice, payment, fulfillment, ad group,
+and expense links when those tables exist. A linked base-typed or wrong-branch
+contract blocks the next save of its document even when the link is unchanged.
+Registered custom descendants of either contract branch are accepted in link
+checks; load those model classes before running the preflight.
+Tenant-owned documents linked to global or other-tenant contracts are also
+reported because the save-time lookup is tenant-scoped. Retype the contract to
+the correct leaf, assign it to the document's tenant, or repair the link before
+deployment. The deprecated `ContractCollection` party finders now return the
+appropriate branch
+only, so retype legacy base rows with party links before relying on those
+finders. Clear stray party columns and fill required parties before deploying
+writers that save affected rows. Missing required parties remain readable but
+fail their next save. Regenerate cached manifests, planner catalogs, and
+generated screens after upgrading.
+This preflight never edits rows; an operator chooses the data correction.
+
 | Export | Description |
 |--------|------------|
 | `Customer` | Customer record with creditLimit, paymentTerms, tax exemption, addresses |
 | `Vendor` | Vendor/supplier with leadTimeDays, minimumOrderAmount, currency |
 | `Contract` | STI base class for all commercial agreements |
+| `SalesContract` | Abstract customer-side Contract branch; owns `customerId` |
+| `PurchaseContract` | Abstract supplier-side Contract branch; owns `vendorId` |
 | `Estimate` | Quote or proposal sent to a customer |
 | `Order` | Customer purchase order |
 | `Lease` | Rental or lease agreement |
@@ -178,7 +214,7 @@ own releases.
 
 ### Collections
 
-`CustomerCollection`, `VendorCollection`, `ContractCollection`, `InvoiceCollection`, `InvoiceLineItemCollection`, `PaymentCollection`, `PaymentAllocationCollection`, `FulfillmentCollection`
+`CustomerCollection`, `VendorCollection`, `ContractCollection`, `SalesContractCollection`, `PurchaseContractCollection`, `InvoiceCollection`, `InvoiceLineItemCollection`, `PaymentCollection`, `PaymentAllocationCollection`, `FulfillmentCollection`
 
 `PaymentAllocationCollection.allocatePayment()` splits a payment across invoices
 in one transaction using stable allocation IDs for retries. Direct allocation
@@ -191,7 +227,7 @@ replay, parent revision refresh and compatibility requirements.
 
 | Export | Values |
 |--------|--------|
-| `ContractType` | `estimate`, `order`, `lease`, `agreement`, `purchase_order` |
+| `ContractType` | `estimate`, `order`, `lease`, `agreement`, `purchase_order`, `wholesale_order`, `production_order`, `cart`, `license_sale` |
 | `ContractStatus` | `draft`, `sent`, `accepted`, `declined`, `completed`, `cancelled` |
 | `CustomerStatus` | `active`, `inactive`, `suspended` |
 | `VendorStatus` | `active`, `inactive`, `suspended` |

@@ -6,8 +6,8 @@
  */
 
 import {
-  ContractCollection,
   ContractLineItemCollection,
+  PurchaseContractCollection,
   VendorCollection,
 } from '@happyvertical/smrt-commerce';
 import {
@@ -239,10 +239,12 @@ export class Expense extends SmrtObject {
   vendorId: string | null = null;
 
   /**
-   * Optional commitment this actual draws down: a commerce `Contract`
-   * (normally a `PurchaseOrder`). Must be in the same currency and tenant.
+   * Optional purchase commitment this actual draws down (normally a
+   * `PurchaseOrder`). Must be in the same currency and tenant.
    */
-  @crossPackageRef('@happyvertical/smrt-commerce:Contract')
+  @crossPackageRef('@happyvertical/smrt-commerce:PurchaseContract', {
+    validateSubtype: true,
+  })
   commitmentId: string | null = null;
 
   /** Optional line of {@link Expense.commitmentId} this actual draws down. */
@@ -770,7 +772,7 @@ export class Expense extends SmrtObject {
     ) {
       return;
     }
-    const contracts = await ContractCollection.create({ db: this.db });
+    const contracts = await PurchaseContractCollection.create({ db: this.db });
     const commitment = await contracts.get({ id: this.commitmentId });
     // Before super.save() the tenant interceptor has not populated tenantId
     // yet, so compare against the tenant the row is about to be written in.

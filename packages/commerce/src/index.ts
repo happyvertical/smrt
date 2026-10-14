@@ -88,7 +88,9 @@ export {
   type PaymentIntentIdempotencyArgs,
   type PaymentIntentSeed,
   PayoutCollection,
+  PurchaseContractCollection,
   type RefreshTaxSummaryReportOptions,
+  SalesContractCollection,
   TaxCodeCollection,
   TaxComponentCollection,
   TaxSettingsCollection,
@@ -178,6 +180,12 @@ export {
   migrateCommerceMoneyToMinorUnits,
   preflightCommerceMoneyMinorUnits,
 } from './migrations/moneyMinorUnits.js';
+export {
+  type CommerceContractTypeGroup,
+  type CommercePartyLinkRow,
+  type CommercePartyLinksPreflight,
+  preflightCommercePartyLinks,
+} from './migrations/partyLinks.js';
 // Models
 export {
   Agreement,
@@ -214,7 +222,9 @@ export {
   PaymentIntent,
   Payout,
   ProductionOrder,
+  PurchaseContract,
   PurchaseOrder,
+  SalesContract,
   TaxCode,
   TaxComponent,
   TaxSettings,
@@ -327,9 +337,11 @@ export {
   type PaymentOption,
   PaymentStatus,
   PayoutStatus,
+  type PurchaseContractOptions,
   type PurchaseOrderOptions,
   type RecognizeRevenueOptions,
   type RecordPaymentOptions,
+  type SalesContractOptions,
   VendorStatus,
 } from './types/index.js';
 

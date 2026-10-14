@@ -63,7 +63,6 @@ describe('AdVariation', () => {
     await tier.save();
 
     group = await groups.create({
-      contractId: 'contract-123',
       tierId: tier.id,
       name: 'Test Campaign',
       status: AdGroupStatus.ACTIVE,
@@ -165,7 +164,6 @@ describe('AdVariation', () => {
     it('should return null when no active variations', async () => {
       // Create a new group with no variations
       const emptyGroup = await groups.create({
-        contractId: 'contract-456',
         tierId: tier.id,
         name: 'Empty Group',
         status: AdGroupStatus.ACTIVE,

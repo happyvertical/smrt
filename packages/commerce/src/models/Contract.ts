@@ -17,7 +17,9 @@ import {
   ContractStatus,
   ContractType,
   type LicenseSaleOptions,
+  type PurchaseContractOptions,
   type PurchaseOrderOptions,
+  type SalesContractOptions,
 } from '../types/index.js';
 import { Customer } from './Customer.js';
 import { Vendor } from './Vendor.js';
@@ -64,12 +66,10 @@ const loadedContractStatus = new WeakMap<Contract, ContractStatus>();
 /**
  * Contract is the base class for all commercial agreements.
  *
- * Uses Single Table Inheritance (STI) to support different contract types:
- * - Estimate: Quote/proposal for customer
- * - Order: Customer purchase order
- * - Lease: Rental/lease agreement
- * - Agreement: Service/maintenance agreement
- * - PurchaseOrder: Order to vendor/supplier
+ * Uses Single Table Inheritance (STI) for nine leaf types. SalesContract owns
+ * the customer link for Estimate, Order, WholesaleOrder, Cart, Lease,
+ * Agreement, and LicenseSale. PurchaseContract owns the vendor link for
+ * PurchaseOrder and ProductionOrder. Both branches share `contracts`.
  *
  * @example
  * ```typescript
@@ -122,22 +122,6 @@ export class Contract extends SmrtObject {
       'Where the order or agreement stands, for example draft, sent, accepted or completed.',
   })
   status: ContractStatus = ContractStatus.DRAFT;
-
-  /**
-   * Customer ID (for sales contracts: Estimate, Order, Agreement)
-   */
-  @foreignKey(Customer, {
-    description: 'The customer a sales order or agreement is for.',
-  })
-  customerId: string | null = null;
-
-  /**
-   * Vendor ID (for purchase contracts: PurchaseOrder)
-   */
-  @foreignKey(Vendor, {
-    description: 'The vendor a purchase order is placed with.',
-  })
-  vendorId: string | null = null;
 
   /**
    * Subtotal before tax, in **integer minor units** (cents, satoshis).
@@ -241,8 +225,6 @@ export class Contract extends SmrtObject {
     if (options.contractType !== undefined)
       this.contractType = options.contractType;
     if (options.status !== undefined) this.status = options.status;
-    if (options.customerId !== undefined) this.customerId = options.customerId;
-    if (options.vendorId !== undefined) this.vendorId = options.vendorId;
     if (options.subtotal !== undefined) this.subtotal = options.subtotal;
     if (options.taxAmount !== undefined) this.taxAmount = options.taxAmount;
     if (options.totalAmount !== undefined)
@@ -400,13 +382,50 @@ export class Contract extends SmrtObject {
 // `tenantId: null` (the row becomes global / invisible to tenant-scoped
 // queries) and lists return rows across tenants.
 
+/** Customer-side contracts, including orders, estimates, and licenses. */
+@TenantScoped({ mode: 'optional' })
+@smrt({ abstract: true })
+export abstract class SalesContract extends Contract {
+  @foreignKey(Customer, {
+    description: 'The customer a sales order or agreement is for.',
+  })
+  customerId: string | null = null;
+
+  constructor(options: SalesContractOptions = {}) {
+    super(options);
+    if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
+}
+
+/** Supplier-side contracts, including purchase and production orders. */
+@TenantScoped({ mode: 'optional' })
+@smrt({ abstract: true })
+export abstract class PurchaseContract extends Contract {
+  @foreignKey(Vendor, {
+    description: 'The vendor a purchase order is placed with.',
+  })
+  vendorId: string | null = null;
+
+  constructor(options: PurchaseContractOptions = {}) {
+    super(options);
+    if (options.vendorId !== undefined) this.vendorId = options.vendorId;
+  }
+}
+
 /**
  * Estimate - Quote or proposal for a customer
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class Estimate extends Contract {
+export class Estimate extends SalesContract {
+  @foreignKey(Customer, { required: true })
+  override customerId: string | null = null;
   override contractType = ContractType.ESTIMATE;
+
+  constructor(options: SalesContractOptions = {}) {
+    super(options);
+    if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
 }
 
 /**
@@ -414,8 +433,15 @@ export class Estimate extends Contract {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class Order extends Contract {
+export class Order extends SalesContract {
+  @foreignKey(Customer, { required: true })
+  override customerId: string | null = null;
   override contractType = ContractType.ORDER;
+
+  constructor(options: SalesContractOptions = {}) {
+    super(options);
+    if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
 }
 
 /**
@@ -423,8 +449,15 @@ export class Order extends Contract {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class Lease extends Contract {
+export class Lease extends SalesContract {
+  @foreignKey(Customer, { required: true })
+  override customerId: string | null = null;
   override contractType = ContractType.LEASE;
+
+  constructor(options: SalesContractOptions = {}) {
+    super(options);
+    if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
 }
 
 /**
@@ -432,8 +465,15 @@ export class Lease extends Contract {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class Agreement extends Contract {
+export class Agreement extends SalesContract {
+  @foreignKey(Customer, { required: true })
+  override customerId: string | null = null;
   override contractType = ContractType.AGREEMENT;
+
+  constructor(options: SalesContractOptions = {}) {
+    super(options);
+    if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
 }
 
 /**
@@ -441,7 +481,9 @@ export class Agreement extends Contract {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class PurchaseOrder extends Contract {
+export class PurchaseOrder extends PurchaseContract {
+  @foreignKey(Vendor, { required: true })
+  override vendorId: string | null = null;
   override contractType = ContractType.PURCHASE_ORDER;
 
   /** Expected delivery calendar date (YYYY-MM-DD), or empty when unspecified. */
@@ -461,6 +503,7 @@ export class PurchaseOrder extends Contract {
   /** Construct a purchase order with its optional delivery header. */
   constructor(options: PurchaseOrderOptions = {}) {
     super(options);
+    if (options.vendorId !== undefined) this.vendorId = options.vendorId;
     if (options.expectedDate !== undefined)
       this.expectedDate = options.expectedDate;
     if (options.shipTo !== undefined) this.shipTo = options.shipTo;
@@ -476,8 +519,15 @@ export class PurchaseOrder extends Contract {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class WholesaleOrder extends Contract {
+export class WholesaleOrder extends SalesContract {
+  @foreignKey(Customer, { required: true })
+  override customerId: string | null = null;
   override contractType = ContractType.WHOLESALE_ORDER;
+
+  constructor(options: SalesContractOptions = {}) {
+    super(options);
+    if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
 }
 
 /**
@@ -508,7 +558,7 @@ export class WholesaleOrder extends Contract {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class ProductionOrder extends Contract {
+export class ProductionOrder extends PurchaseContract {
   override contractType = ContractType.PRODUCTION_ORDER;
 
   /**
@@ -537,13 +587,12 @@ export class ProductionOrder extends Contract {
  *
  * A Cart starts in {@link ContractStatus.DRAFT} via the base `Contract.status`
  * default — the subclass doesn't need its own override. Application code
- * is responsible for promoting the row to `ContractStatus.PENDING` /
- * `ACCEPTED` at checkout time; the framework doesn't enforce a state
- * machine on the cart → order transition.
+ * is responsible for assigning the appropriate Order status at checkout;
+ * the framework doesn't enforce a state machine on the cart → order transition.
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class Cart extends Contract {
+export class Cart extends SalesContract {
   override contractType = ContractType.CART;
 }
 
@@ -613,7 +662,7 @@ const issuedRightsSnapshot = new WeakMap<LicenseSale, string>();
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class LicenseSale extends Contract {
+export class LicenseSale extends SalesContract {
   override contractType = ContractType.LICENSE_SALE;
 
   /**
