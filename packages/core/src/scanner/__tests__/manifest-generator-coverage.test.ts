@@ -82,6 +82,35 @@ function method(
 }
 
 describe('ManifestGenerator coverage', () => {
+  it('limits generated surfaces of abstract models to reads', () => {
+    const manifest = new ManifestGenerator().generateManifest([
+      scan([
+        def('AbstractWidget', {
+          decoratorConfig: {
+            abstract: true,
+            api: { include: ['list', 'get', 'create'] },
+            mcp: { include: ['list', 'get', 'create'] },
+            cli: { include: ['list', 'get', 'create'] },
+          },
+        }),
+        def('ListOnlyWidget', {
+          decoratorConfig: {
+            abstract: true,
+            api: { include: ['list', 'create'] },
+          },
+        }),
+      ]),
+    ]);
+    const config = manifest.objects.abstractwidget.decoratorConfig;
+    expect(config.abstract).toBe(true);
+    expect(config.api).toMatchObject({ include: ['list', 'get'] });
+    expect(config.mcp).toMatchObject({ include: ['list', 'get'] });
+    expect(config.cli).toMatchObject({ include: ['list', 'get'] });
+    expect(manifest.objects.listonlywidget.decoratorConfig.api).toMatchObject({
+      include: ['list'],
+    });
+  });
+
   describe('schema generation strategies', () => {
     it('generates a CTI table schema for a plain SmrtObject subclass', () => {
       const gen = new ManifestGenerator();

@@ -701,6 +701,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
   }
 
+  /** Discriminators visible through this STI class, including its descendants. */
+  private getStiReadTypes(itemQualifiedName: string): string[] {
+    return [
+      itemQualifiedName,
+      ...ObjectRegistry.getDescendants(itemQualifiedName)
+        .filter((name) => ObjectRegistry.getTableStrategy(name) === 'sti')
+        .sort(),
+    ];
+  }
+
   /** Apply and validate this collection's owned STI discriminator predicate. */
   private applyStiReadScope(
     where: SmrtListWhereClause<ModelType> | undefined,
@@ -712,9 +722,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const isChild = stiBase !== null && stiBase !== itemQualifiedName;
 
     if (stiScope === undefined) {
-      return isChild
-        ? andWhereCondition(where, { _meta_type: itemQualifiedName })
-        : where;
+      if (!isChild) return where;
+      const types = this.getStiReadTypes(itemQualifiedName);
+      return andWhereCondition(
+        where,
+        types.length === 1
+          ? { _meta_type: itemQualifiedName }
+          : { '_meta_type in': types },
+      );
     }
     if (
       !stiScope ||
@@ -2001,10 +2016,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (relatedIsSTI) {
       const relatedStiBase = ObjectRegistry.getSTIBase(relatedQualifiedName);
       if (relatedStiBase && relatedStiBase !== relatedQualifiedName) {
-        relatedWhere = {
-          _meta_type: relatedQualifiedName,
-          ...(relatedWhere || {}),
-        };
+        relatedWhere = relatedCollection.applyStiReadScope(
+          relatedWhere,
+          undefined,
+        );
       }
     }
     relatedWhere = resolveMetaTypeInWhere(relatedWhere);
@@ -2946,10 +2961,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (isSTI) {
       const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
       if (stiBase && stiBase !== itemQualifiedName) {
-        where = {
-          _meta_type: itemQualifiedName,
-          ...where,
-        };
+        const types = this.getStiReadTypes(itemQualifiedName);
+        where = andWhereCondition(
+          where,
+          types.length === 1
+            ? { _meta_type: itemQualifiedName }
+            : { '_meta_type in': types },
+        ) as Record<string, unknown>;
       }
     }
 
@@ -4546,6 +4564,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
     const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
     return stiBase && stiBase !== itemQualifiedName ? itemQualifiedName : null;
+  }
+
+  /** All discriminator values visible through this STI child collection. */
+  public getStiChildMetaTypes(): string[] {
+    const child = this.getStiChildMetaType();
+    return child ? this.getStiReadTypes(child) : [];
   }
 
   /**

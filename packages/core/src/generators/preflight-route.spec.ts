@@ -39,6 +39,9 @@ class PreflightPrivateWidget extends SmrtObject {
   name: string = '';
 }
 
+@smrt({ abstract: true, api: { include: ['list', 'get', 'create'] } })
+abstract class PreflightAbstractWidget extends SmrtObject {}
+
 @smrt({
   api: {
     public: 'read',
@@ -56,6 +59,7 @@ class PreflightRoutedWidget extends SmrtObject {
 // The classes are referenced so the decorators run under tree-shaking.
 void PreflightWidget;
 void PreflightPrivateWidget;
+void PreflightAbstractWidget;
 void PreflightRoutedWidget;
 
 const UNIFORM_UNAVAILABLE = {
@@ -218,6 +222,21 @@ describe('playbook preflight route (#2590)', () => {
       expect(isApiActionEnabledForObject('PreflightWidget', 'delete')).toBe(
         false,
       );
+    });
+
+    it('exposes reads but no writes for an abstract model', () => {
+      expect(
+        isApiActionEnabledForObject('PreflightAbstractWidget', 'list'),
+      ).toBe(true);
+      expect(
+        isApiActionEnabledForObject('PreflightAbstractWidget', 'get'),
+      ).toBe(true);
+      expect(
+        isApiActionEnabledForObject('PreflightAbstractWidget', 'create'),
+      ).toBe(false);
+      expect(
+        isApiActionEnabledForObject('PreflightAbstractWidget', 'update'),
+      ).toBe(false);
     });
 
     it('reads the fail-closed public posture per HTTP method', () => {

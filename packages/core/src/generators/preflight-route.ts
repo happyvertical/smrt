@@ -241,7 +241,11 @@ export function isApiActionEnabledForObject(
     return true;
   }
 
-  const apiConfig = ObjectRegistry.getConfig(objectName).api;
+  const config = ObjectRegistry.getConfig(objectName);
+  if (config.abstract && action !== 'list' && action !== 'get') {
+    return false;
+  }
+  const apiConfig = config.api;
 
   if (apiConfig === false) {
     return false;

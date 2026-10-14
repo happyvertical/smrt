@@ -306,6 +306,23 @@ export class ManifestGenerator {
 
     for (const result of scanResults) {
       for (const objectDef of result.objects) {
+        if (objectDef.decoratorConfig?.abstract === true) {
+          const config = objectDef.decoratorConfig;
+          for (const surface of ['api', 'mcp', 'cli'] as const) {
+            if (config[surface] === false) continue;
+            const current = config[surface];
+            const includes =
+              current && typeof current === 'object' && current.include
+                ? current.include.filter(
+                    (action) => action === 'list' || action === 'get',
+                  )
+                : ['list', 'get'];
+            config[surface] = {
+              ...(current && typeof current === 'object' ? current : {}),
+              include: includes,
+            };
+          }
+        }
         // Set package metadata on object definition if provided
         if (options?.packageName) {
           objectDef.packageName = options.packageName;

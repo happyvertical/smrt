@@ -2621,11 +2621,19 @@ export class SmrtObject extends SmrtClass {
   /** Shared preparation for ordinary saves and compatible bulk creates. */
   private async prepareSave(revisionGuard: Date | string | undefined) {
     const className = this.getResolvedClassName();
+    if (ObjectRegistry.getConfig(this.getResolvedQualifiedName()).abstract) {
+      throw new ValidationError(
+        `Cannot save abstract model ${className}`,
+        'VALIDATION_ABSTRACT_MODEL',
+        { className },
+      );
+    }
     // Validate object state before saving
     await this.validateBeforeSave();
 
     // Validate cross-package references that opted into save-time validation
     await this.validateCrossPackageRefs();
+    await this.validateTypedStiReferences();
 
     // Execute beforeSave interceptors (e.g., tenancy validation)
     const interceptorContext = createInterceptorContext(
@@ -4070,6 +4078,57 @@ export class SmrtObject extends SmrtClass {
     }
   }
 
+  /** Check the discriminator that a physical FK to a shared STI table cannot. */
+  private async validateTypedStiReferences(): Promise<void> {
+    const source = this.getResolvedQualifiedName();
+    const registered = this.getRegisteredClassInfo();
+    if (!registered) return;
+    for (const [fieldName, field] of registered.inheritedFields ||
+      registered.fields) {
+      if (field.type !== 'foreignKey' && field.type !== 'crossPackageRef')
+        continue;
+      if (field._meta?.validateSubtype !== true) continue;
+      const value = this.getFieldValue(fieldName);
+      if (value === null || value === undefined || value === '') continue;
+      const target =
+        ObjectRegistry.resolveRelationshipTarget(source, fieldName) ??
+        field.related?.split('.')[0];
+      if (!target) continue;
+      let targetClass = ObjectRegistry.getClass(target);
+      if (!targetClass && field.type === 'crossPackageRef') {
+        try {
+          await ObjectRegistry.ensureManifestLoaded(target);
+          targetClass = ObjectRegistry.getClass(target);
+        } catch {
+          // The ordinary cross-package validation owns missing-target errors.
+        }
+      }
+      if (!targetClass) continue;
+      const targetName = targetClass.qualifiedName || targetClass.name;
+      const root = ObjectRegistry.getSTIBase(targetName);
+      if (!root || root === targetName) continue;
+      const collection = await ObjectRegistry.getCollection(targetName, {
+        ...this.options,
+        db: this.db,
+      });
+      const related = await collection.get({ id: String(value) });
+      const ownerTenant = (this as unknown as { tenantId?: string | null })
+        .tenantId;
+      const relatedTenant = (related as { tenantId?: string | null } | null)
+        ?.tenantId;
+      if (
+        !related ||
+        (ownerTenant && relatedTenant && ownerTenant !== relatedTenant)
+      ) {
+        throw new ValidationError(
+          `${this.constructor.name}.${fieldName} must reference ${targetName} or a descendant`,
+          'VALIDATION_STI_REFERENCE_TYPE',
+          { className: this.constructor.name, fieldName, value },
+        );
+      }
+    }
+  }
+
   /**
    * Gets the value of a field on this object
    */
@@ -5166,6 +5225,22 @@ export class SmrtObject extends SmrtClass {
         if (actualClass) {
           actualClassInfo = actualClass;
         }
+      }
+      const requiredType =
+        targetClassInfo.qualifiedName || targetClassInfo.name;
+      const actualType = actualClassInfo.qualifiedName || actualClassInfo.name;
+      const validateSubtype =
+        ObjectRegistry.getFields(this.getResolvedQualifiedName()).get(fieldName)
+          ?._meta?.validateSubtype === true;
+      if (
+        validateSubtype &&
+        actualType !== requiredType &&
+        !ObjectRegistry.getInheritanceChain(actualType).includes(requiredType)
+      ) {
+        throw RuntimeError.invalidState(
+          `Relationship ${this.constructor.name}.${fieldName} points to ${actualType}, not ${requiredType}`,
+          { fieldName, actualType, requiredType },
+        );
       }
     }
 
