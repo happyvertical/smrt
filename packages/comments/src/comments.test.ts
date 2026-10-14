@@ -2,6 +2,7 @@ import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { UserNotificationService } from '@happyvertical/smrt-messages';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { clearCache, setConfig } from '../../config/src/index.js';
 import { CommentCollection } from './collections/CommentCollection.js';
 import { Comment } from './models/Comment.js';
 import { RecordCommentsRecipe } from './recipes.js';
@@ -24,6 +25,71 @@ describe.each([
   const dbs: Array<{ close?: () => Promise<void> }> = [];
   afterEach(async () => {
     await Promise.all(dbs.splice(0).map((db) => db.close?.()));
+  });
+  it('creates, lists and replays retained requests through a mapped Comment table', async () => {
+    let mappedDb: Awaited<ReturnType<typeof getTestDatabase>> | undefined;
+    setConfig({
+      smrt: {
+        tableNames: {
+          '@happyvertical/smrt-comments:Comment': 'mapped_record_comments',
+        },
+      },
+    });
+    try {
+      const db = await getTestDatabase({
+        classes: ['Comment'],
+        type: dialect as 'sqlite' | 'duckdb' | 'postgres',
+        url:
+          dialect === 'postgres'
+            ? process.env.SMRT_TEST_POSTGRES_URL
+            : ':memory:',
+      });
+      dbs.push(db);
+      mappedDb = db;
+      const collection = await withTenant({ tenantId }, () =>
+        CommentCollection.create({ db }),
+      );
+      expect(collection.tableName).toBe('mapped_record_comments');
+      const service = new CommentService({ db, ...access });
+      const input = {
+        tenantId,
+        authorUserId,
+        metaType: 'Record',
+        metaId: crypto.randomUUID(),
+        body: 'Mapped request',
+        idempotencyKey: crypto.randomUUID(),
+      };
+      const original = await service.create(input);
+      expect((await service.create(input)).id).toBe(original.id);
+      expect(
+        (await service.listForRecord(input.metaType, input.metaId)).map(
+          (row) => row.id,
+        ),
+      ).toEqual([original.id]);
+      await db.query(
+        'DELETE FROM _smrt_run_once_claims WHERE tenant_id = ?',
+        tenantId,
+      );
+      expect((await service.create(input)).id).toBe(original.id);
+      expect(
+        (await service.listForRecord(input.metaType, input.metaId)).map(
+          (row) => row.id,
+        ),
+      ).toEqual([original.id]);
+      expect(
+        (await withTenant({ tenantId }, () => collection.list())).map(
+          (row) => row.id,
+        ),
+      ).toEqual([original.id]);
+    } finally {
+      try {
+        // PostgreSQL tests share one disposable database; remove this deployment
+        // before restoring the default binding and its schema-level index names.
+        await mappedDb?.query('DROP TABLE IF EXISTS mapped_record_comments');
+      } finally {
+        clearCache();
+      }
+    }
   });
   it.each([
     'natural-key',

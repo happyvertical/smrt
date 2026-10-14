@@ -84,7 +84,7 @@ export class CommentService {
     // The canonical retry namespace is separate from legacy reference spelling.
     // This query is tenant/parent-bound before any scoped hydration.
     const bound = await collection.db.query(
-      'SELECT CAST(id AS TEXT) AS id, CAST(tenant_id AS TEXT) AS tenant_id FROM record_comments WHERE retry_tenant_id = ? AND meta_type = ? AND meta_id = ? AND idempotency_key IS NOT NULL',
+      `SELECT CAST(id AS TEXT) AS id, CAST(tenant_id AS TEXT) AS tenant_id FROM "${collection.tableName.replace(/"/g, '""')}" WHERE retry_tenant_id = ? AND meta_type = ? AND meta_id = ? AND idempotency_key IS NOT NULL`,
       binding,
       recordType,
       recordId,
@@ -225,7 +225,7 @@ export class CommentService {
         async (tx) => {
           const scoped = await CommentCollection.create({ db: tx });
           const matches = await tx.query(
-            'SELECT CAST(id AS TEXT) AS id, CAST(tenant_id AS TEXT) AS tenant_id FROM record_comments WHERE retry_tenant_id = ? AND idempotency_key = ?',
+            `SELECT CAST(id AS TEXT) AS id, CAST(tenant_id AS TEXT) AS tenant_id FROM "${scoped.tableName.replace(/"/g, '""')}" WHERE retry_tenant_id = ? AND idempotency_key = ?`,
             canonicalUuid(tenantId),
             idempotencyKey,
           );

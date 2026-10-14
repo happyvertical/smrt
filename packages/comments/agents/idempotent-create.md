@@ -27,7 +27,10 @@ conflict-safe SQL; comment insertion uses the callback's executor and remains
 insert-only with a random server UUID. Nullable key/digest/retry-tenant fields on Comment retain the binding after normal
 generic claim retention. Existing rows need no key or canonical binding.
 
-Internal lookups use parameterized queries against the owning comments table,
+Internal lookups use parameterized queries against the resolved public
+`CommentCollection.tableName`, honoring `smrt.tableNames` deployment bindings.
+The table identifier is quoted separately from bound values (mapping configuration
+accepts a single lowercase SQL identifier, not schema-qualified names). Lookups are
 restricted to canonical retry tenant plus key (or exact authorized parent for
 listing). The stored tenant must be UUID-equivalent to the authorized tenant before
 hydration in that original tenant scope; no system-context bypass is used. Lists
