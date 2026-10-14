@@ -2811,6 +2811,9 @@ importers:
 
   packages/reports:
     dependencies:
+      '@happyvertical/smrt-config':
+        specifier: workspace:*
+        version: link:../config
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -3686,6 +3689,9 @@ importers:
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles
+      '@happyvertical/smrt-reports':
+        specifier: workspace:*
+        version: link:../reports
       '@happyvertical/smrt-scanner':
         specifier: workspace:*
         version: link:../scanner

@@ -129,3 +129,13 @@ refresh with an empty tenant array, which would select the global slice.
 Schedule provisioning preserves existing state. Hosts bind terminal job events
 with `ReportScheduleRunner.bindTaskRunner()` and dispose the returned binding
 on shutdown; see [scheduled refresh lifecycle](README.md#scheduled-refresh-lifecycle).
+
+## Runtime server surfaces (#3878)
+
+`runtime-server.ts` owns the framework-neutral confirmation handler, current
+principal run/archive helpers and chart loader. Source allow-lists come from
+`packages.reports.runtime.sources`; no configuration means no sources. Never
+accept identity or source configuration from JSON. The RuntimeReport run/archive
+methods reuse read/create grants through `operationPermissions`, including the
+archive UPDATE RLS binding. `RuntimeReportsRecipe` declares nav and server
+runtime; #3895 adds actual UI surfaces. See [runtime contract](agents/runtime-reports.md).

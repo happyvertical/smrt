@@ -60,7 +60,8 @@
     "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
-    "@happyvertical/sql": "catalog:"
+    "@happyvertical/sql": "catalog:",
+    "@happyvertical/smrt-config": "workspace:*"
   },
   "devDependencies": {
     "@happyvertical/smrt-scanner": "workspace:*",

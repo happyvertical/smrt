@@ -1,3 +1,4 @@
+import * as smrtConfig from '@happyvertical/smrt-config';
 import {
   getTestDatabase,
   ObjectRegistry,
@@ -10,7 +11,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type CompiledRuntimeReport,
   compileRuntimeReportSpec,
@@ -26,6 +27,11 @@ import {
   runStoredRuntimeReport,
   saveRuntimeReport,
 } from '../runtime-report.js';
+import {
+  archiveRuntimeReportForPrincipal,
+  createRuntimeReportConfirmHandler,
+  runRuntimeReportForPrincipal,
+} from '../runtime-server.js';
 import {
   parseRuntimeReportSpec,
   RuntimeReportError,
@@ -1276,5 +1282,339 @@ describe('RuntimeReport storage', () => {
         'status',
       );
     });
+  });
+});
+
+describe('browser runtime report confirmation (#3878)', () => {
+  const options = {
+    sources: [
+      { id: 'invoices', className: 'RtInvoice', collection: 'invoices' },
+    ],
+  };
+  function principal(overrides = {}) {
+    return {
+      db,
+      userId: USER,
+      tenantId: TENANT_A,
+      permissions: ['runtimereports.create', 'invoices.read'],
+      ...overrides,
+    };
+  }
+  function request(
+    body: unknown = { spec: spec(), specHash: runtimeReportSpecHash(spec()) },
+    headers: Record<string, string> = { origin: 'https://app.test' },
+  ) {
+    return new Request('https://app.test/api/_reports/runtime/confirm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    });
+  }
+  it('applies revoked source field policy to confirmation retries and viewer runs', async () => {
+    const confirmed = await createRuntimeReportConfirmHandler(options)(
+      request(),
+      principal(),
+    );
+    expect(confirmed.status).toBe(201);
+    const saved = await confirmed.json();
+    const viewer = principal({
+      permissions: [
+        'runtimereports.create',
+        'runtimereports.read',
+        'invoices.read',
+      ],
+    });
+    expect(
+      await runRuntimeReportForPrincipal(saved.id, viewer, options),
+    ).toMatchObject({ rowCount: 2 });
+    const narrowed = {
+      sources: options.sources.map((source) => ({
+        ...source,
+        fields: ['status', 'totalAmount'],
+        excludeFields: ['totalAmount'],
+      })),
+    };
+    const retry = await createRuntimeReportConfirmHandler(narrowed)(
+      request(),
+      principal(),
+    );
+    expect(retry.status).toBe(403);
+    expect(await retry.json()).toMatchObject({ code: 'forbidden' });
+    await expect(
+      runRuntimeReportForPrincipal(saved.id, viewer, narrowed),
+    ).rejects.toMatchObject({ status: 403, code: 'forbidden' });
+  });
+
+  it('uses the configured audit callback when the template mounts the default factory', async () => {
+    const audit = vi.fn();
+    const config = vi.spyOn(smrtConfig, 'getPackageConfig').mockReturnValue({
+      runtime: { ...options, audit },
+    });
+    try {
+      const response = await createRuntimeReportConfirmHandler()(
+        request(),
+        principal(),
+      );
+      expect(response.status).toBe(201);
+      expect(audit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'confirm',
+          userId: USER,
+          tenantId: TENANT_A,
+          reused: false,
+        }),
+      );
+    } finally {
+      config.mockRestore();
+    }
+  });
+
+  it('saves the normalized spec exactly and retries per author/hash within a tenant', async () => {
+    const audit = vi.fn();
+    const handle = createRuntimeReportConfirmHandler({ ...options, audit });
+    const first = await handle(request(), principal());
+    expect(first.status).toBe(201);
+    const saved = await first.json();
+    const retry = await handle(request(), principal());
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toEqual(saved);
+    const otherAuthor = await handle(
+      request(),
+      principal({ userId: CUSTOMER_1 }),
+    );
+    expect(otherAuthor.status).toBe(201);
+    expect((await otherAuthor.json()).id).not.toBe(saved.id);
+    const otherTenant = await handle(
+      request(),
+      principal({ tenantId: TENANT_B }),
+    );
+    expect(otherTenant.status).toBe(201);
+    await withTenant({ tenantId: TENANT_A }, async () => {
+      const row = await getRuntimeReport({
+        db,
+        ref: saved.id,
+        tenantId: TENANT_A,
+      });
+      expect(row?.getSpec()).toEqual(spec());
+      expect(row?.createdByUserId).toBe(USER);
+    });
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'confirm',
+        userId: USER,
+        tenantId: TENANT_A,
+        reportId: saved.id,
+        reused: true,
+      }),
+    );
+  });
+  it.each([
+    [{}, 403],
+    [{ origin: 'https://evil.test' }, 403],
+    [{ origin: 'https://app.test', 'sec-fetch-site': 'cross-site' }, 403],
+    [{ 'sec-fetch-site': 'same-site' }, 403],
+    [{ 'sec-fetch-site': 'same-origin' }, 201],
+  ])('requires same-origin browser evidence %j', async (headers, status) => {
+    const response = await createRuntimeReportConfirmHandler(options)(
+      request(undefined, headers),
+      principal(),
+    );
+    expect(response.status).toBe(status);
+  });
+  it('refuses missing session, absent permission, and a mismatched ambient tenant', async () => {
+    const handle = createRuntimeReportConfirmHandler(options);
+    expect((await handle(request(), null)).status).toBe(401);
+    expect(
+      (await handle(request(), principal({ permissions: ['invoices.read'] })))
+        .status,
+    ).toBe(403);
+    expect(
+      (
+        await withTenant({ tenantId: TENANT_B }, () =>
+          handle(request(), principal()),
+        )
+      ).status,
+    ).toBe(403);
+    expect(await rowCount()).toBe(0);
+  });
+  it('fails closed before lookup when the request database has no transaction support', async () => {
+    const query = vi.spyOn(db, 'query');
+    const noTransaction = new Proxy(db, {
+      get(target, property) {
+        if (property === 'transaction') return undefined;
+        const value = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const response = await createRuntimeReportConfirmHandler(options)(
+      request(),
+      principal({ db: noTransaction }),
+    );
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      code: 'transaction_required',
+      message: 'Runtime report confirmation requires transaction support',
+    });
+    expect(query).not.toHaveBeenCalled();
+  });
+  it('rejects a mismatched hash, body authority, malformed grammar, and stale field policy', async () => {
+    const handle = createRuntimeReportConfirmHandler(options);
+    const wrong = await handle(
+      request({ spec: spec(), specHash: 'wrong' }),
+      principal(),
+    );
+    expect(wrong.status).toBe(422);
+    expect(await wrong.json()).toMatchObject({ code: 'spec_hash_mismatch' });
+    const forged = await handle(
+      request({
+        spec: spec(),
+        specHash: runtimeReportSpecHash(spec()),
+        tenantId: TENANT_B,
+      }),
+      principal(),
+    );
+    expect(forged.status).toBe(422);
+    const invalid = await handle(
+      request({ spec: { ...spec(), sql: 'select 1' } }),
+      principal(),
+    );
+    expect(invalid.status).toBe(422);
+    const privateSpec = spec({ measures: [{ fn: 'sum', field: 'margin' }] });
+    const stale = await handle(
+      request({
+        spec: privateSpec,
+        specHash: runtimeReportSpecHash(privateSpec),
+      }),
+      principal(),
+    );
+    expect(stale.status).toBe(422);
+    expect(await stale.json()).toMatchObject({ code: 'unknown_field' });
+    expect(await rowCount()).toBe(0);
+  });
+  it('revalidates a previously confirmed spec when retrying after access revocation', async () => {
+    const handle = createRuntimeReportConfirmHandler(options);
+    expect((await handle(request(), principal())).status).toBe(201);
+    const denied = await handle(
+      request(),
+      principal({ permissions: ['runtimereports.create'] }),
+    );
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ code: 'forbidden' });
+    expect(await rowCount()).toBe(1);
+  });
+  it('serializes simultaneous confirmation and recovers after a failed audit callback', async () => {
+    const handle = createRuntimeReportConfirmHandler(options);
+    const responses = await Promise.all([
+      handle(request(), principal()),
+      handle(request(), principal()),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      200, 201,
+    ]);
+    const bodies = await Promise.all(
+      responses.map((response) => response.json()),
+    );
+    expect(bodies[0]).toEqual(bodies[1]);
+    expect(await rowCount()).toBe(1);
+    const brokenAudit = createRuntimeReportConfirmHandler({
+      ...options,
+      audit: () => {
+        throw new Error('private://secret');
+      },
+    });
+    const failed = await brokenAudit(request(), principal());
+    expect(failed.status).toBe(500);
+    expect(await failed.text()).not.toContain('secret');
+    expect((await handle(request(), principal())).status).toBe(200);
+    expect(await rowCount()).toBe(1);
+  });
+  it('runs shared reports using each viewer and hides missing or foreign-tenant rows', async () => {
+    const saved = await (
+      await createRuntimeReportConfirmHandler(options)(request(), principal())
+    ).json();
+    const viewer = principal({
+      userId: CUSTOMER_1,
+      permissions: ['runtimereports.read', 'invoices.read'],
+    });
+    const result = await runRuntimeReportForPrincipal(
+      saved.id,
+      viewer,
+      options,
+    );
+    expect(
+      result.columns.find((column) => column.id === 'revenue')?.format,
+    ).toBe('money');
+    expect(result.rows).toHaveLength(2);
+    expect(await rowCount()).toBe(1);
+    await expect(
+      runRuntimeReportForPrincipal(
+        saved.id,
+        { ...viewer, permissions: ['runtimereports.read'] },
+        options,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      runRuntimeReportForPrincipal(
+        saved.id,
+        { ...viewer, tenantId: TENANT_B },
+        options,
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      runRuntimeReportForPrincipal('missing', viewer, options),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+  it('archives status only, rejects readers, and requires restore before confirm retry', async () => {
+    const handle = createRuntimeReportConfirmHandler(options);
+    const saved = await (await handle(request(), principal())).json();
+    const before = await db.get('runtime_reports', { id: saved.id });
+    await expect(
+      archiveRuntimeReportForPrincipal(
+        saved.id,
+        true,
+        principal({ permissions: ['runtimereports.read'] }),
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(
+      await archiveRuntimeReportForPrincipal(saved.id, true, principal()),
+    ).toEqual({ id: saved.id, status: 'archived' });
+    await expect(
+      runRuntimeReportForPrincipal(
+        saved.id,
+        principal({ permissions: ['runtimereports.read', 'invoices.read'] }),
+        options,
+      ),
+    ).rejects.toMatchObject({ status: 409, code: 'report_archived' });
+    const after = await db.get('runtime_reports', { id: saved.id });
+    for (const key of [
+      'spec',
+      'spec_hash',
+      'title',
+      'description',
+      'source_id',
+      'created_by_user_id',
+      'tenant_id',
+    ]) {
+      expect(after?.[key]).toEqual(before?.[key]);
+    }
+    expect(
+      await archiveRuntimeReportForPrincipal(saved.id, true, principal()),
+    ).toEqual({ id: saved.id, status: 'archived' });
+    await expect(
+      archiveRuntimeReportForPrincipal(
+        saved.id,
+        false,
+        principal({ tenantId: TENANT_B }),
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    const next = await handle(request(), principal());
+    expect(next.status).toBe(409);
+    expect(await next.json()).toMatchObject({ code: 'report_archived' });
+    expect(
+      await archiveRuntimeReportForPrincipal(saved.id, false, principal()),
+    ).toEqual({ id: saved.id, status: 'active' });
+    const restored = await handle(request(), principal());
+    expect(restored.status).toBe(200);
+    expect(await restored.json()).toEqual(saved);
   });
 });

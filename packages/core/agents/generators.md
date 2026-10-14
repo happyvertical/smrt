@@ -315,3 +315,19 @@ tool schemas (`fieldTypeToJsonSchema`, so MCP and WebMCP descriptors), OpenAPI
 `null` to the list so `type: [.., 'null']` still validates. The client web
 collection `fields` map does not carry `enum` yet (it feeds the shape digest and
 three hand-mirrored d.ts files); tool inputs read it from the manifest field.
+
+## Custom-action permission aliases (#3878)
+
+`@smrt({ operationPermissions: { run: { action: 'read' } } })` lets a custom
+method reuse an existing CRUD grant in its own collection. Generated SvelteKit
+POST routes and smrt-users operation guards resolve the same mapping; the
+catalog emits the target grant rather than a second method-named permission.
+CRUD itself cannot be aliased. Malformed declarations fail closed. Optional
+`databaseActions: ['SELECT', 'UPDATE']` adds explicit PostgreSQL policy bindings
+for the aliased grant (for example a status-only archive guarded by `create`
+that must load its item before updating it). This is server-authored authority
+metadata: grant only the actions the method needs, review it with the method's
+model-level validation, and regenerate RLS policies when adopting a changed
+binding.
+
+Custom actions retain the `{ action, result }` response envelope.

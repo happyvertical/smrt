@@ -15,6 +15,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { SmrtError } from '@happyvertical/smrt-core';
 
 export const RUNTIME_REPORT_SPEC_VERSION = 1 as const;
 
@@ -169,7 +170,7 @@ export type RuntimeReportErrorCode =
  * to a model so it can repair the spec; it never echoes restricted-field
  * metadata (a hidden field is reported exactly like an absent one).
  */
-export class RuntimeReportError extends Error {
+export class RuntimeReportError extends SmrtError {
   readonly code: RuntimeReportErrorCode;
   readonly path: string;
   /**
@@ -180,7 +181,7 @@ export class RuntimeReportError extends Error {
   readonly status: number;
 
   constructor(code: RuntimeReportErrorCode, path: string, message: string) {
-    super(path ? `${path}: ${message}` : message);
+    super(path ? `${path}: ${message}` : message, code, 'validation');
     this.name = 'RuntimeReportError';
     this.code = code;
     this.path = path;

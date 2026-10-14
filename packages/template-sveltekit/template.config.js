@@ -24,6 +24,7 @@ export default {
     '@happyvertical/smrt-core': '^0.55.24',
     '@happyvertical/smrt-jobs': '^0.55.24',
     '@happyvertical/smrt-profiles': '^0.55.24',
+    '@happyvertical/smrt-reports': '^0.55.24',
     '@happyvertical/smrt-svelte': '^0.55.24',
     '@happyvertical/smrt-tenancy': '^0.55.24',
     '@happyvertical/smrt-ui': '^0.55.24',

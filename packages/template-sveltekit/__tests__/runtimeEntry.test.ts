@@ -13,6 +13,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import templateConfig from '../template/smrt.config.js';
 import * as hooks from '../template/src/hooks.server.js';
 import * as smrtModule from '../template/src/lib/server/smrt.js';
 import { runtime } from '../template/src/lib/server/smrt.js';
@@ -22,6 +23,8 @@ import {
   actions as setupActions,
   load as setupLoad,
 } from '../template/src/routes/setup/+page.server.js';
+
+import { POST as confirmReport } from '../template/src/routes/api/_reports/runtime/confirm/+server.js';
 
 const anonymousLocals = {
   user: null,
@@ -85,6 +88,22 @@ describe('template runtime entry', () => {
       schemaVersion: 1,
       error: { code: 'authentication_required' },
     });
+  });
+
+  it('mounts report confirmation and refuses an anonymous request before opening storage', async () => {
+    expect(templateConfig.consumer.packages).toContain(
+      '@happyvertical/smrt-reports',
+    );
+    const response = await confirmReport({
+      request: new Request('https://app.test/api/_reports/runtime/confirm', {
+        method: 'POST',
+        headers: { origin: 'https://app.test' },
+        body: '{}',
+      }),
+      locals: anonymousLocals,
+    });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ code: 'unauthenticated' });
   });
 
   it('sends a signed-in visitor away from owner setup', async () => {
