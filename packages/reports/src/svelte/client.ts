@@ -26,6 +26,9 @@ export class RuntimeReportsHttpError extends Error {
   }
 }
 
+const REPORT_LIST_PAGE_LIMIT = 1_000;
+const MAX_REPORT_LIST_PAGES = 1_000;
+
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -119,23 +122,51 @@ export function createRuntimeReportsHttpClient(
 
   return {
     async list({ onlyMine, includeArchived }) {
-      const query = new URLSearchParams();
-      if (!includeArchived) query.set('status', 'active');
+      const filters = new URLSearchParams();
+      if (!includeArchived) filters.set('status', 'active');
       if (onlyMine) {
         if (!options.currentUserId)
           throw new RuntimeReportsHttpError(400, 'missing_current_user');
-        query.set('createdByUserId', options.currentUserId);
+        filters.set('createdByUserId', options.currentUserId);
       }
-      const body = record(
-        await responseJson(
-          await request(`${basePath}?${query}`, {
-            headers: { accept: 'application/json' },
-          }),
-        ),
-      );
-      if (!body || !Array.isArray(body.items))
-        throw new RuntimeReportsHttpError(502, 'invalid_result');
-      return body.items.map(project);
+
+      const reports: SavedRuntimeReport[] = [];
+      let offset = 0;
+      for (let page = 0; page < MAX_REPORT_LIST_PAGES; page++) {
+        const query = new URLSearchParams(filters);
+        query.set('limit', String(REPORT_LIST_PAGE_LIMIT));
+        query.set('offset', String(offset));
+        const body = record(
+          await responseJson(
+            await request(`${basePath}?${query}`, {
+              headers: { accept: 'application/json' },
+            }),
+          ),
+        );
+        if (
+          !body ||
+          !Array.isArray(body.items) ||
+          typeof body.count !== 'number' ||
+          !Number.isSafeInteger(body.count) ||
+          body.count < 0 ||
+          typeof body.limit !== 'number' ||
+          !Number.isSafeInteger(body.limit) ||
+          body.limit < 1 ||
+          body.limit > REPORT_LIST_PAGE_LIMIT ||
+          typeof body.offset !== 'number' ||
+          !Number.isSafeInteger(body.offset) ||
+          body.offset !== offset ||
+          body.items.length > body.limit
+        ) {
+          throw new RuntimeReportsHttpError(502, 'invalid_result');
+        }
+        reports.push(...body.items.map(project));
+        offset += body.items.length;
+        if (offset >= body.count) return reports;
+        if (body.items.length === 0)
+          throw new RuntimeReportsHttpError(502, 'invalid_result');
+      }
+      throw new RuntimeReportsHttpError(502, 'invalid_result');
     },
     get,
     async run(id): Promise<RuntimeReportResult> {

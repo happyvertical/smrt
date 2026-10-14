@@ -81,6 +81,49 @@ describe('runtime reports HTTP client', () => {
     });
   });
 
+  it('loads every bounded generated page without dropping older reports', async () => {
+    const firstPage = Array.from({ length: 1_000 }, (_, index) => ({
+      ...wire(),
+      id: `report-${index}`,
+      title: `Report ${index}`,
+    }));
+    const older = { ...wire(), id: 'report-older', title: 'Older report' };
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      const url = new URL(String(input), 'https://example.test');
+      const offset = Number(url.searchParams.get('offset'));
+      expect(url.searchParams.get('limit')).toBe('1000');
+      return offset === 0
+        ? json({ items: firstPage, count: 1_001, limit: 1_000, offset })
+        : json({ items: [older], count: 1_001, limit: 1_000, offset });
+    });
+    const client = createRuntimeReportsHttpClient({ fetch });
+
+    const reports = await client.list({
+      onlyMine: false,
+      includeArchived: false,
+    });
+
+    expect(reports).toHaveLength(1_001);
+    expect(reports.at(-1)).toMatchObject({
+      id: older.id,
+      title: older.title,
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(String(fetch.mock.calls[1][0])).toContain('offset=1000');
+  });
+
+  it('fails closed when a generated page cannot advance', async () => {
+    const client = createRuntimeReportsHttpClient({
+      fetch: vi.fn(async () =>
+        json({ items: [], count: 1, limit: 1_000, offset: 0 }),
+      ),
+    });
+
+    await expect(
+      client.list({ onlyMine: false, includeArchived: false }),
+    ).rejects.toMatchObject({ code: 'invalid_result' });
+  });
+
   it('fails closed on malformed envelopes and cross-origin confirmation paths', async () => {
     const client = createRuntimeReportsHttpClient({
       fetch: vi.fn(async () => json({ action: 'run', result: {} })),
