@@ -30,6 +30,10 @@
     "./cost-billing": {
       "types": "./dist/cost-billing.d.ts",
       "import": "./dist/cost-billing.js"
+    },
+    "./money": {
+      "types": "./dist/money.d.ts",
+      "import": "./dist/money.js"
     }
   },
   "files": [

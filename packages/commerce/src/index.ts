@@ -141,7 +141,29 @@ export {
   Vendor,
   WholesaleOrder,
 } from './models/index.js';
-export { assertIntegerMinorUnits } from './money.js';
+export {
+  assertIntegerMinorUnits,
+  calculateMoneyDocument,
+  type LineAmountType,
+  type MoneyDiscountInput,
+  type MoneyDocumentResult,
+  type MoneyDocumentTaxResult,
+  type MoneyLineInput,
+  type MoneyLineResult,
+  type MoneyTaxCodeInput,
+  type MoneyValidationCode,
+  MoneyValidationError,
+  type ResolvableTaxCodeInput,
+  type ResolvedLineTaxCode,
+  type ResolveLineTaxCodeContext,
+  type ResolveLineTaxCodeInput,
+  resolveLineTaxCode,
+  type TaxCodeAppliesTo,
+  type TaxCodeKind,
+  type TaxCodeResolutionSource,
+  type TaxComponentInput,
+  type TaxRoundingScope,
+} from './money.js';
 export {
   AgreementsRecipe,
   CustomersRecipe,
