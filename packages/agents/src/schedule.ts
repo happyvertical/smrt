@@ -16,6 +16,8 @@ import {
   getAgentTypeName,
 } from './identity.js';
 
+type SaveOptions = NonNullable<Parameters<SmrtObject['save']>[0]>;
+
 /**
  * Status of a scheduled agent
  */
@@ -220,6 +222,16 @@ export class AgentSchedule extends SmrtObject {
       ? `${displayAgentType}#${this.agentId}`
       : displayAgentType;
     return `${agent}.${this.method}() @ ${this.cron}`;
+  }
+
+  /**
+   * Run {@link beforeSave} before persisting: core `save()` does not call a
+   * model's own `beforeSave()`, so without this an enabled schedule created
+   * with `create()` + `save()` kept a NULL `next_run` and never fired (#3390).
+   */
+  override async save(options: SaveOptions = {}): Promise<this> {
+    await this.beforeSave();
+    return super.save(options);
   }
 
   /**
