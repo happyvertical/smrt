@@ -12,7 +12,10 @@ import '../collections/InvoiceLineItemCollection.js';
 import '../collections/PaymentAllocationCollection.js';
 import '../collections/TaxSettingsCollection.js';
 import { DOCUMENT_MONEY_WRITE } from '../document-money-internal.js';
-import { seedInvoiceTaxReportFacts } from './helpers/invoice-tax-report-facts.js';
+import {
+  seedInvoiceTaxReportCredit,
+  seedInvoiceTaxReportFacts,
+} from './helpers/invoice-tax-report-facts.js';
 
 describe('DocumentTax invoice report facts (#3940)', () => {
   let db: DatabaseInterface;
@@ -93,6 +96,37 @@ describe('DocumentTax invoice report facts (#3940)', () => {
           taxComponentId: 'pst',
           taxableMinor: 29_908,
           taxMinor: 2_094,
+        }),
+      ]),
+    );
+  });
+
+  it('returns a positive credit-note snapshot with its stored credit kind', async () => {
+    const fixture = await withTenant({ tenantId: 'tenant-a' }, () =>
+      seedInvoiceTaxReportFacts(db),
+    );
+    const creditId = await withTenant({ tenantId: fixture.tenantId }, () =>
+      seedInvoiceTaxReportCredit(db, fixture),
+    );
+    const facts = await (
+      await DocumentTaxCollection.create({ db })
+    ).listReportFacts({
+      tenantId: fixture.tenantId,
+      from: new Date('2026-09-01T00:00:00.000Z'),
+      to: new Date('2026-09-30T23:59:59.999Z'),
+      currency: 'CAD',
+    });
+
+    expect(facts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          documentId: creditId,
+          documentType: 'credit_note',
+          documentKind: 'credit_note',
+          documentNumber: 'CN-REPORT-A',
+          partyId: fixture.partyAId,
+          taxableMinor: 10_000,
+          taxMinor: 500,
         }),
       ]),
     );

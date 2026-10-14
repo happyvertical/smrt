@@ -18,7 +18,10 @@ import {
   drilldownTaxSummaryInvoiceFacts,
   TAX_SUMMARY_REPORT_ADAPTER,
 } from '../tax-summary-report-adapter.js';
-import { seedInvoiceTaxReportFacts } from './helpers/invoice-tax-report-facts.js';
+import {
+  seedInvoiceTaxReportCredit,
+  seedInvoiceTaxReportFacts,
+} from './helpers/invoice-tax-report-facts.js';
 
 const from = new Date('2026-09-01T00:00:00.000Z');
 const to = new Date('2026-09-30T23:59:59.999Z');
@@ -186,6 +189,74 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
       ]),
       total: { kind: 'exact', value: 5 },
     });
+  });
+
+  it('negates a positive stored credit-note snapshot exactly once', async () => {
+    const fixture = await withTenant({ tenantId: 'tenant-a' }, () =>
+      seedInvoiceTaxReportFacts(db),
+    );
+    const creditId = await withTenant({ tenantId: fixture.tenantId }, () =>
+      seedInvoiceTaxReportCredit(db, fixture),
+    );
+    await withTenant({ tenantId: fixture.tenantId }, () =>
+      activateV2(fixture.tenantId),
+    );
+    const reports = await TaxSummaryReportCollection.create({ db });
+    const result = await reports.refreshTaxSummary({
+      tenantId: fixture.tenantId,
+      from,
+      to,
+      expenseSource: { listReviewedTaxFacts: async () => [] },
+      ledgerSource: {
+        listPostedMovements: async ({ accountIds }) =>
+          accountIds.map((accountId) => ({
+            tenantId: fixture.tenantId,
+            entryId: `credit-${accountId}`,
+            accountId,
+            currency: 'CAD',
+            creditMinusDebit: accountId === 'gst-payable' ? 10_578 : 4_439,
+          })),
+      },
+      expenseComponentMappings: [],
+    });
+    expect(result).toEqual({ rowCount: 5, complete: true });
+    const rows = await withTenant({ tenantId: fixture.tenantId }, () =>
+      reports.list({ where: { tenantId: fixture.tenantId } }),
+    );
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rowKind: 'component',
+          taxComponentId: 'gst',
+          taxableMinor: 211_549,
+          taxMinor: 10_578,
+        }),
+        expect.objectContaining({
+          rowKind: 'kind',
+          taxCodeKind: 'taxable',
+          taxableMinor: 211_549,
+        }),
+      ]),
+    );
+    const gst = rows.find(
+      (row) => row.rowKind === 'component' && row.taxComponentId === 'gst',
+    );
+    if (!gst?.id) throw new Error('Expected GST report row.');
+    await expect(
+      drilldownTaxSummaryInvoiceFacts(db, {
+        tenantId: fixture.tenantId,
+        reportId: gst.id,
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          documentId: creditId,
+          documentKind: 'credit_note',
+          taxableMinor: 10_000,
+          taxMinor: 500,
+        }),
+      ]),
+    );
   });
 
   it('refuses a legacy tenant or missing owner adapters instead of presenting an incomplete total', async () => {

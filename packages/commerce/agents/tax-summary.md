@@ -52,9 +52,9 @@ a tenant id supplied by the authenticated host, rechecks the materialized row
 under that tenant, then applies its currency/component/kind dimensions to the
 same Invoice source query. It cannot widen a row into another tenant.
 
-This source currently treats every Invoice as an invoice because the Invoice
-`kind` discriminator is supplied by #3939. Once credit notes are stored on
-Invoice, this source must select that field and pass positive credit snapshots
+This source selects the shared Invoice `kind` discriminator and accepts only
+matching `DocumentTax.documentType` pairs: `invoice`/`invoice` or
+`credit_note`/`credit_note`. Credit rows retain positive stored values and pass
 through the aggregation's single credit sign step. Contract facts await #3898;
 they are not silently included in this path.
 

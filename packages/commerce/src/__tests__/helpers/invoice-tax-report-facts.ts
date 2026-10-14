@@ -219,3 +219,48 @@ export async function seedInvoiceTaxReportFacts(
     partyBId: partyB.id,
   };
 }
+
+/** Add one positive stored credit snapshot; report aggregation supplies its sign. */
+export async function seedInvoiceTaxReportCredit(
+  db: DatabaseInterface,
+  fixture: InvoiceTaxReportFactsFixture,
+): Promise<string> {
+  const invoices = await InvoiceCollection.create({ db });
+  const credit = await invoices.create({
+    kind: 'credit_note',
+    creditedInvoiceId: fixture.invoiceAId,
+    customerId: fixture.partyAId,
+    invoiceNumber: 'CN-REPORT-A',
+    issueDate: new Date('2026-09-20T00:00:00.000Z'),
+    currency: 'CAD',
+  });
+  credit.status = InvoiceStatus.SENT;
+  await credit.save();
+  if (!credit.id) throw new Error('Expected persisted credit-note id.');
+
+  const taxes = await DocumentTaxCollection.create({ db });
+  await taxes.replaceDerivedForDocument(DOCUMENT_MONEY_WRITE, {
+    tenantId: fixture.tenantId,
+    documentType: 'credit_note',
+    documentId: credit.id,
+    rows: [
+      {
+        tenantId: fixture.tenantId,
+        documentType: 'credit_note',
+        documentId: credit.id,
+        currency: 'CAD',
+        taxCodeId: 'gst',
+        taxCodeCode: 'GST',
+        kind: 'taxable',
+        taxComponentId: 'gst',
+        taxComponentName: 'GST',
+        percent: '5',
+        liabilityAccountId: 'gst-payable',
+        taxableMinor: 10_000,
+        taxMinor: 500,
+        recoverableMinor: 0,
+      },
+    ],
+  });
+  return credit.id;
+}

@@ -12,7 +12,10 @@ import {
 } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DocumentTaxCollection } from '../collections/DocumentTaxCollection.js';
-import { seedInvoiceTaxReportFacts } from './helpers/invoice-tax-report-facts.js';
+import {
+  seedInvoiceTaxReportCredit,
+  seedInvoiceTaxReportFacts,
+} from './helpers/invoice-tax-report-facts.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -84,6 +87,35 @@ describePostgres(
             taxComponentId: 'gst',
             taxableMinor: 29_908,
             taxMinor: 1_496,
+          }),
+        ]),
+      );
+    });
+
+    it('returns a PostgreSQL credit-note snapshot with positive stored values', async () => {
+      const tenantId = randomUUID();
+      const fixture = await withTenant({ tenantId }, () =>
+        seedInvoiceTaxReportFacts(db, tenantId, randomUUID()),
+      );
+      const creditId = await withTenant({ tenantId }, () =>
+        seedInvoiceTaxReportCredit(db, fixture),
+      );
+      const facts = await (
+        await DocumentTaxCollection.create({ db })
+      ).listReportFacts({
+        tenantId,
+        from: new Date('2026-09-01T00:00:00.000Z'),
+        to: new Date('2026-09-30T23:59:59.999Z'),
+        currency: 'CAD',
+      });
+      expect(facts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            documentId: creditId,
+            documentType: 'credit_note',
+            documentKind: 'credit_note',
+            taxableMinor: 10_000,
+            taxMinor: 500,
           }),
         ]),
       );
