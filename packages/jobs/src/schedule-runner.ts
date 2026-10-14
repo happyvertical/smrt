@@ -750,12 +750,16 @@ export function getNextCronDate(cron: string): Date {
   // Search for next matching date (limit to 1 year)
   const maxIterations = 525600;
   for (let i = 0; i < maxIterations; i++) {
-    const dayMatches = matchesCronField(candidate.getDate(), dayExpr);
+    const dayMatches = matchesCronField(
+      candidate.getDate(),
+      dayExpr,
+      CRON_FIELD_RANGES[2],
+    );
     // getDay() returns 0 for Sunday; standard cron accepts both 0 and 7
     const dow = candidate.getDay();
     const dowMatches =
-      matchesCronField(dow, dowExpr) ||
-      (dow === 0 && matchesCronField(7, dowExpr));
+      matchesCronField(dow, dowExpr, CRON_FIELD_RANGES[4]) ||
+      (dow === 0 && matchesCronField(7, dowExpr, CRON_FIELD_RANGES[4]));
 
     let dayOfMonthOrWeekMatches: boolean;
     if (!dayIsWildcard && !dowIsWildcard) {
@@ -769,10 +773,14 @@ export function getNextCronDate(cron: string): Date {
     }
 
     if (
-      matchesCronField(candidate.getMonth() + 1, monthExpr) &&
+      matchesCronField(
+        candidate.getMonth() + 1,
+        monthExpr,
+        CRON_FIELD_RANGES[3],
+      ) &&
       dayOfMonthOrWeekMatches &&
-      matchesCronField(candidate.getHours(), hourExpr) &&
-      matchesCronField(candidate.getMinutes(), minuteExpr)
+      matchesCronField(candidate.getHours(), hourExpr, CRON_FIELD_RANGES[1]) &&
+      matchesCronField(candidate.getMinutes(), minuteExpr, CRON_FIELD_RANGES[0])
     ) {
       return candidate;
     }
@@ -784,41 +792,39 @@ export function getNextCronDate(cron: string): Date {
 }
 
 /**
- * Check if a value matches a cron field expression
+ * Check if a value matches a cron field expression.
+ *
+ * Each comma-separated term is evaluated on its own, so mixed lists such as
+ * `1-5,10` or `0,30-40/5` match every term rather than parsing the whole
+ * list as one range. `*\/step` steps from the field minimum (day-of-month
+ * `*\/2` is 1,3,5,…; month `*\/3` is 1,4,7,10), and `base/step` without a range
+ * (`5/15`) steps from `base` to the field maximum — the common cron extension
+ * the validator already accepts.
  */
-function matchesCronField(value: number, expr: string): boolean {
+function matchesCronField(
+  value: number,
+  expr: string,
+  range: { min: number; max: number },
+): boolean {
   if (expr === '*') return true;
-
-  // Step values (*/5, 0-30/2)
-  if (expr.includes('/')) {
-    const [range, stepStr] = expr.split('/');
-    const step = parseInt(stepStr, 10);
-    if (range === '*') return value % step === 0;
-    if (range.includes('-')) {
-      const [startStr, endStr] = range.split('-');
-      const start = parseInt(startStr, 10);
-      const end = parseInt(endStr, 10);
-      if (value < start || value > end) return false;
-      return (value - start) % step === 0;
+  return expr.split(',').some((term) => {
+    const [body, stepStr] = term.split('/');
+    const step = stepStr === undefined ? 1 : parseInt(stepStr, 10);
+    let start: number;
+    let end: number;
+    if (body === '*') {
+      start = range.min;
+      end = range.max;
+    } else if (body.includes('-')) {
+      const [startStr, endStr] = body.split('-');
+      start = parseInt(startStr, 10);
+      end = parseInt(endStr, 10);
+    } else {
+      start = parseInt(body, 10);
+      end = stepStr === undefined ? start : range.max;
     }
-  }
-
-  // Ranges (1-5)
-  if (expr.includes('-')) {
-    const [startStr, endStr] = expr.split('-');
-    const start = parseInt(startStr, 10);
-    const end = parseInt(endStr, 10);
-    return value >= start && value <= end;
-  }
-
-  // Lists (1,3,5)
-  if (expr.includes(',')) {
-    const values = expr.split(',').map((v) => parseInt(v.trim(), 10));
-    return values.includes(value);
-  }
-
-  // Exact match
-  return value === parseInt(expr, 10);
+    return value >= start && value <= end && (value - start) % step === 0;
+  });
 }
 
 /**
