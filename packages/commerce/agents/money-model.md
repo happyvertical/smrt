@@ -1,0 +1,83 @@
+# Commercial money model
+
+This guide names the public commerce money contract. The exact input and result
+shapes, validation codes, and worked calculator examples live in the
+[calculator guide](money-calculator.md) and
+[package documentation](../../../docs/content/commerce-money.md). Money values
+are signed safe-integer minor units; calculator tax percentages are exact text,
+so `'5'` means 5%. The retained `InvoiceLineItem.taxRate` and
+`ContractLineItem.taxRate` fields are different legacy persisted fractions:
+`0.05` means 5%.
+
+## Calculation contract
+
+`calculateMoneyDocument()` accepts `exclusive`, `inclusive`, and `none` line
+amount modes. It first computes quantity times unit price, applies the one
+chosen discount, and returns the post-discount amount, tax components, net, and
+line total. `exclusive` line amounts are tax-exclusive net; `inclusive` line
+amounts are the visible gross and derive net by removing tax; `none` has zero
+tax and requires an out-of-scope code. `subtotalMinor`, `taxMinor`, and
+`totalMinor` are document totals. `discountTotalMinor` is informational because
+the line discounts were already applied; consumers must not subtract it again.
+
+The `line` rounding scope rounds each line/component. The `document` scope
+rounds each shared component's exact total, truncates each allocation toward
+zero, and gives signed residual minor units to the largest remainders, with
+line-ID code-unit order breaking ties. It leaves no document residual. Across
+`n` small lines, the two scopes can differ by up to `ceil(n / 2)` minor units
+per component. Store the chosen scope; do not silently substitute a later
+setting. `MoneyValidationError.code` is the public branch point for invalid
+money, discounts, tax-code state and scope, unsupported compound tax, frozen
+records, and unsafe values.
+
+Tax-code resolution is pure once the caller has loaded authorized codes. It
+uses a line override, customer exemption, product code, customer code, and app
+default in that order. An unresolved exclusive or inclusive line is a genuine
+zero-tax, null-code case; it is not an out-of-scope inference. The tax-code
+catalogue, seeds, registrations, and cookbook boundary are documented in
+[tax codes](tax-codes.md).
+
+## Stored Invoice facts
+
+`TaxSettings.moneyModel` selects the Invoice write behavior. `legacy` keeps the
+compatibility path; `migrating` rejects money writes; `v2` resolves a draft's
+current settings once and atomically writes the header, line snapshots, and
+`DocumentTax` rows. The detailed persistence, freeze, preview, credit-note, and
+refund contracts are in [document money](document-money.md).
+
+Once an Invoice leaves `DRAFT`, or receives an AR journal, its money snapshot
+is frozen. Reads use those stored values and must not recompute issued tax from
+new defaults. `DocumentTax` is a derived, read-only per-document/code/component
+snapshot with currency, code and component identities and labels, kind, exact
+percent, liability account, taxable, tax, and recoverable minor-unit values.
+It also represents non-taxable and unassigned zero-tax rows so reporting does
+not invent a taxable component.
+
+A credit note is an `Invoice` with `kind: 'credit_note'`. It stores positive
+amounts; posting, reporting, and accounting adapters apply that direction once.
+Issued-credit capacity and refunds are stable Invoice-v2 behavior. A refund is
+a positive `Payment` of kind `refund`, allocated only to a credit note. See
+[document money](document-money.md) before presenting either balance as an
+ordinary incoming payment.
+
+## Reporting and integrations
+
+The materialized `TaxSummaryReport` and its public descriptor/drilldown bridge
+read stored Invoice `DocumentTax` facts under the tenant v2 gate. See
+[tax summary aggregation](tax-summary.md). A runtime reports UI, report-server
+contract, and a shared Svelte money formatter are pending their owning releases;
+commerce does not supply a duplicate host.
+
+The accounting snapshot mapper consumes frozen facts and never re-calculates a
+rate or allocation. It maps an inclusive line to the accounting SDK's
+`TaxInclusiveAmt`; tenant mappings provide provider tax-code and component-rate
+identities. Its supported boundary and the pending provider write integration
+are documented in [accounting snapshot mapper](accounting-snapshot-mapper.md).
+
+## Deliberate boundaries
+
+This package does not publish a tenant migration runbook or migration command.
+The marker is a maintenance gate, not a customer-controlled setting. Contract
+money persistence and the production reports UI are separate work. The model
+also does not provide currency conversion, cash-basis/deposit accounting,
+partial recoverability, period locking, or compound tax.
