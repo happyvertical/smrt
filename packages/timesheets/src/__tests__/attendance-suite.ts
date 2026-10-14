@@ -156,6 +156,100 @@ export function attendanceSuite(
       const segments = await service.segments(outcomes[2].punchId!);
       expect(segments.map((g) => g.closedReason)).toEqual(['break']);
     });
+    it('replays work actions with the punch changes and stores refusal codes', async () => {
+      const t = (clientId: string, hour: number, action: string, extra = {}) =>
+        ({
+          clientId,
+          action,
+          at: at(hour).toISOString(),
+          ...extra,
+        }) as never;
+      const outcomes = await service.replay([
+        t('w-in', 8, 'punchIn'),
+        t('w-start', 9, 'startWork', { work }),
+        t('w-switch', 10, 'switchWork', {
+          work: { ...work, workRefId: 'work-2' },
+        }),
+        t('w-break', 11, 'startBreak'),
+        t('w-back', 12, 'endBreak'),
+        t('w-resume', 13, 'resumeWork'),
+        t('w-stop', 14, 'stopWork'),
+      ]);
+      expect(outcomes.every((o) => !o.error)).toBe(true);
+      const kinds = (await service.segments(outcomes[0].punchId!)).map(
+        (g) => [g.workRefId, g.closedReason] as const,
+      );
+      expect(kinds).toEqual([
+        ['work-1', 'switch'],
+        ['work-2', 'break'],
+        ['work-2', 'stop'],
+      ]);
+      expect(outcomes[1].segmentId).toBeTruthy();
+      await expect(
+        service.replay([t('w-none', 15, 'startWork')]),
+      ).rejects.toThrow('Malformed');
+      const [refused] = await service.replay([t('w-dup', 15, 'resumeWork')]);
+      expect(refused).toMatchObject({ code: 'no_resumable_work' });
+      expect(refused.error).toBeTruthy();
+      expect(await service.replay([t('w-dup', 15, 'resumeWork')])).toEqual([
+        refused,
+      ]);
+      const [custom] = await service.replay([t('w-c', 16, 'stopWork')], {
+        refusal: (_tap, error) => ({
+          code: 'device_busy',
+          message: `busy: ${error.code}`,
+        }),
+      });
+      expect(custom).toMatchObject({
+        code: 'device_busy',
+        error: 'busy: no_open_work',
+      });
+    });
+    it('resolves replay time by policy, hashing the tap as sent', async () => {
+      const serverNow = at(20);
+      const resolveAt = vi.fn(({ deviceAt, waitedMs }) =>
+        waitedMs > 3 * 3600_000
+          ? {
+              at: new Date(deviceAt.getTime() + 3600_000),
+              reviewRequired: true,
+            }
+          : { at: deviceAt },
+      );
+      const taps = [
+        {
+          clientId: 'r-in',
+          action: 'punchIn' as const,
+          at: at(8).toISOString(),
+        },
+        {
+          clientId: 'r-w',
+          action: 'startWork' as const,
+          at: at(9).toISOString(),
+          work,
+        },
+      ];
+      const result = await service.replay(taps, {
+        resolveAt,
+        now: () => serverNow,
+      });
+      expect(resolveAt.mock.calls[0][0]).toMatchObject({
+        waitedMs: 12 * 3600_000,
+        actor,
+      });
+      expect(result[0].resolvedAt).toBe(at(9).toISOString());
+      const segment = await service.currentWork();
+      expect(segment?.startedAt).toEqual(at(10));
+      expect(segment?.reviewRequired).toBe(true);
+      // Retrying the same tap hits the receipt without consulting the policy.
+      resolveAt.mockClear();
+      expect(
+        await service.replay(taps, { resolveAt, now: () => serverNow }),
+      ).toEqual(result);
+      expect(resolveAt).not.toHaveBeenCalled();
+      await expect(
+        service.replay([{ ...taps[1], at: at(11).toISOString() }]),
+      ).rejects.toThrow('different content');
+    });
     it('composes segment helpers inside one transaction and rolls back together', async () => {
       await service.punchIn(at(8));
       await expect(

@@ -27,7 +27,35 @@ export interface AttendanceWork {
 }
 
 /** Expected state conflict, distinct from retryable database failures. */
-export class AttendanceConflict extends Error {}
+export class AttendanceConflict extends Error {
+  /**
+   * Stable machine-readable reason (see {@link AttendanceRefusalCode}); stored
+   * on a refused replay outcome so a device screen can say why.
+   */
+  readonly code: AttendanceRefusalCode;
+  constructor(message: string, code: AttendanceRefusalCode = 'conflict') {
+    super(message);
+    this.code = code;
+  }
+}
+
+/**
+ * Built-in refusal codes. Consumers may store any other string through the
+ * `refusalCode` replay hook.
+ */
+export type AttendanceRefusalCode =
+  | 'conflict'
+  | 'invalid'
+  | 'predates_committed'
+  | 'punch_open'
+  | 'no_open_punch'
+  | 'break_open'
+  | 'no_open_break'
+  | 'during_break'
+  | 'work_open'
+  | 'no_open_work'
+  | 'no_resumable_work'
+  | (string & {});
 
 /**
  * Collections bound to one transaction executor. Handed to

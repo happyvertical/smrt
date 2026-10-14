@@ -379,8 +379,9 @@ or when already closed. If later committed attendance would be truncated it
 refuses the operation for manual review. A scheduler calls this per authorized
 actor; the package does not choose overtime, payroll, or shop-time-zone rules.
 
-`replay(taps)` accepts `{ clientId, action, at, paid?, work? }`, where `action` is
-`punchIn`, `punchOut`, `startBreak`, or `endBreak`. It sorts each batch by device
+`replay(taps, options?)` accepts `{ clientId, action, at, paid?, work? }`, where `action` is
+`punchIn`, `punchOut`, `startBreak`, `endBreak`, or a work action (`startWork`,
+`switchWork` (both require `work`), `stopWork`, `resumeWork`). It sorts each batch by device
 time, then client id. Client ids are durable and scoped to tenant/profile.
 Successful taps set `recordedOffline` and `reviewRequired`. The conflict policy
 is **committed attendance wins**: an event predating committed activity, or
@@ -391,6 +392,31 @@ be retried. Earlier committed taps in the batch remain committed. Device clocks
 are treated as supplied evidence, not server authentication; consumers should
 apply device drift policy before replay. Replay receipts must be retained for as
 long as clients can retry their ids.
+
+Work actions replay under the same client id and in the same transaction as punch
+and break changes; the outcome carries `segmentId`. Replay options:
+
+```ts
+await attendance.replay(taps, {
+  // Choose each tap's effective time. Called once per tap without a receipt.
+  resolveAt: ({ tap, deviceAt, serverNow, waitedMs, actor }) =>
+    waitedMs <= 12 * 3600_000
+      ? { at: deviceAt, reviewRequired: false }
+      : { at: serverNow, reviewRequired: true },
+  // Optionally name the stored reason of a refused tap.
+  refusal: (tap, error) => ({ code: 'device_busy', message: 'Finish current task first' }),
+});
+```
+
+The receipt hashes the tap as sent, so a retry with the same `clientId` still
+matches even though the stored time differs; the outcome then has `resolvedAt`.
+Punches are always flagged `reviewRequired`; `reviewRequired: true` from the
+resolver also flags the resulting work segment (`AttendanceSegment.reviewRequired`,
+a new column). A refused outcome stores `{ error, code }`: `code` defaults to the
+`AttendanceConflict.code` (`predates_committed`, `punch_open`, `no_open_punch`,
+`break_open`, `no_open_break`, `during_break`, `work_open`, `no_open_work`,
+`no_resumable_work`, or `conflict`), so a device screen can say why. Resolved times
+that break chronology are refused like any other tap.
 
 ## Period timecards
 

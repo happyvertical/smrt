@@ -10,6 +10,7 @@ import {
   type AttendanceActor,
   AttendanceConflict,
   type AttendanceContext,
+  type AttendanceRefusalCode,
   type AttendanceWork,
   validateAttendanceWork,
 } from './context.js';
@@ -36,6 +37,7 @@ export {
   type AttendanceActor,
   AttendanceConflict,
   type AttendanceContext,
+  type AttendanceRefusalCode,
   type AttendanceWork,
   validateAttendanceWork,
 } from './context.js';
@@ -46,9 +48,82 @@ export * from './segments.js';
 export interface AttendanceTap {
   clientId: string;
   at: string;
-  action: 'punchIn' | 'punchOut' | 'startBreak' | 'endBreak';
+  action: AttendanceTapAction;
   paid?: boolean;
+  /** Required by `startWork` and `switchWork`; also links evidence on `punchOut`. */
   work?: AttendanceWork;
+}
+
+/** Punch and break actions plus the work-segment actions (`stopWork` is "pause"). */
+export type AttendanceTapAction =
+  | 'punchIn'
+  | 'punchOut'
+  | 'startBreak'
+  | 'endBreak'
+  | 'startWork'
+  | 'switchWork'
+  | 'stopWork'
+  | 'resumeWork';
+
+const TAP_ACTIONS: readonly string[] = [
+  'punchIn',
+  'punchOut',
+  'startBreak',
+  'endBreak',
+  'startWork',
+  'switchWork',
+  'stopWork',
+  'resumeWork',
+];
+
+/** What a time policy sees for one tap that has not been replayed yet. */
+export interface AttendanceTimeInput {
+  /** The tap exactly as sent. */
+  tap: AttendanceTap;
+  /** The tap's device time. */
+  deviceAt: Date;
+  /** When the server received the batch. */
+  serverNow: Date;
+  /** `serverNow - deviceAt` in milliseconds: how long the tap waited. */
+  waitedMs: number;
+  /** The trusted actor the tap replays for. */
+  actor: AttendanceActor;
+}
+
+/** The effective time a policy chose, and whether a person should look at it. */
+export interface AttendanceResolvedTime {
+  at: Date;
+  /** Flags the resulting work segment (punches are always flagged offline). */
+  reviewRequired?: boolean;
+}
+
+/** Why a consumer refuses or rewrites the stored reason of a refused tap. */
+export interface AttendanceRefusal {
+  code: AttendanceRefusalCode;
+  /** Replaces the default message when given. */
+  message?: string;
+}
+
+export interface AttendanceReplayOptions {
+  /**
+   * Choose each tap's effective time (for example the device time inside a
+   * window, else the server arrival time). The receipt still hashes the tap as
+   * sent, so retries with the same clientId match; the resolved time is what is
+   * stored. Called once per tap that has no receipt yet, inside its transaction.
+   */
+  resolveAt?: (
+    input: AttendanceTimeInput,
+  ) => AttendanceResolvedTime | Promise<AttendanceResolvedTime>;
+  /** Clock for `serverNow`; defaults to `new Date()` per tap. */
+  now?: () => Date;
+  /**
+   * Name the stored code (and optionally message) of a refused tap. Without it,
+   * the refusal's own `AttendanceConflict.code` is stored.
+   */
+  refusal?: (
+    tap: AttendanceTap,
+    error: AttendanceConflict,
+  ) => AttendanceRefusal | undefined | void;
 }
 
 type Context = AttendanceContext;
@@ -160,7 +235,7 @@ export class AttendanceService {
       where: { ...this.actor, endedAt: null },
       limit: 1,
     });
-    if (!punch) throw new AttendanceConflict('No open punch.');
+    if (!punch) throw new AttendanceConflict('No open punch.', 'no_open_punch');
     return punch;
   }
 
@@ -199,6 +274,7 @@ export class AttendanceService {
     if (at.getTime() < latest)
       throw new AttendanceConflict(
         'Tap predates committed attendance; manual review required.',
+        'predates_committed',
       );
   }
 
@@ -308,7 +384,7 @@ export class AttendanceService {
           })
         ).length
       )
-        throw new AttendanceConflict('A punch is already open.');
+        throw new AttendanceConflict('A punch is already open.', 'punch_open');
       return tx.punches.create({
         ...this.actor,
         startedAt: at,
@@ -321,7 +397,8 @@ export class AttendanceService {
     });
     const active = breaks.find((b) => !b.endedAt);
     if (action === 'startBreak') {
-      if (active) throw new AttendanceConflict('A break is already open.');
+      if (active)
+        throw new AttendanceConflict('A break is already open.', 'break_open');
       if (typeof paid !== 'boolean')
         throw new AttendanceConflict('paid must be boolean.');
       await closeOpenSegment(tx, punch, at, 'break');
@@ -337,7 +414,7 @@ export class AttendanceService {
     if (action !== 'endBreak' && action !== 'punchOut')
       throw new AttendanceConflict('Unknown attendance action.');
     if (action === 'endBreak' && !active)
-      throw new AttendanceConflict('No open break.');
+      throw new AttendanceConflict('No open break.', 'no_open_break');
     if (action === 'punchOut' && work) {
       this.validateWork(work);
       const unpaidMilliseconds = breaks
@@ -379,6 +456,47 @@ export class AttendanceService {
     await punch.save();
     if (work) await this.link(tx, punch, work);
     return punch;
+  }
+
+  /** Run one replayed tap on `tx`; work actions share the punch changes' transaction. */
+  private async apply(
+    tx: Context,
+    tap: AttendanceTap,
+    at: Date,
+  ): Promise<{ punch: AttendancePunch; segment?: AttendanceSegment }> {
+    const work = (): AttendanceWork => {
+      if (!tap.work)
+        throw new AttendanceConflict('Work is required.', 'invalid');
+      return tap.work;
+    };
+    let segment: AttendanceSegment;
+    switch (tap.action) {
+      case 'startWork':
+        await this.chronological(tx, at);
+        segment = await beginSegment(tx, await this.open(tx), at, work());
+        break;
+      case 'switchWork':
+        await this.chronological(tx, at);
+        segment = await replaceSegment(tx, await this.open(tx), at, work());
+        break;
+      case 'stopWork':
+        await this.chronological(tx, at);
+        segment = await endSegment(tx, await this.open(tx), at);
+        break;
+      case 'resumeWork':
+        await this.chronological(tx, at);
+        segment = await continueSegment(tx, await this.open(tx), at);
+        break;
+      default:
+        return {
+          punch: await this.transition(tx, tap.action, at, tap.paid, tap.work),
+        };
+    }
+    const [punch] = await tx.punches.list({
+      where: { ...this.actor, id: segment.punchId },
+      limit: 1,
+    });
+    return { punch, segment };
   }
 
   private validateWork(work: AttendanceWork): void {
@@ -488,6 +606,7 @@ export class AttendanceService {
    */
   async replay(
     taps: readonly AttendanceTap[],
+    options: AttendanceReplayOptions = {},
   ): Promise<AttendanceReplayOutcome[]> {
     for (const tap of taps) {
       if (
@@ -495,11 +614,16 @@ export class AttendanceService {
         typeof tap.at !== 'string' ||
         typeof tap.clientId !== 'string' ||
         !tap.clientId ||
-        !['punchIn', 'punchOut', 'startBreak', 'endBreak'].includes(tap.action)
+        !TAP_ACTIONS.includes(tap.action)
       )
         throw new AttendanceConflict('Malformed attendance tap.');
       this.date(new Date(tap.at));
       if (tap.work !== undefined) this.validateWork(tap.work);
+      if (
+        (tap.action === 'startWork' || tap.action === 'switchWork') &&
+        tap.work === undefined
+      )
+        throw new AttendanceConflict('Malformed attendance tap.');
       if (tap.paid !== undefined && typeof tap.paid !== 'boolean')
         throw new AttendanceConflict('paid must be boolean.');
     }
@@ -548,6 +672,27 @@ export class AttendanceService {
               );
             return outcome;
           }
+          const deviceAt = new Date(tap.at);
+          let at = deviceAt;
+          let review = false;
+          if (options.resolveAt) {
+            const serverNow = this.date(options.now?.() ?? new Date());
+            const resolved = await options.resolveAt({
+              tap,
+              deviceAt,
+              serverNow,
+              waitedMs: serverNow.getTime() - deviceAt.getTime(),
+              actor: { ...this.actor },
+            });
+            if (
+              !resolved ||
+              !(resolved.at instanceof Date) ||
+              !Number.isFinite(resolved.at.getTime())
+            )
+              throw new Error('resolveAt must return a valid date.');
+            at = resolved.at;
+            review = resolved.reviewRequired === true;
+          }
           let outcome: AttendanceReplayOutcome;
           try {
             // Domain refusals are validated before the first write. Adapters with
@@ -564,23 +709,33 @@ export class AttendanceService {
                   segments: await AttendanceSegmentCollection.create({ db }),
                   replays: tx.replays,
                 };
-                const punch = await this.transition(
-                  inner,
-                  tap.action,
-                  new Date(tap.at),
-                  tap.paid,
-                  tap.work,
-                );
+                const { punch, segment } = await this.apply(inner, tap, at);
                 punch.recordedOffline = true;
                 punch.reviewRequired = true;
                 await punch.save();
-                return { clientId: tap.clientId, punchId: punch.id! };
+                if (segment && review) {
+                  segment.reviewRequired = true;
+                  await segment.save();
+                }
+                return {
+                  clientId: tap.clientId,
+                  punchId: punch.id!,
+                  ...(segment ? { segmentId: segment.id! } : {}),
+                  ...(at.getTime() !== deviceAt.getTime()
+                    ? { resolvedAt: at.toISOString() }
+                    : {}),
+                };
               },
               true,
             );
           } catch (error) {
             if (!(error instanceof AttendanceConflict)) throw error;
-            outcome = { clientId: tap.clientId, error: error.message };
+            const custom = options.refusal?.(tap, error) || undefined;
+            outcome = {
+              clientId: tap.clientId,
+              error: custom?.message || error.message,
+              code: custom?.code || error.code,
+            };
           }
           await tx.replays.create({
             tenantId: this.actor.tenantId,
