@@ -1,4 +1,9 @@
-import { getTestDatabase, MCPGenerator } from '@happyvertical/smrt-core';
+import {
+  getTestDatabase,
+  MCPGenerator,
+  ObjectRegistry,
+  type SmrtObject,
+} from '@happyvertical/smrt-core';
 import { ProductCollection } from '@happyvertical/smrt-products/collections';
 import {
   disableTenancy,
@@ -15,9 +20,37 @@ import { TaxCodeCollection } from '../collections/TaxCodeCollection';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection';
 import { serializeInvoiceMcpGet } from '../invoice-mcp';
+import { DocumentTax } from '../models/DocumentTax';
+import { Invoice } from '../models/Invoice';
+import { InvoiceLineItem } from '../models/InvoiceLineItem';
 import { MoneyValidationError } from '../money';
 import { ensureTenantTaxCodes } from '../tax/legacy';
 import { InvoiceStatus } from '../types';
+
+function gateFieldForTest(
+  objectClass: typeof SmrtObject,
+  fieldName: string,
+  permission: string,
+): () => void {
+  const registered = ObjectRegistry.getClassByConstructor(objectClass);
+  if (!registered) throw new Error(`Expected ${objectClass.name} registration`);
+  const definitions = [registered.fields, registered.inheritedFields]
+    .filter((fields) => fields !== undefined)
+    .map((fields) => fields.get(fieldName))
+    .filter((field) => field !== undefined);
+  if (definitions.length === 0)
+    throw new Error(`Expected ${objectClass.name}.${fieldName} registration`);
+  const prior = definitions.map((field) => field.readPermission);
+  definitions.forEach((field) => {
+    field.readPermission = permission;
+  });
+  return () => {
+    definitions.forEach((field, index) => {
+      if (prior[index] === undefined) delete field.readPermission;
+      else field.readPermission = prior[index];
+    });
+  };
+}
 
 describe('invoice money persistence (#3933)', () => {
   let db: DatabaseInterface;
@@ -191,6 +224,33 @@ describe('invoice money persistence (#3933)', () => {
         },
       });
 
+      const restorePolicies = [
+        gateFieldForTest(Invoice, 'taxAmount', 'invoices.read.money'),
+        gateFieldForTest(InvoiceLineItem, 'taxAmount', 'invoices.read.money'),
+        gateFieldForTest(DocumentTax, 'taxMinor', 'invoices.read.money'),
+      ];
+      try {
+        const denied = await serializeInvoiceMcpGet(storedInvoice);
+        expect(denied).not.toHaveProperty('taxAmount');
+        expect(denied).not.toHaveProperty('money');
+
+        const authorized = await serializeInvoiceMcpGet(storedInvoice, {
+          permissions: ['invoices.read.money'],
+        });
+        expect(authorized).toMatchObject({
+          taxAmount: 5,
+          money: {
+            header: { taxAmountMinor: 5 },
+            lines: [expect.objectContaining({ taxMinor: 5 })],
+            taxes: [expect.objectContaining({ taxMinor: 5 })],
+          },
+        });
+      } finally {
+        restorePolicies.reverse().forEach((restore) => {
+          restore();
+        });
+      }
+
       const crossTenant = await withTenant({ tenantId: 'tenant-other' }, () =>
         new MCPGenerator(
           { classNames: ['@happyvertical/smrt-commerce:Invoice'] },
@@ -275,6 +335,23 @@ describe('invoice money persistence (#3933)', () => {
       await expect(serializeInvoiceMcpGet(invoice)).rejects.toMatchObject({
         code: 'FROZEN_DOCUMENT',
       } satisfies Partial<MoneyValidationError>);
+      const mcp = await new MCPGenerator(
+        { classNames: ['@happyvertical/smrt-commerce:Invoice'] },
+        {
+          db,
+          user: { id: 'invoice-reader' },
+          tenantId: 'tenant-b',
+        },
+      ).handleToolCall({
+        method: 'tools/call',
+        params: { name: 'invoice_get', arguments: { id: invoice.id } },
+      });
+      expect(mcp).toMatchObject({
+        isError: true,
+        structuredContent: {
+          error: { code: 'FROZEN_DOCUMENT' },
+        },
+      });
       const forged = await settings.getForTenant('tenant-b');
       if (!forged) throw new Error('Expected settings');
       forged.moneyModel = 'legacy';
