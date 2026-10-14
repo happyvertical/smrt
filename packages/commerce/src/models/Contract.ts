@@ -10,9 +10,12 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
+  DOCUMENT_MONEY_READ_REBIND,
   DOCUMENT_MONEY_WRITE,
+  type DocumentMoneyReadRebindCapability,
   type DocumentMoneyWriteCapability,
 } from '../document-money-internal.js';
 import { assertIntegerMinorUnits } from '../money.js';
@@ -103,6 +106,18 @@ const loadedContractStatus = new WeakMap<Contract, ContractStatus>();
   cli: { skipApiCheck: true },
 })
 export class Contract extends SmrtObject {
+  /** @internal Collection read guard returns this snapshot on its root DB. */
+  rebindMoneyRead(
+    capability: DocumentMoneyReadRebindCapability,
+    db: DatabaseInterface,
+  ): this {
+    if (capability !== DOCUMENT_MONEY_READ_REBIND)
+      throw new Error('Contract read rebinding requires the owning capability');
+    this._db = db;
+    this.options.db = db;
+    return this;
+  }
+
   /**
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global contracts
