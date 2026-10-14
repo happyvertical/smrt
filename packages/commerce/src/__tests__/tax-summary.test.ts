@@ -40,7 +40,7 @@ const fact = (overrides: Partial<TaxSummaryInput['facts'][number]> = {}) => ({
 });
 
 describe('aggregateTaxSummary', () => {
-  it('uses exact A, B line/document, C exempt and E stored calculator goldens', () => {
+  it('uses exact A, B line/document, C/D exempt and E stored calculator goldens', () => {
     const result = aggregateTaxSummary(
       input({
         facts: [
@@ -114,6 +114,17 @@ describe('aggregateTaxSummary', () => {
             componentName: null,
             liabilityAccountId: null,
           }),
+          // D is the distinct inclusive-exempt document: stored base/tax match C.
+          fact({
+            documentId: 'D',
+            taxCodeId: 'exempt',
+            taxCodeKind: 'exempt',
+            taxableMinor: 114_498,
+            taxMinor: 0,
+            taxComponentId: null,
+            componentName: null,
+            liabilityAccountId: null,
+          }),
           // E document scope persists the $0.34 rounding result: 2¢ + 2¢ tax.
           fact({
             documentId: 'E',
@@ -158,8 +169,8 @@ describe('aggregateTaxSummary', () => {
         }),
         expect.objectContaining({
           taxCodeKind: 'exempt',
-          taxableMinor: 114_498,
-          documentCount: 1,
+          taxableMinor: 228_996,
+          documentCount: 2,
         }),
       ]),
     );
