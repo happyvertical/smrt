@@ -967,7 +967,7 @@ ${principalGuard}
     ) {
       throw error(403, 'Tenant context does not match authenticated principal');
     }
-${requirePrincipal ? '    enterTenantContext({ tenantId, userId, permissions });\n' : ''}    return;
+${requirePrincipal ? '    enterTenantContext({ ...active, tenantId, userId, permissions });\n' : ''}    return;
   }
   if (typeof tenantId === 'string' && tenantId) {
     enterTenantContext(

@@ -177,7 +177,7 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
         "throw error(403, 'Authenticated principal context is incomplete')",
       );
       expect(route).toContain('enterTenantContext(');
-      expect(route).toContain('{ tenantId, userId, permissions }');
+      expect(route).toContain('{ ...active, tenantId, userId, permissions }');
       expect(route).toContain('establishTenantContext(locals);');
     }
     // Request body ownership values are intentionally absent from the helper.

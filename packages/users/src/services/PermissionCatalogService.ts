@@ -264,8 +264,30 @@ export function deriveOperationPermissionSlug(
   if (['read', 'create', 'update', 'delete'].includes(standard)) {
     return `${collectionName}.${standard}`;
   }
+  const ctor =
+    typeof collection === 'string' ? undefined : resolveConstructor(collection);
+  const registered = ctor
+    ? (ObjectRegistry.getClassByConstructor(
+        ctor as Parameters<typeof ObjectRegistry.getClassByConstructor>[0],
+      ) ?? ObjectRegistry.getClass(ctor.name ?? ''))
+    : undefined;
+  if (registered) {
+    const entry = manifestEntryFor(registered);
+    const alias = resolveOperationPermissionAlias(
+      entry?.decoratorConfig ?? registered.config,
+      action,
+    );
+    const normalizedAction = normalizeOperationPermissionAction(
+      alias?.action ?? action,
+    );
+    if (!normalizedAction) {
+      throw new Error('Operation permission action must not be empty.');
+    }
+    return `${collectionName}.${normalizedAction}`;
+  }
   // Resolve by the catalog slug even for string callers (CLI/MCP/tool runs).
-  // Two models sharing a collection must agree; ambiguity never widens grants.
+  // Two models sharing a collection must agree. An unaliased matching method
+  // conflicts with an alias rather than silently inheriting its broader grant.
   const actions = new Set<string>();
   for (const registered of new Set(ObjectRegistry.getAllClasses().values())) {
     const entry = manifestEntryFor(registered);
@@ -283,7 +305,24 @@ export function deriveOperationPermissionSlug(
       entry?.decoratorConfig ?? registered.config,
       action,
     );
-    if (alias) actions.add(alias.action);
+    if (alias) {
+      actions.add(alias.action);
+      continue;
+    }
+    const methodEntries = entry?.methods
+      ? Object.values(entry.methods)
+      : Array.from(registered.methods.entries());
+    if (
+      getPublicCustomMethodNames(methodEntries, [
+        'list',
+        'get',
+        'create',
+        'update',
+        'delete',
+      ]).includes(action)
+    ) {
+      actions.add(action);
+    }
   }
   if (actions.size > 1) throw new Error('Ambiguous operation permission alias');
   const normalizedAction = normalizeOperationPermissionAction(

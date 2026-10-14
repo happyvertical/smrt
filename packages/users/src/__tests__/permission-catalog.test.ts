@@ -695,6 +695,27 @@ class AliasPermissionRecord extends SmrtObject {
   }
 }
 
+@smrt({
+  api: { include: ['archive'] },
+  collection: 'shared_alias_permission_records',
+  operationPermissions: { archive: { action: 'create' } },
+})
+class SharedAliasedPermissionRecord extends SmrtObject {
+  async archive(): Promise<boolean> {
+    return true;
+  }
+}
+
+@smrt({
+  api: { include: ['archive'] },
+  collection: 'shared_alias_permission_records',
+})
+class SharedUnaliasedPermissionRecord extends SmrtObject {
+  async archive(): Promise<boolean> {
+    return true;
+  }
+}
+
 describe('custom action permission aliases (#3878)', () => {
   it('keeps one grant vocabulary across classes, strings, guards and SQL policies', async () => {
     const catalog = PermissionCatalogService.create().getCatalog();
@@ -749,5 +770,20 @@ describe('custom action permission aliases (#3878)', () => {
         (entry) => entry.tableName === 'alias_permission_records',
       )?.actions.SELECT,
     ).toContain('alias_permission_records.create');
+  });
+
+  it('uses constructor-specific aliases and rejects ambiguous shared-collection strings', () => {
+    expect(
+      deriveOperationPermissionSlug(SharedAliasedPermissionRecord, 'archive'),
+    ).toBe('shared_alias_permission_records.create');
+    expect(
+      deriveOperationPermissionSlug(SharedUnaliasedPermissionRecord, 'archive'),
+    ).toBe('shared_alias_permission_records.archive');
+    expect(() =>
+      deriveOperationPermissionSlug(
+        'shared_alias_permission_records',
+        'archive',
+      ),
+    ).toThrow('Ambiguous operation permission alias');
   });
 });

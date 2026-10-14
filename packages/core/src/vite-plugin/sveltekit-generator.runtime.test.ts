@@ -762,6 +762,64 @@ describe('generated SvelteKit helper runtime', () => {
     expect(lookups).toBe(0);
   });
 
+  it('preserves verified active context capabilities while refreshing generated-action authority', async () => {
+    const route = await importGeneratedRuntimeReportAction('run');
+    const database = { marker: 'tenant-database' };
+    const user = { id: 'loaded-user' };
+    const metadata = { requestId: 'request-1' };
+    let actionContext: Record<string, unknown> | undefined;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => ({
+        run: async () => {
+          actionContext = (globalThis as Record<string, unknown>)
+            .__smrtGeneratedActiveTenantContext as Record<string, unknown>;
+          return { ok: true };
+        },
+      }),
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        database,
+        metadata,
+        permissions: new Set(['stale.permission']),
+        superAdminBypass: true,
+        tenantId: 'tenant-a',
+        user,
+        userId: 'user-a',
+      };
+
+    const response = await route.POST({
+      locals: {
+        tenantContext: {
+          permissions: new Set(['widgets.read']),
+          superAdminBypass: true,
+          tenantId: 'tenant-a',
+          userId: 'user-a',
+        },
+        user: { id: 'user-a' },
+      },
+      params: { id: 'report-a' },
+      request: new Request('http://localhost/api/widgets/report-a/run', {
+        method: 'POST',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(actionContext).toMatchObject({
+      database,
+      metadata,
+      superAdminBypass: true,
+      tenantId: 'tenant-a',
+      user,
+      userId: 'user-a',
+    });
+    expect(actionContext).toBeDefined();
+    expect([
+      ...((actionContext as Record<string, unknown>)
+        .permissions as Set<string>),
+    ]).toEqual(['widgets.read']);
+  });
+
   it('executes emitted DELETE routes with safe typed 4xx errors and opaque 5xx errors', async () => {
     const route = await importGeneratedItemDelete();
     const routeCollection = globalThis as Record<string, unknown>;
