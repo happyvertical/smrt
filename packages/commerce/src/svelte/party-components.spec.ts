@@ -258,6 +258,65 @@ describe('customer and vendor SSR surfaces', () => {
     expect(vendorHtml).toContain('href="/vendors/vendor-1/edit"');
   });
 
+  it('omits or replaces the page header for hosts that frame the page (#3501)', () => {
+    const hostHeader = createRawSnippet(() => ({
+      render: () => '<div data-host-header>Host frame</div>',
+    }));
+    const surfaces = [
+      {
+        component: CustomerDirectory,
+        props: {
+          items: [{ data: customer }],
+          canCreate: true,
+          addHref: '/clients/new',
+        },
+        action: '/clients/new',
+      },
+      {
+        component: VendorDirectory,
+        props: {
+          items: [{ data: vendor }],
+          canCreate: true,
+          addHref: '/vendors/new',
+        },
+        action: '/vendors/new',
+      },
+      {
+        component: CustomerDetail,
+        props: {
+          customer,
+          canEdit: true,
+          editHref: '/clients/customer-1/edit',
+        },
+        action: '/clients/customer-1/edit',
+      },
+      {
+        component: VendorDetail,
+        props: { vendor, canEdit: true, editHref: '/vendors/vendor-1/edit' },
+        action: '/vendors/vendor-1/edit',
+      },
+    ] as const;
+    for (const { component, props, action } of surfaces) {
+      const framed = render(component as never, { props: props as never }).body;
+      expect(framed).toContain('<h1');
+      expect(framed).toContain(action);
+
+      const headless = render(component as never, {
+        props: { ...props, headless: true, header: hostHeader } as never,
+      }).body;
+      expect(headless).not.toContain('<h1');
+      expect(headless).not.toContain(action);
+      expect(headless).not.toContain('data-host-header');
+      expect(headless).toMatch(/Avery Chen|Morgan Lee|Riverstone|Northstar/);
+
+      const replaced = render(component as never, {
+        props: { ...props, header: hostHeader } as never,
+      }).body;
+      expect(replaced).not.toContain('<h1');
+      expect(replaced).toContain('data-host-header');
+    }
+  });
+
   it('does not invent an identity category when profile identity is missing or unknown', () => {
     const missingCustomerIdentity = render(CustomerDetail, {
       props: {

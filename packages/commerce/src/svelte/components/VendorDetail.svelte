@@ -3,6 +3,7 @@ import { StatusBadge } from '@happyvertical/smrt-ui';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { PageHeader } from '@happyvertical/smrt-ui/layout';
 import { Button, Card } from '@happyvertical/smrt-ui/ui';
+import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';
 import type {
   PartyContactLabels,
@@ -33,6 +34,10 @@ export interface Props {
   locale?: string;
   /** Consumer content rendered after the standard vendor sections. */
   extension?: PartyExtension<VendorDisplayData>;
+  /** Omits the built-in page header (title, subtitle, and its create/edit action) for hosts that frame the page themselves. */
+  headless?: boolean;
+  /** Replaces the built-in page header; not rendered when `headless` is set. */
+  header?: Snippet;
 }
 
 const {
@@ -45,6 +50,8 @@ const {
   minorUnitExponent = 2,
   locale = 'en',
   extension,
+  headless = false,
+  header,
 }: Props = $props();
 const { t } = useI18n();
 const singular = $derived(labels.singular ?? t(M['commerce.vendor.singular']));
@@ -82,11 +89,15 @@ function minimumOrder(amountMinor: number): string {
 
 <section class="party-detail" data-smrt-component="VendorDetail">
   {#if backHref}<Button href={backHref} variant="ghost">{t(M['commerce.party.back_to'], { plural })}</Button>{/if}
-  <PageHeader title={vendor.profile.name} subtitle={vendor.profile.description ?? t(M['commerce.vendor.details'])}>
-    {#snippet actions()}
-      {#if canEdit && editHref}<Button href={editHref}>{labels.edit ?? (labels.singular ? t(M['commerce.party.edit_named'], { singular }) : t(M['commerce.vendor.edit']))}</Button>{/if}
-    {/snippet}
-  </PageHeader>
+  {#if header && !headless}
+    {@render header()}
+  {:else if !headless}
+    <PageHeader title={vendor.profile.name} subtitle={vendor.profile.description ?? t(M['commerce.vendor.details'])}>
+      {#snippet actions()}
+        {#if canEdit && editHref}<Button href={editHref}>{labels.edit ?? (labels.singular ? t(M['commerce.party.edit_named'], { singular }) : t(M['commerce.vendor.edit']))}</Button>{/if}
+      {/snippet}
+    </PageHeader>
+  {/if}
 
   <div class="summary-grid">
     <Card padding="md">

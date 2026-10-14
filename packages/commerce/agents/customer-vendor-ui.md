@@ -73,6 +73,13 @@ Use the `extension` snippets for application fields such as construction roles a
 
 Directory entries carry caller-owned detail links and pagination links. Detail edit links and form submit buttons appear only when their capability props allow them; the server must still authorize every request.
 
+`CustomerDirectory`, `CustomerDetail`, `VendorDirectory`, and `VendorDetail`
+render a `PageHeader` (the page `h1`, a subtitle, and the add/edit action) by
+default. A host that frames every page itself passes `headless` to render only
+the body, then renders its own heading and create/edit affordance; or passes a
+`header` snippet to replace the built-in header in place (#3501). `backHref`
+stays independent of both.
+
 Directory empty and filter behavior follows this contract:
 
 | State | Empty guidance | Native form behavior |
