@@ -932,6 +932,30 @@ describe('local SvelteKit runtime', () => {
     expect(await ownerCount(local.db)).toBe(0);
   });
 
+  it('reports an owner tenant slug conflict as setup_conflict', async () => {
+    const { runtime } = await localRuntime('conflict');
+    await runtime.init();
+    const page = createOwnerSetupPage(runtime);
+    const local = await runtime.localRuntime();
+    const token = await bootstrapToken(runtime);
+    vi.spyOn(local, 'claimOwner').mockRejectedValueOnce(
+      new LocalRuntimeError('owner_tenant_conflict', 'slug taken'),
+    );
+    const { failure } = await runAction(
+      page,
+      testEvent(SETUP_URL, {
+        form: { token, name: 'Owner', email: 'owner@example.com' },
+      }),
+    );
+    expect(failure).toMatchObject({
+      status: 409,
+      data: {
+        code: 'setup_conflict',
+        message: DEFAULT_OWNER_SETUP_MESSAGES.setup_conflict,
+      },
+    });
+  });
+
   it('separates URL/header selection from the session-authorized tenant context', async () => {
     const { runtime } = await localRuntime('ordering');
     await runtime.init();

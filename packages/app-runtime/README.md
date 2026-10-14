@@ -211,8 +211,8 @@ re-checks on every request that both the peer address and the URL host are
 loopback; its `default` action reads `token`, `name`, `email`, and optional
 `tenantName`, sets the session cookie, and redirects 303, or returns
 `fail(status, { code, message })` with `setup_disabled` (404),
-`setup_unavailable` (403), `setup_invalid_input` (400), or `setup_invalid`
-(400). Claim error text is never returned. After the claim commits, the
+`setup_unavailable` (403), `setup_invalid_input` (400), `setup_invalid`
+(400), or `setup_conflict` (409, the `ownerTenant` slug already exists). Claim error text is never returned. After the claim commits, the
 runtime removes the `smrt app setup` / `recover` hand-off files
 (`ONBOARDING_HANDOFF_FILES`: `onboarding.json`, `onboarding-launch.html`) from
 `runtime.applicationStateRoot()`, so `pnpm app:open` stops offering the spent
