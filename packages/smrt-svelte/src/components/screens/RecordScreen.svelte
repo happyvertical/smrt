@@ -445,7 +445,7 @@ function cancel(): void {
     flex-direction: column;
     gap: var(--smrt-spacing-md, 1rem);
     padding: var(--smrt-spacing-md, 1rem);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-lg);
     background: var(--smrt-color-surface-container-low, var(--smrt-color-surface));
     animation: smrt-record-screen-in var(--smrt-duration-medium1)

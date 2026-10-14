@@ -134,7 +134,7 @@ const LABELS = {
   .smrt-line-items__total { display: flex; justify-content: space-between; gap: var(--smrt-spacing-4); }
   .smrt-line-items__total dt { color: var(--smrt-color-on-surface-variant); }
   .smrt-line-items__total dd { margin: 0; text-align: end; }
-  .smrt-line-items__total--grand { padding-block-start: var(--smrt-spacing-2); border-block-start: 1px solid var(--smrt-color-outline-variant); font-weight: var(--smrt-typography-weight-semibold); }
+  .smrt-line-items__total--grand { padding-block-start: var(--smrt-spacing-2); border-block-start: var(--smrt-hairline); font-weight: var(--smrt-typography-weight-semibold); }
   .smrt-line-items__total--grand dt { color: var(--smrt-color-on-surface); }
   .smrt-line-items__computed { margin-inline-start: var(--smrt-spacing-1); font-size: var(--smrt-typography-body-small-size, 0.75rem); }
   .smrt-line-items__flag { margin: 0; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border-inline-start: var(--smrt-spacing-1) solid var(--smrt-color-warning); border-radius: var(--smrt-radius-sm); background: var(--smrt-color-warning-container); color: var(--smrt-color-on-warning-container); }
