@@ -33,3 +33,10 @@ Their provider direction is the SDK's `CreditMemo` operation. A future host
 must call `requireCreditMemoCapability()` (or the SDK's equivalent) before a
 write and must persist the SDK create descriptor and returned external ID. The
 adapter never auto-applies a credit memo to its invoice.
+
+The mapper's A/B fixtures are the commerce calculator's actual CAD goldens:
+example A is tax-exclusive and example B is tax-inclusive. Both cover line and
+document allocation; example B's document scope preserves line 3's allocated
+GST cent. The external evidence probe runs the mapped example B request through
+the reviewed SDK mapper without making the unreleased SDK a production
+dependency.

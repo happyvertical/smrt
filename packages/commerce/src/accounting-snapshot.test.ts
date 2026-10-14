@@ -8,16 +8,19 @@ import {
 } from './accounting-snapshot.js';
 
 const mapping: FrozenQuickBooksTaxMapping = {
-  lines: {
-    'line-1': { itemRef: 'item-1', taxCodeRef: 'tax-code-1' },
-  },
+  lines: Object.fromEntries(
+    ['1', '2', '3', '4'].map((id) => [
+      id,
+      { itemRef: `item-${id}`, taxCodeRef: `tax-code-${id}` },
+    ]),
+  ),
   components: {
     gst: { quickbooksTaxRateRef: 'rate-gst' },
     pst: { quickbooksTaxRateRef: 'rate-pst' },
   },
 };
 
-function snapshot(
+function document(
   overrides: Partial<FrozenAccountingDocumentSnapshot> = {},
 ): FrozenAccountingDocumentSnapshot {
   return {
@@ -28,93 +31,234 @@ function snapshot(
     customerExternalId: 'qbo-customer-1',
     issueDate: new Date('2026-10-13T00:00:00.000Z'),
     dueDate: new Date('2026-11-12T00:00:00.000Z'),
-    currency: 'JPY',
+    currency: 'CAD',
     lineAmountType: 'exclusive',
     taxRoundingScope: 'line',
-    subtotalMinor: 100,
-    taxAmountMinor: 10,
+    subtotalMinor: 0,
+    taxAmountMinor: 0,
     providerTaxMinor: 0,
-    totalAmountMinor: 110,
+    totalAmountMinor: 0,
+    lineItems: [],
+    ...overrides,
+  };
+}
+
+function exampleA(
+  taxRoundingScope: 'line' | 'document',
+): FrozenAccountingDocumentSnapshot {
+  return document({
+    taxRoundingScope,
+    subtotalMinor: 114_498,
+    taxAmountMinor: 8_070,
+    totalAmountMinor: 122_568,
     lineItems: [
       {
-        id: 'line-1',
-        description: 'JPY consultation',
-        quantity: 1,
-        unitPriceMinor: 100,
-        discountMinor: 0,
-        amountMinor: 100,
-        taxMinor: 10,
+        id: '1',
+        description: 'Example A line 1',
+        quantity: 10,
+        unitPriceMinor: 8500,
+        discountMinor: 8500,
+        amountMinor: 76_500,
+        taxMinor: 3825,
         taxComponents: [
-          { taxComponentId: 'gst', name: 'GST', percent: '10', taxMinor: 10 },
+          { taxComponentId: 'gst', name: 'GST', percent: '5', taxMinor: 3825 },
+        ],
+      },
+      {
+        id: '2',
+        description: 'Example A line 2',
+        quantity: 2,
+        unitPriceMinor: 4999,
+        discountMinor: 500,
+        amountMinor: 9498,
+        taxMinor: 1140,
+        taxComponents: [
+          { taxComponentId: 'gst', name: 'GST', percent: '5', taxMinor: 475 },
+          { taxComponentId: 'pst', name: 'PST', percent: '7', taxMinor: 665 },
+        ],
+      },
+      {
+        id: '3',
+        description: 'Example A line 3',
+        quantity: 12,
+        unitPriceMinor: 2000,
+        discountMinor: 0,
+        amountMinor: 24_000,
+        taxMinor: 2880,
+        taxComponents: [
+          { taxComponentId: 'gst', name: 'GST', percent: '5', taxMinor: 1200 },
+          { taxComponentId: 'pst', name: 'PST', percent: '7', taxMinor: 1680 },
+        ],
+      },
+      {
+        id: '4',
+        description: 'Example A line 4',
+        quantity: 1,
+        unitPriceMinor: 4500,
+        discountMinor: 0,
+        amountMinor: 4500,
+        taxMinor: 225,
+        taxComponents: [
+          { taxComponentId: 'gst', name: 'GST', percent: '5', taxMinor: 225 },
         ],
       },
     ],
-    ...overrides,
-  };
+  });
+}
+
+function exampleB(
+  taxRoundingScope: 'line' | 'document',
+): FrozenAccountingDocumentSnapshot {
+  const documentScope = taxRoundingScope === 'document';
+  return document({
+    lineAmountType: 'inclusive',
+    taxRoundingScope,
+    subtotalMinor: documentScope ? 107_051 : 107_052,
+    taxAmountMinor: documentScope ? 7447 : 7446,
+    totalAmountMinor: 114_498,
+    lineItems: [
+      {
+        id: '1',
+        description: 'Example B line 1',
+        quantity: 10,
+        unitPriceMinor: 8500,
+        discountMinor: 8500,
+        amountMinor: 72_857,
+        taxMinor: 3643,
+        taxComponents: [
+          { taxComponentId: 'gst', name: 'GST', percent: '5', taxMinor: 3643 },
+        ],
+      },
+      {
+        id: '2',
+        description: 'Example B line 2',
+        quantity: 2,
+        unitPriceMinor: 4999,
+        discountMinor: 500,
+        amountMinor: 8480,
+        taxMinor: 1018,
+        taxComponents: [
+          { taxComponentId: 'gst', name: 'GST', percent: '5', taxMinor: 424 },
+          { taxComponentId: 'pst', name: 'PST', percent: '7', taxMinor: 594 },
+        ],
+      },
+      {
+        id: '3',
+        description: 'Example B line 3',
+        quantity: 12,
+        unitPriceMinor: 2000,
+        discountMinor: 0,
+        amountMinor: documentScope ? 21_428 : 21_429,
+        taxMinor: documentScope ? 2572 : 2571,
+        taxComponents: [
+          {
+            taxComponentId: 'gst',
+            name: 'GST',
+            percent: '5',
+            taxMinor: documentScope ? 1072 : 1071,
+          },
+          { taxComponentId: 'pst', name: 'PST', percent: '7', taxMinor: 1500 },
+        ],
+      },
+      {
+        id: '4',
+        description: 'Example B line 4',
+        quantity: 1,
+        unitPriceMinor: 4500,
+        discountMinor: 0,
+        amountMinor: 4286,
+        taxMinor: 214,
+        taxComponents: [
+          { taxComponentId: 'gst', name: 'GST', percent: '5', taxMinor: 214 },
+        ],
+      },
+    ],
+  });
 }
 
 describe('mapFrozenAccountingSnapshot', () => {
   it.each([
     'line',
     'document',
-  ] as const)('maps example A JPY exclusive facts with %s rounding intact', (taxRoundingScope) => {
+  ] as const)('maps actual example A exclusive stored facts under %s rounding', (taxRoundingScope) => {
     const result = mapFrozenAccountingSnapshot(
-      snapshot({ taxRoundingScope }),
+      exampleA(taxRoundingScope),
       mapping,
     );
-
     expect(result).toMatchObject({
-      invoiceNumber: 'INV-1',
-      currency: 'JPY',
-      subtotal: 100,
-      taxAmount: 10,
-      totalAmount: 110,
+      currency: 'CAD',
+      subtotal: 1144.98,
+      taxAmount: 80.7,
+      totalAmount: 1225.68,
       quickbooksMapping: { globalTaxCalculation: 'TaxExcluded' },
-      lineItems: [
-        {
-          unitPrice: 100,
-          amount: 100,
-          taxAmount: 10,
-          taxComponents: [
-            {
-              taxCode: 'gst',
-              rate: '0.1',
-              quickbooksTaxRateRef: 'rate-gst',
-              taxAmount: 10,
-            },
-          ],
-        },
-      ],
+    });
+    expect(result.lineItems[0]).toMatchObject({
+      unitPrice: 85,
+      discount: 85,
+      amount: 765,
+      taxAmount: 38.25,
+    });
+    expect(result.lineItems[1]).toMatchObject({
+      unitPrice: 49.99,
+      discount: 5,
+      amount: 94.98,
+      taxAmount: 11.4,
     });
   });
 
   it.each([
     'line',
     'document',
-  ] as const)('maps example B KWD inclusive discount facts with %s rounding intact', (taxRoundingScope) => {
+  ] as const)('maps actual example B inclusive stored facts under %s rounding', (taxRoundingScope) => {
     const result = mapFrozenAccountingSnapshot(
-      snapshot({
-        currency: 'KWD',
-        lineAmountType: 'inclusive',
-        taxRoundingScope,
-        subtotalMinor: 950,
-        taxAmountMinor: 50,
-        totalAmountMinor: 1000,
+      exampleB(taxRoundingScope),
+      mapping,
+    );
+    const documentScope = taxRoundingScope === 'document';
+    expect(result).toMatchObject({
+      currency: 'CAD',
+      subtotal: documentScope ? 1070.51 : 1070.52,
+      taxAmount: documentScope ? 74.47 : 74.46,
+      totalAmount: 1144.98,
+      quickbooksMapping: { globalTaxCalculation: 'TaxInclusive' },
+    });
+    expect(result.lineItems[2]).toMatchObject({
+      amount: documentScope ? 214.28 : 214.29,
+      taxAmount: documentScope ? 25.72 : 25.71,
+      taxInclusiveAmount: 240,
+      taxComponents: [
+        {
+          taxCode: 'gst',
+          rate: '0.05',
+          taxAmount: documentScope ? 10.72 : 10.71,
+        },
+        { taxCode: 'pst', rate: '0.07', taxAmount: 15 },
+      ],
+    });
+  });
+
+  it('preserves JPY zero-decimal minor values', () => {
+    const result = mapFrozenAccountingSnapshot(
+      document({
+        currency: 'JPY',
+        subtotalMinor: 100,
+        taxAmountMinor: 10,
+        totalAmountMinor: 110,
         lineItems: [
           {
-            id: 'line-1',
-            description: 'KWD inclusive service',
+            id: '1',
+            description: 'JPY service',
             quantity: 1,
-            unitPriceMinor: 1125,
-            discountMinor: 125,
-            amountMinor: 950,
-            taxMinor: 50,
+            unitPriceMinor: 100,
+            discountMinor: 0,
+            amountMinor: 100,
+            taxMinor: 10,
             taxComponents: [
               {
                 taxComponentId: 'gst',
                 name: 'GST',
-                percent: '5',
-                taxMinor: 50,
+                percent: '10',
+                taxMinor: 10,
               },
             ],
           },
@@ -122,42 +266,67 @@ describe('mapFrozenAccountingSnapshot', () => {
       }),
       mapping,
     );
-
     expect(result).toMatchObject({
-      currency: 'KWD',
-      subtotal: 0.95,
-      taxAmount: 0.05,
-      totalAmount: 1,
-      quickbooksMapping: { globalTaxCalculation: 'TaxInclusive' },
-      lineItems: [
-        {
-          unitPrice: 1.125,
-          discount: 0.125,
-          amount: 0.95,
-          taxAmount: 0.05,
-          taxInclusiveAmount: 1,
-          taxComponents: [{ rate: '0.05', taxAmount: 0.05 }],
-        },
-      ],
+      currency: 'JPY',
+      subtotal: 100,
+      taxAmount: 10,
+      totalAmount: 110,
+    });
+  });
+
+  it('preserves a valid KWD three-decimal inclusive allocation', () => {
+    const result = mapFrozenAccountingSnapshot(
+      document({
+        currency: 'KWD',
+        lineAmountType: 'inclusive',
+        subtotalMinor: 952,
+        taxAmountMinor: 48,
+        totalAmountMinor: 1000,
+        lineItems: [
+          {
+            id: '1',
+            description: 'KWD service',
+            quantity: 1,
+            unitPriceMinor: 1000,
+            discountMinor: 0,
+            amountMinor: 952,
+            taxMinor: 48,
+            taxComponents: [
+              {
+                taxComponentId: 'gst',
+                name: 'GST',
+                percent: '5',
+                taxMinor: 48,
+              },
+            ],
+          },
+        ],
+      }),
+      mapping,
+    );
+    expect(result.lineItems[0]).toMatchObject({
+      amount: 0.952,
+      taxAmount: 0.048,
+      taxInclusiveAmount: 1,
     });
   });
 
   it('maps a positive credit memo and retains its credited invoice linkage', () => {
-    const result = mapFrozenAccountingSnapshot(
-      snapshot({
+    const result = mapFrozenAccountingSnapshot(exampleA('line'), mapping);
+    const memo = mapFrozenAccountingSnapshot(
+      {
+        ...exampleA('line'),
         kind: 'creditMemo',
         number: 'CM-1',
         creditedInvoiceExternalId: 'qbo-invoice-1',
-      }),
+      },
       mapping,
     );
-
-    expect(result).toMatchObject({
+    expect(result.totalAmount).toBe(1225.68);
+    expect(memo).toMatchObject({
       creditMemoNumber: 'CM-1',
       creditedInvoiceExternalId: 'qbo-invoice-1',
-      subtotal: 100,
-      taxAmount: 10,
-      totalAmount: 110,
+      totalAmount: 1225.68,
     });
   });
 
@@ -166,12 +335,13 @@ describe('mapFrozenAccountingSnapshot', () => {
     await expect(
       pushFrozenCreditMemo(
         { type: 'quickbooks', creditMemos: { push, sync: push } },
-        snapshot({
+        {
+          ...exampleA('line'),
           kind: 'creditMemo',
           creditedInvoiceExternalId: 'qbo-invoice-1',
-          taxAmountMinor: 9,
-          totalAmountMinor: 109,
-        }),
+          taxAmountMinor: 8069,
+          totalAmountMinor: 122_567,
+        },
         mapping,
       ),
     ).rejects.toThrow('Frozen line tax amounts do not equal frozen tax total');
@@ -180,7 +350,7 @@ describe('mapFrozenAccountingSnapshot', () => {
 
   it('refuses guessed component tax-rate references and unsupported providers', () => {
     expect(() =>
-      mapFrozenAccountingSnapshot(snapshot(), {
+      mapFrozenAccountingSnapshot(exampleA('line'), {
         ...mapping,
         components: {},
       }),
@@ -195,10 +365,23 @@ describe('mapFrozenAccountingSnapshot', () => {
   it('refuses header-only provider tax with no frozen component facts', () => {
     expect(() =>
       mapFrozenAccountingSnapshot(
-        snapshot({
+        document({
           providerTaxMinor: 1,
-          taxAmountMinor: 11,
-          totalAmountMinor: 111,
+          taxAmountMinor: 1,
+          totalAmountMinor: 1,
+          subtotalMinor: 0,
+          lineItems: [
+            {
+              id: '1',
+              description: 'Provider tax',
+              quantity: 1,
+              unitPriceMinor: 0,
+              discountMinor: 0,
+              amountMinor: 0,
+              taxMinor: 0,
+              taxComponents: [],
+            },
+          ],
         }),
         mapping,
       ),
