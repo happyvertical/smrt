@@ -45,6 +45,14 @@ describe('summary aggregates', () => {
     expect(sumDataTableColumn(big, amount)).toBeNull();
   });
 
+  it('sums a fractional value followed by an integer', () => {
+    const fractionalFirst = [
+      { id: 'x', item: '', qty: 1.5, amount: 0 },
+      { id: 'y', item: '', qty: 2, amount: 0 },
+    ];
+    expect(sumDataTableColumn(fractionalFirst, qty)).toBe(3.5);
+  });
+
   it('averages numeric values and counts rows', () => {
     expect(averageDataTableColumn(rows, amount)).toBe(33172.5);
     expect(averageDataTableColumn(rows, item)).toBeNull();

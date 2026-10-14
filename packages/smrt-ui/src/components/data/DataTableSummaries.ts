@@ -53,12 +53,16 @@ export function sumDataTableColumn<T>(
 ): number | null {
   let total = 0;
   let seen = false;
+  let integers = true;
   for (const row of rows) {
     const value = toNumber(cellValue(row, column));
     if (value === null) continue;
     seen = true;
+    integers &&= Number.isInteger(value);
     total += value;
-    if (Number.isInteger(value) && !Number.isSafeInteger(total)) return null;
+    if (integers ? !Number.isSafeInteger(total) : !Number.isFinite(total)) {
+      return null;
+    }
   }
   return seen ? total : null;
 }
