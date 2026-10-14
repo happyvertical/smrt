@@ -14,7 +14,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { platform, tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { JobHandle, SmrtJobCollection } from '@happyvertical/smrt-jobs';
 import {
@@ -61,6 +61,7 @@ const filesystemInterleave = vi.hoisted(() => ({
 
 const initializationLockWorkerInterleave = vi.hoisted(() => ({
   releaseFailure: undefined as Error | undefined,
+  lockPaths: [] as string[],
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -110,6 +111,14 @@ vi.mock('node:worker_threads', async (importOriginal) => {
   return {
     ...actual,
     Worker: class extends actual.Worker {
+      constructor(...args: ConstructorParameters<typeof actual.Worker>) {
+        super(...args);
+        const path = (args[1]?.workerData as { path?: unknown } | undefined)
+          ?.path;
+        if (typeof path === 'string') {
+          initializationLockWorkerInterleave.lockPaths.push(path);
+        }
+      }
       override postMessage(value: unknown): void {
         const releaseFailure =
           initializationLockWorkerInterleave.releaseFailure;
@@ -1490,13 +1499,88 @@ describe('local application runtime', () => {
         diagnostics: { runtime: { profile: 'local' } },
       });
       expect(prepareDatabaseCalled).toBe(true);
-      await expect(stat(inNamespaceLockPath)).rejects.toMatchObject({
-        code: 'ENOENT',
-      });
+      // The in-namespace candidate is taken too, for older releases running
+      // inside the same namespace.
+      expect((await stat(inNamespaceLockPath)).isFile()).toBe(true);
     } finally {
       if (legacyHolder.exitCode === null) legacyHolder.kill('SIGKILL');
       await rm(outsideLockRoot, { recursive: true, force: true });
     }
+  });
+
+  it('also waits for an older release in the same remapped namespace (#3877)', async () => {
+    const directories = await localDirectories('lease-uid-map-inner');
+    const currentUid = process.getuid?.() as number;
+    const outsideUid = 4_000_000 + (currentUid % 1000);
+    filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
+    const outsideLockRoot = join(await realpath('/tmp'), `.smrt-${outsideUid}`);
+    // An older release in this namespace locks the in-namespace uid's lease.
+    const innerLockPath = await initializationLockPath(
+      directories.dataDirectory,
+    );
+    await mkdir(dirname(innerLockPath), { recursive: true, mode: 0o700 });
+    await rm(innerLockPath, { force: true });
+    await writeFile(innerLockPath, '', { mode: 0o600 });
+    const legacyHolder = spawn(
+      process.execPath,
+      [
+        '-e',
+        "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(process.argv[1]);db.exec('BEGIN IMMEDIATE');process.stdout.write('ready\\n');setInterval(()=>{},1000);",
+        innerLockPath,
+      ],
+      { stdio: ['ignore', 'pipe', 'inherit'] },
+    );
+    try {
+      await once(legacyHolder.stdout as NodeJS.ReadableStream, 'data');
+      let prepareDatabaseCalled = false;
+      const initializing = initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase: async () => {
+          prepareDatabaseCalled = true;
+        },
+      });
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        expect(prepareDatabaseCalled).toBe(false);
+      } finally {
+        legacyHolder.kill('SIGKILL');
+        await once(legacyHolder, 'exit');
+      }
+      await expect(initializing).resolves.toMatchObject({
+        diagnostics: { runtime: { profile: 'local' } },
+      });
+      expect(prepareDatabaseCalled).toBe(true);
+      // Both legacy candidates were taken.
+      expect(
+        (
+          await stat(
+            join(
+              outsideLockRoot,
+              basename(dirname(innerLockPath)),
+              'initialization.sqlite',
+            ),
+          )
+        ).isFile(),
+      ).toBe(true);
+    } finally {
+      if (legacyHolder.exitCode === null) legacyHolder.kill('SIGKILL');
+      await rm(outsideLockRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('takes exactly one legacy lease under an identity uid map', async () => {
+    const directories = await localDirectories('lease-uid-map-identity');
+    filesystemInterleave.uidMap = '         0          0 4294967295\n';
+    initializationLockWorkerInterleave.lockPaths.length = 0;
+    await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    expect(initializationLockWorkerInterleave.lockPaths).toEqual([
+      besideDataLockPath(directories.dataDirectory),
+      await initializationLockPath(directories.dataDirectory),
+    ]);
   });
 
   it.each([

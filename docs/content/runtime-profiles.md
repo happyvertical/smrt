@@ -131,9 +131,10 @@ also works in user-namespace sandboxes where `/tmp` reads as owned by the
 overflow uid. The legacy per-user `/tmp/.smrt-<uid>` lease is taken afterwards
 so older releases stay excluded; when `/tmp`'s owner is unmapped it is taken
 lock-only (never written, private current-user lock directories and file), and
-it is required when the parent cannot hold a lease. Its `<uid>` is translated
-through `/proc/self/uid_map`, so a remapped namespace contends on the host
-user's lease; an unusable map fails closed. The released SQL trusted-parent boundary validates
+it is required when the parent cannot hold a lease. In a uid-remapping
+namespace both the in-namespace `<uid>` and its `/proc/self/uid_map` host
+mapping are locked, in that order, so older releases inside the namespace and
+on the host both contend; an unusable map fails closed. The released SQL trusted-parent boundary validates
 each lock directory, ancestor chain, leaf, and macOS ACLs before opening it.
 SQLite elects one owner atomically without deleting a lock pathname; process or
 worker death releases the kernel lock without PID/time leases. A read-only

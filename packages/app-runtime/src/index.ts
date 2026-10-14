@@ -1566,13 +1566,15 @@ async function prepareDedicatedRoot(
  * already passed trusted-parent custody preflight, and it is the only
  * location every process sharing the data directory is guaranteed to see,
  * including processes in a user namespace where `/tmp` reads as owned by the
- * overflow uid (#3877). The historical per-user `/tmp/.smrt-<uid>` lease is
- * still taken second, so a process running an older release that knows only
- * that lease stays excluded: through the secure boundary when its ancestry is
+ * overflow uid (#3877). The historical per-user `/tmp/.smrt-<uid>` leases are
+ * still taken afterwards — for the in-namespace uid, then for its host
+ * mapping when that differs — so a process running an older release that
+ * knows only that lease stays excluded, whether it runs in this namespace or
+ * on the host: each through the secure boundary when its ancestry is
  * trusted, otherwise as a lock-only probe that fails closed (see
  * {@link acquireLegacyLeaseWithoutTrustedAncestry}). When the parent cannot
  * hold a lease (not writable by the current user, or a read-only filesystem)
- * the secure `/tmp` lease is required exactly as before.
+ * the secure `/tmp` leases are required exactly as before.
  */
 async function acquireInitializationLock(
   root: string,
@@ -1593,41 +1595,59 @@ async function acquireInitializationLock(
     lockKey,
     currentUid,
   );
-  const temporaryLockRoot = resolve(
-    await realpath('/tmp'),
-    `.smrt-${await legacyLeaseUid(currentUid)}`,
-  );
-  if (besideData === null) {
-    return acquireTemporaryInitializationLease(
-      temporaryLockRoot,
-      lockKey,
-      currentUid,
-    );
-  }
+  // Legacy `/tmp/.smrt-<uid>` candidates, in this fixed order: the
+  // in-namespace uid (what an older release running in this same namespace
+  // locks), then that uid mapped through `/proc/self/uid_map` (what an older
+  // release on the host locks). Identical paths are taken once, so a host
+  // process with an identity map takes exactly the one lease it always did.
+  const canonicalTemporaryRoot = await realpath('/tmp');
+  const legacyLockRoots = [
+    ...new Set([currentUid, await legacyLeaseUid(currentUid)]),
+  ].map((uid) => resolve(canonicalTemporaryRoot, `.smrt-${uid}`));
 
-  const primary = await acquireInitializationDatabaseLease(
-    resolve(besideData, 'initialization.sqlite'),
-    besideData,
-  );
-  let compatibility: LocalInitializationLock | null;
+  const held: LocalInitializationLock[] = [];
   try {
-    compatibility = (await hasTrustedLeaseAncestry(
-      temporaryLockRoot,
-      currentUid,
-    ))
-      ? await acquireTemporaryInitializationLease(
-          temporaryLockRoot,
-          lockKey,
-          currentUid,
-        )
-      : await acquireLegacyLeaseWithoutTrustedAncestry(
-          temporaryLockRoot,
-          lockKey,
-          currentUid,
+    if (besideData === null) {
+      // The parent cannot hold a lease: every legacy lease is required on
+      // the secure boundary, exactly as before.
+      for (const lockRoot of legacyLockRoots) {
+        held.push(
+          await acquireTemporaryInitializationLease(
+            lockRoot,
+            lockKey,
+            currentUid,
+          ),
         );
+      }
+    } else {
+      // Every new process takes the beside-data lease first, which
+      // serializes new processes against each other before any legacy lease
+      // is requested; older releases hold only one legacy lease and wait on
+      // nothing, so the fixed legacy order below cannot deadlock.
+      held.push(
+        await acquireInitializationDatabaseLease(
+          resolve(besideData, 'initialization.sqlite'),
+          besideData,
+        ),
+      );
+      for (const lockRoot of legacyLockRoots) {
+        const legacy = (await hasTrustedLeaseAncestry(lockRoot, currentUid))
+          ? await acquireTemporaryInitializationLease(
+              lockRoot,
+              lockKey,
+              currentUid,
+            )
+          : await acquireLegacyLeaseWithoutTrustedAncestry(
+              lockRoot,
+              lockKey,
+              currentUid,
+            );
+        if (legacy) held.push(legacy);
+      }
+    }
   } catch (error) {
     try {
-      await primary.release();
+      await releaseInitializationLeases(held);
     } catch (releaseError) {
       throw preservePrimaryFailure(
         error,
@@ -1638,40 +1658,47 @@ async function acquireInitializationLock(
     }
     throw error;
   }
-  if (compatibility === null) return primary;
-  const legacy = compatibility;
+  let released = false;
   return {
     release: async () => {
-      let failure: unknown;
-      try {
-        await legacy.release();
-      } catch (error) {
-        failure = error;
-      }
-      try {
-        await primary.release();
-      } catch (error) {
-        if (failure === undefined) throw error;
-        throw preservePrimaryFailure(
-          failure,
-          error,
-          'initializationLockReleaseError',
-          'Both local runtime initialization leases failed to release.',
-        );
-      }
-      if (failure !== undefined) throw failure;
+      if (released) return;
+      released = true;
+      await releaseInitializationLeases(held);
     },
   };
+}
+
+/** Release leases in reverse acquisition order, reporting the first failure. */
+async function releaseInitializationLeases(
+  leases: readonly LocalInitializationLock[],
+): Promise<void> {
+  let failure: unknown;
+  for (const lease of leases.toReversed()) {
+    try {
+      await lease.release();
+    } catch (error) {
+      failure =
+        failure === undefined
+          ? error
+          : preservePrimaryFailure(
+              failure,
+              error,
+              'initializationLockReleaseError',
+              'Several local runtime initialization leases failed to release.',
+            );
+    }
+  }
+  if (failure !== undefined) throw failure;
 }
 
 /**
  * The uid that names the legacy `/tmp/.smrt-<uid>` lease directory.
  *
- * An older release on the host names it after its own uid. Inside a user
- * namespace that remaps the uid (`unshare -Ur` maps host uid 1000 to 0), the
- * in-namespace uid would select a different directory and never contend with
- * the host process, so the current uid is translated through
- * `/proc/self/uid_map` into the parent namespace. Ownership checks keep using
+ * An older release names it after the uid it sees. Inside a user namespace
+ * that remaps the uid (`unshare -Ur` maps host uid 1000 to 0), an older host
+ * process locks the host uid's directory, so the current uid is translated
+ * through `/proc/self/uid_map` into the parent namespace and that lease is
+ * taken in addition to the in-namespace one. Ownership checks keep using
  * the in-namespace uid, which is how the remapped owner reads here. Without
  * the file (non-Linux) the uid is used as is; an unreadable, malformed, or
  * non-covering map fails closed. Only one namespace level is visible.

@@ -19,9 +19,11 @@ Application infrastructure composition for the validated runtime profiles in
   its ancestry is trusted, else lock-only (owner check on unmapped ancestors
   relaxed, nothing written; skipped only if its directory cannot be created
   and no lock file exists). It is required (secure) when the parent cannot hold
-  a lease. Its `<uid>` is the current uid mapped through `/proc/self/uid_map`
-  (identity when absent; unparseable/non-covering fails closed); ownership
-  checks still use the in-namespace uid. Acquire in that order; never make the
+  a lease. Legacy candidates, deduplicated and in this order: the in-namespace
+  uid, then that uid mapped through `/proc/self/uid_map` (identity when absent;
+  unparseable/non-covering fails closed); ownership checks still use the
+  in-namespace uid. The beside-data lease taken first keeps that order
+  deadlock-free. Acquire in that order; never make the
   lease location configurable per process — every process sharing a data root
   must derive the same lease.
 - Application migrations are explicit through `prepareDatabase`; runtime never

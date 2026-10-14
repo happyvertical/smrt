@@ -70,8 +70,12 @@ not group/world writable unless sticky, and the lock directories and file must
 be current-user-owned and private. A held legacy lease therefore makes the new
 process wait (and fail closed after two minutes). Inside a user namespace that
 remaps the uid (for example `unshare -Ur`, where host uid 1000 reads as 0), the
-legacy directory is named after the uid's mapping in `/proc/self/uid_map`, so
-it is the same `/tmp/.smrt-<host uid>` an older host process locks; a map that
+legacy lease is taken for both the in-namespace uid (`/tmp/.smrt-0`, what an
+older release inside the namespace locks) and, in that order, the uid's mapping
+in `/proc/self/uid_map` (`/tmp/.smrt-<host uid>`, what an older host process
+locks); identical paths are taken once, so a host process takes the single
+lease it always did. Every new process takes the beside-data lease first, which
+is what keeps the fixed legacy order deadlock-free. A map that
 cannot be read, parsed, or does not cover the current uid fails closed. Only
 one namespace level is visible, so a doubly nested remap is not translated
 past its parent. The residual rule: when the
