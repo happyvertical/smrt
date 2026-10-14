@@ -6,6 +6,7 @@
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { allocationOwner, allocationTotal } from '../allocation-integrity.js';
+import { calculateAvailableRefund } from '../credit-allocation.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import type { PaymentAllocationOptions } from '../types/index.js';
 
@@ -210,6 +211,13 @@ export class PaymentAllocation extends SmrtObject {
           'PaymentAllocation requires matching tenant, customer and currency',
         );
       }
+      if (
+        (payment.kind === 'refund' && invoice.kind !== 'credit_note') ||
+        (payment.kind === 'payment' && invoice.kind !== 'invoice')
+      )
+        throw new Error(
+          'PaymentAllocation requires payments on invoices and refunds on credit notes',
+        );
       const paymentTotal =
         allocationTotal(
           await allocations.findByPayment(this.paymentId),
@@ -222,8 +230,67 @@ export class PaymentAllocation extends SmrtObject {
         ) + BigInt(this.amount);
       if (paymentTotal > BigInt(payment.amount))
         throw new Error('PaymentAllocation would over-apply payment');
-      if (invoiceTotal > BigInt(invoice.totalAmount))
+      const invoiceCap =
+        invoice.kind === 'invoice'
+          ? invoice.totalAmount - invoice.creditedAmount
+          : invoice.totalAmount;
+      if (invoiceTotal > BigInt(Math.max(0, invoiceCap)))
         throw new Error('PaymentAllocation would over-pay invoice');
+      if (payment.kind === 'refund') {
+        if (payment.status !== 'completed')
+          throw new Error('A refund must be settled before it is allocated');
+        if (!invoice.creditedInvoiceId)
+          throw new Error('Refund credit note has no credited invoice');
+        const source = await invoices.get(
+          { id: invoice.creditedInvoiceId },
+          { cache: false },
+        );
+        if (!source || source.tenantId !== owner)
+          throw new Error('Refund source invoice does not exist in its tenant');
+        if (!source.updated_at)
+          throw new Error('Refund source invoice has no persisted revision');
+        await source.claimRevision(source.updated_at);
+        const credits = (
+          await invoices.list({
+            where: {
+              tenantId: owner,
+              creditedInvoiceId: source.id,
+            },
+          })
+        ).filter(
+          (credit) =>
+            credit.kind === 'credit_note' &&
+            credit.status !== 'draft' &&
+            credit.status !== 'cancelled',
+        );
+        const issuedCredits = credits.reduce(
+          (sum, credit) => sum + credit.totalAmount,
+          0,
+        );
+        let settledRefunds = 0;
+        for (const credit of credits) {
+          if (!credit.id) continue;
+          for (const allocation of await allocations.findByInvoice(credit.id)) {
+            if (allocation.id === this.id) continue;
+            const refund = await payments.get(
+              { id: allocation.paymentId },
+              { cache: false },
+            );
+            if (refund?.kind === 'refund' && refund.status === 'completed')
+              settledRefunds += allocation.amount;
+          }
+        }
+        const availableRefund = calculateAvailableRefund({
+          sourceTotalMinor: source.totalAmount,
+          sourcePaidMinor: source.amountPaid,
+          issuedCreditMinor: issuedCredits,
+          settledRefundMinor: settledRefunds,
+        });
+        if (this.amount > availableRefund)
+          throw new Error(
+            `Refund allocation exceeds available unapplied credit (${availableRefund})`,
+          );
+      }
       return (await super.save()) as this;
     });
   }

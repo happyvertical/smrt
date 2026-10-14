@@ -26,6 +26,7 @@ import {
   type AccountingInvoiceInput,
   type CancelRevenueOptions,
   type InvoiceCollectionMethod,
+  type InvoiceKind,
   type InvoiceOptions,
   InvoiceStatus,
   type RecognizeRevenueOptions,
@@ -106,6 +107,7 @@ const INVOICE_STATUS_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
     InvoiceStatus.VIEWED,
     InvoiceStatus.SENT,
     InvoiceStatus.OVERDUE,
+    InvoiceStatus.CANCELLED,
     InvoiceStatus.WRITTEN_OFF,
   ],
   // Terminal states: no outbound transitions.
@@ -198,6 +200,15 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
   cli: { skipApiCheck: true },
 })
 export class Invoice extends SmrtObject {
+  @field({ description: 'Invoice or customer credit note.' })
+  kind: InvoiceKind = 'invoice';
+
+  @foreignKey('Invoice', { nullable: true })
+  creditedInvoiceId: string | null = null;
+
+  /** Issued credit-note total cached under the source invoice lock. */
+  creditedAmount = 0;
+
   /**
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global invoices
@@ -476,6 +487,11 @@ export class Invoice extends SmrtObject {
 
   constructor(options: InvoiceOptions = {}) {
     super(options);
+    if (options.kind !== undefined) this.kind = options.kind;
+    if (options.creditedInvoiceId !== undefined)
+      this.creditedInvoiceId = options.creditedInvoiceId;
+    if (options.creditedAmount !== undefined)
+      this.creditedAmount = options.creditedAmount;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.customerId !== undefined) this.customerId = options.customerId;
     if (options.contractId !== undefined) this.contractId = options.contractId;
@@ -754,7 +770,7 @@ export class Invoice extends SmrtObject {
    * such thing as sub-cent dust.
    */
   private isFullyPaid(): boolean {
-    return this.amountPaid >= this.totalAmount;
+    return this.amountPaid + this.creditedAmount >= this.totalAmount;
   }
 
   /**
@@ -762,7 +778,7 @@ export class Invoice extends SmrtObject {
    * Derived from {@link isFullyPaid} so the two stay mutually exclusive.
    */
   private isPartiallyPaid(): boolean {
-    return this.amountPaid > 0 && !this.isFullyPaid();
+    return this.amountPaid + this.creditedAmount > 0 && !this.isFullyPaid();
   }
 
   /**
@@ -875,6 +891,7 @@ export class Invoice extends SmrtObject {
         ['providerTaxAmount', this.providerTaxAmount],
         ['totalAmount', this.totalAmount],
         ['amountPaid', this.amountPaid],
+        ['creditedAmount', this.creditedAmount],
       ],
     );
   }
@@ -887,6 +904,7 @@ export class Invoice extends SmrtObject {
       ['providerTaxAmount', this.providerTaxAmount],
       ['totalAmount', this.totalAmount],
       ['amountPaid', this.amountPaid],
+      ['creditedAmount', this.creditedAmount],
     ] as const;
     // Re-checked after the recompute: line-item sums and the allocation total
     // feed these, so integer-ness has to hold for the derived values too — it
@@ -969,7 +987,12 @@ export class Invoice extends SmrtObject {
    * Get remaining amount due
    */
   getAmountDue(): number {
-    return Math.max(0, this.totalAmount - this.amountPaid);
+    return Math.max(0, this.getBalance());
+  }
+
+  /** Signed amount still owed after payments and issued credit notes. */
+  getBalance(): number {
+    return this.totalAmount - this.amountPaid - this.creditedAmount;
   }
 
   // ============================================================================
@@ -1042,7 +1065,7 @@ export class Invoice extends SmrtObject {
         this.paidDate = new Date();
       }
       this.status = InvoiceStatus.PAID;
-    } else if (amountPaid > 0) {
+    } else if (amountPaid + this.creditedAmount > 0) {
       this.status = InvoiceStatus.PARTIAL;
       this.paidDate = null; // Clear paidDate if no longer fully paid
     } else {
@@ -1062,9 +1085,12 @@ export class Invoice extends SmrtObject {
    * Cancel the invoice
    */
   cancel(): void {
-    if (this.isPaid()) {
+    if (
+      (this.kind === 'invoice' && this.isPaid()) ||
+      (this.kind === 'credit_note' && this.amountPaid > 0)
+    ) {
       throw new Error(
-        `Cannot cancel invoice with status '${this.status}'. Paid invoices cannot be cancelled.`,
+        `Cannot cancel ${this.kind} with status '${this.status}' and refunded/paid amount ${this.amountPaid}.`,
       );
     }
     this.status = InvoiceStatus.CANCELLED;

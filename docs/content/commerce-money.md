@@ -175,9 +175,65 @@ does not recalculate its totals or tax rows. This lets issued-document display
 stay faithful to its recorded allocation even when tax configuration later
 changes.
 
+## Persisted Invoice money
+
+The public `Invoice` and `InvoiceLineItem` save paths select their behavior
+from the server-owned `TaxSettings.moneyModel` marker. Missing settings and
+`legacy` retain the existing line-save behavior. `migrating` is a maintenance
+guard: Invoice money writes fail until its owner restores `legacy` or activates
+`v2`. Generated surfaces and ordinary `TaxSettings.save()` calls cannot change
+the marker or its owner token on an existing settings row.
+
+With `moneyModel: 'v2'`, saving a draft Invoice or Invoice line locks and
+reloads the parent and siblings, resolves the current tax inputs, runs the pure
+calculator once, and atomically persists the resolved line values and Invoice
+headers. Invoice tax selection uses the line override when present; otherwise a
+customer exemption selects the exempt code, followed by product, customer, and
+tenant default. `none` mode selects the tenant's out-of-scope code. The
+persisted `InvoiceLineItem.amount` is post-discount amount in the document's
+mode: it is tax-exclusive net for `exclusive`, and includes tax for `inclusive`.
+`taxAmount` stays separate in both cases.
+
+The first transition away from `DRAFT`, or setting `arJournalId`, freezes the
+money document. The Invoice and each line receive the same stable
+`moneySnapshotId`; later lifecycle and payment updates retain it. Header or
+line money changes, moving a line, adding a line, and deleting a line then fail
+with `FROZEN_DOCUMENT`. The snapshots retain document settings, tax codes and
+components, seller registrations, party tax identity, and the line's product,
+pricing, discount, and source details, so later tax configuration changes do
+not rewrite an issued Invoice.
+
+The aggregate also replaces derived, read-only per-code/component tax rows.
+They retain code and component labels, exact percent, liability account, taxable
+minor units, and tax minor units. A genuinely unassigned zero-tax line may have
+no tax-code or component identity. Provider-calculated tax remains the separate
+Invoice `providerTaxAmount`; it contributes to header `taxAmount` and
+`totalAmount`, but never creates an application tax code or component.
+
+`InvoiceLineItemCollection.getTotalForInvoice()` remains a public compatibility
+helper that sums stored line `amount` values. It is not the Invoice amount due
+in v2: use the persisted `Invoice.totalAmount`, which includes resolved tax and
+`providerTaxAmount`, for the document total.
+
+Credit notes are `Invoice` rows with `kind: 'credit_note'` and a frozen
+`creditedInvoiceId`. They store positive document totals; reports, sync, and
+posting apply the credit direction once from `kind`. Targeted lines use the
+issued source line's price, discount, tax-code, component, and account
+snapshots, so later rate changes cannot alter the reversal. Partial quantity
+credits prorate flat discounts, while the final credit across every remaining
+source line consumes the exact stored document-tax residual. Free-form credit
+lines require an explicit tax code.
+
+Use `previewInvoiceMoney()` to calculate a proposed draft overlay without
+writing. It requires the active tenant and rejects frozen documents. Use
+`getInvoiceMoneyFacts()` when a tool or integration needs the authoritative
+stored header, line snapshots, stable `moneySnapshotId`, and `DocumentTax`
+rows without recomputation.
+
 ## Not part of this guide
 
-This guide does not define Invoice persistence or migrations, issued-document
-credit-note posting, reports, or currency conversion. Those application
-contracts are released separately. The external documentation follow-up is
-tracked in [s-m-r-t.dev #309](https://github.com/happyvertical/s-m-r-t.dev/issues/309).
+This guide does not define the tenant migration or marker-transition procedure,
+Contract money persistence, reports, or currency conversion. Those application
+contracts are released separately. The
+external documentation follow-up is tracked in
+[s-m-r-t.dev #309](https://github.com/happyvertical/s-m-r-t.dev/issues/309).

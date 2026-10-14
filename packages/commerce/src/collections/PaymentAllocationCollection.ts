@@ -105,6 +105,35 @@ export class PaymentAllocationCollection extends SmrtCollection<PaymentAllocatio
     );
   }
 
+  /** Remove one allocation atomically and rederive its invoice/credit status. */
+  async removeAllocation(id: string): Promise<void> {
+    const allocation = await this.get({ id }, { cache: false });
+    if (!allocation) return;
+    const { PaymentCollection } = await import('./PaymentCollection.js');
+    const { InvoiceCollection } = await import('./InvoiceCollection.js');
+    const payment = await (await PaymentCollection.create({ db: this.db })).get(
+      { id: allocation.paymentId },
+      { cache: false },
+    );
+    if (!payment) throw new Error('Allocation payment does not exist');
+    await payment.withTransaction(async () => {
+      const rows = await PaymentAllocationCollection.create({ db: payment.db });
+      const current = await rows.get({ id }, { cache: false });
+      if (!current) return;
+      const invoices = await InvoiceCollection.create({ db: payment.db });
+      const invoice = await invoices.get(
+        { id: current.invoiceId },
+        { cache: false },
+      );
+      if (!invoice) throw new Error('Allocation invoice does not exist');
+      await current.delete();
+      invoice.updatePaymentStatus(
+        await rows.getTotalAllocatedToInvoice(current.invoiceId),
+      );
+      await invoice.save();
+    });
+  }
+
   /**
    * Find allocations by payment
    *

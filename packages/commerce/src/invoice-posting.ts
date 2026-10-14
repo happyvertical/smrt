@@ -22,7 +22,11 @@ import {
 } from './types/index.js';
 
 type PostingMetadata = {
-  kind: 'invoice-revenue' | 'invoice-cancellation-reversal';
+  kind:
+    | 'invoice-revenue'
+    | 'credit-note-revenue'
+    | 'invoice-cancellation-reversal'
+    | 'credit-note-cancellation-reversal';
   invoiceId: string;
   moneySnapshotId: string;
   originalJournalId?: string;
@@ -215,7 +219,7 @@ export async function recognizeInvoiceRevenueV2(
       ).findByInvoice(invoiceId);
       const taxes = await (
         await DocumentTaxCollection.create({ db: tx })
-      ).findByDocument(tenantId, 'invoice', invoiceId);
+      ).findByDocument(tenantId, invoice.kind, invoiceId);
       const built = buildRevenueJournalEntries(
         {
           id: invoiceId,
@@ -246,6 +250,7 @@ export async function recognizeInvoiceRevenueV2(
           revenueAccountId: options.revenueAccountId,
           taxAccountId: options.taxAccountId,
           bookCurrency: currency,
+          direction: invoice.kind === 'credit_note' ? -1 : 1,
         },
       );
       await validateAccounts(
@@ -253,14 +258,18 @@ export async function recognizeInvoiceRevenueV2(
         tenantId,
         built.entries.map((entry) => entry.accountId),
       );
+      const postingKind =
+        invoice.kind === 'credit_note'
+          ? ('credit-note-revenue' as const)
+          : ('invoice-revenue' as const);
       const journalId = await deterministicId([
-        'invoice-revenue',
+        postingKind,
         tenantId,
         invoiceId,
         invoice.moneySnapshotId,
       ]);
       const metadata: PostingMetadata = {
-        kind: 'invoice-revenue',
+        kind: postingKind,
         invoiceId,
         moneySnapshotId: invoice.moneySnapshotId,
         warnings: built.warnings,
@@ -268,8 +277,8 @@ export async function recognizeInvoiceRevenueV2(
       const journal = await createOrReadPostedJournal(tx, {
         id: journalId,
         tenantId,
-        sourceRef: `invoice-revenue:${invoiceId}:${invoice.moneySnapshotId}`,
-        description: `Revenue: Invoice ${invoice.invoiceNumber}`,
+        sourceRef: `${postingKind}:${invoiceId}:${invoice.moneySnapshotId}`,
+        description: `${invoice.kind === 'credit_note' ? 'Credit note' : 'Revenue'}: Invoice ${invoice.invoiceNumber}`,
         date: invoice.issueDate,
         metadata,
         entries: built.entries,
@@ -343,10 +352,13 @@ export async function cancelInvoiceWithRevenueReversal(
           'CURRENCY_MISMATCH',
           `Invoice currency ${invoice.currency} does not match book currency ${currency}`,
         );
-      if (invoice.isPaid())
+      if (
+        (invoice.kind === 'invoice' && invoice.isPaid()) ||
+        (invoice.kind === 'credit_note' && invoice.amountPaid > 0)
+      )
         throw new MoneyValidationError(
           'FROZEN_DOCUMENT',
-          'Paid invoices cannot be cancelled',
+          'Paid invoices and refunded credit notes cannot be cancelled',
         );
       if (!invoice.arJournalId)
         throw new MoneyValidationError(
@@ -358,6 +370,10 @@ export async function cancelInvoiceWithRevenueReversal(
         'Invoice money snapshot ID',
       );
       const originalJournalId = invoice.arJournalId;
+      const originalKind =
+        invoice.kind === 'credit_note'
+          ? ('credit-note-revenue' as const)
+          : ('invoice-revenue' as const);
       const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
       const journals = await JournalCollection.create({ db: tx });
       const original = await journals.get(
@@ -368,9 +384,9 @@ export async function cancelInvoiceWithRevenueReversal(
         original?.status !== 'posted' ||
         original.tenantId !== tenantId ||
         original.sourceModule !== 'smrt-commerce' ||
-        original.sourceRef !== `invoice-revenue:${invoiceId}:${snapshotId}` ||
+        original.sourceRef !== `${originalKind}:${invoiceId}:${snapshotId}` ||
         !metadataMatches(original, {
-          kind: 'invoice-revenue',
+          kind: originalKind,
           invoiceId,
           moneySnapshotId: snapshotId,
         })
@@ -386,15 +402,19 @@ export async function cancelInvoiceWithRevenueReversal(
         tenantId,
         reversalEntries.map((entry) => entry.accountId),
       );
+      const reversalKind =
+        invoice.kind === 'credit_note'
+          ? ('credit-note-cancellation-reversal' as const)
+          : ('invoice-cancellation-reversal' as const);
       const reversalId = await deterministicId([
-        'invoice-cancellation-reversal',
+        reversalKind,
         tenantId,
         invoiceId,
         snapshotId,
         originalJournalId,
       ]);
       const metadata: PostingMetadata = {
-        kind: 'invoice-cancellation-reversal',
+        kind: reversalKind,
         invoiceId,
         moneySnapshotId: snapshotId,
         originalJournalId,

@@ -24,6 +24,7 @@ import {
 } from '../svelte/invoices/calculations.js';
 import type {
   AccountingLineItemInput,
+  InvoiceCreditCalculationBasis,
   InvoiceLineEditorState,
   InvoiceLineItemOptions,
   InvoiceTaxComponentSnapshot,
@@ -92,6 +93,44 @@ export class InvoiceLineItem extends SmrtObject {
   @field({ description: 'The invoice this line belongs to.' })
   @foreignKey('Invoice')
   invoiceId: string = '';
+
+  @foreignKey('InvoiceLineItem', { nullable: true })
+  creditedLineId: string | null = null;
+
+  @field({
+    description:
+      'Frozen source basis used to cap and reproduce an issued credit line.',
+  })
+  creditCalculationBasisJson = '';
+
+  get creditCalculationBasis(): InvoiceCreditCalculationBasis | null {
+    try {
+      const value: unknown = JSON.parse(this.creditCalculationBasisJson);
+      if (!value || typeof value !== 'object' || !('kind' in value))
+        return null;
+      const basis = value as Record<string, unknown>;
+      if (
+        (basis.kind !== 'quantity' && basis.kind !== 'net_amount') ||
+        typeof basis.sourceQuantity !== 'string' ||
+        !Number.isSafeInteger(basis.sourceUnitPrice) ||
+        (basis.sourceDiscountType !== 'none' &&
+          basis.sourceDiscountType !== 'percent' &&
+          basis.sourceDiscountType !== 'amount') ||
+        typeof basis.sourceDiscountRate !== 'string' ||
+        !Number.isSafeInteger(basis.sourceDiscountMinor) ||
+        (basis.kind === 'quantity' && typeof basis.quantity !== 'string') ||
+        (basis.kind === 'net_amount' && !Number.isSafeInteger(basis.netMinor))
+      )
+        return null;
+      return basis as unknown as InvoiceCreditCalculationBasis;
+    } catch {
+      return null;
+    }
+  }
+
+  set creditCalculationBasis(value: InvoiceCreditCalculationBasis | null) {
+    this.creditCalculationBasisJson = value ? JSON.stringify(value) : '';
+  }
 
   /**
    * Item description
@@ -269,6 +308,14 @@ export class InvoiceLineItem extends SmrtObject {
       this.invoiceEditorState = structuredClone(options.invoiceEditorState);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.invoiceId !== undefined) this.invoiceId = options.invoiceId;
+    if (options.creditedLineId !== undefined)
+      this.creditedLineId = options.creditedLineId;
+    if (options.creditCalculationBasisJson !== undefined)
+      this.creditCalculationBasisJson = options.creditCalculationBasisJson;
+    if (options.creditCalculationBasis !== undefined)
+      this.creditCalculationBasis = structuredClone(
+        options.creditCalculationBasis,
+      );
     if (options.description !== undefined)
       this.description = options.description;
     if (options.sku !== undefined) this.sku = options.sku;
