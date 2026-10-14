@@ -70,9 +70,15 @@ export async function beginSegment(
     where: { tenantId: punch.tenantId, punchId: punch.id },
   });
   if (breaks.some((b) => !b.endedAt))
-    throw new AttendanceConflict('Cannot work during an open break.');
+    throw new AttendanceConflict(
+      'Cannot work during an open break.',
+      'during_break',
+    );
   if (await openSegment(tx, punch))
-    throw new AttendanceConflict('A work segment is already open.');
+    throw new AttendanceConflict(
+      'A work segment is already open.',
+      'work_open',
+    );
   return tx.segments.create({
     tenantId: punch.tenantId,
     punchId: punch.id ?? undefined,
@@ -96,7 +102,10 @@ export async function replaceSegment(
 ): Promise<AttendanceSegment> {
   validateAttendanceWork(work);
   if (!(await closeOpenSegment(tx, punch, at, 'switch')))
-    throw new AttendanceConflict('No open work segment to switch.');
+    throw new AttendanceConflict(
+      'No open work segment to switch.',
+      'no_open_work',
+    );
   return beginSegment(tx, punch, at, work);
 }
 
@@ -107,7 +116,8 @@ export async function endSegment(
   at: Date,
 ): Promise<AttendanceSegment> {
   const segment = await closeOpenSegment(tx, punch, at, 'stop');
-  if (!segment) throw new AttendanceConflict('No open work segment.');
+  if (!segment)
+    throw new AttendanceConflict('No open work segment.', 'no_open_work');
   return segment;
 }
 
@@ -123,6 +133,9 @@ export async function continueSegment(
   const all = await listSegments(tx, punch);
   const last = all[all.length - 1];
   if (last?.closedReason !== 'break')
-    throw new AttendanceConflict('No work interrupted by a break to resume.');
+    throw new AttendanceConflict(
+      'No work interrupted by a break to resume.',
+      'no_resumable_work',
+    );
   return beginSegment(tx, punch, at, last);
 }

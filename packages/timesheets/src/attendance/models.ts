@@ -277,6 +277,8 @@ export class AttendanceSegment extends SmrtObject {
   durationSeconds = 0;
   /** `stop`, `switch`, `break` or `punchOut` once closed; `''` while open. */
   closedReason: AttendanceSegmentCloseReason = '';
+  /** Set when a replay time policy asked for review of this segment's boundary. */
+  reviewRequired = false;
   @field({ required: true }) openSlot = '';
 
   override async save(): Promise<this> {
@@ -373,7 +375,14 @@ export class AttendanceSegment extends SmrtObject {
 export interface AttendanceReplayOutcome {
   clientId: string;
   punchId?: string;
+  /** Work segment a replayed work action started, switched to, stopped or resumed. */
+  segmentId?: string;
+  /** Effective time stored when a `resolveAt` policy changed it (ISO 8601). */
+  resolvedAt?: string;
+  /** Refusal message (with `code`); present exactly when the tap was refused. */
   error?: string;
+  /** Typed refusal reason; see `AttendanceRefusalCode`. */
+  code?: string;
 }
 
 function validReplayOutcome(value: unknown): value is AttendanceReplayOutcome {
@@ -382,6 +391,13 @@ function validReplayOutcome(value: unknown): value is AttendanceReplayOutcome {
   return (
     typeof result.clientId === 'string' &&
     result.clientId.length > 0 &&
+    (result.code === undefined ||
+      (typeof result.code === 'string' &&
+        result.code.length > 0 &&
+        result.error !== undefined)) &&
+    (result.segmentId === undefined || typeof result.segmentId === 'string') &&
+    (result.resolvedAt === undefined ||
+      typeof result.resolvedAt === 'string') &&
     ((typeof result.punchId === 'string' &&
       result.punchId.length > 0 &&
       result.error === undefined) ||
