@@ -98,6 +98,19 @@ const INITIALIZATION_LOCK_WORKER = `
   let transaction;
   (async () => {
     try {
+      if (workerData.lockOnly) {
+        // Legacy /tmp lease probe (#3877): the same BEGIN IMMEDIATE lock an
+        // older release's secure acquisition takes, on a pre-validated,
+        // already-existing, never-written lock file.
+        const { DatabaseSync } = require('node:sqlite');
+        const lockDatabase = new DatabaseSync(workerData.path, {
+          timeout: workerData.timeout,
+        });
+        database = { close: async () => lockDatabase.close() };
+        lockDatabase.exec('BEGIN IMMEDIATE');
+        transaction = { rollback: async () => lockDatabase.exec('ROLLBACK') };
+        parentPort.postMessage({ type: 'acquired' });
+      } else {
       const { getDatabase } = await import(workerData.sqlModuleUrl);
       database = await getDatabase({
         type: 'sqlite',
@@ -115,6 +128,7 @@ const INITIALIZATION_LOCK_WORKER = `
       await database.query('PRAGMA busy_timeout = ' + workerData.timeout);
       transaction = await database.beginTransaction();
       parentPort.postMessage({ type: 'acquired' });
+      }
     } catch (error) {
       try { await database?.close?.(); } catch {}
       parentPort.postMessage({ type: 'error', message: String(error) });
@@ -1551,10 +1565,12 @@ async function prepareDedicatedRoot(
  * location every process sharing the data directory is guaranteed to see,
  * including processes in a user namespace where `/tmp` reads as owned by the
  * overflow uid (#3877). The historical per-user `/tmp/.smrt-<uid>` lease is
- * still taken, in that order, whenever its ancestry is trusted, so a process
- * running an older release that knows only the `/tmp` lease stays excluded.
- * When the parent cannot hold a lease (not writable by the current user, or a
- * read-only filesystem) the `/tmp` lease is required exactly as before.
+ * still taken second, so a process running an older release that knows only
+ * that lease stays excluded: through the secure boundary when its ancestry is
+ * trusted, otherwise as a lock-only probe that fails closed (see
+ * {@link acquireLegacyLeaseWithoutTrustedAncestry}). When the parent cannot
+ * hold a lease (not writable by the current user, or a read-only filesystem)
+ * the secure `/tmp` lease is required exactly as before.
  */
 async function acquireInitializationLock(
   root: string,
@@ -1591,16 +1607,22 @@ async function acquireInitializationLock(
     resolve(besideData, 'initialization.sqlite'),
     besideData,
   );
-  if (!(await hasTrustedLeaseAncestry(temporaryLockRoot, currentUid))) {
-    return primary;
-  }
-  let compatibility: LocalInitializationLock;
+  let compatibility: LocalInitializationLock | null;
   try {
-    compatibility = await acquireTemporaryInitializationLease(
+    compatibility = (await hasTrustedLeaseAncestry(
       temporaryLockRoot,
-      lockKey,
       currentUid,
-    );
+    ))
+      ? await acquireTemporaryInitializationLease(
+          temporaryLockRoot,
+          lockKey,
+          currentUid,
+        )
+      : await acquireLegacyLeaseWithoutTrustedAncestry(
+          temporaryLockRoot,
+          lockKey,
+          currentUid,
+        );
   } catch (error) {
     try {
       await primary.release();
@@ -1614,11 +1636,13 @@ async function acquireInitializationLock(
     }
     throw error;
   }
+  if (compatibility === null) return primary;
+  const legacy = compatibility;
   return {
     release: async () => {
       let failure: unknown;
       try {
-        await compatibility.release();
+        await legacy.release();
       } catch (error) {
         failure = error;
       }
@@ -1703,10 +1727,96 @@ async function assertPrivateLeaseDirectory(
 }
 
 /**
+ * Take the legacy `/tmp` lease when `/tmp` fails the secure ancestry rule
+ * only because its owner is not mapped into this user namespace (#3877).
+ *
+ * An older release on the host takes nothing but this lease, so skipping it
+ * would let both initialize one data root at once. The lock database is only
+ * ever locked, never written or read for content, so this path relaxes the
+ * ancestor *owner* check alone: every ancestor must still be a real directory
+ * that is not group/world writable unless sticky, and the per-user lock
+ * directory, key directory, and lock file must be current-user-owned and
+ * private, exactly as the secure path requires. Returns `null` only when the
+ * lock directory cannot be created at all (not writable, read-only), where no
+ * process sharing this view of `/tmp` can hold the lease either.
+ */
+async function acquireLegacyLeaseWithoutTrustedAncestry(
+  lockRoot: string,
+  lockKey: string,
+  currentUid: number,
+): Promise<LocalInitializationLock | null> {
+  for (const component of absolutePathComponents(resolve(lockRoot, '..'))) {
+    const details = await lstat(component);
+    if (
+      details.isSymbolicLink() ||
+      !details.isDirectory() ||
+      ((details.mode & 0o022) !== 0 && (details.mode & 0o1000) === 0)
+    ) {
+      throw unsafeFilesystemEntry(
+        `Legacy local runtime lock ancestry permits replacement by another principal: ${component}`,
+      );
+    }
+  }
+  const custodyRoot = resolve(lockRoot, lockKey);
+  const path = resolve(custodyRoot, 'initialization.sqlite');
+  try {
+    await mkdir(lockRoot, { mode: 0o700 });
+  } catch (error) {
+    if (isLeaseLocationUnavailable(error)) {
+      try {
+        await lstat(path);
+      } catch (probeError) {
+        if (isMissingFile(probeError)) return null;
+        throw probeError;
+      }
+      // A legacy lease file exists but this process cannot lock it: fail
+      // closed rather than risk overlapping an older live initializer.
+      throw error;
+    }
+    if (!isFileAlreadyExists(error)) throw error;
+  }
+  await assertPrivateLeaseDirectory(lockRoot, currentUid);
+  try {
+    await mkdir(custodyRoot, { mode: 0o700 });
+  } catch (error) {
+    if (!isFileAlreadyExists(error)) throw error;
+  }
+  await assertPrivateLeaseDirectory(custodyRoot, currentUid);
+  let created: FileHandle | undefined;
+  try {
+    created = await open(
+      path,
+      constants.O_RDWR |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+  } catch (error) {
+    if (!isFileAlreadyExists(error)) throw error;
+  } finally {
+    await created?.close();
+  }
+  const leaf = await lstat(path);
+  if (
+    leaf.isSymbolicLink() ||
+    !leaf.isFile() ||
+    leaf.uid !== currentUid ||
+    (leaf.mode & 0o022) !== 0
+  ) {
+    throw unsafeFilesystemEntry(
+      `Legacy local runtime lock file must be a current-user-owned private file: ${path}`,
+    );
+  }
+  return acquireInitializationDatabaseLease(path, custodyRoot, true);
+}
+
+/**
  * Whether every existing ancestor of `path` meets the secure SQLite ancestry
  * rule (owned by the current user or root; group/world writable only when
  * sticky). In a user namespace an unmapped owner reads as the overflow uid,
- * so the shared `/tmp` fails this and its compatibility lease is skipped.
+ * so the shared `/tmp` fails this and the legacy lease is taken through
+ * {@link acquireLegacyLeaseWithoutTrustedAncestry} instead.
  */
 async function hasTrustedLeaseAncestry(
   path: string,
@@ -1734,12 +1844,14 @@ function isLeaseLocationUnavailable(error: unknown): boolean {
 async function acquireInitializationDatabaseLease(
   path: string,
   custodyRoot: string,
+  lockOnly = false,
 ): Promise<LocalInitializationLock> {
   const worker = new Worker(INITIALIZATION_LOCK_WORKER, {
     eval: true,
     workerData: {
       path,
       custodyRoot,
+      lockOnly,
       timeout: INITIALIZATION_LOCK_TIMEOUT_MS,
       sqlModuleUrl: import.meta.resolve('@happyvertical/sql'),
     },

@@ -15,8 +15,11 @@ Application infrastructure composition for the validated runtime profiles in
   runtime establishes its user-owned mode-0700 data root.
 - The initialization lease lives beside the data root
   (`<parent>/.smrt-lease-<key>/initialization.sqlite`, #3877), then the legacy
-  `/tmp/.smrt-<uid>/<key>` lease when its ancestry is trusted (required only
-  when the parent cannot hold a lease). Acquire in that order; never make the
+  `/tmp/.smrt-<uid>/<key>` lease, which older releases take alone: secure when
+  its ancestry is trusted, else lock-only (owner check on unmapped ancestors
+  relaxed, nothing written; skipped only if its directory cannot be created
+  and no lock file exists). It is required (secure) when the parent cannot hold
+  a lease. Acquire in that order; never make the
   lease location configurable per process — every process sharing a data root
   must derive the same lease.
 - Application migrations are explicit through `prepareDatabase`; runtime never

@@ -62,9 +62,17 @@ parent has already passed the custody preflight and is the one location every
 process sharing the data directory sees, so the lease also works inside a user
 namespace (agent sandboxes, rootless containers) where `/tmp` reads as owned by
 the overflow uid. The historical per-user `/tmp/.smrt-<uid>/<key>` lease is
-still taken afterwards whenever its ancestry is trusted, so a process running an
-older release stays excluded; when the parent is not writable by the current
-user (or is read-only) the `/tmp` lease is required instead, as before. The
+still taken afterwards, so a process running an older release (which takes
+only that lease) stays excluded. When `/tmp` fails the ancestry owner check
+because its owner is unmapped, the legacy lease is taken lock-only: the lock
+file is never written, every ancestor must still be a real directory that is
+not group/world writable unless sticky, and the lock directories and file must
+be current-user-owned and private. A held legacy lease therefore makes the new
+process wait (and fail closed after two minutes). The residual rule: when the
+legacy lock directory cannot be created at all (`/tmp` not writable or
+read-only in that view) and no legacy lock file exists, the legacy lease is
+skipped. When the data root's parent is not writable by the current user (or is
+read-only) the secure `/tmp` lease is required instead, as before. The
 released `@happyvertical/sql`
 trusted-parent boundary validates each lease directory, its ancestors, and the lock
 leaf for ownership, write permissions, static links, and macOS ACLs before it

@@ -1373,9 +1373,54 @@ describe('local application runtime', () => {
     expect(
       (await stat(besideDataLockPath(directories.dataDirectory))).isFile(),
     ).toBe(true);
-    await expect(stat(temporaryLockPath)).rejects.toMatchObject({
-      code: 'ENOENT',
+    // The legacy lease is still taken, lock-only, so older releases on the
+    // host stay excluded.
+    expect((await stat(temporaryLockPath)).mode & 0o777).toBe(0o600);
+  });
+
+  it('waits for a live legacy /tmp lease even when /tmp reads as owned by an unmapped user (#3877)', async () => {
+    const directories = await localDirectories('lease-userns-legacy');
+    const temporaryLockPath = await initializationLockPath(
+      directories.dataDirectory,
+    );
+    const canonicalTemporaryRoot = await realpath('/tmp');
+    filesystemInterleave.lstatOwner = (path) =>
+      path === canonicalTemporaryRoot ? 65534 : undefined;
+    await mkdir(dirname(temporaryLockPath), { recursive: true, mode: 0o700 });
+    await rm(temporaryLockPath, { force: true });
+    await writeFile(temporaryLockPath, '', { mode: 0o600 });
+    // An older release holds the legacy lease: BEGIN IMMEDIATE, as its
+    // secure node:sqlite acquisition does.
+    const legacyHolder = spawn(
+      process.execPath,
+      [
+        '-e',
+        "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(process.argv[1]);db.exec('BEGIN IMMEDIATE');process.stdout.write('ready\\n');setInterval(()=>{},1000);",
+        temporaryLockPath,
+      ],
+      { stdio: ['ignore', 'pipe', 'inherit'] },
+    );
+    await once(legacyHolder.stdout as NodeJS.ReadableStream, 'data');
+
+    let prepareDatabaseCalled = false;
+    const initializing = initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+      prepareDatabase: async () => {
+        prepareDatabaseCalled = true;
+      },
     });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      expect(prepareDatabaseCalled).toBe(false);
+    } finally {
+      legacyHolder.kill('SIGKILL');
+      await once(legacyHolder, 'exit');
+    }
+    await expect(initializing).resolves.toMatchObject({
+      diagnostics: { runtime: { profile: 'local' } },
+    });
+    expect(prepareDatabaseCalled).toBe(true);
   });
 
   it.skipIf(process.getuid?.() === 0)(
