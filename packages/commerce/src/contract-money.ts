@@ -101,8 +101,21 @@ function assertUnchanged<T extends object>(
 function isFrozen(contract: Contract): boolean {
   return contract.status !== ContractStatus.DRAFT || !!contract.moneySnapshotId;
 }
+/** Classify the STI branch from its public party field, including descendants. */
+export function classifyContractPurchase(contract: Contract): boolean {
+  return 'vendorId' in contract;
+}
+
+/** Frozen Contract facts are reportable after draft except for cancelled rows. */
+export function isContractSnapshotReportEligible(contract: Contract): boolean {
+  return (
+    contract.status !== ContractStatus.DRAFT &&
+    contract.status !== ContractStatus.CANCELLED
+  );
+}
+
 function direction(contract: Contract): 'sales' | 'purchases' {
-  return 'vendorId' in contract ? 'purchases' : 'sales';
+  return classifyContractPurchase(contract) ? 'purchases' : 'sales';
 }
 function discount(line: ContractLineItem) {
   if (line.discountType === 'percent')
