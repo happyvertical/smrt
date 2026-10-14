@@ -25,7 +25,6 @@ import {
 import type { DocumentTax } from './models/DocumentTax.js';
 import type { Invoice } from './models/Invoice.js';
 import { InvoiceLineItem } from './models/InvoiceLineItem.js';
-import type { TaxCode } from './models/TaxCode.js';
 import type { TaxSettings } from './models/TaxSettings.js';
 import {
   calculateMoneyDocument,
@@ -425,8 +424,7 @@ async function prepareCreditLines(
     );
   const sourceInvoice = await findInvoice(db, invoice.creditedInvoiceId);
   if (
-    !sourceInvoice ||
-    sourceInvoice.kind !== 'invoice' ||
+    sourceInvoice?.kind !== 'invoice' ||
     sourceInvoice.tenantId !== invoice.tenantId ||
     sourceInvoice.status === InvoiceStatus.DRAFT ||
     sourceInvoice.status === InvoiceStatus.CANCELLED ||
@@ -817,79 +815,43 @@ async function recomputeInvoiceAggregate(
   if (credit?.exhaustsDocument) {
     const resultById = new Map(calculated.lines.map((row) => [row.id, row]));
     const targeted = lines.filter((line) => !!line.creditedLineId);
-    const compare = (left: InvoiceLineItem, right: InvoiceLineItem) =>
-      String(left.id) < String(right.id)
-        ? -1
-        : String(left.id) > String(right.id)
-          ? 1
-          : 0;
-    const sourceCodeIds = [
-      ...new Set(credit.sourceTaxes.map((row) => row.taxCodeId)),
-    ];
-    for (const codeId of sourceCodeIds) {
-      const sourceRows = credit.sourceTaxes.filter(
-        (row) => row.taxCodeId === codeId,
+    for (const line of targeted) {
+      const source = credit.sourceByLineId.get(
+        requireId(line.creditedLineId, 'Credited line'),
       );
-      const desiredNet = sourceRows[0]?.taxableMinor ?? 0;
-      const priorForCode = credit.issuedLines.filter(
-        (line) => line.taxCodeId === codeId,
+      const result = resultById.get(requireId(line.id, 'Credit line'));
+      if (!source || !result) continue;
+      const prior = credit.issuedLines.filter(
+        (candidate) => candidate.creditedLineId === source.id,
       );
-      const priorNet = priorForCode.reduce((sum, line) => {
-        const parent = credit.issuedParentById.get(line.invoiceId);
-        return sum + (parent ? lineNet(line, parent) : 0);
+      const priorNet = prior.reduce((sum, candidate) => {
+        const parent = credit.issuedParentById.get(candidate.invoiceId);
+        return sum + (parent ? lineNet(candidate, parent) : 0);
       }, 0);
-      const currentLines = targeted
-        .filter(
-          (line) =>
-            resolvedCodes.get(requireId(line.id, 'Credit line'))?.id === codeId,
-        )
-        .sort(compare);
-      const currentResults = currentLines
-        .map((line) => resultById.get(requireId(line.id, 'Credit line')))
-        .filter((row): row is NonNullable<typeof row> => !!row);
-      if (!currentResults.length) continue;
-      const currentNet = currentResults.reduce(
-        (sum, row) => sum + row.netMinor,
-        0,
-      );
-      const last = currentResults[currentResults.length - 1];
-      const netDelta = desiredNet - priorNet - currentNet;
-      last.netMinor += netDelta;
-      last.amountMinor += netDelta;
-      for (const sourceRow of sourceRows) {
-        if (!sourceRow.taxComponentId) continue;
-        const priorTax = priorForCode.reduce(
-          (sum, line) =>
-            sum +
-            (line.taxComponents.find(
-              (part) => part.taxComponentId === sourceRow.taxComponentId,
-            )?.taxMinor ?? 0),
-          0,
-        );
-        const eligible = currentResults.filter((row) =>
-          row.components.some(
-            (part) => part.taxComponentId === sourceRow.taxComponentId,
-          ),
-        );
-        if (!eligible.length) continue;
-        const currentTax = eligible.reduce(
-          (sum, row) =>
-            sum +
-            (row.components.find(
-              (part) => part.taxComponentId === sourceRow.taxComponentId,
-            )?.taxMinor ?? 0),
-          0,
-        );
-        const taxTarget = eligible[eligible.length - 1];
-        const component = taxTarget.components.find(
-          (part) => part.taxComponentId === sourceRow.taxComponentId,
+      const desiredNet = lineNet(source, credit.sourceInvoice) - priorNet;
+      const netDelta = desiredNet - result.netMinor;
+      result.netMinor = desiredNet;
+      result.amountMinor += netDelta;
+      for (const sourceComponent of source.taxComponents) {
+        const component = result.components.find(
+          (candidate) =>
+            candidate.taxComponentId === sourceComponent.taxComponentId,
         );
         if (!component) continue;
-        const taxDelta = sourceRow.taxMinor - priorTax - currentTax;
-        component.taxMinor += taxDelta;
-        taxTarget.taxMinor += taxDelta;
+        const priorTax = prior.reduce(
+          (sum, candidate) =>
+            sum +
+            (candidate.taxComponents.find(
+              (part) => part.taxComponentId === sourceComponent.taxComponentId,
+            )?.taxMinor ?? 0),
+          0,
+        );
+        const desiredTax = sourceComponent.taxMinor - priorTax;
+        const taxDelta = desiredTax - component.taxMinor;
+        component.taxMinor = desiredTax;
+        result.taxMinor += taxDelta;
         if (invoice.lineAmountType === 'inclusive')
-          taxTarget.amountMinor += taxDelta;
+          result.amountMinor += taxDelta;
       }
     }
     const rebuilt = new Map<
