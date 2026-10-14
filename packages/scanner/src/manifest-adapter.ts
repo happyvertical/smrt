@@ -1043,6 +1043,9 @@ export class ManifestAdapter {
         // runtime decorator.
         'onDelete',
         'onUpdate',
+        // #3718: `role: 'items'` marks the declaring model as the target's
+        // line items; it rides the generated web relationship edge.
+        'role',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {
@@ -1121,6 +1124,9 @@ export class ManifestAdapter {
         // consumers, matching the runtime decorator.
         'onDelete',
         'onUpdate',
+        // #3718: `role: 'items'` marks the declaring model as the target's
+        // line items; it rides the generated web relationship edge.
+        'role',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {

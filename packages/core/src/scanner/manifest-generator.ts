@@ -37,9 +37,14 @@ import type {
 import { generateToolManifest } from '../tools/tool-generator.js';
 import {
   displayLabelFieldProblem,
+  FIELD_UI_FORMAT_TYPES,
+  FIELD_UI_FORMATS,
   FIELD_UI_WIDGET_TYPES,
   FIELD_UI_WIDGETS,
+  isFieldUIFormat,
   isFieldUIWidget,
+  isRelationshipRole,
+  RELATIONSHIP_ROLES,
   resolveDisplayLabelField,
 } from '../ui-metadata.js';
 import { classnameToTablename, toSnakeCase } from '../utils/naming.js';
@@ -786,8 +791,37 @@ export class ManifestGenerator {
       const owner = obj.qualifiedName ?? key;
 
       for (const [fieldName, field] of Object.entries(obj.fields)) {
-        const ui = field._meta?.ui as { widget?: unknown } | undefined;
-        if (!ui || typeof ui !== 'object' || ui.widget === undefined) continue;
+        const role = (field._meta as { role?: unknown } | undefined)?.role;
+        if (role !== undefined) {
+          if (!isRelationshipRole(role)) {
+            failures.push(
+              `${owner}.${fieldName}: role ${JSON.stringify(role)} is not one of ${RELATIONSHIP_ROLES.join(', ')}.`,
+            );
+          } else if (
+            field.type !== 'foreignKey' &&
+            field.type !== 'crossPackageRef'
+          ) {
+            failures.push(
+              `${owner}.${fieldName}: role "${role}" needs a foreignKey or crossPackageRef field, but this field is ${field.type}.`,
+            );
+          }
+        }
+        const ui = field._meta?.ui as
+          | { widget?: unknown; format?: unknown }
+          | undefined;
+        if (!ui || typeof ui !== 'object') continue;
+        if (ui.format !== undefined) {
+          if (!isFieldUIFormat(ui.format)) {
+            failures.push(
+              `${owner}.${fieldName}: ui.format ${JSON.stringify(ui.format)} is not one of ${FIELD_UI_FORMATS.join(', ')}.`,
+            );
+          } else if (!FIELD_UI_FORMAT_TYPES[ui.format].includes(field.type)) {
+            failures.push(
+              `${owner}.${fieldName}: ui.format "${ui.format}" needs a field of type ${FIELD_UI_FORMAT_TYPES[ui.format].join(' or ')}, but this field is ${field.type}.`,
+            );
+          }
+        }
+        if (ui.widget === undefined) continue;
         if (!isFieldUIWidget(ui.widget)) {
           failures.push(
             `${owner}.${fieldName}: ui.widget ${JSON.stringify(ui.widget)} is not one of ${FIELD_UI_WIDGETS.join(', ')}.`,

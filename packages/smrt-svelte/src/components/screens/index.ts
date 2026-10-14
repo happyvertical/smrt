@@ -1,3 +1,4 @@
+export { lineItemColumns, relatedColumns } from './columns.js';
 export { default as DetailScreen } from './DetailScreen.svelte';
 export { default as EditForm } from './EditForm.svelte';
 export {
@@ -12,6 +13,32 @@ export {
 } from './fields.js';
 export { default as ListScreen } from './ListScreen.svelte';
 export { default as RecipeScreens } from './RecipeScreens.svelte';
+export { default as RecordScreen } from './RecordScreen.svelte';
+export {
+  deriveRecordHeader,
+  RECORD_HEADER_MAX_FACTS,
+  type RecordFact,
+  type RecordFactKind,
+  type RecordHeaderModel,
+  recordTotals,
+  totalsFields,
+} from './record-header.js';
+export {
+  deriveScreenRelations,
+  relationKey,
+  type ScreenRelation,
+} from './relations.js';
+export {
+  currencyCodeField,
+  deriveFieldRoles,
+  FIELD_ROLES,
+  type FieldRole,
+  fieldsWithRole,
+  fieldWithRole,
+  hasLineItemRoles,
+  isDocumentLike,
+  type ScreenFieldRoles,
+} from './roles.js';
 export type {
   DetailScreenProps,
   EditFormProps,
@@ -20,12 +47,15 @@ export type {
   RecipeScreensProps,
   RecipeScreensSource,
   RecipeScreenView,
+  RecordScreenMode,
+  RecordScreenProps,
   ScreenCollectionDefinition,
   ScreenDraft,
   ScreenDraftValue,
   ScreenField,
   ScreenFieldDefinition,
   ScreenFieldErrorCode,
+  ScreenFieldFormat,
   ScreenFieldPolicy,
   ScreenFieldType,
   ScreenFieldUIHints,
@@ -34,6 +64,8 @@ export type {
   ScreenMode,
   ScreenPolicy,
   ScreenRecord,
+  ScreenRelationshipDefinition,
+  ScreenRelationshipKind,
 } from './types.js';
 export {
   compareScreenValues,
@@ -43,10 +75,13 @@ export {
   draftFromRecord,
   type FormatValueContext,
   formatScreenValue,
+  jsonScreenEntries,
   majorStringToMinorUnits,
   minorUnitsToMajorString,
   type ParsedDraft,
   parseDraft,
+  type ScreenJsonEntry,
+  shortScreenId,
   toDatetimeLocal,
   toDraftValue,
 } from './values.js';

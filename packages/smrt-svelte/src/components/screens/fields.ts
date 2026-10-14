@@ -10,6 +10,7 @@
  * `basic` markers anywhere => everything basic; any marker => unmarked fields
  * advanced).
  */
+import { deriveFieldRoles, type FieldRole } from './roles.js';
 import type {
   ScreenCollectionDefinition,
   ScreenField,
@@ -60,7 +61,11 @@ export function humanizeFieldName(name: string): string {
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
-function humanizeLabel(name: string, definition: ScreenFieldDefinition) {
+/** Default label of a field: reference fields drop a trailing `Id`. */
+export function humanizeLabel(
+  name: string,
+  definition: ScreenFieldDefinition,
+): string {
   if (
     (definition.type === 'foreignKey' ||
       definition.type === 'crossPackageRef') &&
@@ -88,12 +93,22 @@ export function screenTitles(definition: ScreenCollectionDefinition): {
   return { singular, plural };
 }
 
-/** Which control renders a field, from its widget hint and wire type. */
+/**
+ * Which control renders a field, from its wire type, its `enum`, its widget
+ * hint and its roles (`deriveFieldRoles`): a text field with an `enum` is a
+ * `select`; an INTEGER field with the `money` role (an explicit role, a
+ * `format: 'money'` hint, the legacy `ui.widget: 'currency'`, or a money
+ * name like `totalAmount`) is `money`. Without `roles`, only the
+ * definition's own hints count.
+ */
 export function inputKindFor(
   definition: ScreenFieldDefinition,
+  roles?: readonly FieldRole[],
 ): ScreenInputKind {
   const widget = definition.ui?.widget;
   if (definition.type === 'text') {
+    if (Array.isArray(definition.enum) && definition.enum.length > 0)
+      return 'select';
     if (widget === 'textarea') return 'textarea';
     if (widget === 'email') return 'email';
     if (widget === 'url') return 'url';
@@ -103,7 +118,11 @@ export function inputKindFor(
   // Money is integer minor units only; a currency hint on a decimal is a
   // plain decimal (rates and confidences are the only decimals).
   if (definition.type === 'integer') {
-    return widget === 'currency' ? 'money' : 'integer';
+    const money =
+      roles?.includes('money') ??
+      (widget === 'currency' ||
+        (definition.format ?? definition.ui?.format) === 'money');
+    return money ? 'money' : 'integer';
   }
   switch (definition.type) {
     case 'decimal':
@@ -203,6 +222,7 @@ export function deriveScreenFields(
     );
 
   const seedBasic = policy ? null : seedBasicSet(candidates);
+  const roles = deriveFieldRoles(definition);
 
   const decorate = (c: Candidate): ScreenField | null => {
     const policyField = policy?.fields[c.name];
@@ -215,17 +235,21 @@ export function deriveScreenFields(
     if (tier === 'hidden') return null;
     const label = policyField?.label?.trim();
     const help = policyField?.help ?? c.definition.description ?? null;
+    const fieldRoles = roles[c.name] ?? [];
+    const kind = inputKindFor(c.definition, fieldRoles);
     return {
       name: c.name,
       label: label || humanizeLabel(c.name, c.definition),
       help: help && help.trim() !== '' ? help : null,
       type: c.definition.type,
-      kind: inputKindFor(c.definition),
+      kind,
       required: isRequired(c.definition, policyField?.required),
       tier,
       group: policyField?.group ?? c.definition.ui?.group ?? null,
       order: policyField?.order ?? c.definition.ui?.order ?? null,
       definition: c.definition,
+      roles: fieldRoles,
+      ...(kind === 'select' ? { options: [...(c.definition.enum ?? [])] } : {}),
     };
   };
 
@@ -248,6 +272,7 @@ export function deriveScreenFields(
       group: null,
       order: null,
       definition: fieldDefinition,
+      roles: roles[name] ?? [],
     };
   };
 
