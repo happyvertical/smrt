@@ -3,11 +3,13 @@ import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  AttendanceCorrectionService,
   AttendanceService,
   SERVICE_DURATION_HOURS_EVIDENCE,
   ServiceTimeEntryCollection,
 } from '../index.js';
 import {
+  confirmedTimecardGuard,
   PeriodRollupService,
   type PeriodRulesResolver,
   PeriodTimecardCollection,
@@ -15,6 +17,7 @@ import {
 } from '../rollup.js';
 
 const at = (hour: number) => new Date(Date.UTC(2026, 9, 1, hour));
+const half = (hour: number) => new Date(at(hour).getTime() + 30 * 60_000);
 export function rollupSuite(
   name: string,
   create: () => Promise<DatabaseInterface>,
@@ -609,6 +612,28 @@ export function rollupSuite(
       expect((await service.totals(card.id!)).totalSeconds).toBe(7200);
       await service.adjust(card.id!, input);
       expect((await service.totals(card.id!)).totalSeconds).toBe(7260);
+    });
+    it('refuses attendance corrections inside a confirmed timecard', async () => {
+      const attendance = new AttendanceService(db, actor);
+      await attendance.punchIn(at(8));
+      const punch = await attendance.punchOut(at(10));
+      const fix = new AttendanceCorrectionService(
+        db,
+        { tenantId: actor.tenantId, profileId: actor.profileId },
+        { guard: confirmedTimecardGuard },
+      );
+      const input = {
+        subjectProfileId: actor.profileId,
+        punchId: punch.id!,
+        endedAt: at(9),
+        reason: 'left early',
+      };
+      const card = await service.rollup(at(12));
+      await expect(fix.correctPunch(input)).resolves.toBeDefined();
+      await service.confirm(card.id!);
+      await expect(
+        fix.correctPunch({ ...input, endedAt: half(8) }),
+      ).rejects.toThrow('confirmed timecard');
     });
   });
 }

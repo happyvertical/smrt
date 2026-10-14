@@ -392,6 +392,66 @@ are treated as supplied evidence, not server authentication; consumers should
 apply device drift policy before replay. Replay receipts must be retained for as
 long as clients can retry their ids.
 
+### Correcting closed attendance
+
+Closed punches, breaks and segments are immutable to every direct write.
+`AttendanceCorrectionService` is the one sanctioned path around that, and it
+leaves a paper trail. Construct it with the **correcting** person as `actor`;
+each request names the `subjectProfileId` whose time it is. As with
+`AttendanceService`, your application authorizes the actor (and decides whether
+they may correct this subject) first.
+
+```ts
+import { AttendanceCorrectionService } from '@happyvertical/smrt-timesheets/attendance';
+import { confirmedTimecardGuard } from '@happyvertical/smrt-timesheets/rollup';
+
+const fix = new AttendanceCorrectionService(
+  db,
+  { tenantId, profileId: foremanId },
+  { guard: confirmedTimecardGuard }, // optional, see below
+);
+const base = { subjectProfileId: welderId, reason: 'forgot to clock out' };
+
+await fix.correctPunch({ ...base, punchId, endedAt: new Date('2026-10-01T15:30:00Z'),
+  acknowledgementRequired: true });
+await fix.addPunch({ ...base, reason: 'missed punch', startedAt, endedAt });
+await fix.saveBreak({ ...base, punchId, startedAt, endedAt, paid: false }); // add
+await fix.saveBreak({ ...base, punchId, breakId, endedAt });                // change
+await fix.removeBreak({ ...base, breakId });
+await fix.saveSegment({ ...base, punchId, startedAt, endedAt, work });      // add
+await fix.saveSegment({ ...base, punchId, segmentId, endedAt });            // change
+await fix.removeSegment({ ...base, segmentId });
+
+// the welder, constructing the service as themselves:
+await new AttendanceCorrectionService(db, { tenantId, profileId: welderId })
+  .acknowledge(correctionId);
+```
+
+Every method runs in one transaction serialized with the subject's own taps. It
+validates the resulting layout (everything inside its punch, no overlapping
+breaks, segments or other punches, no segment across a break), recomputes
+`durationSeconds` and `unpaidBreakSeconds`, and appends an `AttendanceCorrection`
+row (`attendance_corrections`: `kind`, `subjectProfileId`, `actorProfileId`,
+`punchId`, `targetId`, `beforeState`/`afterState` JSON, a required non-blank
+`reason`, `acknowledgementRequired`, `acknowledgedAt`/`acknowledgedByProfileId`).
+Rows are append-only: the only later change is the subject's single
+`acknowledge()`, and `listForPunch(punchId)` / `pendingAcknowledgements()` read
+the ledger. The ledger has no generated operations. Notes:
+
+- Only **closed** punches are corrected; an open one is `AttendanceService`'s.
+  Moving a punch edge past a break or segment is refused: correct those first.
+- `correctPunch` clears `reviewRequired` (a person reviewed it). A linked
+  *draft* `ServiceTimeEntry` is kept in step; a submitted or approved one
+  refuses the correction until it is corrected with `ServiceEvidenceService`.
+- **Confirmed timecards.** A confirmed `PeriodTimecard` never changes, so
+  correcting its sources would leave card and attendance disagreeing for good.
+  Pass `confirmedTimecardGuard` (from `./rollup`) and a correction overlapping a
+  confirmed card is refused before any write; reopen the card first (that
+  lifecycle is happyvertical/smrt#3950, not part of this service), correct, then
+  `rollup()` again. Any other lock can be supplied as `guard`.
+- Closed `AttendanceBreak`/`AttendanceSegment` rows can no longer be deleted
+  directly; `removeBreak`/`removeSegment` are the path.
+
 ## Period timecards
 
 `./rollup` provides per-person integer-second regular/overtime rollups, immutable

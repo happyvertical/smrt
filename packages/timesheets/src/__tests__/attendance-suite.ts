@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { beginSegment } from '../attendance/segments.js';
 import {
   AttendanceBreakCollection,
+  AttendanceCorrectionCollection,
+  AttendanceCorrectionService,
   AttendancePunchCollection,
   AttendanceReplayCollection,
   AttendanceSegmentCollection,
@@ -17,6 +19,7 @@ const actor = {
   profileId: '22222222-2222-4222-8222-222222222222',
 };
 const at = (hour: number) => new Date(Date.UTC(2026, 9, 1, hour));
+const half = (hour: number) => new Date(at(hour).getTime() + 30 * 60_000);
 const work = {
   workRefType: '@fixture/work:WorkPackage',
   workRefId: 'work-1',
@@ -542,6 +545,289 @@ export function attendanceSuite(
         'Invalid stored attendance replay outcome',
       );
       await service.punchOut(at(9));
+    });
+
+    describe('corrections', () => {
+      const foreman = crypto.randomUUID();
+      let fix: AttendanceCorrectionService;
+      beforeEach(() => {
+        fix = new AttendanceCorrectionService(db, {
+          tenantId: actor.tenantId,
+          profileId: foreman,
+        });
+      });
+      const base = () => ({
+        subjectProfileId: actor.profileId,
+        reason: 'forgot to clock out',
+      });
+      async function day() {
+        await service.punchIn(at(8));
+        await service.startWork(at(8), work);
+        await service.startBreak(at(12));
+        await service.endBreak(at(13));
+        return service.punchOut(at(16));
+      }
+      const ledger = (punchId: string) => fix.listForPunch(punchId);
+      it('corrects a closed punch end, recomputes and writes the ledger', async () => {
+        const punch = await day();
+        expect(punch.durationSeconds).toBe(7 * 3600);
+        punch.endedAt = at(15);
+        await expect(punch.save()).rejects.toThrow('immutable');
+        const row = await fix.correctPunch({
+          ...base(),
+          punchId: punch.id!,
+          endedAt: half(15),
+          acknowledgementRequired: true,
+        });
+        const [fresh] = await new AttendanceService(db, actor).withTransaction(
+          (tx) =>
+            tx.punches.list({ where: { ...actor, id: punch.id }, limit: 1 }),
+        );
+        expect(fresh.durationSeconds).toBe(6.5 * 3600);
+        expect(fresh.unpaidBreakSeconds).toBe(3600);
+        expect(row).toMatchObject({
+          kind: 'punch.corrected',
+          actorProfileId: foreman,
+          subjectProfileId: actor.profileId,
+          punchId: punch.id,
+          reason: 'forgot to clock out',
+          acknowledgementRequired: true,
+          acknowledgedAt: null,
+        });
+        expect(row.getBefore()).toMatchObject({
+          endedAt: at(16).toISOString(),
+          durationSeconds: 7 * 3600,
+        });
+        expect(row.getAfter()).toMatchObject({ durationSeconds: 6.5 * 3600 });
+        expect(await ledger(punch.id!)).toHaveLength(1);
+      });
+      it('requires a reason and refuses invalid layouts and overlaps', async () => {
+        const punch = await day();
+        const id = punch.id!;
+        await expect(
+          fix.correctPunch({
+            ...base(),
+            reason: '  ',
+            punchId: id,
+            endedAt: at(15),
+          }),
+        ).rejects.toThrow('reason');
+        await expect(
+          fix.correctPunch({ ...base(), punchId: id, endedAt: at(12) }),
+        ).rejects.toThrow('inside its punch');
+        await expect(
+          fix.correctPunch({ ...base(), punchId: id, startedAt: at(17) }),
+        ).rejects.toThrow('after it starts');
+        await expect(
+          fix.correctPunch({
+            ...base(),
+            subjectProfileId: crypto.randomUUID(),
+            punchId: id,
+            endedAt: at(15),
+          }),
+        ).rejects.toThrow('not found');
+        await expect(
+          fix.saveBreak({
+            ...base(),
+            punchId: id,
+            startedAt: at(12),
+            endedAt: at(14),
+          }),
+        ).rejects.toThrow('overlap');
+        await expect(
+          fix.saveSegment({
+            ...base(),
+            punchId: id,
+            startedAt: at(11),
+            endedAt: at(12),
+            work,
+          }),
+        ).rejects.toThrow('overlap');
+        await expect(
+          fix.saveBreak({
+            ...base(),
+            punchId: id,
+            startedAt: at(7),
+            endedAt: at(9),
+          }),
+        ).rejects.toThrow('inside its punch');
+        expect(await ledger(id)).toHaveLength(0);
+        await service.punchIn(at(17));
+        await expect(
+          fix.addPunch({ ...base(), startedAt: half(16), endedAt: at(18) }),
+        ).rejects.toThrow('Punches must not overlap');
+        await expect(
+          fix.correctPunch({ ...base(), punchId: id, endedAt: at(18) }),
+        ).rejects.toThrow('Punches must not overlap');
+        await expect(
+          fix.correctPunch({
+            ...base(),
+            punchId: (await service.punchOut(at(18))).id!,
+            endedAt: at(19),
+          }),
+        ).resolves.toBeDefined();
+      });
+      it('adds a missed punch retroactively', async () => {
+        await day();
+        const row = await fix.addPunch({
+          ...base(),
+          reason: 'missed Friday',
+          startedAt: at(-24),
+          endedAt: at(-16),
+        });
+        expect(row.kind).toBe('punch.added');
+        expect(row.getBefore()).toBeNull();
+        expect(row.getAfter()).toMatchObject({ durationSeconds: 8 * 3600 });
+        await expect(
+          fix.addPunch({ ...base(), startedAt: at(-20), endedAt: at(-18) }),
+        ).rejects.toThrow('Punches must not overlap');
+        // the open-slot is unaffected: a normal punch in still works
+        await service.punchIn(at(20));
+      });
+      it('adds, changes and removes breaks and segments inside a closed punch', async () => {
+        const punch = await day();
+        const id = punch.id!;
+        const added = await fix.saveBreak({
+          ...base(),
+          punchId: id,
+          startedAt: at(14),
+          endedAt: half(14),
+          paid: false,
+        });
+        expect(added.kind).toBe('break.added');
+        const run = () =>
+          new AttendanceService(db, actor).withTransaction(async (tx) => ({
+            punch: (
+              await tx.punches.list({ where: { ...actor, id }, limit: 1 })
+            )[0],
+            breaks: await tx.breaks.list({
+              where: { tenantId: actor.tenantId, punchId: id },
+            }),
+            segments: await tx.segments.list({
+              where: { tenantId: actor.tenantId, punchId: id },
+            }),
+          }));
+        let state = await run();
+        expect(state.punch.unpaidBreakSeconds).toBe(3600 + 1800);
+        expect(state.punch.durationSeconds).toBe(7 * 3600 - 1800);
+        const changed = await fix.saveBreak({
+          ...base(),
+          punchId: id,
+          breakId: added.targetId,
+          paid: true,
+        });
+        expect(changed.kind).toBe('break.changed');
+        expect(changed.getBefore()).toMatchObject({ paid: false });
+        state = await run();
+        expect(state.punch.durationSeconds).toBe(7 * 3600);
+        await expect(state.breaks[0].delete()).rejects.toThrow('immutable');
+        await fix.removeBreak({ ...base(), breakId: added.targetId });
+        state = await run();
+        expect(state.breaks).toHaveLength(1);
+        expect(state.punch.unpaidBreakSeconds).toBe(3600);
+        // segments: trim the morning one, add an afternoon one, drop the morning
+        const [morning] = state.segments;
+        expect(morning.endedAt).toEqual(at(12));
+        const trimmed = await fix.saveSegment({
+          ...base(),
+          punchId: id,
+          segmentId: morning.id!,
+          endedAt: at(11),
+        });
+        expect(trimmed.getAfter()).toMatchObject({ durationSeconds: 3 * 3600 });
+        await fix.saveSegment({
+          ...base(),
+          punchId: id,
+          startedAt: at(13),
+          endedAt: at(15),
+          work: { ...work, workRefId: 'work-2', description: 'Weld' },
+        });
+        await fix.removeSegment({ ...base(), segmentId: morning.id! });
+        state = await run();
+        expect(state.segments.map((g) => g.workRefId)).toEqual(['work-2']);
+        expect(state.segments[0].durationSeconds).toBe(2 * 3600);
+        await expect(state.segments[0].delete()).rejects.toThrow('immutable');
+        expect((await ledger(id)).map((r) => r.kind)).toEqual([
+          'break.added',
+          'break.changed',
+          'break.removed',
+          'segment.changed',
+          'segment.added',
+          'segment.removed',
+        ]);
+      });
+      it('keeps a draft evidence entry in step and refuses a submitted one', async () => {
+        await service.punchIn(at(8));
+        const punch = await service.punchOut(at(16), work);
+        await fix.correctPunch({
+          ...base(),
+          punchId: punch.id!,
+          endedAt: at(15),
+        });
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          const entries = await ServiceTimeEntryCollection.create({ db });
+          const entry = await entries.get(punch.serviceTimeEntryId!);
+          expect(entry).toMatchObject({ durationSeconds: 7 * 3600 });
+          expect(entry!.endedAt).toEqual(at(15));
+          entry!.status = 'submitted';
+          await entry!.save();
+        });
+        await expect(
+          fix.correctPunch({ ...base(), punchId: punch.id!, endedAt: at(14) }),
+        ).rejects.toThrow('ServiceEvidenceService');
+      });
+      it('lets only the subject acknowledge, once, and keeps the ledger append-only', async () => {
+        const punch = await day();
+        const row = await fix.correctPunch({
+          ...base(),
+          punchId: punch.id!,
+          endedAt: at(15),
+          acknowledgementRequired: true,
+        });
+        const mine = new AttendanceCorrectionService(db, actor);
+        expect((await mine.pendingAcknowledgements()).map((r) => r.id)).toEqual(
+          [row.id],
+        );
+        await expect(fix.acknowledge(row.id!)).rejects.toThrow(
+          'Only the subject',
+        );
+        const done = await mine.acknowledge(row.id!, at(17));
+        expect(done.acknowledgedAt).toEqual(at(17));
+        expect(done.acknowledgedByProfileId).toBe(actor.profileId);
+        expect(await mine.pendingAcknowledgements()).toHaveLength(0);
+        await expect(mine.acknowledge(row.id!)).rejects.toThrow('already');
+        const plain = await fix.correctPunch({
+          ...base(),
+          punchId: punch.id!,
+          endedAt: at(14),
+        });
+        await expect(mine.acknowledge(plain.id!)).rejects.toThrow(
+          'does not require',
+        );
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          const rows = await AttendanceCorrectionCollection.create({ db });
+          const stored = await rows.get(row.id!);
+          stored!.reason = 'edited';
+          await expect(stored!.save()).rejects.toThrow('append-only');
+          await expect(stored!.delete()).rejects.toThrow('cannot be deleted');
+        });
+      });
+      it('refuses a correction a guard locks, before any write', async () => {
+        const punch = await day();
+        const guarded = new AttendanceCorrectionService(
+          db,
+          { tenantId: actor.tenantId, profileId: foreman },
+          { guard: async () => 'period is confirmed' },
+        );
+        await expect(
+          guarded.correctPunch({
+            ...base(),
+            punchId: punch.id!,
+            endedAt: at(15),
+          }),
+        ).rejects.toThrow('period is confirmed');
+        expect(await ledger(punch.id!)).toHaveLength(0);
+      });
     });
   });
 }

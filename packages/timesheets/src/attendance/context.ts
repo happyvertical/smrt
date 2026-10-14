@@ -1,3 +1,4 @@
+import { isPostgresDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type {
   AttendanceBreakCollection,
@@ -62,4 +63,16 @@ export function validateAttendanceWork(work: AttendanceWork): void {
     throw new AttendanceConflict(
       'taskRefType and taskRefId must be provided together.',
     );
+}
+
+/** Canonicalize a tenant/profile id: PostgreSQL requires UUIDs, other adapters take it verbatim. */
+export function attendanceIdentity(
+  db: DatabaseInterface,
+  value: string,
+): string {
+  if (!isPostgresDatabase(db)) return value;
+  const hex = value.replace(/[{}-]/g, '').toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(hex))
+    throw new Error('PostgreSQL attendance identities must be UUIDs.');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }

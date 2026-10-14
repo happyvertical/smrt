@@ -11,6 +11,7 @@ import {
   AttendanceConflict,
   type AttendanceContext,
   type AttendanceWork,
+  attendanceIdentity,
   validateAttendanceWork,
 } from './context.js';
 import {
@@ -73,11 +74,7 @@ export class AttendanceService {
   }
 
   private identity(value: string): string {
-    if (!isPostgresDatabase(this.db)) return value;
-    const hex = value.replace(/[{}-]/g, '').toLowerCase();
-    if (!/^[0-9a-f]{32}$/.test(hex))
-      throw new Error('PostgreSQL attendance identities must be UUIDs.');
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    return attendanceIdentity(this.db, value);
   }
 
   /**
