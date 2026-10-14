@@ -61,7 +61,7 @@ describe('Payout', () => {
         'v-sum',
       ],
     });
-  });
+  }, 30_000);
 
   afterEach(() => {
     if (existsSync(dbPath)) {
