@@ -72,6 +72,20 @@ describe('v2 money editor adapter', () => {
       ],
     });
   });
+  it('allows a genuinely unassigned code in exclusive mode without inventing tax', () => {
+    const calculated = calculateMoneyEditorDraft(
+      {
+        ...money.draft,
+        lineAmountType: 'exclusive',
+        lines: [{ ...money.draft.lines[0], inheritedTaxCodeId: null }],
+      },
+      money.taxCodes,
+    );
+    expect(calculated).toMatchObject({
+      valid: true,
+      result: { subtotalMinor: 10080, taxMinor: 0, totalMinor: 10080 },
+    });
+  });
   it('renders stored frozen facts without recalculating and preserves native fields', () => {
     const body = render(InvoiceEditor, {
       props: {
@@ -90,6 +104,7 @@ describe('v2 money editor adapter', () => {
             taxes: [
               {
                 id: 'gst',
+                taxComponentId: 'gst-component',
                 name: 'GST',
                 percent: '5',
                 taxableMinor: 7600,
@@ -97,6 +112,7 @@ describe('v2 money editor adapter', () => {
               },
               {
                 id: 'gst-in-combined-code',
+                taxComponentId: 'gst-component',
                 name: 'GST',
                 percent: '5',
                 taxableMinor: 2000,

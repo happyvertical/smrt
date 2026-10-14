@@ -47,6 +47,8 @@ export interface MoneyEditorDraft {
 
 export interface MoneyStoredTax {
   id: string;
+  /** Shared component identity: repeated tax codes with this ID aggregate. */
+  taxComponentId?: string | null;
   name: string;
   percent: string;
   taxableMinor: number;
@@ -164,13 +166,9 @@ export function calculateMoneyEditorDraft(
     const lines = draft.lines.map((line) => {
       const codeId =
         line.taxMode === 'override' ? line.taxCodeId : line.inheritedTaxCodeId;
-      const taxCode = codeId ? codes.get(codeId) : undefined;
-      if (!taxCode)
-        throw new Error(
-          codeId
-            ? 'The selected tax code is no longer available.'
-            : 'No resolved tax code is available for this line.',
-        );
+      const taxCode = codeId ? (codes.get(codeId) ?? null) : null;
+      if (codeId && !taxCode)
+        throw new Error('The selected tax code is no longer available.');
       return {
         id: line.id,
         quantity: quantity(line.quantity),

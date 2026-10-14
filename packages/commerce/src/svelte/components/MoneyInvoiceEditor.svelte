@@ -72,6 +72,7 @@ const totals = $derived(
             );
             return {
               id: `${tax.taxCodeId}:${tax.taxComponentId ?? ''}`,
+              taxComponentId: tax.taxComponentId,
               name: code?.name ?? code?.code ?? 'Tax',
               percent: component?.percent ?? '0',
               taxableMinor: tax.taxableMinor,
@@ -101,6 +102,7 @@ function inheritedHint(line: MoneyEditorProps['draft']['lines'][number]) {
 function groupedTaxes(
   taxes: readonly {
     id: string;
+    taxComponentId?: string | null;
     name: string;
     percent: string;
     taxableMinor: number;
@@ -111,6 +113,7 @@ function groupedTaxes(
     string,
     {
       id: string;
+      taxComponentId?: string | null;
       name: string;
       percent: string;
       taxableMinor: number;
@@ -118,7 +121,7 @@ function groupedTaxes(
     }
   >();
   for (const tax of taxes) {
-    const key = `${tax.name}\u0000${tax.percent}`;
+    const key = `${tax.taxComponentId ?? tax.id}\u0000${tax.name}\u0000${tax.percent}`;
     const current = rows.get(key);
     if (current) {
       current.taxableMinor += tax.taxableMinor;
