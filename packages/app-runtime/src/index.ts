@@ -18,6 +18,7 @@ import {
   mkdir,
   open,
   readdir,
+  readFile,
   realpath,
   rmdir,
   unlink,
@@ -90,6 +91,7 @@ const SECRET_FILE_NAME = 'application.secret';
 const DATABASE_FILE_NAME = 'application.sqlite';
 const ROOT_MARKER_PREFIX = '.smrt-local-runtime-';
 const LEASE_DIRECTORY_PREFIX = '.smrt-lease-';
+const UID_MAP_PATH = '/proc/self/uid_map';
 const PREFLIGHT_RETRY_LIMIT = 4;
 const INITIALIZATION_LOCK_TIMEOUT_MS = 120_000;
 const INITIALIZATION_LOCK_WORKER = `
@@ -1593,7 +1595,7 @@ async function acquireInitializationLock(
   );
   const temporaryLockRoot = resolve(
     await realpath('/tmp'),
-    `.smrt-${currentUid}`,
+    `.smrt-${await legacyLeaseUid(currentUid)}`,
   );
   if (besideData === null) {
     return acquireTemporaryInitializationLease(
@@ -1660,6 +1662,54 @@ async function acquireInitializationLock(
       if (failure !== undefined) throw failure;
     },
   };
+}
+
+/**
+ * The uid that names the legacy `/tmp/.smrt-<uid>` lease directory.
+ *
+ * An older release on the host names it after its own uid. Inside a user
+ * namespace that remaps the uid (`unshare -Ur` maps host uid 1000 to 0), the
+ * in-namespace uid would select a different directory and never contend with
+ * the host process, so the current uid is translated through
+ * `/proc/self/uid_map` into the parent namespace. Ownership checks keep using
+ * the in-namespace uid, which is how the remapped owner reads here. Without
+ * the file (non-Linux) the uid is used as is; an unreadable, malformed, or
+ * non-covering map fails closed. Only one namespace level is visible.
+ */
+async function legacyLeaseUid(currentUid: number): Promise<number> {
+  let map: string;
+  try {
+    map = await readFile(UID_MAP_PATH, 'utf8');
+  } catch (error) {
+    if (isMissingFile(error)) return currentUid;
+    throw unsafeFilesystemEntry(
+      'Local runtime could not read the user-namespace uid map for its legacy lease.',
+      error,
+    );
+  }
+  for (const line of map.split('\n')) {
+    if (!line.trim()) continue;
+    const fields = line.trim().split(/\s+/);
+    const [inside, outside, count] = fields.map((field) =>
+      /^\d+$/.test(field) ? Number(field) : Number.NaN,
+    );
+    if (
+      fields.length !== 3 ||
+      !Number.isSafeInteger(inside) ||
+      !Number.isSafeInteger(outside) ||
+      !Number.isSafeInteger(count)
+    ) {
+      throw unsafeFilesystemEntry(
+        'Local runtime could not parse the user-namespace uid map for its legacy lease.',
+      );
+    }
+    if (currentUid >= inside && currentUid - inside < count) {
+      return outside + (currentUid - inside);
+    }
+  }
+  throw unsafeFilesystemEntry(
+    'The user-namespace uid map does not cover the current user; the legacy local runtime lease cannot be located.',
+  );
 }
 
 /**

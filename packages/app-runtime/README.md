@@ -68,7 +68,13 @@ because its owner is unmapped, the legacy lease is taken lock-only: the lock
 file is never written, every ancestor must still be a real directory that is
 not group/world writable unless sticky, and the lock directories and file must
 be current-user-owned and private. A held legacy lease therefore makes the new
-process wait (and fail closed after two minutes). The residual rule: when the
+process wait (and fail closed after two minutes). Inside a user namespace that
+remaps the uid (for example `unshare -Ur`, where host uid 1000 reads as 0), the
+legacy directory is named after the uid's mapping in `/proc/self/uid_map`, so
+it is the same `/tmp/.smrt-<host uid>` an older host process locks; a map that
+cannot be read, parsed, or does not cover the current uid fails closed. Only
+one namespace level is visible, so a doubly nested remap is not translated
+past its parent. The residual rule: when the
 legacy lock directory cannot be created at all (`/tmp` not writable or
 read-only in that view) and no legacy lock file exists, the legacy lease is
 skipped. When the data root's parent is not writable by the current user (or is

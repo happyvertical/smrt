@@ -56,6 +56,7 @@ const filesystemInterleave = vi.hoisted(() => ({
         path: Parameters<typeof import('node:fs/promises').unlink>[0],
       ) => Promise<void>),
   lstatOwner: undefined as undefined | ((path: string) => number | undefined),
+  uidMap: undefined as undefined | string,
 }));
 
 const initializationLockWorkerInterleave = vi.hoisted(() => ({
@@ -82,6 +83,15 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     unlink: async (path: Parameters<typeof actual.unlink>[0]) => {
       await filesystemInterleave.beforeUnlink?.(path);
       return actual.unlink(path);
+    },
+    readFile: async (...args: unknown[]) => {
+      if (
+        args[0] === '/proc/self/uid_map' &&
+        filesystemInterleave.uidMap !== undefined
+      ) {
+        return filesystemInterleave.uidMap;
+      }
+      return Reflect.apply(actual.readFile, actual, args);
     },
     lstat: async (...args: unknown[]) => {
       const details = await Reflect.apply(actual.lstat, actual, args);
@@ -128,6 +138,7 @@ afterEach(async () => {
   filesystemInterleave.afterReaddir = undefined;
   filesystemInterleave.beforeUnlink = undefined;
   filesystemInterleave.lstatOwner = undefined;
+  filesystemInterleave.uidMap = undefined;
   initializationLockWorkerInterleave.releaseFailure = undefined;
   vi.restoreAllMocks();
   await Promise.all(
@@ -1421,6 +1432,91 @@ describe('local application runtime', () => {
       diagnostics: { runtime: { profile: 'local' } },
     });
     expect(prepareDatabaseCalled).toBe(true);
+  });
+
+  it('names the legacy lease after the uid outside a remapping user namespace (#3877)', async () => {
+    const directories = await localDirectories('lease-uid-map');
+    const currentUid = process.getuid?.() as number;
+    const outsideUid = 4_000_000 + (currentUid % 1000);
+    filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
+    const lockKey = createHash('sha256')
+      .update(
+        platform() === 'darwin'
+          ? directories.dataDirectory.toLowerCase()
+          : directories.dataDirectory,
+      )
+      .digest('hex')
+      .slice(0, 32);
+    const outsideLockRoot = join(await realpath('/tmp'), `.smrt-${outsideUid}`);
+    const legacyLockPath = join(
+      outsideLockRoot,
+      lockKey,
+      'initialization.sqlite',
+    );
+    const inNamespaceLockPath = await initializationLockPath(
+      directories.dataDirectory,
+    );
+    await mkdir(dirname(legacyLockPath), { recursive: true, mode: 0o700 });
+    await chmod(outsideLockRoot, 0o700);
+    await writeFile(legacyLockPath, '', { mode: 0o600 });
+    // The host process (outside uid) holds its legacy lease.
+    const legacyHolder = spawn(
+      process.execPath,
+      [
+        '-e',
+        "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(process.argv[1]);db.exec('BEGIN IMMEDIATE');process.stdout.write('ready\\n');setInterval(()=>{},1000);",
+        legacyLockPath,
+      ],
+      { stdio: ['ignore', 'pipe', 'inherit'] },
+    );
+    try {
+      await once(legacyHolder.stdout as NodeJS.ReadableStream, 'data');
+      let prepareDatabaseCalled = false;
+      const initializing = initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase: async () => {
+          prepareDatabaseCalled = true;
+        },
+      });
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        expect(prepareDatabaseCalled).toBe(false);
+      } finally {
+        legacyHolder.kill('SIGKILL');
+        await once(legacyHolder, 'exit');
+      }
+      await expect(initializing).resolves.toMatchObject({
+        diagnostics: { runtime: { profile: 'local' } },
+      });
+      expect(prepareDatabaseCalled).toBe(true);
+      await expect(stat(inNamespaceLockPath)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    } finally {
+      if (legacyHolder.exitCode === null) legacyHolder.kill('SIGKILL');
+      await rm(outsideLockRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ['malformed', 'not a uid map\n'],
+    ['non-covering', '0 4000000 1\n'],
+  ])('fails closed before migrations when the uid map is %s', async (_label, uidMap) => {
+    const directories = await localDirectories('lease-uid-map-bad');
+    filesystemInterleave.uidMap =
+      process.getuid?.() === 0 ? uidMap.replace(/^0 /, '1 ') : uidMap;
+    let prepareDatabaseCalled = false;
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase: async () => {
+          prepareDatabaseCalled = true;
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    expect(prepareDatabaseCalled).toBe(false);
   });
 
   it.skipIf(process.getuid?.() === 0)(
