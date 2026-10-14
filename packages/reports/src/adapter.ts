@@ -15,6 +15,7 @@ import type {
   DataQueryFreshness,
   DataQueryRequest,
   DataQueryResult,
+  DataQueryScalar,
   DataQuerySchema,
 } from '@happyvertical/smrt-types';
 import { buildReportDefinition } from './compiler.js';
@@ -1277,11 +1278,66 @@ export function splitReportFilterScopes(
   return split(filter);
 }
 
+const DATE_ONLY_VALUE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * `YYYY-MM-DD[T ]HH:MM[:SS[.fff]]` with no zone designator — the shape SQLite's
+ * `CURRENT_TIMESTAMP` / `datetime('now')` persist. SQLite writes those in UTC,
+ * but `new Date('2026-09-17 12:00:00')` reads the space-separated form as
+ * *local* time, so the zone is appended explicitly instead of inferred.
+ */
+const NAIVE_TIMESTAMP_VALUE =
+  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/;
+
+/** ISO-8601/RFC 3339 instant in UTC, or `null` for an unrepresentable date. */
+function instantOrNull(value: Date): string | null {
+  return Number.isNaN(value.getTime()) ? null : value.toISOString();
+}
+
+function epochToInstant(value: number): string | null {
+  if (!Number.isFinite(value)) return null;
+  return instantOrNull(new Date(value));
+}
+
+/**
+ * Serialize one temporal row value to an RFC 3339 instant in UTC (#2934).
+ *
+ * `SmrtCollection.list()` hydrates a `datetime` field into a `Date`, and a raw
+ * driver row can hand back the stored string or an epoch number instead. The
+ * shared result validator only accepts JSON scalars, and normalizes a
+ * `datetime` descriptor's value through `normalizedInstant`, so every one of
+ * those forms has to reach it as an instant string.
+ *
+ * An unparseable string is returned unchanged on purpose: the shared validator
+ * owns that error, and its message names the field and the RFC 3339 contract.
+ */
+function temporalToInstant(value: unknown): unknown {
+  if (value instanceof Date) return instantOrNull(value);
+  if (typeof value === 'number') return epochToInstant(value);
+  if (typeof value === 'bigint') {
+    // An epoch outside the safe-integer range would round on the way through
+    // `Number`, producing a WRONG instant. For a temporal value a missing one
+    // is safer than a silently shifted one.
+    const numeric = Number(value);
+    return Number.isSafeInteger(numeric) ? epochToInstant(numeric) : null;
+  }
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (text.length === 0) return null;
+  if (DATE_ONLY_VALUE.test(text)) return `${text}T00:00:00.000Z`;
+  if (NAIVE_TIMESTAMP_VALUE.test(text)) {
+    return epochToInstant(Date.parse(`${text.replace(' ', 'T')}Z`)) ?? value;
+  }
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) return value;
+  return epochToInstant(parsed) ?? value;
+}
+
 function jsonSafeValue(
   value: unknown,
   ancestors = new WeakSet<object>(),
 ): unknown {
-  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Date) return instantOrNull(value);
   if (typeof value === 'bigint') {
     const numeric = Number(value);
     if (!Number.isSafeInteger(numeric)) {
@@ -1313,15 +1369,55 @@ function jsonSafeValue(
   return value;
 }
 
+/** Normalize hydrated values according to the public descriptor (#2934). */
+function toDeclaredValue(
+  value: unknown,
+  descriptor: DataQueryFieldDescriptor,
+  shortened: Set<string>,
+): unknown {
+  const cap = (text: string): string => {
+    if (text.length <= 4096) return text;
+    shortened.add(descriptor.id);
+    // Keep a UTF-16 surrogate pair together at the scalar length boundary.
+    const last = text.charCodeAt(4095);
+    const next = text.charCodeAt(4096);
+    const splitsPair =
+      last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff;
+    return text.slice(0, splitsPair ? 4095 : 4096);
+  };
+  // Identity is authoritative: reject unsupported values instead of rewriting it.
+  if (descriptor.id === 'id') return value;
+  if (value === undefined || value === null) return null;
+  if (descriptor.type === 'datetime') return temporalToInstant(value);
+  if (descriptor.type === 'json') return jsonSafeValue(value);
+  if (typeof value === 'object' && !(value instanceof Date)) {
+    try {
+      const rendered = JSON.stringify(jsonSafeValue(value));
+      return rendered === undefined ? null : cap(rendered);
+    } catch (error) {
+      if (error instanceof RangeError) throw error;
+      return null;
+    }
+  }
+  if (descriptor.type === 'boolean' && typeof value === 'number')
+    return value !== 0;
+  if (typeof value === 'string') return cap(value);
+  return jsonSafeValue(value);
+}
+
 function mapMaterializedRow(
   row: Record<string, unknown>,
   projection: readonly string[],
   fieldMap: Map<string, string>,
+  schema: DataQuerySchema,
+  shortened: Set<string>,
 ): Record<string, unknown> {
   const mapped: Record<string, unknown> = {};
   for (const id of projection) {
     const sourceField = fieldMap.get(id) ?? id;
-    if (sourceField in row) mapped[id] = jsonSafeValue(row[sourceField]);
+    const descriptor = schema.fields.find((field) => field.id === id);
+    if (sourceField in row && descriptor)
+      mapped[id] = toDeclaredValue(row[sourceField], descriptor, shortened);
   }
   return mapped;
 }
@@ -1426,6 +1522,7 @@ export async function queryReportMaterializedRows(
     ((await ObjectRegistry.getCollection(descriptor.reportClassName, {
       db: options.db,
     })) as unknown as NonNullable<ReportQueryOptions['collection']>);
+  const shortened = new Set<string>();
   let rows: Record<string, unknown>[] = [];
   let page: DataQueryResult['page'];
   let total: number;
@@ -1447,7 +1544,13 @@ export async function queryReportMaterializedRows(
       ...(where === undefined ? {} : { where }),
     });
     rows = materialized.map((row) =>
-      mapMaterializedRow(row, projection, fieldMap),
+      mapMaterializedRow(
+        row,
+        projection,
+        fieldMap,
+        descriptor.schema,
+        shortened,
+      ),
     );
     rows.forEach((row) => {
       if (typeof row.id !== 'string' || row.id.length === 0) {
@@ -1496,10 +1599,18 @@ export async function queryReportMaterializedRows(
       facets = requested.map((facet) => {
         const sourceField = fieldMap.get(facet.field) ?? facet.field;
         const values = byField.get(sourceField)?.values ?? [];
+        const field = descriptor.schema.fields.find(
+          (field) => field.id === facet.field,
+        );
+        if (!field) throw new Error('Unknown report facet field');
         return {
           field: facet.field,
           values: values.map((value) => ({
-            value: value.value,
+            value: toDeclaredValue(
+              value.value,
+              field,
+              shortened,
+            ) as DataQueryScalar,
             count: value.count,
           })),
           // The collection deliberately bounds this database grouping query;
@@ -1519,8 +1630,10 @@ export async function queryReportMaterializedRows(
     total: { kind: 'exact' as const, value: total },
     ...(facets === undefined ? {} : { facets }),
     freshness: { state: 'unknown' as const },
-    warnings: [],
-    truncated: false,
+    warnings: shortened.size
+      ? ['Values exceeding the scalar result limit were shortened.']
+      : [],
+    truncated: shortened.size > 0,
   };
   const normalized = normalizeDataQueryResult(
     result,

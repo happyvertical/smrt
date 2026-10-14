@@ -1,3 +1,5 @@
+import './__smrt-register__.js';
+
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import {

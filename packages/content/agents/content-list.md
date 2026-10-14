@@ -266,3 +266,11 @@ bare Vitest. Narrow with `-- <test-file>` to the affected content-list, query,
 action, lifecycle or component tests; include both grid and compact paging
 scenarios for reachability changes. Run package `pnpm typecheck` for Svelte
 changes and root knowledge checks for this module documentation.
+
+### Hydrated result values
+
+The query boundary normalizes values against their declared descriptors before
+byte budgeting. Objects hydrated from text columns become JSON strings and use
+the existing scalar shortening/warning path; JSON columns retain their document
+limits. Date-only and timezone-less datetime strings mean UTC, including facet
+buckets. Bigint values must remain safely representable as JavaScript numbers.

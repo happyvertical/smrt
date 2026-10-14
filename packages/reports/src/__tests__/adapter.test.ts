@@ -843,6 +843,157 @@ describe('report adapter', () => {
     expect(result).not.toHaveProperty('rows');
   });
 
+  it.each([
+    ['2026-09-17', '2026-09-17T00:00:00.000Z'],
+    ['2026-09-17 12:34:56', '2026-09-17T12:34:56.000Z'],
+    [new Date('2026-09-17T12:34:56Z'), '2026-09-17T12:34:56.000Z'],
+  ])('normalizes hydrated scalar and datetime values: %s', async (value, expected) => {
+    const result = await queryReportMaterializedRows(
+      AdapterReport,
+      {
+        version: 1,
+        requestId: 'normalization',
+        mode: 'rows',
+        projection: ['customer_id', 'issued_month'],
+      },
+      {
+        collection: {
+          list: async () => [
+            {
+              id: 'normalized',
+              customerId: { region: 'west', count: 2n },
+              issuedMonth: value,
+            },
+          ],
+          count: async () => 1,
+        },
+      },
+    );
+    expect(result.rows).toEqual([
+      {
+        id: 'normalized',
+        customer_id: '{"region":"west","count":2}',
+        issued_month: expected,
+      },
+    ]);
+  });
+
+  it.each([
+    'x'.repeat(4096) + 'a',
+    'x'.repeat(4096) + 'b',
+    { key: 'row' },
+  ])('refuses an identity that would need rewriting', async (id) => {
+    await expect(
+      queryReportMaterializedRows(
+        AdapterReport,
+        {
+          version: 1,
+          requestId: 'identity-preserved',
+          mode: 'rows',
+          projection: ['customer_id'],
+        },
+        {
+          collection: {
+            list: async () => [{ id, customerId: 'customer' }],
+            count: async () => 1,
+          },
+        },
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('bounds JSON rendered into a scalar and reports shortening', async () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const result = await queryReportMaterializedRows(
+      AdapterReport,
+      {
+        version: 1,
+        requestId: 'scalar-limits',
+        mode: 'rows',
+        projection: ['customer_id'],
+      },
+      {
+        collection: {
+          list: async () => [
+            { id: 'long', customerId: { note: 'x'.repeat(5000) } },
+            { id: 'circular', customerId: circular },
+          ],
+          count: async () => 2,
+        },
+      },
+    );
+    expect(result.rows[0].customer_id).toHaveLength(4096);
+    expect(result.rows[1].customer_id).toBeNull();
+    expect(result.truncated).toBe(true);
+    expect(result.warnings).toHaveLength(1);
+  });
+
+  it.each([
+    4095, 4094,
+  ])('caps row and facet text without splitting Unicode pairs (%i)', async (prefix) => {
+    const value = 'x'.repeat(prefix) + '😀' + 'tail';
+    const expected = 'x'.repeat(prefix) + (prefix === 4094 ? '😀' : '');
+    const collection = {
+      list: async () => [{ id: 'unicode', customerId: value }],
+      count: async () => 1,
+      facets: async () => [
+        { field: 'customerId', values: [{ value, count: 1 }] },
+      ],
+    };
+    const rows = await queryReportMaterializedRows(
+      AdapterReport,
+      {
+        version: 1,
+        requestId: 'unicode-rows',
+        mode: 'rows',
+        projection: ['customer_id'],
+      },
+      { collection },
+    );
+    expect(rows.rows[0].customer_id).toBe(expected);
+    expect(rows.truncated).toBe(true);
+    const facets = await queryReportMaterializedRows(
+      AdapterReport,
+      {
+        version: 1,
+        requestId: 'unicode-facets',
+        mode: 'facets',
+        facets: [{ field: 'customer_id', limit: 5 }],
+      },
+      { collection },
+    );
+    expect(facets.facets?.[0].values).toEqual([{ value: expected, count: 1 }]);
+    expect(facets.truncated).toBe(true);
+  });
+
+  it('normalizes datetime facet buckets at the same boundary as rows', async () => {
+    const result = await queryReportMaterializedRows(
+      AdapterReport,
+      {
+        version: 1,
+        requestId: 'temporal-facets',
+        mode: 'facets',
+        facets: [{ field: 'issued_month', limit: 5 }],
+      },
+      {
+        collection: {
+          list: async () => [],
+          count: async () => 1,
+          facets: async () => [
+            {
+              field: 'issuedMonth',
+              values: [{ value: '2026-09-17 12:34:56', count: 1 }],
+            },
+          ],
+        },
+      },
+    );
+    expect(result.facets?.[0].values).toEqual([
+      { value: '2026-09-17T12:34:56.000Z', count: 1 },
+    ]);
+  });
+
   it('rejects bigint values that cannot be represented safely in JSON', async () => {
     const collection = {
       async list() {
