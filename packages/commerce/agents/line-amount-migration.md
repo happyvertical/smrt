@@ -1,5 +1,11 @@
 # Tenant line-amount migration
 
+The operational CLI entrypoints are documented in
+`@happyvertical/smrt-cli/agents/commerce-money-migration.md`. A CLI migration
+chooses and prints its owner UUID before the tenant is claimed, so a failure
+after the claim can be resumed with the exact same `--migration-id`; a
+different owner is rejected.
+
 `preflightCommerceLineAmounts(db, { tenantId?, out? })` is read-only. It does
 not create `TaxSettings`. Review its structured report (and optional explicit
 `jsonPath`/`csvPath`) before migration. `UNRECONCILED`, orphan or cross-tenant

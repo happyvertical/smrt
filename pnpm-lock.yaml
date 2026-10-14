@@ -876,6 +876,9 @@ importers:
       '@happyvertical/smrt-app-runtime':
         specifier: workspace:*
         version: link:../app-runtime
+      '@happyvertical/smrt-commerce':
+        specifier: workspace:*
+        version: link:../commerce
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config

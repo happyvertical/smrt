@@ -47,6 +47,7 @@
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-app-runtime": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
+    "@happyvertical/smrt-commerce": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-dev-mcp": "workspace:*",
     "@happyvertical/smrt-ledgers": "workspace:*",

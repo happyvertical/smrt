@@ -303,22 +303,33 @@ describe('commerce line amount migration (#3933)', () => {
 
   it('resumes exact applied journals after activation is interrupted', async () => {
     const { line } = await issued();
+    const migrationId = '00000000-0000-4000-8000-000000003933';
     const activation = vi
       .spyOn(TaxSettingsCollection.prototype, 'activateMoneyV2')
       .mockRejectedValueOnce(new Error('interrupted before activation'));
     await expect(
-      migrateCommerceLineAmounts(db, { tenantId: TENANT }),
+      migrateCommerceLineAmounts(db, {
+        tenantId: TENANT,
+        migrationId,
+      }),
     ).rejects.toThrow('interrupted before activation');
-    const migrationId = await withTenant(
-      { tenantId: TENANT },
-      async () =>
-        (
-          await (
-            await TaxSettingsCollection.create({ db })
-          ).getForTenant(TENANT)
-        )?.moneyMigrationId,
-    );
-    expect(migrationId).toBeTruthy();
+    expect(
+      await withTenant(
+        { tenantId: TENANT },
+        async () =>
+          (
+            await (
+              await TaxSettingsCollection.create({ db })
+            ).getForTenant(TENANT)
+          )?.moneyMigrationId,
+      ),
+    ).toBe(migrationId);
+    await expect(
+      migrateCommerceLineAmounts(db, {
+        tenantId: TENANT,
+        migrationId: '00000000-0000-4000-8000-000000003934',
+      }),
+    ).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
     activation.mockRestore();
     const resumed = await migrateCommerceLineAmounts(db, {
       tenantId: TENANT,

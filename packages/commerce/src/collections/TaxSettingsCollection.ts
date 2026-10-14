@@ -50,13 +50,26 @@ export class TaxSettingsCollection extends SmrtCollection<TaxSettings> {
   }
 
   /** Claim exclusive runtime maintenance before any per-document rewrite. */
-  async beginMoneyMigration(tenantId: string): Promise<string> {
+  async beginMoneyMigration(
+    tenantId: string,
+    requestedMigrationId?: string,
+  ): Promise<string> {
+    if (
+      requestedMigrationId !== undefined &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        requestedMigrationId,
+      )
+    )
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Migration owner identity must be a UUID',
+      );
     return withDocumentMoneyTransaction(this.db, async (tx) => {
       const { lockTenantMoneyMigrationClaim } = await import(
         '../tenant-money-barrier.js'
       );
       const current = await lockTenantMoneyMigrationClaim(tx, tenantId);
-      const migrationId = crypto.randomUUID();
+      const migrationId = requestedMigrationId ?? crypto.randomUUID();
       current.moneyModel = 'migrating';
       current.moneyMigrationId = migrationId;
       await current.saveMoneyModelOnTransaction(MONEY_MIGRATION_WRITE);

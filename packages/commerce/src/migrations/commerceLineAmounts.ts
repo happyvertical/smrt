@@ -86,7 +86,11 @@ export interface PreflightCommerceLineAmountsOptions {
 export interface MigrateCommerceLineAmountsOptions {
   tenantId: string;
   acceptDraftChanges?: boolean;
-  /** Required only to resume an already claimed migration. */
+  /**
+   * Stable owner identity chosen before the attempt starts. Supplying it on
+   * the first call makes failures after the tenant claim safely resumable;
+   * a retry must present the same identity.
+   */
   migrationId?: string;
 }
 
@@ -1191,11 +1195,6 @@ export async function migrateCommerceLineAmounts(
       'FROZEN_DOCUMENT',
       'Tenant money model is already v2',
     );
-  } else if (migrationId) {
-    throw new MoneyValidationError(
-      'FROZEN_DOCUMENT',
-      'Migration owner was supplied without an active claim',
-    );
   }
   const pendingDocuments = tenantDocuments.filter(
     (document) =>
@@ -1219,9 +1218,14 @@ export async function migrateCommerceLineAmounts(
       'INVALID_MONEY_INPUT',
       'Migration changes draft totals; pass acceptDraftChanges after reviewing preflight',
     );
-  if (!migrationId)
+  if (!persistedSettings || persistedSettings.moneyModel === 'legacy')
     migrationId = await withTenant({ tenantId: options.tenantId }, () =>
-      settings.beginMoneyMigration(options.tenantId),
+      settings.beginMoneyMigration(options.tenantId, migrationId),
+    );
+  if (!migrationId)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Migration owner identity was not established',
     );
   const taxMap = (
     await mapLegacyTaxRates(db, { tenantId: options.tenantId })
