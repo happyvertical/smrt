@@ -1,0 +1,1849 @@
+{
+  "version": 1,
+  "files": {
+    "packages/agents/src/svelte/components/AgentAdminPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/agents/src/svelte/components/AgentAdminTabs.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/agents/src/svelte/components/AgentDashboard.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/agents/src/svelte/components/AgentRunHistory.svelte": {
+      "unsorted": true,
+      "internalClasses": 20
+    },
+    "packages/agents/src/svelte/components/AgentScheduleForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/agents/src/svelte/components/AgentScheduleList.svelte": {
+      "unsorted": true,
+      "internalClasses": 34
+    },
+    "packages/agents/src/svelte/components/AgentSettingsForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/agents/src/svelte/components/AgentSettingsShell.svelte": {
+      "unsorted": true,
+      "internalClasses": 17
+    },
+    "packages/analytics/src/svelte/AnalyticsSummary.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/analytics/src/svelte/EventsTable.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/analytics/src/svelte/PropertyInfo.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/analytics/src/svelte/PropertyStatusBadge.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/analytics/src/svelte/StatCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/analytics/src/svelte/TrendBadge.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/assets/src/svelte/ActionBar.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/assets/src/svelte/AssetDetail.svelte": {
+      "unsorted": true,
+      "internalClasses": 25
+    },
+    "packages/assets/src/svelte/AssetGrid.svelte": {
+      "unsorted": true,
+      "internalClasses": 22
+    },
+    "packages/assets/src/svelte/AssetList.svelte": {
+      "unsorted": true,
+      "internalClasses": 27
+    },
+    "packages/assets/src/svelte/AssetManager.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/assets/src/svelte/AssetToolbar.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/assets/src/svelte/components/AttachmentList.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/assets/src/svelte/components/AttachmentPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/assets/src/svelte/components/AttachmentUpload.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/assets/src/svelte/CreateAssetModal.svelte": {
+      "unsorted": true,
+      "internalClasses": 18
+    },
+    "packages/assets/src/svelte/playground/AssetDetailPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/assets/src/svelte/playground/AttachmentPanelPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/assets/src/svelte/playground/CreateAssetModalPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/assets/src/svelte/routes/AssetManagerRoute.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/chat/src/routes/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 21
+    },
+    "packages/chat/src/routes/components/CharacterConversation.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/chat/src/routes/components/CharacterConversationVoice.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/chat/src/routes/previews/assistant-dock-narrow/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/chat/src/routes/previews/assistant-dock/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 14
+    },
+    "packages/chat/src/routes/previews/floating-assistant/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 0
+    },
+    "packages/chat/src/routes/previews/listening-mode/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/chat/src/svelte/components/agent/AgentChat.svelte": {
+      "unsorted": true,
+      "internalClasses": 28
+    },
+    "packages/chat/src/svelte/components/agent/AgentSelector.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/chat/src/svelte/components/agent/AgentSessionPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 21
+    },
+    "packages/chat/src/svelte/components/agent/ToolCallDisplay.svelte": {
+      "unsorted": true,
+      "internalClasses": 26
+    },
+    "packages/chat/src/svelte/components/assistant/AssistantChoiceCards.svelte": {
+      "unsorted": true,
+      "internalClasses": 14
+    },
+    "packages/chat/src/svelte/components/assistant/AssistantComposer.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/chat/src/svelte/components/assistant/AssistantDock.svelte": {
+      "unsorted": true,
+      "internalClasses": 35
+    },
+    "packages/chat/src/svelte/components/assistant/AssistantThreadList.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/chat/src/svelte/components/assistant/captions/CaptionOverlay.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/chat/src/svelte/components/assistant/captions/HeardCaptions.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/chat/src/svelte/components/assistant/captions/SpokenCaptions.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/chat/src/svelte/components/assistant/FloatingAssistant.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/chat/src/svelte/components/dialogs/RoomCreateDialog.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/chat/src/svelte/components/dialogs/SearchMessages.svelte": {
+      "unsorted": true,
+      "internalClasses": 21
+    },
+    "packages/chat/src/svelte/components/helper/HelperControlPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/chat/src/svelte/components/layout/ChatLayout.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/chat/src/svelte/components/layout/MemberList.svelte": {
+      "unsorted": true,
+      "internalClasses": 22
+    },
+    "packages/chat/src/svelte/components/layout/RoomHeader.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/chat/src/svelte/components/layout/RoomList.svelte": {
+      "unsorted": true,
+      "internalClasses": 23
+    },
+    "packages/chat/src/svelte/components/messages/MessageInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/chat/src/svelte/components/messages/MessageItem.svelte": {
+      "unsorted": true,
+      "internalClasses": 26
+    },
+    "packages/chat/src/svelte/components/messages/MessageList.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/chat/src/svelte/components/messages/ThreadPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/chat/src/svelte/components/shared/FileUpload.svelte": {
+      "unsorted": true,
+      "internalClasses": 18
+    },
+    "packages/chat/src/svelte/components/shared/LinkPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/chat/src/svelte/components/shared/MentionAutocomplete.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/chat/src/svelte/components/shared/ReadReceipts.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/chat/src/svelte/components/shared/UserPresence.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/chat/src/svelte/components/tabs/ChatTab.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/chat/src/svelte/components/tabs/ChatTabList.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/chat/src/svelte/components/tabs/ChatTabs.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/chat/src/svelte/components/tabs/MiniChat.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/comments/src/svelte/RecordComments.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/commerce/src/svelte/components/CustomerDetail.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/commerce/src/svelte/components/CustomerDirectory.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/commerce/src/svelte/components/CustomerForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/commerce/src/svelte/components/InvoiceActions.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/commerce/src/svelte/components/InvoiceAllocationFields.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/commerce/src/svelte/components/InvoiceCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/commerce/src/svelte/components/InvoiceEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/commerce/src/svelte/components/InvoiceHeader.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/commerce/src/svelte/components/InvoiceLineEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/commerce/src/svelte/components/InvoiceLineItems.svelte": {
+      "unsorted": true,
+      "internalClasses": 17
+    },
+    "packages/commerce/src/svelte/components/InvoiceReview.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/commerce/src/svelte/components/InvoiceTotals.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/commerce/src/svelte/components/PartyAddressFields.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/commerce/src/svelte/components/PartyContactFields.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/commerce/src/svelte/components/PricingVersionDecision.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/commerce/src/svelte/components/PricingVersionSummary.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/commerce/src/svelte/components/PurchaseOrderEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/commerce/src/svelte/components/PurchaseSourceSelector.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/commerce/src/svelte/components/QuoteEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/commerce/src/svelte/components/QuoteRevisionComparison.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/commerce/src/svelte/components/QuoteRevisionHistory.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/commerce/src/svelte/components/UnbilledItems.svelte": {
+      "unsorted": true,
+      "internalClasses": 22
+    },
+    "packages/commerce/src/svelte/components/VendorDetail.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/commerce/src/svelte/components/VendorDirectory.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/commerce/src/svelte/components/VendorForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/commerce/src/svelte/playground/InvoicePreparationPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/commerce/src/svelte/playground/PartyFormPreview.svelte": {
+      "unsorted": false,
+      "internalClasses": 1
+    },
+    "packages/commerce/src/svelte/playground/PartySelectPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/content/src/routes/+layout.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/content/src/routes/api-explorer/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 18
+    },
+    "packages/content/src/svelte/components/ArticleCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/content/src/svelte/components/ArticleList.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/content/src/svelte/components/ContentAgentChat.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/content/src/svelte/components/ContentBodyEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/content/src/svelte/components/ContentBodyRenderer.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/content/src/svelte/components/ContentClaimAuditTool.svelte": {
+      "unsorted": true,
+      "internalClasses": 18
+    },
+    "packages/content/src/svelte/components/ContentContributionForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/content/src/svelte/components/ContentContributionInbox.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/content/src/svelte/components/ContentContributionPortal.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/content/src/svelte/components/ContentContributionTypeManager.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/content/src/svelte/components/ContentContributorManager.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/content/src/svelte/components/ContentCorrectionsTool.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/content/src/svelte/components/ContentEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 60
+    },
+    "packages/content/src/svelte/components/ContentGovernanceAssignmentEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/content/src/svelte/components/ContentGovernanceManager.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/content/src/svelte/components/ContentGovernancePanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 71
+    },
+    "packages/content/src/svelte/components/ContentGovernancePolicyEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/content/src/svelte/components/ContentGovernanceProfileEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/content/src/svelte/components/ContentImageBrowser.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/content/src/svelte/components/ContentImageChooser.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/content/src/svelte/components/ContentList.svelte": {
+      "unsorted": true,
+      "internalClasses": 73
+    },
+    "packages/content/src/svelte/components/ContentListLifecyclePanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/content/src/svelte/components/ContentMetadataFields.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/content/src/svelte/components/ContentPictureDrawer.svelte": {
+      "unsorted": true,
+      "internalClasses": 21
+    },
+    "packages/content/src/svelte/components/ContentReferencesPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/content/src/svelte/components/ContentReviewStatusTray.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/content/src/svelte/components/ContentStatusFields.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/content/src/svelte/components/ContentTitleField.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/content/src/svelte/components/ContentTransparencyReport.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/content/src/svelte/components/ContentTransparencyTool.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/content/src/svelte/components/ContentVersionsTool.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/content/src/svelte/components/GovernedContentEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/content/src/svelte/components/ImageThumbnail.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/content/src/svelte/components/Markdown.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/content/src/svelte/routes/ContentContributionsRoute.svelte": {
+      "unsorted": true,
+      "internalClasses": 19
+    },
+    "packages/content/src/svelte/routes/ContentFactsRoute.svelte": {
+      "unsorted": true,
+      "internalClasses": 27
+    },
+    "packages/content/src/svelte/routes/ContentGovernanceRoute.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/content/src/svelte/routes/ContentWorkspaceRoute.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/content/src/svelte/routes/PublishedArticleRoute.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/events/src/svelte/components/MeetingView.svelte": {
+      "unsorted": true,
+      "internalClasses": 22
+    },
+    "packages/expenses/src/svelte/components/ExpenseAmountInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/expenses/src/svelte/components/ExpenseForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/expenses/src/svelte/components/ExpenseList.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/expenses/src/svelte/components/ExpenseReceiptCapture.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/expenses/src/svelte/components/ExpenseReviewPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/expenses/src/svelte/components/ExpenseReviewQueue.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/expenses/src/svelte/playground/ExpenseWorkflowPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/features/src/svelte/components/FeatureSettingsPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/fields/src/svelte/components/FieldInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/fields/src/svelte/components/FieldPolicyControlPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/fields/src/svelte/components/FieldPolicyEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/fields/src/svelte/components/FieldPolicyGearButton.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/fields/src/svelte/components/FieldPolicyGearProvider.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/fields/src/svelte/components/FieldPolicySuggestionQueue.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/fields/src/svelte/components/FormHelp.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/fields/src/svelte/components/ObjectForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/fields/src/svelte/components/PolicyField.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/fields/src/svelte/playground/FieldPolicyFormPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/fields/src/svelte/playground/ObjectFormPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/human-resources/src/svelte/components/EmployeeForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/human-resources/src/svelte/components/EmployeeList.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/human-resources/src/svelte/components/ExpiringQualificationsList.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/human-resources/src/svelte/components/PersonQualifications.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/images/src/svelte/components/AssetsGallery.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/images/src/svelte/components/ImageEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/images/src/svelte/components/ImageUploader.svelte": {
+      "unsorted": true,
+      "internalClasses": 28
+    },
+    "packages/images/src/svelte/components/PhotoCutoutSetup.svelte": {
+      "unsorted": true,
+      "internalClasses": 16
+    },
+    "packages/images/src/svelte/routes/ImageStudioRoute.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/ingestion/src/svelte/components/ActionReview.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/ingestion/src/svelte/components/EvidenceViewer.svelte": {
+      "unsorted": true,
+      "internalClasses": 0
+    },
+    "packages/ingestion/src/svelte/components/InboxView.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/ingestion/src/svelte/components/ReviewView.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/jobs/src/svelte/components/JobActions.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/jobs/src/svelte/components/JobDashboard.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/jobs/src/svelte/components/JobDetail.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/jobs/src/svelte/components/JobList.svelte": {
+      "unsorted": true,
+      "internalClasses": 25
+    },
+    "packages/jobs/src/svelte/components/JobStats.svelte": {
+      "unsorted": true,
+      "internalClasses": 21
+    },
+    "packages/manufacturing/src/svelte/components/AssemblyForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/manufacturing/src/svelte/components/AssemblyList.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/manufacturing/src/svelte/components/BomEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 18
+    },
+    "packages/manufacturing/src/svelte/components/BomStructureTree.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/manufacturing/src/svelte/components/OperationForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/manufacturing/src/svelte/components/OperationList.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/manufacturing/src/svelte/components/ProductionRunList.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/manufacturing/src/svelte/components/RequirementsTree.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/manufacturing/src/svelte/components/RequirementsTreeLevel.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/marketing/src/svelte/components/BudgetPacing.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/marketing/src/svelte/components/CampaignDetail.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/marketing/src/svelte/components/CampaignList.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/marketing/src/svelte/components/ChannelMix.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/marketing/src/svelte/components/MarketingDashboard.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/messages/src/svelte/components/AccountAvatar.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/messages/src/svelte/components/AccountCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/messages/src/svelte/components/AccountList.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/messages/src/svelte/components/AttachmentChip.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/messages/src/svelte/components/AttachmentUpload.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/messages/src/svelte/components/ComposeForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/messages/src/svelte/components/EmailAccountManager.svelte": {
+      "unsorted": true,
+      "internalClasses": 30
+    },
+    "packages/messages/src/svelte/components/EmailFilterManager.svelte": {
+      "unsorted": true,
+      "internalClasses": 28
+    },
+    "packages/messages/src/svelte/components/FolderNav.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/messages/src/svelte/components/ForwardForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/messages/src/svelte/components/MessageCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 19
+    },
+    "packages/messages/src/svelte/components/MessageDetail.svelte": {
+      "unsorted": true,
+      "internalClasses": 16
+    },
+    "packages/messages/src/svelte/components/MessageFilters.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/messages/src/svelte/components/MessageList.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/messages/src/svelte/components/MessageStatusIndicator.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/messages/src/svelte/components/MessageToolbar.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/messages/src/svelte/components/MessageTypeBadge.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/messages/src/svelte/components/MessagingSettingsPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/messages/src/svelte/components/RecipientInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/messages/src/svelte/components/ReplyForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/messages/src/svelte/components/SendStatusBadge.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/messages/src/svelte/components/ThreadView.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/personas/src/svelte/components/DirectiveReviewQueue.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/products/src/app/App.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/products/src/app/layouts/AppLayout.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/products/src/app/pages/DemoPage.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/products/src/app/pages/LiveProductsPage.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/products/src/app/pages/ProductsPage.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/products/src/lib/components/auto-generated/AutoForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/products/src/lib/components/auto-generated/FieldRenderer.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/products/src/lib/components/LiveProductList.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/products/src/lib/components/ProductCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/products/src/lib/components/ProductForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/products/src/lib/components/TestComponent.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/products/src/lib/features/CategoryManager.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/products/src/lib/features/ProductCatalog.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/projects/src/svelte/AssistanceLauncher.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/projects/src/svelte/components/ApprovalActions.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/projects/src/svelte/components/BulkActions.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/projects/src/svelte/components/DevelopmentRequestForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/projects/src/svelte/components/DevelopmentRequestList.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/projects/src/svelte/components/RejectDialog.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/projects/src/svelte/DeliveryStatus.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/projects/src/svelte/DevelopmentBoard.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/projects/src/svelte/DevelopmentRequestDetail.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/projects/src/svelte/PreviewApprovalPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/projects/src/svelte/ProjectBoard.svelte": {
+      "unsorted": true,
+      "internalClasses": 0
+    },
+    "packages/projects/src/svelte/ServiceEvidenceList.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/prompts/src/svelte/components/PromptSettingsPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 17
+    },
+    "packages/sales/src/svelte/components/AttributionConflictQueue.svelte": {
+      "unsorted": true,
+      "internalClasses": 16
+    },
+    "packages/sales/src/svelte/components/CommissionBreakdown.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/sales/src/svelte/components/CommissionExpenseSummary.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/sales/src/svelte/components/ExecutedAgreementsList.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/sales/src/svelte/components/LeadCreateForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/sales/src/svelte/components/LeadDetail.svelte": {
+      "unsorted": true,
+      "internalClasses": 21
+    },
+    "packages/sales/src/svelte/components/LeadList.svelte": {
+      "unsorted": true,
+      "internalClasses": 16
+    },
+    "packages/sales/src/svelte/components/OpportunityBoard.svelte": {
+      "unsorted": true,
+      "internalClasses": 18
+    },
+    "packages/sales/src/svelte/components/OpportunityDetail.svelte": {
+      "unsorted": true,
+      "internalClasses": 24
+    },
+    "packages/sales/src/svelte/components/PayoutBatchReview.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/sales/src/svelte/components/PayoutHistoryList.svelte": {
+      "unsorted": true,
+      "internalClasses": 20
+    },
+    "packages/sales/src/svelte/components/ReferralLinkManager.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/sales/src/svelte/components/ReferralStatusList.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/sales/src/svelte/components/ReferrerEarningsSummary.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/sales/src/svelte/components/SalesDashboard.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/smrt-playground/src/svelte/PlaygroundHost.svelte": {
+      "unsorted": true,
+      "internalClasses": 30
+    },
+    "packages/smrt-svelte/src/browser-ai/svelte/components/DownloadProgress.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/smrt-svelte/src/browser-ai/svelte/components/ModelStatusControl.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-svelte/src/browser-ai/svelte/components/STTTest.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/smrt-svelte/src/browser-ai/svelte/components/VoiceInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-svelte/src/components/app/AppShell.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-svelte/src/components/app/DockToggles.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-svelte/src/components/app/OwnerSetupForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/app/ShellSettingsPage.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/audit/AuditList.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/audit/RecordHistory.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/board/Board.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/command-palette/CommandPaletteDialog.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/command-palette/CommandPaletteTrigger.svelte": {
+      "unsorted": true,
+      "internalClasses": 0
+    },
+    "packages/smrt-svelte/src/components/cookbook/CookbookSectionOverview.svelte": {
+      "unsorted": false,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/cookbook/CookbookSectionPage.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-svelte/src/components/forms/__tests__/form-scope.fixture.svelte": {
+      "unsorted": false,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/forms/AddressInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/smrt-svelte/src/components/forms/CheckboxInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/smrt-svelte/src/components/forms/DateRangeInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 22
+    },
+    "packages/smrt-svelte/src/components/forms/DateTimeInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/smrt-svelte/src/components/forms/FileUpload.svelte": {
+      "unsorted": true,
+      "internalClasses": 14
+    },
+    "packages/smrt-svelte/src/components/forms/Form.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/smrt-svelte/src/components/forms/FormMicButton.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/smrt-svelte/src/components/forms/FormScope.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/forms/MeasurementInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-svelte/src/components/forms/MoneyInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-svelte/src/components/forms/NumberInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/smrt-svelte/src/components/forms/PhoneInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 16
+    },
+    "packages/smrt-svelte/src/components/forms/SearchInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/smrt-svelte/src/components/forms/SelectInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/smrt-svelte/src/components/forms/TextareaInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 17
+    },
+    "packages/smrt-svelte/src/components/forms/TextInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 17
+    },
+    "packages/smrt-svelte/src/components/import-export/ImportExport.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/module/ModulePanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/smrt-svelte/src/components/notifications/NotificationBell.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/overview/OverviewAssistantUndo.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/overview/OverviewGrid.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/overview/WidgetOptionsForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 0
+    },
+    "packages/smrt-svelte/src/components/overview/widgets/ChartWidget.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-svelte/src/components/overview/widgets/MetricWidget.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/overview/widgets/NoteWidget.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/overview/widgets/RecordListWidget.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/overview/widgets/ShortcutsWidget.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/screens/DetailScreen.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/screens/EditForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/screens/ListScreen.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/screens/RecipeScreens.svelte": {
+      "unsorted": false,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/settings/SettingsCatalog.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/sortable/Sortable.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ActivityItem.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ActivityList.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ActivityTicker.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ActivityToasts.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/AdminShell.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/AppScopePanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/HotkeyInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/PhoneBottomBar.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/PhoneTopBar.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellBrand.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellCorner.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellIconButton.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellLayoutEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellNavEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellNavToggle.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellSectionIcon.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellSectionMenu.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellSettingsPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellTitle.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/ShortcutsOverlay.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/SystemScopePanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/SystemStatusChips.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/TenantNav.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-svelte/src/components/workspace/admin-shell/WorkspaceAccountMenu.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/workspace/Breadcrumbs.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/smrt-svelte/src/components/workspace/NavTree.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/smrt-svelte/src/components/workspace/RoleShell.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/smrt-svelte/src/components/workspace/tools-dock/ToolsDock.svelte": {
+      "unsorted": true,
+      "internalClasses": 20
+    },
+    "packages/smrt-svelte/src/components/workspace/WorkspaceShell.svelte": {
+      "unsorted": true,
+      "internalClasses": 34
+    },
+    "packages/smrt-svelte/src/mcp-apps/McpAppsBridge.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-ui/src/components/calendar/Calendar.svelte": {
+      "unsorted": true,
+      "internalClasses": 21
+    },
+    "packages/smrt-ui/src/components/calendar/CalendarView.svelte": {
+      "unsorted": true,
+      "internalClasses": 49
+    },
+    "packages/smrt-ui/src/components/calendar/DayView.svelte": {
+      "unsorted": true,
+      "internalClasses": 26
+    },
+    "packages/smrt-ui/src/components/chat/MessageBubble.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/smrt-ui/src/components/chat/ReactionPicker.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-ui/src/components/chat/TypingIndicator.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/data/CollectionList.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/smrt-ui/src/components/data/CollectionToolbar.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/smrt-ui/src/components/data/DataTable.svelte": {
+      "unsorted": true,
+      "internalClasses": 62
+    },
+    "packages/smrt-ui/src/components/data/ListSortSelect.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/smrt-ui/src/components/data/SortableHeader.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/smrt-ui/src/components/display/ConfidenceBadge.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/smrt-ui/src/components/display/CurrencyDisplay.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/smrt-ui/src/components/display/DateDisplay.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-ui/src/components/display/Icon.svelte": {
+      "unsorted": true,
+      "internalClasses": 0
+    },
+    "packages/smrt-ui/src/components/display/StatusBadge.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/feedback/ConfirmDialog.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/smrt-ui/src/components/feedback/LoadingOverlay.svelte": {
+      "unsorted": true,
+      "internalClasses": 16
+    },
+    "packages/smrt-ui/src/components/feedback/Meter.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-ui/src/components/feedback/Modal.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/smrt-ui/src/components/feedback/PhoneSheet.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-ui/src/components/feedback/Progress.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/smrt-ui/src/components/feedback/ProgressBar.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/smrt-ui/src/components/feedback/Spinner.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/smrt-ui/src/components/feedback/ToastViewport.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-ui/src/components/feedback/WorkingStrip.svelte": {
+      "unsorted": true,
+      "internalClasses": 17
+    },
+    "packages/smrt-ui/src/components/forms/__tests__/place-picker.fixture.svelte": {
+      "unsorted": false,
+      "internalClasses": 1
+    },
+    "packages/smrt-ui/src/components/forms/CameraCapture.svelte": {
+      "unsorted": true,
+      "internalClasses": 14
+    },
+    "packages/smrt-ui/src/components/forms/Combobox.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/smrt-ui/src/components/forms/DatePicker.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-ui/src/components/forms/DictationButton.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/smrt-ui/src/components/forms/DictationStatus.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-ui/src/components/forms/ErrorSummary.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-ui/src/components/forms/FieldLabel.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-ui/src/components/forms/Fieldset.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/smrt-ui/src/components/forms/FilePicker.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/smrt-ui/src/components/forms/FormActionBar.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-ui/src/components/forms/FormGroup.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/smrt-ui/src/components/forms/InputGroup.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/smrt-ui/src/components/forms/Listbox.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-ui/src/components/forms/MultiSelect.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/forms/Radio.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/forms/RadioGroup.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/forms/RangeSlider.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/smrt-ui/src/components/forms/RelationInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/smrt-ui/src/components/forms/SearchInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/forms/SegmentedControl.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/forms/SignaturePad.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/smrt-ui/src/components/forms/Slider.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/forms/StagedControlReview.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/smrt-ui/src/components/forms/TagsInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/smrt-ui/src/components/forms/Textarea.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-ui/src/components/forms/TimePicker.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-ui/src/components/forms/Toggle.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/smrt-ui/src/components/forms/ToggleButton.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-ui/src/components/layout/ActionGroup.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/smrt-ui/src/components/layout/Container.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/smrt-ui/src/components/layout/EmptyState.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-ui/src/components/layout/Footer.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/layout/Grid.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/smrt-ui/src/components/layout/Header.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/layout/Masthead.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/smrt-ui/src/components/layout/PageHeader.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/smrt-ui/src/components/layout/PageLayout.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/layout/SummaryCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/smrt-ui/src/components/memberships/MembershipCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 14
+    },
+    "packages/smrt-ui/src/components/memberships/MembershipList.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/nav/FilterChips.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-ui/src/components/permissions/PermissionPicker.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/smrt-ui/src/components/roles/RoleBadge.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-ui/src/components/roles/RoleSelector.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/smrt-ui/src/components/theme/ThemeProvider.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-ui/src/components/ui/Accordion.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-ui/src/components/ui/AccordionItem.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/smrt-ui/src/components/ui/Avatar.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/smrt-ui/src/components/ui/Disclosure.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/smrt-ui/src/components/ui/Dropdown.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/smrt-ui/src/components/ui/IconToggle.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/smrt-ui/src/components/ui/IconToggleGroup.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-ui/src/components/ui/Pagination.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/smrt-ui/src/components/ui/Popover.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/smrt-ui/src/components/ui/Skeleton.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/smrt-ui/src/components/ui/Tooltip.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/smrt-ui/src/components/ui/Tree.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-ui/src/svelte/playground/BaseControlsPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/smrt-ui/src/svelte/playground/CalendarPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/smrt-ui/src/svelte/playground/CapturePreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/smrt-ui/src/svelte/playground/CodeSelectorsPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-ui/src/svelte/playground/CollectionsPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/smrt-ui/src/svelte/playground/DataTablePreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 14
+    },
+    "packages/smrt-ui/src/svelte/playground/FeedbackPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/smrt-ui/src/svelte/playground/InteractiveControlsPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/smrt-ui/src/svelte/playground/StylelessPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/smrt-ui/src/theme/ThemeProvider.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-ui/src/themes/components/ColorSchemeToggle.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-ui/src/themes/components/ThemeSwitcher.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-ui/src/themes/ThemeProvider.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/smrt-workbench/src/svelte/MarkdownDocument.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/smrt-workbench/src/svelte/WorkbenchHost.svelte": {
+      "unsorted": true,
+      "internalClasses": 59
+    },
+    "packages/social/src/svelte/components/SocialAccountSettings.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/subscriptions/src/svelte/CommercialOverview.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/subscriptions/src/svelte/PlanPicker.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/subscriptions/src/svelte/SubscriptionSummary.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/subscriptions/src/svelte/UsageThresholds.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/support/src/svelte/components/CaseDetail.svelte": {
+      "unsorted": true,
+      "internalClasses": 18
+    },
+    "packages/support/src/svelte/components/CaseQueue.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/support/src/svelte/components/RoutingRationale.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/support/src/svelte/components/TargetList.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/tenancy/src/svelte/components/TenantCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/tenancy/src/svelte/components/TenantSwitcher.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/timesheets/src/svelte/components/DurationDisplay.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/timesheets/src/svelte/components/TimeEntryApprovalQueue.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/timesheets/src/svelte/components/TimeEntryCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 19
+    },
+    "packages/timesheets/src/svelte/components/TimeEntryList.svelte": {
+      "unsorted": true,
+      "internalClasses": 20
+    },
+    "packages/timesheets/src/svelte/components/TimeSummary.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/users/src/svelte/components/AccountSecurityPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/users/src/svelte/components/InviteUserModal.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/users/src/svelte/components/MagicLinkForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/users/src/svelte/components/OidcProviderButtons.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/users/src/svelte/components/PasskeySignInButton.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/users/src/svelte/components/SignInForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/users/src/svelte/components/SignUpForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/users/src/svelte/components/UserAvatar.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/users/src/svelte/components/UserCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/users/src/svelte/components/UserForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/users/src/svelte/components/UserList.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/users/src/svelte/components/UserMenu.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/webhooks/src/svelte/WebhookAdmin.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    }
+  }
+}
