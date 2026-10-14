@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { VendorCollection } from '../collections/VendorCollection.js';
-import { PurchaseOrder } from '../models/Contract.js';
+import { Order, PurchaseOrder } from '../models/Contract.js';
 import { ContractLineItem } from '../models/ContractLineItem.js';
 import { ContractStatus, ContractType } from '../types/index.js';
 
@@ -295,32 +295,35 @@ describe('Contract', () => {
       const customer2 = await customers.create({ profileId: 'c2' });
       await customer2.save();
 
-      await (
-        await contracts.create({
-          _meta_type: 'Order',
-          customerId: customer1.id,
-          totalAmount: 100,
-        })
-      ).save();
-      await (
-        await contracts.create({
-          _meta_type: 'Order',
-          customerId: customer1.id,
-          totalAmount: 200,
-        })
-      ).save();
-      await (
-        await contracts.create({
-          _meta_type: 'Order',
-          customerId: customer2.id,
-          totalAmount: 300,
-        })
-      ).save();
+      const first = new Order({
+        db: contracts.db,
+        customerId: customer1.id,
+        totalAmount: 100,
+      });
+      await first.initialize();
+      await first.save();
+      const second = new Order({
+        db: contracts.db,
+        customerId: customer1.id,
+        totalAmount: 200,
+      });
+      await second.initialize();
+      await second.save();
+      const third = new Order({
+        db: contracts.db,
+        customerId: customer2.id,
+        totalAmount: 300,
+      });
+      await third.initialize();
+      await third.save();
 
-      const c1Contracts = await contracts.findByCustomer(customer1.id!);
+      if (!customer1.id || !customer2.id)
+        throw new Error('Expected saved customers');
+
+      const c1Contracts = await contracts.findByCustomer(customer1.id);
       expect(c1Contracts).toHaveLength(2);
 
-      const c2Contracts = await contracts.findByCustomer(customer2.id!);
+      const c2Contracts = await contracts.findByCustomer(customer2.id);
       expect(c2Contracts).toHaveLength(1);
     });
 
