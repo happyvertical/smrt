@@ -11,6 +11,7 @@ import {
   resolveOwnedAssetsById,
 } from '@happyvertical/smrt-assets';
 import {
+  crossPackageRef,
   field,
   SmrtObject,
   type SmrtObjectOptions,
@@ -35,6 +36,8 @@ export interface ProductOptions extends SmrtObjectOptions {
   manufacturer?: string;
   model?: string;
   price?: number;
+  defaultSalesTaxCodeId?: string;
+  defaultPurchaseTaxCodeId?: string;
   inStock?: boolean;
   specifications?: Record<string, unknown>;
   tags?: string[];
@@ -103,6 +106,18 @@ export class Product extends SmrtObject {
       'The price in minor units (cents), for example 1999 for 19.99.',
   })
   price = 0;
+
+  /** Default tax code when this product is sold. */
+  @crossPackageRef('@happyvertical/smrt-commerce:TaxCode', {
+    description: 'The tax code normally used when this product is sold.',
+  })
+  defaultSalesTaxCodeId = '';
+
+  /** Default tax code when this product is purchased. */
+  @crossPackageRef('@happyvertical/smrt-commerce:TaxCode', {
+    description: 'The tax code normally used when this product is purchased.',
+  })
+  defaultPurchaseTaxCodeId = '';
   inStock = true;
   specifications: Record<string, unknown> = {};
   tags: string[] = [];
@@ -126,6 +141,10 @@ export class Product extends SmrtObject {
     this.manufacturer = options.manufacturer || '';
     this.model = options.model || '';
     this.price = options.price || 0;
+    if (options.defaultSalesTaxCodeId !== undefined)
+      this.defaultSalesTaxCodeId = options.defaultSalesTaxCodeId;
+    if (options.defaultPurchaseTaxCodeId !== undefined)
+      this.defaultPurchaseTaxCodeId = options.defaultPurchaseTaxCodeId;
     this.inStock = options.inStock !== undefined ? options.inStock : true;
     this.specifications = options.specifications || {};
     this.tags = options.tags || [];

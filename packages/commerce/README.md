@@ -78,6 +78,55 @@ await payment.recordPayment({
 });
 ```
 
+## Commercial money calculator
+
+The public `/money` entry is a pure calculator for line amounts, discounts,
+component tax, document rounding, and totals. It consumes and returns integer
+minor-unit money values; tax and discount percentages are exact text (`'5'`
+means 5%). It does not persist or load documents.
+
+```ts
+import { calculateMoneyDocument } from '@happyvertical/smrt-commerce/money';
+
+const totals = calculateMoneyDocument({
+  currency: 'CAD',
+  lineAmountType: 'exclusive',
+  roundingScope: 'line',
+  lines: [{
+    id: 'consulting', quantity: 1, unitPrice: 10000,
+    discount: { kind: 'none' },
+    taxCode: {
+      id: 'gst', kind: 'taxable',
+      components: [{ taxComponentId: 'gst', percent: '5', compound: false }],
+    },
+  }],
+});
+```
+
+`resolveLineTaxCode()` resolves caller-loaded codes without I/O, and the
+Svelte `InvoiceEditor` opts into the v2 money controls through its `money`
+prop. Frozen editor documents render a supplied stored snapshot without
+recalculation. See the [commerce money calculator guide](../../docs/content/commerce-money.md)
+for pricing modes, rounding, input and result types, the native-form editor
+contract, and the boundaries this package does not define.
+
+### Tenant tax catalogue and defaults
+
+The package root also exports tenant-scoped `TaxComponent`, `TaxCode`, and
+`TaxSettings` models and their collections. Components hold exact percentage
+rates and optional liability accounts; codes combine compatible components; the
+one settings row per tenant supplies sales/purchase defaults, amount mode,
+rounding scope, and labelled registration numbers. A referenced component rate
+is immutable: archive it and create a replacement for a rate change.
+
+`ensureTenantTaxCodes(db, tenantId)` idempotently creates the baseline
+non-taxable codes. `applyTaxCodeExamplePack(db, tenantId)` installs illustrative
+regional examples for review, and `applyCommerceCookbookSettings(db, tenantId,
+cookbook)` explicitly materializes a validated cookbook's defaults after schema
+setup and authentication establish the tenant. See the [commerce money
+calculator guide](../../docs/content/commerce-money.md#tenant-tax-catalogue) for
+the supported kinds, seed behavior, and cookbook rate units.
+
 ## API
 
 ### Models

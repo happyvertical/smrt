@@ -86,9 +86,23 @@ export {
   type PaymentIntentIdempotencyArgs,
   type PaymentIntentSeed,
   PayoutCollection,
+  TaxCodeCollection,
+  TaxComponentCollection,
+  TaxSettingsCollection,
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
+export {
+  type CommerceLineAmountDocumentReport,
+  type CommerceLineAmountReasonCode,
+  type CommerceLineAmountsReport,
+  type CommerceLineAmountsReportOutput,
+  type CommerceLineAmountTenantSummary,
+  type CommerceMoneyTotals,
+  type PreflightCommerceLineAmountsOptions,
+  serializeCommerceLineAmountsReportCsv,
+  serializeCommerceLineAmountsReportJson,
+} from './migrations/commerceLineAmounts.js';
 export {
   type InvoiceEditorStorageEngine,
   type InvoiceEditorStorageMigrationResult,
@@ -138,6 +152,9 @@ export {
   Payout,
   ProductionOrder,
   PurchaseOrder,
+  TaxCode,
+  TaxComponent,
+  TaxSettings,
   Vendor,
   WholesaleOrder,
 } from './models/index.js';
@@ -177,6 +194,21 @@ export {
   VendorsRecipe,
   WholesaleRecipe,
 } from './recipes.js';
+export {
+  applyCommerceCookbookSettings,
+  applyCookbookTaxSettings,
+  applyTaxCodeExamplePack,
+  COMMON_TAX_CODE_EXAMPLE_PACK,
+  type CookbookTaxSettingsInput,
+  cookbookTaxSettings,
+  ensureTenantTaxCodes,
+  type LegacyTaxMapReport,
+  type LegacyTaxRateRow,
+  type MapLegacyTaxRatesOptions,
+  mapLegacyTaxRates,
+  mapLegacyTaxRatesInTransaction,
+  type TaxCodeExamplePack,
+} from './tax/index.js';
 
 // Types
 export {

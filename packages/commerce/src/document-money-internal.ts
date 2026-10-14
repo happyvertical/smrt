@@ -11,6 +11,11 @@ export const DOCUMENT_MONEY_WRITE = Symbol('commerce.documentMoneyWrite');
 
 export type DocumentMoneyWriteCapability = typeof DOCUMENT_MONEY_WRITE;
 
+/** Internal capability for the server-owned tenant money migration marker. */
+export const MONEY_MIGRATION_WRITE = Symbol('commerce.moneyMigrationWrite');
+
+export type MoneyMigrationWriteCapability = typeof MONEY_MIGRATION_WRITE;
+
 export interface MoneyParentLockCollection {
   readonly tableName: string;
   query(

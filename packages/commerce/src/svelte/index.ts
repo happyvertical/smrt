@@ -260,14 +260,21 @@ import InvoiceAllocationFields from './components/InvoiceAllocationFields.svelte
 import InvoiceEditor from './components/InvoiceEditor.svelte';
 import InvoiceLineEditor from './components/InvoiceLineEditor.svelte';
 import InvoiceReview from './components/InvoiceReview.svelte';
+import MoneyInvoiceEditor from './components/MoneyInvoiceEditor.svelte';
 
 export {
   InvoiceAllocationFields,
   InvoiceEditor,
   InvoiceLineEditor,
   InvoiceReview,
+  MoneyInvoiceEditor,
 };
 export type InvoiceReviewProps = ComponentProps<typeof InvoiceReview>;
+export {
+  calculateMoneyEditorDraft,
+  moneyEditorFieldNames,
+  moneyEditorSubmission,
+} from './invoices/money-editor.js';
 export type {
   InvoiceAllocationDraft,
   InvoiceAllocationFieldsProps,
@@ -281,6 +288,13 @@ export type {
   InvoicePreparationHiddenField,
   InvoicePreparationReview,
   InvoicePreparationSource,
+  MoneyEditorDraft,
+  MoneyEditorFieldNames,
+  MoneyEditorLineDraft,
+  MoneyEditorProps,
+  MoneyEditorTaxCode,
+  MoneyStoredDocument,
+  MoneyStoredTax,
 } from './invoices/types.js';
 
 ModuleUIRegistry.register(

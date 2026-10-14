@@ -360,6 +360,7 @@ export interface CustomerOptions extends SmrtObjectOptions {
   paymentTerms?: string;
   taxExempt?: boolean;
   taxId?: string;
+  defaultTaxCodeId?: string;
   defaultShippingAddress?: Address;
   defaultBillingAddress?: Address;
   status?: CustomerStatus;
@@ -377,11 +378,55 @@ export interface VendorOptions extends SmrtObjectOptions {
   minimumOrderAmount?: number;
   paymentTerms?: string;
   currency?: string;
+  taxId?: string;
+  defaultTaxCodeId?: string;
   defaultContactEmail?: string;
   defaultContactPhone?: string;
   status?: VendorStatus;
   notes?: string;
   payoutAddresses?: Record<string, string> | string | null;
+}
+
+/** A component reference stored in a tax code's ordered component list. */
+export interface TaxCodePart {
+  taxComponentId: string;
+  compound: boolean;
+}
+
+export interface TaxComponentOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  name?: string;
+  percent?: string;
+  liabilityAccountId?: string;
+  recoverable?: boolean;
+  active?: boolean;
+}
+
+export interface TaxCodeOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  code?: string;
+  name?: string;
+  kind?: 'taxable' | 'zero-rated' | 'exempt' | 'out-of-scope';
+  appliesTo?: 'sales' | 'purchases' | 'both';
+  components?: TaxCodePart[];
+  active?: boolean;
+}
+
+export interface TaxRegistrationOptions {
+  taxComponentId: string;
+  number: string;
+  label: string;
+}
+
+export interface TaxSettingsOptions extends SmrtObjectOptions {
+  tenantId?: string;
+  defaultSalesTaxCodeId?: string;
+  defaultPurchaseTaxCodeId?: string;
+  defaultLineAmountType?: 'exclusive' | 'inclusive' | 'none';
+  taxRoundingScope?: 'line' | 'document';
+  taxRegistrations?: TaxRegistrationOptions[];
+  moneyModel?: 'legacy' | 'migrating' | 'v2';
+  moneyMigrationId?: string;
 }
 
 /**
@@ -499,6 +544,20 @@ export interface InvoiceOptions extends SmrtObjectOptions {
   notes?: string;
   customerNotes?: string;
   terms?: string;
+  lineAmountType?: 'exclusive' | 'inclusive' | 'none';
+  taxRoundingScope?: 'line' | 'document';
+  discountTotal?: number;
+  sellerTaxRegistrations?: TaxRegistrationOptions[];
+  sellerTaxRegistrationsJson?: string;
+  partyTaxId?: string;
+  moneySnapshotId?: string;
+}
+
+export interface InvoiceTaxComponentSnapshot {
+  taxComponentId: string;
+  name: string;
+  percent: string;
+  taxMinor: number;
 }
 
 /** Retained editing modes, validated against resolved model fields before reuse. */
@@ -519,16 +578,28 @@ export interface InvoiceLineItemOptions extends SmrtObjectOptions {
   invoiceId?: string;
   description?: string;
   sku?: string;
+  productId?: string | null;
   quantity?: number;
   unitPrice?: number;
   discount?: number;
+  discountType?: 'none' | 'percent' | 'amount';
+  discountRate?: string;
   taxRate?: number;
+  taxMode?: 'inherit' | 'override';
+  taxCodeId?: string | null;
+  taxCodeCode?: string | null;
+  taxCodeName?: string | null;
+  taxComponents?: InvoiceTaxComponentSnapshot[];
+  taxComponentsJson?: string | null;
+  taxAmount?: number;
+  legacyAmount?: number | null;
+  moneySnapshotId?: string;
   amount?: number;
   sourceType?: string;
   sourceId?: string;
   periodStart?: Date | null;
   periodEnd?: Date | null;
-  revenueAccountId?: string;
+  revenueAccountId?: string | null;
   sortOrder?: number;
 }
 

@@ -51,6 +51,7 @@ function writeManifests(dir: string): void {
       WholesaleOrder: ['currency', 'terms'],
       Estimate: ['currency', 'terms'],
       Agreement: ['currency', 'terms'],
+      Contract: ['currency', 'terms'],
       InvoiceLineItem: ['taxRate'],
       ContractLineItem: ['taxRate'],
       ProductionOrder: ['quantity'],
@@ -840,6 +841,7 @@ describe('smrt kitchen mcp over stdio', () => {
       currency: 'CAD',
       taxRate: 5,
     });
+    expect(changed.text).toContain('tax 5% excluded, line rounding');
 
     // The same batch id again applies nothing, even though expectedRevision is stale.
     const retry = await call('run_commands', {
