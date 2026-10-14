@@ -1,11 +1,21 @@
 # Frozen commerce snapshot → accounting SDK mapper
 
-`src/accounting-snapshot.ts` is a pure adapter for an approved commerce money
-snapshot. It is intentionally not wired into `Invoice`, a collection, or a
-provider call. The currently released `@happyvertical/accounting` package does
-not export the #1408 snapshot and credit-memo inputs, so the module has local
-structural types compatible with that public API. Wire it only after the SDK
-release is available; do not add an unreleased dependency override.
+`src/accounting-snapshot.ts` is the pure adapter for an approved commerce money
+snapshot. `src/invoice-accounting-sync.ts` is the owning persistence and
+provider boundary. It re-reads the issued Invoice, InvoiceLineItem and
+DocumentTax rows and verifies their shared `moneySnapshotId` before calling the
+pure mapper. `Invoice.toAccountingInput()` keeps its legacy behavior for legacy
+tenants; a money-v2 tenant must supply explicit QuickBooks realm mapping and is
+routed through the frozen boundary.
+
+The released `@happyvertical/accounting` 0.103.5 path supports only invoices
+whose amounts exclude tax (or have no applicable tax) and whose lines have no
+discount. The commerce adapter sends stored net `amountMinor` as QBO `Amount`,
+never sends numeric `taxRate` or `discount`, and supplies explicit Item and
+TaxCode references for every line. Inclusive documents, credit notes, signed
+adjustment lines, and discounts fail before any local sync-state or provider
+write until their reviewed public SDK APIs ship. No dependency override or
+private SDK import is used.
 
 The caller supplies persisted document and line facts: document mode and
 rounding scope, integer-minor header totals, line pre-discount unit price and
@@ -33,6 +43,59 @@ Their provider direction is the SDK's `CreditMemo` operation. A future host
 must call `requireCreditMemoCapability()` (or the SDK's equivalent) before a
 write and must persist the SDK create descriptor and returned external ID. The
 adapter never auto-applies a credit memo to its invoice.
+
+## Sync identity and recovery
+
+`syncFrozenInvoiceToAccounting()` derives a QuickBooks request identity from
+the provider, realm, environment, document id, and immutable
+`moneySnapshotId`. The SDK forwards the persisted `requestId` as QuickBooks'
+`requestid` parameter and validates the payload hash. Commerce persists an
+`in_flight` owner before provider I/O, so a competing call is refused instead
+of issuing a second create. A successful call persists the external id and a
+`synced` state; another call for the same identity returns `unchanged` without
+provider I/O. A different realm, environment, provider, or snapshot never
+shares that no-op.
+
+The database transaction and provider request are separate phases. Commerce
+does not claim they are atomic. If the provider outcome or the post-write local
+commit is uncertain, the stored state requires reconciliation and refuses a
+blind retry. A provider rejection known not to have committed may be retried
+with the same prepared request. `readFrozenAccountingSyncState()` exposes the
+request descriptor needed by an operator-owned reconciliation workflow.
+
+Recovery is an explicit application flow rather than a database repair:
+
+1. Load the invoice and call `readFrozenAccountingSyncState()`.
+2. Use its realm, environment, `requestId`, and payload hash to query the
+   configured QuickBooks realm. Wait until the original sync owner has stopped.
+3. Call `reconcileFrozenInvoiceAccountingSync()` with that same request ID,
+   attempt ID, and mapping. Report `found` with the provider document ID and
+   observed timestamp, or report `absent` only after QuickBooks authoritatively
+   confirms no create.
+4. A `found` result records the sync and makes later calls no-ops. An `absent`
+   result returns `ready`; the next sync reuses the identical prepared request.
+
+The reconciliation API accepts both `unknown` and interrupted `in_flight`
+records so a process crash after the remote write cannot wedge the invoice.
+It rejects a changed snapshot, request, realm, environment, or mapping. It does
+not perform the remote lookup itself and must not be used while the original
+owner can still complete.
+
+## Deployment and current SDK boundary
+
+`Invoice.accountingSyncStateJson` is a sensitive, server-owned persistence
+field. It is excluded from public serialization and from the shared generated
+REST, MCP/Chat, and CLI writable allowlist. Deployments must apply the normal
+generated schema migration that adds `accounting_sync_state_json` before using
+this sync API. Runtime code never creates or alters schema.
+
+Signed adjustment lines remain a known acceptance gap in the released SDK
+integration. The commerce snapshot and pure mapper preserve them, but SDK
+0.103.5 cannot emit their supported provider representation. The owning sync
+boundary therefore rejects them before state or provider mutation. Inclusive
+documents, credit notes, and discounted lines have the same release dependency;
+support must use reviewed public SDK capabilities rather than a private import
+or dependency override.
 
 The mapper's A/B fixtures are the commerce calculator's actual CAD goldens:
 example A is tax-exclusive and example B is tax-inclusive. Both cover line and

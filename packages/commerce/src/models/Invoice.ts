@@ -21,7 +21,8 @@ import {
   DOCUMENT_MONEY_WRITE,
   type DocumentMoneyWriteCapability,
 } from '../document-money-internal.js';
-import { assertIntegerMinorUnits } from '../money.js';
+import type { FrozenInvoiceAccountingOptions } from '../invoice-accounting-sync.js';
+import { assertIntegerMinorUnits, MoneyValidationError } from '../money.js';
 import {
   type AccountingInvoiceInput,
   type CancelRevenueOptions,
@@ -429,6 +430,10 @@ export class Invoice extends SmrtObject {
    */
   syncedAt: Date | null = null;
 
+  /** Server-owned prepared/in-flight/result identity for frozen accounting sync. */
+  @field({ sensitive: true })
+  accountingSyncStateJson = '';
+
   /**
    * How the provider collects this invoice (#3190), decided once by billing
    * period close before its first push and reused on every retry, so it is
@@ -545,6 +550,8 @@ export class Invoice extends SmrtObject {
     if (options.externalProvider !== undefined)
       this.externalProvider = options.externalProvider;
     if (options.syncedAt !== undefined) this.syncedAt = options.syncedAt;
+    if (options.accountingSyncStateJson !== undefined)
+      this.accountingSyncStateJson = options.accountingSyncStateJson;
     if (options.collectionMethod !== undefined)
       this.collectionMethod = options.collectionMethod;
     if (options.sentAt !== undefined) this.sentAt = options.sentAt;
@@ -1291,7 +1298,40 @@ export class Invoice extends SmrtObject {
    * await invoice.save();
    * ```
    */
-  async toAccountingInput(): Promise<AccountingInvoiceInput> {
+  async toAccountingInput(
+    options?: FrozenInvoiceAccountingOptions,
+  ): Promise<AccountingInvoiceInput> {
+    const { settingsForTenant } = await import('../document-money.js');
+    const settings = await settingsForTenant(this.db, this.tenantId);
+    if (settings?.moneyModel === 'migrating') {
+      throw new MoneyValidationError(
+        'FROZEN_DOCUMENT',
+        'Tenant money migration is in progress',
+      );
+    }
+    if (settings?.moneyModel === 'v2') {
+      if (!options) {
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          'Money-v2 accounting conversion requires explicit realm mapping',
+        );
+      }
+      if (!this.id || !this.tenantId) {
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          'Money-v2 accounting conversion requires a persisted tenant invoice',
+        );
+      }
+      const { toFrozenInvoiceAccountingInput } = await import(
+        '../invoice-accounting-sync.js'
+      );
+      return toFrozenInvoiceAccountingInput({
+        db: this.db,
+        tenantId: this.tenantId,
+        invoiceId: this.id,
+        mapping: options.mapping,
+      });
+    }
     // Dynamically import to avoid circular dependency
     const { InvoiceLineItemCollection } = await import(
       '../collections/InvoiceLineItemCollection.js'

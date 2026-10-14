@@ -120,6 +120,21 @@ export {
   previewInvoiceMoney,
 } from './document-money.js';
 export {
+  type FrozenAccountingReconciliationReady,
+  type FrozenAccountingSyncResult,
+  type FrozenInvoiceAccountingInput,
+  type FrozenInvoiceAccountingOptions,
+  type FrozenInvoiceAccountingSnapshot,
+  loadFrozenInvoiceAccountingSnapshot,
+  type QuickBooksFrozenInvoiceMapping,
+  type ReconcileFrozenInvoiceAccountingInput,
+  readFrozenAccountingSyncState,
+  reconcileFrozenInvoiceAccountingSync,
+  type SyncFrozenInvoiceToAccountingInput,
+  syncFrozenInvoiceToAccounting,
+  toFrozenInvoiceAccountingInput,
+} from './invoice-accounting-sync.js';
+export {
   type InvoiceMcpGetResult,
   serializeInvoiceMcpGet,
 } from './invoice-mcp.js';
