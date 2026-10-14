@@ -86,6 +86,9 @@ export {
   type PaymentIntentIdempotencyArgs,
   type PaymentIntentSeed,
   PayoutCollection,
+  TaxCodeCollection,
+  TaxComponentCollection,
+  TaxSettingsCollection,
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
@@ -138,6 +141,9 @@ export {
   Payout,
   ProductionOrder,
   PurchaseOrder,
+  TaxCode,
+  TaxComponent,
+  TaxSettings,
   Vendor,
   WholesaleOrder,
 } from './models/index.js';
@@ -177,6 +183,14 @@ export {
   VendorsRecipe,
   WholesaleRecipe,
 } from './recipes.js';
+export {
+  ensureTenantTaxCodes,
+  type LegacyTaxMapReport,
+  type LegacyTaxRateRow,
+  type MapLegacyTaxRatesOptions,
+  mapLegacyTaxRates,
+  mapLegacyTaxRatesInTransaction,
+} from './tax/index.js';
 
 // Types
 export {
