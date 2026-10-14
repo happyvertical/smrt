@@ -127,6 +127,26 @@ setup and authentication establish the tenant. See the [commerce money
 calculator guide](../../docs/content/commerce-money.md#tenant-tax-catalogue) for
 the supported kinds, seed behavior, and cookbook rate units.
 
+### Persisted Invoice v2
+
+The public `Invoice` and `InvoiceLineItem` save paths use the server-owned
+`TaxSettings.moneyModel` gate. Missing settings and `legacy` preserve the
+existing behavior; `migrating` rejects Invoice money writes; `v2` atomically
+recalculates the draft Invoice aggregate from its lines and current tax inputs.
+The marker is not writable through generated surfaces or ordinary saves of
+an existing settings row.
+
+Issuing an Invoice (leaving `DRAFT`) or assigning `arJournalId` freezes its
+money snapshot. Header and line money changes then fail with `FROZEN_DOCUMENT`,
+while later lifecycle and payment updates retain the snapshot. Provider tax
+stays separate in `providerTaxAmount` and contributes to the Invoice headers
+without creating an application tax code. In v2,
+`InvoiceLineItemCollection.getTotalForInvoice()` sums line amounts for
+compatibility; use persisted `Invoice.totalAmount` for the amount due. The
+[commerce money calculator guide](../../docs/content/commerce-money.md#persisted-invoice-money)
+documents the v2 Invoice semantics and boundaries; tenant migration, Contract
+persistence, credit notes, posting, and reporting are not covered here.
+
 ## API
 
 ### Models
