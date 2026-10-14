@@ -89,7 +89,8 @@ export interface MoneyLineInput {
   /** Signed safe integer minor units. */
   unitPrice: number;
   discount: MoneyDiscountInput;
-  taxCode: MoneyTaxCodeInput;
+  /** Null means no code resolved; `none` pricing requires an out-of-scope code. */
+  taxCode: MoneyTaxCodeInput | null;
 }
 
 export interface MoneyLineResult {
@@ -103,7 +104,8 @@ export interface MoneyLineResult {
 }
 
 export interface MoneyDocumentTaxResult {
-  taxCodeId: string;
+  /** Null records an unassigned line without inventing a persisted tax-code ID. */
+  taxCodeId: string | null;
   taxComponentId: string | null;
   taxableMinor: number;
   taxMinor: number;
@@ -378,7 +380,20 @@ export function calculateMoneyDocument(input: {
     const discount = discountFor(gross, line.discount);
     const amount = gross - discount;
     safeMoney(amount);
-    const components = validateTaxCode(line.taxCode, rates);
+    if (input.lineAmountType === 'none' && !line.taxCode)
+      validationError(
+        'TAX_CODE_NOT_FOUND',
+        'None pricing requires an out-of-scope tax code',
+      );
+    if (
+      input.lineAmountType === 'none' &&
+      line.taxCode?.kind !== 'out-of-scope'
+    )
+      validationError(
+        'TAX_CODE_KIND',
+        'None pricing requires an out-of-scope tax code',
+      );
+    const components = line.taxCode ? validateTaxCode(line.taxCode, rates) : [];
     const totalRate = components.reduce(
       (sum, component) => sum + component.rate,
       0n,
@@ -460,12 +475,13 @@ export function calculateMoneyDocument(input: {
     const source = working[index].input;
     const result = lines[index];
     if (
+      !source.taxCode ||
       source.taxCode.components.length === 0 ||
       input.lineAmountType === 'none'
     ) {
-      const key = `${source.taxCode.id}\u0000`;
+      const key = `${source.taxCode?.id ?? ''}\u0000`;
       const row = taxRows.get(key) ?? {
-        taxCodeId: source.taxCode.id,
+        taxCodeId: source.taxCode?.id ?? null,
         taxComponentId: null,
         taxableMinor: 0,
         taxMinor: 0,
@@ -477,6 +493,11 @@ export function calculateMoneyDocument(input: {
       continue;
     }
     for (const component of result.components) {
+      if (!source.taxCode)
+        validationError(
+          'INVALID_MONEY_INPUT',
+          'Tax component requires a tax code',
+        );
       const key = `${source.taxCode.id}\u0000${component.taxComponentId}`;
       const row = taxRows.get(key) ?? {
         taxCodeId: source.taxCode.id,
@@ -494,8 +515,9 @@ export function calculateMoneyDocument(input: {
     }
   }
   const taxes = [...taxRows.values()].sort((left, right) => {
-    if (left.taxCodeId !== right.taxCodeId)
-      return left.taxCodeId < right.taxCodeId ? -1 : 1;
+    const leftCode = left.taxCodeId ?? '';
+    const rightCode = right.taxCodeId ?? '';
+    if (leftCode !== rightCode) return leftCode < rightCode ? -1 : 1;
     const leftComponent = left.taxComponentId ?? '';
     const rightComponent = right.taxComponentId ?? '';
     return leftComponent < rightComponent

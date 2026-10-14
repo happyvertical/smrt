@@ -298,6 +298,58 @@ describe('commercial money goldens', () => {
       expect(result.lines[0].grossMinor).toBe(-13);
     }
   });
+
+  it('represents an unassigned exclusive line without a synthetic tax code', () => {
+    const result = calculate(
+      [
+        {
+          id: 'unassigned',
+          quantity: 2,
+          unitPrice: 125,
+          discount: { kind: 'none' },
+          taxCode: null,
+        },
+      ],
+      'exclusive',
+      'document',
+    );
+    expect(result).toMatchObject({
+      subtotalMinor: 250,
+      taxMinor: 0,
+      totalMinor: 250,
+    });
+    expect(result.lines[0]).toMatchObject({
+      amountMinor: 250,
+      components: [],
+      taxMinor: 0,
+      netMinor: 250,
+    });
+    expect(result.taxes).toEqual([
+      {
+        taxCodeId: null,
+        taxComponentId: null,
+        taxableMinor: 250,
+        taxMinor: 0,
+      },
+    ]);
+    expectCode(
+      () =>
+        calculate(
+          [
+            {
+              id: 'missing-out-of-scope',
+              quantity: 1,
+              unitPrice: 100,
+              discount: { kind: 'none' },
+              taxCode: null,
+            },
+          ],
+          'none',
+          'line',
+        ),
+      'TAX_CODE_NOT_FOUND',
+    );
+  });
 });
 
 describe('validation and tax-code resolution', () => {
@@ -529,6 +581,16 @@ describe('validation and tax-code resolution', () => {
         ),
       'TAX_CODE_NOT_FOUND',
     );
+    expect(
+      resolveLineTaxCode(
+        { lineAmountType: 'exclusive' },
+        {
+          direction: 'sales',
+          codes,
+          customerTaxExempt: false,
+        },
+      ),
+    ).toEqual({ taxCode: null, source: 'none' });
   });
 });
 
