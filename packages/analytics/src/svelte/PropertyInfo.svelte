@@ -87,7 +87,7 @@ const lastSyncFormatted = $derived.by(() => {
 	.property-info {
 		padding: 1rem;
 		background: var(--smrt-color-surface);
-		border: 1px solid var(--smrt-color-outline-variant);
+		border: var(--smrt-hairline);
 		border-radius: 0.5rem;
 	}
 
@@ -112,7 +112,7 @@ const lastSyncFormatted = $derived.by(() => {
 		display: flex;
 		justify-content: space-between;
 		padding: 0.375rem 0;
-		border-bottom: 1px solid var(--smrt-color-outline-variant);
+		border-bottom: var(--smrt-hairline);
 	}
 
 	.detail-row:last-child {

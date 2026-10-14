@@ -6,7 +6,7 @@ let { scheme = 'light' }: { scheme?: 'light' | 'dark' } = $props();
 const longSlug = `construction.${'extraordinarily_long_unbroken_permission_segment_'.repeat(4)}manage`;
 const permissions = [
   { slug: 'projects.read', name: 'Read projects', category: 'Projects' },
-  { slug: longSlug, name: 'Manage specialist construction records', category: 'Construction' },
+  { slug: longSlug, name: `Manage ${'SpecialistConstructionRecords'.repeat(4)}`, category: 'Construction' },
 ];
 </script>
 

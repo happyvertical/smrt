@@ -138,7 +138,7 @@ const statusLabel: Record<string, string> = {
     height: 100%;
     width: 280px;
     background: var(--smrt-color-surface-container);
-    border-right: 1px solid var(--smrt-color-outline-variant);
+    border-right: var(--smrt-hairline);
     overflow: hidden;
   }
 
@@ -147,7 +147,7 @@ const statusLabel: Record<string, string> = {
     align-items: center;
     justify-content: space-between;
     padding: var(--smrt-spacing-4);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     flex-shrink: 0;
   }
 

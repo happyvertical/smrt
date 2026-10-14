@@ -494,7 +494,7 @@ onDestroy(() => {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     border-radius: var(--smrt-radius-lg);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     overflow: hidden;
     height: 100%;
     min-height: 500px;
@@ -505,7 +505,7 @@ onDestroy(() => {
     justify-content: space-between;
     align-items: center;
     padding: 1rem 1.5rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
   
   .header h3 {
@@ -529,7 +529,7 @@ onDestroy(() => {
   .tabs {
     display: flex;
     background: var(--smrt-color-surface-container-high);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   /* The tab strip is migrated to ghost Buttons; the active state is the bottom
@@ -594,7 +594,7 @@ onDestroy(() => {
   }
 
   .upload-area:hover, .upload-area:focus {
-    border-color: var(--smrt-color-outline);
+    border-color: var(--smrt-hairline-strong-color);
     background: var(--smrt-color-surface-container-highest);
     outline: none;
   }
@@ -706,7 +706,7 @@ onDestroy(() => {
   .error-panel :global(.try-again-btn) {
     background: var(--smrt-color-surface-container-high);
     color: white;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     padding: 0.5rem 1rem;
     border-radius: var(--smrt-radius-sm);
   }
@@ -796,7 +796,7 @@ onDestroy(() => {
     max-height: 400px;
     object-fit: contain;
     border-radius: var(--smrt-radius-md);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background-color: var(--smrt-color-surface-container-high);
   }
 
@@ -822,7 +822,7 @@ onDestroy(() => {
     display: flex;
     gap: 0.75rem;
     flex-wrap: wrap;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     margin-top: 0.5rem;
   }
 
@@ -845,7 +845,7 @@ onDestroy(() => {
     gap: 0.4rem;
     background: var(--smrt-color-surface-container-highest);
     color: var(--smrt-color-on-surface-variant);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     padding: 0.65rem 1.25rem;
     border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
@@ -871,7 +871,7 @@ onDestroy(() => {
     margin: 0 1.5rem 1.5rem;
     background: var(--smrt-color-surface-container-high);
     border-radius: var(--smrt-radius-md);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
   }
 
   .variation-hint {

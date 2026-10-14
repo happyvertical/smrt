@@ -187,7 +187,7 @@ function headingTag(depth = 2) {
   .markdown-document pre {
     margin: 0;
     overflow: auto;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 6px;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);

@@ -76,8 +76,8 @@ describe('Button', () => {
     // Caller's class is applied (so custom-styled buttons can adopt Button)...
     expect(button).toHaveClass('topic-action-btn');
     // ...without dropping the primitive's own base/variant styling.
-    expect(button).toHaveClass('button');
-    expect(button).toHaveClass('primary');
+    expect(button).toHaveClass('smrt-button__root');
+    expect(button).toHaveClass('smrt-button__primary');
   });
 
   it('appends a custom class in link mode too', () => {
@@ -90,7 +90,7 @@ describe('Button', () => {
     });
     const link = screen.getByRole('link', { name: 'Home' });
     expect(link).toHaveClass('nav-link');
-    expect(link).toHaveClass('button');
+    expect(link).toHaveClass('smrt-button__root');
   });
 
   it('passes target/rel through to the anchor in link mode (#1589)', () => {

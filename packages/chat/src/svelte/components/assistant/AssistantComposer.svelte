@@ -503,7 +503,7 @@ function removeAttachment(id: string) {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .assistant-composer {
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     background: var(--smrt-color-surface);
     padding: var(--smrt-spacing-2);
     flex-shrink: 0;
@@ -525,7 +525,7 @@ function removeAttachment(id: string) {
     width: 44px;
     height: 44px;
     padding: 0;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface-variant);
@@ -602,7 +602,7 @@ function removeAttachment(id: string) {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container-low);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
     color: var(--smrt-color-on-surface);
     max-width: 160px;

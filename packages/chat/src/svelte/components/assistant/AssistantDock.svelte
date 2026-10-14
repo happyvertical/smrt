@@ -1021,7 +1021,7 @@ async function handleConfirmAction(requestId: string) {
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.35rem 0.75rem;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
     color: var(--smrt-color-on-surface-variant);
   }
@@ -1032,14 +1032,14 @@ async function handleConfirmAction(requestId: string) {
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.35rem 0.75rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .assistant-dock-tool-request {
     margin: 0.5rem 0;
     padding: 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface-container);
   }
@@ -1099,7 +1099,7 @@ async function handleConfirmAction(requestId: string) {
       min-height: 44px;
       padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
       border: none;
-      border-bottom: 1px solid var(--smrt-color-outline-variant);
+      border-bottom: var(--smrt-hairline);
       background: var(--smrt-color-surface-container-low);
       color: var(--smrt-color-on-surface);
       font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
@@ -1132,7 +1132,7 @@ async function handleConfirmAction(requestId: string) {
       display: flex;
       max-width: none;
       max-height: 40%;
-      border-bottom: 1px solid var(--smrt-color-outline-variant);
+      border-bottom: var(--smrt-hairline);
     }
 
     .assistant-dock-threads > :global(.assistant-thread-list) {
@@ -1156,7 +1156,7 @@ async function handleConfirmAction(requestId: string) {
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
     color: var(--smrt-color-on-surface-variant);
     background: var(--smrt-color-surface-container-low);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .assistant-dock-scroll {
@@ -1349,7 +1349,7 @@ async function handleConfirmAction(requestId: string) {
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
     color: var(--smrt-color-on-error-container);
     background: var(--smrt-color-error-container);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .assistant-dock-single-actions {

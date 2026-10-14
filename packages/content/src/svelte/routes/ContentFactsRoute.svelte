@@ -332,7 +332,7 @@ onMount(() => {
     min-height: 2.5rem;
     padding: 0 1rem;
     border-radius: var(--smrt-radius-full);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: color-mix(
       in srgb,
       var(--smrt-color-surface) 92%,
@@ -370,7 +370,7 @@ onMount(() => {
 
   .filters-panel,
   .panel {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: color-mix(
       in srgb,
       var(--smrt-color-surface) 96%,
@@ -410,10 +410,10 @@ onMount(() => {
     color: var(--smrt-color-on-surface-variant);
   }
 
-  .search-field :global(.input) {
+  .search-field :global([data-smrt-component="Input"]) {
     min-height: 2.85rem;
     border-radius: 0.85rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     padding: 0 0.95rem;
@@ -453,7 +453,7 @@ onMount(() => {
     align-items: center;
     flex-wrap: wrap;
     padding-bottom: 0.25rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .results-meta strong {
@@ -489,7 +489,7 @@ onMount(() => {
     display: grid;
     gap: 0.9rem;
     padding: 1rem 0;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .fact-row:first-child {
@@ -552,7 +552,7 @@ onMount(() => {
   }
 
   details {
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     padding-top: 0.8rem;
   }
 

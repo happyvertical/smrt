@@ -49,7 +49,7 @@ const { t } = useI18n();
     justify-content: space-between;
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-3) 0;
-    border-block-end: 1px solid var(--smrt-color-outline-variant);
+    border-block-end: var(--smrt-hairline);
   }
 
   .smrt-activity-item__main {

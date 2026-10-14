@@ -36,7 +36,7 @@ const errorId = $derived(error ? `fieldset-${instanceId}-error` : undefined);
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-  .fieldset { margin: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); }
+  .fieldset { margin: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); }
   legend { padding: 0 var(--smrt-spacing-2); color: var(--smrt-color-on-surface); font: var(--smrt-typography-title-small-font); }
   .content--stack { display: grid; gap: var(--smrt-spacing-4); }
   .description, .error { margin: 0 0 var(--smrt-spacing-3); font: var(--smrt-typography-body-small-font); color: var(--smrt-color-on-surface-variant); } .error { margin: var(--smrt-spacing-3) 0 0; color: var(--smrt-color-error); }

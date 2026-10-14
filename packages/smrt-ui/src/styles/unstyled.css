@@ -10,8 +10,8 @@
  * CSS, the --smrt-* tokens, or the data-smrt-component / data-smrt-part hooks.
  *
  * The reverted property list is explicit on purpose. `all: revert-layer` would
- * also drop layout declarations, because until per-package structure/theme
- * sorting lands every component rule sits in smrt.theme. Keep this list in
+ * also drop layout from unsorted components, including those nested inside
+ * the ten wave-2 pilot primitives. Keep this list in
  * step with the "Styleless mode" section of agents/styling.md.
  */
 @layer smrt.reset, smrt.structure, smrt.theme;

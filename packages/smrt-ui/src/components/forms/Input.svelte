@@ -213,7 +213,7 @@ export function getElement(): HTMLInputElement | null {
 	aria-label={ariaLabel}
 	aria-describedby={resolvedDescribedBy}
 	aria-invalid={resolvedInvalid}
-	data-density={density} class="input {className}"
+	data-density={density} class="smrt-input__root {className}"
 	data-smrt-control={resolvedControlId}
 	data-smrt-form={controlInteraction?.formId}
 	data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
@@ -223,66 +223,71 @@ export function getElement(): HTMLInputElement | null {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.structure {
+  .smrt-input__root {
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+  }
+  .smrt-input__root:disabled {
+    cursor: not-allowed;
+  }
+  @media (max-width: 48rem) {
+    .smrt-input__root {
+      min-height: 2.75rem;
+    }
+  }
+  .smrt-input__root[data-density='touch'] {
+    --smrt-input-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-input__root[data-density='comfortable'] {
+    --smrt-input-target-min: 0px;
+  }
+  .smrt-input__root {
+    min-height: max(var(--smrt-control-height), var(--smrt-input-target-min, var(--smrt-control-target-min)));
+  }
+}
 @layer smrt.theme {
-	.input {
-		box-sizing: border-box;
-		display: block;
-		width: 100%;
-		padding: 0.5rem 0.75rem;
-		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-		font-weight: var(--smrt-control-weight);
-		line-height: var(--smrt-typography-body-medium-line-height, 1.5);
-		color: var(--smrt-color-on-surface);
-		background-color: var(--smrt-surface-control);
-		border: var(--smrt-hairline-strong);
-		border-radius: var(--smrt-control-radius);
-		transition:
-			border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease-in-out),
-			box-shadow var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease-in-out);
-	}
-
-	.input:focus {
-		border-color: var(--smrt-color-primary);
-	}
-
-	.input:focus-visible {
-		outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-		outline-offset: var(--smrt-focus-ring-offset);
-	}
-
-	.input[data-smrt-highlighted='true'] {
-		outline: 3px solid var(--smrt-color-tertiary);
-		outline-offset: 3px;
-		box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-tertiary) 20%, transparent);
-	}
-
-	.input:disabled {
-		background-color: var(--smrt-color-surface-container-high);
-		cursor: not-allowed;
-		opacity: var(--smrt-state-disabled);
-	}
-
-	.input::placeholder {
-		color: var(--smrt-color-on-surface-variant);
-	}
-
-	/* Phones: 16px text so iOS Safari doesn't zoom the page when the field
-	   gets focus, and a 44px touch target. */
-	@media (max-width: 48rem) {
-		.input {
-			font-size: max(var(--smrt-typography-body-medium-size, 0.875rem), 16px);
-			min-height: 2.75rem;
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.input {
-			transition: none;
-		}
-	}
-
-  .input[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .input[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .input { min-height: max(var(--smrt-control-height), var(--smrt-control-target-min, 0px)); }
+  .smrt-input__root {
+    font-size: var(--smrt-typography-body-medium-size);
+    font-weight: var(--smrt-control-weight);
+    line-height: var(--smrt-typography-body-medium-line-height);
+    color: var(--smrt-color-on-surface);
+    background-color: var(--smrt-surface-control);
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-control-radius);
+    transition: border-color var(--smrt-duration-short2) var(--smrt-easing-standard),
+			box-shadow var(--smrt-duration-short2) var(--smrt-easing-standard);
+  }
+  .smrt-input__root:focus {
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-input__root:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-input__root[data-smrt-highlighted='true'] {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-tertiary) 20%, transparent);
+  }
+  .smrt-input__root:disabled {
+    background-color: var(--smrt-color-surface-container-high);
+    opacity: var(--smrt-state-disabled);
+  }
+  .smrt-input__root::placeholder {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  @media (max-width: 48rem) {
+    .smrt-input__root {
+      font-size: max(var(--smrt-typography-body-medium-size), 16px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-input__root {
+      transition: none;
+    }
+  }
 }
 </style>

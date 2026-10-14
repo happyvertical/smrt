@@ -118,7 +118,7 @@ async function addProduct() {
       name="name"
       bind:value={newName}
       placeholder={t(M['products.live_list.name_placeholder'])}
-      aria-label={t(M['products.live_list.name_placeholder'])}
+      label={t(M['products.live_list.name_placeholder'])}
       disabled={submitting}
     />
     <Button type="submit" variant="primary" disabled={submitting || !newName.trim()}>
@@ -166,7 +166,7 @@ async function addProduct() {
     margin: 0 auto;
     padding: 1.5rem;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
   }
 

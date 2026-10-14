@@ -16,11 +16,15 @@ for (const width of [320, 390]) {
       expect(await summary.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
       await page.keyboard.press('Enter');
       await page.keyboard.press('Tab');
-      await expect(page.getByRole('checkbox', { name: 'Manage specialist construction records' })).toBeFocused();
+      await expect(page.getByRole('checkbox', { name: /^Manage SpecialistConstructionRecords/ })).toBeFocused();
+      const label = picker.locator('[data-smrt-component="Checkbox"] [data-smrt-part="label"]').filter({ hasText: 'SpecialistConstructionRecords' });
+      await expect(label).toBeVisible();
+      expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const slug = page.locator('code').filter({ hasText: 'extraordinarily_long_unbroken' });
       await expect(slug).toBeVisible();
       expect(await slug.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-      const hitSize = await page.locator('.choice .checkbox').first().evaluate((element) => getComputedStyle(element, '::before').blockSize);
+      const hitSize = await page.locator('.choice [data-smrt-component="Checkbox"]').first().evaluate((element) => getComputedStyle(element, '::before').blockSize);
       expect(Number.parseFloat(hitSize)).toBeGreaterThanOrEqual(44);
       const surface = await page.locator('main').evaluate((element) => ({
         background: getComputedStyle(element).backgroundColor,

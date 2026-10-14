@@ -125,7 +125,7 @@ function factorChips(
     border-radius: 0.5rem;
     background: var(--smrt-color-surface-container-highest, transparent);
     color: var(--smrt-color-on-surface-variant, inherit);
-    border: 1px solid var(--smrt-color-outline-variant, currentColor);
+    border: var(--smrt-hairline);
   }
 
   .routing-rationale-empty {

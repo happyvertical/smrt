@@ -216,7 +216,7 @@ function handleSelect(selected: ImageLike | File | string) {
     justify-content: center;
     gap: 0.45rem;
     min-height: 2.35rem;
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: 0.5rem;
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);

@@ -173,14 +173,14 @@ function handleKeydown(event: KeyboardEvent) {
     display: flex;
     align-items: stretch;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
     overflow: hidden;
     transition: all 0.2s var(--smrt-easing-standard);
   }
 
   .time-entry-card:hover {
-    border-color: var(--smrt-color-outline);
+    border-color: var(--smrt-hairline-strong-color);
   }
 
   .time-entry-card.selected {
@@ -201,7 +201,7 @@ function handleKeydown(event: KeyboardEvent) {
     align-items: center;
     padding: 1rem;
     background: var(--smrt-color-surface-container-low);
-    border-right: 1px solid var(--smrt-color-outline-variant);
+    border-right: var(--smrt-hairline);
   }
 
   .checkbox-wrapper input[type='checkbox'] {
@@ -310,7 +310,7 @@ function handleKeydown(event: KeyboardEvent) {
     display: flex;
     align-items: center;
     padding: 0.5rem;
-    border-left: 1px solid var(--smrt-color-outline-variant);
+    border-left: var(--smrt-hairline);
   }
 }
 </style>

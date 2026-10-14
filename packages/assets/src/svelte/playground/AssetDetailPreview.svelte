@@ -99,7 +99,7 @@ function handleEdit() {
     padding: 1.25rem;
     border-radius: 1rem;
     background: color-mix(in srgb, var(--smrt-color-surface) 92%, transparent);
-    border: 1px solid var(--smrt-color-outline-variant, rgba(15, 23, 34, 0.08));
+    border: var(--smrt-hairline);
     box-shadow: var(--smrt-elevation-5, 0 18px 38px color-mix(in srgb, var(--smrt-color-shadow) 8%, transparent));
   }
 

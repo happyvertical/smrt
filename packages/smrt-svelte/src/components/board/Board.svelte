@@ -295,14 +295,14 @@ function toggleColumn(columnId: string): void {
 @layer smrt.theme {
   .smrt-board { min-width: 0; }
   .smrt-board__lanes { display: flex; gap: var(--smrt-spacing-4); overflow-x: auto; overscroll-behavior-x: contain; padding-block-end: var(--smrt-spacing-2); }
-  .smrt-board__lane { display: grid; grid-template-rows: auto minmax(0, 1fr); flex: 0 0 min(18rem, 82vw); min-block-size: 12rem; max-block-size: min(42rem, 70vh); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container); overflow: hidden; }
+  .smrt-board__lane { display: grid; grid-template-rows: auto minmax(0, 1fr); flex: 0 0 min(18rem, 82vw); min-block-size: 12rem; max-block-size: min(42rem, 70vh); border: var(--smrt-hairline); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container); overflow: hidden; }
   .smrt-board__lane--disabled { opacity: 0.6; }
-  .smrt-board__header { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2); min-block-size: 2.75rem; padding: 0 var(--smrt-spacing-3); border-block-end: 1px solid var(--smrt-color-outline-variant); }
+  .smrt-board__header { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2); min-block-size: 2.75rem; padding: 0 var(--smrt-spacing-3); border-block-end: var(--smrt-hairline); }
   .smrt-board__title, .smrt-board__collapse { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2); inline-size: 100%; color: inherit; font: var(--smrt-typography-label-large-font); }
   .smrt-board__collapse { padding: 0; border: 0; background: transparent; cursor: pointer; text-align: start; }
   .smrt-board__collapse:focus-visible, .smrt-board__card:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   .smrt-board__cards { display: grid; align-content: start; gap: var(--smrt-spacing-2); min-block-size: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: var(--smrt-spacing-3); }
-  .smrt-board__card { display: block; inline-size: 100%; padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-sm); background: var(--smrt-color-surface); color: inherit; cursor: grab; text-align: start; }
+  .smrt-board__card { display: block; inline-size: 100%; padding: var(--smrt-spacing-3); border: var(--smrt-hairline); border-radius: var(--smrt-radius-sm); background: var(--smrt-color-surface); color: inherit; cursor: grab; text-align: start; }
   .smrt-board__card--touch-drag { touch-action: none; }
   .smrt-board__card:active { cursor: grabbing; }
   .smrt-board__card--dragging { opacity: 0.55; }

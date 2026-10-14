@@ -364,7 +364,7 @@ const surfaceTokens = [
     gap: 1.5rem;
   }
 
-  .showcase-card :global(.card-header) {
+  .showcase-card :global([data-smrt-component="Card"] [data-smrt-part="header"]) {
     font-size: var(--smrt-typography-title-medium-size);
     font-weight: var(--smrt-typography-title-medium-weight);
   }

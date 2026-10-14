@@ -213,6 +213,6 @@ function vendorMeta(vendor: VendorDisplayData): string {
   h2 a { color: var(--smrt-color-primary); text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
   .meta { margin-block-start: var(--smrt-spacing-2); color: var(--smrt-color-on-surface-variant); }
   .pagination { display: flex; align-items: center; justify-content: center; gap: var(--smrt-spacing-3); }
-  @media (max-width: 42rem) { :global(.directory-search) { grid-template-columns: minmax(0, 1fr); } :global(.directory-search .button) { inline-size: 100%; } .party-row { align-items: start; } }
+  @media (max-width: 42rem) { :global(.directory-search) { grid-template-columns: minmax(0, 1fr); } :global(.directory-search [data-smrt-component="Button"]) { inline-size: 100%; } .party-row { align-items: start; } }
 }
 </style>

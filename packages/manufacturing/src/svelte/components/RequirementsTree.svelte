@@ -118,7 +118,7 @@ function componentText(name: string, skuCode: string): string {
   .requirements-totals td {
     padding: 0.375rem 0.5rem;
     text-align: left;
-    border-bottom: 1px solid var(--smrt-color-outline-variant, transparent);
+    border-bottom: var(--smrt-hairline);
   }
 
   .requirements-number {
