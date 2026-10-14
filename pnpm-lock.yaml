@@ -1001,6 +1001,9 @@ importers:
       '@happyvertical/smrt-products':
         specifier: workspace:*
         version: link:../products
+      '@happyvertical/smrt-reports':
+        specifier: workspace:*
+        version: link:../reports
       '@happyvertical/smrt-subscriptions':
         specifier: workspace:*
         version: link:../subscriptions

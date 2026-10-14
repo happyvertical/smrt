@@ -6,6 +6,11 @@
 export { ContractCollection } from './ContractCollection.js';
 export { ContractLineItemCollection } from './ContractLineItemCollection.js';
 export { CustomerCollection } from './CustomerCollection.js';
+export {
+  DocumentTaxCollection,
+  type InvoiceTaxReportFact,
+  type InvoiceTaxReportFactsOptions,
+} from './DocumentTaxCollection.js';
 export { FulfillmentCollection } from './FulfillmentCollection.js';
 export { FulfillmentLineItemCollection } from './FulfillmentLineItemCollection.js';
 export {
@@ -29,4 +34,12 @@ export {
 export { TaxCodeCollection } from './TaxCodeCollection.js';
 export { TaxComponentCollection } from './TaxComponentCollection.js';
 export { TaxSettingsCollection } from './TaxSettingsCollection.js';
+export {
+  type RefreshTaxSummaryReportOptions,
+  type TaxSummaryExpenseSource,
+  type TaxSummaryInvoiceDrilldownOptions,
+  type TaxSummaryLedgerSource,
+  TaxSummaryReportCollection,
+  type TaxSummaryReportRefreshResult,
+} from './TaxSummaryReportCollection.js';
 export { VendorCollection } from './VendorCollection.js';

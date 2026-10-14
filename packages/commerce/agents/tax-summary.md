@@ -28,3 +28,32 @@ reported as unassigned. When multiple components share a
 liability account, component-level reconciliation is ambiguous: the compiler
 keeps the rows visible, emits a warning, and does not compare the full account
 movement to every component.
+
+## Materialized Invoice report path
+
+`TaxSummaryReport` is a tenant-scoped, manual materialized report. Its owner,
+`TaxSummaryReportCollection.refreshTaxSummary()`, refuses tenants whose
+`TaxSettings.moneyModel` is not `v2`: legacy and migrating documents are not a
+complete stored-tax source. The caller injects the public Expense and Journal
+source adapters because commerce cannot depend on expenses; omitting either
+adapter is a refusal, never a zero-ITC fallback.
+
+`DocumentTaxCollection.listReportFacts()` is the Invoice-only source query. It
+joins `document_taxes` to `invoices` on both document id and tenant id, filters
+inclusive `issueDate` bounds, excludes drafts/cancelled invoices, and retains
+written-off invoices. It returns stored `DocumentTax` snapshots without
+recalculating tax. A nullable tax-code kind becomes an unassigned-source
+warning; it never becomes out-of-scope by inference.
+
+The existing reports adapter is exposed by
+`buildTaxSummaryReportAdapterDescriptor()`. Its DataTable columns use the
+runtime's snake-case descriptor ids. `drilldownTaxSummaryInvoiceFacts()` takes
+a tenant id supplied by the authenticated host, rechecks the materialized row
+under that tenant, then applies its currency/component/kind dimensions to the
+same Invoice source query. It cannot widen a row into another tenant.
+
+This source currently treats every Invoice as an invoice because the Invoice
+`kind` discriminator is supplied by #3939. Once credit notes are stored on
+Invoice, this source must select that field and pass positive credit snapshots
+through the aggregation's single credit sign step. Contract facts await #3898;
+they are not silently included in this path.
