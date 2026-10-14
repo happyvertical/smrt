@@ -538,9 +538,21 @@ export async function materializeContractMoneySnapshot(input: {
     input.db,
     input.tenantId,
     input.contractId,
-    async (contract, lines) => ({
-      contractId: input.contractId,
-      taxRows: await recompute(input.db, contract, lines, settings, true),
-    }),
+    async (contract, lines) => {
+      if (contract.status !== ContractStatus.DRAFT)
+        throw new MoneyValidationError(
+          'FROZEN_DOCUMENT',
+          'Only a draft Contract can be migration-recomputed',
+        );
+      const taxRows = await recompute(
+        input.db,
+        contract,
+        lines,
+        settings,
+        true,
+      );
+      await contract.saveDerived(DOCUMENT_MONEY_WRITE);
+      return { contractId: input.contractId, taxRows };
+    },
   );
 }

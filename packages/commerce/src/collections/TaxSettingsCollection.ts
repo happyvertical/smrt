@@ -98,4 +98,24 @@ export class TaxSettingsCollection extends SmrtCollection<TaxSettings> {
       await current.saveMoneyModelOnTransaction(MONEY_MIGRATION_WRITE);
     });
   }
+
+  /** Claim a previously completed migration for checksum-guarded rollback. */
+  async beginMoneyRollback(
+    tenantId: string,
+    migrationId: string,
+  ): Promise<void> {
+    await withDocumentMoneyTransaction(this.db, async (tx) => {
+      const current = await (
+        await TaxSettingsCollection.create({ db: tx })
+      ).lockForTenant(tenantId, false);
+      if (current?.moneyModel !== 'v2')
+        throw new MoneyValidationError(
+          'FROZEN_DOCUMENT',
+          'Money rollback requires an active v2 tenant marker',
+        );
+      current.moneyModel = 'migrating';
+      current.moneyMigrationId = migrationId;
+      await current.saveMoneyModelOnTransaction(MONEY_MIGRATION_WRITE);
+    });
+  }
 }

@@ -19,7 +19,7 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import { DOCUMENT_MONEY_READ_REBIND } from '../document-money-internal.js';
 import { Contract } from '../models/Contract.js';
-import { withTenantMoneyRuntime } from '../tenant-money-barrier.js';
+import { withTenantMoneyCollectionRead } from '../tenant-money-barrier.js';
 import { ContractStatus, ContractType } from '../types/index.js';
 import { PurchaseContractCollection } from './PurchaseContractCollection.js';
 import { SalesContractCollection } from './SalesContractCollection.js';
@@ -31,11 +31,10 @@ export class ContractCollection extends SmrtCollection<Contract> {
     const rootDb = this.db;
     const tenantId = getTenantId();
     if (!tenantId) return operation();
-    const result = await withTenantMoneyRuntime(
+    const result = await withTenantMoneyCollectionRead(
       rootDb,
       tenantId,
-      'legacy-or-v2',
-      (scope) => this.withDatabase(scope.db, operation),
+      (boundDb) => this.withDatabase(boundDb, operation),
     );
     if (result instanceof Contract)
       result.rebindMoneyRead(DOCUMENT_MONEY_READ_REBIND, rootDb);

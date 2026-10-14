@@ -19,6 +19,7 @@ export {
   UNPAID_STATUSES,
 } from './InvoiceCollection.js';
 export { InvoiceLineItemCollection } from './InvoiceLineItemCollection.js';
+export { MoneyMigrationDocumentCollection } from './MoneyMigrationDocumentCollection.js';
 export { PaymentAllocationCollection } from './PaymentAllocationCollection.js';
 export { PaymentCollection } from './PaymentCollection.js';
 export { PaymentInstrumentCollection } from './PaymentInstrumentCollection.js';

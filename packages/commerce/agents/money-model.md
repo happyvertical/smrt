@@ -97,7 +97,8 @@ are documented in [accounting snapshot mapper](accounting-snapshot-mapper.md).
 
 ## Deliberate boundaries
 
-This package does not publish a tenant migration runbook or migration command.
+The tenant migration and rollback contract is documented in
+[tenant line-amount migration](line-amount-migration.md).
 The marker is a maintenance gate, not a customer-controlled setting. Contract
 money persistence and the production reports UI are separate work. The model
 also does not provide currency conversion, cash-basis/deposit accounting,

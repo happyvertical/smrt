@@ -33,6 +33,7 @@ import {
   resolveLineTaxCode,
 } from './money.js';
 import {
+  lockTenantMoneyMigrationOwner,
   lockTenantMoneyRuntime,
   withTenantMoneyRuntime,
 } from './tenant-money-barrier.js';
@@ -1402,6 +1403,33 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
     input.updated_at = priorRevision;
     throw error;
   }
+}
+
+/** Migration-only draft materializer; caller already owns the tenant migration transaction. */
+export async function materializeInvoiceMoneyDraft(input: {
+  db: DatabaseInterface;
+  invoiceId: string;
+  tenantId: string;
+  migrationId: string;
+}): Promise<{ invoiceId: string; taxRows: DocumentTaxWriteInput[] }> {
+  const settings = await lockTenantMoneyMigrationOwner(
+    input.db,
+    input.tenantId,
+    input.migrationId,
+  );
+  const { invoice } = await lockAndReloadInvoice(
+    input.db,
+    input.invoiceId,
+    input.tenantId,
+  );
+  if (invoice.status !== InvoiceStatus.DRAFT || invoice.arJournalId)
+    throw new MoneyValidationError(
+      'FROZEN_DOCUMENT',
+      'Only an unfrozen draft invoice can be migration-recomputed',
+    );
+  const result = await recomputeInvoiceAggregate(input.db, invoice, settings);
+  await invoice.saveDerived(DOCUMENT_MONEY_WRITE, { recomputeLegacy: false });
+  return { invoiceId: input.invoiceId, taxRows: result.taxRows };
 }
 
 /** Persist a line and recompute its complete invoice aggregate. */

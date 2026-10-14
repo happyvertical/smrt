@@ -36,6 +36,18 @@ export interface TenantMoneyRuntimeScope {
   readonly [tenantMoneyScopeBrand]: true;
 }
 
+declare const tenantMoneyMigrationScopeBrand: unique symbol;
+
+/** Transaction-affine proof held only by the active migration owner. */
+export interface TenantMoneyMigrationScope {
+  readonly db: DatabaseInterface;
+  readonly tenantId: string;
+  readonly migrationId: string;
+  readonly settings: TaxSettings;
+  readonly phase: 'migration';
+  readonly [tenantMoneyMigrationScopeBrand]: true;
+}
+
 function requiredText(value: string, label: string): string {
   if (!value || value.trim() !== value)
     throw new MoneyValidationError(
@@ -52,6 +64,10 @@ async function hasSettingsStorage(db: DatabaseInterface): Promise<boolean> {
 const activeRuntimeScopes = new WeakMap<
   object,
   Map<string, TenantMoneyRuntimeScope>
+>();
+const activeMigrationScopes = new WeakMap<
+  object,
+  Map<string, TenantMoneyMigrationScope>
 >();
 
 function runtimeScope(
@@ -164,6 +180,80 @@ export async function withTenantMoneyRuntime<T>(
       if (scopes.size === 0) activeRuntimeScopes.delete(tx as object);
     }
   });
+}
+
+/**
+ * Run migration work under the exact owner marker and transaction executor.
+ * This is the only scope that lets guarded collections read while the marker
+ * is `migrating`; possession cannot be inferred from adapter shape.
+ */
+export async function withTenantMoneyMigration<T>(
+  db: DatabaseInterface,
+  tenantId: string,
+  migrationId: string,
+  operation: (scope: TenantMoneyMigrationScope) => Promise<T>,
+  existingScope?: TenantMoneyMigrationScope,
+): Promise<T> {
+  requiredText(tenantId, 'Money migration tenant');
+  requiredText(migrationId, 'Money migration owner');
+  if (existingScope) {
+    if (
+      existingScope.phase !== 'migration' ||
+      existingScope.db !== db ||
+      existingScope.tenantId !== tenantId ||
+      existingScope.migrationId !== migrationId
+    )
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Tenant money migration scope does not match the requested executor',
+      );
+    return operation(existingScope);
+  }
+  return withDocumentMoneyTransaction(db, async (tx) => {
+    const active = activeMigrationScopes.get(tx as object)?.get(tenantId);
+    if (active) {
+      if (active.migrationId !== migrationId)
+        throw new MoneyValidationError(
+          'FROZEN_DOCUMENT',
+          'Tenant money migration owner does not match',
+        );
+      return operation(active);
+    }
+    const settings = await lockTenantMoneyMigrationOwner(
+      tx,
+      tenantId,
+      migrationId,
+    );
+    const scope = {
+      db: tx,
+      tenantId,
+      migrationId,
+      settings,
+      phase: 'migration',
+    } as TenantMoneyMigrationScope;
+    const scopes = activeMigrationScopes.get(tx as object) ?? new Map();
+    scopes.set(tenantId, scope);
+    activeMigrationScopes.set(tx as object, scopes);
+    try {
+      return await operation(scope);
+    } finally {
+      scopes.delete(tenantId);
+      if (scopes.size === 0) activeMigrationScopes.delete(tx as object);
+    }
+  });
+}
+
+/** @internal Guard a generated collection read for runtime or migration. */
+export async function withTenantMoneyCollectionRead<T>(
+  db: DatabaseInterface,
+  tenantId: string,
+  operation: (boundDb: DatabaseInterface) => Promise<T>,
+): Promise<T> {
+  const migration = activeMigrationScopes.get(db as object)?.get(tenantId);
+  if (migration) return operation(migration.db);
+  return withTenantMoneyRuntime(db, tenantId, 'legacy-or-v2', (scope) =>
+    operation(scope.db),
+  );
 }
 
 /** Lock a tenant at the legacy marker before the caller claims migration. */

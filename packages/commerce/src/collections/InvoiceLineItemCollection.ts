@@ -19,7 +19,7 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import { DOCUMENT_MONEY_READ_REBIND } from '../document-money-internal.js';
 import { InvoiceLineItem } from '../models/InvoiceLineItem.js';
-import { withTenantMoneyRuntime } from '../tenant-money-barrier.js';
+import { withTenantMoneyCollectionRead } from '../tenant-money-barrier.js';
 import type { AccountingLineItemInput } from '../types/index.js';
 
 export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
@@ -29,11 +29,10 @@ export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
     const rootDb = this.db;
     const tenantId = getTenantId();
     if (!tenantId) return operation();
-    const result = await withTenantMoneyRuntime(
+    const result = await withTenantMoneyCollectionRead(
       rootDb,
       tenantId,
-      'legacy-or-v2',
-      (scope) => this.withDatabase(scope.db, operation),
+      (boundDb) => this.withDatabase(boundDb, operation),
     );
     if (result instanceof InvoiceLineItem)
       result.rebindMoneyRead(DOCUMENT_MONEY_READ_REBIND, rootDb);

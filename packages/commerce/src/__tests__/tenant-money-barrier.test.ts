@@ -12,6 +12,7 @@ import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { withDocumentMoneyTransaction } from '../document-money-internal.js';
 import {
   lockTenantMoneyRuntime,
+  withTenantMoneyMigration,
   withTenantMoneyRuntime,
 } from '../tenant-money-barrier.js';
 
@@ -221,6 +222,36 @@ describe('tenant money runtime barrier (#3933)', () => {
       await expect(lines.list()).rejects.toMatchObject({
         code: 'FROZEN_DOCUMENT',
       });
+
+      await withTenantMoneyMigration(
+        db,
+        'tenant-a',
+        migrationId,
+        async (scope) => {
+          const ownedInvoices = await InvoiceCollection.create({
+            db: scope.db,
+          });
+          const ownedLines = await InvoiceLineItemCollection.create({
+            db: scope.db,
+          });
+          await expect(
+            ownedInvoices.get({ id: invoice.id }),
+          ).resolves.toMatchObject({ id: invoice.id });
+          await expect(ownedInvoices.list()).resolves.toHaveLength(1);
+          await expect(ownedLines.get({ id: line.id })).resolves.toMatchObject({
+            id: line.id,
+          });
+          await expect(ownedLines.list()).resolves.toHaveLength(1);
+          await expect(
+            withTenantMoneyMigration(
+              scope.db,
+              'tenant-a',
+              'wrong-owner',
+              async () => undefined,
+            ),
+          ).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
+        },
+      );
 
       await settings.restoreLegacyMoneyModel('tenant-a', migrationId);
       await expect(invoices.get({ id: invoice.id })).resolves.toMatchObject({

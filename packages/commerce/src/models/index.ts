@@ -42,6 +42,12 @@ export { Fulfillment } from './Fulfillment.js';
 export { FulfillmentLineItem } from './FulfillmentLineItem.js';
 export { Invoice } from './Invoice.js';
 export { InvoiceLineItem } from './InvoiceLineItem.js';
+export {
+  MoneyMigrationDocument,
+  type MoneyMigrationDocumentOptions,
+  type MoneyMigrationDocumentState,
+  type MoneyMigrationDocumentType,
+} from './MoneyMigrationDocument.js';
 export { Payment } from './Payment.js';
 export { PaymentAllocation } from './PaymentAllocation.js';
 export { PaymentInstrument } from './PaymentInstrument.js';
