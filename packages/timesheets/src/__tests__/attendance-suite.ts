@@ -2,10 +2,12 @@ import { isPostgresDatabase } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beginSegment } from '../attendance/segments.js';
 import {
   AttendanceBreakCollection,
   AttendancePunchCollection,
   AttendanceReplayCollection,
+  AttendanceSegmentCollection,
   AttendanceService,
   ServiceTimeEntryCollection,
 } from '../index.js';
@@ -64,6 +66,110 @@ export function attendanceSuite(
           workRefId: 'other',
         }),
       ).rejects.toThrow('different work');
+    });
+    it('runs work segments through switches and breaks, one open per punch', async () => {
+      const wo = (id: string, op: string) => ({
+        workRefType: '@fixture/work:WorkOrder',
+        workRefId: id,
+        taskRefType: '@fixture/work:Operation',
+        taskRefId: op,
+        kind: 'shop',
+        description: op,
+      });
+      await service.punchIn(at(8));
+      await expect(service.stopWork(at(8))).rejects.toThrow('No open work');
+      await service.startWork(at(8), wo('WO-1', 'SHEAR'));
+      await expect(
+        service.startWork(at(9), wo('WO-2', 'WELD')),
+      ).rejects.toThrow('already open');
+      expect((await service.currentWork())?.workRefId).toBe('WO-1');
+      await service.switchWork(at(10), wo('WO-2', 'WELD'));
+      await service.startBreak(at(12));
+      await expect(service.startWork(at(12), wo('WO-3', 'X'))).rejects.toThrow(
+        'open break',
+      );
+      expect(await service.currentWork()).toBeNull();
+      await service.endBreak(at(13), { resumeWork: true });
+      expect((await service.currentWork())?.workRefId).toBe('WO-2');
+      await expect(service.switchWork(at(12), wo('WO-3', 'X'))).rejects.toThrow(
+        'predates',
+      );
+      const punch = await service.punchOut(at(16));
+      expect(await service.currentWork()).toBeNull();
+      const segments = await service.segments(punch.id!);
+      expect(
+        segments.map((g) => [
+          g.workRefId,
+          g.taskRefId,
+          g.durationSeconds / 3600,
+          g.closedReason,
+        ]),
+      ).toEqual([
+        ['WO-1', 'SHEAR', 2, 'switch'],
+        ['WO-2', 'WELD', 2, 'break'],
+        ['WO-2', 'WELD', 3, 'punchOut'],
+      ]);
+      expect(punch.durationSeconds).toBe(7 * 3600);
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const collection = await AttendanceSegmentCollection.create({ db });
+        const byTask = await collection.list({
+          where: { taskRefType: '@fixture/work:Operation', taskRefId: 'WELD' },
+        });
+        expect(byTask).toHaveLength(2);
+        const closed = byTask[0];
+        closed.description = 'edited';
+        await expect(closed.save()).rejects.toThrow('immutable');
+        closed.description = 'WELD';
+        closed.endedAt = at(11);
+        await expect(closed.save()).rejects.toThrow('immutable');
+      });
+    });
+    it('refuses resume without an interrupting break, half task refs and work outside a punch', async () => {
+      await expect(service.startWork(at(8), work)).rejects.toThrow(
+        'No open punch',
+      );
+      await service.punchIn(at(8));
+      await service.startWork(at(8), work);
+      await service.stopWork(at(9));
+      await expect(service.resumeWork(at(9))).rejects.toThrow(
+        'No work interrupted',
+      );
+      await expect(
+        service.startWork(at(9), { ...work, taskRefType: 'x:Op' }),
+      ).rejects.toThrow('together');
+      await service.startWork(at(9), work);
+      await service.punchOut(at(10), work);
+      const [punch] = await withTenant({ tenantId: actor.tenantId }, async () =>
+        (await AttendancePunchCollection.create({ db })).list({}),
+      );
+      expect((await service.segments(punch.id!)).at(-1)?.closedReason).toBe(
+        'punchOut',
+      );
+    });
+    it('closes segments on replayed break and punch-out taps and keeps punchOut work compatible', async () => {
+      await service.punchIn(at(8));
+      await service.startWork(at(8), work);
+      const outcomes = await service.replay([
+        { clientId: 'b', action: 'startBreak', at: at(9).toISOString() },
+        { clientId: 'e', action: 'endBreak', at: at(10).toISOString() },
+        { clientId: 'o', action: 'punchOut', at: at(11).toISOString(), work },
+      ]);
+      expect(outcomes.every((o) => !o.error)).toBe(true);
+      const segments = await service.segments(outcomes[2].punchId!);
+      expect(segments.map((g) => g.closedReason)).toEqual(['break']);
+    });
+    it('composes segment helpers inside one transaction and rolls back together', async () => {
+      await service.punchIn(at(8));
+      await expect(
+        service.withTransaction(async (tx) => {
+          const [punch] = await tx.punches.list({
+            where: { ...actor, endedAt: null },
+          });
+          await beginSegment(tx, punch, at(9), work);
+          throw new Error('boom');
+        }),
+      ).rejects.toThrow('boom');
+      expect(await service.currentWork()).toBeNull();
     });
     it('keeps linked evidence attribution bound to the actor despite extra work keys', async () => {
       const injected = {

@@ -11,7 +11,11 @@ afterEach(() => ObjectRegistry.clear());
 it('lets a consumer close attendance routes without replacement models or schema drift', async () => {
   const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
   const count = ObjectRegistry.getAllClasses().size;
-  for (const name of ['AttendancePunch', 'AttendanceBreak']) {
+  for (const name of [
+    'AttendancePunch',
+    'AttendanceBreak',
+    'AttendanceSegment',
+  ]) {
     const key = `@happyvertical/smrt-timesheets:${name}`;
     const registered = ObjectRegistry.getClass(key);
     expect(isApiActionEnabledForObject(key, 'list')).toBe(true);

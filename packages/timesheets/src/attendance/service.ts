@@ -7,26 +7,41 @@ import { getTenantId, withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { ServiceTimeEntryCollection } from '../models/service-time-entry.js';
 import {
+  type AttendanceActor,
+  AttendanceConflict,
+  type AttendanceContext,
+  type AttendanceWork,
+  validateAttendanceWork,
+} from './context.js';
+import {
   AttendanceBreakCollection,
   AttendancePunch,
   AttendancePunchCollection,
   AttendanceReplayCollection,
   type AttendanceReplayOutcome,
+  AttendanceSegment,
+  AttendanceSegmentCollection,
 } from './models.js';
+import {
+  beginSegment,
+  closeOpenSegment,
+  continueSegment,
+  endSegment,
+  listSegments,
+  openSegment,
+  replaceSegment,
+} from './segments.js';
 
+export {
+  type AttendanceActor,
+  AttendanceConflict,
+  type AttendanceContext,
+  type AttendanceWork,
+  validateAttendanceWork,
+} from './context.js';
 export type { AttendanceReplayOutcome } from './models.js';
+export * from './segments.js';
 
-/** Resolve these identifiers from the authenticated session, never from tap input. */
-export interface AttendanceActor {
-  tenantId: string;
-  profileId: string;
-}
-/** Explicit work attribution for a closed punch's draft evidence entry. */
-export interface AttendanceWork {
-  workRefType: string;
-  workRefId: string;
-  description: string;
-}
 /** Offline command with a durable client-generated identifier and device timestamp. */
 export interface AttendanceTap {
   clientId: string;
@@ -36,15 +51,7 @@ export interface AttendanceTap {
   work?: AttendanceWork;
 }
 
-/** Expected state conflict, distinct from retryable database failures. */
-export class AttendanceConflict extends Error {}
-
-type Context = {
-  db: DatabaseInterface;
-  punches: AttendancePunchCollection;
-  breaks: AttendanceBreakCollection;
-  replays: AttendanceReplayCollection;
-};
+type Context = AttendanceContext;
 
 /**
  * Attendance mutations bound to a trusted tenant/profile. Applications authorize
@@ -73,6 +80,18 @@ export class AttendanceService {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 
+  /**
+   * Run `operation` in the actor's serialized attendance transaction. The
+   * context's collections share the executor, so corrections and replay can
+   * compose several attendance mutations (with the segment helpers) atomically.
+   * Results that are punches or segments are re-read after commit.
+   */
+  async withTransaction<T>(
+    operation: (context: AttendanceContext) => Promise<T>,
+  ): Promise<T> {
+    return this.transact(operation);
+  }
+
   private async transact<T>(
     operation: (context: Context) => Promise<T>,
   ): Promise<T> {
@@ -97,6 +116,7 @@ export class AttendanceService {
             db,
             punches: await AttendancePunchCollection.create({ db }),
             breaks: await AttendanceBreakCollection.create({ db }),
+            segments: await AttendanceSegmentCollection.create({ db }),
             replays: await AttendanceReplayCollection.create({ db }),
           });
         },
@@ -109,6 +129,18 @@ export class AttendanceService {
           limit: 1,
         });
         if (!fresh) throw new Error('Committed attendance punch disappeared.');
+        return fresh as T;
+      }
+      if (result instanceof AttendanceSegment) {
+        const segments = await AttendanceSegmentCollection.create({
+          db: this.db,
+        });
+        const [fresh] = await segments.list({
+          where: { tenantId: this.actor.tenantId, id: result.id },
+          limit: 1,
+        });
+        if (!fresh)
+          throw new Error('Committed attendance segment disappeared.');
         return fresh as T;
       }
       return result;
@@ -149,8 +181,15 @@ export class AttendanceService {
     const breaks = await tx.breaks.list({
       where: { tenantId: this.actor.tenantId, punchId: punch.id },
     });
+    const segments = await tx.segments.list({
+      where: { tenantId: this.actor.tenantId, punchId: punch.id },
+    });
     const latest = Math.max(
       punch.startedAt.getTime(),
+      ...segments.flatMap((g) => [
+        g.startedAt.getTime(),
+        g.endedAt?.getTime() ?? 0,
+      ]),
       punch.endedAt?.getTime() ?? 0,
       ...breaks.flatMap((b) => [
         b.startedAt.getTime(),
@@ -179,11 +218,76 @@ export class AttendanceService {
       this.transition(tx, 'startBreak', this.date(at), paid),
     );
   }
-  /** End the current break. */
-  async endBreak(at: Date): Promise<AttendancePunch> {
+  /**
+   * End the current break. With `{ resumeWork: true }` the work interrupted by
+   * `startBreak` resumes at the same instant, atomically with the break end.
+   */
+  async endBreak(
+    at: Date,
+    options?: { resumeWork?: boolean },
+  ): Promise<AttendancePunch> {
     return this.transact((tx) =>
-      this.transition(tx, 'endBreak', this.date(at)),
+      this.transition(
+        tx,
+        'endBreak',
+        this.date(at),
+        false,
+        undefined,
+        options?.resumeWork,
+      ),
     );
+  }
+
+  /** Open a work segment in the open punch; refuses during a break or while one is open. */
+  async startWork(at: Date, work: AttendanceWork): Promise<AttendanceSegment> {
+    return this.transact(async (tx) => {
+      validateAttendanceWork(work);
+      await this.chronological(tx, this.date(at));
+      return beginSegment(tx, await this.open(tx), at, work);
+    });
+  }
+  /** Atomically close the open segment and open the next one at `at`. */
+  async switchWork(at: Date, work: AttendanceWork): Promise<AttendanceSegment> {
+    return this.transact(async (tx) => {
+      validateAttendanceWork(work);
+      await this.chronological(tx, this.date(at));
+      return replaceSegment(tx, await this.open(tx), at, work);
+    });
+  }
+  /** Close the open segment without starting another. */
+  async stopWork(at: Date): Promise<AttendanceSegment> {
+    return this.transact(async (tx) => {
+      await this.chronological(tx, this.date(at));
+      return endSegment(tx, await this.open(tx), at);
+    });
+  }
+  /** Reopen the work a break interrupted (the latest segment must have closed on `startBreak`). */
+  async resumeWork(at: Date): Promise<AttendanceSegment> {
+    return this.transact(async (tx) => {
+      await this.chronological(tx, this.date(at));
+      return continueSegment(tx, await this.open(tx), at);
+    });
+  }
+  /** The open work segment of the actor's open punch, or null. */
+  async currentWork(): Promise<AttendanceSegment | null> {
+    return this.transact(async (tx) => {
+      const [punch] = await tx.punches.list({
+        where: { ...this.actor, endedAt: null },
+        limit: 1,
+      });
+      return punch ? openSegment(tx, punch) : null;
+    });
+  }
+  /** Work segments of one of the actor's punches, oldest first. */
+  async segments(punchId: string): Promise<AttendanceSegment[]> {
+    return this.transact(async (tx) => {
+      const [punch] = await tx.punches.list({
+        where: { ...this.actor, id: punchId },
+        limit: 1,
+      });
+      if (!punch) throw new AttendanceConflict('Punch not found for actor.');
+      return listSegments(tx, punch);
+    });
   }
 
   private async transition(
@@ -192,6 +296,7 @@ export class AttendanceService {
     at: Date,
     paid = false,
     work?: AttendanceWork,
+    resumeWork = false,
   ): Promise<AttendancePunch> {
     await this.chronological(tx, at);
     if (action === 'punchIn') {
@@ -219,6 +324,7 @@ export class AttendanceService {
       if (active) throw new AttendanceConflict('A break is already open.');
       if (typeof paid !== 'boolean')
         throw new AttendanceConflict('paid must be boolean.');
+      await closeOpenSegment(tx, punch, at, 'break');
       await tx.breaks.create({
         tenantId: this.actor.tenantId,
         punchId: punch.id ?? undefined,
@@ -254,7 +360,11 @@ export class AttendanceService {
       active.endedAt = at;
       await active.save();
     }
-    if (action === 'endBreak') return punch;
+    if (action === 'endBreak') {
+      if (resumeWork) await continueSegment(tx, punch, at);
+      return punch;
+    }
+    await closeOpenSegment(tx, punch, at, 'punchOut');
     punch.endedAt = at;
     const unpaidMilliseconds = breaks
       .filter((b) => !b.paid)
@@ -272,17 +382,7 @@ export class AttendanceService {
   }
 
   private validateWork(work: AttendanceWork): void {
-    if (
-      !work ||
-      typeof work.workRefType !== 'string' ||
-      !work.workRefType ||
-      typeof work.workRefId !== 'string' ||
-      !work.workRefId ||
-      typeof work.description !== 'string'
-    )
-      throw new AttendanceConflict(
-        'A complete work reference and description are required.',
-      );
+    validateAttendanceWork(work);
   }
 
   private async link(
@@ -322,7 +422,13 @@ export class AttendanceService {
       endedAt: punch.endedAt,
       durationSeconds: punch.durationSeconds,
       status: 'draft',
-      metadata: JSON.stringify({ attendancePunchId: punch.id }),
+      metadata: JSON.stringify({
+        attendancePunchId: punch.id,
+        ...(work.taskRefType
+          ? { taskRefType: work.taskRefType, taskRefId: work.taskRefId }
+          : {}),
+        ...(work.kind ? { kind: work.kind } : {}),
+      }),
       _insertOnly: true,
     });
     if (!entry.id) throw new Error('Saved service entry has no id.');
@@ -418,6 +524,13 @@ export class AttendanceService {
             tap.work?.workRefType ?? null,
             tap.work?.workRefId ?? null,
             tap.work?.description ?? null,
+            ...(tap.work?.taskRefType || tap.work?.kind
+              ? [
+                  tap.work.taskRefType ?? null,
+                  tap.work.taskRefId ?? null,
+                  tap.work.kind ?? null,
+                ]
+              : []),
           ]);
           const [receipt] = await tx.replays.list({
             where: { tenantId: this.actor.tenantId, replayKey },
@@ -448,6 +561,7 @@ export class AttendanceService {
                   db,
                   punches: await AttendancePunchCollection.create({ db }),
                   breaks: await AttendanceBreakCollection.create({ db }),
+                  segments: await AttendanceSegmentCollection.create({ db }),
                   replays: tx.replays,
                 };
                 const punch = await this.transition(

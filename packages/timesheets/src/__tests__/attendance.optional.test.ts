@@ -15,6 +15,7 @@ if (isPostgresAvailable()) {
         includeObjects: [
           'AttendancePunch',
           'AttendanceBreak',
+          'AttendanceSegment',
           'AttendanceReplay',
           'ServiceTimeEntry',
         ],

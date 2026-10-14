@@ -269,7 +269,7 @@ and are unchanged.
 ## Attendance
 
 The `@happyvertical/smrt-timesheets/attendance` subpath adds `AttendancePunch`,
-`AttendanceBreak`, and `AttendanceService`. Apply migrations for the new tables
+`AttendanceBreak`, `AttendanceSegment`, and `AttendanceService`. Apply migrations for the new tables
 before enabling the module. Existing entry and snapshot tables are unchanged.
 Attendance supports SQLite and PostgreSQL. DuckDB cannot enforce the required
 `ON UPDATE CASCADE` foreign-key contract used by attendance and existing entry
@@ -288,7 +288,7 @@ reads without replacing the models or changing their schema:
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import '@happyvertical/smrt-timesheets/attendance';
 
-for (const model of ['AttendancePunch', 'AttendanceBreak']) {
+for (const model of ['AttendancePunch', 'AttendanceBreak', 'AttendanceSegment']) {
   ObjectRegistry.registerOverride(`@happyvertical/smrt-timesheets:${model}`, {
     api: false, cli: false, mcp: false,
   });
@@ -320,6 +320,49 @@ UUID normalization. Breaks use the same
 pattern per punch. Persisted ownership/start and closed intervals are immutable.
 Direct ORM saves serialize against the parent punch and reject a close while a
 break remains open or ends outside the punch.
+
+### Running work segments
+
+A shift is one punch; inside it a person works on a sequence of things. An
+`AttendanceSegment` (table `attendance_segments`) is one running interval of work
+inside a punch, with queryable columns `workRefType`/`workRefId`, an optional
+second reference `taskRefType`/`taskRefId` (for example an operation; both or
+neither), a short `kind` lane label, `description`, `startedAt`/`endedAt`,
+`durationSeconds` and `closedReason` (`stop`, `switch`, `break`, `punchOut`).
+Indexes on `(tenantId, workRefType, workRefId)` and `(tenantId, taskRefType,
+taskRefId)` serve job costing; a unique `(tenantId, punchId, openSlot)` index
+allows one open segment per punch. Segments never overlap each other or a break.
+
+```ts
+await attendance.punchIn(t(8));
+await attendance.startWork(t(8), { workRefType: '@acme:WorkOrder', workRefId: 'WO-1',
+  taskRefType: '@acme:Operation', taskRefId: 'SHEAR', description: 'Shear' });
+await attendance.switchWork(t(10), { workRefType: '@acme:WorkOrder', workRefId: 'WO-2',
+  taskRefType: '@acme:Operation', taskRefId: 'WELD', description: 'Weld' });
+await attendance.startBreak(t(12));                        // closes the segment
+await attendance.endBreak(t(13), { resumeWork: true });    // or attendance.resumeWork(t(13))
+await attendance.punchOut(t(16));                          // closes the segment
+```
+
+`startWork`, `switchWork` (closes the open segment and opens the next at the same
+instant), `stopWork`, `resumeWork` (reopens the work a break interrupted),
+`currentWork()` and `segments(punchId)` are the service surface. `startBreak`,
+`punchOut`, `autoClose` and replayed taps close the open segment. Closed segments
+are immutable; ownership, references and start are immutable always. Closing a
+punch with an open segment, or a segment outside the punch, is refused.
+
+Segments are attendance evidence, not service time entries: they do not create
+`ServiceTimeEntry` rows and `punchOut(at, work?)` is unchanged (one draft entry
+for the whole punch; `taskRef*` and `kind` ride in its `metadata`). A consumer that
+costs jobs from segments should not also cost the punch-level entry. Rollups
+still deduplicate `serviceTimeEntryId`.
+
+To compose segment work with other attendance mutations (corrections, custom
+replay actions) atomically, use `attendance.withTransaction(async (tx) => ...)`
+and the exported helpers `openSegment`, `listSegments`, `beginSegment`,
+`replaceSegment`, `endSegment`, `continueSegment` and `closeOpenSegment`, which
+take the `AttendanceContext` (`tx.punches`, `tx.breaks`, `tx.segments`, `tx.db`)
+and an open punch.
 
 A work reference is optional: attendance alone is not billable evidence. Passing
 one on close, or calling `linkServiceTimeEntry(punch.id, work)` later, creates
