@@ -1,4 +1,4 @@
-import { getTestDatabase } from '@happyvertical/smrt-core';
+import { getTestDatabase, MCPGenerator } from '@happyvertical/smrt-core';
 import { ProductCollection } from '@happyvertical/smrt-products/collections';
 import {
   disableTenancy,
@@ -14,6 +14,7 @@ import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollect
 import { TaxCodeCollection } from '../collections/TaxCodeCollection';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection';
+import { serializeInvoiceMcpGet } from '../invoice-mcp';
 import { MoneyValidationError } from '../money';
 import { ensureTenantTaxCodes } from '../tax/legacy';
 import { InvoiceStatus } from '../types';
@@ -162,6 +163,48 @@ describe('invoice money persistence (#3933)', () => {
       await expect(storedInvoice.save()).rejects.toMatchObject({
         code: 'FROZEN_DOCUMENT',
       } satisfies Partial<MoneyValidationError>);
+
+      const mcp = await new MCPGenerator(
+        { classNames: ['@happyvertical/smrt-commerce:Invoice'] },
+        {
+          db,
+          user: { id: 'invoice-reader' },
+          tenantId: 'tenant-a',
+        },
+      ).handleToolCall({
+        method: 'tools/call',
+        params: { name: 'invoice_get', arguments: { id: invoice.id } },
+      });
+      expect(mcp.isError).not.toBe(true);
+      expect(mcp.structuredContent).toMatchObject({
+        id: invoice.id,
+        money: {
+          source: 'stored',
+          moneySnapshotId: snapshotId,
+          header: {
+            subtotalMinor: 90,
+            taxAmountMinor: 5,
+            totalAmountMinor: 95,
+          },
+          lines: [expect.objectContaining({ amountMinor: 90, taxMinor: 5 })],
+          taxes: [expect.objectContaining({ taxableMinor: 90, taxMinor: 5 })],
+        },
+      });
+
+      const crossTenant = await withTenant({ tenantId: 'tenant-other' }, () =>
+        new MCPGenerator(
+          { classNames: ['@happyvertical/smrt-commerce:Invoice'] },
+          {
+            db,
+            user: { id: 'other-reader' },
+            tenantId: 'tenant-other',
+          },
+        ).handleToolCall({
+          method: 'tools/call',
+          params: { name: 'invoice_get', arguments: { id: invoice.id } },
+        }),
+      );
+      expect(crossTenant.isError).toBe(true);
     });
   });
 
@@ -224,8 +267,14 @@ describe('invoice money persistence (#3933)', () => {
         customerId: customer.id,
         invoiceNumber: 'LEGACY',
       });
+      await expect(serializeInvoiceMcpGet(invoice)).resolves.not.toHaveProperty(
+        'money',
+      );
       const settings = await TaxSettingsCollection.create({ db });
       const migrationId = await settings.beginMoneyMigration('tenant-b');
+      await expect(serializeInvoiceMcpGet(invoice)).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      } satisfies Partial<MoneyValidationError>);
       const forged = await settings.getForTenant('tenant-b');
       if (!forged) throw new Error('Expected settings');
       forged.moneyModel = 'legacy';

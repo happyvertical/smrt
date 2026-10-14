@@ -44,6 +44,7 @@ async function installRecordingRuntime(outputDirectory: string) {
     server: join(nodeModules, '@modelcontextprotocol', 'server'),
     core: join(nodeModules, '@happyvertical', 'smrt-core'),
     config: join(nodeModules, '@happyvertical', 'smrt-config'),
+    serializer: join(nodeModules, '@fixture', 'mcp-get-serializer'),
   };
   await Promise.all(
     Object.values(packages).map((dir) => mkdir(dir, { recursive: true })),
@@ -110,6 +111,16 @@ export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
       join(packages.config, 'index.js'),
       'export async function loadConfig() { return {}; }\n',
     ),
+    writeFile(
+      join(packages.serializer, 'package.json'),
+      JSON.stringify({ type: 'module', exports: './index.js' }),
+    ),
+    writeFile(
+      join(packages.serializer, 'index.js'),
+      `export async function serializePickedThing(item, options) {
+  return { ...item.toPublicJSON(options), emittedSerializer: true };
+}\n`,
+    ),
   ]);
 }
 
@@ -142,7 +153,15 @@ describe('generated MCP server dispatch identity (#3490)', () => {
     ObjectRegistry.register(PickB, {
       packageName: '@fixture/pick-b3490',
       tableName: 'picked_things_b',
-      mcp: { include },
+      mcp: {
+        include,
+        serializers: {
+          get: {
+            importPath: '@fixture/mcp-get-serializer',
+            exportName: 'serializePickedThing',
+          },
+        },
+      },
     });
     tmpDir = await mkdtemp(join(tmpdir(), 'smrt-3490-runtime-'));
   });
@@ -206,6 +225,13 @@ console.log(JSON.stringify({ resolved, results }));
     };
 
     expect(results.filter(([, isError]) => isError)).toEqual([]);
+    expect(
+      JSON.parse(
+        results.find(([name]) => name === 'pickedthing_get')?.[2] ?? '{}',
+      ),
+    ).toMatchObject({
+      emittedSerializer: true,
+    });
     expect(resolved.length).toBeGreaterThan(0);
     // Every collection, policy and class lookup names the scoped class.
     expect(resolved.filter((entry) => !entry.endsWith(`:${PICK_B}`))).toEqual(

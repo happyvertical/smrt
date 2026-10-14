@@ -16,7 +16,10 @@ import {
 import { ObjectRegistry } from '../registry';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { readFieldEnum } from '../registry/manifest-field-merge.js';
-import type { RegisteredClass } from '../registry/types.js';
+import type {
+  ApiSerializerReference,
+  RegisteredClass,
+} from '../registry/types.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
 import { resolveDisplayLabelField } from '../ui-metadata.js';
 import { isQualifiedName } from '../utils/qualified-names.js';
@@ -457,6 +460,10 @@ export class MCPGenerator {
   private config: MCPConfig;
   private context: MCPContext;
   private collections = new Map<string, SmrtCollection<SmrtObject>>();
+  private getSerializerModules = new Map<
+    string,
+    Promise<Record<string, unknown>>
+  >();
 
   constructor(config: MCPConfig = {}, context: MCPContext = {}) {
     this.config = {
@@ -1836,7 +1843,7 @@ export class MCPGenerator {
           throw new Error('Object not found');
         }
 
-        return this.toPublicData(item);
+        return this.serializeGetResult(objectName, item);
       }
 
       case 'create': {
@@ -1921,6 +1928,55 @@ export class MCPGenerator {
         return this.toPublicData(result);
       }
     }
+  }
+
+  private getSerializerReference(
+    objectName: string | undefined,
+  ): ApiSerializerReference | undefined {
+    if (!objectName) return undefined;
+    const mcp = ObjectRegistry.getConfig(objectName)?.mcp;
+    return mcp && typeof mcp === 'object' ? mcp.serializers?.get : undefined;
+  }
+
+  private async serializeGetResult(
+    objectName: string | undefined,
+    item: SmrtObject,
+  ): Promise<unknown> {
+    const reference = this.getSerializerReference(objectName);
+    if (!reference) return this.toPublicData(item);
+    let modulePromise = this.getSerializerModules.get(reference.importPath);
+    if (!modulePromise) {
+      modulePromise = import(reference.importPath) as Promise<
+        Record<string, unknown>
+      >;
+      this.getSerializerModules.set(reference.importPath, modulePromise);
+    }
+    const serializer = (await modulePromise)[reference.exportName];
+    if (typeof serializer !== 'function') {
+      throw new Error(
+        `MCP get serializer '${reference.exportName}' was not exported by '${reference.importPath}'`,
+      );
+    }
+    const options = this.getPublicJsonOptions();
+    return this.toPublicData(
+      await serializer(item, options),
+      new WeakSet(),
+      options,
+    );
+  }
+
+  private runtimeGetSerializers(
+    tools: MCPTool[],
+  ): Record<string, ApiSerializerReference> {
+    const serializers: Record<string, ApiSerializerReference> = {};
+    for (const tool of tools) {
+      const target = this.toolTarget(tool);
+      if (target.action !== 'get') continue;
+      const owner = this.toolClass(tool);
+      const reference = this.getSerializerReference(owner?.key);
+      if (reference) serializers[tool.name] = reference;
+    }
+    return serializers;
   }
 
   /**
@@ -2149,6 +2205,7 @@ export class MCPGenerator {
         debug,
         tools,
         toolTargets: this.runtimeToolTargets(tools),
+        getSerializers: this.runtimeGetSerializers(tools),
         customActions: await this.runtimeCustomActions(tools),
         taskActions: await this.runtimeTaskActions(tools),
         tenantScopedObjects,
@@ -2511,7 +2568,7 @@ ${indent}  if (!item) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  return successResult(item.toPublicJSON(PUBLIC_JSON_OPTIONS));
+${indent}  return successResult(await serializeGetResult(${JSON.stringify(tool.name)}, item));
 ${indent}}`;
 
             case 'create':
@@ -2672,6 +2729,7 @@ ${indent}}`;
     const switchCases = await this.generateToolSwitchCases('        ', tools);
     const stiTargets = this.runtimeStiTargets(tools);
     const toolTargets = this.runtimeToolTargets(tools);
+    const getSerializers = this.runtimeGetSerializers(tools);
     const tenantScopedSet = Array.from(
       new Set(tenantScopedObjects.map((n) => n.toLowerCase())),
     );
@@ -2713,7 +2771,21 @@ const PUBLIC_JSON_OPTIONS = {
     .map((permission) => permission.trim())
     .filter(Boolean),
 };
+const GET_SERIALIZERS: Record<string, { importPath: string; exportName: string }> = ${JSON.stringify(getSerializers)};
 const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
+
+async function serializeGetResult(toolName: string, item: any): Promise<any> {
+  const reference = GET_SERIALIZERS[toolName];
+  if (!reference) return item.toPublicJSON(PUBLIC_JSON_OPTIONS);
+  const serializerModule = await import(reference.importPath);
+  const serializer = serializerModule[reference.exportName];
+  if (typeof serializer !== 'function') {
+    throw new Error(
+      \`MCP get serializer '\${reference.exportName}' was not exported by '\${reference.importPath}'\`,
+    );
+  }
+  return toPublicResult(await serializer(item, PUBLIC_JSON_OPTIONS));
+}
 
 /**
  * Mass-assignment guard (#1540): strip framework/server-managed and
