@@ -102,6 +102,7 @@
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
+    "@happyvertical/smrt-commerce": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-personas": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",

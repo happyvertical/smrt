@@ -116,6 +116,14 @@ export {
   type RunChatConversationStreamOptions,
   runChatConversationStream,
 } from './chat-stream.js';
+// Principal-bound draft invoice and tax-code tools (#3937).
+export {
+  COMMERCE_INVOICE_LINE_ADD_TOOL_SLUG,
+  COMMERCE_INVOICE_LINE_UPDATE_TOOL_SLUG,
+  COMMERCE_INVOICE_PREVIEW_TOOL_SLUG,
+  COMMERCE_TAX_CODES_LIST_TOOL_SLUG,
+  createCommerceMoneyTools,
+} from './commerce-money-tools.js';
 // Authenticated browser data-surface command/ack/event bridge. This adapter is
 // transport-neutral; the consuming app supplies its authorized transport.
 export {

@@ -770,6 +770,9 @@ importers:
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
+      '@happyvertical/smrt-commerce':
+        specifier: workspace:*
+        version: link:../commerce
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config

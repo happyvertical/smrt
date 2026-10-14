@@ -97,6 +97,19 @@ fail-closed `allowedTools` offer/execution gates; RBAC, tenant, redaction,
 bounded query results, and audit authority remain in the authenticated
 `PrincipalRun` supplied by `@happyvertical/smrt-agents`.
 
+## Commerce money tools (#3937)
+
+Hosts that offer invoice money work must explicitly register
+`createCommerceMoneyTools()` in their authenticated assistant route's
+`extraTools` (for example, `extraTools: () => createCommerceMoneyTools()`) and
+add only the desired `commerce.*` slugs to the persona's `allowedTools`.
+They are not generic manifest CRUD tools: tax codes are selected by code,
+preview is calculator-only, and line writes run through the document-money
+coordinator. Each execution reasserts the principal allow-list and required
+`Invoice`, `InvoiceLineItem`, `DocumentTax`, and `TaxCode` operations. The
+generated MCP invoice `get` serializer remains commerce-owned; use its
+stored-facts integration when that serializer exposes `DocumentTax` rows.
+
 ## Runtime report tools (#3711)
 
 `createRuntimeReportTools()` (`runtime-report-tools.ts`) returns four
