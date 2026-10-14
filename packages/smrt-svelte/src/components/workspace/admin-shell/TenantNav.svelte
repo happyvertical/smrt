@@ -309,8 +309,8 @@ function fallbackIcon(label: string): string {
     display: inline-grid;
     grid-template-columns: minmax(0, 1fr);
     place-items: center;
-    inline-size: max(2rem, var(--smrt-control-target-min, 0px));
-    block-size: max(2rem, var(--smrt-control-target-min, 0px));
+    inline-size: max(2rem, var(--smrt-control-target-min));
+    block-size: max(2rem, var(--smrt-control-target-min));
     padding: 0;
     color: var(--smrt-color-on-surface-variant);
   }
@@ -321,7 +321,7 @@ function fallbackIcon(label: string): string {
 
   .smrt-tenant-nav__heading {
     box-sizing: border-box;
-    min-block-size: var(--smrt-control-target-min, 0px);
+    min-block-size: var(--smrt-control-target-min);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-large-size);
@@ -343,8 +343,8 @@ function fallbackIcon(label: string): string {
     display: grid;
     place-items: center;
     list-style: none;
-    inline-size: max(2.25rem, var(--smrt-control-target-min, 0px));
-    block-size: max(2.25rem, var(--smrt-control-target-min, 0px));
+    inline-size: max(2.25rem, var(--smrt-control-target-min));
+    block-size: max(2.25rem, var(--smrt-control-target-min));
     padding: 0;
   }
   .smrt-tenant-nav--collapsed .smrt-tenant-nav__heading::-webkit-details-marker { display: none; }
@@ -357,7 +357,7 @@ function fallbackIcon(label: string): string {
   .smrt-tenant-nav[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .smrt-tenant-nav a {
     box-sizing: border-box;
-    min-block-size: var(--smrt-control-target-min, 0px);
+    min-block-size: var(--smrt-control-target-min);
     display: grid;
     /* Icon, label, then one auto column per trailing mark (badge, dot). */
     grid-template-columns: auto minmax(0, 1fr);
@@ -380,8 +380,8 @@ function fallbackIcon(label: string): string {
   .smrt-tenant-nav--collapsed a {
     grid-template-columns: minmax(0, 1fr);
     place-items: center;
-    inline-size: max(2.25rem, var(--smrt-control-target-min, 0px));
-    block-size: max(2.25rem, var(--smrt-control-target-min, 0px));
+    inline-size: max(2.25rem, var(--smrt-control-target-min));
+    block-size: max(2.25rem, var(--smrt-control-target-min));
     padding: 0;
   }
 

@@ -2306,8 +2306,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     flex: 0 0 auto;
     margin-block-start: auto;
     align-self: flex-end;
-    inline-size: max(2rem, var(--smrt-control-target-min, 0px));
-    block-size: max(2rem, var(--smrt-control-target-min, 0px));
+    inline-size: max(2rem, var(--smrt-control-target-min));
+    block-size: max(2rem, var(--smrt-control-target-min));
     padding: 0;
     border-radius: var(--smrt-control-radius);
     color: var(--smrt-color-on-surface-variant);
@@ -2332,8 +2332,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]) {
     flex: 0 0 auto;
-    inline-size: max(2.75rem, var(--smrt-control-target-min, 0px));
-    block-size: max(2.75rem, var(--smrt-control-target-min, 0px));
+    inline-size: max(2.75rem, var(--smrt-control-target-min));
+    block-size: max(2.75rem, var(--smrt-control-target-min));
     padding: 0;
     color: var(--smrt-color-on-surface-variant);
   }

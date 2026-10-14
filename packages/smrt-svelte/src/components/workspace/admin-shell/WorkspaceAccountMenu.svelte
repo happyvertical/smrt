@@ -357,7 +357,7 @@ $effect(() => {
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
-    min-height: max(2.75rem, var(--smrt-control-target-min, 0px));
+    min-height: max(2.75rem, var(--smrt-control-target-min));
     padding: var(--smrt-spacing-2);
     position: relative;
     border: var(--smrt-hairline);
@@ -403,7 +403,7 @@ $effect(() => {
     display: grid;
     place-items: center;
     grid-template-columns: minmax(0, 1fr);
-    min-width: max(2.75rem, var(--smrt-control-target-min, 0px));
+    min-width: max(2.75rem, var(--smrt-control-target-min));
     padding: var(--smrt-spacing-1);
     border-color: transparent;
     border-radius: var(--smrt-radius-full);
@@ -467,7 +467,7 @@ $effect(() => {
     display: flex;
     align-items: center;
     box-sizing: border-box;
-    min-block-size: max(2.75rem, var(--smrt-control-target-min, 0px));
+    min-block-size: max(2.75rem, var(--smrt-control-target-min));
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     border: none;
     border-radius: var(--smrt-control-radius-small);
