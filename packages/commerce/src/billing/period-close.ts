@@ -1594,6 +1594,7 @@ async function postRevenue(
       arAccountId: runtime.ledger.arAccountId,
       revenueAccountId: runtime.ledger.revenueAccountId,
       taxAccountId: runtime.ledger.taxAccountId,
+      bookCurrency: runtime.ledger.bookCurrency,
     });
   });
 }

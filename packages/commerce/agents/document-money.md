@@ -35,3 +35,26 @@ empty-string sentinel.
 labels, percentage, liability account, taxable minor units, and tax minor
 units. Provider tax remains the invoice header's `providerTaxAmount`; commerce
 does not invent a tax code or component for provider-owned tax.
+
+Revenue recognition for `v2` reads only the frozen invoice, lines, and
+`DocumentTax` rows. It groups each line's stored net by its snapshotted revenue
+account (falling back to the caller's revenue account), groups component tax by
+the snapshotted liability account (falling back to the caller's tax account),
+and posts provider tax to the fallback once. Non-taxable zero rows do not post.
+Every entry is an exact non-negative debit or credit in the invoice currency.
+The caller must supply its authoritative `bookCurrency`; commerce rejects a
+missing, unsupported, or different currency because ledgers has no book model.
+
+The revenue journal identity derives from the tenant, invoice, and stable
+`moneySnapshotId`. Creation, posting, and the invoice's `arJournalId` link share
+the invoice parent lock and transaction, so retries converge. Account IDs from
+frozen snapshots are still authorization checked: every used account must be
+active and owned by the invoice tenant.
+
+A posted `v2` invoice cannot move directly to `CANCELLED`. Call
+`cancelWithRevenueReversal({ bookCurrency })`; it reads the original posted
+journal, posts one deterministic journal with every debit and credit reversed,
+and stores `arReversalJournalId` with the status transition atomically. The
+original journal remains posted. Failed link or reversal writes roll back the
+entire operation, and retry returns the same reversal. Legacy tenants keep the
+existing recognition and cancellation behavior.

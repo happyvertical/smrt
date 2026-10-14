@@ -24,6 +24,7 @@ import {
 import { assertIntegerMinorUnits } from '../money.js';
 import {
   type AccountingInvoiceInput,
+  type CancelRevenueOptions,
   type InvoiceCollectionMethod,
   type InvoiceOptions,
   InvoiceStatus,
@@ -374,6 +375,10 @@ export class Invoice extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-ledgers:Journal')
   arJournalId: string = '';
 
+  /** Posted journal that exactly reverses arJournalId on cancellation. */
+  @crossPackageRef('@happyvertical/smrt-ledgers:Journal', { nullable: true })
+  arReversalJournalId: string | null = null;
+
   /**
    * Journal ID for revenue recognition (cross-package ref to smrt-ledgers)
    */
@@ -506,6 +511,8 @@ export class Invoice extends SmrtObject {
     if (options.status !== undefined) this.status = options.status;
     if (options.arJournalId !== undefined)
       this.arJournalId = options.arJournalId;
+    if (options.arReversalJournalId !== undefined)
+      this.arReversalJournalId = options.arReversalJournalId;
     if (options.revenueJournalId !== undefined)
       this.revenueJournalId = options.revenueJournalId;
     if (options.externalId !== undefined) this.externalId = options.externalId;
@@ -1063,6 +1070,16 @@ export class Invoice extends SmrtObject {
     this.status = InvoiceStatus.CANCELLED;
   }
 
+  /** Cancel a posted money-v2 invoice with an exact atomic journal reversal. */
+  async cancelWithRevenueReversal(
+    options: CancelRevenueOptions,
+  ): Promise<Journal | null> {
+    const { cancelInvoiceWithRevenueReversal } = await import(
+      '../invoice-posting.js'
+    );
+    return cancelInvoiceWithRevenueReversal(this, options);
+  }
+
   /**
    * Write off the invoice (bad debt)
    */
@@ -1097,6 +1114,9 @@ export class Invoice extends SmrtObject {
    * ```
    */
   async recognizeRevenue(options: RecognizeRevenueOptions): Promise<Journal> {
+    const { recognizeInvoiceRevenueV2 } = await import('../invoice-posting.js');
+    const v2Journal = await recognizeInvoiceRevenueV2(this, options);
+    if (v2Journal) return v2Journal;
     if (this.arJournalId) {
       throw new Error(
         `Revenue already recognized for invoice ${this.invoiceNumber} (journal ID: ${this.arJournalId})`,
