@@ -1,4 +1,5 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
+import { ProductCollection } from '@happyvertical/smrt-products/collections';
 import {
   disableTenancy,
   enableTenancy,
@@ -50,6 +51,48 @@ describe('Contract money persistence (#3933)', () => {
       const migrationId = await settings.beginMoneyMigration(tenantId);
       await settings.activateMoneyV2(tenantId, migrationId);
       return code.id;
+    });
+  }
+
+  async function activateCadV2(
+    tenantId: string,
+    lineAmountType: 'exclusive' | 'inclusive',
+    taxRoundingScope: 'line' | 'document',
+  ): Promise<{ gst: string; gstPst: string; exempt: string }> {
+    return withTenant({ tenantId }, async () => {
+      const components = await TaxComponentCollection.create({ db });
+      const gst = await components.create({ name: 'GST', percent: '5' });
+      const pst = await components.create({ name: 'PST', percent: '7' });
+      const codes = await TaxCodeCollection.create({ db });
+      const gstCode = await codes.create({
+        code: 'gst',
+        name: 'GST',
+        components: [{ taxComponentId: gst.id, compound: false }],
+      });
+      const gstPstCode = await codes.create({
+        code: 'gst-pst',
+        name: 'GST + PST',
+        components: [
+          { taxComponentId: gst.id, compound: false },
+          { taxComponentId: pst.id, compound: false },
+        ],
+      });
+      const exemptCode = await codes.create({
+        code: 'exempt',
+        name: 'Exempt',
+        kind: 'exempt',
+        components: [],
+      });
+      const settings = await TaxSettingsCollection.create({ db });
+      const current = await settings.getOrCreateForTenant(tenantId);
+      current.defaultSalesTaxCodeId = gstCode.id;
+      current.defaultPurchaseTaxCodeId = gstCode.id;
+      current.defaultLineAmountType = lineAmountType;
+      current.taxRoundingScope = taxRoundingScope;
+      await current.save();
+      const migrationId = await settings.beginMoneyMigration(tenantId);
+      await settings.activateMoneyV2(tenantId, migrationId);
+      return { gst: gstCode.id, gstPst: gstPstCode.id, exempt: exemptCode.id };
     });
   }
 
@@ -115,5 +158,291 @@ describe('Contract money persistence (#3933)', () => {
         code: 'FROZEN_DOCUMENT',
       });
     });
+  });
+
+  it('uses the product tax default before party and tenant defaults', async () => {
+    const tenantId = 'contract-product-default';
+    const { gst, exempt } = await activateCadV2(tenantId, 'exclusive', 'line');
+    await withTenant({ tenantId }, async () => {
+      const product = await (await ProductCollection.create({ db })).create({
+        name: 'Exempt service',
+        defaultSalesTaxCodeId: exempt,
+      });
+      const contract = await (await ContractCollection.create({ db })).create({
+        currency: 'CAD',
+      });
+      const line = await (
+        await ContractLineItemCollection.create({ db })
+      ).create({
+        contractId: contract.id,
+        productId: product.id,
+        description: 'Product default',
+        quantity: 1,
+        unitPrice: 100,
+      });
+      expect(line).toMatchObject({ taxCodeId: exempt, taxAmount: 0 });
+      line.taxMode = 'override';
+      line.taxCodeId = gst;
+      await line.save();
+      expect(line).toMatchObject({ taxCodeId: gst, taxAmount: 5 });
+    });
+  });
+
+  it.each([
+    ContractStatus.SENT,
+    ContractStatus.ACCEPTED,
+    ContractStatus.DECLINED,
+    ContractStatus.CANCELLED,
+  ])('freezes persisted %s contract lines', async (status) => {
+    const tenantId = `contract-freeze-${status}`;
+    const codeId = await activateV2(tenantId);
+    await withTenant({ tenantId }, async () => {
+      const contract = await (await ContractCollection.create({ db })).create({
+        currency: 'CAD',
+      });
+      const line = await (
+        await ContractLineItemCollection.create({ db })
+      ).create({
+        contractId: contract.id,
+        description: 'Frozen service',
+        quantity: 1,
+        unitPrice: 100,
+        taxMode: 'override',
+        taxCodeId: codeId,
+        startDate: new Date('2026-01-01T00:00:00.000Z'),
+        billingPeriod: 'monthly',
+      });
+      const issued = await (await ContractCollection.create({ db })).get(
+        { id: contract.id },
+        { cache: false },
+      );
+      if (!issued) throw new Error('Expected saved Contract');
+      issued.status = status;
+      await issued.save();
+      line.billingPeriod = 'yearly';
+      await expect(line.save()).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+    });
+  });
+
+  it('freezes persisted completed contracts after the accepted transition', async () => {
+    const tenantId = 'contract-freeze-completed';
+    const codeId = await activateV2(tenantId);
+    await withTenant({ tenantId }, async () => {
+      const contract = await (await ContractCollection.create({ db })).create({
+        currency: 'CAD',
+      });
+      const line = await (
+        await ContractLineItemCollection.create({ db })
+      ).create({
+        contractId: contract.id,
+        description: 'Completed service',
+        quantity: 1,
+        unitPrice: 100,
+        taxMode: 'override',
+        taxCodeId: codeId,
+      });
+      const accepted = await (await ContractCollection.create({ db })).get(
+        { id: contract.id },
+        { cache: false },
+      );
+      if (!accepted) throw new Error('Expected saved Contract');
+      accepted.status = ContractStatus.ACCEPTED;
+      await accepted.save();
+      const completed = await (await ContractCollection.create({ db })).get(
+        { id: contract.id },
+        { cache: false },
+      );
+      if (!completed) throw new Error('Expected accepted Contract');
+      completed.status = ContractStatus.COMPLETED;
+      await completed.save();
+      line.unitPrice = 101;
+      await expect(line.save()).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+    });
+  });
+
+  it('persists the A–E money examples across line and document rounding', async () => {
+    const cases = [
+      {
+        name: 'A exclusive',
+        mode: 'exclusive' as const,
+        exempt: false,
+        expected: {
+          subtotal: 114_498,
+          discountTotal: 9_000,
+          taxAmount: 8_070,
+          totalAmount: 122_568,
+        },
+      },
+      {
+        name: 'B inclusive',
+        mode: 'inclusive' as const,
+        exempt: false,
+        expected: {
+          line: {
+            subtotal: 107_052,
+            discountTotal: 9_000,
+            taxAmount: 7_446,
+            totalAmount: 114_498,
+          },
+          document: {
+            subtotal: 107_051,
+            discountTotal: 9_000,
+            taxAmount: 7_447,
+            totalAmount: 114_498,
+          },
+        },
+      },
+      {
+        name: 'C exclusive exempt',
+        mode: 'exclusive' as const,
+        exempt: true,
+        expected: {
+          subtotal: 114_498,
+          discountTotal: 9_000,
+          taxAmount: 0,
+          totalAmount: 114_498,
+        },
+      },
+      {
+        name: 'D inclusive exempt',
+        mode: 'inclusive' as const,
+        exempt: true,
+        expected: {
+          subtotal: 114_498,
+          discountTotal: 9_000,
+          taxAmount: 0,
+          totalAmount: 114_498,
+        },
+      },
+      {
+        name: 'E rounding boundary',
+        mode: 'exclusive' as const,
+        roundingBoundary: true,
+        expected: {
+          line: {
+            subtotal: 30,
+            discountTotal: 0,
+            taxAmount: 6,
+            totalAmount: 36,
+          },
+          document: {
+            subtotal: 30,
+            discountTotal: 0,
+            taxAmount: 4,
+            totalAmount: 34,
+          },
+        },
+      },
+      {
+        name: 'E inclusive rounding boundary',
+        mode: 'inclusive' as const,
+        roundingBoundary: true,
+        expected: {
+          line: {
+            subtotal: 27,
+            discountTotal: 0,
+            taxAmount: 3,
+            totalAmount: 30,
+          },
+          document: {
+            subtotal: 27,
+            discountTotal: 0,
+            taxAmount: 3,
+            totalAmount: 30,
+          },
+        },
+      },
+    ] as const;
+
+    for (const [caseIndex, example] of cases.entries())
+      for (const taxRoundingScope of ['line', 'document'] as const) {
+        const tenantId = `contract-epic-${caseIndex}-${taxRoundingScope}`;
+        const codes = await activateCadV2(
+          tenantId,
+          example.mode,
+          taxRoundingScope,
+        );
+        await withTenant({ tenantId }, async () => {
+          const contract = await (
+            await ContractCollection.create({ db })
+          ).create({ currency: 'CAD' });
+          const lines = await ContractLineItemCollection.create({ db });
+          const codeFor = (taxable: boolean) =>
+            taxable ? codes.gstPst : codes.exempt;
+          const specifications = example.roundingBoundary
+            ? [
+                { description: 'cent one', quantity: 1, unitPrice: 10 },
+                { description: 'cent two', quantity: 1, unitPrice: 10 },
+                { description: 'cent three', quantity: 1, unitPrice: 10 },
+              ]
+            : [
+                {
+                  description: 'Design',
+                  quantity: 10,
+                  unitPrice: 8_500,
+                  discountType: 'percent' as const,
+                  discountRate: '10',
+                  taxCodeId: example.exempt ? codes.exempt : codes.gst,
+                },
+                {
+                  description: 'Laptop stand',
+                  quantity: 2,
+                  unitPrice: 4_999,
+                  discountType: 'amount' as const,
+                  discount: 500,
+                  taxCodeId: codeFor(!example.exempt),
+                },
+                {
+                  description: 'Software licence',
+                  quantity: 12,
+                  unitPrice: 2_000,
+                  taxCodeId: codeFor(!example.exempt),
+                },
+                {
+                  description: 'Book',
+                  quantity: 1,
+                  unitPrice: 4_500,
+                  taxCodeId: example.exempt ? codes.exempt : codes.gst,
+                },
+              ];
+          for (const specification of specifications)
+            await lines.create({
+              contractId: contract.id,
+              taxMode: 'override',
+              ...specification,
+              ...(example.roundingBoundary ? { taxCodeId: codes.gstPst } : {}),
+            });
+          const stored = await (await ContractCollection.create({ db })).get(
+            { id: contract.id },
+            { cache: false },
+          );
+          const expected =
+            'line' in example.expected
+              ? example.expected[taxRoundingScope]
+              : example.expected;
+          expect(stored, example.name).toMatchObject(expected);
+          const documentTaxes = await (
+            await DocumentTaxCollection.create({ db })
+          ).findByDocument(tenantId, 'contract', contract.id);
+          expect(
+            documentTaxes.reduce((sum, row) => sum + row.taxMinor, 0),
+          ).toBe(expected.taxAmount);
+          if (
+            example.name === 'B inclusive' &&
+            taxRoundingScope === 'document'
+          ) {
+            const software = (await lines.findByContract(contract.id)).find(
+              (line) => line.description === 'Software licence',
+            );
+            expect(
+              software?.taxComponents.map((component) => component.taxMinor),
+            ).toEqual([1_072, 1_500]);
+          }
+        });
+      }
   });
 });
