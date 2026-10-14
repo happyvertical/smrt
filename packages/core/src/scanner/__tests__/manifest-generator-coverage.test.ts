@@ -134,7 +134,7 @@ describe('ManifestGenerator coverage', () => {
     for (const surface of ['api', 'mcp', 'cli'] as const) {
       expect(config[surface]).toMatchObject({
         include: ['list', 'get', 'create', 'browse'],
-        exclude: ['create', 'update', 'delete'],
+        exclude: ['create', 'update', 'delete', 'browse'],
       });
     }
     expect(manifest.objects.listonlywidget.decoratorConfig.api).toMatchObject({

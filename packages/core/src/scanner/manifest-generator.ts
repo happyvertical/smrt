@@ -418,26 +418,12 @@ export class ManifestGenerator {
       assertScopedPackageName(options?.packageName);
     }
 
-    // All producers, including the OXC Vite path, must carry this policy.
     // Capture authored API exposure before making the abstract class itself
     // read-only so hosted concrete descendants can inherit the authored part.
     for (const objectDef of Object.values(manifest.objects)) {
       if (objectDef.decoratorConfig?.abstract !== true) continue;
-      const config = objectDef.decoratorConfig;
       if (!Object.hasOwn(objectDef, 'abstractDeclaredApi')) {
-        objectDef.abstractDeclaredApi = config.api ?? null;
-      }
-      for (const surface of ['api', 'mcp', 'cli'] as const) {
-        if (config[surface] === false) continue;
-        const current = config[surface];
-        const excludes =
-          current && typeof current === 'object' && current.exclude
-            ? current.exclude
-            : [];
-        config[surface] = {
-          ...(current && typeof current === 'object' ? current : {}),
-          exclude: [...new Set([...excludes, 'create', 'update', 'delete'])],
-        };
+        objectDef.abstractDeclaredApi = objectDef.decoratorConfig.api ?? null;
       }
     }
 
@@ -457,6 +443,31 @@ export class ManifestGenerator {
     // Third pass: Merge inherited fields for STI classes
     // This ensures STI subclasses have all parent fields inline in the manifest
     this.mergeInheritedFields(manifest);
+
+    // All producers, including OXC, must suppress custom actions on abstract
+    // resources. Do this after inheritance so ancestor methods are covered.
+    for (const objectDef of Object.values(manifest.objects)) {
+      const config = objectDef.decoratorConfig;
+      if (config?.abstract !== true) continue;
+      const methods = Object.entries(objectDef.methods || {})
+        .filter(([, method]) => method.isPublic)
+        .map(([name]) => name)
+        .filter((name) => name !== 'list' && name !== 'get');
+      for (const surface of ['api', 'mcp', 'cli'] as const) {
+        if (config[surface] === false) continue;
+        const current = config[surface];
+        const excludes =
+          current && typeof current === 'object' && current.exclude
+            ? current.exclude
+            : [];
+        config[surface] = {
+          ...(current && typeof current === 'object' ? current : {}),
+          exclude: [
+            ...new Set([...excludes, 'create', 'update', 'delete', ...methods]),
+          ],
+        };
+      }
+    }
 
     // Recipe options may only name fields the merged model declares (#3590).
     this.assertRecipeOptions(manifest);
