@@ -89,6 +89,7 @@ export {
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
+export type { InvoiceRoundingPolicy } from './invoice-rounding-policy.js';
 export {
   type InvoiceEditorStorageEngine,
   type InvoiceEditorStorageMigrationResult,
@@ -96,6 +97,8 @@ export {
   migrateInvoiceEditorStorage,
   preflightInvoiceEditorStorage,
 } from './migrations/invoiceEditorStorage.js';
+export type { InvoiceRoundingStorageEngine } from './migrations/invoiceRoundingStorage.js';
+export { migrateInvoiceRoundingStorage } from './migrations/invoiceRoundingStorage.js';
 // Money conventions and the major-units → minor-units migration (#2401)
 export {
   COMMERCE_MONEY_COLUMNS,
@@ -155,7 +158,6 @@ export {
   VendorsRecipe,
   WholesaleRecipe,
 } from './recipes.js';
-
 // Types
 export {
   type Address,
@@ -178,6 +180,5 @@ export {
   type RecordPaymentOptions,
   VendorStatus,
 } from './types/index.js';
-
 // UI metadata (no Svelte dependency - import ./svelte for components)
 export { COMMERCE_MODULE_META, COMMERCE_UI_SLOTS } from './ui.js';

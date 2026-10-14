@@ -7,16 +7,32 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  isPostgresDatabase,
+  type SmrtDeleteOptions,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
 import type { Journal, JournalEntryData } from '@happyvertical/smrt-ledgers';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import {
   assertAllocationParent,
   claimAllocationParent,
 } from '../allocation-integrity.js';
 import { minorToMajorUnits } from '../billing/units.js';
+import { allocateInvoiceTax } from '../invoice-rounding.js';
+import {
+  freezingInvoices,
+  type InvoiceRoundingPolicy,
+  invoiceLineRoundingSource,
+  parseInvoiceRoundingPolicy,
+  pendingInvoicePolicies,
+  persistInvoiceLineAllocation,
+  validateInvoiceRoundingPolicy,
+} from '../invoice-rounding-policy.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import {
   type AccountingInvoiceInput,
@@ -190,6 +206,192 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
   cli: { skipApiCheck: true },
 })
 export class Invoice extends SmrtObject {
+  /** Explicit server-selected policy; empty historical storage retains per-line behavior. */
+  invoiceRoundingPolicyJson: string = '';
+
+  /** Permanent accepted monetary snapshot; status changes cannot reopen its policy. */
+  invoiceRoundingFrozenJson: string = '';
+
+  /** Detached policy selected through the authorized backend method. */
+  get roundingPolicy(): InvoiceRoundingPolicy | null {
+    return parseInvoiceRoundingPolicy(this.invoiceRoundingPolicyJson);
+  }
+
+  /**
+   * Select approved tenant policy for a mutable draft. The application must
+   * authorize its actor before calling; generated mutations cannot set policy.
+   * This stages policy for save(), which verifies persisted ownership/state.
+   */
+  configureRoundingPolicy(policy: InvoiceRoundingPolicy): void {
+    const selected = validateInvoiceRoundingPolicy(policy);
+    if (
+      selected.tenantId !== this.tenantId ||
+      selected.currency !== this.currency ||
+      (getTenantId() && getTenantId() !== selected.tenantId)
+    )
+      throw new Error(
+        'Invoice rounding policy does not match authorized tenant and currency',
+      );
+    if (
+      this.invoiceRoundingFrozenJson ||
+      this.status !== InvoiceStatus.DRAFT ||
+      this.arJournalId ||
+      this.revenueJournalId
+    )
+      throw new Error('Finalized invoice rounding is immutable');
+    const json = JSON.stringify(selected);
+    pendingInvoicePolicies.set(this, json);
+    this.invoiceRoundingPolicyJson = json;
+  }
+
+  /** Retain finalized invoice-rounding history even for an invoice without lines. */
+  override async delete(options: SmrtDeleteOptions = {}): Promise<void> {
+    return this.withTransaction(async () => {
+      if (this.id && isPostgresDatabase(this.db))
+        await this.db.query(
+          `SELECT id FROM "${this.tableName}" WHERE id = ? FOR UPDATE`,
+          [this.id],
+        );
+      const stored = this.id
+        ? await this.db.get(this.tableName, { id: this.id })
+        : null;
+      if (
+        stored?.invoice_rounding_policy_json &&
+        (stored.invoice_rounding_frozen_json ||
+          stored.status !== InvoiceStatus.DRAFT ||
+          stored.ar_journal_id ||
+          stored.revenue_journal_id)
+      )
+        throw new Error('Finalized invoice rounding history cannot be deleted');
+      await super.delete(options);
+    });
+  }
+
+  private async validateRoundingPolicyForSave(
+    persisted: boolean,
+  ): Promise<void> {
+    const stored =
+      persisted && this.id
+        ? await this.db.get(this.tableName, { id: this.id })
+        : null;
+    const previous = String(stored?.invoice_rounding_policy_json ?? '');
+    const frozen = String(stored?.invoice_rounding_frozen_json ?? '');
+    if (this.invoiceRoundingFrozenJson !== frozen)
+      throw new Error('Invoice frozen rounding snapshot is server-managed');
+    if (this.invoiceRoundingPolicyJson !== previous) {
+      if (pendingInvoicePolicies.get(this) !== this.invoiceRoundingPolicyJson)
+        throw new Error(
+          'Use configureRoundingPolicy with an authorized tenant policy',
+        );
+      if (
+        frozen ||
+        (stored &&
+          (stored.status !== InvoiceStatus.DRAFT ||
+            stored.ar_journal_id ||
+            stored.revenue_journal_id))
+      )
+        throw new Error('Finalized invoice rounding policy is immutable');
+    }
+    const policy = this.roundingPolicy;
+    if (!policy) return;
+    if (
+      policy.tenantId !== this.tenantId ||
+      policy.currency !== this.currency ||
+      (getTenantId() && getTenantId() !== policy.tenantId) ||
+      (stored && (stored.tenant_id ?? null) !== this.tenantId)
+    )
+      throw new Error('Invoice rounding policy ownership or currency mismatch');
+    if (this.providerTaxAmount !== 0)
+      throw new Error(
+        'Invoice rounding cannot be combined with provider-managed tax',
+      );
+  }
+
+  /** Require valid posting inputs before freezing an approved monetary snapshot. */
+  private assertRevenueInputs(options: RecognizeRevenueOptions): void {
+    if (this.totalAmount <= 0) {
+      throw new Error(
+        `Cannot recognize revenue for invoice ${this.invoiceNumber} with non-positive total: ${this.totalAmount}`,
+      );
+    }
+
+    if (this.taxAmount > 0 && !options.taxAccountId) {
+      throw new Error(
+        `Invoice ${this.invoiceNumber} has taxAmount ${this.taxAmount} but no taxAccountId provided`,
+      );
+    }
+  }
+
+  private async recomputeInvoiceRoundedAmounts(
+    lineItems: InvoiceLineItem[],
+  ): Promise<void> {
+    const policy = this.roundingPolicy;
+    if (!policy) throw new Error('Explicit invoice rounding policy required');
+    for (const line of lineItems) {
+      if (line.tenantId !== this.tenantId || line.invoiceId !== this.id)
+        throw new Error('Invoice allocation line ownership mismatch');
+    }
+    const amounts = allocateInvoiceTax(
+      lineItems.map((line) => ({
+        id: line.id!,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        discount: line.discount,
+        taxRate: line.taxRate,
+      })),
+    );
+    const sources = [...lineItems]
+      .sort((a, b) => (a.id! < b.id! ? -1 : a.id! > b.id! ? 1 : 0))
+      .map((line) => [
+        invoiceLineRoundingSource(line),
+        line.description,
+        line.sku,
+        line.revenueAccountId,
+      ]);
+    const snapshot = JSON.stringify({
+      policy,
+      tenantId: this.tenantId,
+      customerId: this.customerId,
+      currency: this.currency,
+      sources,
+      amounts,
+    });
+    if (
+      this.invoiceRoundingFrozenJson &&
+      this.invoiceRoundingFrozenJson !== snapshot
+    )
+      throw new Error('Finalized invoice monetary snapshot is immutable');
+    if (!this.invoiceRoundingFrozenJson) {
+      for (const allocation of amounts.lines) {
+        const line = lineItems.find((item) => item.id === allocation.id)!;
+        await persistInvoiceLineAllocation(line, allocation);
+      }
+    } else {
+      for (const allocation of amounts.lines) {
+        const line = lineItems.find((item) => item.id === allocation.id)!;
+        if (
+          line.amount !== allocation.totalMinor ||
+          line.getTaxAmount() !== allocation.taxMinor
+        )
+          throw new Error(
+            'Finalized invoice line allocation disagrees with snapshot',
+          );
+      }
+    }
+    this.subtotal = amounts.subtotalMinor;
+    this.taxAmount = amounts.taxMinor;
+    this.totalAmount = amounts.totalMinor;
+    const revenueOptions = freezingInvoices.get(this);
+    if (revenueOptions) this.assertRevenueInputs(revenueOptions);
+    if (
+      this.status !== InvoiceStatus.DRAFT ||
+      this.arJournalId ||
+      this.revenueJournalId ||
+      freezingInvoices.has(this)
+    )
+      this.invoiceRoundingFrozenJson = snapshot;
+  }
+
   /**
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global invoices
@@ -486,6 +688,21 @@ export class Invoice extends SmrtObject {
   // Save-time financial-integrity guard (S5 audit #1390)
   // ============================================================================
 
+  /** Restore derived rounding history when an enclosing model transaction aborts. */
+  override async withTransaction<T>(
+    operation: (bound: this) => Promise<T>,
+  ): Promise<T> {
+    const frozen = this.invoiceRoundingFrozenJson;
+    try {
+      return await super.withTransaction(operation);
+    } catch (error) {
+      // Derived history is transaction-owned, unlike caller-editable domain fields.
+      // Restore it even when save succeeded before the enclosing callback failed.
+      this.invoiceRoundingFrozenJson = frozen;
+      throw error;
+    }
+  }
+
   /**
    * Recompute and validate financial fields before every write so forged
    * totals, negative amounts, and illegal status flips can't be persisted via
@@ -509,25 +726,34 @@ export class Invoice extends SmrtObject {
    *  - **Status transitions** are validated against the prior persisted status.
    */
   override async save(): Promise<this> {
-    return this.withTransaction(async () => {
-      await claimAllocationParent(this, 'invoice');
-      const persisted = await this.isSaved();
-      const prior = await this.resolvePriorStatus(persisted);
+    const previousFrozen = this.invoiceRoundingFrozenJson;
+    try {
+      const saved = await this.withTransaction(async () => {
+        await claimAllocationParent(this, 'invoice');
+        const persisted = await this.isSaved();
+        const prior = await this.resolvePriorStatus(persisted);
 
-      this.assertAmountsAreMinorUnits();
-      await this.recomputeAmountsForSave(persisted);
-      this.assertNonNegativeAmounts();
-      this.assertStatusTransition(prior);
-      this.assertPaymentStatusConsistent();
-      await this.assertDraftDeliveryHistory(persisted);
+        await this.validateRoundingPolicyForSave(persisted);
+        this.assertAmountsAreMinorUnits();
+        await this.recomputeAmountsForSave(persisted);
+        this.assertNonNegativeAmounts();
+        this.assertStatusTransition(prior);
+        this.assertPaymentStatusConsistent();
+        await this.assertDraftDeliveryHistory(persisted);
 
-      await assertAllocationParent(this, 'invoice');
-      const result = (await super.save()) as this;
-      // Once written, the current status becomes the new "prior" for the next
-      // save in this instance's lifetime.
-      loadedInvoiceStatus.set(this, this.status);
-      return result;
-    });
+        await assertAllocationParent(this, 'invoice');
+        const result = (await super.save()) as this;
+        // Once written, the current status becomes the new "prior" for the next
+        // save in this instance's lifetime.
+        loadedInvoiceStatus.set(this, this.status);
+        return result;
+      });
+      // Retain the authorized selection for retry if a caller-owned outer transaction rolls back.
+      return saved;
+    } catch (error) {
+      this.invoiceRoundingFrozenJson = previousFrozen;
+      throw error;
+    }
   }
 
   /**
@@ -562,6 +788,8 @@ export class Invoice extends SmrtObject {
    * (the dynamic imports stay inside the package).
    */
   private async recomputeAmountsForSave(persisted: boolean): Promise<void> {
+    if (!persisted && this.roundingPolicy)
+      await this.recomputeInvoiceRoundedAmounts([]);
     if (persisted && this.id) {
       const { InvoiceLineItemCollection } = await import(
         '../collections/InvoiceLineItemCollection.js'
@@ -572,7 +800,9 @@ export class Invoice extends SmrtObject {
       });
       const lineItems = await lineItemCollection.findByInvoice(this.id);
 
-      if (lineItems.length > 0) {
+      if (this.roundingPolicy) {
+        await this.recomputeInvoiceRoundedAmounts(lineItems);
+      } else if (lineItems.length > 0) {
         const subtotal = lineItems.reduce(
           (sum: number, item: InvoiceLineItem) => sum + item.getSubtotal(),
           0,
@@ -1005,6 +1235,16 @@ export class Invoice extends SmrtObject {
    * ```
    */
   async recognizeRevenue(options: RecognizeRevenueOptions): Promise<Journal> {
+    // Capture and persist the immutable monetary revision before creating a journal.
+    // Failed posting leaves the approved snapshot frozen, never silently editable.
+    if (this.roundingPolicy && !this.invoiceRoundingFrozenJson) {
+      freezingInvoices.set(this, options);
+      try {
+        await this.save();
+      } finally {
+        freezingInvoices.delete(this);
+      }
+    }
     if (this.arJournalId) {
       throw new Error(
         `Revenue already recognized for invoice ${this.invoiceNumber} (journal ID: ${this.arJournalId})`,
@@ -1022,17 +1262,7 @@ export class Invoice extends SmrtObject {
     await this.recomputeAmountsForSave(persisted);
     this.assertNonNegativeAmounts();
 
-    if (this.totalAmount <= 0) {
-      throw new Error(
-        `Cannot recognize revenue for invoice ${this.invoiceNumber} with non-positive total: ${this.totalAmount}`,
-      );
-    }
-
-    if (this.taxAmount > 0 && !options.taxAccountId) {
-      throw new Error(
-        `Invoice ${this.invoiceNumber} has taxAmount ${this.taxAmount} but no taxAccountId provided`,
-      );
-    }
+    this.assertRevenueInputs(options);
 
     // Dynamic import to avoid hard dependency on smrt-ledgers
     const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
@@ -1144,6 +1374,10 @@ export class Invoice extends SmrtObject {
    * ```
    */
   async toAccountingInput(): Promise<AccountingInvoiceInput> {
+    if (this.roundingPolicy)
+      throw new Error(
+        'Invoice-rounded tax requires an accounting adapter with explicit allocated-tax support',
+      );
     // Dynamically import to avoid circular dependency
     const { InvoiceLineItemCollection } = await import(
       '../collections/InvoiceLineItemCollection.js'

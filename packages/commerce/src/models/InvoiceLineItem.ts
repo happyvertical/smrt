@@ -7,11 +7,21 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  isPostgresDatabase,
+  type SmrtDeleteOptions,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import { minorToMajorUnits } from '../billing/units.js';
+import {
+  allocatedLineTax,
+  allocatingInvoiceLines,
+} from '../invoice-rounding-policy.js';
 import {
   calculateInvoiceMinorLine,
   type InvoiceCalculationContext,
@@ -23,6 +33,7 @@ import type {
   InvoiceLineEditorState,
   InvoiceLineItemOptions,
 } from '../types/index.js';
+import { InvoiceStatus } from '../types/index.js';
 
 /**
  * InvoiceLineItem represents a single line item on an invoice.
@@ -47,7 +58,24 @@ import type {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+  api: {
+    include: ['list', 'get', 'create', 'update', 'delete'],
+    writable: [
+      'invoiceId',
+      'description',
+      'sku',
+      'quantity',
+      'unitPrice',
+      'discount',
+      'taxRate',
+      'sourceType',
+      'sourceId',
+      'periodStart',
+      'periodEnd',
+      'revenueAccountId',
+      'sortOrder',
+    ],
+  },
   mcp: { include: ['list', 'get'] },
   cli: { skipApiCheck: true },
 })
@@ -83,6 +111,9 @@ export class InvoiceLineItem extends SmrtObject {
 
   /** Raw editor modes retained only while they resolve to the authoritative model fields. */
   invoiceEditorStateJson: string = '';
+
+  /** Server-derived allocated tax for explicitly invoice-rounded parents. */
+  invoiceTaxAllocationJson: string = '';
 
   /** Guarded editor metadata view; malformed stored JSON is treated as absent. */
   get invoiceEditorState(): InvoiceLineEditorState | null {
@@ -211,7 +242,12 @@ export class InvoiceLineItem extends SmrtObject {
 
   /** Calculate exact safe integer-minor totals, rounding gross and tax ties toward positive infinity. */
   calculateAmount(): number {
-    return calculateInvoiceMinorLine(this).totalMinor;
+    const calculated = calculateInvoiceMinorLine(this);
+    const tax = allocatedLineTax(this);
+    const amount = calculated.subtotalMinor + (tax ?? calculated.taxMinor);
+    if (!Number.isSafeInteger(amount))
+      throw new RangeError('Unsafe allocated line amount');
+    return amount;
   }
 
   /** Rounded quantity times price, less the resolved flat minor-unit discount. */
@@ -221,7 +257,7 @@ export class InvoiceLineItem extends SmrtObject {
 
   /** Tax on the rounded discounted subtotal, in safe integer minor units. */
   getTaxAmount(): number {
-    return calculateInvoiceMinorLine(this).taxMinor;
+    return allocatedLineTax(this) ?? calculateInvoiceMinorLine(this).taxMinor;
   }
 
   /** Apply a server-validated draft without saving; authorization and transaction stay caller-owned. */
@@ -265,14 +301,125 @@ export class InvoiceLineItem extends SmrtObject {
 
   /** Validate resolved fields and recompute amount before persistence; editor metadata never determines money. */
   override async save(): Promise<this> {
-    this.amount = this.calculateAmount();
-    const state = this.invoiceEditorState;
-    if (
-      this.invoiceEditorStateJson &&
-      (!state || !this.getEditorDraft(state.context))
-    )
-      this.invoiceEditorState = null;
-    return (await super.save()) as this;
+    // Derived writes occur only inside the parent's already claimed transaction.
+    if (allocatingInvoiceLines.has(this)) return (await super.save()) as this;
+    calculateInvoiceMinorLine(this);
+    return this.mutateWithRoundingParent(async () => {
+      this.invoiceTaxAllocationJson = '';
+      this.amount = calculateInvoiceMinorLine(this).totalMinor;
+      const state = this.invoiceEditorState;
+      if (
+        this.invoiceEditorStateJson &&
+        (!state || !this.getEditorDraft(state.context))
+      )
+        this.invoiceEditorState = null;
+      return (await super.save()) as this;
+    });
+  }
+
+  /** Delete a draft line and its allocation in the same transaction as sibling redistribution. */
+  override async delete(options: SmrtDeleteOptions = {}): Promise<void> {
+    return this.mutateWithRoundingParent(() => super.delete(options));
+  }
+
+  private async mutateWithRoundingParent<T>(
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const { InvoiceCollection } = await import(
+      '../collections/InvoiceCollection.js'
+    );
+    const invoices = await InvoiceCollection.create({
+      ...this.options,
+      db: this.db,
+    });
+    const parent = this.invoiceId
+      ? await invoices.get({ id: this.invoiceId }, { cache: false })
+      : null;
+    const stored = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    const prior =
+      stored && stored.invoice_id !== this.invoiceId
+        ? await invoices.get(
+            { id: String(stored.invoice_id) },
+            { cache: false },
+          )
+        : null;
+    if (stored && stored.invoice_id !== this.invoiceId) {
+      if (stored.invoice_id && !prior)
+        throw new Error('Invoice line requires an accessible prior parent');
+      if (
+        prior?.invoiceRoundingPolicyJson ||
+        parent?.invoiceRoundingPolicyJson ||
+        stored.invoice_tax_allocation_json
+      )
+        throw new Error('Invoice-rounded lines cannot be reparented');
+    }
+    if (!parent) {
+      if (this.invoiceId)
+        throw new Error('Invoice line requires an accessible parent');
+      if (this.invoiceTaxAllocationJson || stored?.invoice_tax_allocation_json)
+        throw new Error('Allocated line requires its invoice-rounded parent');
+      return operation();
+    }
+    return this.withTransaction(async () =>
+      parent.withDatabase(this.db, async () => {
+        // Serialize even legacy writers against a concurrent explicit policy activation,
+        // without advancing legacy parent revisions or recalculating legacy headers.
+        const parentIds = [
+          ...new Set([parent.id!, ...(prior?.id ? [prior.id] : [])]),
+        ].sort();
+        if (isPostgresDatabase(parent.db))
+          await parent.db.query(
+            `SELECT id FROM "${parent.tableName}" WHERE id IN (${parentIds.map(() => '?').join(', ')}) ORDER BY id FOR UPDATE`,
+            parentIds,
+          );
+        await parent.loadFromId();
+        if (prior) {
+          await prior.withDatabase(this.db, async () => prior.loadFromId());
+          if (
+            prior.invoiceRoundingPolicyJson ||
+            parent.invoiceRoundingPolicyJson
+          )
+            throw new Error('Invoice-rounded lines cannot be reparented');
+        }
+        if (!parent.invoiceRoundingPolicyJson) {
+          if (
+            this.invoiceTaxAllocationJson ||
+            stored?.invoice_tax_allocation_json
+          )
+            throw new Error(
+              'Allocated line requires its invoice-rounded parent',
+            );
+          return operation();
+        }
+        if (
+          (this.tenantId || getTenantId()) !== parent.tenantId ||
+          (stored && (stored.tenant_id ?? null) !== parent.tenantId)
+        )
+          throw new Error(
+            'Invoice line and rounding parent must have identical tenant ownership',
+          );
+        const { claimAllocationParent } = await import(
+          '../allocation-integrity.js'
+        );
+        await claimAllocationParent(parent, 'invoice');
+        if (
+          parent.invoiceRoundingFrozenJson ||
+          parent.status !== InvoiceStatus.DRAFT ||
+          parent.arJournalId ||
+          parent.revenueJournalId
+        )
+          throw new Error('Finalized invoice rounding is immutable');
+        const result = await operation();
+        await parent.save();
+        if (this.isPersisted && this.id) {
+          const saved = await this.db.get(this.tableName, { id: this.id });
+          if (saved) await this.loadFromId();
+        }
+        return result;
+      }),
+    );
   }
 
   /**
@@ -297,6 +444,10 @@ export class InvoiceLineItem extends SmrtObject {
    * without it, money stays in this package's integer minor units.
    */
   toAccountingLineItem(currency?: string): AccountingLineItemInput {
+    if (this.invoiceTaxAllocationJson)
+      throw new Error(
+        'Invoice-rounded tax requires an accounting adapter with explicit allocated-tax support',
+      );
     const money = (value: number) =>
       currency ? minorToMajorUnits(value, currency) : value;
     return {

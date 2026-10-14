@@ -108,6 +108,16 @@ export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
    * @returns Updated line items
    */
   async recalculateAmounts(invoiceId: string): Promise<InvoiceLineItem[]> {
+    const { InvoiceCollection } = await import('./InvoiceCollection.js');
+    const invoices = await InvoiceCollection.create({
+      ...this.options,
+      db: this.db,
+    });
+    const invoice = await invoices.get({ id: invoiceId }, { cache: false });
+    if (invoice?.roundingPolicy) {
+      await invoice.save();
+      return this.findByInvoice(invoiceId);
+    }
     const lineItems = await this.findByInvoice(invoiceId);
 
     for (const item of lineItems) {

@@ -201,3 +201,5 @@ See [agents/purchasing-ui.md](agents/purchasing-ui.md) for caller responsibiliti
 
 Pure signed cost billing and explicit tax rounding are available through the
 independent `cost-billing` subpath; see [contract](agents/cost-billing.md).
+
+[Invoice rounding](agents/invoice-rounding.md).
