@@ -42,6 +42,23 @@ The caller owns action URLs, server authorization, tenancy checks, request token
 
 Forms use the provider-free `Form`, `Input`, `Select`, `Textarea`, and `Checkbox` controls from `@happyvertical/smrt-ui/forms`. They default to native `POST` submission through `preventDefault={false}`. `transport.hiddenFields`, `transport.intentName`, and the field-name maps let an application preserve its existing payload contract. Repeatable contact rows submit repeated field names in DOM order. Add and remove controls are native submitters, so they work without JavaScript; the server returns the revised rows and retained values.
 
+`CustomerForm` and `VendorForm` accept submit hooks so a host never has to find
+the form after mount (#3501). `enhance` (`PartyFormEnhance`, action-shaped) is
+applied to the mounted native `<form>` and destroyed with it; SvelteKit's
+`enhance` from `$app/forms` fits directly, or wrap it to pass a submit callback.
+An `ssr = false` app needs it, because a plain native post answers with the
+empty shell. `onsubmit` receives the native submit event (submission stays
+native unless it calls `preventDefault()`), and the `getFormElement()` instance
+method returns the native element while mounted.
+
+```svelte
+<script lang="ts">
+  import { enhance } from '$app/forms';
+</script>
+
+<VendorForm values={form?.values ?? data.values} errors={form?.errors} transport={{ action: '?/save' }} {enhance} />
+```
+
 Directory search forms accept `hiddenFields` as a string record for caller-owned GET state such as sort direction and page size. Fields whose names equal the resolved `queryName` or `statusName` are omitted so the visible search controls remain authoritative.
 
 Customer shipping and billing addresses use the shared `CountrySelect` and

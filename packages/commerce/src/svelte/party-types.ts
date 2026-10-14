@@ -122,6 +122,16 @@ export interface PartyFormTransport {
   removeContactIntent?: (index: number) => string;
 }
 
+/**
+ * Progressive-enhancement hook applied to a party form's native `<form>`
+ * element while it is mounted, with the same shape as a Svelte action.
+ * SvelteKit's `enhance` from `$app/forms` satisfies it directly; wrap it to
+ * pass a submit callback: `(form) => enhance(form, onSubmit)`.
+ */
+export type PartyFormEnhance = (
+  form: HTMLFormElement,
+) => { destroy?: () => void } | void;
+
 /** Adaptable common field names. Repeated contact names are submitted in DOM order. */
 export interface PartyFieldNames {
   profileId: string;
