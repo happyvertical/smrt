@@ -388,8 +388,8 @@ export class InheritanceResolver {
    *
    * Iterates from the root base class to the leaf class so that base class
    * fields appear first in the returned array.  If a field name is declared in
-   * both an ancestor and a descendant, the ancestor's definition takes
-   * precedence (first-seen wins), preserving the base-class column layout.
+   * both an ancestor and a descendant, the descendant's definition takes
+   * precedence while preserving the base-class column position.
    *
    * @param chain - Ordered inheritance chain (base → leaf) as returned by
    *   {@link resolveInheritanceChain}.
@@ -398,18 +398,20 @@ export class InheritanceResolver {
    */
   mergeFieldsForSTI(chain: string[]): RawFieldDefinition[] {
     const allFields: RawFieldDefinition[] = [];
-    const seenNames = new Set<string>();
+    const positions = new Map<string, number>();
 
     for (const className of chain) {
       const classDef = this.findClassDefinition(className);
       if (!classDef) continue;
 
       for (const field of classDef.fields) {
-        // Skip if already seen (child overrides parent)
-        if (seenNames.has(field.name)) continue;
-
-        seenNames.add(field.name);
-        allFields.push(field);
+        const position = positions.get(field.name);
+        if (position === undefined) {
+          positions.set(field.name, allFields.length);
+          allFields.push(field);
+        } else {
+          allFields[position] = field;
+        }
       }
     }
 

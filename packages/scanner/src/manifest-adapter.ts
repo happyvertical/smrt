@@ -1043,6 +1043,7 @@ export class ManifestAdapter {
         // runtime decorator.
         'onDelete',
         'onUpdate',
+        'validateSubtype',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {
@@ -1121,6 +1122,7 @@ export class ManifestAdapter {
         // consumers, matching the runtime decorator.
         'onDelete',
         'onUpdate',
+        'validateSubtype',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {

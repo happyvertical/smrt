@@ -147,6 +147,30 @@ function inheritedStiCollection(ctor: typeof SmrtObject): string | undefined {
   return base?.collection;
 }
 
+function assertRegisteredStiParent(ctor: typeof SmrtObject): void {
+  const directParent = Object.getPrototypeOf(ctor) as typeof SmrtObject;
+  if (
+    !directParent ||
+    directParent === SmrtObject ||
+    getConstructorIndex().has(directParent)
+  )
+    return;
+  for (
+    let ancestor = Object.getPrototypeOf(directParent) as typeof SmrtObject;
+    ancestor && ancestor !== SmrtObject && ancestor !== Function.prototype;
+    ancestor = Object.getPrototypeOf(ancestor) as typeof SmrtObject
+  ) {
+    const key = getConstructorIndex().get(ancestor);
+    if (key && getClasses().get(key)?.config.tableStrategy === 'sti') {
+      throw new ConfigurationError(
+        `STI descendant ${ctor.name} has unregistered direct parent ${directParent.name}; decorate the intermediate with @smrt()`,
+        'CONFIG_STI_UNREGISTERED_PARENT',
+        { className: ctor.name, parentName: directParent.name },
+      );
+    }
+  }
+}
+
 /**
  * Shared bundled-context detector. Source files in these output
  * directories come from a bundler (Vite library mode, webpack, Next.js,
@@ -1889,6 +1913,7 @@ function registerUntracked(
   // This is critical for inline test classes that use decorators
   let extendsClass: string | undefined =
     manifestEntry?.extendsQualified ?? manifestEntry?.extends;
+  assertRegisteredStiParent(ctor);
   if (!extendsClass) {
     const proto = Object.getPrototypeOf(ctor);
     if (proto?.name && proto.name !== 'SmrtObject' && proto.name !== 'Object') {

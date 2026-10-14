@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { InheritanceResolver } from '../inheritance-resolver.js';
+import { ManifestAdapter } from '../manifest-adapter.js';
 import type { RawClassDefinition } from '../types.js';
 
 describe('InheritanceResolver', () => {
@@ -87,6 +88,46 @@ describe('InheritanceResolver', () => {
   });
 
   describe('resolveAll', () => {
+    it('keeps the leaf field options when an STI child redeclares a field', () => {
+      const baseField = {
+        name: 'customerId',
+        typeAnnotation: 'string',
+        initializer: 'null',
+        hasDecimalPoint: false,
+        numericValue: null,
+        decorators: [{ name: 'field', arguments: ['{}'] }],
+        optional: false,
+        isStatic: false,
+        readonly: false,
+        accessibility: 'public' as const,
+        line: 1,
+      };
+      const resolver = new InheritanceResolver();
+      resolver.addClasses([
+        createClass('Sale', 'SmrtObject', [baseField], {
+          tableStrategy: 'sti',
+        }),
+        createClass('Order', 'Sale', [
+          {
+            ...baseField,
+            decorators: [{ name: 'field', arguments: ['{ required: true }'] }],
+            line: 2,
+          },
+        ]),
+      ]);
+
+      const order = resolver
+        .resolveAll()
+        .find((item) => item.className === 'Order');
+      expect(
+        order?.allFields.find((field) => field.name === 'customerId')?.line,
+      ).toBe(2);
+      const field = order?.allFields.find((item) => item.name === 'customerId');
+      expect(field && new ManifestAdapter().convertField(field)?.required).toBe(
+        true,
+      );
+    });
+
     it('should merge inherited fields for STI', () => {
       const resolver = new InheritanceResolver();
       resolver.addClasses([

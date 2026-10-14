@@ -538,6 +538,9 @@ export class MCPGenerator {
         typeof mcpConfig === 'object' ? mcpConfig?.include : undefined;
 
       const shouldInclude = (endpoint: string) => {
+        if (config.abstract && endpoint !== 'list' && endpoint !== 'get') {
+          return false;
+        }
         if (included && !included.includes(endpoint)) return false;
         if (excluded.includes(endpoint)) return false;
         return true;

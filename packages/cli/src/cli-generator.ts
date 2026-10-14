@@ -1098,6 +1098,8 @@ export class CLIGenerator {
     const shouldInclude = (
       command: 'list' | 'get' | 'create' | 'update' | 'delete',
     ) => {
+      if (config.abstract && command !== 'list' && command !== 'get')
+        return false;
       if (included && !included.includes(command)) return false;
       if (excluded.includes(command)) return false;
       return true;

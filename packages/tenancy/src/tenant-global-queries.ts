@@ -90,8 +90,8 @@ export async function withTenantGlobalRead<T>(
 /**
  * Return all global (tenant-less) rows for a tenant-scoped collection.
  *
- * STI child collections are auto-scoped to their own `_meta_type` (via
- * `collection.getStiChildMetaType()`) so the shared table never returns sibling
+ * STI child collections are scoped to their own and descendant `_meta_type` values (via
+ * `collection.getStiChildMetaTypes()`) so the shared table never returns sibling
  * subtypes; STI base / CTI collections are not scoped.
  *
  * @param collection - The tenant-scoped collection to query.
@@ -99,11 +99,11 @@ export async function withTenantGlobalRead<T>(
 export async function queryGlobal<T, M extends SmrtObject = SmrtObject>(
   collection: SmrtCollection<M>,
 ): Promise<T[]> {
-  const metaType = collection.getStiChildMetaType();
-  const where = metaType
-    ? 'WHERE _meta_type = ? AND tenant_id IS NULL'
+  const metaTypes = collection.getStiChildMetaTypes();
+  const where = metaTypes.length
+    ? `WHERE _meta_type IN (${metaTypes.map(() => '?').join(', ')}) AND tenant_id IS NULL`
     : 'WHERE tenant_id IS NULL';
-  const params = metaType ? [metaType] : [];
+  const params = metaTypes;
   // Two decoupled type params by design (STI). `M` is inferred from the
   // collection's declared item type — the STI *base* (e.g. `Email`) — and keeps
   // the parameter assignable despite `SmrtCollection`'s contravariant
@@ -124,8 +124,8 @@ export async function queryGlobal<T, M extends SmrtObject = SmrtObject>(
  * Return a tenant's rows plus all global rows for a tenant-scoped collection.
  *
  * Fails closed (`assertTenantReadAllowed`) before issuing the bypassed query.
- * STI child collections are auto-scoped to their own `_meta_type` (via
- * `collection.getStiChildMetaType()`); STI base / CTI collections are not.
+ * STI child collections are scoped to their own and descendant `_meta_type` values (via
+ * `collection.getStiChildMetaTypes()`); STI base / CTI collections are not.
  *
  * @param collection - The tenant-scoped collection to query.
  * @param tenantId - The tenant id to include alongside globals.
@@ -137,11 +137,11 @@ export async function queryWithGlobals<T, M extends SmrtObject = SmrtObject>(
   label: string,
 ): Promise<T[]> {
   assertTenantReadAllowed(tenantId, label);
-  const metaType = collection.getStiChildMetaType();
-  const where = metaType
-    ? 'WHERE _meta_type = ? AND (tenant_id = ? OR tenant_id IS NULL)'
+  const metaTypes = collection.getStiChildMetaTypes();
+  const where = metaTypes.length
+    ? `WHERE _meta_type IN (${metaTypes.map(() => '?').join(', ')}) AND (tenant_id = ? OR tenant_id IS NULL)`
     : 'WHERE tenant_id = ? OR tenant_id IS NULL';
-  const params = metaType ? [metaType, tenantId] : [tenantId];
+  const params = [...metaTypes, tenantId];
   // See `queryGlobal` above: `T` (caller's STI child row type) is intentionally
   // decoupled from `M` (the collection's inferred base type), so the cast
   // bridges `query()`'s static `M[]` to the hydrated child rows.

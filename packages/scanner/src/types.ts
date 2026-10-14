@@ -67,6 +67,8 @@ export interface RawClassDefinition {
  * Raw @smrt() decorator configuration
  */
 export interface RawDecoratorConfig {
+  /** Prevent direct creation of this STI model. */
+  abstract?: boolean;
   /** Table strategy: 'sti' | 'cti' */
   tableStrategy?: 'sti' | 'cti';
 

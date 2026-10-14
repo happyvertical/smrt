@@ -418,6 +418,29 @@ export class ManifestGenerator {
       assertScopedPackageName(options?.packageName);
     }
 
+    // All producers, including the OXC Vite path, must carry this policy.
+    // Capture authored API exposure before making the abstract class itself
+    // read-only so hosted concrete descendants can inherit the authored part.
+    for (const objectDef of Object.values(manifest.objects)) {
+      if (objectDef.decoratorConfig?.abstract !== true) continue;
+      const config = objectDef.decoratorConfig;
+      if (!Object.hasOwn(objectDef, 'abstractDeclaredApi')) {
+        objectDef.abstractDeclaredApi = config.api ?? null;
+      }
+      for (const surface of ['api', 'mcp', 'cli'] as const) {
+        if (config[surface] === false) continue;
+        const current = config[surface];
+        const excludes =
+          current && typeof current === 'object' && current.exclude
+            ? current.exclude
+            : [];
+        config[surface] = {
+          ...(current && typeof current === 'object' ? current : {}),
+          exclude: [...new Set([...excludes, 'create', 'update', 'delete'])],
+        };
+      }
+    }
+
     // Deprecated qualified-name aliases (#3338) fail closed at build time, the
     // same as the registry refuses them at runtime.
     this.assertQualifiedNameAliases(manifest);
