@@ -349,6 +349,16 @@ export interface AccountingInvoiceInput {
   currency: string;
   reference?: string;
   memo?: string;
+  idempotencyKey?: string;
+  quickbooksRequest?: {
+    readonly requestId: string;
+    readonly realmId: string;
+    readonly environment: 'sandbox' | 'production';
+    readonly payloadHash: string;
+  };
+  quickbooksMapping?: {
+    globalTaxCalculation: 'TaxExcluded' | 'NotApplicable';
+  };
 }
 
 // ============================================================================
@@ -588,6 +598,7 @@ export interface InvoiceOptions extends SmrtObjectOptions {
   sellerTaxRegistrationsJson?: string;
   partyTaxId?: string;
   moneySnapshotId?: string;
+  accountingSyncStateJson?: string;
 }
 
 export interface InvoiceTaxComponentSnapshot {
