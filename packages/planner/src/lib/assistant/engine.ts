@@ -25,7 +25,10 @@ export interface EngineHost {
 /** The real host: a module worker running WebLLM. */
 export const browserHost: EngineHost = {
   createWorker: () =>
-    new Worker(new URL('./llm.worker.ts', import.meta.url), { type: 'module' }),
+    // Extensionless on purpose: Vite resolves it to `.ts` here and to the
+    // `.js` svelte-package emits in `dist/`, so a host bundling the package
+    // finds the worker (`./llm.worker.ts` broke the host's build).
+    new Worker(new URL('./llm.worker', import.meta.url), { type: 'module' }),
   createEngine: async (worker, modelId, onProgress) => {
     const { CreateWebWorkerMLCEngine } = await import('@mlc-ai/web-llm');
     return CreateWebWorkerMLCEngine(worker, modelId, {

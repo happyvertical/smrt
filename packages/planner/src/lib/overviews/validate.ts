@@ -13,7 +13,7 @@ import {
   parseOverviewOverride,
 } from '@happyvertical/smrt-svelte/overview';
 import type { ShellLayout } from '@happyvertical/smrt-svelte/workspace/layout';
-import { isOverviewId, sectionOverview } from './definitions.ts';
+import { isOverviewId, overviewDefinition } from './definitions.ts';
 import { overviewRegistry } from './registry.ts';
 
 export type CookbookOverviews = Record<string, OverviewOverride>;
@@ -67,7 +67,7 @@ export function checkStoredOverride(
   id: string,
   raw: unknown,
 ): { override: OverviewOverride | null; issues: OverviewIssue[] } {
-  const definition = sectionOverview(id);
+  const definition = overviewDefinition(id);
   if (!definition) {
     return {
       override: null,

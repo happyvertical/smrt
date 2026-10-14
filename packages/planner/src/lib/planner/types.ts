@@ -22,7 +22,13 @@ export interface PlannerProps {
    * sections and model pages, so it needs no host router.
    */
   basePath?: string;
-  /** A model for the planner's assistant; see `createPlannerAssistant`. */
+  /**
+   * A model for the planner's assistant; see `createPlannerAssistant`. The
+   * complete `Planner` then shows the assistant icon at the end of its
+   * header: it opens the chat dock once a model is ready and the AI models
+   * page (`#/ai/`, where a visitor downloads a model or connects their own
+   * endpoint) before. Without it the planner has no assistant.
+   */
   inference?: PlannerInference;
   /**
    * `PlannerControls` uses `'own'` by default, editing the menu layout on a
@@ -42,5 +48,22 @@ export interface PlannerProps {
   advancedStylesHref?: string;
   /** Tabs to show, in order; defaults to all. */
   tabs?: readonly PlannerTabId[];
+  /**
+   * A host's way back, rendered at the start of the planner's header beside
+   * the brand (`{ href: '/', label: 'Back to documentation' }`). Off by
+   * default. The complete `Planner` only.
+   */
+  backLink?: PlannerBackLink;
+  /**
+   * Called once the planner is mounted, with its controller and (when
+   * `inference` was given) the assistant transport, for a host that drives
+   * the plan itself.
+   */
   onready?: (handle: PlannerHandle) => void;
+}
+
+/** A link out of the planner, shown in its header. */
+export interface PlannerBackLink {
+  href: string;
+  label: string;
 }

@@ -54,13 +54,19 @@ function indexOf(catalog: PromptCatalog): MatchIndex {
 
 /** The snapshot's theme as the setting the prompt describes. */
 function themeOf(snapshot: PlanSnapshot): ThemeSetting | undefined {
-  const { preset, primary, colorScheme } = snapshot.theme;
+  const { preset, primary, colorScheme, borderRadius, density, contrast } =
+    snapshot.theme;
   const theme: ThemeSetting = {};
   if (preset) theme.preset = preset;
   if (primary) theme.custom = { primary };
   if (colorScheme && colorScheme !== 'system') {
     theme.colorScheme = colorScheme as ColorSchemeSetting;
   }
+  if (borderRadius) {
+    theme.borderRadius = borderRadius as ThemeSetting['borderRadius'];
+  }
+  if (density) theme.density = density as ThemeSetting['density'];
+  if (contrast) theme.contrast = contrast as ThemeSetting['contrast'];
   return Object.keys(theme).length ? theme : undefined;
 }
 

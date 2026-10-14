@@ -95,6 +95,22 @@ export function recipeNav(recipe: Recipe): RecipeNavTarget[] {
   });
 }
 
+/** Is `key` a keyed nav entry of the model (`/m/<pkg>/<Model>/<key>/`) in any recipe? */
+export function hasNavKey(
+  packageId: string,
+  modelName: string,
+  key: string,
+): boolean {
+  return recipes.some((recipe) =>
+    recipeNav(recipe).some(
+      (entry) =>
+        entry.key === key &&
+        entry.packageId === packageId &&
+        entry.model.name === modelName,
+    ),
+  );
+}
+
 /**
  * In-app path of a nav entry, without the app query: `/m/<pkg>/<Model>/`, and
  * `/m/<pkg>/<Model>/<key>/` for a keyed entry (the same model shown twice).

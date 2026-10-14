@@ -1,5 +1,7 @@
 <script lang="ts">
 import { useShellLayout } from '@happyvertical/smrt-svelte/workspace';
+import { browser } from '$app/environment';
+import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { catalog, getModel } from '../catalog/index.ts';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
@@ -7,6 +9,7 @@ import { humanize, navNoun } from '../data/format.ts';
 import { activeForms } from '../forms/active.ts';
 import { PRODUCT } from '../forms/stock.ts';
 import { appHref } from '../planner/app.svelte.ts';
+import { type RecordMode, recordFilter } from '../planner/routes.ts';
 import { selection } from '../planner/selection.svelte.ts';
 import { FEATURE_SECTION } from '../recipes/features.ts';
 import { renderHelp } from '../recipes/help.ts';
@@ -29,6 +32,7 @@ import { recipeState } from '../recipes/state.svelte.ts';
 import { sectionPath } from '../sections/path.ts';
 import FormWorkspace from './FormWorkspace.svelte';
 import ModelWorkspace from './ModelWorkspace.svelte';
+import RecordView from './RecordView.svelte';
 import SectionIcons from './SectionIcons.svelte';
 
 interface ModelPageProps {
@@ -36,9 +40,12 @@ interface ModelPageProps {
   modelName: string;
   /** The key of the nav entry this page is (`/m/<pkg>/<Model>/<key>/`). */
   view?: string;
+  /** The record this page shows (`/m/<pkg>/<Model>/<id>/`), with how. */
+  recordId?: string;
+  mode?: RecordMode;
 }
 
-let { packageId, modelName, view }: ModelPageProps = $props();
+let { packageId, modelName, view, recordId, mode }: ModelPageProps = $props();
 
 const catalogModel = $derived(getModel(packageId, modelName));
 // Recipe options (field policies, narrowed exposure) shape what is shown.
@@ -139,8 +146,10 @@ const declaredNoun = $derived(
     .find((e) => e.model.id === catalogModel?.id && e.key === view && e.noun)
     ?.noun,
 );
-// A filtered entry lists only its rows; the plain entry gives them up.
-const scope = $derived(
+// A filtered entry lists only its rows; the plain entry gives them up. A
+// record's "View all" (`?<fk>=<id>`) narrows the list to that record's rows
+// instead; the query is read in the browser only (the page is prerendered).
+const navScope = $derived(
   catalogModel
     ? pageScope(
         catalogModel.id,
@@ -152,6 +161,12 @@ const scope = $derived(
       )
     : undefined,
 );
+const queryScope = $derived(
+  browser && catalogModel
+    ? recordFilter(page.url.search, catalogModel)
+    : undefined,
+);
+const scope = $derived(queryScope ?? navScope);
 const preset = $derived(scopePreset(scope));
 const noun = $derived(
   navCrumb ? navNoun(navCrumb.label, declaredNoun) : undefined,
@@ -217,7 +232,7 @@ const inApp = $derived(
 </script>
 
 <svelte:head>
-  <title>{modelName} · {humanize(packageId)} · smrt planner</title>
+  <title>{recordId ? `${humanize(modelName)} record · ` : ''}{modelName} · {humanize(packageId)} · smrt planner</title>
 </svelte:head>
 
 {#if model && applied}
@@ -243,7 +258,17 @@ const inApp = $derived(
     {/if}
     </div>
 
-    {#if embeddedIn.length}
+    {#if recordId}
+      {#key recordId}
+        <RecordView
+          {packageId}
+          {modelName}
+          {recordId}
+          {mode}
+          navigate={(path) => void goto(appHref(path))}
+        />
+      {/key}
+    {:else if embeddedIn.length}
       <p>
         {humanize(model.name)} records live inside their parent record. Open
         one of:
@@ -276,6 +301,8 @@ const inApp = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   main {
     display: grid;
     gap: var(--smrt-spacing-6);
@@ -292,4 +319,5 @@ const inApp = $derived(
   .meta {
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

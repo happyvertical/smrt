@@ -150,6 +150,34 @@ function makeState(
 }
 
 describe('AiState', () => {
+  it('reads the assistant as ready only once a model can answer', () => {
+    const state = makeState(storage());
+    expect(state.assistantReady).toBe(false);
+    state.hydrate(false);
+    // Browser mode: nothing downloaded, so the header icon leads to setup.
+    expect(state.assistantReady).toBe(false);
+    state.configure({ config: { mode: 'byo' } });
+    expect(state.assistantReady).toBe(false);
+    state.configure({ config: { mode: 'manual' } });
+    expect(state.assistantReady).toBe(false);
+    state.configure({
+      config: { mode: 'host', host: { endpoint: '/api/planner/chat' } },
+    });
+    expect(state.assistantReady).toBe(true);
+  });
+
+  it("takes a host's own chat model, ready before the model has loaded", () => {
+    const state = makeState(storage());
+    state.hydrate(false);
+    state.useChat(() => null, 'Host model');
+    expect(state.inference.mode).toBe('host');
+    expect(state.availableModes).toEqual(['host']);
+    expect(state.session.remoteLabel).toBe('Host model');
+    expect(state.assistantReady).toBe(true);
+    expect(state.capabilities[0]?.where).toBe('Server');
+    expect(state.firstRun).toBe(false);
+  });
+
   it('shows capabilities as not set up before hydration, then reads the browser', async () => {
     const state = makeState(storage(), { probe: 'works' });
     expect(state.capabilities.map((c) => c.state)).toEqual([

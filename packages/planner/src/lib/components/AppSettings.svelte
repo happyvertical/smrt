@@ -71,6 +71,8 @@ const set = (patch: Partial<AppSettings>) => onchange({ ...value, ...patch });
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .settings {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
@@ -97,4 +99,5 @@ const set = (patch: Partial<AppSettings>) => onchange({ ...value, ...patch });
     padding-bottom: var(--smrt-spacing-2);
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

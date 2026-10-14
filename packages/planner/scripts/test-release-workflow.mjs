@@ -95,7 +95,9 @@ for (const name of [
   '@happyvertical/smrt-svelte',
   '@happyvertical/smrt-ui',
 ]) {
-  if (pkg.dependencies[name] !== '^0.55.12') {
+  // A caret range on the 0.55 line at or above the Kitchen-safe 0.55.12.
+  const range = /^\^0\.55\.(\d+)$/.exec(pkg.dependencies[name] ?? '');
+  if (!range || Number(range[1]) < 12) {
     throw new Error(`${name} must require the Kitchen-safe release floor`);
   }
 }

@@ -75,7 +75,7 @@ describe('record labels', () => {
     }
   });
 
-  it('leads an invoice title with its number, the row aria-label too', () => {
+  it('titles an invoice by its number alone, the row aria-label too', () => {
     const fields = recipeState.apply(invoice).fields;
     const customer = fields.find((f) => f.name === 'customerId');
     const labels = new Map([[`${customer?.related}:c1`, 'Lantern Collective']]);
@@ -86,7 +86,7 @@ describe('record labels', () => {
         { customerId: 'c1', invoiceNumber: 'WIL-1133', reference: 'x' },
         labels,
       ),
-    ).toBe('WIL-1133 · Lantern Collective');
+    ).toBe('WIL-1133');
   });
 
   it('titles a payment by customer, amount and date', () => {

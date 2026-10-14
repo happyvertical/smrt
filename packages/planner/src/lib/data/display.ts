@@ -3,6 +3,11 @@
  * manifest's `displayLabelField` (happyvertical/smrt#3611); a model that
  * declares none falls back to the first of `name`, `title`, `label`, `code`.
  */
+import {
+  deriveFieldRoles,
+  fieldWithRole,
+  type ScreenFieldType,
+} from '@happyvertical/smrt-svelte/screens';
 import type { CatalogField, CatalogModel } from '../catalog/types.ts';
 import { formatMoney } from './format.ts';
 
@@ -31,9 +36,10 @@ export function displayLabel(
 
 // ---------------------------------------------------------------------------
 // One label per record, for list cells, pickers, child tables, titles and
-// row aria-labels. A model that declares no name still reads as something: its
-// own number (an invoice's `invoiceNumber`), the record it is about (the
-// customer), and for money records the amount and date.
+// row aria-labels. A model that declares no name still reads as something: a
+// document reads as its own identifier (an invoice's `invoiceNumber`, an
+// order's `reference`), a party as its name (see `labels.ts`), and a money
+// record with no identifier as the record it is about, its amount and date.
 // ---------------------------------------------------------------------------
 
 /** Finds the label of the record a relation field points at. */
@@ -57,6 +63,58 @@ const PARTY_ORDER = [
   /^contract/i,
 ];
 
+/** A document's own number, e.g. `invoiceNumber` or `number`. */
+const NUMBER_NAME = /(^|[a-z])Number$|^number$/;
+
+/**
+ * The field that identifies a document to a person (`invoiceNumber`, an
+ * order's `reference`): the first field the framework's field roles
+ * (`deriveFieldRoles`, smrt#3718) give the `identifier` role. `undefined`
+ * for a model with a name of its own: a product's `code` is a detail, its
+ * `name` is what it is called.
+ */
+export function identifierField(model: CatalogModel): CatalogField | undefined {
+  if (labelFields(model).some((name) => name !== 'code')) return undefined;
+  const own = model.fields.filter((f) => !f.system);
+  const roles = deriveFieldRoles({
+    objectRef: model.id,
+    className: model.name,
+    fields: Object.fromEntries(
+      own.map((f) => [
+        f.name,
+        {
+          type: SCREEN_TYPES.has(f.type) ? (f.type as ScreenFieldType) : 'text',
+          ...(f.enum?.length ? { enum: f.enum } : {}),
+          ...(f.ui ? { ui: { ...f.ui } } : {}),
+        },
+      ]),
+    ),
+  });
+  const name = fieldWithRole(roles, 'identifier');
+  return name ? own.find((f) => f.name === name) : undefined;
+}
+
+const SCREEN_TYPES = new Set([
+  'text',
+  'integer',
+  'decimal',
+  'boolean',
+  'datetime',
+  'json',
+  'foreignKey',
+  'crossPackageRef',
+]);
+
+/** A document's identifier value, e.g. `WIL-1133`; `undefined` when empty. */
+export function identifierOf(
+  model: CatalogModel,
+  record: Readonly<Record<string, unknown>>,
+): string | undefined {
+  const field = identifierField(model);
+  const value = field ? record[field.name] : undefined;
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+}
+
 /** A record's own number, e.g. `invoiceNumber` or `number`. */
 export function numberOf(
   model: CatalogModel,
@@ -66,7 +124,7 @@ export function numberOf(
     (f) =>
       !f.system &&
       f.type === 'text' &&
-      /(^|[a-z])Number$|^number$/.test(f.name) &&
+      NUMBER_NAME.test(f.name) &&
       typeof record[f.name] === 'string' &&
       String(record[f.name]).trim() !== '',
   );
@@ -92,9 +150,11 @@ export function partyField(
 const DATE_NAME = /(paid|allocated|issue|^date$|createdat)/i;
 
 /**
- * The text that names a record: its label field, else its number (plus the
- * party it is for), else the party, with the amount and date for a money record
- * such as a payment. `undefined` when nothing names it.
+ * The text that names a record: its label field, else its identifier (a
+ * document is its number: `GRA-3159`, never `Ridgeline Construction ·
+ * GRA-3159`), else, for a money record such as a payment allocation, the party
+ * it is for with its amount and date, else the party and a description.
+ * `undefined` when nothing names it.
  */
 export function recordName(
   model: CatalogModel,
@@ -104,12 +164,12 @@ export function recordName(
 ): string | undefined {
   const own = displayLabel(model, record);
   if (own) return own;
+  const identifier = identifierOf(model, record);
+  if (identifier) return identifier;
   const partyOf = partyField(fields, record);
   const party = partyOf?.related
     ? related(partyOf, String(record[partyOf.name]))
     : undefined;
-  const number = numberOf(model, record);
-  if (number) return unique([number, party]);
   const moneyField = model.fields.find(
     (f) => f.name === 'amount' && f.type === 'integer',
   );
@@ -123,10 +183,27 @@ export function recordName(
       dateField ? String(record[dateField.name]).slice(0, 10) : undefined,
     ]);
   }
-  const reference = ['reference', 'description']
-    .map((name) => record[name])
-    .find((v): v is string => typeof v === 'string' && v.trim() !== '');
-  return unique([party, reference]);
+  const description =
+    typeof record.description === 'string' && record.description.trim() !== ''
+      ? record.description
+      : undefined;
+  return unique([party, description]);
+}
+
+/**
+ * A record page's heading: a document is its kind and identifier
+ * (`Order GRA-3159`), anything else its name. `kind` is the model's name
+ * as a person reads it ("Order", "Purchase order").
+ */
+export function recordHeading(
+  model: CatalogModel,
+  record: Readonly<Record<string, unknown>>,
+  name: string,
+  kind: string,
+): string {
+  if (displayLabel(model, record)) return name;
+  const identifier = identifierOf(model, record);
+  return identifier && identifier === name ? `${kind} ${identifier}` : name;
 }
 
 function unique(parts: readonly (string | undefined)[]): string | undefined {

@@ -4,10 +4,13 @@ import { aiState } from '$lib/ai/instance.ts';
 import AiSetup from '$lib/components/AiSetup.svelte';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import PlannerControls from '$lib/planner/PlannerControls.svelte';
+import { currentPlannerTitle } from '$lib/planner/title.svelte.ts';
+
+const title = $derived(currentPlannerTitle());
 </script>
 
 <svelte:head>
-  <title>Planner · smrt planner</title>
+  <title>{title} · smrt planner</title>
 </svelte:head>
 
 <main>
@@ -31,6 +34,8 @@ import PlannerControls from '$lib/planner/PlannerControls.svelte';
 </main>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   main {
     width: min(100%, 72rem);
     margin-inline: auto;
@@ -52,4 +57,5 @@ import PlannerControls from '$lib/planner/PlannerControls.svelte';
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2);
   }
+}
 </style>

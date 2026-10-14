@@ -258,11 +258,13 @@ async function remove(row: ModelRecord) {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .children {
     display: grid;
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
   }
 
@@ -275,7 +277,7 @@ async function remove(row: ModelRecord) {
 
   h3 {
     margin: 0;
-    font-size: 1rem;
+    font: var(--smrt-typography-title-medium-font); letter-spacing: var(--smrt-typography-title-medium-tracking);
   }
 
   small,
@@ -322,7 +324,7 @@ async function remove(row: ModelRecord) {
   th,
   td {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     text-align: left;
     white-space: nowrap;
   }
@@ -338,7 +340,7 @@ async function remove(row: ModelRecord) {
   }
 
   button.secondary {
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-control-border);
     background: transparent;
     color: var(--smrt-color-on-surface);
   }
@@ -350,4 +352,5 @@ async function remove(row: ModelRecord) {
     overflow: hidden;
     clip-path: inset(50%);
   }
+}
 </style>

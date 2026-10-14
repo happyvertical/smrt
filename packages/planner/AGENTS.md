@@ -73,15 +73,20 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   carries the gear to its own group/recipe options page. `group` is the Planner card + Options/Help
   pages only. `cookbook/migrate.ts` rewrites pre-section layout ids in the loader.
 - `src/lib/theme/`: the app's look, stored in the cookbook as `theme?: { preset?, colorScheme?,
-  fontFamily?, custom?: { primary, fontFamily? }, customCss? }` (absent = default `glass`/`system`).
-  `theme.ts` validates known presets, hex colours, allowed font keys and CSS text length.
+  borderRadius?, density?, contrast?, fontFamily?, custom?: { primary, fontFamily? }, customCss? }`
+  (absent = default `glass`/`system`, the preset's own radius, comfortable, contrast following the
+  device). `theme.ts` validates known presets, hex colours, the radius/density/contrast enums (smrt-core's
+  cookbook schema, the same names as `set_theme`'s inputs and `AppShell`'s props), allowed font keys and
+  CSS text length.
   `runtime.ts` registers a brand-colour theme or a font variant of a built-in preset; ids include
   the colour/font because `ThemeProvider` looks each preset up once. The top-level font keeps the
   preset palette; the nested font remains readable for older cookbooks. `ThemeBridge.svelte` (in the
   layout, and inside `Planner`'s `CookbookApp` so hosted controls reach the plan; `deferInitial`
   lets the plan theme win over AppShell's browser-stored one) applies the cookbook theme and custom
-  CSS to the shell. `ThemeSection.svelte` shows visual preset and
-  appearance choices, a colour picker and font control; `AdvancedStyles.svelte` edits the CSS on
+  CSS to the shell, and radius, density and contrast through the provider's `updateConfig` (the mount's
+  `CookbookApp` also passes them to `AppShell`; the static layout passes them as props).
+  `ThemeSection.svelte` shows visual preset and appearance choices, corner radius / density / contrast
+  selects (choosing the default removes the field), a colour picker and font control; `AdvancedStyles.svelte` edits the CSS on
   its own page. Cookbook CSS is untrusted (`theme/custom-css.svelte.ts`): it applies only once the
   visitor approves that exact text (SHA-256; typing it counts), is re-serialized by the browser
   inside an `@scope` rooted at this Planner's own shell (`data-smrt-planner-scope`), keeping only style,
@@ -118,29 +123,38 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   (confirm when non-empty), `state.svelte.ts` remembers the last applied id in
   localStorage (not in the document). Applying regenerates the sample records from the cookbook's pack (the panel says so). Add a
   library cookbook by adding an entry; use only existing recipe ids.
-- `src/lib/sections/` and `src/routes/s/[section]/`: the sidebar is `navMode="sections"`, so it lists only
-  sections (icon + name); each opens its own page at `/s/<slug>/` (`path.ts`: `section:sales` ->
+- `src/lib/sections/` and `src/routes/s/[section]/`: the sidebar is `navMode="sections-with-items"`: sections
+  (icon + name) with their entries beneath when expanded, icons only in the rail; each section opens its own page at `/s/<slug>/` (`path.ts`: `section:sales` ->
   `section-sales`; `entries()` prerenders recipe sections, More and the cookbooks' custom sections, the
   static fallback serves the rest, e.g. visitor-made ones). `components/SectionPage.svelte` shows the
   icon, title (the layout's rename wins), description (`info.ts`: recipe `section.icon/description`,
   `FEATURE_SECTION`, cookbook `sectionDescriptions`), Help/Options icons (`entries.ts` `optionGroups`),
   and the section's editable overview (`SectionOverview.svelte`, see `src/lib/overviews/`; its
-  `shortcuts` widget replaces the menu cards); in edit mode the entries follow as smrt-svelte's
-  `ShellSectionMenu` list. A section id outside the overview id pattern keeps the `ShellSectionMenu`
-  cards with "N records" (`entryIndex` + the entry's own scope) and "New <noun>". New asks the entry page to open its create form through `planner/create.ts` (a
+  `shortcuts` widget replaces the menu cards; the grid is `presentation="plain"`, page sections rather
+  than cards in a card); in edit mode the entries follow as smrt-svelte's `ShellSectionMenu` list.
+  `SectionView.svelte` is the route page's body (the static shell is a plain `AppShell`, so it cannot
+  use `CookbookSectionPage`); `SectionHeading.svelte` is the icon/title/description heading it shares
+  with the mount. A section id outside the overview id pattern keeps the `ShellSectionMenu`
+  cards with "N records" and "New <noun>". New asks the entry page to open its create form through `planner/create.ts` (a
   one-shot, page-named, expiring request; the URL carries only the shareable state). In edit mode the
   rows get the grip/rename/hide chrome, so `PlannerEditBridge` does not leave a section page. Every
   recipe `section` and every cookbook custom section (`layout.sections[id].icon`) must have an icon from
   smrt-svelte's shell icon set (tests/section-pages.test.ts); visitor sections get `folder`.
 - `src/lib/overviews/`: section pages as customisable overviews (smrt-svelte `./overview`, smrt#3727).
   `definitions.ts`: one `defineOverview` per section, id = the section's layout id, static (never
-  depends on which recipes are on): `shortcuts` (the section's entries with record counts) then the
+  depends on which recipes are on): `shortcuts` (the section's entries with record counts: the framework's entries through
+  `composeShortcutsLoader(loadShortcutCounts)`, counting rows in each entry's scope from the
+  `entryIndex` in the load context) then the
   section's lead model as a `metric` count and a `records` list; `allowed` = the core types the planner
   loads plus recipe `widget` surfaces, `models` = the catalog. `isOverviewId` is what a cookbook may
   key: recipe sections, More, and the document's own `layout.customSections`. `registry.ts`: the one
   registry, core widgets with loaders over the in-browser `DataSource` (capabilities in the load
-  context, never in options; a named `filter` is an error tile, the sample data has none) and
-  `registerRecipeWidgets` with a static, currently empty, module map. `validate.ts`: the cookbook's
+  context, never in options; a named `filter` is an error tile, the sample data has none; `chart`
+  groups the sample rows itself, the in-browser stand-in for a runtime report, for every chart style:
+  bar, line, table, pie and stat read the same points), `plannerLoaders` (metric, records, chart, and
+  `shortcuts` = `loadShortcutCounts`) for the mounted `Planner`'s `CookbookApp`, and
+  `registerRecipeWidgets` with a static, currently empty, module map. `models.ts`: the option
+  editor's model choices, shared by the page and the mount. `validate.ts`: the cookbook's
   `overviews` field; every override goes through `checkOverviewOverride` on load and import, bad
   widgets and unknown ids are dropped and reported (`CookbookResult.dropped`), only canonical
   non-empty overrides are kept. `page.ts`: the controller wiring (`override` reads
@@ -168,8 +182,14 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   add its `EXAMPLES` row in `tests/planner-commands.test.ts`; `tests/headless-planner.test.ts` runs one
   script through the browser controller, the headless planner and a bare `createCookbookEngine`.
   `instance.ts` is the app's controller; `plannerRuntime` is how the layout lends it the data-source
-  reset and section navigation. `Planner.svelte` is the mountable component (props in `types.ts`);
-  the static app's Planner page renders the same one (`layout="shell"`, `persistence="host"`).
+  reset and section navigation. `Planner.svelte` is the mountable component (props in `types.ts`; `backLink`
+  is a host's way out, a `header.start` slot item; `inference` switches the assistant on, see
+  `src/lib/ai/`); the static app's Planner page renders the same one (`layout="shell"`,
+  `persistence="host"`). The mount is a `CookbookApp` with `layoutEditing`, `plannerLoaders`,
+  `widgetContext` and `resolveExport`, routed by URL fragment (`setBasePath(base, 'hash')` makes
+  `appHref` write `#/...`); section pages are the framework's `CookbookSectionPage`
+  (`presentation="plain"`, a `heading` snippet drawing `SectionHeading`, the record counts from
+  `loaders.shortcuts`; remounted on a data reset), packages the planner's `PackagePage`.
   `assistant.ts` builds a chat transport over any controller. The stores (`cookbookStore`,
   `recipeState`) are still module singletons: one planner per page. Still planner-side and NOT yet
   deleted because the UI uses them directly (follow-up: route the UI through commands):
@@ -254,7 +274,16 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   `status.ts` is the pure derivation (`ready` / `available` / `off`, accessible names,
   `needsFirstRunSetup`); `icons.ts` the three icon paths. The sidebar icons
   (`AiStatusIcons`, a `slotItems` entry `ai-status` in `leftSidebar.footer`), the
-  `/ai/` page and the assistant dock all render `AiSetup.svelte` / read `aiState`.
+  `/ai/` page (`AiModelsPage.svelte`, which a mounted `Planner` serves at `#/ai/`) and the
+  assistant dock all render `AiSetup.svelte` / read `aiState`. The assistant's header control is
+  the shell's own `dock:assistant` item (`plannerAssistantToggle(appHref('/ai/'),
+  aiState.assistantReady)`, `planner/shell.ts`; the app's layout and `Planner` both pass it): it
+  toggles the `assistant` dock once `aiState.assistantReady` (think `ready`: a loaded browser model,
+  the host's server, a connected BYO endpoint); until then the shell renders it as a link to the AI
+  setup page ("Set up the assistant"). There is no planner-side toggle; `BrowserAssistant`'s
+  not-ready panel only covers a dock left open when the model goes away. A mounted `Planner` configures `aiState` from its `inference` prop
+  (`PlannerLifecycle`: `configure(configFromProp(...))`, or `useChat` for `{ chat }`) and only
+  then renders the dock and the icon; without the prop it has no assistant.
   First visit: `aiState.hydrate` decides once (nothing downloaded, no read-aloud,
   nothing built, not dismissed) and the Planner page then shows the setup form
   before the tabs; Continue is per visit, "I don't need AI" is remembered.
@@ -273,17 +302,70 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
 - `src/lib/fields/`: `renderer.ts` picks the input per field (pure, tested);
   `FieldInput.svelte` renders it and `RelationField.svelte` the selectors.
   `data/labels.ts` (with `data/display.ts`) labels related records (Customer/Vendor via their Profile).
-- `src/lib/components/`: generated list/form (`ModelWorkspace`), the collapsed "Connect other tools"
+- `src/lib/components/`: generated list/form (`ModelWorkspace`; a row opens its record page), the
+  record page (`RecordView`), the collapsed "Connect other tools"
   list (`ConnectTools`), the Help view (`HelpView`), `BrowserAssistant` (the dock slot: consent, progress, then smrt-chat's `AssistantDock`).
+- Record pages (smrt#3718 record view): `/m/<pkg>/<Model>/<id>/` shows one sample row through
+  smrt-svelte's `RecordScreen` (a header by field role: a document's kind and monospace identifier,
+  "Order GRA-3159", else the record's name; status badge, key facts, Edit with Delete in the overflow;
+  a details card; then the record's own editable overview) and `/<id>/edit/` is the same page in edit
+  mode (the form beside the header on desktop, a sheet on phones; `ChildRecords`, the line-items
+  editor, is RecordScreen's `items` snippet, so it is inside the sheet too). Nothing is hand-written
+  per model: `src/lib/screens/` turns a catalog model into the framework's `ScreenCollectionDefinition` /
+  `ScreenPolicy` (`definition.ts`: `enum`, `format` `money` by `isMoneyField` / `date` for business dates,
+  `display` on a named model's label field, `relationships[].role: 'items'` on a line's edge to its
+  document) and its relations (`relations.ts`: `reverseLinks` / `forwardLinks` from
+  `recipes/plumbing.ts`; `items` for `itemModels`, the priced children named after the model, else
+  `children`; each with the framework's role-chosen `columns`; children confined to the models in the
+  app, references to every catalog target so `data/labels.ts` names them, e.g. a customer's Profile,
+  while `RecordView`'s `hrefFor` links only targets in the app); derived here rather than through
+  `deriveScreenRelations` because the catalog knows STI parents. `totals.ts` is the record's own
+  subtotal / tax / total by role (plus its lines' discounts) for the line-items totals block. The
+  overview is `detail:<pkg>.<Model>` (`overviews/definitions.ts` `detailOverview`: the framework's
+  `recordOverview` over the whole catalog's relations, every relation's metric tiles, so widget ids
+  are stable whichever recipes are on; `detailOverviewFor` narrows the defaults to the app: the first
+  four tiles, `line-items`, the tabbed `related`), saved in the cookbook's `overviews` like a
+  section's (the framework's own `recordOverviewId` key, `detail:happyvertical.smrt-commerce.Customer`,
+  is accepted for the same model). `related` and `line-items` are registered once on
+  `overviewRegistry` and read `relations` / `totals` / `currency` / `viewAllHref` from the load
+  context; each tab is one `records` load with `filter: 'parent'` + `field` (a metric's
+  `parentField` when its `field` is measured) and a `columns` option, and `loadRecords` returns
+  `cells`, `columns` and `summaries` summed over every matching row. Record names (`data/display.ts`):
+  a document is its identifier (the framework's `identifier` role), a party its Profile name.
+  "View all" is the list page with `?<fk>=<id>` (`planner/routes.ts`; the layout keeps that
+  query, `ModelPage` / the mount's hash router turn it into the list's scope). The ids are sample
+  data made in the browser, so the record routes are served by the static fallback
+  (`[view]/+page.ts` treats a segment that is not a nav key as an id; `edit` is `prerender = false`).
+  Sample foreign keys spread over every row of their target (`fakes.ts` `relatedIndex`), so each
+  record has related rows; a customer-linked model (a FK to Customer) gets 3-6 rows per customer
+  (`customerSlots`, seeded by the customer's index), so related lists hold several records. Sample
+  lines (`data/derived.ts`): `amount` is tax-inclusive, quantity x unit price - discount + tax, as
+  smrt-commerce's `ContractLineItem.calculateAmount` computes it and as smrt-svelte 0.55.24's
+  `line-items` widget reads it (smrt#3954: lines adding up to the recorded total agree). INTERIM:
+  the money-model epic smrt#3931 will add an explicit tax-exclusive mode (amount excludes tax);
+  until it ships, follow the released reading, and if the widget changes, re-check
+  `tests/record-page.test.ts` (only the seeded documents flag) before changing the sample data.
+  The document's subtotal is the lines' prices (quantity x unit price), total = subtotal - discount
+  + tax = the lines' amounts, taxed at the app's setting, else the pack's, else 5%;
+  about a third of documents discount a line (only where the app shows the line's discount: generated
+  lines take the hidden fields' background values first); the third Order and Invoice keep a stale subtotal and
+  total (`children.ts` `MISMATCH_*`) so the line-items mismatch flag shows (the widget compares
+  the recorded subtotal with the lines' tax-inclusive sum, so the note names the subtotal).
+  Stored sample rows live under `smrt-planner:data:v5:`; bump it when line amounts change meaning.
 - `src/routes/`: `/` Planner with `?tab=cookbooks|recipes|features|layout|export` tabs (`planner/tab.svelte.ts`; a visitor with nothing built lands on Cookbooks; smrt-ui `Tabs`: Cookbooks cards + preview, Recipes cards with switches only, Features the browsable catalogue of every recipe with its demo label, providers and what it adds, Layout `ShellLayoutEditor`, Export / Import / Reset in `ExportPanel`), `/ai/` the AI models page (Set up your assistant), `/cookbook/` a client-side redirect to `/?tab=export`, `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),
-  `/packages/` and `/packages/[id]/` the package browser, `/m/[package]/[model]/`.
-  All prerendered; `entries()` come from the catalog.
+  `/packages/` and `/packages/[id]/` the package browser, `/m/[package]/[model]/` (and `/[view]/`:
+  a keyed nav entry, else a record's view page; `/[view]/edit/` its edit page).
+  All prerendered but the record pages; `entries()` come from the catalog.
 
 ## Invariants
 
 - Fully static: `adapter-static`, `prerender = true`, `trailingSlash = 'always'`.
   Never read `url.searchParams` during prerender; the selection is read in the
   browser after navigation.
+- Forced colours (Windows High Contrast): where a custom style shows selected, pressed, current or
+  disabled state only by colour or background, add an `@media (forced-colors: active)` rule using
+  `Highlight` / `HighlightText` (selected, current) or `GrayText` (disabled); colour swatches use
+  `forced-color-adjust: none`. Use rem lengths there: the style-literal allowlist counts px.
 - Money fields are integer minor units everywhere (fakes, form state, storage);
   they are formatted as currency only for display.
 - Fakes are deterministic: seeded, fixed clock, no `Math.random()`/`Date.now()`.
@@ -300,7 +382,7 @@ Node 26, pnpm 11.25. Run, in order:
 pnpm install
 pnpm typecheck
 pnpm lint
-pnpm test
+pnpm test          # *.dom.test.ts run in the `dom` project (happy-dom)
 pnpm build
 pnpm package
 pnpm test:release-workflow

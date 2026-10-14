@@ -68,6 +68,8 @@ const visible = $derived(
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .voice {
     display: flex;
     align-items: center;
@@ -105,4 +107,5 @@ const visible = $derived(
   .error {
     color: var(--smrt-color-error);
   }
+}
 </style>

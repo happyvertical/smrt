@@ -1,3 +1,4 @@
+import { getModelByQualifiedName } from '../catalog/index.ts';
 import type { CatalogField, CatalogModel } from '../catalog/types.ts';
 import { isLineModel } from './derived.ts';
 import {
@@ -100,6 +101,8 @@ const SENTENCES = [
 
 /** Fixed clock so seeded timestamps never change between runs. */
 export const EPOCH = Date.UTC(2026, 0, 1);
+/** Sample rows per model unless a pack or {@link SAMPLE_ROW_COUNTS} says otherwise. */
+export const DEFAULT_SAMPLE_ROWS = 8;
 const YEAR = 365 * 24 * 60 * 60 * 1000;
 
 function pick<T>(random: () => number, list: readonly T[]): T {
@@ -144,6 +147,13 @@ const PERIODS = ['monthly', 'quarterly', 'annual'];
 
 /** Fractions a tax rate takes: 0%, 5%, 8.25%, 13% and 20%. */
 export const TAX_RATES = [0, 0.05, 0.0825, 0.13, 0.2] as const;
+
+/**
+ * The sample tax rate when neither the app's setting nor the pack names one:
+ * every line of every document is taxed at it, so a document's tax is one
+ * rate of its subtotal, as on a real invoice.
+ */
+export const DEFAULT_SAMPLE_TAX_RATE = 0.05;
 
 function fakeText(
   field: CatalogField,
@@ -211,7 +221,50 @@ export const SAMPLE_ROW_COUNTS: Readonly<Record<string, number>> = {
   '@happyvertical/smrt-commerce:Vendor': 5,
 };
 
-/** Sample rows for a model: the pack's count, else the shared one, else `fallback`. */
+const CUSTOMER_MODEL = '@happyvertical/smrt-commerce:Customer';
+
+/**
+ * How many rows of each customer-linked model (orders, quotes, invoices,
+ * payments: any model with a FK to a Customer) point at each sample customer:
+ * 3 to 6, uneven, seeded by the customer's index so it never changes. The
+ * slots interleave (every customer once, then again...), so a list's first
+ * rows still show different customers and row `n < customers` points at
+ * customer `n`.
+ */
+export function customerSlots(customers: number): readonly number[] {
+  const cached = slotCache.get(customers);
+  if (cached) return cached;
+  const counts = Array.from(
+    { length: customers },
+    (_, k) => 3 + (hashString(`customer-rows:${k}`) % 4),
+  );
+  const slots: number[] = [];
+  for (let round = 0; round < 6; round++) {
+    counts.forEach((count, k) => {
+      if (count > round) slots.push(k);
+    });
+  }
+  slotCache.set(customers, slots);
+  return slots;
+}
+const slotCache = new Map<number, readonly number[]>();
+
+/** Does the model's rows belong to a customer (a FK to Customer, not its Profile)? */
+function isCustomerLinked(modelId: string): boolean {
+  const model = getModelByQualifiedName(modelId)?.model;
+  return (
+    model?.fields.some(
+      (f) =>
+        (f.type === 'foreignKey' || f.type === 'crossPackageRef') &&
+        f.related === CUSTOMER_MODEL,
+    ) ?? false
+  );
+}
+
+/**
+ * Sample rows for a model: the pack's count, else the shared one, else, for a
+ * customer-linked model, one per {@link customerSlots} slot, else `fallback`.
+ */
 export function sampleRowCount(modelId: string, fallback: number): number {
   // Profiles: customers, then vendors, then the pack's instructors.
   if (modelId === PROFILE_MODEL) {
@@ -224,18 +277,24 @@ export function sampleRowCount(modelId: string, fallback: number): number {
   return (
     getSamplePack().rowCounts?.[modelId] ??
     SAMPLE_ROW_COUNTS[modelId] ??
-    fallback
+    (isCustomerLinked(modelId)
+      ? customerSlots(sampleRowCount(CUSTOMER_MODEL, fallback)).length
+      : fallback)
   );
 }
 
 /**
  * Which row of the target a sample relation points at. Rows are seeded with
- * ids from `(model, index)`, so pointing at index `n` points at a real row.
+ * ids from `(model, index)`, so pointing at index `n` points at a real row;
+ * spread over every row of the target, so each sample record has related
+ * records (a customer several orders, quotes and invoices), not just the
+ * first few.
  */
-function relatedIndex(
+export function relatedIndex(
   field: CatalogField,
-  context: { modelId: string; index: number },
+  context: FakeContext,
 ): number {
+  const rows = context.rows ?? DEFAULT_SAMPLE_ROWS;
   const instructors = getSamplePack().instructors;
   if (field.name === 'organizerId' && instructors?.length) {
     // Organizers lead classes and jobs; they are staff, never customers.
@@ -249,14 +308,33 @@ function relatedIndex(
       ? context.index
       : context.index % 8;
   }
-  return context.index % 5;
+  const target = field.related ?? '';
+  if (target === CUSTOMER_MODEL) {
+    // Several rows per customer, 3 to 6 each (see `customerSlots`).
+    const slots = customerSlots(sampleRowCount(CUSTOMER_MODEL, rows));
+    return slots[context.index % slots.length] ?? 0;
+  }
+  return (
+    context.index % (target.includes(':') ? sampleRowCount(target, rows) : rows)
+  );
+}
+
+/**
+ * Where a fake value is made: the model, the row's index and the data
+ * source's rows per model (default {@link DEFAULT_SAMPLE_ROWS}), so a
+ * reference points at a row the source actually made.
+ */
+export interface FakeContext {
+  modelId: string;
+  index: number;
+  rows?: number;
 }
 
 /** One fake value for a field. Money is an integer number of minor units. */
 export function fakeValue(
   field: CatalogField,
   random: () => number,
-  context: { modelId: string; index: number },
+  context: FakeContext,
 ): unknown {
   // A declared enumeration: only its values are valid.
   if (field.enum && field.enum.length > 0) {
@@ -283,9 +361,8 @@ export function fakeValue(
     }
     case 'decimal':
       if (/taxrate|vatrate/i.test(field.name)) {
-        // A cookbook's default rate (0: untaxed) beats a random one.
-        const rate = getSampleTaxRate();
-        return rate ?? pick(random, TAX_RATES);
+        // The app's setting, else the pack's (0: untaxed), else 5%.
+        return getSampleTaxRate() ?? DEFAULT_SAMPLE_TAX_RATE;
       }
       if (/discountrate/i.test(field.name)) return pick(random, [0, 0.05, 0.1]);
       if (/(quantity|qty)/i.test(field.name))
@@ -523,6 +600,7 @@ export function fakeRecord(
   model: CatalogModel,
   index: number,
   seed: number,
+  rows?: number,
 ): ModelRecord {
   const random = createRandom(hashString(`${seed}:${model.id}:${index}`));
   const record: ModelRecord = { id: fakeId(`${model.id}:${index}`) };
@@ -531,6 +609,7 @@ export function fakeRecord(
     record[field.name] = fakeValue(field, random, {
       modelId: model.id,
       index,
+      rows,
     });
   }
   orderDates(
@@ -542,11 +621,14 @@ export function fakeRecord(
   return record;
 }
 
-/** `count` seeded records for a model. */
+/** `count` seeded records for a model; `rows` is the source's rows per model. */
 export function fakeRecords(
   model: CatalogModel,
   count: number,
   seed = 1,
+  rows?: number,
 ): ModelRecord[] {
-  return Array.from({ length: count }, (_, i) => fakeRecord(model, i, seed));
+  return Array.from({ length: count }, (_, i) =>
+    fakeRecord(model, i, seed, rows),
+  );
 }

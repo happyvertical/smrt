@@ -188,6 +188,52 @@ export function childLinks(
   return [...found.values()];
 }
 
+/**
+ * Every model whose rows point at the model (or at a class it extends), one
+ * link per reference field, plumbing or not: `Customer` <- `Order.customerId`,
+ * `Quote.customerId`, `Invoice.customerId`; `InventoryLocation` <-
+ * `StockTransfer.fromLocationId` and `.toLocationId`. {@link childLinks} is
+ * the subset that lives inside the record (line items); this is what a
+ * record's view page lists as its related records. Catalog order.
+ */
+export function reverseLinks(catalog: Catalog, modelId: string): ChildLink[] {
+  const all = catalog.packages.flatMap((p) => p.models);
+  const byId = new Map(all.map((m) => [m.id, m]));
+  const parents = new Set(lineage(byId, modelId));
+  if (!parents.size) return [];
+  const found: ChildLink[] = [];
+  for (const candidate of all) {
+    if (parents.has(candidate.id)) continue;
+    for (const field of candidate.fields) {
+      if (
+        REF_TYPES.has(field.type) &&
+        field.related &&
+        parents.has(qualify(field.related, candidate.id))
+      ) {
+        found.push({ model: candidate, fk: field.name });
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * The records a model's own reference fields point at (`Order.customerId` ->
+ * `Customer`), one per field whose target the catalog knows; the way up from
+ * a record's view page.
+ */
+export function forwardLinks(catalog: Catalog, modelId: string): ChildLink[] {
+  const all = catalog.packages.flatMap((p) => p.models);
+  const byId = new Map(all.map((m) => [m.id, m]));
+  const model = byId.get(modelId);
+  if (!model) return [];
+  return model.fields.flatMap((field) => {
+    if (!REF_TYPES.has(field.type) || !field.related) return [];
+    const target = byId.get(qualify(field.related, model.id));
+    return target ? [{ model: target, fk: field.name }] : [];
+  });
+}
+
 /** Does any recipe give the model a menu entry of its own? */
 export function hasNavPage(
   recipes: readonly RecipeScope[],
@@ -228,4 +274,23 @@ export function lineageNames(catalog: Catalog, modelId: string): string[] {
     const m = byId.get(id);
     return m ? [m.name] : [];
   });
+}
+
+/**
+ * The priced child records that make up a model's own record (its line
+ * items): the {@link childModels} whose name starts with the model's or an
+ * STI ancestor's (`ContractLineItem` under every Contract, `InvoiceLineItem`
+ * under Invoice), so a Product, which line items also point at, has none.
+ * `isLine` says what a line is (the planner's `isLineModel`).
+ */
+export function itemModels(
+  catalog: Catalog,
+  modelId: string,
+  isLine: (model: CatalogModel) => boolean,
+): CatalogModel[] {
+  const names = lineageNames(catalog, modelId);
+  return childModels(catalog, modelId).filter(
+    (child) =>
+      isLine(child) && names.some((name) => child.name.startsWith(name)),
+  );
 }

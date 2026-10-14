@@ -101,6 +101,8 @@ const mainOn = (card: PlannerCard) => cardIsOn(card, recipeState.ids);
   <p class="notice" role="status" aria-live="polite">{notice}</p>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   h2,
   p {
     margin: 0;
@@ -130,7 +132,7 @@ const mainOn = (card: PlannerCard) => cardIsOn(card, recipeState.ids);
     align-content: start;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
   }
 
@@ -142,4 +144,14 @@ const mainOn = (card: PlannerCard) => cardIsOn(card, recipeState.ids);
     display: grid;
     gap: var(--smrt-spacing-1);
   }
+
+  /* Forced colours: a switched-on recipe's border colour is replaced, so it
+     gets a Highlight frame. */
+  @media (forced-colors: active) {
+    .cards li.selected {
+      border-color: Highlight;
+      outline: 0.125rem solid Highlight;
+    }
+  }
+}
 </style>

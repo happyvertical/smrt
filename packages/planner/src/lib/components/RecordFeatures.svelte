@@ -7,8 +7,10 @@ import {
   Switch,
   ToggleButton,
 } from '@happyvertical/smrt-ui/forms';
+import { flip } from 'svelte/animate';
 import { catalog } from '../catalog/index.ts';
 import { humanize } from '../data/format.ts';
+import { motionDuration } from '../motion/tokens.ts';
 import { appHref } from '../planner/app.svelte.ts';
 import {
   type FeatureEntry,
@@ -105,7 +107,7 @@ function toggle(entry: FeatureEntry, on: boolean) {
     <ul class="rows" aria-label="Features">
       {#each results as entry (entry.id)}
         {@const on = recipeState.hasFeature(entry.id)}
-        <li class:selected={on}>
+        <li class:selected={on} animate:flip={{ duration: motionDuration('medium2', 300) }}>
           <span class="icon" aria-hidden="true"><Icon path={DATABASE} size={22} /></span>
           <div class="text">
             <span class="name">
@@ -132,6 +134,8 @@ function toggle(entry: FeatureEntry, on: boolean) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .features {
     display: grid;
     gap: var(--smrt-spacing-3);
@@ -150,7 +154,7 @@ function toggle(entry: FeatureEntry, on: boolean) {
   }
 
   .count {
-    font-size: var(--smrt-font-size-body-medium, 0.875rem);
+    font-size: var(--smrt-typography-body-medium-size);
     font-weight: 400;
   }
 
@@ -169,7 +173,7 @@ function toggle(entry: FeatureEntry, on: boolean) {
     margin: 0;
     padding: 0;
     list-style: none;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
     overflow: hidden;
   }
@@ -182,16 +186,16 @@ function toggle(entry: FeatureEntry, on: boolean) {
   }
 
   .rows li + li {
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 
   .rows li.selected {
-    background: var(--smrt-color-surface-container);
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-selected) * 100%), transparent);
   }
 
   .includes {
     color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-font-size-body-small, 0.75rem);
+    font-size: var(--smrt-typography-body-small-size);
   }
 
   .icon {
@@ -220,10 +224,10 @@ function toggle(entry: FeatureEntry, on: boolean) {
 
   .tag {
     padding: 0 var(--smrt-spacing-2);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
     color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-font-size-label-small, 0.6875rem);
+    font-size: var(--smrt-typography-label-small-size);
   }
 
   .text a {
@@ -237,4 +241,14 @@ function toggle(entry: FeatureEntry, on: boolean) {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  /* Forced colours: the selected tint is dropped, so a switched-on row gets a
+     Highlight frame. */
+  @media (forced-colors: active) {
+    .rows li.selected {
+      outline: 0.125rem solid Highlight;
+      outline-offset: -0.125rem;
+    }
+  }
+}
 </style>

@@ -24,6 +24,20 @@ import PlannerLifecycle from './PlannerLifecycle.svelte';
 import { plannerTab } from './tab.svelte.ts';
 import type { PlannerProps } from './types.ts';
 
+/**
+ * The planner's customization controls alone (Cookbooks, Recipes, Theme,
+ * Settings, Export as tabs), for a host that owns the surrounding shell; the
+ * complete `Planner` mounts the same inside its own shell.
+ */
+interface PlannerControlsProps extends PlannerProps {
+  /**
+   * `true` when the complete `Planner` renders these: its own lifecycle
+   * already configured the controller, persistence and inference, so the
+   * controls do not mount a second one.
+   */
+  managedByParent?: boolean;
+}
+
 const DEFAULT_TABS: PlannerTabId[] = [
   'cookbooks',
   'recipes',
@@ -44,7 +58,7 @@ let {
   tabs = DEFAULT_TABS,
   onready,
   managedByParent = false,
-}: PlannerProps & { managedByParent?: boolean } = $props();
+}: PlannerControlsProps = $props();
 
 // Generated views and the Cookbooks tab read sample records from a data
 // source: use the host's, else make the planner's own.
@@ -166,8 +180,19 @@ $effect(() => {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .planner :global(.tab-panel) {
     padding-top: var(--smrt-spacing-4);
+  }
+
+  /* The strip persists across configure-page route changes; the panel below
+     crossfades with the content. smrt-ui's Tabs owns the classes (`tabs-nav`
+     for button tabs, `tabs-links` for link tabs; one strip per Tabs). Named
+     only while a transition runs, as in Planner.svelte. */
+  :global([data-smrt-view-transition]) .planner :global(.tabs-nav),
+  :global([data-smrt-view-transition]) .planner :global(.tabs-links) {
+    view-transition-name: planner-tabs;
   }
 
   .pane {
@@ -184,4 +209,5 @@ $effect(() => {
     margin: 0;
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

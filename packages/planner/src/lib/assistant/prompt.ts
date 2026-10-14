@@ -154,7 +154,7 @@ export function buildSystemPrompt(
   }
   if (themeInfo) {
     out.push(
-      '"theme": only if they ask for a look: {"preset": material|glass|studio|smrt|happyvertical} or {"primary": "#rrggbb"}, optional "colorScheme": light|dark; else omit.',
+      '"theme": only if they ask for a look: {"preset": material|glass|studio|smrt|happyvertical} or {"primary": "#rrggbb"}, optional "colorScheme": light|dark, "borderRadius": none|sm|md|lg|xl|full, "density": comfortable|touch, "contrast": auto|standard|more; else omit.',
     );
   }
   const shown = examples(

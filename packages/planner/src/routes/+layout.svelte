@@ -4,14 +4,13 @@ import {
   ShellDockTool,
   type ShellNavGroup,
   type ShellNavItem,
-  WorkspaceAccountMenu,
 } from '@happyvertical/smrt-svelte/workspace';
-import { afterNavigate, goto, replaceState } from '$app/navigation';
+import { afterNavigate, goto, onNavigate, replaceState } from '$app/navigation';
 import { base } from '$app/paths';
 import { page } from '$app/state';
 import { aiState } from '$lib/ai/instance.ts';
 import smrtMark from '$lib/assets/smrt-mark.svg';
-import { exposedModels, getPackage } from '$lib/catalog/index.ts';
+import { exposedModels, getModel, getPackage } from '$lib/catalog/index.ts';
 import AiStatusIcons from '$lib/components/AiStatusIcons.svelte';
 import BrowserAssistant from '$lib/components/BrowserAssistant.svelte';
 import PlannerEditBridge from '$lib/components/PlannerEditBridge.svelte';
@@ -38,12 +37,18 @@ import {
 } from '$lib/kitchen/live.ts';
 import { kitchenState } from '$lib/kitchen/state.svelte.ts';
 import { libraryState } from '$lib/library/state.svelte.ts';
+import { createOnNavigateViewTransition } from '$lib/motion/view-transition.ts';
 import { appHref, appQuery, setBasePath } from '$lib/planner/app.svelte.ts';
 import { plannerRuntime } from '$lib/planner/instance.ts';
 import { hasAppState, withTab } from '$lib/planner/query.ts';
+import { recordFilter, recordFilterQuery } from '$lib/planner/routes.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
-import { plannerShellProps } from '$lib/planner/shell.ts';
+import {
+  plannerAssistantToggle,
+  plannerShellProps,
+} from '$lib/planner/shell.ts';
 import { plannerTab } from '$lib/planner/tab.svelte.ts';
+import { currentPlannerTitle } from '$lib/planner/title.svelte.ts';
 import { FEATURE_SECTION, featureNavItems } from '$lib/recipes/features.ts';
 import {
   buildNavSections,
@@ -62,6 +67,9 @@ let { children }: LayoutProps = $props();
 // Sample data follows the cookbook last applied (nothing in the SSR render).
 libraryState.load();
 
+// The app's name: the shell brand and the home page title follow it.
+const title = $derived(currentPlannerTitle());
+
 // The seam for live objects: swap createPlannerDataSource for a collection-backed DataSource.
 const dataSource = provideDataSource(createPlannerDataSource());
 
@@ -78,8 +86,11 @@ plannerRuntime.openSection = (id) => {
 const nav: ShellNavItem[] = [];
 const shellProps = plannerShellProps();
 
-// The sidebar lists only these sections (`navMode="sections"`); each opens its
-// own page (`/s/<section>/`) listing the entries. Navigation sections belong to the app: a recipe only suggests one
+// The sidebar lists these sections with their entries beneath them when
+// expanded and icons only in the collapsed rail (`navMode="sections-with-items"`,
+// the value `CookbookApp` defaults to; a raw `AppShell` defaults to `items`, so
+// the prop stays explicit). Each section opens its own page (`/s/<section>/`).
+// Navigation sections belong to the app: a recipe only suggests one
 // (`recipe.section`, else its group, else itself), and the user overrides it in
 // the Layout tab. Recipes suggesting the same section share it, entries
 // de-duplicated in recipe declaration order. Each recipe's main (first) item
@@ -226,13 +237,28 @@ let kitchenFragment: KitchenFragment = { present: false, hash: '' };
 
 const onPlanner = () => page.route.id === '/';
 
+/**
+ * A model list page keeps its `?<fk>=<id>` filter (a record's "View all")
+ * beside the app query; every other page drops any other parameter.
+ */
+function withListFilter(query: string): string {
+  const { package: packageId, model: modelName } = page.params;
+  const model =
+    packageId && modelName ? getModel(packageId, modelName) : undefined;
+  const filter = model
+    ? recordFilterQuery(recordFilter(location.search, model))
+    : '';
+  if (!filter) return query;
+  return query ? `${query}&${filter}` : `?${filter}`;
+}
+
 function syncUrl() {
   // A legacy link that could not be saved keeps its URL: it is the only copy.
   if (cookbookStore.keepLegacyUrl) return;
   // The tab belongs to the Planner page only; other pages drop it.
   const wanted = onPlanner()
     ? withTab(appQuery(), plannerTab.active)
-    : appQuery();
+    : withListFilter(appQuery());
   if (location.search !== wanted) {
     replaceState(`${location.pathname}${wanted}${location.hash}`, page.state);
   }
@@ -309,6 +335,13 @@ afterNavigate((navigation) => {
   else sync();
 });
 
+// Route changes morph instead of cutting: the shell's `onNavigate` adapter
+// pairs SvelteKit's navigation with `document.startViewTransition`, falling
+// back to a plain navigation under reduced motion or without the API. The
+// shell names its brand, nav and dock for the duration; the planner's own
+// names (`planner-*`) crossfade the rest.
+onNavigate(createOnNavigateViewTransition());
+
 // Keep the address bar in step with the selection as it changes.
 $effect(() => {
   // appQuery reads every part of the shareable state, so this tracks them all.
@@ -346,14 +379,10 @@ function flushOnHide() {
   <PlannerPalette />
 {/snippet}
 
-{#snippet userMenu()}
-  <WorkspaceAccountMenu userName="User menu" disabled />
-{/snippet}
-
 <div class="shell-host" inert={liveLocked}>
 <AppShell
   storageKey={SHELL_STORAGE_KEY}
-  title="Planner"
+  {title}
   logoSrc={smrtMark}
   homeHref={appHref('/')}
   {nav}
@@ -370,22 +399,19 @@ function flushOnHide() {
       render: aiStatus,
     },
     {
-      id: 'user-menu',
-      label: 'User menu',
-      slot: 'leftSidebar.footer',
-      render: userMenu,
-    },
-    {
       id: 'palette',
       label: 'Search',
       slot: 'header.center',
       render: palette,
     },
   ]}
-  dockToggles={[{ tool: 'assistant', label: 'Assistant', slot: 'header.end' }]}
+  dockToggles={[plannerAssistantToggle(appHref('/ai/'), aiState.assistantReady)]}
+  borderRadius={cookbookStore.theme?.borderRadius}
+  density={cookbookStore.theme?.density}
+  contrast={cookbookStore.theme?.contrast}
   {...shellProps}
   layoutEditing={{ slot: 'header.start' }}
-  navMode="sections"
+  navMode="sections-with-items"
   sectionHref={(id) => appHref(sectionPath(id))}
 >
   {#snippet sectionActions({ sectionId: navSectionId, label })}
@@ -421,7 +447,12 @@ function flushOnHide() {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .shell-host { display: contents; }
+  /* The shell lays a footer slot out as one row; the planner's `ai-status`
+     item shares it with the shell's `item:account`, so stack them (checked
+     against 0.55.17: without this the account squashes beside the icons). */
   :global(.smrt-admin-shell__slot--leftSidebar-footer) {
     flex-direction: column;
     align-items: stretch;
@@ -438,4 +469,5 @@ function flushOnHide() {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

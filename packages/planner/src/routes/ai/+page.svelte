@@ -1,6 +1,5 @@
 <script lang="ts">
-import { aiState } from '$lib/ai/instance.ts';
-import AiSetup from '$lib/components/AiSetup.svelte';
+import AiModelsPage from '$lib/components/AiModelsPage.svelte';
 import { appHref } from '$lib/planner/app.svelte.ts';
 </script>
 
@@ -9,28 +8,16 @@ import { appHref } from '$lib/planner/app.svelte.ts';
 </svelte:head>
 
 <main>
-  <p class="meta"><a href={appHref('/')}>Planner</a> / AI models</p>
-  <h1>Set up your assistant</h1>
-  <p class="privacy">{aiState.privacyNote}</p>
-  <AiSetup />
+  <AiModelsPage backHref={appHref('/')} />
 </main>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   main {
-    display: grid;
-    gap: var(--smrt-spacing-4);
     width: min(100%, 72rem);
     margin-inline: auto;
     padding: var(--smrt-spacing-6);
   }
-
-  h1,
-  p {
-    margin: 0;
-  }
-
-  .meta,
-  .privacy {
-    color: var(--smrt-color-on-surface-variant);
-  }
+}
 </style>

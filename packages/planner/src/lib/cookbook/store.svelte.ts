@@ -80,11 +80,20 @@ export class CookbookStore {
   private storage: Storage | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
+  /**
+   * Plain data only: the `$state` fields are unwrapped with `$state.snapshot`
+   * because the document reaches smrt-core's cookbook engine, whose
+   * `structuredClone` throws on a `$state` proxy (#53: a saved layout then
+   * made the plan unreadable on reload).
+   */
   snapshot(): Cookbook {
-    return assembleCookbook(recipeState.data, {
-      layout: this.layout,
+    return assembleCookbook($state.snapshot(recipeState.data), {
+      layout: $state.snapshot(this.layout) as ShellLayout | undefined,
       theme: $state.snapshot(this.theme) as ThemeSetting | undefined,
-      overviews: this.overviews,
+      overviews: $state.snapshot(this.overviews) as Record<
+        string,
+        OverviewOverride
+      >,
       name: this.name,
       description: this.description,
     });

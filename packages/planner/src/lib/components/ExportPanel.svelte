@@ -190,6 +190,8 @@ function confirmReset() {
 />
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .export {
     display: grid;
     gap: var(--smrt-spacing-4);
@@ -214,4 +216,5 @@ function confirmReset() {
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2);
   }
+}
 </style>

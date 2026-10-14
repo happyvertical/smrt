@@ -85,6 +85,8 @@ const groups = $derived(
 </article>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .help {
     display: grid;
     gap: var(--smrt-spacing-3);
@@ -126,4 +128,5 @@ const groups = $derived(
     margin: 0;
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

@@ -56,12 +56,18 @@ async function profileOf(
 /** How many relations deep a label may reach (allocation > invoice > customer). */
 const LABEL_DEPTH = 3;
 
-/** The text that names one record. Never an empty string. */
+/**
+ * The text that names one record. Never an empty string. `omitParty` names
+ * a party field (`customerId`) whose label to leave out when the record has
+ * a name of its own without it: a customer's page lists its orders as
+ * `TIM-8288`, not `Ridgeline Construction · TIM-8288`.
+ */
 export async function recordLabel(
   source: DataSource,
   model: CatalogModel,
   record: ModelRecord,
   depth = 0,
+  omitParty?: string,
 ): Promise<string> {
   if (isProfileLabelled(model)) {
     const profile = await profileOf(source, record);
@@ -69,6 +75,10 @@ export async function recordLabel(
     if (name) return name;
   }
   const party = partyField(model.fields, record);
+  if (party && party.name === omitParty) {
+    const own = recordName(model, record, () => undefined);
+    if (own) return own;
+  }
   const target = party?.related
     ? getModelByQualifiedName(party.related)?.model
     : undefined;

@@ -42,7 +42,9 @@ is dispatched.
 ## Publish a version
 
 1. Set the version in `package.json`, update release notes as appropriate, and
-   merge the reviewed change to `main`. The first release remains `0.0.1`.
+   merge the reviewed change to `main`. While the package is `0.x`, new public
+   API (props, exports, cookbook fields) is a minor bump and fixes are a patch;
+   the release notes live in the pull request that sets the version.
 2. Open **Actions → Publish package → Run workflow** on `main` and choose
    `release`.
 3. Confirm the safeguards, validation, primary publication, and mirror jobs.

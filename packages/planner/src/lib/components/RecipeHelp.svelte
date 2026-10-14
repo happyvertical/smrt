@@ -38,6 +38,8 @@ const rendered = $derived(
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   section {
     display: grid;
     gap: var(--smrt-spacing-3);
@@ -51,4 +53,5 @@ const rendered = $derived(
   .meta {
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

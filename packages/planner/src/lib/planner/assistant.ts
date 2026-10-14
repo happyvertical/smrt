@@ -98,12 +98,23 @@ function settingsStoreOf(controller: PlannerController): SettingsStore {
 function themeStoreOf(controller: PlannerController): ThemeStore {
   return {
     read: () => {
-      const { preset, primary, colorScheme } = controller.snapshot().theme;
+      const snapshot = controller.snapshot().theme;
+      const { preset, primary, colorScheme } = snapshot;
       const theme: ThemeSetting = {};
       if (preset) theme.preset = preset;
       if (primary) theme.custom = { primary };
       if (colorScheme !== 'system') {
         theme.colorScheme = colorScheme as ThemeSetting['colorScheme'];
+      }
+      if (snapshot.borderRadius) {
+        theme.borderRadius =
+          snapshot.borderRadius as ThemeSetting['borderRadius'];
+      }
+      if (snapshot.density) {
+        theme.density = snapshot.density as ThemeSetting['density'];
+      }
+      if (snapshot.contrast) {
+        theme.contrast = snapshot.contrast as ThemeSetting['contrast'];
       }
       return Object.keys(theme).length ? theme : undefined;
     },
@@ -119,6 +130,9 @@ function themeStoreOf(controller: PlannerController): ThemeStore {
           ...(theme.preset ? { preset: theme.preset } : {}),
           ...(theme.custom ? { primary: theme.custom.primary } : {}),
           ...(theme.colorScheme ? { colorScheme: theme.colorScheme } : {}),
+          ...(theme.borderRadius ? { borderRadius: theme.borderRadius } : {}),
+          ...(theme.density ? { density: theme.density } : {}),
+          ...(theme.contrast ? { contrast: theme.contrast } : {}),
         },
       });
     },

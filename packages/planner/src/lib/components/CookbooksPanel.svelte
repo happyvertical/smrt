@@ -186,6 +186,8 @@ function commit() {
 />
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .cookbooks {
     display: grid;
     gap: var(--smrt-spacing-4);
@@ -200,7 +202,7 @@ function commit() {
 
   h3,
   h4 {
-    font-size: 1rem;
+    font: var(--smrt-typography-title-medium-font); letter-spacing: var(--smrt-typography-title-medium-tracking);
   }
 
   .meta,
@@ -225,9 +227,9 @@ function commit() {
     width: 100%;
     height: 100%;
     padding: var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-lg, 0.75rem);
-    background: var(--smrt-color-surface);
+    background: var(--smrt-surface-panel);
     color: inherit;
     font: inherit;
     text-align: start;
@@ -253,7 +255,7 @@ function commit() {
   }
 
   .name {
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold);
   }
 
   .badge {
@@ -261,7 +263,7 @@ function commit() {
     top: var(--smrt-spacing-3);
     right: var(--smrt-spacing-3);
     padding: 0 var(--smrt-spacing-2);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 999px);
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     font-size: 0.75rem;
@@ -271,7 +273,7 @@ function commit() {
     display: grid;
     gap: var(--smrt-spacing-4);
     padding: var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-lg, 0.75rem);
   }
 
@@ -295,7 +297,7 @@ function commit() {
 
   .chips li {
     padding: 0 var(--smrt-spacing-3);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 999px);
     background: var(--smrt-color-surface-container);
   }
 
@@ -317,4 +319,13 @@ function commit() {
     align-items: center;
     gap: var(--smrt-spacing-3);
   }
+
+  /* Forced colours: the selected cookbook keeps a Highlight frame. */
+  @media (forced-colors: active) {
+    .card.selected {
+      border-color: Highlight;
+      outline-color: Highlight;
+    }
+  }
+}
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { Switch } from '@happyvertical/smrt-ui/forms';
+import { flip } from 'svelte/animate';
 import {
   catalog,
   exposedModels,
@@ -7,6 +8,7 @@ import {
   surfaceCount,
 } from '$lib/catalog/index.ts';
 import { humanize } from '$lib/data/format.ts';
+import { motionDuration } from '$lib/motion/tokens.ts';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
 
@@ -77,7 +79,7 @@ function toggle(id: string) {
       {#each results as pkg (pkg.id)}
         {@const selected = selection.has(pkg.id)}
         {@const lockedBy = selection.requiredBy(pkg.id)}
-        <li class:selected>
+        <li class:selected animate:flip={{ duration: motionDuration('medium2', 300) }}>
           <h3>
             <a href={appHref(`/packages/${pkg.id}/`)}>{humanize(pkg.id)}</a>
           </h3>
@@ -114,6 +116,8 @@ function toggle(id: string) {
 </main>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   main {
     display: grid;
     gap: var(--smrt-spacing-6);
@@ -176,7 +180,7 @@ function toggle(id: string) {
     align-content: start;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
   }
 
@@ -200,16 +204,16 @@ function toggle(id: string) {
   .search input {
     width: min(100%, 28rem);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-control-border);
     border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-surface);
+    background: var(--smrt-surface-control);
     color: var(--smrt-color-on-surface);
     font: inherit;
   }
 
   button.secondary {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-3);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-control-border);
     border-radius: var(--smrt-radius-medium);
     background: transparent;
     color: var(--smrt-color-on-surface);
@@ -224,4 +228,5 @@ function toggle(id: string) {
     overflow: hidden;
     clip-path: inset(50%);
   }
+}
 </style>

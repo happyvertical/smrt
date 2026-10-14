@@ -110,6 +110,8 @@ function toggle(id: string, on: boolean) {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .features {
     display: grid;
     gap: var(--smrt-spacing-3);
@@ -131,7 +133,7 @@ function toggle(id: string, on: boolean) {
   }
 
   .count {
-    font-size: var(--smrt-font-size-body-medium, 0.875rem);
+    font-size: var(--smrt-typography-body-medium-size);
   }
 
   .notice:empty {
@@ -152,4 +154,5 @@ function toggle(id: string, on: boolean) {
     padding: 0;
     list-style: none;
   }
+}
 </style>

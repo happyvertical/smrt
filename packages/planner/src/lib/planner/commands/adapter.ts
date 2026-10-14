@@ -635,8 +635,9 @@ export function createPlannerAdapter(
 
   /**
    * Applying a library cookbook that sets no theme keeps the person's own look
-   * (as the Cookbooks tab does): the preset, brand colour and colour scheme
-   * (the font is not carried; `set_theme` has no font). Returns the patch.
+   * (as the Cookbooks tab does): the preset, brand colour, colour scheme,
+   * corner radius, density and contrast (the font is not carried). Returns
+   * the patch.
    */
   function themeToKeep(
     raw: Record<string, unknown>,
@@ -651,6 +652,9 @@ export function createPlannerAdapter(
     if (theme.preset) patch.preset = theme.preset;
     if (theme.custom?.primary) patch.primary = theme.custom.primary;
     if (theme.colorScheme) patch.colorScheme = theme.colorScheme;
+    if (theme.borderRadius) patch.borderRadius = theme.borderRadius;
+    if (theme.density) patch.density = theme.density;
+    if (theme.contrast) patch.contrast = theme.contrast;
     return Object.keys(patch).length ? patch : undefined;
   }
 

@@ -1,5 +1,10 @@
 import type { CatalogModel } from '../catalog/types.ts';
-import { type ChildOf, fakeChildrenOf, syncTotals } from './children.ts';
+import {
+  type ChildOf,
+  fakeChildrenOf,
+  seedMismatch,
+  syncTotals,
+} from './children.ts';
 import {
   allocationInvoiceField,
   allocationPaymentField,
@@ -12,6 +17,7 @@ import {
   withTotals,
 } from './derived.ts';
 import {
+  DEFAULT_SAMPLE_ROWS,
   EPOCH,
   fakeId,
   fakeRecords,
@@ -83,6 +89,15 @@ export type RecordWrite =
 
 export interface DataSource {
   list(model: CatalogModel): Promise<ModelRecord[]>;
+  /**
+   * The rows whose `field` equals `value` (compared as strings): a record's
+   * related rows, by the foreign key that points at it.
+   */
+  listWhere(
+    model: CatalogModel,
+    field: string,
+    value: string,
+  ): Promise<ModelRecord[]>;
   get(model: CatalogModel, id: string): Promise<ModelRecord | undefined>;
   create(
     model: CatalogModel,
@@ -109,8 +124,13 @@ export interface DataSource {
   onReset?(listener: () => void): () => void;
 }
 
-/** Prefix of the localStorage keys rows are kept under, one per model. */
-export const DATA_STORAGE_PREFIX = 'smrt-planner:data:v3:';
+/**
+ * Prefix of the localStorage keys rows are kept under, one per model. v5:
+ * a line's `amount` is tax-inclusive again, as smrt-commerce and the
+ * released line-items widget read it (`derived.ts`); rows kept under v4 hold
+ * pre-tax amounts, so they are left behind for fresh samples.
+ */
+export const DATA_STORAGE_PREFIX = 'smrt-planner:data:v5:';
 const CREATED_KEY = `${DATA_STORAGE_PREFIX}_created`;
 
 /** Remove every stored row. Never throws. */
@@ -185,7 +205,7 @@ export function createMemoryDataSource(
   options: MemoryDataSourceOptions = {},
 ): DataSource {
   const seed = options.seed ?? 1;
-  const rows = options.rowsPerModel ?? 8;
+  const rows = options.rowsPerModel ?? DEFAULT_SAMPLE_ROWS;
   const empty = new Set(options.empty ?? []);
   const tables = new Map<string, ModelRecord[]>();
   const resetListeners = new Set<() => void>();
@@ -354,7 +374,7 @@ export function createMemoryDataSource(
     const made: ModelRecord[] =
       empty.has(model.id) || owned.length || allocation
         ? []
-        : fakeRecords(model, sampleRowCount(model.id, rows), seed);
+        : fakeRecords(model, sampleRowCount(model.id, rows), seed, rows);
     // Registered before the other side is built so each finds this table.
     tables.set(model.id, made);
     for (const link of linksOf(model.id)) table(link.model);
@@ -378,11 +398,21 @@ export function createMemoryDataSource(
     }
     if (!empty.has(model.id)) {
       for (const { parent, fk } of owned) {
-        for (const row of table(parent)) {
-          const items = fakeChildrenOf(model, fk, row, seed);
+        // A child row takes the values a hidden field carries in this app
+        // (a line's discount the recipe options leave at 0), as one created
+        // through the form would, before its parent's totals are summed.
+        const carried = options.defaults?.(model) ?? {};
+        table(parent).forEach((row, index) => {
+          const items = fakeChildrenOf(model, fk, row, seed, rows).map(
+            (item) =>
+              isLineModel(model)
+                ? settleLine({ ...item, ...carried })
+                : { ...item, ...carried },
+          );
           made.push(...items);
           syncTotals(row, parent, items);
-        }
+          if (isLineModel(model)) seedMismatch(row, parent, index);
+        });
       }
     }
     return made;
@@ -479,6 +509,11 @@ export function createMemoryDataSource(
   return {
     async list(model) {
       return table(model).map((r) => present(model, r));
+    },
+    async listWhere(model, field, value) {
+      return table(model)
+        .filter((r) => String(r[field] ?? '') === value)
+        .map((r) => present(model, r));
     },
     async get(model, id) {
       const found = table(model).find((r) => r.id === id);

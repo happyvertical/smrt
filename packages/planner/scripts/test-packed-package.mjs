@@ -191,7 +191,17 @@ async function browserContract(site) {
     const dismissSetup = page.getByRole('button', {
       name: /I don't need AI/,
     });
-    if (await dismissSetup.isVisible()) await dismissSetup.click();
+    // The first-run form replaces the tabs only once the layout has hydrated
+    // the AI state, after the tabs first render: wait for it, not a snapshot.
+    await page.waitForLoadState('networkidle');
+    if (
+      await dismissSetup.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      await dismissSetup.click();
+    }
     const leftPanel = page.locator('#smrt-admin-shell-left-panel');
     if ((await leftPanel.count()) !== 1) {
       throw new Error('the packaged planner is not inside its AppShell');

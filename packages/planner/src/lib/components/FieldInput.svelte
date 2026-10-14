@@ -257,6 +257,8 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .field {
     display: grid;
     gap: var(--smrt-spacing-1);
@@ -298,10 +300,11 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
   input[type='url'],
   textarea {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-control-border);
     border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-surface);
+    background: var(--smrt-surface-control);
     color: var(--smrt-color-on-surface);
     font: inherit;
   }
+}
 </style>

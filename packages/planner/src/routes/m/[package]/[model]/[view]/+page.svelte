@@ -9,4 +9,6 @@ let { data }: PageProps = $props();
   packageId={data.packageId}
   modelName={data.modelName}
   view={data.view}
+  recordId={data.recordId}
+  mode={data.mode}
 />

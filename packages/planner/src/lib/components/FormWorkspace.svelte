@@ -271,6 +271,8 @@ async function addImage(row: ModelRecord, file: File) {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   section {
     display: grid;
     gap: var(--smrt-spacing-4);
@@ -311,7 +313,7 @@ async function addImage(row: ModelRecord, file: File) {
   th,
   td {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     text-align: left;
     white-space: nowrap;
   }
@@ -327,7 +329,7 @@ async function addImage(row: ModelRecord, file: File) {
   }
 
   button.secondary {
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-control-border);
     background: transparent;
     color: var(--smrt-color-on-surface);
   }
@@ -339,4 +341,5 @@ async function addImage(row: ModelRecord, file: File) {
     overflow: hidden;
     clip-path: inset(50%);
   }
+}
 </style>

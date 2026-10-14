@@ -39,6 +39,8 @@ $effect(() => {
 <svelte:window onpagehide={commit} />
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .pane {
     display: grid;
     gap: var(--smrt-spacing-4);
@@ -48,4 +50,5 @@ $effect(() => {
     margin: 0;
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

@@ -26,6 +26,9 @@ const snapshot: PlanSnapshot = {
     preset: 'glass',
     primary: null,
     colorScheme: 'dark',
+    borderRadius: null,
+    density: null,
+    contrast: null,
   },
   sections: [
     {

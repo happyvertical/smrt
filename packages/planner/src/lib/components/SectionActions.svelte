@@ -38,6 +38,8 @@ let { label, groups }: SectionActionsProps = $props();
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .menu {
     position: relative;
   }
@@ -58,8 +60,8 @@ let { label, groups }: SectionActionsProps = $props();
   }
 
   summary:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 
   ul {
@@ -70,8 +72,8 @@ let { label, groups }: SectionActionsProps = $props();
     margin: var(--smrt-spacing-1) 0 0;
     padding: var(--smrt-spacing-1);
     list-style: none;
-    background: var(--smrt-color-surface-container-high, var(--smrt-color-surface));
-    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-surface-raised);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
   }
 
@@ -86,6 +88,7 @@ let { label, groups }: SectionActionsProps = $props();
 
   a:hover,
   a:focus-visible {
-    background: var(--smrt-color-surface-container-highest, var(--smrt-color-surface-variant));
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
   }
+}
 </style>

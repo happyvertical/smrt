@@ -3,7 +3,9 @@ import { availablePresets } from '@happyvertical/smrt-ui/themes/presets';
 /**
  * The app's look, kept in the app document (smrt#3604): a built-in smrt-ui
  * preset, a light/dark/system choice and optionally a brand colour that
- * `createThemeFromColor` expands into a full theme. Custom CSS is saved
+ * `createThemeFromColor` expands into a full theme (it replaces the preset;
+ * smrt-ui's `primaryColor`, which only tints a preset, is never used), plus
+ * corner radius, density and contrast. Custom CSS is saved
  * with the cookbook and applied live by the Planner.
  * Absent means the default (the `glass` preset, following the system scheme).
  */
@@ -16,10 +18,23 @@ export interface CustomTheme {
   fontFamily?: string;
 }
 
+/** Corner radius scale (`ThemeProvider` `borderRadius`); `md` is the preset's own. */
+export type BorderRadiusSetting = 'none' | 'sm' | 'md' | 'lg' | 'xl' | 'full';
+/** Control size: comfortable, or larger touch targets. */
+export type DensitySetting = 'comfortable' | 'touch';
+/** `auto` follows the device's contrast preference. */
+export type ContrastSetting = 'auto' | 'standard' | 'more';
+
 export interface ThemeSetting {
   /** A built-in smrt-ui preset; the default when absent. */
   preset?: string;
   colorScheme?: ColorSchemeSetting;
+  /** Corner radius; absent keeps the preset's own. */
+  borderRadius?: BorderRadiusSetting;
+  /** Control density; absent is comfortable. */
+  density?: DensitySetting;
+  /** Contrast; absent follows the device. */
+  contrast?: ContrastSetting;
   /** A font override that preserves the selected preset's palette. */
   fontFamily?: string;
   /** A brand colour theme; wins over `preset` while present. */
@@ -36,6 +51,22 @@ export const COLOR_SCHEMES: readonly ColorSchemeSetting[] = [
   'light',
   'dark',
   'system',
+];
+
+/** The cookbook's `theme.borderRadius` values (smrt-core's cookbook schema). */
+export const BORDER_RADII: readonly BorderRadiusSetting[] = [
+  'none',
+  'sm',
+  'md',
+  'lg',
+  'xl',
+  'full',
+];
+export const DENSITIES: readonly DensitySetting[] = ['comfortable', 'touch'];
+export const CONTRASTS: readonly ContrastSetting[] = [
+  'auto',
+  'standard',
+  'more',
 ];
 
 /** The fonts a theme may name, each with its CSS stack. A fixed list, never free text. */
@@ -98,6 +129,21 @@ export function parseTheme(value: unknown): ThemeParse {
       };
     }
     theme.colorScheme = value.colorScheme as ColorSchemeSetting;
+  }
+  for (const [key, allowed] of [
+    ['borderRadius', BORDER_RADII],
+    ['density', DENSITIES],
+    ['contrast', CONTRASTS],
+  ] as const) {
+    const given = value[key];
+    if (given === undefined) continue;
+    if (!(allowed as readonly unknown[]).includes(given)) {
+      return {
+        ok: false,
+        error: `The theme ${key} must be one of ${allowed.join(', ')}.`,
+      };
+    }
+    (theme as Record<string, unknown>)[key] = given;
   }
   if (value.fontFamily !== undefined) {
     if (
@@ -162,6 +208,9 @@ function canonical(theme: ThemeSetting | undefined) {
   return {
     preset: theme?.preset ?? DEFAULT_PRESET,
     colorScheme: theme?.colorScheme ?? DEFAULT_COLOR_SCHEME,
+    borderRadius: theme?.borderRadius ?? null,
+    density: theme?.density ?? null,
+    contrast: theme?.contrast ?? null,
     primary: theme?.custom?.primary ?? null,
     font: theme?.fontFamily ?? theme?.custom?.fontFamily ?? null,
     customCss: theme?.customCss ?? null,
@@ -176,6 +225,9 @@ export function compactTheme(
   const out: ThemeSetting = {};
   if (theme.preset) out.preset = theme.preset;
   if (theme.colorScheme) out.colorScheme = theme.colorScheme;
+  if (theme.borderRadius) out.borderRadius = theme.borderRadius;
+  if (theme.density) out.density = theme.density;
+  if (theme.contrast) out.contrast = theme.contrast;
   if (theme.fontFamily) out.fontFamily = theme.fontFamily;
   if (theme.custom) out.custom = { ...theme.custom };
   if (theme.customCss) out.customCss = theme.customCss;

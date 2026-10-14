@@ -1,6 +1,7 @@
 <script lang="ts">
 import { FieldLabel } from '@happyvertical/smrt-ui/forms';
 import { tick } from 'svelte';
+import { getModelByQualifiedName } from '../catalog/index.ts';
 import type { CatalogModel } from '../catalog/types.ts';
 import {
   blankRecord,
@@ -27,7 +28,7 @@ import {
   pluralize,
   recordCount,
 } from '../data/format.ts';
-import { relationLabels, shortId } from '../data/labels.ts';
+import { relationLabels, resolveRelated, shortId } from '../data/labels.ts';
 import {
   type ListSort,
   nextListSort,
@@ -35,7 +36,9 @@ import {
 } from '../data/list-sort.ts';
 import { focusFirstInvalid } from '../fields/invalid.ts';
 import { type ActiveForm, isFieldMap } from '../forms/active.ts';
+import { appHref } from '../planner/app.svelte.ts';
 import { takeCreate } from '../planner/create.ts';
+import { modelPath, recordPath } from '../planner/routes.ts';
 import type { ViewField } from '../recipes/policy.ts';
 import { inScope, type RowScope } from '../recipes/scope.ts';
 import type { FieldMapForm as FieldMapFormShape } from '../recipes/types.ts';
@@ -68,6 +71,8 @@ interface ModelWorkspaceProps {
   scope?: RowScope;
   /** Values a new row carries so it stays in `scope`. */
   preset?: Record<string, unknown>;
+  /** An in-app path as a link; the planner's `appHref` by default. */
+  href?: (path: string) => string;
 }
 
 let {
@@ -79,6 +84,7 @@ let {
   noun,
   scope,
   preset,
+  href = appHref,
 }: ModelWorkspaceProps = $props();
 
 const source = useDataSource();
@@ -108,6 +114,37 @@ const totalFields = $derived(
 );
 const newNoun = $derived(noun ?? humanize(model.name).toLowerCase());
 const heading = $derived(title ?? pluralize(humanize(model.name)));
+const packageId = $derived(getModelByQualifiedName(model.id)?.pkg.id ?? '');
+/** A row opens its record page (smrt#3718 record view). */
+const viewHref = (row: ModelRecord) =>
+  href(recordPath(packageId, model.name, row.id));
+/**
+ * The list narrowed to one record's rows ("View all" on a record page): the
+ * reference field the scope filters on, so the heading can say whose rows
+ * these are and offer the whole list.
+ */
+const filterField = $derived(
+  scope?.equals !== undefined
+    ? fields.find(
+        (f) =>
+          f.name === scope.field &&
+          (f.type === 'foreignKey' || f.type === 'crossPackageRef') &&
+          f.related,
+      )
+    : undefined,
+);
+let filterLabel = $state('');
+$effect(() => {
+  const field = filterField;
+  const id = scope?.equals;
+  filterLabel = '';
+  if (!field?.related || id === undefined) return;
+  const target = getModelByQualifiedName(field.related)?.model;
+  if (!target) return;
+  void resolveRelated(source, target, id).then((found) => {
+    if (found && filterField === field) filterLabel = found.label;
+  });
+});
 
 let rows = $state<ModelRecord[]>([]);
 let sort = $state<ListSort | null>(null);
@@ -194,18 +231,12 @@ function startCreate(form?: ActiveForm<FieldMapFormShape>) {
   formKey++;
 }
 
-function startEdit(row: ModelRecord) {
-  if (mapForms[0]) {
-    mapForm = mapForms[0];
-    editing = row.id;
-    formKey++;
-    return;
-  }
-  mapForm = undefined;
-  draft = { ...row };
-  errors = {};
-  editing = row.id;
-  formKey++;
+/** A click on the row (not on one of its controls) opens the record. */
+function openRow(event: MouseEvent) {
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('a, button')) return;
+  const link = event.currentTarget as HTMLElement;
+  link.querySelector<HTMLAnchorElement>('a[data-view]')?.click();
 }
 
 async function save(event: SubmitEvent) {
@@ -258,6 +289,12 @@ async function remove(row: ModelRecord) {
 <section>
   <header>
     <h2>{heading} {#if loaded}<small>{recordCount(rows.length)}</small>{/if}</h2>
+    {#if filterField}
+      <p class="filter" data-list-filter>
+        {filterField.label}: {filterLabel || shortId(scope?.equals)}
+        · <a href={href(modelPath(packageId, model.name))}>Show all</a>
+      </p>
+    {/if}
     {#if mapForms.length}
       {#each mapForms as active (active.form.id)}
         <button type="button" onclick={() => startCreate(active)}>
@@ -374,19 +411,20 @@ async function remove(row: ModelRecord) {
         </thead>
         <tbody>
           {#each sortedRows as row (row.id)}
-            <tr>
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <tr class="row" onclick={openRow}>
               {#each columns as column (column.name)}
                 <td>{formatValue(column, cellValue(column, row), labels)}</td>
               {/each}
               <td class="row-actions">
-                <button
-                  type="button"
+                <a
                   class="secondary"
-                  aria-label={`Edit ${nameOf(row)}`}
-                  onclick={() => startEdit(row)}
+                  href={viewHref(row)}
+                  aria-label={`View ${nameOf(row)}`}
+                  data-view
                 >
-                  Edit
-                </button>
+                  View
+                </a>
                 <button
                   type="button"
                   class="secondary"
@@ -405,6 +443,8 @@ async function remove(row: ModelRecord) {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   section {
     display: grid;
     gap: var(--smrt-spacing-4);
@@ -412,6 +452,7 @@ async function remove(row: ModelRecord) {
 
   header {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--smrt-spacing-3);
     align-items: center;
     justify-content: space-between;
@@ -464,6 +505,21 @@ async function remove(row: ModelRecord) {
     overflow-x: auto;
   }
 
+  .filter {
+    margin: 0;
+    flex: 1 1 100%;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.8125rem);
+  }
+
+  .row {
+    cursor: pointer;
+  }
+
+  .row:hover td {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+
   table {
     width: 100%;
     border-collapse: collapse;
@@ -472,7 +528,7 @@ async function remove(row: ModelRecord) {
   th,
   td {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     text-align: left;
     white-space: nowrap;
   }
@@ -488,10 +544,15 @@ async function remove(row: ModelRecord) {
     cursor: pointer;
   }
 
-  button.secondary {
-    border: 1px solid var(--smrt-color-outline);
+  button.secondary,
+  a.secondary {
+    display: inline-block;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    border: var(--smrt-control-border);
+    border-radius: var(--smrt-radius-medium);
     background: transparent;
     color: var(--smrt-color-on-surface);
+    text-decoration: none;
   }
 
   .visually-hidden {
@@ -501,4 +562,5 @@ async function remove(row: ModelRecord) {
     overflow: hidden;
     clip-path: inset(50%);
   }
+}
 </style>

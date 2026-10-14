@@ -57,4 +57,8 @@ export {
   PLANNER_SHELL_PANEL_DEFAULTS,
   plannerShellProps,
 } from './planner/shell.ts';
-export type { PlannerHandle, PlannerProps } from './planner/types.ts';
+export type {
+  PlannerBackLink,
+  PlannerHandle,
+  PlannerProps,
+} from './planner/types.ts';

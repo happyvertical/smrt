@@ -15,9 +15,9 @@ import { resolveTheme } from '../theme/runtime.ts';
 import type { ColorSchemeSetting } from '../theme/theme.ts';
 
 // The app document owns the theme. This applies it to the shell's
-// ThemeProvider once the saved document is read, and reads back a change made
-// through the provider's own controls (ThemeSwitcher, ColorSchemeToggle) so
-// that it is saved with the document.
+// ThemeProvider once the saved document is read, and reads back a preset or
+// scheme change made through the provider's own controls (ThemeSwitcher,
+// ColorSchemeToggle) so that it is saved with the document.
 const context = getThemeContext();
 let {
   deferInitial = false,
@@ -58,6 +58,30 @@ $effect(() => {
   if (context.state.colorScheme !== wanted.colorScheme) {
     context.setColorScheme(wanted.colorScheme);
   }
+});
+
+// Document -> provider: corner radius, density and contrast. The cookbook is
+// the visitor's own choice here (the Theme tab edits it), so it is applied over
+// a preference the provider read from browser storage, as the preset is.
+// Absent values are the provider's defaults: the preset's own radius, no
+// density override, contrast following the device.
+$effect(() => {
+  if (!cookbookStore.loaded || !ready) return;
+  const theme = cookbookStore.theme;
+  const wanted = {
+    borderRadius: theme?.borderRadius ?? 'md',
+    density: theme?.density,
+    contrast: theme?.contrast ?? 'auto',
+  } as const;
+  const { borderRadius, density, contrast } = context.state.config;
+  if (
+    borderRadius === wanted.borderRadius &&
+    density === wanted.density &&
+    (contrast ?? 'auto') === wanted.contrast
+  ) {
+    return;
+  }
+  context.updateConfig(wanted);
 });
 
 // Provider -> document.

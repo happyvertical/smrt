@@ -111,6 +111,8 @@ const id = $derived(`feature-${card.id}`);
 </li>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   h3,
   h4,
   p {
@@ -122,7 +124,7 @@ const id = $derived(`feature-${card.id}`);
     align-content: start;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
   }
 
@@ -138,20 +140,19 @@ const id = $derived(`feature-${card.id}`);
   }
 
   h3 {
-    font-size: var(--smrt-font-size-title-medium, 1rem);
+    font: var(--smrt-typography-title-medium-font); letter-spacing: var(--smrt-typography-title-medium-tracking);
   }
 
   h4 {
     color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-font-size-label-medium, 0.75rem);
-    font-weight: 600;
-    letter-spacing: 0.04em;
+    font: var(--smrt-typography-label-medium-font); letter-spacing: var(--smrt-typography-label-medium-tracking);
+    font-weight: var(--smrt-typography-weight-semibold);
     text-transform: uppercase;
   }
 
   .meta {
     color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-font-size-body-small, 0.8125rem);
+    font-size: var(--smrt-typography-body-small-size);
   }
 
   .plain {
@@ -160,16 +161,16 @@ const id = $derived(`feature-${card.id}`);
     margin: 0;
     padding: 0;
     list-style: none;
-    font-size: var(--smrt-font-size-body-medium, 0.875rem);
+    font-size: var(--smrt-typography-body-medium-size);
   }
 
   .kind {
     margin-inline-end: var(--smrt-spacing-1);
     padding: 0 var(--smrt-spacing-2);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
     color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-font-size-label-small, 0.6875rem);
+    font-size: var(--smrt-typography-label-small-size);
   }
 
   .reasons {
@@ -192,6 +193,16 @@ const id = $derived(`feature-${card.id}`);
   }
 
   .summary {
-    font-size: var(--smrt-font-size-body-medium, 0.875rem);
+    font-size: var(--smrt-typography-body-medium-size);
   }
+
+  /* Forced colours: a switched-on feature's border colour is replaced, so it
+     gets a Highlight frame. */
+  @media (forced-colors: active) {
+    .card.selected {
+      border-color: Highlight;
+      outline: 0.125rem solid Highlight;
+    }
+  }
+}
 </style>

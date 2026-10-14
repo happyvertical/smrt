@@ -8,7 +8,12 @@ runtime, so one build serves every deployment.
 Served at `${base}/planner.config.json` (next to the app; `base` is the
 SvelteKit base path) and fetched once at startup. A missing file means the
 defaults. A mounted `Planner` can pass the same object as its `inference` prop
-(plus `onReply`); the prop overrides the file.
+(plus `onReply`); the prop overrides the file, and is what gives the mount its
+assistant at all: the chat icon at the end of the header and the dock appear
+only with it, and the AI models page is served inside the mount at `#/ai/`
+(the icon leads there until a model is ready). A site where visitors connect
+their own endpoint passes `{ mode: 'byo', credentialPersistence: 'memory' }`
+(add `alternatives: ['browser']` to offer WebLLM as well).
 
 ```json
 {
@@ -105,7 +110,10 @@ Every field but `reply` is optional:
 - `reply`: the sentence shown (and read aloud when Speak is on), about 200
   characters at most.
 - `add` / `remove`: recipe ids; unknown ids are dropped client-side.
-- `settings.taxRate` is in percent. `theme` is tokens only, never CSS.
+- `settings.taxRate` is in percent. `theme` is tokens only, never CSS: `preset`
+  or `primary`, `colorScheme` (light or dark), and optionally `borderRadius`
+  (none, sm, md, lg, xl, full), `density` (comfortable, touch) and `contrast`
+  (auto, standard, more), the names `set_theme` takes.
 - `commands`: up to 8 planner commands (`commandTools` / `commandSchemas` in
   `./commands`), run in order through the controller, which validates each.
   The first refused one stops the rest and is reported in the chat. They apply

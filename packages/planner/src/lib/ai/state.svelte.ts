@@ -3,6 +3,7 @@ import {
   AssistantSession,
   type SessionOptions,
 } from '../assistant/session.svelte.ts';
+import type { ChatModel } from '../assistant/transport.ts';
 import {
   loadVoiceConsent,
   type VoiceOptions,
@@ -203,6 +204,43 @@ export class AiState {
       : null;
     this.applyMode(config.mode);
     if (this.hydrated) this.decideFirstRun();
+  }
+
+  /**
+   * A host's own model (a mounted `Planner`'s `inference.chat`): the host
+   * chose and loaded it, so nothing is downloaded and no mode is offered. A
+   * function is read on every turn, so a model that loads later still answers.
+   */
+  useChat(chat: ChatModel | (() => ChatModel | null), label: string): void {
+    this.pendingConfig = false;
+    this.inference = { mode: 'host' };
+    this.notice = '';
+    this.availableModes = ['host'];
+    this.byo = null;
+    this.session.setMode('host');
+    const read = () => (typeof chat === 'function' ? chat() : chat);
+    this.session.useRemote(
+      {
+        message: (text, options) => {
+          const model = read();
+          if (!model) {
+            throw new Error('The host has not connected a model yet.');
+          }
+          return model.message(text, options);
+        },
+      },
+      label,
+    );
+    if (this.hydrated) this.decideFirstRun();
+  }
+
+  /**
+   * The assistant can answer now: a loaded browser model, the host's server,
+   * or a connected endpoint of the visitor's own. Until then the header icon
+   * leads to the AI models page instead of an empty chat.
+   */
+  get assistantReady(): boolean {
+    return this.hydrated && this.session.status === 'ready';
   }
 
   /** Change providers only after a visitor selects one from the configured policy. */

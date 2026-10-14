@@ -153,6 +153,8 @@ function picked(id: string) {
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .plain {
     display: grid;
     gap: var(--smrt-spacing-1);
@@ -163,13 +165,14 @@ function picked(id: string) {
     max-height: 90vh;
     padding: var(--smrt-spacing-2);
     overflow: auto;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
-    background: var(--smrt-color-surface);
+    background: var(--smrt-surface-raised);
     color: var(--smrt-color-on-surface);
   }
 
   .create::backdrop {
     background: rgb(0 0 0 / 0.5);
   }
+}
 </style>

@@ -56,10 +56,12 @@ starting points for a bakery, a mechanic, a welder and a yoga studio: pick one,
 read what it adds (recipes, menu, default payment terms, currency and tax), and
 use it to replace your recipes and menu. Your records stay.
 
-The Assistant runs a small model on your device. Three icons in the left
-sidebar footer show **Think** (the language model), **Hear** (voice typing) and
-**Speak** (read replies aloud); each opens the AI models page (`/ai/`), where you
-choose and download them. A first visit with nothing built starts there; "I don't
+The Assistant runs a small model on your device. The chat icon at the end of
+the header opens it once a model is ready; before that it opens the AI models
+page (`/ai/`), so a first click sets inference up instead of showing an empty
+chat. Three icons in the left sidebar footer show **Think** (the language
+model), **Hear** (voice typing) and **Speak** (read replies aloud); each opens
+the same page, where you choose and download them. A first visit with nothing built starts there; "I don't
 need AI, let's just build" skips it for good. Live s-m-r-t objects are tracked in #4.
 
 Generated record forms use the Planner's own responsive, open form layout.
@@ -93,6 +95,43 @@ const controller = createPlannerController();
 </script>
 
 <Planner {controller} basePath="/planner" />
+```
+
+`Planner` props, all optional: `controller`, `basePath` (where its pages are
+served from), `persistence` (`'self'` reads and saves the cookbook in this
+browser, `'host'` leaves both to you), `themeControls`, `tabs`, `onready`, and:
+
+The mounted planner is the framework's cookbook-driven app shell with its
+customizable overviews switched on: the pencil at the start of the header
+edits the menu and every section page in place (add, move, resize, configure
+and remove widgets), and each edit lands in the cookbook's `layout` and
+`overviews`, so it is saved, exported and imported with the rest of the plan.
+The `metric`, `records` and `chart` widgets read the in-browser sample data;
+the chart groups the seeded rows itself (by a field, or a date field bucketed
+over the widget's period) as the stand-in for the runtime report a generated
+app's chart loader would compile. Its pages are fragment routes (`#/s/...`,
+`#/m/...`, `#/packages/...`), so the mount needs nothing from the host's
+router and every in-planner link stays inside it.
+
+- `backLink: { href, label }` renders a link out of the planner at the start
+  of its header, beside the brand (a docs site's "Back to documentation").
+- `inference` gives the planner's assistant a model and switches the assistant
+  on: the chat icon at the end of the header opens the chat dock once a model
+  is ready, and the AI models page (`#/ai/`) before, where a visitor downloads
+  a browser model or connects their own endpoint. Pass the same object as
+  `planner.config.json`'s `inference` (`{ mode, alternatives?,
+  credentialPersistence?, host?, byo? }`, see `docs/inference-host.md`) or
+  `{ chat }` with a model of your own. For a public site where visitors bring
+  their own endpoint: `inference={{ mode: 'byo', alternatives: ['browser'],
+  credentialPersistence: 'memory' }}`. Without `inference` the planner has no
+  assistant and no chat icon.
+
+```svelte
+<Planner
+  basePath="/planner"
+  backLink={{ href: '/', label: 'Back to documentation' }}
+  inference={{ mode: 'byo', credentialPersistence: 'memory' }}
+/>
 ```
 
 Hosts that already own an `AppShell` can mount `PlannerControls` inside it.

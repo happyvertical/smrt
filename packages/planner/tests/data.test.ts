@@ -50,6 +50,26 @@ describe('memory data source', () => {
   });
 });
 
+describe('memory data source row counts', () => {
+  it('points customer-linked rows only at customers it made', async () => {
+    const customer = getModel('commerce', 'Customer');
+    const order = getModel('commerce', 'Order');
+    if (!customer || !order) throw new Error('commerce models missing');
+    for (const rowsPerModel of [3, 8]) {
+      const source = createMemoryDataSource({ rowsPerModel });
+      const customers = new Set((await source.list(customer)).map((c) => c.id));
+      expect(customers.size).toBe(rowsPerModel);
+      const orders = await source.list(order);
+      expect(orders.length).toBeGreaterThan(rowsPerModel);
+      for (const row of orders) {
+        expect(customers.has(String(row.customerId))).toBe(true);
+      }
+      // Every customer gets several orders.
+      expect(new Set(orders.map((o) => o.customerId)).size).toBe(rowsPerModel);
+    }
+  });
+});
+
 describe('memory data source defaults', () => {
   it('overlays background defaults on read and create', async () => {
     const model = product;

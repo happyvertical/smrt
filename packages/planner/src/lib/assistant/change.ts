@@ -2,7 +2,10 @@ import type { Recipe } from '../recipes/types.ts';
 import type { AppSettings } from '../settings/app-settings.ts';
 import { CURRENCY_CODES } from '../settings/currencies.ts';
 import {
+  BORDER_RADII,
+  CONTRASTS,
   type ColorSchemeSetting,
+  DENSITIES,
   normalizeHex,
   THEME_PRESETS,
   type ThemeSetting,
@@ -18,13 +21,17 @@ export interface SettingsPatch {
 
 /**
  * A look as the model states it: a preset, or a brand colour (hex), and
- * optionally light or dark. Tokens only; there is no way to ask for CSS.
+ * optionally light or dark, corner radius, density and contrast. Tokens only;
+ * there is no way to ask for CSS. The names are `set_theme`'s.
  */
 export interface ThemePatch {
   preset?: string;
   /** `#rrggbb`. */
   primary?: string;
   colorScheme?: ColorSchemeSetting;
+  borderRadius?: ThemeSetting['borderRadius'];
+  density?: ThemeSetting['density'];
+  contrast?: ThemeSetting['contrast'];
 }
 
 /** Longest payment terms the assistant will write. */
@@ -125,6 +132,9 @@ export function buildResponseSchema(
         preset: { enum: [...THEME_PRESETS] },
         primary: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' },
         colorScheme: { enum: ['light', 'dark'] },
+        borderRadius: { enum: [...BORDER_RADII] },
+        density: { enum: [...DENSITIES] },
+        contrast: { enum: [...CONTRASTS] },
       },
       additionalProperties: false,
     };
@@ -167,7 +177,7 @@ export function parseSettings(value: unknown): SettingsPatch {
   return out;
 }
 
-/** Keep only a known preset, a hex colour and light or dark. */
+/** Keep only a known preset, a hex colour, light or dark and known radius, density and contrast values. */
 export function parseThemePatch(value: unknown): ThemePatch {
   const out: ThemePatch = {};
   if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
@@ -186,6 +196,15 @@ export function parseThemePatch(value: unknown): ThemePatch {
     object.colorScheme === 'system'
   ) {
     out.colorScheme = object.colorScheme;
+  }
+  if ((BORDER_RADII as readonly unknown[]).includes(object.borderRadius)) {
+    out.borderRadius = object.borderRadius as ThemePatch['borderRadius'];
+  }
+  if ((DENSITIES as readonly unknown[]).includes(object.density)) {
+    out.density = object.density as ThemePatch['density'];
+  }
+  if ((CONTRASTS as readonly unknown[]).includes(object.contrast)) {
+    out.contrast = object.contrast as ThemePatch['contrast'];
   }
   return out;
 }

@@ -32,6 +32,8 @@ const section = $derived(getSection(data.id));
 {/if}
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   main {
     display: grid;
     gap: var(--smrt-spacing-6);
@@ -58,4 +60,5 @@ const section = $derived(getSection(data.id));
   .meta {
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

@@ -78,6 +78,8 @@ const exposed = $derived(models.filter((m) => m.exposed));
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .panel {
     display: grid;
     gap: var(--smrt-spacing-4);
@@ -97,7 +99,7 @@ const exposed = $derived(models.filter((m) => m.exposed));
     display: grid;
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
   }
 
@@ -108,7 +110,7 @@ const exposed = $derived(models.filter((m) => m.exposed));
   }
 
   h4 {
-    font-size: 0.9rem;
+    font: var(--smrt-typography-title-small-font); letter-spacing: var(--smrt-typography-title-small-tracking);
     color: var(--smrt-color-on-surface-variant);
   }
 
@@ -142,4 +144,5 @@ const exposed = $derived(models.filter((m) => m.exposed));
     color: var(--smrt-color-on-tertiary-container);
     font-size: 0.75rem;
   }
+}
 </style>

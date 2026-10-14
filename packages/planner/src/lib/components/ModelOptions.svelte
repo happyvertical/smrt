@@ -167,6 +167,8 @@ function setOrder(name: string, raw: string) {
 </form>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .options {
     display: grid;
     gap: var(--smrt-spacing-3);
@@ -190,7 +192,7 @@ function setOrder(name: string, raw: string) {
     gap: var(--smrt-spacing-2);
     margin: 0;
     padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
   }
 
@@ -232,8 +234,17 @@ function setOrder(name: string, raw: string) {
   }
 
   button.secondary {
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-control-border);
     background: transparent;
     color: var(--smrt-color-on-surface);
   }
+
+  /* Forced colours: a disabled default reads as GrayText, not by opacity. */
+  @media (forced-colors: active) {
+    fieldset.default:disabled {
+      color: GrayText;
+      opacity: 1;
+    }
+  }
+}
 </style>

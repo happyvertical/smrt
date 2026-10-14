@@ -16,15 +16,17 @@ import { previewMenu } from '../library/menu.ts';
 import { libraryState } from '../library/state.svelte.ts';
 import { appHref } from '../planner/app.svelte.ts';
 import { settingsOfCookbook } from '../settings/app-settings.ts';
-import AiSetup from './AiSetup.svelte';
 import VoiceTyping from './VoiceTyping.svelte';
 
 interface BrowserAssistantProps {
   /** The registry the shell gives its `dock` snippet. */
   registry: DataSurfaceRegistry;
+  /** The AI models page; a mounted `Planner` serves it at `#/ai/`. */
+  settingsHref?: string;
 }
 
-let { registry }: BrowserAssistantProps = $props();
+let { registry, settingsHref = appHref('/ai/') }: BrowserAssistantProps =
+  $props();
 
 // The model and voice live in the shared AI state (the sidebar icons and the
 // AI models page read the same), so closing the dock keeps them loaded.
@@ -145,7 +147,7 @@ $effect(() => {
         <span class="model-name">{thinkName}</span>
         <a
           class="model-link"
-          href={appHref('/ai/')}
+          href={settingsHref}
           aria-label="AI settings: change model or voice"
           title="AI settings"
         >
@@ -190,23 +192,19 @@ $effect(() => {
       />
     </div>
   {:else}
-    <div class="panel">
+    <!-- The header control only opens the dock once the assistant is ready;
+         this covers a dock left open when the model goes away. -->
+    <div class="panel" role="status">
       <h2>Assistant</h2>
-      <p>
-        Describe your business and an assistant adds the matching recipes.
-        {aiState.inference.mode === 'manual'
-          ? 'Inference is off. The Planner page still works without a model.'
-          : aiState.inference.mode === 'browser'
-          ? 'It runs on your own device, so nothing you type leaves this page.'
-          : aiState.privacyNote}
-      </p>
-      <AiSetup show={['think']} />
-      <a href={appHref('/ai/')}>All AI settings</a>
+      <p>The assistant is not set up.</p>
+      <a href={settingsHref}>Set up the assistant</a>
     </div>
   {/if}
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .assistant {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -266,12 +264,12 @@ $effect(() => {
   }
 
   .model-link:hover {
-    background: var(--smrt-color-surface-container);
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
   }
 
   .model-link:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 1px;
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
 
   .offer {
@@ -315,4 +313,5 @@ $effect(() => {
   p {
     color: var(--smrt-color-on-surface-variant);
   }
+}
 </style>

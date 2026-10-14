@@ -105,6 +105,8 @@ const requiredHref = (id: string) => {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .recipe,
   header,
   .adds,
@@ -148,7 +150,7 @@ const requiredHref = (id: string) => {
   }
 
   button.secondary {
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-control-border);
     background: transparent;
     color: var(--smrt-color-on-surface);
   }
@@ -157,4 +159,14 @@ const requiredHref = (id: string) => {
     cursor: not-allowed;
     opacity: 0.6;
   }
+
+  /* Forced colours: a disabled button reads as GrayText, not by opacity. */
+  @media (forced-colors: active) {
+    button:disabled {
+      border-color: GrayText;
+      color: GrayText;
+      opacity: 1;
+    }
+  }
+}
 </style>

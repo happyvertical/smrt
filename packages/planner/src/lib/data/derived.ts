@@ -1,13 +1,23 @@
 /**
- * Amounts the commerce models derive rather than take as input, mirrored from
- * `ContractLineItem` / `InvoiceLineItem` / `Invoice` in smrt-commerce:
+ * Amounts a document's lines derive rather than take as input, in integer
+ * minor units, mirrored from smrt-commerce's `ContractLineItem.calculateAmount`
+ * (a line's `amount` is tax-inclusive) and read the way smrt-svelte 0.55.24's
+ * `line-items` widget reads them (lines that add up to the recorded total
+ * agree with the record):
  *
- *   line subtotal = round(quantity * unitPrice) - discount   (minor units)
- *   line tax      = round(line subtotal * taxRate)           (taxRate is a fraction)
- *   line amount   = line subtotal + line tax
+ *   line price    = round(quantity * unitPrice)                (before discount and tax)
+ *   line tax      = round((line price - discount) * taxRate)   (taxRate is a fraction)
+ *   line amount   = line price - discount + line tax           (tax-inclusive)
  *
- * and a parent with line items takes `subtotal`, `taxAmount` and `totalAmount`
- * from the sum of its lines, ignoring what a form sent.
+ *   subtotal      = sum of line prices
+ *   discount      = sum of line discounts (no document field: the totals block)
+ *   taxAmount     = sum of line taxes
+ *   totalAmount   = subtotal - discount + taxAmount = sum of line amounts
+ *
+ * A parent with line items takes `subtotal`, `taxAmount` and `totalAmount`
+ * from its lines, ignoring what a form sent. INTERIM: smrt#3931 (the money
+ * model) will add an explicit tax-exclusive mode; until it ships the planner
+ * follows the released, tax-inclusive reading (see AGENTS.md).
  */
 import type { CatalogModel } from '../catalog/types.ts';
 
@@ -27,16 +37,19 @@ export function isLineModel(model: CatalogModel): boolean {
 }
 
 export interface LineAmounts {
-  subtotal: number;
+  /** Quantity times unit price, before discount and tax. */
+  price: number;
+  discount: number;
   tax: number;
+  /** What the line comes to: price - discount + tax (tax-inclusive). */
   amount: number;
 }
 
 export function lineAmounts(line: Row): LineAmounts {
-  const subtotal =
-    Math.round(num(line.quantity) * num(line.unitPrice)) - num(line.discount);
-  const tax = Math.round(subtotal * num(line.taxRate));
-  return { subtotal, tax, amount: subtotal + tax };
+  const price = Math.round(num(line.quantity) * num(line.unitPrice));
+  const discount = num(line.discount);
+  const tax = Math.round((price - discount) * num(line.taxRate));
+  return { price, discount, tax, amount: price - discount + tax };
 }
 
 /** The line with its `amount` brought in line with its other fields. */
@@ -46,19 +59,28 @@ export function settleLine<T extends Row>(line: T): T & { amount: number } {
 
 export interface ParentTotals {
   subtotal: number;
+  /** The lines' discounts; documents carry no field for it. */
+  discount: number;
   taxAmount: number;
   totalAmount: number;
 }
 
 export function totalsOf(lines: readonly Row[]): ParentTotals {
   let subtotal = 0;
+  let discount = 0;
   let taxAmount = 0;
   for (const line of lines) {
     const parts = lineAmounts(line);
-    subtotal += parts.subtotal;
+    subtotal += parts.price;
+    discount += parts.discount;
     taxAmount += parts.tax;
   }
-  return { subtotal, taxAmount, totalAmount: subtotal + taxAmount };
+  return {
+    subtotal,
+    discount,
+    taxAmount,
+    totalAmount: subtotal - discount + taxAmount,
+  };
 }
 
 export const TOTAL_FIELDS = ['subtotal', 'taxAmount', 'totalAmount'] as const;

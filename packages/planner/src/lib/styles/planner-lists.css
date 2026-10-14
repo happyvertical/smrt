@@ -7,13 +7,13 @@
 }
 
 .planner-list th {
-  background: var(--smrt-color-surface-container-low);
+  background: var(--smrt-surface-sunken);
   color: var(--smrt-color-on-surface-variant);
-  font-weight: 600;
+  font-weight: var(--smrt-typography-weight-semibold);
 }
 
 .planner-list tbody tr:hover {
-  background: var(--smrt-color-surface-container-low);
+  background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
 }
 
 .planner-list .sort-button {
@@ -32,8 +32,8 @@
 }
 
 .planner-list .sort-button:focus-visible {
-  outline: 2px solid var(--smrt-color-primary);
-  outline-offset: 2px;
+  outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+  outline-offset: var(--smrt-focus-ring-offset);
 }
 
 .planner-list .sort-icon {

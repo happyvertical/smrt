@@ -5,10 +5,15 @@
 // a customised page is saved, exported and imported with the rest of the app.
 // The shell's pencil edits it like the layout; widget data comes from the
 // in-browser sample source. Mount it under `{#key}` on the section id.
+//
+// The widgets are page sections, not cards in a card: the grid's `plain`
+// presentation drops the tile frame (edit mode brings it back with the
+// controls) and each title is drawn as a section heading.
 import {
   type OverviewDefinition,
   OverviewGrid,
   type OverviewModelChoice,
+  type OverviewWidget,
 } from '@happyvertical/smrt-svelte/overview';
 import { useShellLayout } from '@happyvertical/smrt-svelte/workspace';
 import { onDestroy, untrack } from 'svelte';
@@ -26,9 +31,20 @@ interface SectionOverviewProps {
   models: readonly OverviewModelChoice[];
   /** Accessible name of the grid. */
   label: string;
+  /** Page sections (`plain`, the default) or framed tiles (`card`). */
+  presentation?: 'card' | 'plain';
+  /** An in-app path with the app query; the standalone page's `appHref`. */
+  href?: (path: string) => string;
 }
 
-let { definition, entries, models, label }: SectionOverviewProps = $props();
+let {
+  definition,
+  entries,
+  models,
+  label,
+  presentation = 'plain',
+  href = appHref,
+}: SectionOverviewProps = $props();
 
 const shell = useShellLayout();
 const source = useDataSource();
@@ -36,7 +52,7 @@ const source = useDataSource();
 const controller = createSectionOverview(
   untrack(() => definition),
   cookbookStore,
-  () => ({ source, sections: shell.sections, entries, href: appHref }),
+  () => ({ source, sections: shell.sections, entryIndex: entries, href }),
 );
 
 function reloadAll() {
@@ -62,4 +78,18 @@ $effect(() => source.onReset?.(() => reloadAll()));
 onDestroy(() => controller.destroy());
 </script>
 
-<OverviewGrid {controller} {models} {label} />
+{#snippet heading(_widget: OverviewWidget, title: string)}
+  <span class="section-heading">{title}</span>
+{/snippet}
+
+<OverviewGrid {controller} {models} {label} {presentation} {heading} />
+
+<style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
+  .section-heading {
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+    font-weight: var(--smrt-typography-title-medium-weight, 600);
+  }
+}
+</style>

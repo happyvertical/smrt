@@ -29,8 +29,15 @@ export interface HostReply {
   cookbook?: string;
   /** Settings to change; `taxRate` in percent. */
   settings?: { currency?: string; taxRate?: number; paymentTerms?: string };
-  /** Theme tokens: a preset or `#rrggbb`, and light or dark. */
-  theme?: { preset?: string; primary?: string; colorScheme?: string };
+  /** Theme tokens: a preset or `#rrggbb`, light or dark, corner radius, density and contrast. */
+  theme?: {
+    preset?: string;
+    primary?: string;
+    colorScheme?: string;
+    borderRadius?: string;
+    density?: string;
+    contrast?: string;
+  };
   /** Up to 8 planner commands, run in order by the planner. */
   commands?: { name: string; input: unknown }[];
 }
