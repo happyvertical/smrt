@@ -458,10 +458,33 @@ export class ManifestGenerator {
       const isCollection =
         objectDef.extends === 'SmrtCollection' ||
         this.extendsCollection(objectDef, objectsByName);
-      const itemIsAbstract =
-        isCollection &&
-        this.findItemClass(objectDef, manifest, objectsByName)?.decoratorConfig
-          ?.abstract === true;
+      let collectionItem: SmartObjectDefinition | undefined;
+      if (isCollection) {
+        const seenParents = new Set<string>();
+        let candidate: SmartObjectDefinition | undefined = objectDef;
+        while (candidate) {
+          if (candidate.extendsTypeArg || candidate.fields._itemClass) {
+            collectionItem = this.findItemClass(
+              candidate,
+              manifest,
+              objectsByName,
+            );
+            break;
+          }
+          const parentName = candidate.extendsQualified || candidate.extends;
+          if (!parentName || seenParents.has(parentName)) break;
+          seenParents.add(parentName);
+          candidate = lookupInManifest(manifest, parentName) as
+            | SmartObjectDefinition
+            | undefined;
+        }
+        collectionItem ??= this.findItemClass(
+          objectDef,
+          manifest,
+          objectsByName,
+        );
+      }
+      const itemIsAbstract = collectionItem?.decoratorConfig?.abstract === true;
       if (config?.abstract !== true && !itemIsAbstract) continue;
       const methods = Object.entries(objectDef.methods || {})
         .filter(([, method]) => method.isPublic)

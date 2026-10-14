@@ -128,6 +128,12 @@ describe('ManifestGenerator coverage', () => {
             cli: { include: ['browse'] },
           },
         }),
+        def('SpecialWidgetCollection', {
+          collection: 'abstractwidgets',
+          extends: 'AbstractWidgetCollection',
+          methods: { browse: method('browse') },
+          decoratorConfig: { api: { include: ['browse'] } },
+        }),
         def('ListOnlyWidget', {
           decoratorConfig: {
             abstract: true,
@@ -157,6 +163,9 @@ describe('ManifestGenerator coverage', () => {
     expect(
       new ManifestGenerator().generateRestEndpoints(manifest),
     ).not.toContain('/abstractwidgets/browse');
+    expect(
+      manifest.objects.specialwidgetcollection.decoratorConfig.api,
+    ).toMatchObject({ exclude: ['create', 'update', 'delete', 'browse'] });
     expect(manifest.objects.listonlywidget.decoratorConfig.api).toMatchObject({
       include: ['list', 'create'],
       exclude: ['create', 'update', 'delete'],
