@@ -45,9 +45,12 @@ refund journals reverse those sides.
 
 `previewInvoiceMoney({ db, tenantId, invoiceId, draft })` applies a proposed
 draft overlay through the owning resolver/calculator without writes and rejects
-frozen documents. `getInvoiceMoneyFacts({ db, tenantId, invoiceId })` reads the
-authoritative stored header, lines, `moneySnapshotId`, and `DocumentTax` rows
-without recalculation.
+frozen documents. A supplied line id must name a stored line exactly once; omit
+the id for a new preview-only line. `getInvoiceMoneyFacts({ db, tenantId,
+invoiceId })` reads the authoritative stored header, lines, `moneySnapshotId`,
+and `DocumentTax` rows without recalculation. Both facades require an active
+`v2` tenant and fail closed while migration is in progress, so legacy or
+partially migrated amounts are never presented as money-v2 facts.
 
 `InvoiceLineItem.amount` is tax-exclusive net money in `v2`.
 `taxAmount` is separate, while `legacyAmount` is reserved for rollback during
