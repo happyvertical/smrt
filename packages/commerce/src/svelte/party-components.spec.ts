@@ -317,6 +317,25 @@ describe('customer and vendor SSR surfaces', () => {
     }
   });
 
+  it('posts a contact-count presence marker only from the editable contact block (#3501)', () => {
+    const empty = render(VendorForm, { props: { values: {} } }).body;
+    expect(empty).toMatch(
+      /name="contactCount"[^>]*value="0"|value="0"[^>]*name="contactCount"/,
+    );
+    const two = render(CustomerForm, {
+      props: {
+        values: { contacts: [{ name: 'A' }, { name: 'B' }] },
+        fieldNames: { contactCount: 'peopleCount' },
+      },
+    }).body;
+    expect(two).toMatch(
+      /name="peopleCount"[^>]*value="2"|value="2"[^>]*name="peopleCount"/,
+    );
+    expect(render(VendorDetail, { props: { vendor } }).body).not.toContain(
+      'contactCount',
+    );
+  });
+
   it('does not invent an identity category when profile identity is missing or unknown', () => {
     const missingCustomerIdentity = render(CustomerDetail, {
       props: {

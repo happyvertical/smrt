@@ -22,6 +22,7 @@ import {
   applyPartyContactIntent,
   normalizePartyContacts,
   PartyContactPartyNotFoundError,
+  PartyContactPayloadError,
   PartyContactValidationError,
   readPartyContactRows,
   savePartyContacts,
@@ -33,6 +34,7 @@ function contactForm(
 ): FormData {
   const form = new FormData();
   form.set('intent', 'save');
+  form.set('contactCount', String(rows.length));
   for (const [id, name, label, email, phone, address] of rows) {
     form.append('contactId', id);
     form.append('contactName', name);
@@ -74,6 +76,7 @@ describe('party contact payload', () => {
     const renamed = new URLSearchParams([
       ['personId', 'p-1'],
       ['personName', 'Sam'],
+      ['personCount', '1'],
       ['contactLabel', ''],
       ['contactEmail', ''],
       ['contactPhone', ''],
@@ -83,6 +86,7 @@ describe('party contact payload', () => {
       readPartyContactRows(renamed, {
         contactId: 'personId',
         contactName: 'personName',
+        contactCount: 'personCount',
       }),
     ).toEqual([
       { id: 'p-1', name: 'Sam', label: '', email: '', phone: '', address: '' },
@@ -92,7 +96,32 @@ describe('party contact payload', () => {
   it('refuses a misaligned payload instead of pairing values across rows', () => {
     const form = contactForm([['', 'Avery', '', '', '', '']]);
     form.append('contactName', 'Extra');
+    expect(() => readPartyContactRows(form)).toThrow(PartyContactPayloadError);
     expect(() => readPartyContactRows(form)).toThrow(/misaligned/);
+
+    const miscounted = contactForm([['', 'Avery', '', '', '', '']]);
+    miscounted.set('contactCount', '2');
+    expect(() => readPartyContactRows(miscounted)).toThrow(/misaligned/);
+  });
+
+  it('reads an empty contact list only when the block posted its marker', () => {
+    // The block rendered with no rows: a genuine "no contacts".
+    expect(readPartyContactRows(contactForm([]))).toEqual([]);
+
+    // No marker (block not rendered, or fields posted under other names):
+    // refuse rather than read zero rows.
+    const unmarked = new FormData();
+    unmarked.set('intent', 'save');
+    unmarked.append('personName', 'Sam');
+    const error = (() => {
+      try {
+        readPartyContactRows(unmarked);
+      } catch (caught) {
+        return caught;
+      }
+    })();
+    expect(error).toBeInstanceOf(PartyContactPayloadError);
+    expect((error as PartyContactPayloadError).reason).toBe('missing');
   });
 
   it('applies add and remove intents without signalling a save', () => {
@@ -186,13 +215,11 @@ describe('savePartyContacts', () => {
       const first = await savePartyContacts(
         vendors,
         vendor.id as string,
-        readPartyContactRows(
-          contactForm([
-            ['', 'Avery Chen', 'Accounts', 'avery@example.test', '', ''],
-            ['', 'Morgan Lee', '', '', '+1 403 555 0117', ''],
-            ['', '', '', '', '', ''],
-          ]),
-        ),
+        contactForm([
+          ['', 'Avery Chen', 'Accounts', 'avery@example.test', '', ''],
+          ['', 'Morgan Lee', '', '', '+1 403 555 0117', ''],
+          ['', '', '', '', '', ''],
+        ]),
       );
       expect(first.map((c) => c.name)).toEqual(['Avery Chen', 'Morgan Lee']);
       const [avery, morgan] = first;
@@ -212,6 +239,36 @@ describe('savePartyContacts', () => {
 
       const reloaded = await vendors.get({ id: vendor.id as string });
       expect(reloaded?.contacts).toEqual(second);
+    });
+  });
+
+  it('keeps every contact when the posted form lacks the contact marker', async () => {
+    const vendors = await VendorCollection.create({ db });
+    await withTenant({ tenantId: 'tenant-1' }, async () => {
+      const vendor = await vendors.create({ profileId: 'profile-1' });
+      await vendor.save();
+      await savePartyContacts(vendors, vendor.id as string, [
+        { name: 'Avery' },
+        { name: 'Morgan' },
+      ]);
+
+      // Fields posted under custom names, read with the defaults.
+      const renamed = new FormData();
+      renamed.set('personCount', '0');
+      await expect(
+        savePartyContacts(vendors, vendor.id as string, renamed),
+      ).rejects.toBeInstanceOf(PartyContactPayloadError);
+      // The same form with matching names is a real "remove all".
+      const reloaded = await vendors.get({ id: vendor.id as string });
+      expect(reloaded?.contacts.map((c) => c.name)).toEqual([
+        'Avery',
+        'Morgan',
+      ]);
+      await savePartyContacts(vendors, vendor.id as string, renamed, {
+        fieldNames: { contactCount: 'personCount' },
+      });
+      const cleared = await vendors.get({ id: vendor.id as string });
+      expect(cleared?.contacts).toEqual([]);
     });
   });
 

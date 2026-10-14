@@ -566,6 +566,8 @@ import {
 } from '@happyvertical/smrt-commerce';
 
 const form = await request.formData();
+// Throws PartyContactPayloadError when the form's contactCount marker is absent
+// (block not rendered, or fieldNames differ), so a save never deletes by accident.
 const rows = readPartyContactRows(form); // pass the form's fieldNames if overridden
 const { contacts, handled } = applyPartyContactIntent(rows, String(form.get('intent')));
 if (handled) return { values: { ...values, contacts } }; // add/remove round trip, no save
@@ -578,7 +580,8 @@ try {
 }
 ```
 
-The rows replace the party's contacts: posted ids are kept, new rows get an
+`savePartyContacts` also accepts the `FormData` itself (with `fieldNames`) and
+reads it the same way. The rows replace the party's contacts: posted ids are kept, new rows get an
 id, unposted rows are removed, blank rows are dropped. See
 [customer/vendor UI](agents/customer-vendor-ui.md#contact-rows-3501).
 

@@ -132,7 +132,11 @@ export type PartyFormEnhance = (
   form: HTMLFormElement,
 ) => { destroy?: () => void } | void;
 
-/** Adaptable common field names. Repeated contact names are submitted in DOM order. */
+/**
+ * Adaptable common field names. Repeated contact names are submitted in DOM
+ * order; `contactCount` is a hidden presence marker carrying the number of
+ * rendered contact rows, posted whenever the editable contact block renders.
+ */
 export interface PartyFieldNames {
   profileId: string;
   identityKind: string;
@@ -145,6 +149,7 @@ export interface PartyFieldNames {
   contactEmail: string;
   contactPhone: string;
   contactAddress: string;
+  contactCount: string;
 }
 
 /** Customer-specific field names. */
@@ -237,6 +242,7 @@ export const DEFAULT_PARTY_FIELD_NAMES: PartyFieldNames = {
   contactEmail: 'contactEmail',
   contactPhone: 'contactPhone',
   contactAddress: 'contactAddress',
+  contactCount: 'contactCount',
 };
 
 export const DEFAULT_CUSTOMER_FIELD_NAMES: CustomerFieldNames = {

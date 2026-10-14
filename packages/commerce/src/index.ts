@@ -155,6 +155,7 @@ export {
   type PartyContactInput,
   type PartyContactIntents,
   PartyContactPartyNotFoundError,
+  PartyContactPayloadError,
   type PartyContactRowErrors,
   PartyContactValidationError,
   readPartyContactRows,

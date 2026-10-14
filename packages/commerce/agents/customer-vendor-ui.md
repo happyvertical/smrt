@@ -124,16 +124,16 @@ server half of the form's contact payload:
 
 | Export | Contract |
 | --- | --- |
-| `readPartyContactRows(form, fieldNames?)` | Zips the repeated `contactId`, `contactName`, `contactLabel`, `contactEmail`, `contactPhone`, `contactAddress` values (or the form's `fieldNames` overrides) in DOM order into raw `PartyContactInput` rows. Unequal value counts throw a `TypeError`. |
+| `readPartyContactRows(form, fieldNames?)` | Zips the repeated `contactId`, `contactName`, `contactLabel`, `contactEmail`, `contactPhone`, `contactAddress` values (or the form's `fieldNames` overrides) in DOM order into raw `PartyContactInput` rows. The editable contact block always posts a hidden `contactCount` marker with its row count; a missing marker (`reason: 'missing'`) or any disagreeing count (`'misaligned'`) throws `PartyContactPayloadError`, so zero rows mean an empty list only when the block rendered. |
 | `applyPartyContactIntent(rows, intent, intents?)` | `addContact` appends a blank row; `removeContact:<n>` (or a caller `parseRemoveIntent`) drops row `n`. `handled: true` means render the returned rows and do not save, including for a stale index. |
 | `validatePartyContactRows(rows)` | Trims, drops blank rows, and returns `errors` aligned with the submitted rows using codes `too_long` (limits in `PARTY_CONTACT_MAX_LENGTHS`, matching the inputs) and `invalid_email`. |
-| `savePartyContacts(collection, partyId, rows, { expectedTenantId? })` | Loads the party with `collection.get()` (so the active tenant context scopes it) and replaces its contacts: posted ids are kept, new rows get a random id, unposted rows are removed. A posted id the party does not have is `unknown_contact` on `id`. Invalid input throws `PartyContactValidationError` (`errors`, nothing written); a missing or other-tenant party throws `PartyContactPartyNotFoundError`. |
+| `savePartyContacts(collection, partyId, formOrRows, { fieldNames?, expectedTenantId? })` | Given the posted form, reads it with `readPartyContactRows` (marker enforced); an array is taken as rows already read that way. Loads the party with `collection.get()` (so the active tenant context scopes it) and replaces its contacts: posted ids are kept, new rows get a random id, unposted rows are removed. A posted id the party does not have is `unknown_contact` on `id`. Invalid input throws `PartyContactValidationError` (`errors`, nothing written); a missing or other-tenant party throws `PartyContactPartyNotFoundError`. |
 
 Error codes are not messages: map `PartyContactValidationError.errors` to
 localized strings for `PartyFormErrors.contacts`, and return the submitted
 rows as retained `values.contacts`. A form with custom contact `fieldNames`
-must pass the same names to `readPartyContactRows`, or the read sees no rows
-and the save removes every contact. Saves are a read-modify-write of the party
+must pass the same names when reading; with mismatched names the marker is
+not found and the read fails closed instead of removing every contact. Saves are a read-modify-write of the party
 row (last writer wins). Map saved contacts to `CustomerDisplayData.contacts` /
 `VendorDisplayData.contacts` for the detail screens.
 

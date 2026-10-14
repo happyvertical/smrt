@@ -31,6 +31,8 @@ export interface PartyContactFieldNames {
   contactEmail: string;
   contactPhone: string;
   contactAddress: string;
+  /** Hidden presence marker: the number of contact rows the form rendered. */
+  contactCount: string;
 }
 
 /** Default contact field names, matching `DEFAULT_PARTY_FIELD_NAMES` in `./svelte`. */
@@ -41,6 +43,7 @@ export const DEFAULT_PARTY_CONTACT_FIELD_NAMES: PartyContactFieldNames = {
   contactEmail: 'contactEmail',
   contactPhone: 'contactPhone',
   contactAddress: 'contactAddress',
+  contactCount: 'contactCount',
 };
 
 /** Maximum lengths, matching the form controls' `maxlength`. */
@@ -86,6 +89,24 @@ export class PartyContactValidationError extends Error {
     super('One or more contact rows are invalid');
     this.name = 'PartyContactValidationError';
     this.errors = errors;
+  }
+}
+
+/**
+ * Thrown by {@link readPartyContactRows} (and so {@link savePartyContacts}
+ * given a form) when the posted contact payload cannot be trusted:
+ * `missing` — no `contactCount` marker, so the editable contact block did
+ * not render or was posted under other field names (treating that as "no
+ * contacts" would delete them all); `misaligned` — the repeated fields or
+ * the marker disagree on the row count. Nothing is written.
+ */
+export class PartyContactPayloadError extends Error {
+  readonly reason: 'missing' | 'misaligned';
+
+  constructor(reason: 'missing' | 'misaligned', message: string) {
+    super(message);
+    this.name = 'PartyContactPayloadError';
+    this.reason = reason;
   }
 }
 
@@ -138,10 +159,12 @@ export interface PartyContactFormSource {
 }
 
 /**
- * Read the contact rows a party form posted, in DOM order. Every row
- * renders all six fields, so each repeated name must carry the same number
- * of values; a mismatch means the payload was not produced by the form and
- * throws a `TypeError` rather than pairing values from different rows.
+ * Read the contact rows a party form posted, in DOM order. The editable
+ * contact block always posts a `contactCount` marker with its row count, and
+ * every row renders all six fields. A missing marker (the block did not
+ * render, or `fieldNames` differ from the form's) or any disagreeing count
+ * throws {@link PartyContactPayloadError}, so zero rows is only ever read
+ * when the form really posted an empty contact list.
  */
 export function readPartyContactRows(
   form: PartyContactFormSource,
@@ -157,10 +180,24 @@ export function readPartyContactRows(
     phone: column(names.contactPhone),
     address: column(names.contactAddress),
   };
+  const markers = column(names.contactCount);
+  if (markers.length !== 1)
+    throw new PartyContactPayloadError(
+      markers.length === 0 ? 'missing' : 'misaligned',
+      markers.length === 0
+        ? `Contact payload has no ${names.contactCount} marker; the contact fields were not posted under these names`
+        : `Contact payload has ${markers.length} ${names.contactCount} markers`,
+    );
   const count = columns.id.length;
+  if (markers[0] !== String(count))
+    throw new PartyContactPayloadError(
+      'misaligned',
+      `Contact payload is misaligned: ${names.contactCount} is ${markers[0]} but ${count} contact ids were posted`,
+    );
   for (const [key, values] of Object.entries(columns)) {
     if (values.length !== count)
-      throw new TypeError(
+      throw new PartyContactPayloadError(
+        'misaligned',
         `Contact payload is misaligned: ${count} contact ids but ${values.length} ${key} values`,
       );
   }
@@ -249,6 +286,8 @@ export function validatePartyContactRows(rows: readonly PartyContactInput[]): {
 
 /** Options for {@link savePartyContacts}. */
 export interface SavePartyContactsOptions {
+  /** Field names used to read a posted form; must match the form's `fieldNames`. */
+  fieldNames?: Partial<PartyContactFieldNames>;
   /**
    * When set, the party must belong to this tenant. Use it to bind a form's
    * posted tenant to the loaded row in addition to the active tenant
@@ -259,6 +298,12 @@ export interface SavePartyContactsOptions {
 
 /**
  * Replace a customer's or vendor's contacts with the rows its form posted.
+ *
+ * Pass the posted `FormData` (with `options.fieldNames` when the form
+ * overrides them): it is read with {@link readPartyContactRows}, so a payload
+ * without the contact block's presence marker throws
+ * {@link PartyContactPayloadError} instead of removing every contact. An
+ * array is taken as rows the caller already read through that function.
  *
  * The party is loaded through `collection.get()`, so the active tenant
  * context scopes it: a party in another tenant is not found. Rows are
@@ -276,9 +321,17 @@ export interface SavePartyContactsOptions {
 export async function savePartyContacts(
   collection: CustomerCollection | VendorCollection,
   partyId: string,
-  rows: readonly PartyContactInput[],
+  posted: PartyContactFormSource | readonly PartyContactInput[],
   options: SavePartyContactsOptions = {},
 ): Promise<PartyContact[]> {
+  // Reading the form here (rather than trusting a caller's array) keeps the
+  // presence-marker check on the write path.
+  const rows = Array.isArray(posted)
+    ? (posted as readonly PartyContactInput[])
+    : readPartyContactRows(
+        posted as PartyContactFormSource,
+        options.fieldNames,
+      );
   const party: Customer | Vendor | null = await collection.get({
     id: partyId,
   });
