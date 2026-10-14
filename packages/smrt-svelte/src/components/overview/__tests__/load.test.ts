@@ -46,6 +46,47 @@ describe('loadOverview', () => {
     expect(JSON.parse(JSON.stringify(out))).toEqual(out);
   });
 
+  it('passes the record context through to a parent-filtered loader', async () => {
+    const registry = makeRegistry();
+    const load = vi.fn((options, ctx) => ({
+      parent: options.filter === 'parent' ? ctx.record : null,
+    }));
+    registry.register({
+      type: 'probe',
+      title: 'P',
+      options: [
+        { key: 'model', type: 'model', label: 'M' },
+        { key: 'filter', type: 'identifier', label: 'F' },
+        { key: 'field', type: 'identifier', label: 'Fi' },
+      ],
+      load,
+    });
+    const def = { ...definition, allowed: undefined, models: undefined };
+    const out = await loadOverview(
+      {
+        widgets: [
+          w('a', 'probe', 1, {
+            model: 'Order',
+            filter: 'parent',
+            field: 'customerId',
+          }),
+        ],
+      },
+      def,
+      registry,
+      { record: { model: 'Customer', id: 'c-1' } },
+    );
+    expect(out.widgets[0]).toMatchObject({
+      id: 'a',
+      status: 'ready',
+      data: { parent: { model: 'Customer', id: 'c-1' } },
+    });
+    expect(load.mock.calls[0][1].record).toEqual({
+      model: 'Customer',
+      id: 'c-1',
+    });
+  });
+
   it('isolates a failing, slow or non-serializable loader', async () => {
     const registry = createWidgetRegistry();
     const onError = vi.fn();

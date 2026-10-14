@@ -202,6 +202,13 @@ export interface WidgetComponentProps<Data = unknown> {
   presentation?: 'card' | 'plain';
 }
 
+/** The record an overview is rendered on (a record view, `RecordScreen`). */
+export interface WidgetRecordContext {
+  /** Qualified model id (`objectRef`) of the record. */
+  model: string;
+  id: string;
+}
+
 /**
  * Context a widget `load` runs with. The host builds it inside the page's
  * server load from the request principal: the user's permissions, the
@@ -214,6 +221,12 @@ export interface WidgetLoadContext {
   /** Aborts when the load times out or the request ends. */
   signal?: AbortSignal;
   locale?: string;
+  /**
+   * The record a record overview is rendered on. A `records` / `metric`
+   * loader honours `options.filter === 'parent'` by confining its query to
+   * rows whose `options.field` equals `record.id`.
+   */
+  record?: WidgetRecordContext;
   [capability: string]: unknown;
 }
 

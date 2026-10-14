@@ -97,7 +97,7 @@ describe('ManifestAdapter', () => {
       it.each([
         ['foreignKey', 'Organization'],
         ['crossPackageRef', "'@example/accounts:Organization'"],
-      ])('preserves validateSubtype for %s in manifest metadata', (name, target) => {
+      ])('preserves subtype validation and items role for %s', (name, target) => {
         const field: RawFieldDefinition = {
           name: 'organizationId',
           accessibility: 'public',
@@ -109,11 +109,14 @@ describe('ManifestAdapter', () => {
           decorators: [
             {
               name,
-              arguments: [target, '{ validateSubtype: true }'],
+              arguments: [target, "{ validateSubtype: true, role: 'items' }"],
             },
           ],
         };
-        expect(adapter.inferFieldType(field)._meta?.validateSubtype).toBe(true);
+        expect(adapter.inferFieldType(field)._meta).toMatchObject({
+          validateSubtype: true,
+          role: 'items',
+        });
       });
 
       it('should respect TypeScript optional marker (?) for @foreignKey fields', () => {

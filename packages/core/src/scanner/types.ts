@@ -48,6 +48,14 @@ export interface FieldUIHints {
    * `currency` is a currency-CODE picker, also on `text`).
    */
   widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
+  /**
+   * How the value is presented (#3718 record page): `money` (an INTEGER of
+   * minor units — the amount hint; `widget: 'currency'` is the currency-code
+   * picker), `date` (a business date on a `datetime`, shown without a time),
+   * `datetime`, `percent` (a rate on a `decimal`/`integer`). Validated
+   * against the field type at build time.
+   */
+  format?: 'money' | 'date' | 'datetime' | 'percent';
 }
 
 /**
@@ -81,6 +89,11 @@ export interface FieldMeta {
   ui?: FieldUIHints;
   /** Opt-in column/JSON-path indexing flag. */
   indexed?: boolean;
+  /**
+   * Relationship role on a `foreignKey` / `crossPackageRef` (#3718):
+   * `items` marks the declaring model as the line items of the target.
+   */
+  role?: 'items';
   /** Foreign-key delete action carried in metadata. */
   onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
   /** Foreign-key update action carried in metadata. */

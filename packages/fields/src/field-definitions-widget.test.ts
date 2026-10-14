@@ -12,3 +12,13 @@ describe('sanitizeFieldUIHints ui.widget (#3599)', () => {
     expect(sanitizeFieldUIHints({ widget })).toBeUndefined();
   });
 });
+
+describe('sanitizeFieldUIHints ui.format (#3718)', () => {
+  it('keeps a known format and drops junk', () => {
+    expect(sanitizeFieldUIHints({ format: 'money', basic: true })).toEqual({
+      format: 'money',
+      basic: true,
+    });
+    expect(sanitizeFieldUIHints({ format: 'cents' })).toBeUndefined();
+  });
+});

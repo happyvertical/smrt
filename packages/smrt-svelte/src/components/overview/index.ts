@@ -56,14 +56,27 @@ export {
 } from './widgets/core.js';
 export {
   type ChartWidgetData,
+  type LineItemsWidgetData,
   type MetricWidgetData,
+  type RecordListColumn,
+  type RecordListRow,
   type RecordListWidgetData,
+  type RecordStatusTone,
+  type RelatedWidgetData,
+  type RelatedWidgetTab,
   type ShortcutEntry,
   type ShortcutNavSection,
   type ShortcutsWidgetData,
   shortcutsFromNav,
 } from './widgets/data.js';
+export { default as LineItemsWidget } from './widgets/LineItemsWidget.svelte';
 export { default as MetricWidget } from './widgets/MetricWidget.svelte';
 export { default as NoteWidget } from './widgets/NoteWidget.svelte';
 export { default as RecordListWidget } from './widgets/RecordListWidget.svelte';
+export { default as RelatedWidget } from './widgets/RelatedWidget.svelte';
+export {
+  createLineItemsWidget,
+  createRelatedWidget,
+  registerRecordWidgets,
+} from './widgets/record-widgets.js';
 export { default as ShortcutsWidget } from './widgets/ShortcutsWidget.svelte';
