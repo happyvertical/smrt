@@ -1,7 +1,7 @@
 /**
  * `runOnce()` idempotency-seam tests (#3080).
  *
- * Uses real in-memory SQLite via `getTestDatabase()` — no DB mocking except
+ * Uses real in-memory SQLite/DuckDB via `getTestDatabase()` — no DB mocking except
  * where a scenario is architecturally unreachable through the transaction
  * semantics `@happyvertical/sql`'s single-connection adapters guarantee (see
  * `../run-once.ts` module doc): those two branches are exercised by seeding
@@ -22,7 +22,7 @@ import {
 } from '../run-once';
 import { getTestDatabase } from '../testing/database';
 
-describe('runOnce (#3080)', () => {
+describe.each(['sqlite', 'duckdb'] as const)('runOnce %s', (type) => {
   let db: DatabaseInterface;
 
   beforeEach(async () => {
@@ -30,7 +30,7 @@ describe('runOnce (#3080)', () => {
     // hand-DDL `_smrt_run_once_claims` system table, which getTestDatabase()
     // always creates. `classes: []` opts out of its "did you forget to
     // register a class" warning.
-    db = await getTestDatabase({ classes: [] });
+    db = await getTestDatabase({ type, classes: [] });
   });
 
   const baseParams = (overrides: Partial<Record<string, unknown>> = {}) => ({

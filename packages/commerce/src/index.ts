@@ -256,6 +256,27 @@ export {
   type TaxComponentInput,
   type TaxRoundingScope,
 } from './money.js';
+// Customer and vendor contact rows posted by the party forms (#3501)
+export {
+  applyPartyContactIntent,
+  DEFAULT_PARTY_CONTACT_FIELD_NAMES,
+  normalizePartyContacts,
+  PARTY_CONTACT_MAX_LENGTHS,
+  type PartyContactErrorCode,
+  type PartyContactField,
+  type PartyContactFieldNames,
+  type PartyContactFormSource,
+  type PartyContactInput,
+  type PartyContactIntents,
+  PartyContactPartyNotFoundError,
+  PartyContactPayloadError,
+  type PartyContactRowErrors,
+  PartyContactValidationError,
+  readPartyContactRows,
+  type SavePartyContactsOptions,
+  savePartyContacts,
+  validatePartyContactRows,
+} from './party-contacts.js';
 export {
   AgreementsRecipe,
   CustomersRecipe,
@@ -330,6 +351,7 @@ export {
   type InvoiceCreditCalculationBasis,
   type InvoiceKind,
   InvoiceStatus,
+  type PartyContact,
   PaymentInstrumentStatus,
   PaymentIntentStatus,
   type PaymentKind,

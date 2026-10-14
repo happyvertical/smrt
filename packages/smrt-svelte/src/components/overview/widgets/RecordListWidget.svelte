@@ -3,14 +3,32 @@
  * Record list widget (#3727): the rows a loader chose, each optionally a
  * link. The loader owns which field is the title and which records the viewer
  * may see; the widget only draws what it is given.
+ *
+ * With columns (the `columns` option, else the data's `columns`) the rows
+ * render as a compact table of their `cells` (`RecordTable`): identifier,
+ * status badge, date and amount by role, with a totals footer (on by
+ * default when a money or quantity column exists; the `summaries` option
+ * overrides). Without columns, the title list.
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../../i18n/strings.overview.js';
 import { safeHref } from '../markdown.js';
 import type { WidgetComponentProps } from '../types.js';
 import { isRecord, type RecordListWidgetData } from './data.js';
+import RecordTable from './RecordTable.svelte';
+import {
+  isSummedColumn,
+  parseColumnsOption,
+  readRecordRows,
+  resolveRecordColumns,
+} from './record-table.js';
 
-let { data, locale }: WidgetComponentProps<RecordListWidgetData> = $props();
+let {
+  data,
+  locale,
+  options,
+  title,
+}: WidgetComponentProps<RecordListWidgetData> = $props();
 
 const { t } = useI18n();
 const MAX_ROWS = 50;
@@ -46,9 +64,54 @@ const total = $derived(
 const viewAll = $derived(
   isRecord(data) && typeof data.href === 'string' ? safeHref(data.href) : null,
 );
+
+const columns = $derived(
+  resolveRecordColumns(
+    parseColumnsOption(options?.columns),
+    isRecord(data) ? data.columns : undefined,
+  ),
+);
+const tableRows = $derived(readRecordRows(data));
+const showSummaries = $derived(
+  typeof options?.summaries === 'boolean'
+    ? options.summaries
+    : columns.some((c) => isSummedColumn(c)),
+);
+const dataTotal = $derived(
+  isRecord(data) &&
+    typeof data.total === 'number' &&
+    Number.isFinite(data.total)
+    ? data.total
+    : null,
+);
+const summaryValues = $derived.by(() => {
+  if (!isRecord(data) || !isRecord(data.summaries)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(data.summaries)) {
+    if (typeof value === 'number' && Number.isFinite(value)) out[key] = value;
+  }
+  return out;
+});
 </script>
 
-{#if rows.length === 0}
+{#if columns.length > 0 && tableRows.length > 0}
+  <RecordTable
+    rows={tableRows}
+    {columns}
+    {locale}
+    label={title}
+    currency={isRecord(data) && typeof data.currency === 'string' ? data.currency : undefined}
+    timeZone={isRecord(data) && typeof data.timeZone === 'string' ? data.timeZone : undefined}
+    summaries={showSummaries}
+    {summaryValues}
+    total={dataTotal}
+  />
+  {#if viewAll}
+    <p class="smrt-records__foot smrt-records__foot--end" data-smrt-component="RecordListWidget">
+      <a href={viewAll}>{t(M['ui.overview.records.view_all'])}</a>
+    </p>
+  {/if}
+{:else if rows.length === 0}
   <p class="smrt-records__empty" data-smrt-component="RecordListWidget">{t(M['ui.overview.records.empty'])}</p>
 {:else}
   <ul class="smrt-records" data-smrt-component="RecordListWidget">
@@ -67,7 +130,7 @@ const viewAll = $derived(
     {/each}
   </ul>
 {/if}
-{#if total !== null || viewAll}
+{#if columns.length === 0 && (total !== null || viewAll)}
   <p class="smrt-records__foot" data-smrt-component="RecordListWidget">
     {#if total !== null}
       <span>{t(M['ui.overview.records.total'], { count: new Intl.NumberFormat(locale).format(total) })}</span>
@@ -88,6 +151,7 @@ const viewAll = $derived(
   .smrt-records__sub, .smrt-records__meta { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
   .smrt-records__meta { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
   .smrt-records__foot { display: flex; justify-content: space-between; gap: var(--smrt-spacing-3); margin: var(--smrt-spacing-2) 0 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
+  .smrt-records__foot--end { justify-content: flex-end; }
   .smrt-records__foot a { color: var(--smrt-color-primary); }
   .smrt-records__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
 }

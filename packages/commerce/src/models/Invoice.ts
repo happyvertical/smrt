@@ -292,14 +292,14 @@ export class Invoice extends SmrtObject {
    * Writing a fractional major-unit value here is the bug; PostgreSQL rejects
    * it with `22P02` while SQLite's affinity silently stores it (#2361).
    */
-  @field({ description: 'The amount before tax.' })
+  @field({ description: 'The amount before tax.', ui: { format: 'money' } })
   subtotal: number = 0;
 
   /**
    * Tax amount, in integer minor units (#2361). With line items this is the
    * sum of their rate-based tax plus {@link providerTaxAmount}.
    */
-  @field({ description: 'The tax charged.' })
+  @field({ description: 'The tax charged.', ui: { format: 'money' } })
   taxAmount: number = 0;
 
   /**
@@ -309,18 +309,25 @@ export class Invoice extends SmrtObject {
    * It is added to the line items' tax, so `taxAmount` and `totalAmount` stay
    * authoritative from line items plus this one provider figure.
    */
+  @field({ ui: { format: 'money' } })
   providerTaxAmount: number = 0;
 
   /**
    * Total amount due (subtotal + tax), in integer minor units (#2361).
    */
-  @field({ description: 'What the customer owes in all, tax included.' })
+  @field({
+    description: 'What the customer owes in all, tax included.',
+    ui: { format: 'money' },
+  })
   totalAmount: number = 0;
 
   /**
    * Amount paid (sum of PaymentAllocations), in integer minor units (#2361).
    */
-  @field({ description: 'How much of the total has been paid so far.' })
+  @field({
+    description: 'How much of the total has been paid so far.',
+    ui: { format: 'money' },
+  })
   amountPaid: number = 0;
 
   /**

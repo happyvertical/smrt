@@ -116,6 +116,16 @@ export {
   registerDurableResource,
   wipeDurableStore,
 } from './durable-store.js';
+// Shared-device sweep (#3234): enumerate namespaces by name and age out a
+// namespace's queued items without mounting its queue or attaching a transport.
+export type {
+  PruneDurableNamespaceOptions,
+  PruneDurableNamespaceResult,
+} from './durable-store-sweep.js';
+export {
+  listDurableNamespaces,
+  pruneDurableNamespace,
+} from './durable-store-sweep.js';
 // The durable offline outbox capability (#1762) — the first concrete capability
 // over the seam above. A hand-rolled IndexedDB queue + Web Locks leader election
 // (NOT @tanstack/offline-transactions, which would leak an engine type into the

@@ -105,6 +105,18 @@ class STITestOrganizationExpenseCollection extends SmrtCollection<STITestOrganiz
   static readonly _itemClass = STITestOrganizationExpense;
 }
 
+@smrt()
+class STITestUnloadedSubtypeReference extends SmrtObject {
+  @crossPackageRef('@missing-3898/pkg:MissingOrganization', {
+    validateSubtype: true,
+  })
+  organizationId: string = '';
+}
+
+class STITestUnloadedSubtypeReferenceCollection extends SmrtCollection<STITestUnloadedSubtypeReference> {
+  static readonly _itemClass = STITestUnloadedSubtypeReference;
+}
+
 describe('Multi-Level STI Save Operations', () => {
   it('rejects an unregistered STI intermediate', () => {
     @smrt({ tableStrategy: 'sti' })
@@ -136,6 +148,19 @@ describe('Multi-Level STI Save Operations', () => {
   });
 
   describe('Save operations', () => {
+    it('fails closed when a typed cross-package target cannot load', async () => {
+      const references = await STITestUnloadedSubtypeReferenceCollection.create(
+        {
+          db,
+        },
+      );
+      await expect(
+        references.create({ organizationId: 'missing-target' }),
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_STI_REFERENCE_TARGET_UNAVAILABLE',
+      });
+    });
+
     it('should save STITestProfile (base class) successfully', async () => {
       const profile = await profiles.create({
         _meta_type: '@happyvertical/smrt-core:STITestProfile',

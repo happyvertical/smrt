@@ -133,6 +133,99 @@ describe('core widget components', () => {
     await expectNoA11yViolations(container);
   });
 
+  it('records render a table of cells with a totals footer and one View all', async () => {
+    const { container } = render(RecordListWidget, {
+      props: {
+        ...base,
+        title: 'Orders',
+        options: { columns: 'number,status,issuedAt,totalAmount' },
+        data: {
+          rows: [
+            {
+              id: 'o1',
+              title: 'GRA-3159',
+              href: '/orders/o1',
+              cells: {
+                number: 'GRA-3159',
+                status: 'paid',
+                issuedAt: '2025-02-07T12:00:00.000Z',
+                totalAmount: 489000,
+              },
+            },
+            {
+              id: 'o2',
+              title: 'GRA-3160',
+              cells: { number: 'GRA-3160', status: 'draft', totalAmount: 1050 },
+            },
+          ],
+          columns: [
+            { key: 'number', label: 'Number', role: 'identifier' },
+            { key: 'status', label: 'Status', role: 'status' },
+            { key: 'issuedAt', label: 'Issued', role: 'date' },
+            { key: 'totalAmount', label: 'Total', role: 'money' },
+          ],
+          href: '/orders?customer=c1',
+        },
+      },
+    });
+    expect(
+      screen.getByRole('columnheader', { name: 'Issued' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'GRA-3159' })).toHaveAttribute(
+      'href',
+      '/orders/o1',
+    );
+    expect(screen.getByText('Paid')).toBeInTheDocument();
+    expect(screen.getByText('Feb 7, 2025')).toBeInTheDocument();
+    const foot = container.querySelector('tfoot');
+    expect(foot).toHaveTextContent('2 in total');
+    expect(foot).toHaveTextContent('$4,900.50');
+    expect(screen.getAllByRole('link', { name: 'View all' })).toHaveLength(1);
+    await expectNoA11yViolations(container);
+  });
+
+  it('records leave a partial page unsummed unless the host sends totals', () => {
+    const data = {
+      rows: [{ id: 'o1', title: 'A', cells: { amount: 100 } }],
+      columns: [{ key: 'amount', label: 'Amount', role: 'money' }],
+      total: 6,
+    };
+    const first = render(RecordListWidget, {
+      props: { ...base, options: { columns: 'amount' }, data },
+    });
+    expect(first.container.querySelector('tfoot')).not.toHaveTextContent(
+      '$1.00',
+    );
+    first.unmount();
+    const second = render(RecordListWidget, {
+      props: {
+        ...base,
+        options: { columns: 'amount' },
+        data: { ...data, summaries: { amount: 60000 } },
+      },
+    });
+    expect(second.container.querySelector('tfoot')).toHaveTextContent(
+      '$600.00',
+    );
+    second.unmount();
+    const off = render(RecordListWidget, {
+      props: {
+        ...base,
+        options: { columns: 'amount', summaries: false },
+        data,
+      },
+    });
+    expect(off.container.querySelector('tfoot')).toBeNull();
+  });
+
+  it('records without columns keep the title list', () => {
+    const { container } = render(RecordListWidget, {
+      props: { ...base, data: { rows: [{ id: 'a', title: 'Plain' }] } },
+    });
+    expect(container.querySelector('table')).toBeNull();
+    expect(screen.getByText('Plain')).toBeInTheDocument();
+  });
+
   it('shortcuts show a plural-aware record count with tabular figures', () => {
     render(ShortcutsWidget, {
       props: {

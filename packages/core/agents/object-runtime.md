@@ -186,8 +186,8 @@ instances and never use this path to overwrite a loaded revision.
 - Polymorphic queries: collection loads `_meta_type`, creates correct subclass dynamically
 - Validation: fail-fast on save if `_meta_type` missing or mismatched
 - Multi-level STI collections read their own discriminator and every registered descendant, never sibling branches. Decorate every intermediate with `@smrt()`; registration rejects an undecorated intermediate beneath an STI root.
-- `@smrt({ abstract: true })` makes a registered STI type readable but prevents saving an instance with its own discriminator. A base collection can still create a concrete descendant by passing that descendant's `_meta_type`. Generated surfaces expose only `list` and `get` for abstract models.
-- Set `validateSubtype: true` on a foreign key or cross-package reference targeting an STI child when it must reject sibling rows. Save checks through the child's collection, and `loadRelated()` rejects a stored sibling row. The physical FK targets the shared root table, so the collection's discriminator and tenant read scope provide the subtype check.
+- `@smrt({ abstract: true })` makes a registered STI type readable but prevents saving an instance with its own discriminator. A base collection can still create a concrete descendant by passing that descendant's `_meta_type`. Generated surfaces expose only `list` and `get` for abstract models, including when custom actions were explicitly included.
+- Set `validateSubtype: true` on a foreign key or cross-package reference targeting an STI child when it must reject sibling rows. Save checks through the child's collection, and `loadRelated()` rejects a stored sibling row. The physical FK targets the shared root table, so the collection's discriminator and tenant read scope provide the subtype check. Saves fail when the subtype target cannot be loaded, even if ordinary cross-package validation is disabled.
 
 ## Child Accessors (R10)
 

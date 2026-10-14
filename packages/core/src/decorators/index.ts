@@ -225,6 +225,13 @@ export interface RelationshipFieldOptions extends FieldOptions {
   /** Relationship type */
   type?: 'foreignKey' | 'crossPackageRef' | 'oneToMany' | 'manyToMany';
   /**
+   * Relationship role (#3718 record page): `items` on a `@foreignKey` /
+   * `@crossPackageRef` marks the declaring model as the line items of the
+   * target, so record pages show its rows as a line-items table with a
+   * totals block. Emitted on the generated web relationship edge.
+   */
+  role?: 'items';
+  /**
    * What happens to this row when the referenced object is deleted (#2371).
    *
    * Same-package references emit this DB-level action and `SmrtObject.delete()`

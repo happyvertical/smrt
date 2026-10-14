@@ -276,6 +276,22 @@ export interface Address {
 }
 
 /**
+ * A person to reach at a customer or vendor, stored on the party row
+ * (`Customer.contacts` / `Vendor.contacts`, #3501). Every field is plain
+ * text; `id` is a stable random identifier assigned when the row is first
+ * saved. Write rows through `savePartyContacts()`.
+ */
+export interface PartyContact {
+  id: string;
+  name: string;
+  /** Role or relationship, for example "Accounts payable". */
+  label: string;
+  email: string;
+  phone: string;
+  address: string;
+}
+
+/**
  * Options for recording a payment with ledger integration
  */
 export interface RecordPaymentOptions {
@@ -386,6 +402,7 @@ export interface CustomerOptions extends SmrtObjectOptions {
   status?: CustomerStatus;
   customerType?: CustomerType | null;
   notes?: string;
+  contacts?: PartyContact[] | string | null;
 }
 
 /**
@@ -405,6 +422,7 @@ export interface VendorOptions extends SmrtObjectOptions {
   status?: VendorStatus;
   notes?: string;
   payoutAddresses?: Record<string, string> | string | null;
+  contacts?: PartyContact[] | string | null;
 }
 
 /** A component reference stored in a tax code's ordered component list. */

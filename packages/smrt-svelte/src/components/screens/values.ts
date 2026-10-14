@@ -189,7 +189,8 @@ export function parseDraft(
           field.kind === 'textarea' ||
           field.kind === 'email' ||
           field.kind === 'url' ||
-          field.kind === 'tel') &&
+          field.kind === 'tel' ||
+          field.kind === 'select') &&
         field.definition.nullable !== true
       ) {
         values[field.name] = '';
@@ -271,10 +272,13 @@ export interface FormatValueContext extends ScreenValueContext {
 
 /** A record value as display text for a list cell or a view row. */
 export function formatScreenValue(
-  field: Pick<ScreenField, 'kind'>,
+  field: Pick<ScreenField, 'kind'> & {
+    definition?: Pick<ScreenField['definition'], 'format' | 'ui'>;
+  },
   value: unknown,
   context: FormatValueContext = {},
 ): string {
+  const format = field.definition?.format ?? field.definition?.ui?.format;
   if (field.kind === 'boolean') {
     if (value === null || value === undefined) return '';
     return value === true || value === 'true'
@@ -291,6 +295,12 @@ export function formatScreenValue(
             }).format(value)
           : String(value);
       case 'decimal':
+        if (format === 'percent' && typeof value === 'number') {
+          return new Intl.NumberFormat(context.locale, {
+            style: 'percent',
+            maximumFractionDigits: 4,
+          }).format(value);
+        }
         return typeof value === 'number'
           ? new Intl.NumberFormat(context.locale, {
               maximumFractionDigits: 6,
@@ -313,14 +323,18 @@ export function formatScreenValue(
         const date =
           value instanceof Date ? value : new Date(value as string | number);
         if (Number.isNaN(date.getTime())) return String(value);
+        // A business date (`format: 'date'`) shows no time of day.
         return new Intl.DateTimeFormat(context.locale, {
           dateStyle: 'medium',
-          timeStyle: 'short',
+          ...(format === 'date' ? {} : { timeStyle: 'short' }),
           ...(context.timeZone ? { timeZone: context.timeZone } : {}),
         }).format(date);
       }
-      case 'json':
-        return typeof value === 'string' ? value : JSON.stringify(value);
+      case 'json': {
+        const parsed = parseJsonValue(value);
+        if (isEmptyJsonValue(parsed)) return '';
+        return typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
+      }
       default:
         return String(value);
     }
@@ -328,6 +342,74 @@ export function formatScreenValue(
     // An unsupported currency code or locale must not break a row render.
     return String(value);
   }
+}
+
+/** A JSON field's value: stored JSON text parsed, anything else as given. */
+function parseJsonValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (!text.startsWith('{') && !text.startsWith('[')) return value;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return value;
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isBlank(value: unknown): boolean {
+  return value === null || value === undefined || value === '';
+}
+
+/** `{}`, `[]`, or an object whose every value is blank: nothing to show. */
+function isEmptyJsonValue(value: unknown): boolean {
+  if (isBlank(value)) return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (isPlainObject(value)) return Object.values(value).every(isBlank);
+  return false;
+}
+
+/** One row of a JSON object shown as a key/value list. */
+export interface ScreenJsonEntry {
+  key: string;
+  value: string;
+}
+
+/**
+ * A JSON object field as key/value rows for a record view (an address reads
+ * `Line1: 12 Main St`, not `{"line1":...}`): its non-blank top-level entries,
+ * nested values as compact JSON. `null` for anything that is not a non-empty
+ * plain object (an array, a scalar, stored text that is not an object), which
+ * the view shows through {@link formatScreenValue} instead; an empty object
+ * formats as `''`, the view's empty placeholder.
+ */
+export function jsonScreenEntries(value: unknown): ScreenJsonEntry[] | null {
+  const parsed = parseJsonValue(value);
+  if (!isPlainObject(parsed)) return null;
+  const entries: ScreenJsonEntry[] = [];
+  for (const [key, entry] of Object.entries(parsed)) {
+    if (isBlank(entry)) continue;
+    entries.push({
+      key,
+      value:
+        entry !== null && typeof entry === 'object'
+          ? JSON.stringify(entry)
+          : String(entry),
+    });
+  }
+  return entries.length > 0 ? entries : null;
+}
+
+/**
+ * A record id short enough to read where no label names the record: the
+ * first eight characters of a long id (a UUID's first group) and an
+ * ellipsis; a short id as is. Views keep the full id in a tooltip.
+ */
+export function shortScreenId(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 8)}…` : id;
 }
 
 /**

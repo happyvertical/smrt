@@ -348,6 +348,7 @@ declare module '@smrt/web' {
     order?: number;
     locked?: boolean;
     widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
+    format?: 'money' | 'date' | 'datetime' | 'percent';
   }
 
   export interface SmrtWebFieldDefinition {
@@ -376,6 +377,7 @@ declare module '@smrt/web' {
     field: string;
     kind: SmrtWebRelationshipKind;
     relatedCollection: string;
+    role?: 'items';
   }
 
   export interface WebToolRouteDescriptor {

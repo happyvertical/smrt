@@ -47,7 +47,7 @@ export class FulfillmentLineItem extends SmrtObject {
    * Parent fulfillment
    */
   @field({ description: 'The shipment this line belongs to.' })
-  @foreignKey('Fulfillment')
+  @foreignKey('Fulfillment', { role: 'items' })
   fulfillmentId: string = '';
 
   /**
