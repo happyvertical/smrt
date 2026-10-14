@@ -96,9 +96,14 @@ no longer accept `customerId`. `Order`, `Estimate`, `Agreement`, `Lease`, and
 Before upgrading existing data, run the read-only
 `preflightCommercePartyLinks(db)` and inspect its stray party links, missing
 required parties, base-typed rows, discriminator mismatches, and invalid
-document references. The report checks invoice, payment, fulfillment, ad group,
+document references. Its `unqualifiedDiscriminatorRows` lists legacy simple
+`_meta_type` values such as `Order` and `PurchaseOrder`; retype them to the
+qualified class name before upgrading, since branch collections cannot read
+them. The report checks invoice, payment, fulfillment, ad group,
 and expense links when those tables exist. A linked base-typed or wrong-branch
 contract blocks the next save of its document even when the link is unchanged.
+Registered custom descendants of either contract branch are accepted in link
+checks; load those model classes before running the preflight.
 Tenant-owned documents linked to global or other-tenant contracts are also
 reported because the save-time lookup is tenant-scoped. Retype the contract to
 the correct leaf, assign it to the document's tenant, or repair the link before

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ObjectRegistry, smrt } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
@@ -25,6 +26,12 @@ async function save<T extends Contract>(object: T): Promise<T> {
   await object.initialize();
   return object.save();
 }
+
+@smrt()
+class SpecialOrder extends Order {}
+
+@smrt()
+class SpecialPurchaseOrder extends PurchaseOrder {}
 
 describe('Contract party branches', () => {
   let dbUrl: string;
@@ -115,6 +122,77 @@ describe('Contract party branches', () => {
     ).toEqual([purchase.id]);
     expect(await sales.get({ id: purchase.id })).toBeNull();
     expect(await purchases.get({ id: order.id })).toBeNull();
+  });
+
+  it('reports legacy unqualified discriminators that branch reads cannot find', async () => {
+    const order = await save(
+      new Order({ db: contracts.db, customerId: 'customer-a' }),
+    );
+    const purchase = await save(
+      new PurchaseOrder({ db: contracts.db, vendorId: 'vendor-a' }),
+    );
+    await contracts.db.query(
+      "UPDATE contracts SET _meta_type = 'Order' WHERE id = ?",
+      order.id,
+    );
+    await contracts.db.query(
+      "UPDATE contracts SET _meta_type = 'PurchaseOrder' WHERE id = ?",
+      purchase.id,
+    );
+    const sales = await SalesContractCollection.create({ db: contracts.db });
+    const purchases = await PurchaseContractCollection.create({
+      db: contracts.db,
+    });
+    expect(await sales.get({ id: order.id })).toBeNull();
+    expect(await purchases.get({ id: purchase.id })).toBeNull();
+    const report = await preflightCommercePartyLinks(contracts.db);
+    expect(report.unqualifiedDiscriminatorRows.map((row) => row.id)).toEqual(
+      expect.arrayContaining([order.id, purchase.id]),
+    );
+  });
+
+  it('accepts registered custom descendants in linked document preflight', async () => {
+    const order = await save(
+      new Order({ db: contracts.db, customerId: 'customer-a' }),
+    );
+    const purchase = await save(
+      new PurchaseOrder({ db: contracts.db, vendorId: 'vendor-a' }),
+    );
+    const invoice = new Invoice({
+      db: contracts.db,
+      customerId: 'customer-a',
+      contractId: order.id,
+      invoiceNumber: 'INV-CUSTOM-BRANCH',
+    });
+    await invoice.initialize();
+    await invoice.save();
+    await contracts.db.query(
+      'CREATE TABLE expenses (id TEXT PRIMARY KEY, tenant_id TEXT, commitment_id TEXT)',
+    );
+    await contracts.db.query(
+      'INSERT INTO expenses (id, commitment_id) VALUES (?, ?)',
+      'expense-custom-branch',
+      purchase.id,
+    );
+    const salesType =
+      ObjectRegistry.getClassByConstructor(SpecialOrder)?.qualifiedName;
+    const purchaseType =
+      ObjectRegistry.getClassByConstructor(SpecialPurchaseOrder)?.qualifiedName;
+    expect(salesType).toBeTruthy();
+    expect(purchaseType).toBeTruthy();
+    await contracts.db.query(
+      'UPDATE contracts SET _meta_type = ? WHERE id = ?',
+      salesType,
+      order.id,
+    );
+    await contracts.db.query(
+      'UPDATE contracts SET _meta_type = ? WHERE id = ?',
+      purchaseType,
+      purchase.id,
+    );
+    const report = await preflightCommercePartyLinks(contracts.db);
+    expect(report.invalidSalesReferences).toEqual([]);
+    expect(report.invalidPurchaseReferences).toEqual([]);
   });
 
   it('requires parties only on the specified leaves', async () => {

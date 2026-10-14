@@ -1,4 +1,6 @@
 /** Read-only deployment preflight for the Contract party split (#3898). */
+
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 
 export interface CommercePartyLinkRow {
@@ -32,6 +34,7 @@ export interface CommercePartyLinksPreflight {
   missingRequiredCustomer: CommercePartyLinkRow[];
   missingRequiredVendor: CommercePartyLinkRow[];
   baseTypedRows: CommercePartyLinkRow[];
+  unqualifiedDiscriminatorRows: CommercePartyLinkRow[];
   discriminatorGroups: CommerceContractTypeGroup[];
   discriminatorMismatches: CommerceContractTypeGroup[];
   invalidSalesReferences: CommerceInvalidContractReference[];
@@ -109,6 +112,7 @@ export async function preflightCommercePartyLinks(
     missingRequiredCustomer,
     missingRequiredVendor,
     baseTypedRows,
+    unqualifiedDiscriminatorRows,
     grouped,
   ] = await Promise.all([
     rows(`${purchaseSide} AND ${present('customer_id')}`),
@@ -132,6 +136,7 @@ export async function preflightCommercePartyLinks(
       `(${leafMatches(['PurchaseOrder'])} OR (${fallbackType} AND contract_type = 'purchase_order')) AND ${missing('vendor_id')}`,
     ),
     rows("_meta_type = 'Contract' OR _meta_type LIKE '%:Contract'"),
+    rows("_meta_type IS NOT NULL AND _meta_type NOT LIKE '%:%'"),
     db.query(
       'SELECT _meta_type, contract_type, COUNT(*) AS n FROM contracts GROUP BY _meta_type, contract_type ORDER BY n DESC',
     ),
@@ -155,8 +160,15 @@ export async function preflightCommercePartyLinks(
     table: string,
     column: 'contract_id' | 'commitment_id',
     allowed: readonly string[],
+    branch: 'SalesContract' | 'PurchaseContract',
   ): Promise<CommerceInvalidContractReference[]> => {
     if (!(await db.tableExists(table))) return [];
+    const descendants = ObjectRegistry.getDescendants(
+      `@happyvertical/smrt-commerce:${branch}`,
+    ).filter((name) => ObjectRegistry.getTableStrategy(name) === 'sti');
+    const registeredMatch = descendants.length
+      ? ` OR contract._meta_type IN (${descendants.map(() => '?').join(', ')})`
+      : '';
     const result = await db.query(
       `SELECT '${table}' AS source_table, source.id AS source_id,
               source.tenant_id AS source_tenant_id,
@@ -169,26 +181,32 @@ export async function preflightCommercePartyLinks(
         WHERE source.${column} IS NOT NULL
           AND CAST(source.${column} AS TEXT) <> ''
           AND (contract.id IS NULL OR contract._meta_type IS NULL
-               OR NOT (${leafMatches(allowed, 'contract._meta_type')})
+               OR NOT (${leafMatches(allowed, 'contract._meta_type')}${registeredMatch})
                OR (source.tenant_id IS NOT NULL
                    AND CAST(source.tenant_id AS TEXT) <> ''
                    AND (contract.tenant_id IS NULL
                         OR CAST(source.tenant_id AS TEXT) <> CAST(contract.tenant_id AS TEXT))))`,
+      ...descendants,
     );
     return result.rows as CommerceInvalidContractReference[];
   };
   const invalidSalesReferences = (
     await Promise.all(
       ['invoices', 'payments', 'fulfillments', 'ad_groups'].map((table) =>
-        invalidReferences(table, 'contract_id', [
-          'Estimate',
-          'Order',
-          'WholesaleOrder',
-          'Cart',
-          'Lease',
-          'Agreement',
-          'LicenseSale',
-        ]),
+        invalidReferences(
+          table,
+          'contract_id',
+          [
+            'Estimate',
+            'Order',
+            'WholesaleOrder',
+            'Cart',
+            'Lease',
+            'Agreement',
+            'LicenseSale',
+          ],
+          'SalesContract',
+        ),
       ),
     )
   ).flat();
@@ -196,6 +214,7 @@ export async function preflightCommercePartyLinks(
     'expenses',
     'commitment_id',
     ['PurchaseOrder', 'ProductionOrder'],
+    'PurchaseContract',
   );
   return {
     purchaseRowsWithCustomer,
@@ -203,6 +222,7 @@ export async function preflightCommercePartyLinks(
     missingRequiredCustomer,
     missingRequiredVendor,
     baseTypedRows,
+    unqualifiedDiscriminatorRows,
     discriminatorGroups,
     discriminatorMismatches,
     invalidSalesReferences,
