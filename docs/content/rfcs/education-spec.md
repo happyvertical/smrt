@@ -106,7 +106,7 @@ instructions live at the source and the row is a pointer plus our progress.
 Subclasses:
 
 - `Reading`: body is the content.
-- `Video`: `videoAssetId` or `videoUrl`.
+- `Video`: a `LessonAsset` with relationship `video`, or `videoUrl`.
 - `Worksheet`: printable. The PDF is either held (a `LessonAsset` row with
   relationship `printable`, below) or pointed at (`printableUrl`, a PDF the
   source hosts). Likewise an answer key is a `LessonAsset` with relationship
