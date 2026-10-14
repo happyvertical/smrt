@@ -75,7 +75,13 @@ older release inside the namespace locks) and, in that order, the uid's mapping
 in `/proc/self/uid_map` (`/tmp/.smrt-<host uid>`, what an older host process
 locks); identical paths are taken once, so a host process takes the single
 lease it always did. Every new process takes the beside-data lease first, which
-is what keeps the fixed legacy order deadlock-free. A map that
+is what keeps the fixed legacy order deadlock-free. When the in-namespace uid
+differs from its mapping and its `/tmp/.smrt-<uid>` root already exists as a
+real directory owned by someone else (under `unshare -Ur`, host root's
+`/tmp/.smrt-0` reads as the overflow uid), that one candidate is skipped: no
+process in the namespace can hold a lease beneath a root it does not own. A
+symlink there, and any problem with the mapped candidate, still fails closed.
+A map that
 cannot be read, parsed, or does not cover the current uid fails closed. Only
 one namespace level is visible, so a doubly nested remap is not translated
 past its parent. The residual rule: when the

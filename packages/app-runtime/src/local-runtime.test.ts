@@ -56,6 +56,7 @@ const filesystemInterleave = vi.hoisted(() => ({
         path: Parameters<typeof import('node:fs/promises').unlink>[0],
       ) => Promise<void>),
   lstatOwner: undefined as undefined | ((path: string) => number | undefined),
+  lstatSymlink: undefined as undefined | ((path: string) => boolean),
   uidMap: undefined as undefined | string,
 }));
 
@@ -97,10 +98,13 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     lstat: async (...args: unknown[]) => {
       const details = await Reflect.apply(actual.lstat, actual, args);
       const uid = filesystemInterleave.lstatOwner?.(String(args[0]));
-      if (uid === undefined) return details;
+      const symlink = filesystemInterleave.lstatSymlink?.(String(args[0]));
+      if (uid === undefined && !symlink) return details;
       return Object.assign(Object.create(Object.getPrototypeOf(details)), {
         ...details,
-        uid,
+        ...(uid === undefined ? {} : { uid }),
+        // S_IFLNK in place of the file-type bits.
+        ...(symlink ? { mode: (details.mode & 0o7777) | 0o120000 } : {}),
       });
     },
   };
@@ -147,6 +151,7 @@ afterEach(async () => {
   filesystemInterleave.afterReaddir = undefined;
   filesystemInterleave.beforeUnlink = undefined;
   filesystemInterleave.lstatOwner = undefined;
+  filesystemInterleave.lstatSymlink = undefined;
   filesystemInterleave.uidMap = undefined;
   initializationLockWorkerInterleave.releaseFailure = undefined;
   vi.restoreAllMocks();
@@ -1581,6 +1586,73 @@ describe('local application runtime', () => {
       besideDataLockPath(directories.dataDirectory),
       await initializationLockPath(directories.dataDirectory),
     ]);
+  });
+
+  it('skips a foreign-owned in-namespace legacy root and takes the mapped lease (#3877)', async () => {
+    const directories = await localDirectories('lease-uid-map-foreign');
+    const currentUid = process.getuid?.() as number;
+    const outsideUid = 4_000_000 + (currentUid % 1000);
+    filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
+    const canonicalTemporaryRoot = await realpath('/tmp');
+    const innerLockRoot = join(canonicalTemporaryRoot, `.smrt-${currentUid}`);
+    const outsideLockRoot = join(canonicalTemporaryRoot, `.smrt-${outsideUid}`);
+    await mkdir(innerLockRoot, { recursive: true, mode: 0o700 });
+    // `unshare -Ur`: the in-namespace `.smrt-0` belongs to host root and
+    // reads as the overflow uid.
+    filesystemInterleave.lstatOwner = (path) =>
+      path === innerLockRoot ? 65534 : undefined;
+    const innerLockPath = await initializationLockPath(
+      directories.dataDirectory,
+    );
+    initializationLockWorkerInterleave.lockPaths.length = 0;
+    try {
+      await expect(
+        initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+      ).resolves.toMatchObject({
+        diagnostics: { runtime: { profile: 'local' } },
+      });
+      expect(initializationLockWorkerInterleave.lockPaths).toEqual([
+        besideDataLockPath(directories.dataDirectory),
+        join(
+          outsideLockRoot,
+          basename(dirname(innerLockPath)),
+          'initialization.sqlite',
+        ),
+      ]);
+    } finally {
+      await rm(outsideLockRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('still fails closed on a symlinked in-namespace legacy root (#3877)', async () => {
+    const directories = await localDirectories('lease-uid-map-symlink');
+    const currentUid = process.getuid?.() as number;
+    const outsideUid = 4_000_000 + (currentUid % 1000);
+    filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
+    const canonicalTemporaryRoot = await realpath('/tmp');
+    const innerLockRoot = join(canonicalTemporaryRoot, `.smrt-${currentUid}`);
+    await mkdir(innerLockRoot, { recursive: true, mode: 0o700 });
+    filesystemInterleave.lstatOwner = (path) =>
+      path === innerLockRoot ? 65534 : undefined;
+    filesystemInterleave.lstatSymlink = (path) => path === innerLockRoot;
+    let prepareDatabaseCalled = false;
+    try {
+      await expect(
+        initializeLocalApplicationRuntime({
+          appId: 'lolaus',
+          ...directories,
+          prepareDatabase: async () => {
+            prepareDatabaseCalled = true;
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_configuration' });
+      expect(prepareDatabaseCalled).toBe(false);
+    } finally {
+      await rm(join(canonicalTemporaryRoot, `.smrt-${outsideUid}`), {
+        recursive: true,
+        force: true,
+      });
+    }
   });
 
   it.each([

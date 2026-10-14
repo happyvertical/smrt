@@ -1601,9 +1601,22 @@ async function acquireInitializationLock(
   // release on the host locks). Identical paths are taken once, so a host
   // process with an identity map takes exactly the one lease it always did.
   const canonicalTemporaryRoot = await realpath('/tmp');
-  const legacyLockRoots = [
-    ...new Set([currentUid, await legacyLeaseUid(currentUid)]),
-  ].map((uid) => resolve(canonicalTemporaryRoot, `.smrt-${uid}`));
+  const mappedUid = await legacyLeaseUid(currentUid);
+  const legacyLockRoots = [...new Set([currentUid, mappedUid])].map((uid) =>
+    resolve(canonicalTemporaryRoot, `.smrt-${uid}`),
+  );
+  // In a remapping namespace the in-namespace uid can equal a real host uid
+  // (`unshare -Ur` reads as 0), so its `.smrt-<uid>` root may belong to that
+  // host user and read as a foreign owner here. No process in this namespace
+  // can create or hold a lease beneath a root it does not own (an older
+  // in-namespace release fails there too), so that one candidate is skipped.
+  // A symlink or non-directory still falls through and fails closed.
+  if (
+    mappedUid !== currentUid &&
+    (await isForeignOwnedDirectory(legacyLockRoots[0], currentUid))
+  ) {
+    legacyLockRoots.shift();
+  }
 
   const held: LocalInitializationLock[] = [];
   try {
@@ -1666,6 +1679,24 @@ async function acquireInitializationLock(
       await releaseInitializationLeases(held);
     },
   };
+}
+
+async function isForeignOwnedDirectory(
+  path: string,
+  currentUid: number,
+): Promise<boolean> {
+  let details: Awaited<ReturnType<typeof lstat>>;
+  try {
+    details = await lstat(path);
+  } catch (error) {
+    if (isMissingFile(error)) return false;
+    throw error;
+  }
+  return (
+    !details.isSymbolicLink() &&
+    details.isDirectory() &&
+    details.uid !== currentUid
+  );
 }
 
 /** Release leases in reverse acquisition order, reporting the first failure. */

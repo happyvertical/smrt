@@ -134,7 +134,9 @@ lock-only (never written, private current-user lock directories and file), and
 it is required when the parent cannot hold a lease. In a uid-remapping
 namespace both the in-namespace `<uid>` and its `/proc/self/uid_map` host
 mapping are locked, in that order, so older releases inside the namespace and
-on the host both contend; an unusable map fails closed. The released SQL trusted-parent boundary validates
+on the host both contend; the in-namespace candidate is skipped only when its
+root is an existing real directory owned by another user (no one in the
+namespace can hold it), and an unusable map fails closed. The released SQL trusted-parent boundary validates
 each lock directory, ancestor chain, leaf, and macOS ACLs before opening it.
 SQLite elects one owner atomically without deleting a lock pathname; process or
 worker death releases the kernel lock without PID/time leases. A read-only

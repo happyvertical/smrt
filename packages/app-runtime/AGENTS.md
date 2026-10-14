@@ -23,7 +23,8 @@ Application infrastructure composition for the validated runtime profiles in
   uid, then that uid mapped through `/proc/self/uid_map` (identity when absent;
   unparseable/non-covering fails closed); ownership checks still use the
   in-namespace uid. The beside-data lease taken first keeps that order
-  deadlock-free. Acquire in that order; never make the
+  deadlock-free. Only the in-namespace candidate (when it differs) is skipped
+  if its root is an existing real directory owned by another uid. Acquire in that order; never make the
   lease location configurable per process — every process sharing a data root
   must derive the same lease.
 - Application migrations are explicit through `prepareDatabase`; runtime never
