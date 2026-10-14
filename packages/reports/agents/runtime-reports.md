@@ -212,9 +212,9 @@ the same definition returns 409 `report_archived`; restore it through the archiv
 action before retrying.
 
 Errors are JSON `{ code, message }`: 401 without a session; 403 for cross-origin,
-missing permission or mismatched ambient tenant; 409 for an archived retry; 422
-for malformed/stale specs or `spec_hash_mismatch`; generic 500 for unexpected
-provider failures. There is
+missing permission, mismatched ambient tenant, or an active retry invalidated by
+current source/field access; 409 for an archived retry; 422 for a malformed new
+spec or `spec_hash_mismatch`; generic 500 for unexpected provider failures. There is
 no cross-tenant or system bypass. Configure an optional `audit` callback on the
 factory to receive confirmed principal/hash/report identity and whether reused.
 
@@ -245,18 +245,20 @@ confirm factory can instead take explicit `{ sources, audit? }` options.
 the same model action. It requires `runtimereports.read`, reloads the definition
 in the principal's tenant, and recompiles on every call. Tenant peers can run
 shared reports; use `createdByUserId` for an Only mine list filter. Missing and
-foreign-tenant ids return 404; revoked source/field access returns 403; invalid
-results return 422. Rows stay ephemeral and integer money stays in minor units.
+foreign-tenant ids return 404; revoked source/field access returns 403; archived
+reports return 409 `report_archived`; invalid results return 422. Rows stay
+ephemeral and integer money stays in minor units.
 
 `POST /api/runtimereports/:id/archive` takes `{ archived: boolean }` and returns
 `{ action: 'archive', result: { id, status } }`. It requires
 `runtimereports.create`, changes status only, and
 repeating the same state does not write again. `operationPermissions` metadata
 aliases run to read and archive to create consistently across generated routes,
-CLI/MCP guards and the permission catalog. The archive alias adds the UPDATE
-SQL-policy binding to create, so adopted PostgreSQL RLS policies must be
-regenerated. Neither `.run`, `.archive`, `.update` nor `.delete` becomes a new
-grantable permission for this model.
+CLI/MCP guards and the permission catalog. The archive alias adds SELECT and
+UPDATE SQL-policy bindings to create: the authorized action must look up the
+same-tenant row before changing its status. Adopted PostgreSQL RLS policies must
+be regenerated. Neither `.run`, `.archive`, `.update` nor `.delete` becomes a
+new grantable permission for this model.
 
 `loadRuntimeReportChart(options, context)` is the server loader for the dependent
 browser recipe widget. Options are `{ reportId, measure, dimension? }`; the host

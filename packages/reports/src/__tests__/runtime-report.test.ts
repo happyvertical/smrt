@@ -1338,8 +1338,8 @@ describe('browser runtime report confirmation (#3878)', () => {
       request(),
       principal(),
     );
-    expect(retry.status).toBe(422);
-    expect(await retry.json()).toMatchObject({ code: 'unknown_field' });
+    expect(retry.status).toBe(403);
+    expect(await retry.json()).toMatchObject({ code: 'forbidden' });
     await expect(
       runRuntimeReportForPrincipal(saved.id, viewer, narrowed),
     ).rejects.toMatchObject({ status: 403, code: 'forbidden' });
@@ -1498,8 +1498,8 @@ describe('browser runtime report confirmation (#3878)', () => {
       request(),
       principal({ permissions: ['runtimereports.create'] }),
     );
-    expect(denied.status).toBe(422);
-    expect(await denied.json()).toMatchObject({ code: 'unknown_source' });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ code: 'forbidden' });
     expect(await rowCount()).toBe(1);
   });
   it('serializes simultaneous confirmation and recovers after a failed audit callback', async () => {
@@ -1578,6 +1578,13 @@ describe('browser runtime report confirmation (#3878)', () => {
     expect(
       await archiveRuntimeReportForPrincipal(saved.id, true, principal()),
     ).toEqual({ id: saved.id, status: 'archived' });
+    await expect(
+      runRuntimeReportForPrincipal(
+        saved.id,
+        principal({ permissions: ['runtimereports.read', 'invoices.read'] }),
+        options,
+      ),
+    ).rejects.toMatchObject({ status: 409, code: 'report_archived' });
     const after = await db.get('runtime_reports', { id: saved.id });
     for (const key of [
       'spec',

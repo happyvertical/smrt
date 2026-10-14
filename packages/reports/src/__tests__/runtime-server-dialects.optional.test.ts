@@ -186,6 +186,12 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
           expect(
             await archiveRuntimeReportForPrincipal(saved.id, true, principal),
           ).toEqual({ id: saved.id, status: 'archived' });
+          await expect(
+            runRuntimeReportForPrincipal(saved.id, principal, { sources }),
+          ).rejects.toMatchObject({
+            status: 409,
+            code: 'report_archived',
+          });
           const archivedRetries = await Promise.all([
             handle(request(), principal),
             handle(request(), principal),

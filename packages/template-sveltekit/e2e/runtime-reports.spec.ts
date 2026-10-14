@@ -79,5 +79,12 @@ test('confirms once and returns enveloped viewer-run and archive results', async
         status: archived ? 'archived' : 'active',
       },
     });
+    if (archived) {
+      const archivedRun = await ownerPage.request.post(`${itemUrl}/run`);
+      expect(archivedRun.status()).toBe(409);
+      expect(await archivedRun.json()).toMatchObject({
+        error: { code: 'report_archived' },
+      });
+    }
   }
 });

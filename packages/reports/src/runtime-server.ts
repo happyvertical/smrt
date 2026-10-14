@@ -72,6 +72,10 @@ export class RuntimeReportHttpError extends Error {
   }
 }
 
+function isRuntimeReportAccessError(error: RuntimeReportError): boolean {
+  return error.code === 'unknown_field' || error.code === 'unknown_source';
+}
+
 /** Require an authenticated tenant principal; do not honor system bypass. */
 export function assertRuntimeReportPrincipal(
   context: RuntimeReportPrincipal | null | undefined,
@@ -186,11 +190,6 @@ export function createRuntimeReportConfirmHandler(
         },
         async () => {
           const serverOptions = options ?? getRuntimeReportServerOptions();
-          // Compile even a retry: previously saved data grants no current authority.
-          const compiled = await compileRuntimeReportSpec(
-            spec,
-            runtimeReportPrincipalCompileContext(serverOptions, principal),
-          );
           const transaction = principal.db.transaction?.bind(principal.db);
           if (!transaction) {
             throw new RuntimeReportHttpError(
@@ -219,17 +218,41 @@ export function createRuntimeReportConfirmHandler(
                 });
             return { existing, archived };
           });
-          let created = false;
-          let report = existing
-            ? { id: existing.id, specHash: hash, title: existing.title }
-            : undefined;
-          if (!report && archived) {
+          if (archived) {
             throw new RuntimeReportHttpError(
               409,
               'report_archived',
               'Restore the archived report before confirming it again',
             );
           }
+          // Compile even a retry: previously saved data grants no current
+          // authority. Hidden sources/fields on an active retry are current
+          // access revocation, while the same error on a new spec is invalid
+          // input and remains a 422.
+          let compiled: Awaited<ReturnType<typeof compileRuntimeReportSpec>>;
+          try {
+            compiled = await compileRuntimeReportSpec(
+              spec,
+              runtimeReportPrincipalCompileContext(serverOptions, principal),
+            );
+          } catch (error) {
+            if (
+              existing &&
+              error instanceof RuntimeReportError &&
+              isRuntimeReportAccessError(error)
+            ) {
+              throw new RuntimeReportHttpError(
+                403,
+                'forbidden',
+                'Report access denied',
+              );
+            }
+            throw error;
+          }
+          let created = false;
+          let report = existing
+            ? { id: existing.id, specHash: hash, title: existing.title }
+            : undefined;
           if (!report) {
             // The durable claim serializes simultaneous confirms across hosts.
             report = await runOnce(
@@ -350,6 +373,13 @@ export async function runRuntimeReportForPrincipal(
       });
       if (!report)
         throw new RuntimeReportHttpError(404, 'not_found', 'Report not found');
+      if (report.status === 'archived') {
+        throw new RuntimeReportHttpError(
+          409,
+          'report_archived',
+          'Restore the archived report before running it',
+        );
+      }
       try {
         return await runStoredRuntimeReport({
           db: principal.db,
@@ -358,10 +388,7 @@ export async function runRuntimeReportForPrincipal(
         });
       } catch (error) {
         if (error instanceof RuntimeReportError) {
-          if (
-            error.code === 'unknown_field' ||
-            error.code === 'unknown_source'
-          ) {
+          if (isRuntimeReportAccessError(error)) {
             throw new RuntimeReportHttpError(
               403,
               'forbidden',
