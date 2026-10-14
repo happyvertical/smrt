@@ -11,6 +11,7 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import type { HTMLFormAttributes } from 'svelte/elements';
+import type { MoneyHeaderDisplay } from '../invoices/money-editor.js';
 import { P } from '../purchasing-i18n.js';
 import {
   type PurchaseDraftValues,
@@ -78,6 +79,10 @@ export interface Props {
   extensions?: Snippet;
   /** Authorized private attachment surface outside the editor form; never loaded by Commerce. */
   attachments?: Snippet;
+  /** Explicit v2 stored header facts; no totals are recomputed in this surface. */
+  money?: MoneyHeaderDisplay;
+  /** Native field name for the explicit document mode. */
+  moneyFieldName?: string;
 }
 let {
   operation = 'create',
@@ -109,9 +114,16 @@ let {
   formAttributes = {},
   extensions,
   attachments,
+  money: moneyDisplay,
+  moneyFieldName = 'lineAmountType',
 }: Props = $props();
 const { t } = useI18n();
 const fields = $derived({ ...purchaseFieldNames, ...names });
+function normalizedMoneyText(value: string): string | null {
+  if (!/^\d+(?:\.\d+)?$/u.test(value)) return null;
+  const [whole, fraction = ''] = value.split('.');
+  return `${whole.replace(/^0+(?=\d)/u, '') || '0'}.${fraction.replace(/0+$/u, '') || '0'}`;
+}
 const title = $derived(
   labels.title ??
     t(
@@ -136,6 +148,31 @@ function displayMoney(value: QuoteMoneyMinor): string {
 }
 const money = (amountMinor: number | null) =>
   displayMoney({ currency, minorUnitDigits, amountMinor });
+function calculatedTaxError(
+  enteredTax: string,
+  hasLines: boolean,
+  header: MoneyHeaderDisplay | undefined,
+  headerCurrency: string,
+): string | undefined {
+  if (!header || !hasLines) return undefined;
+  const calculatedTax = quoteMinorText({
+    currency: headerCurrency,
+    minorUnitDigits: header.minorUnitDigits,
+    amountMinor: header.taxMinor,
+  });
+  return normalizedMoneyText(enteredTax) ===
+    normalizedMoneyText(calculatedTax ?? '')
+    ? undefined
+    : 'Tax must match calculated line tax.';
+}
+const moneyTaxError = $derived.by(() =>
+  calculatedTaxError(
+    values.tax,
+    values.allocations.length > 0,
+    moneyDisplay,
+    currency,
+  ),
+);
 </script>
 <section class="purchase-editor" aria-label={title} data-smrt-component="PurchaseOrderEditor">
  <h2>{title}</h2>
@@ -144,9 +181,11 @@ const money = (amountMinor: number | null) =>
  {#if source.notice}<p role="status">{source.notice}</p>{/if}
  {#if operation==='reduce'}<p>{t(P['commerce.purchase.reduction_hint'])}</p>{/if}
  {#if readonly}<p>{t(P['commerce.purchase.readonly'])}</p>{/if}
+ {#if moneyDisplay}<p>Amounts are {moneyDisplay.lineAmountType === 'inclusive' ? 'tax inclusive' : moneyDisplay.lineAmountType === 'exclusive' ? 'tax exclusive' : 'no tax'}.</p>{#if moneyDisplay.lineAmountType === 'inclusive' && moneyDisplay.taxMinor !== 0}<p>Includes tax of {displayMoney({currency, minorUnitDigits: moneyDisplay.minorUnitDigits, amountMinor: moneyDisplay.taxMinor})} {currency}.</p>{/if}{/if}
  {#if message}<p role="alert">{message}</p>{/if}
  <Form {...formAttributes} {action} method="post" {onsubmit} preventDefault={false}>
   {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} />{/each}
+  {#if moneyDisplay}<Input type="hidden" name={moneyFieldName} value={moneyDisplay.lineAmountType} />{/if}
   <fieldset disabled={readonly || busy || source.disabled}>
    <legend>{title}</legend>
    <!-- The first submitter is the safe default for native Enter-in-input submission. -->
@@ -174,7 +213,7 @@ const money = (amountMinor: number | null) =>
     {:else}<p>{t(P['commerce.purchase.empty_allocations'])}</p>{/each}
     {#if rowActions && !readonly}<Button type="submit" name={intents.name} value={rowActions.add} formnovalidate variant="secondary" density="touch">{t(P['commerce.purchase.add'])}</Button>{/if}
    </fieldset>
-   <FormGroup label={`${t(P['commerce.purchase.tax'])} (${currency})`} error={errors.tax} required><Input name={fields.tax} value={values.tax} inputmode="decimal" required density="touch" /></FormGroup>
+   <FormGroup label={`${t(P['commerce.purchase.tax'])} (${currency})`} error={errors.tax ?? moneyTaxError} required><Input name={fields.tax} value={values.tax} inputmode="decimal" required density="touch" /></FormGroup>
    {#each [{key:'scope',label:'commerce.purchase.scope'}, {key:'inclusions',label:'commerce.purchase.inclusions'}, {key:'exclusions',label:'commerce.purchase.exclusions'}, {key:'reason',label:'commerce.purchase.reason'}] as field}
     <FormGroup label={t(P[field.label as keyof typeof P])} error={errors[field.key]} required={field.key==='scope' || field.key==='reason'}><Textarea name={fields[field.key as keyof PurchaseFieldNames]} value={values[field.key as 'scope']} required={field.key==='scope' || field.key==='reason'} /></FormGroup>
    {/each}

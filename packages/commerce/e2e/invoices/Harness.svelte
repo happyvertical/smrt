@@ -3,9 +3,9 @@ import InvoiceEditor from '../../src/svelte/components/InvoiceEditor.svelte';
 import InvoiceAllocationFields from '../../src/svelte/components/InvoiceAllocationFields.svelte';
 import type { InvoiceEditorProps, InvoiceAllocationDraft } from '../../src/svelte/invoices/types.js';
 import { values } from './fixture.js';
-let { initial = {}, allocations = [{ key: 'one', sourceId: 'expense-a', amount: '125.00' }] }: { initial?: Partial<InvoiceEditorProps>; allocations?: InvoiceAllocationDraft[] } = $props();
+let { initial = {}, allocations = [{ key: 'one', sourceId: 'expense-a', amount: '125.00' }], colorScheme = 'light' }: { initial?: Partial<InvoiceEditorProps>; allocations?: InvoiceAllocationDraft[]; colorScheme?: 'light' | 'dark' } = $props();
 </script>
-<div data-theme="material" data-color-scheme="light">
+<div data-theme="material" data-color-scheme={colorScheme}>
   <InvoiceEditor action="/save" {values}
     customers={[{ id: 'customer-a', label: 'Example customer' }]}
     hiddenFields={[{ name: 'requestId', value: 'keep-request' }, { name: 'tenantId', value: 'keep-tenant' }]}

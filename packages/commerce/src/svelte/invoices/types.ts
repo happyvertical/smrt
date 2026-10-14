@@ -2,6 +2,17 @@ import type { FormRetryStatus } from '@happyvertical/smrt-ui/form-retry';
 import type { Snippet } from 'svelte';
 import type { HTMLFormAttributes } from 'svelte/elements';
 import type { InvoiceDraftCalculationOptions } from './calculations.js';
+import type { MoneyEditorProps } from './money-editor.js';
+
+export type {
+  MoneyEditorDraft,
+  MoneyEditorFieldNames,
+  MoneyEditorLineDraft,
+  MoneyEditorProps,
+  MoneyEditorTaxCode,
+  MoneyStoredDocument,
+  MoneyStoredTax,
+} from './money-editor.js';
 
 /** Authorized source projection supplied by the application, not fetched by UI. */
 export interface InvoicePreparationSource {
@@ -165,7 +176,7 @@ export interface InvoiceEditorProps extends InvoiceDraftCalculationOptions {
   /** Caller-localized title. */
   title?: string;
   /** Retained editable strings; never reconstructed from model numbers. */
-  values: InvoiceDraftValues;
+  values?: InvoiceDraftValues;
   /** Authorized customer projections; retained unknown references stay visible. */
   customers?: readonly { id: string; label: string }[];
   /** Caller field errors: header name or lineKey.fieldName. */
@@ -200,4 +211,6 @@ export interface InvoiceEditorProps extends InvoiceDraftCalculationOptions {
   children?: Snippet<[InvoiceDraftValues]>;
   /** Optional enhancement; native submission remains the default. */
   onsubmit?: HTMLFormAttributes['onsubmit'];
+  /** Explicit v2 money surface. Omit to retain the legacy invoice editor API. */
+  money?: MoneyEditorProps;
 }

@@ -22,6 +22,7 @@ import type {
 } from '../invoices/types.js';
 import InvoiceLineEditor from './InvoiceLineEditor.svelte';
 import InvoiceReview from './InvoiceReview.svelte';
+import MoneyInvoiceEditor from './MoneyInvoiceEditor.svelte';
 /** General native invoice editor; server owns prices, tax, authorization and persistence. */
 export interface Props extends InvoiceEditorProps {}
 let {
@@ -29,7 +30,15 @@ let {
   method = 'post',
   id,
   title,
-  values,
+  values = {
+    customerId: '',
+    issuedOn: '',
+    dueOn: '',
+    currency: 'USD',
+    paymentTerms: '',
+    taxRate: '0',
+    lines: [],
+  },
   roundingScope = 'line',
   customers = [],
   errors = {},
@@ -48,6 +57,7 @@ let {
   cancelHref,
   children,
   onsubmit,
+  money,
 }: Props = $props();
 const { t } = useI18n();
 const instanceId = $props.id();
@@ -86,6 +96,9 @@ function lineErrors(key: string) {
   ) as Partial<Record<keyof InvoiceLineFieldNames, string>>;
 }
 </script>
+{#if money?.mode === 'v2'}
+  <MoneyInvoiceEditor {action} {method} {money} {canEdit} {pending} {hiddenFields} intentField={names.intent} {saveIntent} {saveLabel} {onsubmit} />
+{:else}
 <section class="invoice-editor" aria-labelledby={`${formId}-title`} data-smrt-component="InvoiceEditor">
   <h2 id={`${formId}-title`}>{title ?? t(M['commerce.preparation.title'])}</h2>
   {#if review}<InvoiceReview {review} />{/if}
@@ -126,6 +139,7 @@ function lineErrors(key: string) {
     </div>
   </Form>
 </section>
+{/if}
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {

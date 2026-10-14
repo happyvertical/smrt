@@ -75,8 +75,8 @@ const calculatedTax = $derived(taxAmount ?? subtotal * (taxRate / 100));
 // Calculate balance due
 const balanceDue = $derived(total - amountPaid);
 
-// Format decimal-dollar amounts. The commerce models store DECIMAL dollars
-// (AGENTS.md "Currency in decimal fields"), not integer cents.
+// This legacy branch receives decimal-major values from its historical API.
+// Exact retained views above use integer minor units through formatInvoiceMinorUnits.
 function formatMoney(amount: number): string {
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
