@@ -38,4 +38,6 @@ compatibility adapters for the legacy single-component exclusive model until the
 tenant migration gate enables persisted money-v2 fields. In particular,
 `calculateInvoiceMinorLine(input)` defaults to the legacy negative-tie rule for
 existing model saves. Migration-aware callers explicitly pass
-`{ moneyModel: 'v2' }`; there is no process-global mode.
+`{ moneyModel: 'v2' }`; there is no process-global mode. V2 callers pass the
+stored signed discount through unchanged; editor magnitude normalization happens
+before constructing that stored input.

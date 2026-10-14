@@ -425,6 +425,32 @@ describe('exact general invoice calculations', () => {
       ),
     ).toMatchObject({ taxMinor: -1, totalMinor: -51 });
   });
+  it('passes stored signed amount discounts through the v2 adapter symmetrically', () => {
+    const positive = calculateInvoiceMinorLine(
+      { quantity: 1, unitPrice: 100, discount: 10, taxRate: 0.05 },
+      { moneyModel: 'v2' },
+    );
+    const negative = calculateInvoiceMinorLine(
+      { quantity: 1, unitPrice: -100, discount: -10, taxRate: 0.05 },
+      { moneyModel: 'v2' },
+    );
+    expect(positive).toMatchObject({
+      grossMinor: 100,
+      discountMinor: 10,
+      subtotalMinor: 90,
+      taxMinor: 5,
+      totalMinor: 95,
+    });
+    expect(negative).toMatchObject({
+      grossMinor: -100,
+      discountMinor: -10,
+      subtotalMinor: -90,
+      taxMinor: -5,
+      totalMinor: -95,
+    });
+    for (const key of Object.keys(positive) as Array<keyof typeof positive>)
+      expect(negative[key] + positive[key]).toBe(0);
+  });
   it.each([
     { quantity: 0.0000001, unitPrice: 1, discount: 0, taxRate: 0 },
     { quantity: 1, unitPrice: 1.5, discount: 0, taxRate: 0 },
