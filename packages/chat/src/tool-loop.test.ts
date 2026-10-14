@@ -101,6 +101,31 @@ class ToolLoopNote extends SmrtObject {
   }
 }
 
+// Covers the registry-provided dynamic MCP get serializer without importing a
+// domain package. The fixture is local so Chat never gains a dependency edge to
+// Commerce merely to test generic dispatcher behavior.
+@smrt({
+  api: { include: ['get'] },
+  mcp: {
+    include: ['get'],
+    serializers: {
+      get: {
+        importPath: './tool-loop-mcp-serializer.test-support.js',
+        exportName: 'serializeToolLoopMcpGet',
+      },
+    },
+  },
+  collection: 'tool_loop_serialized_notes',
+  tableName: 'tool_loop_serialized_notes',
+  tenantScoped: { field: 'tenantId', mode: 'optional' },
+})
+class ToolLoopSerializedNote extends SmrtObject {
+  tenantId: string | null = null;
+
+  @field()
+  title = '';
+}
+
 function toolCall(name: string, args: Record<string, unknown>): AIResponse {
   return {
     content: '',
@@ -482,6 +507,38 @@ describe('runToolLoop', () => {
     expect(result.invocations[0]?.observation).not.toHaveProperty(
       'internalMemo',
     );
+  });
+
+  it('uses the registered MCP get serializer after principal gates', async () => {
+    await grant('tool_loop_serialized_notes.read');
+    const notes = await ObjectRegistry.getCollection('ToolLoopSerializedNote', {
+      db,
+    });
+    const seeded = await notes.create({ title: 'Serialized' });
+    await seeded.save();
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? toolCall('tool_loop_serialized_notes.read', { id: seeded.id })
+        : textResponse('done'),
+    );
+
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'read serialized note' }],
+      tools: tools(['tool_loop_serialized_notes.read']),
+      principal: {
+        runAsUserId: userId,
+        tenantId,
+        allowedTools: ['tool_loop_serialized_notes.read'],
+      },
+      audit: () => {},
+    });
+
+    expect(result.invocations[0]?.observation).toEqual({
+      serializer: 'test',
+      title: 'Serialized',
+    });
   });
 
   it('rejects a tool the persona was not offered — never executed', async () => {

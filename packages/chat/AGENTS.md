@@ -100,8 +100,8 @@ bounded query results, and audit authority remain in the authenticated
 ## Commerce money tools (#3937)
 
 Hosts that offer invoice money work must explicitly register
-`createCommerceMoneyTools()` in their authenticated assistant route's
-`extraTools` (for example, `extraTools: () => createCommerceMoneyTools()`) and
+`createCommerceMoneyTools()` from `@happyvertical/smrt-commerce` in
+their authenticated assistant route's `extraTools` (for example, `extraTools: () => createCommerceMoneyTools()`) and
 add only the desired `commerce.*` slugs to the persona's `allowedTools`.
 They are not generic manifest CRUD tools: tax codes are selected by code,
 preview is calculator-only, and line writes run through the document-money

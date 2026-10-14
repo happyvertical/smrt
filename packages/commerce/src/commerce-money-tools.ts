@@ -1,26 +1,29 @@
 /** Principal-bound commerce money tools for draft invoices (#3937). */
 
-import type { AITool } from '@happyvertical/ai';
 import type {
   PrincipalRun,
   PrincipalTool,
   PrincipalToolContext,
 } from '@happyvertical/smrt-agents';
+import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
+import {
+  InvoiceCollection,
+  InvoiceLineItemCollection,
+  TaxCodeCollection,
+  TaxSettingsCollection,
+} from './collections/index.js';
+import {
+  type PreviewInvoiceMoneyInput,
+  previewInvoiceMoney,
+} from './document-money.js';
+import { serializeInvoiceMcpGet } from './invoice-mcp.js';
 import {
   DocumentTax,
   Invoice,
-  InvoiceCollection,
   InvoiceLineItem,
-  InvoiceLineItemCollection,
-  MoneyValidationError,
-  type PreviewInvoiceMoneyInput,
-  previewInvoiceMoney,
-  serializeInvoiceMcpGet,
   TaxCode,
-  TaxCodeCollection,
-  TaxSettingsCollection,
-} from '@happyvertical/smrt-commerce';
-import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
+} from './models/index.js';
+import { MoneyValidationError } from './money.js';
 
 export const COMMERCE_TAX_CODES_LIST_TOOL_SLUG = 'commerce.taxCodes.list';
 export const COMMERCE_INVOICE_PREVIEW_TOOL_SLUG = 'commerce.invoice.preview';
@@ -47,7 +50,7 @@ function tool(
     aiTool: {
       type: 'function',
       function: { name, description, parameters },
-    } satisfies AITool,
+    },
     execute,
   };
 }

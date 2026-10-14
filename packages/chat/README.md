@@ -167,7 +167,7 @@ server-controlled `allowedTools`; the tools repeat both the allow-list and
 operation checks when invoked.
 
 ```typescript
-import { createCommerceMoneyTools } from '@happyvertical/smrt-chat';
+import { createCommerceMoneyTools } from '@happyvertical/smrt-commerce';
 import { mountAssistantRoutes } from '@happyvertical/smrt-chat/sveltekit';
 
 const routes = mountAssistantRoutes({

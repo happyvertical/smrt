@@ -1,20 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import type { PrincipalRun, PrincipalTool } from '@happyvertical/smrt-agents';
 import {
-  CustomerCollection,
-  DocumentTax,
-  Invoice,
-  InvoiceCollection,
-  InvoiceLineItem,
-  InvoiceLineItemCollection,
-  InvoiceStatus,
-  TaxCode,
-  TaxCodeCollection,
-  TaxComponentCollection,
-  TaxSettingsCollection,
-} from '@happyvertical/smrt-commerce';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
-import {
   disableTenancy,
   enableTenancy,
   withTenant,
@@ -30,9 +16,20 @@ import {
   COMMERCE_INVOICE_LINE_UPDATE_TOOL_SLUG,
   COMMERCE_INVOICE_PREVIEW_TOOL_SLUG,
   COMMERCE_TAX_CODES_LIST_TOOL_SLUG,
+  CustomerCollection,
   createCommerceMoneyTools,
-} from './commerce-money-tools.js';
-import { invokeManifestTool, type ManifestTool } from './tool-loop.js';
+  DocumentTax,
+  Invoice,
+  InvoiceCollection,
+  InvoiceLineItem,
+  InvoiceLineItemCollection,
+  InvoiceStatus,
+  serializeInvoiceMcpGet,
+  TaxCode,
+  TaxCodeCollection,
+  TaxComponentCollection,
+  TaxSettingsCollection,
+} from '../index.js';
 
 const TENANT_A = '11111111-1111-4111-8111-111111111111';
 const TENANT_B = '22222222-2222-4222-8222-222222222222';
@@ -79,19 +76,6 @@ function run(
 
 function tools(): Map<string, PrincipalTool> {
   return new Map(createCommerceMoneyTools().map((tool) => [tool.slug, tool]));
-}
-
-function invoiceGetTool(): ManifestTool {
-  const qualifiedName =
-    ObjectRegistry.getClassByConstructor(Invoice)?.qualifiedName;
-  if (!qualifiedName) throw new Error('Expected registered Invoice metadata');
-  return {
-    slug: 'invoices.read',
-    collection: 'invoices',
-    className: 'Invoice',
-    qualifiedName,
-    action: 'read',
-  };
 }
 
 async function call(
@@ -195,7 +179,7 @@ async function addWorkedExampleLines(
 beforeEach(async () => {
   isolated = await createIsolatedTestDbFromManifest({
     manifestPath: fileURLToPath(
-      new URL('../../commerce/.smrt/manifest.json', import.meta.url),
+      new URL('../../.smrt/manifest.json', import.meta.url),
     ),
     includeObjects: [
       'Customer',
@@ -288,11 +272,13 @@ describe('commerce money principal tools (#3937)', () => {
       amount: 25500,
       taxAmount: 3315,
     });
-    const stored = await withTenant({ tenantId: TENANT_A }, () =>
-      invokeManifestTool(run(TENANT_A, ['invoices.read']), invoiceGetTool(), {
-        id: hstInvoice.id,
-      }),
-    );
+    const storedInvoice = await withTenant({ tenantId: TENANT_A }, async () => {
+      const invoices = await InvoiceCollection.create({ db });
+      const found = await invoices.get({ id: hstInvoice.id }, { cache: false });
+      if (!found) throw new Error('Expected stored HST invoice');
+      return serializeInvoiceMcpGet(found);
+    });
+    const stored = await storedInvoice;
     expect(stored).toMatchObject({
       money: {
         source: 'stored',
