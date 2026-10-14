@@ -34,7 +34,7 @@ const open = $derived(context.isOpen(value));
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-  .item { border-bottom: 1px solid var(--smrt-color-outline-variant); }
+  .item { border-bottom: var(--smrt-hairline); }
   .item:last-child { border-bottom: 0; }
   h3 { margin: 0; }
   button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-4); border: 0; background: transparent; color: var(--smrt-color-on-surface); font: var(--smrt-typography-title-small-font); text-align: left; cursor: pointer; }

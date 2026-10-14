@@ -143,7 +143,7 @@ export function getElement(): HTMLSelectElement | null {
 		aria-label={ariaLabel}
 	aria-describedby={resolvedDescribedBy}
 	aria-invalid={resolvedInvalid}
-		data-density={density} class="select {className}"
+		data-density={density} class="smrt-select__root {className}"
 		data-smrt-control={resolvedControlId}
 		data-smrt-form={controlInteraction?.formId}
 		data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
@@ -155,67 +155,73 @@ export function getElement(): HTMLSelectElement | null {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.structure {
+  .smrt-select__root {
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    padding: 0.5rem 2rem 0.5rem 0.75rem;
+    cursor: pointer;
+  }
+  .smrt-select__root:disabled {
+    cursor: not-allowed;
+  }
+  @media (max-width: 48rem) {
+    .smrt-select__root {
+      min-height: 2.75rem;
+    }
+  }
+  .smrt-select__root[data-density='touch'] {
+    --smrt-select-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-select__root[data-density='comfortable'] {
+    --smrt-select-target-min: 0px;
+  }
+  .smrt-select__root {
+    min-height: max(var(--smrt-control-height), var(--smrt-select-target-min, var(--smrt-control-target-min)));
+  }
+}
 @layer smrt.theme {
-	.select {
-		box-sizing: border-box;
-		display: block;
-		width: 100%;
-		padding: 0.5rem 2rem 0.5rem 0.75rem;
-		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-		line-height: var(--smrt-typography-body-medium-line-height, 1.5);
-		color: var(--smrt-color-on-surface);
-		background-color: var(--smrt-surface-control);
-		font-weight: var(--smrt-control-weight);
-		background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2379747e' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
-		background-position: right 0.5rem center;
-		background-repeat: no-repeat;
-		background-size: 1.5em 1.5em;
-		border: var(--smrt-hairline-strong);
-		border-radius: var(--smrt-control-radius);
-		appearance: none;
-		cursor: pointer;
-		transition:
-			border-color 0.15s ease-in-out,
+  .smrt-select__root {
+    font-size: var(--smrt-typography-body-medium-size);
+    line-height: var(--smrt-typography-body-medium-line-height);
+    color: var(--smrt-color-on-surface);
+    background-color: var(--smrt-surface-control);
+    font-weight: var(--smrt-control-weight);
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2379747e' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-control-radius);
+    appearance: none;
+    transition: border-color 0.15s ease-in-out,
 			box-shadow 0.15s ease-in-out;
-	}
-
-	.select:focus {
-		border-color: var(--smrt-color-primary);
-	}
-
-	.select:focus-visible {
-		outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-		outline-offset: var(--smrt-focus-ring-offset);
-	}
-
-	.select[data-smrt-highlighted='true'] {
-		outline: 3px solid var(--smrt-color-tertiary);
-		outline-offset: 3px;
-	}
-
-	.select:disabled {
-		background-color: var(--smrt-color-surface-container-high);
-		cursor: not-allowed;
-		opacity: var(--smrt-state-disabled);
-	}
-
-	/* Phones: 16px text so iOS Safari doesn't zoom the page when the field
-	   gets focus, and a 44px touch target. */
-	@media (max-width: 48rem) {
-		.select {
-			font-size: max(var(--smrt-typography-body-medium-size, 0.875rem), 16px);
-			min-height: 2.75rem;
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.select {
-			transition: none;
-		}
-	}
-
-  .select[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .select[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .select { min-height: max(var(--smrt-control-height), var(--smrt-control-target-min, 0px)); }
+  }
+  .smrt-select__root:focus {
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-select__root:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-select__root[data-smrt-highlighted='true'] {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 3px;
+  }
+  .smrt-select__root:disabled {
+    background-color: var(--smrt-color-surface-container-high);
+    opacity: var(--smrt-state-disabled);
+  }
+  @media (max-width: 48rem) {
+    .smrt-select__root {
+      font-size: max(var(--smrt-typography-body-medium-size), 16px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-select__root {
+      transition: none;
+    }
+  }
 }
 </style>

@@ -169,7 +169,7 @@ for (const variant of ['static', 'inline'] as const) {
       const highlight = await systemColor(page, 'Highlight');
 
       // Tabs: only the selected tab draws an indicator bar, in Highlight.
-      const indicators = page.locator(`${TABS} .active-indicator`);
+      const indicators = page.locator(`${TABS} .smrt-tabs__active-indicator`);
       const widths = await indicators.evaluateAll((els) =>
         els.map((el) => ({
           width: el.getBoundingClientRect().width,
@@ -182,12 +182,12 @@ for (const variant of ['static', 'inline'] as const) {
       expect(shown[0].color).toBe(highlight);
 
       // Switch: on and off tracks differ in fill and the thumb moves.
-      const on = page.locator('.switch', { hasText: 'On switch' });
-      const off = page.locator('.switch', { hasText: 'Off switch' });
-      expect(await on.locator('.switch__track').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(highlight);
-      expect(await off.locator('.switch__track').evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(highlight);
-      const onX = (await on.locator('.switch__thumb').boundingBox())!.x - (await on.locator('.switch__track').boundingBox())!.x;
-      const offX = (await off.locator('.switch__thumb').boundingBox())!.x - (await off.locator('.switch__track').boundingBox())!.x;
+      const on = page.locator('.smrt-switch__root', { hasText: 'On switch' });
+      const off = page.locator('.smrt-switch__root', { hasText: 'Off switch' });
+      expect(await on.locator('.smrt-switch__track').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(highlight);
+      expect(await off.locator('.smrt-switch__track').evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(highlight);
+      const onX = (await on.locator('.smrt-switch__thumb').boundingBox())!.x - (await on.locator('.smrt-switch__track').boundingBox())!.x;
+      const offX = (await off.locator('.smrt-switch__thumb').boundingBox())!.x - (await off.locator('.smrt-switch__track').boundingBox())!.x;
       expect(onX).toBeGreaterThan(offX);
 
       // Toggle: checked track fills with Highlight, unchecked does not.
@@ -200,16 +200,16 @@ for (const variant of ['static', 'inline'] as const) {
       expect(await trackBg('Toggle off')).not.toBe(highlight);
 
       // Checkbox and radio: checked fills with Highlight.
-      const checked = page.locator('.checkbox:has(input:checked)');
-      expect(await checked.locator('.checkbox__box').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(highlight);
+      const checked = page.locator('.smrt-checkbox__root:has(input:checked)');
+      expect(await checked.locator('.smrt-checkbox__box').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(highlight);
       const radioDot = page.locator('.radio', { hasText: 'Radio B' }).locator('.radio__mark');
       expect(await radioDot.evaluate((el) => getComputedStyle(el, '::after').backgroundColor)).toBe(highlight);
       expect(await radioDot.evaluate((el) => getComputedStyle(el, '::after').transform)).not.toBe('matrix(0, 0, 0, 0, 0, 0)');
 
       // Chip: selected draws a Highlight outline plain chips do not have.
-      const selectedChip = page.locator('.chip.selected');
+      const selectedChip = page.locator('.smrt-chip__root.smrt-chip__selected');
       expect(await selectedChip.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid');
-      expect(await page.locator('.chip:not(.selected)').first().evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('none');
+      expect(await page.locator('.smrt-chip__root:not(.smrt-chip__selected)').first().evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('none');
 
       // DataTable: the selected row is outlined.
       const row = page.locator('.data-table__row--selected');
@@ -220,7 +220,7 @@ for (const variant of ['static', 'inline'] as const) {
 
     test('disabled controls use GrayText', async ({ page }) => {
       const grayText = await systemColor(page, 'GrayText');
-      const disabled = page.locator('.switch--disabled');
+      const disabled = page.locator('.smrt-switch__root.smrt-switch__disabled');
       expect(await disabled.evaluate((el) => getComputedStyle(el).color)).toBe(grayText);
 
       // A disabled control that is also selected must not keep the enabled
@@ -285,7 +285,7 @@ test('standard colours are untouched when forced colors are off', async ({
   });
   expect(tokens.ring).not.toBe('Highlight');
   expect(tokens.hairline).not.toBe('CanvasText');
-  expect(await style(page, '.active-indicator', 'background-color')).not.toBe(
+  expect(await style(page, '.smrt-tabs__active-indicator', 'background-color')).not.toBe(
     'rgba(0, 0, 0, 0)',
   );
 });

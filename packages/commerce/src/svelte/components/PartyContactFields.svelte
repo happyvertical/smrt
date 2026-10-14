@@ -140,7 +140,7 @@ const text = $derived({
   h2 { font: var(--smrt-typography-title-large-font); color: var(--smrt-color-on-surface); }
   h3, legend { font: var(--smrt-typography-title-medium-font); color: var(--smrt-color-on-surface); }
   .contact-list { display: grid; gap: var(--smrt-spacing-4); }
-  .contact-card { min-inline-size: 0; margin: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface-container-low); overflow-wrap: anywhere; }
+  .contact-card { min-inline-size: 0; margin: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface-container-low); overflow-wrap: anywhere; }
   article.contact-card { display: grid; gap: var(--smrt-spacing-2); }
   .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--smrt-spacing-4); }
   .field-grid :global(.form-group) { min-inline-size: 0; }

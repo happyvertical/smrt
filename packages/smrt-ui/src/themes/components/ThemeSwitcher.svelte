@@ -118,7 +118,7 @@ const themeIcons: Record<ThemePreset, string> = {
   .smrt-theme-switcher__select {
     padding: var(--smrt-spacing-1_5, 0.375rem) var(--smrt-spacing-3, 0.75rem);
     border-radius: var(--smrt-radius-md, 0.5rem);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     background: var(--smrt-color-surface, white);
     color: var(--smrt-color-on-surface, inherit);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
@@ -135,7 +135,7 @@ const themeIcons: Record<ThemePreset, string> = {
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
     padding: var(--smrt-spacing-1_5, 0.375rem) var(--smrt-spacing-3, 0.75rem);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-md, 0.5rem);
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface, inherit);
@@ -157,7 +157,7 @@ const themeIcons: Record<ThemePreset, string> = {
   .smrt-theme-switcher__segmented {
     display: inline-flex;
     background: var(--smrt-color-surface-container-lowest);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-lg, 0.75rem);
     padding: var(--smrt-spacing-0_5, 0.125rem);
   }

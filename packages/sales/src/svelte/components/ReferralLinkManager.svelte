@@ -178,13 +178,13 @@ function submitCreate() {
     text-align: left;
     font-weight: var(--smrt-typography-weight-semibold, 600);
     background: var(--smrt-color-surface-container);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     white-space: nowrap;
   }
 
   td {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     vertical-align: middle;
   }
 

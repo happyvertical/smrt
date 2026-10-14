@@ -20,7 +20,7 @@ const { t } = useI18n();
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-  .invoice-review { padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); overflow-wrap: anywhere; }
+  .invoice-review { padding: var(--smrt-spacing-3); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); overflow-wrap: anywhere; }
   p { margin-block: var(--smrt-spacing-2) 0; }
 }
 </style>

@@ -192,7 +192,7 @@ function date(value: string): string {
   .smrt-record-history > ol > li {
     min-inline-size: 0;
     padding-block: var(--smrt-spacing-3);
-    border-block-end: 1px solid var(--smrt-color-outline-variant);
+    border-block-end: var(--smrt-hairline);
     overflow-wrap: anywhere;
   }
 

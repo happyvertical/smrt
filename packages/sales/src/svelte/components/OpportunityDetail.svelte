@@ -405,7 +405,7 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
     align-items: baseline;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-sm);
   }
 

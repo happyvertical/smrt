@@ -1,3 +1,5 @@
+import './__smrt-register__.js';
+
 export type {
   ReportAdapterDescriptor,
   ReportAdapterOptions,

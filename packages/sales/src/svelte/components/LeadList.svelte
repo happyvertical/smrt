@@ -271,7 +271,7 @@ function handleAssign(leadId: string, event: Event) {
 
   .inbox-controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--smrt-spacing-3, 0.75rem); margin-bottom: var(--smrt-spacing-3, 0.75rem); }
   .filters { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-1, 0.25rem); }
-  .filters :global(.filter-tab) { border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-sm, 0.25rem); padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
+  .filters :global(.filter-tab) { border: var(--smrt-hairline); border-radius: var(--smrt-radius-sm, 0.25rem); padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
   .filters :global(.filter-tab.active) { background: var(--smrt-color-primary-container); border-color: var(--smrt-color-primary); }
   .count { margin-left: var(--smrt-spacing-1, 0.25rem); color: var(--smrt-color-on-surface-variant); }
   .sort-control { display: flex; align-items: center; gap: var(--smrt-spacing-2, 0.5rem); }
@@ -288,13 +288,13 @@ function handleAssign(leadId: string, event: Event) {
     text-align: left;
     font-weight: var(--smrt-typography-weight-semibold, 600);
     background: var(--smrt-color-surface-container);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     white-space: nowrap;
   }
 
   td {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     vertical-align: top;
   }
 

@@ -211,7 +211,7 @@ function formatMoney(amount: number): string {
 
   .totals-row.balance {
     padding-top: var(--smrt-spacing-2, 0.5rem);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 

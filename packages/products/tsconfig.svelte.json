@@ -10,6 +10,10 @@
     "verbatimModuleSyntax": true
   },
   "include": [
+    "ambient.d.ts",
+    "src/lib/types/smrt-generated/**/*.d.ts",
+    "src/lib/types.ts",
+    "src/lib/mock-smrt-client.ts",
     "src/lib/i18n.ts",
     "src/lib/components/**/*",
     "src/lib/features/**/*",

@@ -139,7 +139,7 @@ useControlRegistration(() => {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .tags-field { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); } label { font: var(--smrt-typography-label-large-font); }
-  .tags { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-1); min-height: 2.5rem; padding: var(--smrt-spacing-1); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); }
+  .tags { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-1); min-height: 2.5rem; padding: var(--smrt-spacing-1); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); }
   .tag { display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border-radius: var(--smrt-radius-full); background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); }
   .tag button { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: inherit; cursor: pointer; }
   /* Phones and touch screens: the × is a 44px target (the tag grows with it). */

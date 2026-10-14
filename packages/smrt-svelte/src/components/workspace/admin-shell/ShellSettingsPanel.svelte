@@ -362,7 +362,7 @@ function conflictFor(edge: PanelEdge): string | null {
 
   .smrt-shell-settings-panel__row {
     padding-block: var(--smrt-spacing-3);
-    border-block-start: 1px solid var(--smrt-color-outline-variant);
+    border-block-start: var(--smrt-hairline);
   }
 
   .smrt-shell-settings-panel__row > div:first-child {

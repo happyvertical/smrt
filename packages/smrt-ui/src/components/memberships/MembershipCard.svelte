@@ -77,7 +77,7 @@ function formatDate(date: Date | string | null | undefined): string {
   .membership-card {
     padding: 1rem;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.5rem;
   }
 
@@ -132,7 +132,7 @@ function formatDate(date: Date | string | null | undefined): string {
     justify-content: space-between;
     margin-top: 0.75rem;
     padding-top: 0.75rem;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 
   .date {
@@ -148,7 +148,7 @@ function formatDate(date: Date | string | null | undefined): string {
   .action-btn {
     padding: 0.25rem 0.5rem;
     background: none;
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: 0.25rem;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);

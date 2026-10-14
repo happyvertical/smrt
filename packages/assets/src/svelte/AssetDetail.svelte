@@ -319,7 +319,7 @@ function formatDate(date: Date | string | undefined): string {
 
   .detail__section {
     padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .detail__section:last-child {
@@ -457,7 +457,7 @@ function formatDate(date: Date | string | undefined): string {
     padding: 0 var(--smrt-spacing-3, 0.75rem);
     font-size: var(--smrt-typography-label-medium-size, 0.8rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
   }

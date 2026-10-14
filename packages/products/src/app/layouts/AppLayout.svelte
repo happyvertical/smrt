@@ -63,7 +63,7 @@ const { t } = useI18n();
 
   .app-header {
     background: var(--smrt-color-surface);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
     position: sticky;
     top: 0;
@@ -149,7 +149,7 @@ const { t } = useI18n();
   
   .app-footer {
     background: var(--smrt-color-surface);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     margin-top: auto;
   }
   

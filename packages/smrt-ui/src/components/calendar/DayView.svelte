@@ -330,7 +330,7 @@ function getTypeLabel(type: string): string {
 
   .event-card--link:hover {
     background: var(--smrt-day-view-card-hover);
-    border-color: var(--smrt-color-outline);
+    border-color: var(--smrt-hairline-strong-color);
   }
 
   .event-card--link:hover .event-arrow {

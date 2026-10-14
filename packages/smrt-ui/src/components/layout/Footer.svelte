@@ -35,7 +35,7 @@ const currentYear = new Date().getFullYear();
 @layer smrt.theme {
   .site-footer {
     background: var(--smrt-color-surface-container-low);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     padding: var(--smrt-spacing-8) 0;
     margin-top: var(--smrt-spacing-12);
     text-align: center;

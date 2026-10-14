@@ -263,7 +263,7 @@ function getFileIcon(type: string): string {
     padding: var(--smrt-spacing-2);
     background: var(--smrt-color-surface-container-low);
     border-radius: var(--smrt-radius-medium);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
   }
 
   .file-upload__file {

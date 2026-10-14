@@ -294,7 +294,7 @@ function handleInput(e: Event) {
     width: 100%;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     font-size: var(--smrt-typography-body-large-size, 1rem);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-color-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);

@@ -583,7 +583,7 @@ useControlRegistration(() => {
     min-width: var(--smrt-touch-target-min);
     min-height: var(--smrt-touch-target-min);
     padding: 0 var(--smrt-spacing-4);
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);

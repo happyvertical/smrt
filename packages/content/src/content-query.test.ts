@@ -290,6 +290,69 @@ describe('executeContentQuery', () => {
     expect(result.rows[0].metadata).toEqual({ section: 'front' });
   });
 
+  it.each([
+    ['2026-09-17', '2026-09-17T00:00:00.000Z'],
+    ['2026-09-17 12:34:56', '2026-09-17T12:34:56.000Z'],
+  ])('normalizes hydrated text and zoneless datetime %s', async (value, expected) => {
+    const collection = collectionOf(contents);
+    vi.spyOn(collection, 'list').mockResolvedValueOnce([
+      {
+        id: 'normalized',
+        title: { region: 'west', count: 2n },
+        publish_date: value,
+      },
+    ] as never);
+    const result = await executeContentQuery(
+      collection,
+      request({ projection: ['title', 'publish_date'] }),
+    );
+    expect(result.rows).toEqual([
+      {
+        id: 'normalized',
+        title: '{"region":"west","count":2}',
+        publish_date: expected,
+      },
+    ]);
+  });
+
+  it.each([
+    'x'.repeat(4096) + 'a',
+    'x'.repeat(4096) + 'b',
+    { key: 'row' },
+  ])('refuses an identity that would need rewriting', async (id) => {
+    const collection = collectionOf(contents);
+    vi.spyOn(collection, 'list').mockResolvedValueOnce([
+      { id, title: 'Title' },
+    ] as never);
+    await expect(
+      executeContentQuery(collection, request({ projection: ['title'] })),
+    ).rejects.toThrow();
+  });
+
+  it('bounds hydrated JSON text using the scalar warning path', async () => {
+    const collection = collectionOf(contents);
+    vi.spyOn(collection, 'list').mockResolvedValueOnce([
+      { id: 'long-hydrated', title: { note: 'x'.repeat(5000) } },
+    ] as never);
+    const result = await executeContentQuery(
+      collection,
+      request({ projection: ['title'] }),
+    );
+    expect(result.rows[0].title).toHaveLength(DATA_QUERY_MAX_STRING_LENGTH);
+    expect(result.truncated).toBe(true);
+    expect(result.warnings.join(' ')).toContain('title');
+  });
+
+  it('rejects unsafe bigint nested in hydrated text instead of rounding', async () => {
+    const collection = collectionOf(contents);
+    vi.spyOn(collection, 'list').mockResolvedValueOnce([
+      { id: 'unsafe-hydrated', title: { count: 9007199254740993n } },
+    ] as never);
+    await expect(
+      executeContentQuery(collection, request({ projection: ['title'] })),
+    ).rejects.toThrow(/safe integer range/);
+  });
+
   it('counts without returning rows in count mode', async () => {
     await seed(contents, [
       { name: 'a', status: 'draft' },

@@ -6,7 +6,7 @@ for (const width of [320, 390, 768]) {
     await page.goto('/e2e/density-responsive.html?surface=layout');
     await expect(page.getByRole('heading', { name: 'Construction project' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-    for (const selector of ['.tabs-links-row', '.data-table-container']) {
+    for (const selector of ['[data-smrt-component="Tabs"] [data-smrt-part="row"]', '.data-table-container']) {
       const scroll = page.locator(selector);
       expect(await scroll.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
       await scroll.evaluate((element) => { element.scrollLeft = element.scrollWidth; });

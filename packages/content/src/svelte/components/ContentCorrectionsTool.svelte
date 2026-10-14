@@ -282,7 +282,7 @@ async function issueCorrection() {
     flex-direction: column;
     gap: 0.4rem;
     background: var(--smrt-card-background, var(--smrt-color-surface));
-    border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant));
+    border: var(--smrt-card-border, var(--smrt-hairline));
     box-shadow: var(--smrt-card-shadow, none);
     border-radius: 0.75rem;
     padding: 0.85rem;

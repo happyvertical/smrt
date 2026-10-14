@@ -42,6 +42,9 @@ function runPnpm(args: string[]) {
 function runCommand(command: string, args: string[], cwd: string) {
   const result = spawnSync(command, args, {
     cwd,
+    // The fixture symlinks the live node_modules; pnpm 11's pre-run install
+    // would relink live workspace deps into the deleted fixture.
+    env: { ...process.env, pnpm_config_verify_deps_before_run: 'false' },
     encoding: 'utf8',
     timeout: 120_000,
   });

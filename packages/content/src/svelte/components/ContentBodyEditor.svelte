@@ -1935,7 +1935,7 @@ function handleEditorDragEnd() {
     position: relative;
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.85rem;
     background: var(--smrt-color-surface);
     overflow: visible;
@@ -1946,7 +1946,7 @@ function handleEditorDragEnd() {
     align-items: center;
     gap: 0.35rem;
     padding: 0.45rem 0.55rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     background: var(--smrt-color-surface-container-low, var(--smrt-color-surface-container));
   }
 
@@ -1997,7 +1997,7 @@ function handleEditorDragEnd() {
   }
 
   .body-editor-toolbar :global(.editor-toolbar-button:hover) {
-    border-color: var(--smrt-color-outline-variant);
+    border-color: var(--smrt-hairline-color);
     background: var(--smrt-color-surface-container);
   }
 
@@ -2009,7 +2009,7 @@ function handleEditorDragEnd() {
      the story rather than below it. Full width, in the page flow (no modal),
      so it works the same on a phone. */
   .body-editor-image-panel {
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     background: var(--smrt-color-surface-container-lowest, var(--smrt-color-surface));
     padding: 0.75rem;
     max-height: min(70vh, 40rem);
@@ -2031,9 +2031,9 @@ function handleEditorDragEnd() {
     color: var(--smrt-color-on-surface-variant);
   }
 
-  .format-select :global(.select) {
+  .format-select :global([data-smrt-component="Select"]) {
     min-height: 2rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.45rem;
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
@@ -2211,7 +2211,7 @@ function handleEditorDragEnd() {
     inline-size: 44px;
     block-size: 44px;
     padding: 0;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     background: color-mix(in srgb, var(--smrt-color-surface) 94%, transparent);
     color: var(--smrt-color-primary);
@@ -2255,7 +2255,7 @@ function handleEditorDragEnd() {
     align-items: center;
     gap: 0.1rem;
     padding: 0.25rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     background: color-mix(in srgb, var(--smrt-color-surface) 96%, transparent);
     color: var(--smrt-color-on-surface);
@@ -2324,7 +2324,7 @@ function handleEditorDragEnd() {
     z-index: 21;
     width: 1.45rem;
     height: 1.45rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface);
     box-shadow: var(--smrt-elevation-4, 0 0.45rem 1rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent));

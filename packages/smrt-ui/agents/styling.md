@@ -71,14 +71,14 @@ Notes:
 - `Tabs` uses `tab` for both the tablist button and the link-mode anchor,
   `list` for the tablist and the link-mode nav, and `trigger` for the overflow
   `<summary>`.
-- Parts shown here are the first wave. Other packages add parts incrementally
-  under the same rules.
+- The wave-2 pilot also exposes Chip `body`/`close`; Alert `marker`/`body`/`title`/`message`/`actions`/`close`; Checkbox `input`/`box`/`indicator`/`label`; Switch `input`/`control`/`track`/`thumb`/`label`; and Tabs `row`/`overflow`/`body`/`indicator`/`marker`/`description`. Checkbox reuses `indicator` for the check and indeterminate dash. Badge, Input and Select have no owned internal parts. Other packages add parts incrementally under the same rules.
 
 ## Cascade layers
 
 Every component `<style>` block declares and uses the smrt layers, lowest to
-highest: `smrt.reset < smrt.structure < smrt.theme`. Rules sit in
-`@layer smrt.theme { … }` today. Unlayered consumer CSS always beats every smrt
+highest: `smrt.reset < smrt.structure < smrt.theme`. Button, Badge, Chip, Card, Alert, Input, Select, Checkbox, Switch and Tabs
+split their rules between `smrt.structure` and `smrt.theme`; other components
+still put their rules in `smrt.theme`. Unlayered consumer CSS always beats every smrt
 layer, so restyling needs no `:global()` and no `!important`. The declaration is
 [`src/styles/layers.css`](../src/styles/layers.css)
 (`@happyvertical/smrt-ui/styles/layers.css`), injected by `ThemeProvider`. Keep
@@ -176,11 +176,14 @@ import '@happyvertical/smrt-ui/styles/unstyled.css';
   components with unlayered CSS, `--smrt-*` tokens, or the hooks above.
 
 The reverted list is explicit on purpose. `all: revert-layer` would also drop
-layout declarations until per-package structure/theme sorting lands, because
-every component rule currently sits in `smrt.theme`. When that sorting lands,
-layout moves to `smrt.structure` and the list can be widened to `all`.
+layout declarations until per-package structure/theme sorting lands, in components that have not been sorted yet. The ten pilot primitives retain
+their layout with `all`, but a pilot root can contain an unsorted component in
+a snippet. The Chromium regression demonstrates that the candidate reset strips
+that nested component's layout. Keep the production list until the entire
+reachable subtree is sorted; the playground's **Try all: revert-layer** toggle
+exercises the candidate on the ten pilot subtrees, including pseudo-elements.
 
-Component `transition` declarations still run, so a stripped Card or Button
+With the production explicit list, component `transition` declarations still run, so a stripped Card or Button
 fades to its unstyled colours over its usual duration.
 
 Verification: the jsdom contract test
@@ -193,7 +196,7 @@ Shell motion (track transitions, list flips, view transitions, theme crossfade) 
 
 ## Premium baseline token vocabulary
 
-See the table in [src/themes/README.md](../src/themes/README.md#premium-baseline-token-vocabulary): surface ladder, hairlines, state layers, shadow colour, control geometry, focus ring, native chrome, glass and motion/typography tokens. Themes define them; components consume them and use a component-prefixed name () that falls back to the theme token for per-variant overrides, because the required-tokens scanner drops any name a component defines on its own root.
+See the table in [src/themes/README.md](../src/themes/README.md#premium-baseline-token-vocabulary): surface ladder, hairlines, state layers, shadow colour, control geometry, focus ring, native chrome, glass and motion/typography tokens. Themes define them; components consume them and use a component-prefixed name that falls back to the theme token for per-variant overrides, because the required-tokens scanner drops any name a component defines on its own root.
 
 ## Typography
 
@@ -225,3 +228,49 @@ Contract and token table: [Forced colors](../src/themes/README.md#forced-colors)
   (`border-color` resolves to a system colour, no visible `box-shadow`, `backdrop-filter`
   blur 0, focus ring `Highlight` and at least 2px).
 
+
+Use `--smrt-hairline` / `--smrt-hairline-strong` for quiet / strong edges, `--smrt-hairline-color` / `--smrt-hairline-strong-color` for edge colours and matching `--smrt-inset-highlight` shadows (transparent when neutral, never `none` in shadow lists); run `node scripts/codemod-smrt-hairlines.mjs` to convert supported literals and list exceptions, and spell concrete token names in markdown because `scripts/check-svelte-tokens.mjs` scans docs under `src`.
+
+## Visual regression
+
+Before accepting a styling change, run the playground preset screenshot matrix.
+The [playground visual-regression guide](../../smrt-playground/AGENTS.md#visual-regression-styling-wave-2)
+defines the pinned Linux renderer, baseline update/review flow and required
+`Playground Visual Regression` CI job. Baseline changes must represent intentional
+visual changes; a structure/theme split should leave them unchanged.
+
+## Structure/theme pilot classification (#3881)
+
+Preserve declaration order within each layer, splitting mixed rules without
+changing selector specificity or Svelte scoping. Keep media queries in each
+applicable layer; put animation keyframes with their animation in theme.
+
+- **Structure:** display, flex/grid, gap, padding/margin, position/insets,
+  dimensions, overflow, clipping, visibility, hit-area geometry, interaction
+  cursor/pointer behavior, and text truncation/wrapping. Hidden native inputs
+  and loading labels retain their hiding opacity. Switch thumb translation and
+  scale are structural: they express checked position and control geometry.
+- **Theme:** colors, backgrounds, borders (including width), radii, shadows,
+  typography, decorative opacity, outlines, filters, transitions and animations.
+  Card hover lift is decorative. Removing borders/typography can change measured
+  outer geometry in styleless mode; structural declarations remain intact.
+- Classify custom properties by their consumers. Density overrides belong to
+  structure and use component-private names (`--smrt-button-target-min`,
+  `--smrt-input-target-min`, `--smrt-select-target-min`,
+  `--smrt-checkbox-target-min`, `--smrt-switch-target-min`), falling back to the
+  inherited `--smrt-control-target-min`. Do not redeclare shared theme tokens.
+  `--smrt-control-hit-size` is an optional host override, not a preset token;
+  its existing 2.75rem fallback remains necessary.
+- Namespace **all** owned classes, including root, size, variant and state
+  modifiers, as `smrt-<component>__<part-or-modifier>`. Consumer classes passed
+  through props remain untouched. Use role-based part attributes in consumer
+  CSS and tests; keep state on existing native/ARIA attributes.
+- Keep the explicit reset during incremental rollout. A root allowlist alone
+  cannot protect an unsorted nested component. `all` also needs pseudo-element
+  coverage; keep transparent hit targets in structure so they survive it.
+
+The Styleless Mode fixture now includes all ten primitives. Its second checkbox
+is experimental and only takes effect while **Apply unstyled.css** is enabled.
+The candidate strips transition and decorative opacity too; production retains
+its prior behavior. Pixel baselines for the original fixture establish that the
+split itself does not change rendering; fixture additions are reviewed separately.

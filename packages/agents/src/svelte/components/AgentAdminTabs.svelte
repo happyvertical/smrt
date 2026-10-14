@@ -180,7 +180,7 @@ async function handleSave(config: unknown) {
 	.tabs-nav {
 		display: flex;
 		gap: 0.25rem;
-		border-bottom: 1px solid var(--smrt-color-outline-variant);
+		border-bottom: var(--smrt-hairline);
 		padding-bottom: 0;
 	}
 

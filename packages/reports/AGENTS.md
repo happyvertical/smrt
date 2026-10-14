@@ -70,7 +70,7 @@ Materialized aggregate report models for SMRT.
 A runtime report is data, not code: `parseRuntimeReportSpec()` accepts a closed
 grammar (no SQL, expressions, joins, tables, or tenants), and
 `compileRuntimeReportSpec()` resolves it against a server-owned source
-allow-list, the ObjectRegistry field policy, the live principal's permissions,
+allow-list (including optional `fields`/`excludeFields`), the ObjectRegistry field policy, the live principal's permissions,
 and an explicit fail-closed tenant predicate. Stored `RuntimeReport` specs are
 re-compiled for the running principal on every run, and result rows are never
 persisted. Assistant tools are in `@happyvertical/smrt-chat`. The full
@@ -109,3 +109,23 @@ See [core recipes](../core/agents/recipes.md).
 - Raw aggregate refreshes must explicitly filter `tenant_id`; the tenancy interceptor only protects normal collection reads.
 - Scheduled/on-change refreshes enqueue `SmrtReportRefreshTask.run()` through `@happyvertical/smrt-jobs`; do not add a separate report queue.
 - `SmrtReportCollection` is a framework collection base (core's `SMRT_COLLECTION_BASE_NAMES`): a report collection never owns its model's table, even when an app manifest attributes the two to different packages. `pnpm test:postgres` runs the `*.optional.test.ts` lane (#3110).
+
+## Package registration
+
+`src/__smrt-register__.ts` embeds the provider manifest during library builds.
+Import it before model decorators, including model-bearing subpaths (`state`
+and `scheduler`), so consumer SSR bundles retain reports-qualified identities.
+The bundle gate executes these public entries in a fresh consumer process.
+Audit #3525 found no other published domain model package missing its shim;
+packages without one contain framework utilities or example/test decorators.
+
+## Schedule lifecycle
+
+`tenantFanout: 'discover'` resolves non-null tenants in the source and existing
+materialization at execution time only for signed global scheduled maintenance.
+Include materialized scopes so rebuilds clear groups after their last source
+row is deleted; discovery does not change incremental watermark semantics. Empty discovery must not call
+refresh with an empty tenant array, which would select the global slice.
+Schedule provisioning preserves existing state. Hosts bind terminal job events
+with `ReportScheduleRunner.bindTaskRunner()` and dispose the returned binding
+on shutdown; see [scheduled refresh lifecycle](README.md#scheduled-refresh-lifecycle).

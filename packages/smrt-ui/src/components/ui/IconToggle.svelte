@@ -79,7 +79,7 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     min-width: 2.75rem;
     min-height: 2.75rem;
     padding: 0;
-    border: 1px solid var(--smrt-color-outline-variant, var(--smrt-color-outline));
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container, var(--smrt-color-surface));
     color: var(--smrt-color-on-surface);
@@ -129,7 +129,7 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     /* Outlined, not filled: a surface-coloured face (so the button's edge does
        not show through where the badge overlaps it), a 1px theme outline and
        neutral text, readable on light and dark themes alike. */
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface-variant);
     font-size: 0.68rem;

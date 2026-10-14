@@ -130,7 +130,7 @@ const rate = $derived(winRate(opportunities));
 
   .tile {
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     padding: var(--smrt-spacing-3, 0.75rem);
   }
@@ -174,7 +174,7 @@ const rate = $derived(winRate(opportunities));
     align-items: baseline;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-1, 0.25rem) 0;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 

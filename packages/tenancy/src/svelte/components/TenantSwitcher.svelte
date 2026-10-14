@@ -54,7 +54,7 @@ function handleChange(event: Event) {
 
   .tenant-select {
     padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 1rem);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     background: var(--smrt-color-surface, white);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);

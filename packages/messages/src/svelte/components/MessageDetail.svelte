@@ -201,7 +201,7 @@ const _displayBody = $derived.by(() => {
     flex-direction: column;
     gap: 0.75rem;
     padding-bottom: 1rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .header-top {
@@ -268,7 +268,7 @@ const _displayBody = $derived.by(() => {
 
   .attachments {
     padding-top: 0.75rem;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 
   .attachments-label {
@@ -287,7 +287,7 @@ const _displayBody = $derived.by(() => {
     display: flex;
     gap: 0.5rem;
     padding-top: 1rem;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 
   /*
@@ -300,7 +300,7 @@ const _displayBody = $derived.by(() => {
    */
   .actions :global(.action-btn) {
     padding: 0.5rem 1rem;
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);

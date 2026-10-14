@@ -328,7 +328,7 @@ function cancelEditing() {
   }
 
   .card {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.75rem;
     padding: 0.85rem;
     display: flex;

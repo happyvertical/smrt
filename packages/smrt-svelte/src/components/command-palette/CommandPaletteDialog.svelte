@@ -366,7 +366,7 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
     font: inherit;
     font-size: var(--smrt-typography-label-small-size, 0.75rem);
     padding: 0.0625rem 0.375rem;
-    border: 1px solid var(--smrt-color-outline-variant, var(--smrt-color-outline));
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small, 0.375rem);
     color: var(--smrt-color-on-surface-variant);
     background: var(--smrt-color-surface-container);

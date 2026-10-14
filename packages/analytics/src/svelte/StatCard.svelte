@@ -36,7 +36,7 @@ const { label, value, trend, trendPercent, subtitle }: Props = $props();
 	.stat-card {
 		padding: 1rem;
 		background: var(--smrt-color-surface);
-		border: 1px solid var(--smrt-color-outline-variant);
+		border: var(--smrt-hairline);
 		border-radius: 0.5rem;
 	}
 

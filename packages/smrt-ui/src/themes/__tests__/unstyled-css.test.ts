@@ -78,7 +78,7 @@ describe('smrt styleless mode (unstyled.css)', () => {
     });
   });
 
-  it('a layered component compiles its rules inside @layer smrt.theme', () => {
+  it('a pilot component compiles both structure and theme layers', () => {
     const out = compile(BUTTON_SOURCE, {
       filename: resolve(process.cwd(), 'src/components/ui/Button.svelte'),
       generate: 'client',
@@ -87,8 +87,9 @@ describe('smrt styleless mode (unstyled.css)', () => {
     const rules = insertCss('unstyled-test-button', out.css?.code ?? '');
     const themed = styleRules(rules);
     expect(themed.length).toBeGreaterThan(0);
-    // The component's own rules declare both look (themed) and layout (kept),
-    // all of them inside the theme layer until structure sorting lands.
+    expect(out.css?.code).toMatch(/@layer smrt\.structure\s*\{/);
+    expect(out.css?.code).toMatch(/@layer smrt\.theme\s*\{/);
+    // Both layout and look survive compilation; Chromium asserts reversal.
     const declared = themed.flatMap((rule) =>
       Array.from({ length: rule.style.length }, (_, i) => rule.style.item(i)),
     );

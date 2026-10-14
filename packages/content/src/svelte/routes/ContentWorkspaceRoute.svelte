@@ -345,7 +345,7 @@ function closeForms() {
     min-height: 2.5rem;
     padding: 0 1rem;
     border-radius: var(--smrt-radius-full);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: color-mix(
       in srgb,
       var(--smrt-color-surface) 92%,
@@ -383,7 +383,7 @@ function closeForms() {
 
   .callout-card,
   .panel {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: color-mix(
       in srgb,
       var(--smrt-color-surface) 95%,

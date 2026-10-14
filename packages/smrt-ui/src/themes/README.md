@@ -727,7 +727,7 @@ calc(var(--smrt-button-state-hover, var(--smrt-state-hover)) * 100%), transparen
 | `--smrt-surface-overlay` | Modal scrim | `background` of Modal/Drawer backdrops |
 | `--smrt-hairline-color` / `-strong-color` | Quiet and strong edge colours | `border-color`, `outline-color`, dividers |
 | `--smrt-hairline` / `--smrt-hairline-strong` | `1px solid` edge shorthands | `border`, `border-top` etc. on panels (quiet) and controls (strong) |
-| `--smrt-inset-highlight` | Top inner light line (`none` on light) | `box-shadow` (layer with an elevation) on raised dark surfaces |
+| `--smrt-inset-highlight` | Top inner light line (transparent shadow on light, never `none` in a shadow list) | `box-shadow` (layer with an elevation) on raised dark surfaces |
 | `--smrt-state-{hover,pressed,selected,focus,dragged,disabled}` | Unitless state-layer opacities, 0 to 1 | Mix percentage of a state overlay (`calc(var(--smrt-state-hover) * 100%)`); `disabled` as `opacity` |
 | `--smrt-shadow-color` | `rgb(r g b)` shadow base, per scheme | `box-shadow` colour: `rgb(from var(--smrt-shadow-color) r g b / 0.2)` |
 | `--smrt-elevation-0..5` | Existing shadow scale | `box-shadow` |

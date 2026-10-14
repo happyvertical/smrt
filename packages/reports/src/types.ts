@@ -46,7 +46,8 @@ export interface ReportRefreshConfig {
   watermarkColumn?: string;
   softDeleteColumn?: string;
   fullRebuildSchedule?: string;
-  tenantFanout?: boolean;
+  /** Static per-tenant schedules, or one global schedule discovering source tenants at execution. */
+  tenantFanout?: boolean | 'discover';
 }
 
 export interface ReportOptions {

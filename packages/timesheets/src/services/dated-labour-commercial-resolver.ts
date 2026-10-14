@@ -1,4 +1,13 @@
 import type { ServiceTimeEntry } from '../models/service-time-entry.js';
+import {
+  amount,
+  date,
+  decimal,
+  identity,
+  MAX,
+  type Rational,
+  rate,
+} from './labour-math.js';
 import type {
   CommercialSnapshot,
   ServiceCommercialResolver,
@@ -34,64 +43,6 @@ export interface DatedLabourCommercialInput {
   currency: string;
   billable: boolean;
   schedule: readonly DatedLabourRatePeriod[];
-}
-
-type Rational = { numerator: bigint; denominator: bigint };
-const MAX = BigInt(Number.MAX_SAFE_INTEGER);
-
-function decimal(value: string, label: string): Rational {
-  if (
-    typeof value !== 'string' ||
-    value.length > 40 ||
-    !/^\d+(?:\.\d{1,18})?$/.test(value)
-  )
-    throw new Error(`${label} must be nonnegative plain decimal text.`);
-  const [whole, fraction = ''] = value.split('.');
-  const denominator = 10n ** BigInt(fraction.length);
-  const numerator = BigInt(whole + fraction);
-  if (numerator > MAX * denominator)
-    throw new Error(`${label} exceeds the safe numeric range.`);
-  return { numerator, denominator };
-}
-
-function date(value: string): void {
-  if (
-    typeof value !== 'string' ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
-    value.startsWith('0000-')
-  )
-    throw new Error('Expected a valid YYYY-MM-DD calendar date.');
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  if (
-    !Number.isFinite(parsed.getTime()) ||
-    parsed.toISOString().slice(0, 10) !== value
-  )
-    throw new Error('Expected a valid YYYY-MM-DD calendar date.');
-}
-
-function identity(value: string, label: string): void {
-  if (typeof value !== 'string' || !value.trim())
-    throw new Error(`${label} is required.`);
-}
-
-function rate(value: DatedLabourRate): DatedLabourRate {
-  if (!value || typeof value !== 'object') throw new Error('Rate is required.');
-  identity(value.id, 'Rate id');
-  identity(value.version, 'Rate version');
-  decimal(value.rateMinor, 'Hourly rate');
-  // Whitelist fields: never copy arbitrary host/private facts to client terms.
-  return { id: value.id, version: value.version, rateMinor: value.rateMinor };
-}
-
-function amount(hours: Rational, hourly: DatedLabourRate): number {
-  const value = decimal(hourly.rateMinor, 'Hourly rate');
-  const numerator = hours.numerator * value.numerator;
-  const denominator = hours.denominator * value.denominator;
-  // Exact nonnegative half-up rounding, once per independent component.
-  const result = (2n * numerator + denominator) / (2n * denominator);
-  if (result > MAX)
-    throw new Error('Labour amount exceeds safe integer minor units.');
-  return Number(result);
 }
 
 /**

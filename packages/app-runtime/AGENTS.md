@@ -75,7 +75,9 @@ Application infrastructure composition for the validated runtime profiles in
   readiness-checked before startup succeeds.
 - `createTaskWorker()` and `createScheduleWorker()` initialize the normal jobs
   package runners against the shared PostgreSQL database. They are intended for
-  separate processes; the web process does not start them automatically. The
+  separate processes; the web process does not start them automatically. A
+  task worker polls `default` plus `SCHEDULED_JOB_QUEUE` (`agents`, where
+  `ScheduleRunner` enqueues) unless `queues` is passed (#3141). The
   worker process must import the app's compiled registration
   (`.smrt/runtime/register.js`, #3117) first; runners resolve `objectType`
   through the registry and never load application source themselves.

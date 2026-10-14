@@ -409,7 +409,7 @@ function handleEscape(event: KeyboardEvent) {
   .message-item__reactions :global(.message-item__reaction) {
     gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
@@ -461,7 +461,7 @@ function handleEscape(event: KeyboardEvent) {
     position: absolute;
     top: 0;
     right: var(--smrt-spacing-4, 1rem);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface-variant);
@@ -502,7 +502,7 @@ function handleEscape(event: KeyboardEvent) {
     top: 0;
     right: var(--smrt-spacing-4, 1rem);
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small, 0.25rem);
     padding: var(--smrt-spacing-1);
     box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.12));

@@ -434,7 +434,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
     overflow-wrap: anywhere;
   }
 
-  .linked-opportunity { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2, 0.5rem); padding: var(--smrt-spacing-3, 0.75rem); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md, 0.5rem); }
+  .linked-opportunity { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2, 0.5rem); padding: var(--smrt-spacing-3, 0.75rem); border: var(--smrt-hairline); border-radius: var(--smrt-radius-md, 0.5rem); }
   .linked-opportunity h3 { flex-basis: 100%; font-size: var(--smrt-typography-title-small-size, 1rem); }
 
   .controls,
@@ -444,7 +444,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
     align-items: flex-end;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-3, 0.75rem);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
   }
 
@@ -488,7 +488,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-sm);
   }
 

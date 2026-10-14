@@ -153,9 +153,9 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 
 {#snippet linkTab(tab: Tab)}
   <a
-    class="tab-link"
+    class="smrt-tabs__tab-link"
     data-smrt-part="tab"
-    class:active={tab.id === active}
+    class:smrt-tabs__active={tab.id === active}
     href={tab.disabled ? undefined : tab.href}
     aria-current={tab.id === active ? 'page' : undefined}
     aria-disabled={tab.disabled ? 'true' : undefined}
@@ -168,40 +168,40 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
       handleClick(tab.id);
     }}
   >
-    <span class="tab-label" data-smrt-part="label">{tab.label}</span>
+    <span data-smrt-part="label">{tab.label}</span>
     {#if tab.count !== undefined}
-      <span class="tab-count" data-smrt-part="count">{tab.count}</span>
+      <span class="smrt-tabs__tab-count" data-smrt-part="count">{tab.count}</span>
     {/if}
     {#if hasBadge(tab)}
-      <span class="tab-badge" data-smrt-part="badge">{tab.badge}</span>
+      <span class="smrt-tabs__tab-badge" data-smrt-part="badge">{tab.badge}</span>
     {/if}
   </a>
 {/snippet}
 
 {#if linkMode}
-<div class="tabs-container" data-smrt-component="Tabs">
+<div class="smrt-tabs__container" data-smrt-component="Tabs">
   <nav
-    class="tabs-links" data-smrt-part="list"
-    class:sm={size === 'sm'}
-    class:lg={size === 'lg'}
+    class="smrt-tabs__links" data-smrt-part="list"
+    class:smrt-tabs__sm={size === 'sm'}
+    class:smrt-tabs__lg={size === 'lg'}
     aria-label={ariaLabel}
     data-shell-tabs
   >
-    <div class="tabs-links-row" bind:this={linkRow}>
+    <div class="smrt-tabs__links-row" data-smrt-part="row" bind:this={linkRow}>
       {#each split.visible as tab (tab.id)}
         {@render linkTab(tab)}
       {/each}
     </div>
     {#if split.overflow.length > 0}
-      <details class="tabs-more" bind:this={moreMenu}>
-        <summary class="tab-link" data-smrt-part="trigger">
-          <span class="tab-label" data-smrt-part="label">{moreLabel}</span>
+      <details class="smrt-tabs__more" data-smrt-part="overflow" bind:this={moreMenu}>
+        <summary class="smrt-tabs__tab-link" data-smrt-part="trigger">
+          <span data-smrt-part="label">{moreLabel}</span>
           {#if overflowHasBadge}
-            <span class="tab-dot" aria-hidden="true"></span>
-            <span class="visually-hidden">({moreBadgeLabel})</span>
+            <span class="smrt-tabs__tab-dot" data-smrt-part="marker" aria-hidden="true"></span>
+            <span class="smrt-tabs__visually-hidden" data-smrt-part="description">({moreBadgeLabel})</span>
           {/if}
         </summary>
-        <div class="tabs-more-menu" data-smrt-part="menu">
+        <div class="smrt-tabs__more-menu" data-smrt-part="menu">
           {#each split.overflow as tab (tab.id)}
             {@render linkTab(tab)}
           {/each}
@@ -210,18 +210,18 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     {/if}
   </nav>
   {#if children}
-    <div class="tab-panel" data-smrt-part="panel">
+    <div class="smrt-tabs__tab-panel" data-smrt-part="panel">
       {@render children()}
     </div>
   {/if}
 </div>
 {:else}
-<div class="tabs-container" data-smrt-component="Tabs">
+<div class="smrt-tabs__container" data-smrt-component="Tabs">
   <div
-    class="tabs-nav" data-smrt-part="list"
-    class:sm={size === 'sm'}
-    class:lg={size === 'lg'}
-    class:secondary={variant === 'secondary'}
+    class="smrt-tabs__nav" data-smrt-part="list"
+    class:smrt-tabs__sm={size === 'sm'}
+    class:smrt-tabs__lg={size === 'lg'}
+    class:smrt-tabs__secondary={variant === 'secondary'}
     role="tablist"
     aria-label={ariaLabel}
     bind:this={tablistEl}
@@ -229,8 +229,8 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     {#each tabs as tab (tab.id)}
       <button
         type="button"
-        class="tab-button" data-smrt-part="tab"
-        class:active={tab.id === active}
+        class="smrt-tabs__tab-button" data-smrt-part="tab"
+        class:smrt-tabs__active={tab.id === active}
         disabled={tab.disabled}
         role="tab"
         id="tab-{instanceId}-{tab.id}"
@@ -242,24 +242,24 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
         onkeydown={(e) => handleKeydown(e, tab.id)}
         use:ripple
       >
-        <span class="tab-content-wrapper">
-          <span class="tab-label" data-smrt-part="label">{tab.label}</span>
+        <span class="smrt-tabs__tab-content-wrapper" data-smrt-part="body">
+          <span data-smrt-part="label">{tab.label}</span>
           {#if tab.count !== undefined}
-            <span class="tab-count" data-smrt-part="count">{tab.count}</span>
+            <span class="smrt-tabs__tab-count" data-smrt-part="count">{tab.count}</span>
           {/if}
           {#if hasBadge(tab)}
-            <span class="tab-badge" data-smrt-part="badge">{tab.badge}</span>
+            <span class="smrt-tabs__tab-badge" data-smrt-part="badge">{tab.badge}</span>
           {/if}
         </span>
-        <div class="active-indicator"></div>
+        <div class="smrt-tabs__active-indicator" data-smrt-part="indicator"></div>
       </button>
     {/each}
   </div>
 
   {#if children}
-    <div 
-      class="tab-panel" data-smrt-part="panel" 
-      role="tabpanel" 
+    <div
+      class="smrt-tabs__tab-panel" data-smrt-part="panel"
+      role="tabpanel"
       id="tab-panel-{instanceId}"
       aria-labelledby="tab-{instanceId}-{active}"
     >
@@ -271,23 +271,20 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .tabs-container {
+@layer smrt.structure {
+  .smrt-tabs__container {
     display: flex;
     flex-direction: column;
     width: 100%;
   }
-
-  .tabs-nav {
+  .smrt-tabs__nav {
     display: flex;
-    border-bottom: var(--smrt-hairline);
     width: 100%;
     /* Tabs keep their minimum width; a row wider than a phone scrolls. */
     overflow-x: auto;
     scrollbar-width: thin;
   }
-
-  .tab-button {
+  .smrt-tabs__tab-button {
     flex: 1;
     display: inline-flex;
     flex-direction: column;
@@ -295,137 +292,66 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     justify-content: center;
     padding: 0 var(--smrt-spacing-4);
     height: 48px;
-    font: var(--smrt-typography-title-small-font);
-    font-weight: var(--smrt-control-weight);
-    color: var(--smrt-color-on-surface-variant);
-    background: transparent;
-    border: none;
-    border-radius: var(--smrt-control-radius) var(--smrt-control-radius) 0 0;
     cursor: pointer;
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     position: relative;
     overflow: hidden;
     min-width: 90px;
   }
-
-  .sm .tab-button {
+  .smrt-tabs__sm .smrt-tabs__tab-button {
     height: 40px;
-    font: var(--smrt-typography-label-large-font);
   }
-
-  .lg .tab-button {
+  .smrt-tabs__lg .smrt-tabs__tab-button {
     height: 56px;
-    font: var(--smrt-typography-title-medium-font);
   }
-
-  /* State layer: currentColor mixed at the theme's state opacity. */
-  .tab-button::after {
+  .smrt-tabs__tab-button::after {
     content: '';
     position: absolute;
     inset: 0;
-    border-radius: inherit;
-    background: transparent;
     pointer-events: none;
   }
-
-  .tab-button:hover:not(:disabled) {
-    color: var(--smrt-color-on-surface);
-  }
-
-  .tab-button:hover:not(:disabled)::after {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
-  }
-
-  .tab-button:active:not(:disabled)::after {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
-  }
-
-  .tab-button.active::after {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-selected) * 100%), transparent);
-  }
-
-  .tab-button:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
-  }
-
-  .tab-button.active {
-    color: var(--smrt-color-primary);
-  }
-
-  .tab-button:disabled {
-    opacity: var(--smrt-state-disabled);
+  .smrt-tabs__tab-button:disabled {
     cursor: not-allowed;
   }
-
-  .tab-content-wrapper {
+  .smrt-tabs__tab-content-wrapper {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     height: 100%;
   }
-
-  .tab-count {
-    font: var(--smrt-typography-label-small-font);
-    opacity: 0.7;
-  }
-
-  .active-indicator {
+  .smrt-tabs__active-indicator {
     position: absolute;
     bottom: 0;
     height: 3px;
-    background-color: var(--smrt-color-primary);
-    border-radius: var(--smrt-radius-sm) var(--smrt-radius-sm) 0 0;
-    transition: width 200ms, opacity 200ms;
     width: 0;
-    opacity: 0;
   }
-
-  .active .active-indicator {
-    width: 40px; /* Primary variant indicator width */
-    opacity: 1;
+  .smrt-tabs__active .smrt-tabs__active-indicator {
+    width: 40px;
   }
-
-  /* Secondary variant - full width indicator */
-  .secondary .active .active-indicator {
+  .smrt-tabs__secondary .smrt-tabs__active .smrt-tabs__active-indicator {
     width: 100%;
     height: 2px;
   }
-
-  .tab-panel {
+  .smrt-tabs__tab-panel {
     padding-top: 1.5rem;
   }
-
-  .tab-badge {
+  .smrt-tabs__tab-badge {
     min-width: 1.25rem;
     padding: 0.05rem 0.4rem;
-    border-radius: 999px;
-    background: var(--smrt-surface-sunken);
-    color: var(--smrt-color-on-surface);
-    font: var(--smrt-typography-label-small-font);
-    font-weight: var(--smrt-typography-weight-bold, 700);
-    text-align: center;
   }
-
-  /* Link tabs: a navigation row, one URL per tab. */
-  .tabs-links {
+  .smrt-tabs__links {
     display: flex;
     align-items: stretch;
     gap: var(--smrt-spacing-1);
     width: 100%;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .tabs-links-row {
+  .smrt-tabs__links-row {
     display: flex;
     flex: 1 1 auto;
     min-width: 0;
     gap: var(--smrt-spacing-1);
     overflow-x: auto;
-    scrollbar-width: thin;
   }
-
-  .tab-link {
+  .smrt-tabs__tab-link {
     display: inline-flex;
     flex: 0 0 auto;
     align-items: center;
@@ -433,92 +359,44 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     min-height: var(--smrt-control-height);
     padding: 0 var(--smrt-spacing-4);
     margin-bottom: -1px;
-    border-radius: var(--smrt-control-radius) var(--smrt-control-radius) 0 0;
-    border-bottom: 2px solid transparent;
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-title-small-font);
-    font-weight: var(--smrt-control-weight);
-    text-decoration: none;
     white-space: nowrap;
     cursor: pointer;
   }
-
-  .tabs-links.sm .tab-link {
+  .smrt-tabs__links.smrt-tabs__sm .smrt-tabs__tab-link {
     min-height: var(--smrt-control-height-small);
-    border-radius: var(--smrt-control-radius-small) var(--smrt-control-radius-small) 0 0;
-    font: var(--smrt-typography-label-large-font);
   }
-
-  .tabs-links.lg .tab-link {
+  .smrt-tabs__links.smrt-tabs__lg .smrt-tabs__tab-link {
     min-height: 56px;
-    font: var(--smrt-typography-title-medium-font);
   }
-
-  .tab-link:hover {
-    color: var(--smrt-color-on-surface);
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
-  }
-
-  .tab-link:active {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
-  }
-
-  .tab-link.active {
-    border-bottom-color: var(--smrt-color-primary);
-    color: var(--smrt-color-primary);
-  }
-
-  .tab-link[aria-disabled='true'] {
-    opacity: var(--smrt-state-disabled);
+  .smrt-tabs__tab-link[aria-disabled='true'] {
     cursor: not-allowed;
   }
-
-  .tab-link:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
-  }
-
-  .tab-dot {
+  .smrt-tabs__tab-dot {
     width: 0.5rem;
     height: 0.5rem;
-    border-radius: 999px;
-    background: var(--smrt-color-primary);
   }
-
-  .tabs-more {
+  .smrt-tabs__more {
     position: relative;
     flex: 0 0 auto;
   }
-
-  .tabs-more summary {
+  .smrt-tabs__more summary {
     list-style: none;
   }
-
-  .tabs-more summary::-webkit-details-marker {
+  .smrt-tabs__more summary::-webkit-details-marker {
     display: none;
   }
-
-  .tabs-more-menu {
+  .smrt-tabs__more-menu {
     position: absolute;
     inset-inline-end: 0;
-    z-index: var(--smrt-z-index-dropdown, 20);
+    z-index: var(--smrt-z-index-dropdown);
     display: grid;
     min-width: 12rem;
     padding: var(--smrt-spacing-1);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-small, 0.5rem);
-    background: var(--smrt-glass-surface-strong);
-    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3);
   }
-
-  .tabs-more-menu .tab-link {
+  .smrt-tabs__more-menu .smrt-tabs__tab-link {
     margin: 0;
-    border-bottom: 0;
-    border-radius: var(--smrt-radius-extra-small, 0.35rem);
   }
-
-  .visually-hidden {
+  .smrt-tabs__visually-hidden {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -526,15 +404,136 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+}
+@layer smrt.theme {
+  .smrt-tabs__nav {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-tabs__tab-button {
+    font: var(--smrt-typography-title-small-font);
+    font-weight: var(--smrt-control-weight);
+    color: var(--smrt-color-on-surface-variant);
+    background: transparent;
+    border: none;
+    border-radius: var(--smrt-control-radius) var(--smrt-control-radius) 0 0;
+    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .smrt-tabs__sm .smrt-tabs__tab-button {
+    font: var(--smrt-typography-label-large-font);
+  }
+  .smrt-tabs__lg .smrt-tabs__tab-button {
+    font: var(--smrt-typography-title-medium-font);
+  }
+  .smrt-tabs__tab-button::after {
+    border-radius: inherit;
+    background: transparent;
+  }
+  .smrt-tabs__tab-button:hover:not(:disabled) {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-tabs__tab-button:hover:not(:disabled)::after {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+  .smrt-tabs__tab-button:active:not(:disabled)::after {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
+  }
+  .smrt-tabs__tab-button.smrt-tabs__active::after {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-selected) * 100%), transparent);
+  }
+  .smrt-tabs__tab-button:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
+  }
+  .smrt-tabs__tab-button.smrt-tabs__active {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-tabs__tab-button:disabled {
+    opacity: var(--smrt-state-disabled);
+  }
+  .smrt-tabs__tab-count {
+    font: var(--smrt-typography-label-small-font);
+    opacity: 0.7;
+  }
+  .smrt-tabs__active-indicator {
+    background-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-sm) var(--smrt-radius-sm) 0 0;
+    transition: width 200ms, opacity 200ms;
+    opacity: 0;
+  }
+  .smrt-tabs__active .smrt-tabs__active-indicator {
+    opacity: 1;
+  }
+  .smrt-tabs__tab-badge {
+    border-radius: 999px;
+    background: var(--smrt-surface-sunken);
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-label-small-font);
+    font-weight: var(--smrt-typography-weight-bold);
+    text-align: center;
+  }
+  .smrt-tabs__links {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-tabs__links-row {
+    scrollbar-width: thin;
+  }
+  .smrt-tabs__tab-link {
+    border-radius: var(--smrt-control-radius) var(--smrt-control-radius) 0 0;
+    border-bottom: 2px solid transparent;
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-title-small-font);
+    font-weight: var(--smrt-control-weight);
+    text-decoration: none;
+  }
+  .smrt-tabs__links.smrt-tabs__sm .smrt-tabs__tab-link {
+    border-radius: var(--smrt-control-radius-small) var(--smrt-control-radius-small) 0 0;
+    font: var(--smrt-typography-label-large-font);
+  }
+  .smrt-tabs__links.smrt-tabs__lg .smrt-tabs__tab-link {
+    font: var(--smrt-typography-title-medium-font);
+  }
+  .smrt-tabs__tab-link:hover {
+    color: var(--smrt-color-on-surface);
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+  .smrt-tabs__tab-link:active {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
+  }
+  .smrt-tabs__tab-link.smrt-tabs__active {
+    border-bottom-color: var(--smrt-color-primary);
+    color: var(--smrt-color-primary);
+  }
+  .smrt-tabs__tab-link[aria-disabled='true'] {
+    opacity: var(--smrt-state-disabled);
+  }
+  .smrt-tabs__tab-link:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
+  }
+  .smrt-tabs__tab-dot {
+    border-radius: 999px;
+    background: var(--smrt-color-primary);
+  }
+  .smrt-tabs__more-menu {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-glass-surface-strong);
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3);
+  }
+  .smrt-tabs__more-menu .smrt-tabs__tab-link {
+    border-bottom: 0;
+    border-radius: var(--smrt-radius-extra-small);
+  }
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
-    .active-indicator { background-color: Highlight; }
-    .tab-button.active, .tab-link.active { color: Highlight; }
-    .tab-link { border-bottom-color: Canvas; }
-    .tab-link.active { border-bottom-color: Highlight; }
-    .tab-dot { background: CanvasText; }
-    .tab-badge { background: Canvas; border: var(--smrt-hairline-strong); }
-    .tab-button:disabled, .tab-link[aria-disabled='true'] { opacity: 1; color: GrayText; }
+    .smrt-tabs__active-indicator { background-color: Highlight; }
+    .smrt-tabs__tab-button.smrt-tabs__active, .smrt-tabs__tab-link.smrt-tabs__active { color: Highlight; }
+    .smrt-tabs__tab-link { border-bottom-color: Canvas; }
+    .smrt-tabs__tab-link.smrt-tabs__active { border-bottom-color: Highlight; }
+    .smrt-tabs__tab-dot { background: CanvasText; }
+    .smrt-tabs__tab-badge { background: Canvas; border: var(--smrt-hairline-strong); }
+    .smrt-tabs__tab-button:disabled, .smrt-tabs__tab-link[aria-disabled='true'] { opacity: 1; color: GrayText; }
   }
 }
 </style>

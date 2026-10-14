@@ -185,6 +185,14 @@ database-backed dimension facets. A descriptor marks group/time fields as
 combine the two scopes, but an OR or NOT cannot mix them, because moving either
 side across a source `WHERE`/`HAVING` boundary would change its meaning.
 
+Materialized query results normalize hydrated values against their declared
+column types. Objects in scalar columns become JSON text; JSON columns retain
+structured values. Date-only and timezone-less timestamps use UTC, matching
+SQLite storage, and temporal facet buckets follow the same rule. Strings over
+4096 characters are shortened with `truncated` and a warning, except row IDs:
+identities are never rewritten, and unsupported IDs fail validation. Unsafe bigint
+values fail instead of silently losing precision.
+
 The materialized collection executes the normalized, allowlisted predicate as
 parameterized SQL and applies it identically to rows, totals, and facets. It
 never accepts raw SQL, source field paths, tenant ids, or principal ids.
@@ -237,6 +245,36 @@ remain system-authority jobs and do not carry an initiating user, but their job
 payloads use the same integrity boundary. Only a registered `SmrtReportCollection` can
 synchronously refresh a stale read, and only when its TTL policy is positive and
 not manual.
+
+### Scheduled refresh lifecycle
+
+Declare `refresh: { schedule: '*/5 * * * *', tenantFanout: 'discover' }`
+on a tenant-scoped report to discover distinct non-null source tenants each
+scheduled run. Include scopes still present in the materialized table so a
+the next rebuild removes stale groups for tenants losing their final source row.
+Discovery preserves the configured refresh mode. Incremental reports still need
+a `fullRebuildSchedule` to catch hard deletions that do not advance a source
+watermark. Provision schedules with `ensureReportRefreshSchedules({ db,
+reports })`; no discovered scopes means no work, and discovery never refreshes
+the global slice.
+The worker uses the registered source/report tenant columns and its supplied
+maintenance executor. Discovery does not grant database privileges or widen a
+tenant-bound or manual job. Keep `tenantFanout: true` with explicit `tenantIds`
+when the host owns a fixed tenant list.
+
+Initialize a `ReportScheduleRunner` and a jobs `TaskRunner` against the migrated
+database, then call `const unbind = schedules.bindTaskRunner(tasks)` before
+starting them. This connects terminal job events to schedule counters, freeing
+the concurrency slot after success or failure. Repeated binding is idempotent;
+call `unbind()` on shutdown. Listen for `runner:error` to detect failed counter
+updates. Persisted failure messages use the jobs package redaction policy.
+Durable payload signing and execution-time authority checks remain
+required; completion accounting uses the signed schedule identity.
+
+Repeated schedule provisioning inserts missing identities and preserves existing
+history, next-run time, running count, and operator settings. A different cron,
+mode, or tenant scope identifies a different schedule; explicitly disable obsolete
+schedules when changing those settings.
 
 ### Saved views and snapshot exports
 

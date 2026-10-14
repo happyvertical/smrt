@@ -232,7 +232,7 @@ function removeReference(id: string) {
   /* Match the Input primitive's height/radius to the sibling reference-button so
      the two grid columns of .reference-input-row align (the primitive's base
      .input has no min-height). */
-  .content-references-panel :global(.input) {
+  .content-references-panel :global([data-smrt-component="Input"]) {
     min-height: 2.5rem;
     border-radius: 0.5rem;
   }

@@ -1916,7 +1916,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
   .workflow-section {
     background: var(--smrt-color-surface-container-low);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.75rem;
     padding: 1rem;
     display: flex;
@@ -2012,7 +2012,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   }
 
   .claim-audit-item {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.6rem;
     background: var(--smrt-color-surface);
     padding: 0.75rem;
@@ -2049,7 +2049,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   .fact-result,
   .review-card {
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.75rem;
     padding: 0.85rem;
   }
@@ -2096,7 +2096,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     flex-direction: column;
     gap: 0.75rem;
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.75rem;
     padding: 0.85rem;
   }
@@ -2130,7 +2130,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
   .review-profile-item {
     padding: 0.65rem 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.65rem;
     background: var(--smrt-color-surface-container-low);
   }
@@ -2180,7 +2180,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   .transparency-card,
   .transparency-list__item {
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.75rem;
   }
 

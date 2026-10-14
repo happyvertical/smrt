@@ -455,7 +455,7 @@ function formatAttachmentSize(bytes: number): string {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
   }
   .dock-panel > :global(*:first-child) {
@@ -492,7 +492,7 @@ function formatAttachmentSize(bytes: number): string {
   td {
     text-align: left;
     padding: var(--smrt-spacing-2, 0.35rem) var(--smrt-spacing-3, 0.5rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
   .status-shipped {
     color: var(--smrt-color-success);

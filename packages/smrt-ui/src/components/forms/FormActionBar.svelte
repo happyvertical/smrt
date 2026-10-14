@@ -49,7 +49,7 @@ const { t } = useI18n();
     gap: var(--smrt-spacing-3);
     margin-block-start: var(--smrt-spacing-6);
     padding-block-start: var(--smrt-spacing-4);
-    border-block-start: 1px solid var(--smrt-color-outline-variant);
+    border-block-start: var(--smrt-hairline);
   }
 
   .form-action-bar.plain {
@@ -69,7 +69,7 @@ const { t } = useI18n();
       margin: 0;
       padding: var(--smrt-spacing-2) var(--smrt-spacing-4)
         calc(var(--smrt-spacing-2) + env(safe-area-inset-bottom));
-      border-block-start: 1px solid var(--smrt-color-outline-variant);
+      border-block-start: var(--smrt-hairline);
       background: var(--smrt-color-surface);
       box-shadow: var(--smrt-elevation-2);
     }

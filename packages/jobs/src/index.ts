@@ -161,6 +161,7 @@ export {
 export {
   createScheduleRunner,
   getNextCronDate,
+  SCHEDULED_JOB_QUEUE,
   type ScheduleInfo,
   ScheduleRunner,
   type ScheduleRunnerConfig,

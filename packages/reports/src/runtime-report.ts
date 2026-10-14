@@ -1,3 +1,5 @@
+import './__smrt-register__.js';
+
 /**
  * Stored runtime report definitions (#3711).
  *

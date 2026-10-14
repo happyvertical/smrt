@@ -124,8 +124,8 @@ useControlRegistration(() => {
 </script>
 
 <label
-  data-density={density} class="checkbox {className}"
-  class:checkbox--disabled={disabled}
+  data-density={density} class="smrt-checkbox__root {className}"
+  class:smrt-checkbox__disabled={disabled}
   data-smrt-hit-target
   data-smrt-control={controlId}
   data-smrt-form={interactionContext?.formId}
@@ -145,17 +145,17 @@ useControlRegistration(() => {
     aria-describedby={resolvedDescription}
     aria-invalid={formGroup?.().invalid ? 'true' : undefined}
     onchange={handleChange}
-    {...rest}
+    {...rest} data-smrt-part="input"
   />
-  <span class="checkbox__box" aria-hidden="true">
-    {#if indeterminate}<span class="checkbox__dash"></span>{:else if checked}<span class="checkbox__check">✓</span>{/if}
+  <span class="smrt-checkbox__box" data-smrt-part="box" aria-hidden="true">
+    {#if indeterminate}<span class="smrt-checkbox__dash" data-smrt-part="indicator"></span>{:else if checked}<span class="smrt-checkbox__check" data-smrt-part="indicator">✓</span>{/if}
   </span>
-  {#if label}<span class="checkbox__label">{label}</span>{/if}
+  {#if label}<span class="smrt-checkbox__label" data-smrt-part="label">{label}</span>{/if}
 </label>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   /* The visible box stays 18px. A transparent 44x44 hit area (WCAG 2.5.8 / M3 touch target) is
      centred on it with ::before, so clicks nearby still land on the wrapping <label>. It adds no
      layout. The box and the label text sit above every hit area (z-index 1 over 0), so one
@@ -164,43 +164,137 @@ useControlRegistration(() => {
      checkbox stands alone in its parent. Beside anything else (a row title, a link, other text)
      it keeps to the box's own column and grows vertically only. Resize it with
      --smrt-control-hit-size (0px turns it off). */
-  .checkbox { --smrt-checkbox-box: 1.125rem; --smrt-checkbox-hit: max(var(--smrt-control-hit-size, 2.75rem), var(--smrt-checkbox-box)); position: relative; display: inline-flex; align-items: center; gap: var(--smrt-spacing-2, .5rem); cursor: pointer; color: var(--smrt-color-on-surface); }
-  .checkbox::before { content: ''; position: absolute; z-index: 0; inset-block-start: 50%; inset-inline-start: calc(var(--smrt-checkbox-box) / 2); inline-size: var(--smrt-checkbox-hit); block-size: var(--smrt-checkbox-hit); margin-block-start: calc(var(--smrt-checkbox-hit) / -2); margin-inline-start: calc(var(--smrt-checkbox-hit) / -2); }
-  .checkbox--disabled { opacity: .5; cursor: not-allowed; }
-  input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-  .checkbox__box { position: relative; z-index: 1; width: 1.125rem; height: 1.125rem; display: grid; place-items: center; border: 2px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-extra-small); background: var(--smrt-color-surface); transition: background var(--smrt-duration-short2), border-color var(--smrt-duration-short2); }
-  .checkbox__label { position: relative; z-index: 1; }
-  input:checked + .checkbox__box, input:indeterminate + .checkbox__box { background: var(--smrt-color-primary); border-color: var(--smrt-color-primary); color: var(--smrt-color-on-primary); }
-  input:focus-visible + .checkbox__box { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .checkbox__check { font-size: .8rem; font-weight: 800; line-height: 1; }
-  .checkbox__dash { width: .6rem; height: 2px; background: currentColor; }
-  .checkbox:not(:only-child)::before { inline-size: var(--smrt-checkbox-box); margin-inline-start: calc(var(--smrt-checkbox-box) / -2); }
-  .checkbox[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-small); }
-
+  .smrt-checkbox__root {
+    --smrt-checkbox-box: 1.125rem;
+    --smrt-checkbox-hit: max(var(--smrt-control-hit-size, 2.75rem), var(--smrt-checkbox-box));
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    cursor: pointer;
+  }
+  .smrt-checkbox__root::before {
+    content: '';
+    position: absolute;
+    z-index: 0;
+    inset-block-start: 50%;
+    inset-inline-start: calc(var(--smrt-checkbox-box) / 2);
+    inline-size: var(--smrt-checkbox-hit);
+    block-size: var(--smrt-checkbox-hit);
+    margin-block-start: calc(var(--smrt-checkbox-hit) / -2);
+    margin-inline-start: calc(var(--smrt-checkbox-hit) / -2);
+  }
+  .smrt-checkbox__disabled {
+    cursor: not-allowed;
+  }
+  input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .smrt-checkbox__box {
+    position: relative;
+    z-index: 1;
+    width: 1.125rem;
+    height: 1.125rem;
+    display: grid;
+    place-items: center;
+  }
+  .smrt-checkbox__label {
+    position: relative;
+    z-index: 1;
+  }
+  .smrt-checkbox__dash {
+    width: .6rem;
+    height: 2px;
+  }
+  .smrt-checkbox__root:not(:only-child)::before {
+    inline-size: var(--smrt-checkbox-box);
+    margin-inline-start: calc(var(--smrt-checkbox-box) / -2);
+  }
   /* Table cells: neighbouring cells hold links and other controls, so the hit area never leaves
      the cell's column. It grows vertically only (box wide)... */
-  :global(:is(td, th)) .checkbox::before { inline-size: var(--smrt-checkbox-box); margin-inline-start: calc(var(--smrt-checkbox-box) / -2); }
+  :global(:is(td, th)) .smrt-checkbox__root::before {
+    inline-size: var(--smrt-checkbox-box);
+    margin-inline-start: calc(var(--smrt-checkbox-box) / -2);
+  }
   /* ...unless the checkbox is the cell's only content: then the whole cell, clipped to its own
      edges, is the hit area (the 44px target the header and every row share). The cell only needs
      a containing block, so :where() keeps that rule at zero specificity: a sticky header or a
      pinned column's own position always wins (a sticky cell contains the hit area too). */
-  :global(:where(td:has(> [data-smrt-hit-target]:only-child), th:has(> [data-smrt-hit-target]:only-child))) { position: relative; }
-  :global(:is(td, th):has(> [data-smrt-hit-target]:only-child)) > .checkbox { position: static; }
-  :global(:is(td, th):has(> [data-smrt-hit-target]:only-child)) > .checkbox::before { inset: 0; inline-size: auto; block-size: auto; margin: 0; }
-
-  @media (prefers-reduced-motion: reduce) { .checkbox__box { transition: none; } }
-
-  .checkbox[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .checkbox[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .checkbox { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+  :global(:where(td:has(> [data-smrt-hit-target]:only-child), th:has(> [data-smrt-hit-target]:only-child))) {
+    position: relative;
+  }
+  :global(:is(td, th):has(> [data-smrt-hit-target]:only-child)) > .smrt-checkbox__root {
+    position: static;
+  }
+  :global(:is(td, th):has(> [data-smrt-hit-target]:only-child)) > .smrt-checkbox__root::before {
+    inset: 0;
+    inline-size: auto;
+    block-size: auto;
+    margin: 0;
+  }
+  .smrt-checkbox__root[data-density='touch'] {
+    --smrt-checkbox-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-checkbox__root[data-density='comfortable'] {
+    --smrt-checkbox-target-min: 0px;
+  }
+  .smrt-checkbox__root {
+    min-height: var(--smrt-checkbox-target-min, var(--smrt-control-target-min));
+    min-width: var(--smrt-checkbox-target-min, var(--smrt-control-target-min));
+  }
+}
+@layer smrt.theme {
+  .smrt-checkbox__root {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-checkbox__disabled {
+    opacity: .5;
+  }
+  .smrt-checkbox__box {
+    border: 2px solid var(--smrt-color-outline);
+    border-radius: var(--smrt-radius-extra-small);
+    background: var(--smrt-color-surface);
+    transition: background var(--smrt-duration-short2), border-color var(--smrt-duration-short2);
+  }
+  input:checked + .smrt-checkbox__box, input:indeterminate + .smrt-checkbox__box {
+    background: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+  }
+  input:focus-visible + .smrt-checkbox__box {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-checkbox__check {
+    font-size: .8rem;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .smrt-checkbox__dash {
+    background: currentColor;
+  }
+  .smrt-checkbox__root[data-smrt-highlighted='true'] {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 4px;
+    border-radius: var(--smrt-radius-small);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-checkbox__box {
+      transition: none;
+    }
+  }
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
-    .checkbox__box { background: Canvas; border-color: CanvasText; }
-    input:checked + .checkbox__box, input:indeterminate + .checkbox__box { background: Highlight; border-color: Highlight; color: HighlightText; }
-    .checkbox__dash { background: HighlightText; }
-    .checkbox--disabled { opacity: 1; color: GrayText; }
-    .checkbox--disabled .checkbox__box, .checkbox--disabled input:checked + .checkbox__box, .checkbox--disabled input:indeterminate + .checkbox__box { background: Canvas; border-color: GrayText; color: GrayText; }
-    .checkbox--disabled .checkbox__dash { background: GrayText; }
+    .smrt-checkbox__box { background: Canvas; border-color: CanvasText; }
+    input:checked + .smrt-checkbox__box, input:indeterminate + .smrt-checkbox__box { background: Highlight; border-color: Highlight; color: HighlightText; }
+    .smrt-checkbox__dash { background: HighlightText; }
+    .smrt-checkbox__disabled { opacity: 1; color: GrayText; }
+    .smrt-checkbox__disabled .smrt-checkbox__box, .smrt-checkbox__disabled input:checked + .smrt-checkbox__box, .smrt-checkbox__disabled input:indeterminate + .smrt-checkbox__box { background: Canvas; border-color: GrayText; color: GrayText; }
+    .smrt-checkbox__disabled .smrt-checkbox__dash { background: GrayText; }
   }
 }
 </style>

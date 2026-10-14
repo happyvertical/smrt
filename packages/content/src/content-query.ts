@@ -984,12 +984,70 @@ function boundJsonValue(
   }
 }
 
+const DATE_ONLY_VALUE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * `YYYY-MM-DD[T ]HH:MM[:SS[.fff]]` with no zone designator — the shape SQLite's
+ * `CURRENT_TIMESTAMP` / `datetime('now')` persist. SQLite writes those in UTC,
+ * but `new Date('2026-09-17 12:00:00')` reads the space-separated form as
+ * *local* time, so the zone is appended explicitly instead of inferred.
+ */
+const NAIVE_TIMESTAMP_VALUE =
+  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/;
+
+/** ISO-8601/RFC 3339 instant in UTC, or `null` for an unrepresentable date. */
+function instantOrNull(value: Date): string | null {
+  return Number.isNaN(value.getTime()) ? null : value.toISOString();
+}
+
+function epochToInstant(value: number): string | null {
+  if (!Number.isFinite(value)) return null;
+  return instantOrNull(new Date(value));
+}
+
+/**
+ * Serialize one temporal row value to an RFC 3339 instant in UTC (#2934).
+ *
+ * `SmrtCollection.list()` hydrates a `datetime` field into a `Date`, and a raw
+ * driver row can hand back the stored string or an epoch number instead. The
+ * shared result validator only accepts JSON scalars, and normalizes a
+ * `datetime` descriptor's value through `normalizedInstant`, so every one of
+ * those forms has to reach it as an instant string.
+ *
+ * An unparseable string is returned unchanged on purpose: the shared validator
+ * owns that error, and its message names the field and the RFC 3339 contract.
+ */
+function temporalToInstant(value: unknown): unknown {
+  if (value instanceof Date) return instantOrNull(value);
+  if (typeof value === 'number') return epochToInstant(value);
+  if (typeof value === 'bigint') {
+    // An epoch outside the safe-integer range would round on the way through
+    // `Number`, producing a WRONG instant. For a temporal value a missing one
+    // is safer than a silently shifted one.
+    const numeric = Number(value);
+    return Number.isSafeInteger(numeric) ? epochToInstant(numeric) : null;
+  }
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (text.length === 0) return null;
+  if (DATE_ONLY_VALUE.test(text)) return `${text}T00:00:00.000Z`;
+  if (NAIVE_TIMESTAMP_VALUE.test(text)) {
+    return epochToInstant(Date.parse(`${text.replace(' ', 'T')}Z`)) ?? value;
+  }
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) return value;
+  return epochToInstant(parsed) ?? value;
+}
+
 function toDeclaredValue(
   value: unknown,
   descriptor: DataQueryFieldDescriptor,
   truncation?: TruncationLog,
 ): unknown {
-  if (value === undefined) return null;
+  // Identity is authoritative: reject unsupported values instead of rewriting it.
+  if (descriptor.id === CONTENT_QUERY_IDENTITY_FIELD) return value;
+  if (value === undefined || value === null) return null;
+  if (descriptor.type === 'datetime') return temporalToInstant(value);
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? null : value.toISOString();
   }
@@ -997,6 +1055,25 @@ function toDeclaredValue(
   // larger limits, and the scalar cap would corrupt a serialized payload.
   if (descriptor.type === 'json') {
     return boundJsonValue(value, descriptor, truncation);
+  }
+  if (typeof value === 'object') {
+    try {
+      value =
+        JSON.stringify(value, (_key, entry) => {
+          if (typeof entry !== 'bigint') return entry;
+          const numeric = Number(entry);
+          if (!Number.isSafeInteger(numeric)) {
+            return queryFail(
+              `Content query value for ${descriptor.id} exceeds the safe integer range`,
+              'DATA_QUERY_RESULT_INVALID',
+            );
+          }
+          return numeric;
+        }) ?? null;
+    } catch (error) {
+      if (error instanceof DataQueryValidationError) throw error;
+      return null;
+    }
   }
   if (
     typeof value === 'string' &&

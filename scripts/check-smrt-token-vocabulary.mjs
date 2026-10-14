@@ -132,8 +132,8 @@ function main() {
  * comments removed, for bare colour literals and raw px lengths, and compares the
  * per-file counts with `smrt-style-literal-allowlist.json`. Counts must match
  * exactly: a new literal fails, and an allow-list entry the source no longer
- * needs also fails so the list stays honest. `1px` (hairlines) and `0` are
- * allowed everywhere; theme-required `var(--smrt-*, literal)` fallbacks are
+ * needs also fails so the list stays honest. Every px length (including 0px
+ * and 1px) is counted; unitless zero remains allowed; theme-required `var(--smrt-*, literal)` fallbacks are
  * removed by `scripts/codemod-smrt-fallbacks.mjs`.
  */
 const ALLOWLIST_PATH = join(ROOT, 'scripts', 'smrt-style-literal-allowlist.json');
@@ -144,7 +144,6 @@ const CSS_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
 const HEX_RE =
   /(?<![\w&-])(?<!url\()#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![\w-])/g;
 const PX_RE = /(?<![\w.-])-?\d*\.?\d+px\b/g;
-const GLOBAL_PX = new Set(['0px', '1px']);
 
 /** `{ hex: { file: { literal: n } }, px: { file: n } }` for component style blocks. */
 function collectStyleLiterals() {
@@ -166,7 +165,7 @@ function collectStyleLiterals() {
           hexCounts.set(key, (hexCounts.get(key) ?? 0) + 1);
         }
         for (const m of css.matchAll(PX_RE)) {
-          if (!GLOBAL_PX.has(m[0])) pxCount++;
+          pxCount++;
         }
       }
       if (hexCounts.size > 0) hex[rel] = Object.fromEntries([...hexCounts].sort());

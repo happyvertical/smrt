@@ -3457,10 +3457,10 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     align-items: center;
   }
 
-  .search-filters :global(.input),
-  .search-filters :global(.select) {
+  .search-filters :global([data-smrt-component="Input"]),
+  .search-filters :global([data-smrt-component="Select"]) {
     padding: 0.5rem 0.9rem;
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: 0.5rem;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     height: 38px;
@@ -3479,7 +3479,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     background: var(--smrt-color-surface-container-low);
     border-radius: 0.5rem;
     padding: 0.25rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
   }
 
   .view-toggles :global(.view-toggle-btn) {
@@ -3551,7 +3551,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     gap: 0.75rem;
     margin-bottom: 1rem;
     padding: 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.65rem;
     background: var(--smrt-color-surface-container-low);
   }
@@ -3613,7 +3613,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     background: var(--smrt-color-surface);
     border-radius: 0.75rem;
     padding: 1.5rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     transition: transform 0.2s, box-shadow 0.2s;
     display: flex;
     flex-direction: column;
@@ -3628,7 +3628,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     width: calc(100% + 3rem);
     margin: -1.5rem -1.5rem 1rem -1.5rem;
     height: 160px;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
     overflow: hidden;
     background: var(--smrt-color-surface-container-high);
   }
@@ -3675,7 +3675,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
   .status-published { background: var(--smrt-color-success-container); color: var(--smrt-color-on-success-container); border: 1px solid var(--smrt-color-success); }
   .status-draft { background: var(--smrt-color-warning-container); color: var(--smrt-color-on-warning-container); border: 1px solid var(--smrt-color-warning); }
-  .status-archived { background: var(--smrt-color-surface-container); color: var(--smrt-color-on-surface-variant); border: 1px solid var(--smrt-color-outline-variant); }
+  .status-archived { background: var(--smrt-color-surface-container); color: var(--smrt-color-on-surface-variant); border: var(--smrt-hairline); }
 
   .state-highlighted { background: var(--smrt-color-warning-container); color: var(--smrt-color-on-warning-container); border: 1px solid var(--smrt-color-warning);}
   .state-active { background: var(--smrt-color-success-container); color: var(--smrt-color-on-success-container); border: 1px solid var(--smrt-color-success); }
@@ -3722,7 +3722,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     display: flex;
     gap: 0.75rem;
     margin-top: 0.5rem;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
     padding-top: 1rem;
   }
 
@@ -3730,7 +3730,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   .content-actions a {
     flex: 1;
     padding: 0.5rem 1rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.375rem;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
@@ -3745,7 +3745,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   .content-actions :global(.content-action-btn:hover),
   .content-actions a:hover {
     background: var(--smrt-color-surface-variant);
-    border-color: var(--smrt-color-outline);
+    border-color: var(--smrt-hairline-strong-color);
   }
 
   .content-actions .view-btn {
@@ -3773,7 +3773,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     display: flex;
     flex-direction: column;
     gap: 0;
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-hairline);
   }
 
   .content-row {
@@ -3782,7 +3782,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     gap: 1.25rem;
     align-items: start;
     padding: 1.1rem 0;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-hairline);
   }
 
   .content-row__select {
@@ -3831,7 +3831,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     min-height: 2.4rem;
     padding: 0 0.85rem;
     border-radius: var(--smrt-radius-full);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: transparent;
     color: var(--smrt-color-on-surface);
     font-weight: var(--smrt-typography-weight-semibold, 600);
@@ -3870,7 +3870,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   .content-table-wrapper {
     background: var(--smrt-color-surface);
     border-radius: 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     overflow: hidden;
     box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0,0,0,0.05));
   }
@@ -3913,7 +3913,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     align-items: center;
     gap: 0.75rem;
     padding: 0.65rem 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.5rem;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface-variant);
@@ -3997,7 +3997,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     margin-bottom: 1rem;
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
@@ -4015,7 +4015,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   }
 
   .state-notice :global(.state-notice__dismiss) {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.375rem;
     padding: 0.25rem 0.75rem;
     cursor: pointer;
@@ -4056,7 +4056,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   }
 
   .state-panel :global(.retry-button) {
-    border: 1px solid var(--smrt-color-outline);
+    border: var(--smrt-hairline-strong);
     border-radius: 0.5rem;
     padding: 0.5rem 1rem;
     cursor: pointer;
@@ -4085,8 +4085,8 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       width: 100%;
     }
 
-    .search-filters :global(.input),
-    .search-filters :global(.select),
+    .search-filters :global([data-smrt-component="Input"]),
+    .search-filters :global([data-smrt-component="Select"]),
     .add-button {
       width: 100%;
     }

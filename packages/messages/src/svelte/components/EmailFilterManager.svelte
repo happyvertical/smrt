@@ -559,7 +559,7 @@ function getPatternPlaceholder(type: string): string {
   }
 
   .form-actions :global(.cancel-btn) {
-    border-color: var(--smrt-color-outline-variant);
+    border-color: var(--smrt-hairline-color);
     color: var(--smrt-color-on-surface-variant);
   }
 
@@ -574,7 +574,7 @@ function getPatternPlaceholder(type: string): string {
     align-items: center;
     justify-content: space-between;
     background: var(--smrt-color-surface-container);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     padding: 0.75rem 1rem;
     transition: background 150ms ease, border-color 150ms ease;
@@ -605,7 +605,7 @@ function getPatternPlaceholder(type: string): string {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     font-family: var(--smrt-font-family-mono, monospace);
     background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     padding: 0.25rem 0.5rem;
     border-radius: var(--smrt-radius-sm);
     flex-shrink: 0;

@@ -60,14 +60,14 @@ describe('Tabs with hrefs', () => {
         'aria-label': 'Content sections',
       },
     });
-    const row = container.querySelector('.tabs-links-row') as HTMLElement;
+    const row = container.querySelector('.smrt-tabs__links-row') as HTMLElement;
     expect(
       within(row)
         .getAllByRole('link')
         .map((link) => link.dataset.tabId),
     ).toEqual(['article', 'images', 'videos', 'jobs']);
     const more = container.querySelector(
-      'details.tabs-more',
+      'details.smrt-tabs__more',
     ) as HTMLDetailsElement;
     expect(within(more).getByText('More')).toBeInTheDocument();
     expect(within(more).getByText('(has updates)')).toBeInTheDocument();
@@ -115,10 +115,12 @@ describe('Tabs with hrefs', () => {
         'aria-label': 'Sections',
       },
     });
-    const more = container.querySelector('details.tabs-more') as HTMLElement;
+    const more = container.querySelector(
+      'details.smrt-tabs__more',
+    ) as HTMLElement;
     expect(more).not.toBeNull();
-    expect(more.querySelector('.tab-dot')).toBeNull();
-    expect(more.querySelector('.tab-badge')).toBeNull();
+    expect(more.querySelector('.smrt-tabs__tab-dot')).toBeNull();
+    expect(more.querySelector('.smrt-tabs__tab-badge')).toBeNull();
   });
 
   it('is axe-clean', async () => {

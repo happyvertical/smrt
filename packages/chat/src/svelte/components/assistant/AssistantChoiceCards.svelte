@@ -175,7 +175,7 @@ const { t } = useI18n();
     gap: 0.5rem;
     margin: 0.5rem 0;
     padding: 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
     border-radius: 0.75rem;
     background: var(--smrt-color-surface-container-low);
   }

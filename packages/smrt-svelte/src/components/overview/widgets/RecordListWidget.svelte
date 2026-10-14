@@ -143,7 +143,7 @@ const summaryValues = $derived.by(() => {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .smrt-records { display: grid; margin: 0; padding: 0; list-style: none; }
-  .smrt-records__row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-2) 0; border-block-end: 1px solid var(--smrt-color-outline-variant); }
+  .smrt-records__row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-2) 0; border-block-end: var(--smrt-hairline); }
   .smrt-records__row:last-child { border-block-end: 0; }
   .smrt-records__main { display: grid; min-inline-size: 0; }
   .smrt-records__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--smrt-color-on-surface); font-weight: var(--smrt-typography-weight-medium, 500); text-decoration: none; }
