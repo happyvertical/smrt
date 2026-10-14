@@ -6,6 +6,8 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { InvoiceCollection } from '../collections/InvoiceCollection.js';
+import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { withDocumentMoneyTransaction } from '../document-money-internal.js';
 import {
@@ -189,6 +191,40 @@ describe('tenant money runtime barrier (#3933)', () => {
         await expect(
           lockTenantMoneyRuntime(tx, 'tenant-a'),
         ).resolves.toMatchObject({ moneyModel: 'legacy' });
+      });
+    });
+  });
+
+  it('guards generated invoice and line get/list reads while migrating', async () => {
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const invoices = await InvoiceCollection.create({ db });
+      const invoice = await invoices.create({ invoiceNumber: 'BARRIER-1' });
+      const lines = await InvoiceLineItemCollection.create({ db });
+      const line = await lines.create({
+        invoiceId: invoice.id,
+        description: 'Barrier line',
+        quantity: 1,
+        unitPrice: 100,
+      });
+      const settings = await TaxSettingsCollection.create({ db });
+      const migrationId = await settings.beginMoneyMigration('tenant-a');
+
+      await expect(invoices.get({ id: invoice.id })).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+      await expect(invoices.list()).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+      await expect(lines.get({ id: line.id })).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+      await expect(lines.list()).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+
+      await settings.restoreLegacyMoneyModel('tenant-a', migrationId);
+      await expect(invoices.get({ id: invoice.id })).resolves.toMatchObject({
+        id: invoice.id,
       });
     });
   });

@@ -6,6 +6,16 @@ marker. Missing settings and `legacy` preserve the existing line-save behavior.
 the owning migration restores `legacy` or activates `v2`. Generated surfaces
 cannot write either the marker or its owner token.
 
+Every Invoice/InvoiceLineItem get, list, preview, mutation, posting, and
+accounting-sync phase acquires the same tenant settings row before document
+rows. The barrier is held through the owning transaction, so migration cannot
+start between the marker check and a money read/write. Nested coordinators
+reuse an explicitly registered transaction executor; adapter shape is never
+used as transaction proof. When the settings table exists, the first legacy
+runtime boundary materializes the deterministic legacy row solely as this
+durable serialization point. Older schemas without the table remain legacy
+and runtime never creates schema.
+
 In `v2`, saving an invoice line locks and reloads its parent on the caller's
 transaction, reloads every sibling, resolves current tax defaults, calculates
 the document once, and writes line snapshots, `DocumentTax`, and header totals

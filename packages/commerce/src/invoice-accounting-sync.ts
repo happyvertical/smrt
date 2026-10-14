@@ -19,7 +19,7 @@ import {
 import { DocumentTaxCollection } from './collections/DocumentTaxCollection.js';
 import { InvoiceCollection } from './collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from './collections/InvoiceLineItemCollection.js';
-import { lockAndReloadInvoice, settingsForTenant } from './document-money.js';
+import { lockAndReloadInvoice } from './document-money.js';
 import {
   DOCUMENT_MONEY_WRITE,
   withDocumentMoneyTransaction,
@@ -27,6 +27,7 @@ import {
 import type { Invoice } from './models/Invoice.js';
 import type { InvoiceLineItem } from './models/InvoiceLineItem.js';
 import { MoneyValidationError } from './money.js';
+import { lockTenantMoneyRuntime } from './tenant-money-barrier.js';
 import { type AccountingInvoiceInput, InvoiceStatus } from './types/index.js';
 
 export interface QuickBooksFrozenInvoiceMapping
@@ -455,7 +456,8 @@ export async function loadFrozenInvoiceAccountingSnapshot(
 ): Promise<FrozenInvoiceAccountingSnapshot> {
   assertPrincipalTenant(input.tenantId);
   return withDocumentMoneyTransaction(input.db, async (tx) => {
-    const settings = await settingsForTenant(tx, input.tenantId);
+    const settings = (await lockTenantMoneyRuntime(tx, input.tenantId))
+      .settings;
     if (settings?.moneyModel !== 'v2')
       throw new MoneyValidationError(
         'INVALID_MONEY_INPUT',
@@ -504,7 +506,8 @@ async function prepareSync(
       `Frozen accounting sync does not support provider '${input.provider.type}'`,
     );
   return withDocumentMoneyTransaction(input.db, async (tx) => {
-    const settings = await settingsForTenant(tx, input.tenantId);
+    const settings = (await lockTenantMoneyRuntime(tx, input.tenantId))
+      .settings;
     if (settings?.moneyModel !== 'v2')
       throw new MoneyValidationError(
         'INVALID_MONEY_INPUT',
@@ -604,6 +607,7 @@ async function recordFailure(
     (error as { code?: unknown }).code === 'QBO_WRITE_ERROR' &&
     (error as { outcome?: unknown }).outcome === 'rejected';
   await withDocumentMoneyTransaction(input.db, async (tx) => {
+    await lockTenantMoneyRuntime(tx, input.tenantId, 'v2');
     const { invoice } = await lockAndReloadInvoice(
       tx,
       input.invoiceId,
@@ -644,6 +648,7 @@ async function recordSuccess(
       'Accounting provider returned an invalid sync timestamp',
     );
   return withDocumentMoneyTransaction(input.db, async (tx) => {
+    await lockTenantMoneyRuntime(tx, input.tenantId, 'v2');
     const { invoice } = await lockAndReloadInvoice(
       tx,
       input.invoiceId,
@@ -715,7 +720,8 @@ export async function reconcileFrozenInvoiceAccountingSync(
   requiredText(input.requestId, 'Accounting request ID');
   requiredText(input.attemptId, 'Accounting attempt ID');
   return withDocumentMoneyTransaction(input.db, async (tx) => {
-    const settings = await settingsForTenant(tx, input.tenantId);
+    const settings = (await lockTenantMoneyRuntime(tx, input.tenantId))
+      .settings;
     if (settings?.moneyModel !== 'v2')
       throw new MoneyValidationError(
         'INVALID_MONEY_INPUT',

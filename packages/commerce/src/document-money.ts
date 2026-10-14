@@ -11,7 +11,6 @@ import { InvoiceCollection } from './collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from './collections/InvoiceLineItemCollection.js';
 import { TaxCodeCollection } from './collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from './collections/TaxComponentCollection.js';
-import { TaxSettingsCollection } from './collections/TaxSettingsCollection.js';
 import {
   allocateFrozenCredit,
   type FrozenCreditAllocation,
@@ -33,6 +32,10 @@ import {
   type ResolvableTaxCodeInput,
   resolveLineTaxCode,
 } from './money.js';
+import {
+  lockTenantMoneyRuntime,
+  withTenantMoneyRuntime,
+} from './tenant-money-barrier.js';
 import type { InvoiceTaxComponentSnapshot } from './types/index.js';
 import { InvoiceStatus } from './types/index.js';
 
@@ -214,26 +217,12 @@ function requireId(value: string | null | undefined, label: string): string {
   return value;
 }
 
-/** @internal Shared by capability-bound posting and migration coordinators. */
-export async function settingsForTenant(
+async function lockRuntimeSettings(
   db: DatabaseInterface,
   tenantId: string | null,
 ): Promise<TaxSettings | null> {
   if (!tenantId) return null;
-  // Older hosts and focused legacy manifests legitimately omit the money-v2
-  // tables. Absence selects the legacy path; runtime code never creates schema.
-  if (db.tableExists && !(await db.tableExists('tax_settings'))) return null;
-  const collection = await TaxSettingsCollection.create({ db });
-  return collection.getForTenant(tenantId);
-}
-
-function assertRuntimeAvailable(settings: TaxSettings | null): void {
-  if (settings?.moneyModel === 'migrating') {
-    throw new MoneyValidationError(
-      'FROZEN_DOCUMENT',
-      'Tenant money migration is in progress',
-    );
-  }
+  return (await lockTenantMoneyRuntime(db, tenantId)).settings;
 }
 
 function isFrozen(invoice: Invoice): boolean {
@@ -1005,21 +994,14 @@ async function recomputeInvoiceAggregate(
   return { lines, taxRows };
 }
 
-/** Calculate a proposed draft invoice in memory through the owning resolver. */
-export async function previewInvoiceMoney(
+async function previewInvoiceMoneyOnScope(
   input: PreviewInvoiceMoneyInput,
+  settings: TaxSettings,
 ): Promise<PreviewInvoiceMoneyResult> {
   if (!input.tenantId || getTenantId() !== input.tenantId)
     throw new MoneyValidationError(
       'INVALID_MONEY_INPUT',
       'Invoice preview requires its active principal tenant',
-    );
-  const settings = await settingsForTenant(input.db, input.tenantId);
-  assertRuntimeAvailable(settings);
-  if (settings?.moneyModel !== 'v2')
-    throw new MoneyValidationError(
-      'INVALID_MONEY_INPUT',
-      'Invoice preview requires active money v2 settings',
     );
   const { invoice } = await loadInvoice(input.db, input.invoiceId);
   if (invoice.tenantId !== input.tenantId)
@@ -1120,21 +1102,25 @@ export async function previewInvoiceMoney(
   };
 }
 
-/** Read authoritative persisted money facts without resolution or recalculation. */
-export async function getInvoiceMoneyFacts(
+/** Calculate a proposed draft invoice in memory through the owning resolver. */
+export async function previewInvoiceMoney(
+  input: PreviewInvoiceMoneyInput,
+): Promise<PreviewInvoiceMoneyResult> {
+  return withTenantMoneyRuntime(input.db, input.tenantId, 'v2', async (scope) =>
+    previewInvoiceMoneyOnScope(
+      { ...input, db: scope.db },
+      scope.barrier.settings as TaxSettings,
+    ),
+  );
+}
+
+async function getInvoiceMoneyFactsOnScope(
   input: GetInvoiceMoneyFactsInput,
 ): Promise<InvoiceMoneyFacts> {
   if (!input.tenantId || getTenantId() !== input.tenantId)
     throw new MoneyValidationError(
       'INVALID_MONEY_INPUT',
       'Invoice money facts require their active principal tenant',
-    );
-  const settings = await settingsForTenant(input.db, input.tenantId);
-  assertRuntimeAvailable(settings);
-  if (settings?.moneyModel !== 'v2')
-    throw new MoneyValidationError(
-      'INVALID_MONEY_INPUT',
-      'Invoice money facts require active money v2 settings',
     );
   const { invoice } = await loadInvoice(input.db, input.invoiceId);
   if (invoice.tenantId !== input.tenantId)
@@ -1194,6 +1180,15 @@ export async function getInvoiceMoneyFacts(
   };
 }
 
+/** Read authoritative persisted money facts without resolution or recalculation. */
+export async function getInvoiceMoneyFacts(
+  input: GetInvoiceMoneyFactsInput,
+): Promise<InvoiceMoneyFacts> {
+  return withTenantMoneyRuntime(input.db, input.tenantId, 'v2', async (scope) =>
+    getInvoiceMoneyFactsOnScope({ ...input, db: scope.db }),
+  );
+}
+
 /** Persist an invoice through either legacy compatibility or the v2 aggregate. */
 export async function saveInvoice(input: Invoice): Promise<Invoice> {
   const priorRevision = input.updated_at;
@@ -1215,11 +1210,19 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
             'CREDIT_TARGET_NOT_ISSUED',
             'A credit note requires a credited invoice',
           );
+        const candidateTenantId = getTenantId() ?? invoice.tenantId ?? null;
+        const settings = await lockRuntimeSettings(tx, candidateTenantId);
         const existing = invoice.id ? await findInvoice(tx, invoice.id) : null;
-        const tenantId =
-          existing?.tenantId ?? invoice.tenantId ?? getTenantId() ?? null;
-        const settings = await settingsForTenant(tx, tenantId);
-        assertRuntimeAvailable(settings);
+        const tenantId = existing?.tenantId ?? candidateTenantId;
+        if (
+          candidateTenantId &&
+          existing?.tenantId &&
+          existing.tenantId !== candidateTenantId
+        )
+          throw new MoneyValidationError(
+            'INVALID_MONEY_INPUT',
+            'Invoice tenant does not match its active money barrier',
+          );
         if (settings?.moneyModel !== 'v2') {
           return invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
             recomputeLegacy: true,
@@ -1407,6 +1410,8 @@ export async function saveInvoiceLineItem(
 ): Promise<InvoiceLineItem> {
   return withDocumentMoneyTransaction(input.db, async (tx) =>
     input.withDatabase(tx, async (line) => {
+      const candidateTenantId = getTenantId() ?? line.tenantId ?? null;
+      const settings = await lockRuntimeSettings(tx, candidateTenantId);
       const persisted = line.id
         ? await (await InvoiceLineItemCollection.create({ db: tx })).get(
             { id: line.id },
@@ -1415,8 +1420,11 @@ export async function saveInvoiceLineItem(
         : null;
       const parentId = persisted?.invoiceId ?? line.invoiceId;
       const first = await loadInvoice(tx, parentId);
-      const settings = await settingsForTenant(tx, first.invoice.tenantId);
-      assertRuntimeAvailable(settings);
+      if (candidateTenantId && first.invoice.tenantId !== candidateTenantId)
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          'Invoice line tenant does not match its active money barrier',
+        );
       if (settings?.moneyModel !== 'v2')
         return line.saveDerived(DOCUMENT_MONEY_WRITE, true);
       assertTenantId(first.invoice.tenantId);
@@ -1499,6 +1507,8 @@ export async function deleteInvoiceLineItem(
 ): Promise<void> {
   await withDocumentMoneyTransaction(input.db, async (tx) =>
     input.withDatabase(tx, async (line) => {
+      const candidateTenantId = getTenantId() ?? line.tenantId ?? null;
+      const settings = await lockRuntimeSettings(tx, candidateTenantId);
       const persisted = line.id
         ? await (await InvoiceLineItemCollection.create({ db: tx })).get(
             { id: line.id },
@@ -1507,8 +1517,11 @@ export async function deleteInvoiceLineItem(
         : null;
       if (!persisted) return;
       const first = await loadInvoice(tx, persisted.invoiceId);
-      const settings = await settingsForTenant(tx, first.invoice.tenantId);
-      assertRuntimeAvailable(settings);
+      if (candidateTenantId && first.invoice.tenantId !== candidateTenantId)
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          'Invoice line tenant does not match its active money barrier',
+        );
       if (settings?.moneyModel !== 'v2') {
         await line.deleteDerived(DOCUMENT_MONEY_WRITE, options);
         return;
@@ -1542,10 +1555,15 @@ export async function deleteInvoice(
 ): Promise<void> {
   await withDocumentMoneyTransaction(input.db, async (tx) =>
     input.withDatabase(tx, async (invoice) => {
+      const candidateTenantId = getTenantId() ?? invoice.tenantId ?? null;
+      const settings = await lockRuntimeSettings(tx, candidateTenantId);
       const persisted = invoice.id ? await findInvoice(tx, invoice.id) : null;
       if (!persisted) return;
-      const settings = await settingsForTenant(tx, persisted.tenantId);
-      assertRuntimeAvailable(settings);
+      if (candidateTenantId && persisted.tenantId !== candidateTenantId)
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          'Invoice tenant does not match its active money barrier',
+        );
       if (settings?.moneyModel === 'v2' && isFrozen(persisted))
         throw new MoneyValidationError(
           'FROZEN_DOCUMENT',

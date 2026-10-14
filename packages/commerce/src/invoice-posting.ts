@@ -7,7 +7,7 @@ import { ISO_4217_MINOR_UNITS } from '@happyvertical/smrt-ui/currency';
 import { deterministicId } from './billing/units.js';
 import { DocumentTaxCollection } from './collections/DocumentTaxCollection.js';
 import { InvoiceLineItemCollection } from './collections/InvoiceLineItemCollection.js';
-import { lockAndReloadInvoice, settingsForTenant } from './document-money.js';
+import { lockAndReloadInvoice } from './document-money.js';
 import {
   DOCUMENT_MONEY_WRITE,
   withDocumentMoneyTransaction,
@@ -15,6 +15,7 @@ import {
 import type { Invoice } from './models/Invoice.js';
 import { MoneyValidationError } from './money.js';
 import { buildRevenueJournalEntries } from './revenue-journal.js';
+import { lockTenantMoneyRuntime } from './tenant-money-barrier.js';
 import {
   type CancelRevenueOptions,
   InvoiceStatus,
@@ -61,14 +62,6 @@ function assertTenantAuthority(tenantId: string): void {
     throw new MoneyValidationError(
       'INVALID_MONEY_INPUT',
       'Invoice posting requires its active tenant context',
-    );
-}
-
-function assertPostingAvailable(settings: { moneyModel: string } | null): void {
-  if (settings?.moneyModel === 'migrating')
-    throw new MoneyValidationError(
-      'FROZEN_DOCUMENT',
-      'Tenant money migration is in progress',
     );
 }
 
@@ -194,9 +187,10 @@ export async function recognizeInvoiceRevenueV2(
 ): Promise<Journal | null> {
   return withDocumentMoneyTransaction(input.db, async (tx) =>
     input.withDatabase(tx, async (callerInvoice) => {
-      const candidateTenantId = callerInvoice.tenantId;
-      const settings = await settingsForTenant(tx, candidateTenantId);
-      assertPostingAvailable(settings);
+      const candidateTenantId = getTenantId() ?? callerInvoice.tenantId;
+      const settings = candidateTenantId
+        ? (await lockTenantMoneyRuntime(tx, candidateTenantId)).settings
+        : null;
       if (settings?.moneyModel !== 'v2') return null;
       const invoiceId = required(callerInvoice.id, 'Invoice ID');
       const tenantId = required(candidateTenantId, 'Invoice tenant ID');
@@ -332,9 +326,10 @@ export async function cancelInvoiceWithRevenueReversal(
 ): Promise<Journal | null> {
   return withDocumentMoneyTransaction(input.db, async (tx) =>
     input.withDatabase(tx, async (callerInvoice) => {
-      const candidateTenantId = callerInvoice.tenantId;
-      const settings = await settingsForTenant(tx, candidateTenantId);
-      assertPostingAvailable(settings);
+      const candidateTenantId = getTenantId() ?? callerInvoice.tenantId;
+      const settings = candidateTenantId
+        ? (await lockTenantMoneyRuntime(tx, candidateTenantId)).settings
+        : null;
       if (settings?.moneyModel !== 'v2') {
         callerInvoice.cancel();
         await callerInvoice.saveDerived(DOCUMENT_MONEY_WRITE, {

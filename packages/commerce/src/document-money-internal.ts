@@ -18,6 +18,14 @@ export const MONEY_MIGRATION_WRITE = Symbol('commerce.moneyMigrationWrite');
 
 export type MoneyMigrationWriteCapability = typeof MONEY_MIGRATION_WRITE;
 
+/** Internal capability for returning a locked snapshot on its root executor. */
+export const DOCUMENT_MONEY_READ_REBIND = Symbol(
+  'commerce.documentMoneyReadRebind',
+);
+
+export type DocumentMoneyReadRebindCapability =
+  typeof DOCUMENT_MONEY_READ_REBIND;
+
 export interface MoneyParentLockCollection {
   readonly tableName: string;
   query(

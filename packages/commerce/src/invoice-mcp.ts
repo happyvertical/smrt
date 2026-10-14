@@ -2,10 +2,12 @@
 
 import type { PublicJsonOptions } from '@happyvertical/smrt-core';
 import { DocumentTaxCollection } from './collections/DocumentTaxCollection.js';
+import { InvoiceCollection } from './collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from './collections/InvoiceLineItemCollection.js';
-import { getInvoiceMoneyFacts, settingsForTenant } from './document-money.js';
+import { getInvoiceMoneyFacts } from './document-money.js';
 import type { Invoice } from './models/Invoice.js';
 import { MoneyValidationError } from './money.js';
+import { withTenantMoneyRuntime } from './tenant-money-barrier.js';
 
 export type InvoiceMcpGetResult = Record<string, unknown> & {
   money?: Awaited<ReturnType<typeof getInvoiceMoneyFacts>>;
@@ -106,36 +108,42 @@ export async function serializeInvoiceMcpGet(
   invoice: Invoice,
   options?: PublicJsonOptions,
 ): Promise<InvoiceMcpGetResult> {
-  const base = invoice.toPublicJSON(options);
-  const settings = await settingsForTenant(invoice.db, invoice.tenantId);
-  if (settings?.moneyModel === 'migrating') {
-    throw new MoneyValidationError(
-      'FROZEN_DOCUMENT',
-      'Tenant money migration is in progress',
-    );
-  }
-  if (settings?.moneyModel !== 'v2') return base;
-  if (!invoice.id || !invoice.tenantId) {
-    throw new MoneyValidationError(
-      'INVALID_MONEY_INPUT',
-      'Invoice MCP money facts require a persisted tenant invoice',
-    );
-  }
-  if (
-    !(await mayExposeMoneyProjection(
-      invoice,
-      invoice.id,
-      invoice.tenantId,
-      options,
-    ))
-  )
-    return base;
-  return {
-    ...base,
-    money: await getInvoiceMoneyFacts({
-      db: invoice.db,
-      tenantId: invoice.tenantId,
-      invoiceId: invoice.id,
-    }),
-  };
+  if (!invoice.id || !invoice.tenantId) return invoice.toPublicJSON(options);
+  const invoiceId = invoice.id;
+  const tenantId = invoice.tenantId;
+  return withTenantMoneyRuntime(
+    invoice.db,
+    tenantId,
+    'legacy-or-v2',
+    async (scope) => {
+      if (scope.barrier.moneyModel !== 'v2')
+        return invoice.toPublicJSON(options);
+      const authoritative = await (
+        await InvoiceCollection.create({ db: scope.db })
+      ).get({ id: invoiceId }, { cache: false });
+      if (!authoritative || authoritative.tenantId !== tenantId)
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          'Invoice MCP money facts require a persisted tenant invoice',
+        );
+      const base = authoritative.toPublicJSON(options);
+      if (
+        !(await mayExposeMoneyProjection(
+          authoritative,
+          invoiceId,
+          tenantId,
+          options,
+        ))
+      )
+        return base;
+      return {
+        ...base,
+        money: await getInvoiceMoneyFacts({
+          db: scope.db,
+          tenantId,
+          invoiceId,
+        }),
+      };
+    },
+  );
 }

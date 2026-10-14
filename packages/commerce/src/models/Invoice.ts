@@ -10,6 +10,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import type { Journal, JournalEntryData } from '@happyvertical/smrt-ledgers';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
@@ -18,7 +19,9 @@ import {
 } from '../allocation-integrity.js';
 import { minorToMajorUnits } from '../billing/units.js';
 import {
+  DOCUMENT_MONEY_READ_REBIND,
   DOCUMENT_MONEY_WRITE,
+  type DocumentMoneyReadRebindCapability,
   type DocumentMoneyWriteCapability,
 } from '../document-money-internal.js';
 import type { FrozenInvoiceAccountingOptions } from '../invoice-accounting-sync.js';
@@ -209,6 +212,21 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
   cli: { skipApiCheck: true },
 })
 export class Invoice extends SmrtObject {
+  /** @internal Collection read guard returns this snapshot on its root DB. */
+  rebindMoneyRead(
+    capability: DocumentMoneyReadRebindCapability,
+    db: DatabaseInterface,
+  ): this {
+    if (capability !== DOCUMENT_MONEY_READ_REBIND)
+      throw new MoneyValidationError(
+        'FROZEN_DOCUMENT',
+        'Invoice read rebinding requires the owning capability',
+      );
+    this._db = db;
+    this.options.db = db;
+    return this;
+  }
+
   @field({ description: 'Invoice or customer credit note.' })
   kind: InvoiceKind = 'invoice';
 
@@ -1301,14 +1319,25 @@ export class Invoice extends SmrtObject {
   async toAccountingInput(
     options?: FrozenInvoiceAccountingOptions,
   ): Promise<AccountingInvoiceInput> {
-    const { settingsForTenant } = await import('../document-money.js');
-    const settings = await settingsForTenant(this.db, this.tenantId);
-    if (settings?.moneyModel === 'migrating') {
-      throw new MoneyValidationError(
-        'FROZEN_DOCUMENT',
-        'Tenant money migration is in progress',
-      );
-    }
+    if (!this.tenantId) return this.toAccountingInputLocked(options, null);
+    const { withTenantMoneyRuntime } = await import(
+      '../tenant-money-barrier.js'
+    );
+    return withTenantMoneyRuntime(
+      this.db,
+      this.tenantId,
+      'legacy-or-v2',
+      (scope) =>
+        this.withDatabase(scope.db, (bound) =>
+          bound.toAccountingInputLocked(options, scope.barrier.settings),
+        ),
+    );
+  }
+
+  private async toAccountingInputLocked(
+    options: FrozenInvoiceAccountingOptions | undefined,
+    settings: { moneyModel: string } | null,
+  ): Promise<AccountingInvoiceInput> {
     if (settings?.moneyModel === 'v2') {
       if (!options) {
         throw new MoneyValidationError(
