@@ -100,7 +100,7 @@
     "dev:library": "vite build --mode library --watch",
     "generate": "node scripts/generate-smrt-types.js",
     "typecheck": "npm run generate && tsc --noEmit -p tsconfig.json",
-    "build": "npm run build:lib",
+    "build": "npm run generate && npm run build:lib",
     "build:all": "npm run clean && npm run generate && npm run build:lib && npm run build:app && npm run build:federation",
     "build:lib": "vite build --mode library && svelte-package -i src/lib/components -o dist/lib/lib/components --tsconfig tsconfig.svelte.json && svelte-package -i src/lib/features -o dist/lib/lib/features --tsconfig tsconfig.svelte.json && svelte-package -i src/lib/stores -o dist/lib/lib/stores --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "build:app": "vite build --mode standalone",
@@ -118,7 +118,7 @@
     "test:code-split": "node scripts/check-web-engine-code-split.mjs",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
     "clean": "rm -rf dist src/lib/types/smrt-generated",
-    "prepare": "test -f ../smrt/dist/vite-plugin/index.js && npm run build:lib || echo 'Skipping products build:lib (smrt vite-plugin not available yet)'"
+    "prepare": "if test -f ../core/dist/vite-plugin/index.js; then npm run build; else echo 'Skipping products build (smrt vite-plugin not available yet)'; fi"
   },
   "keywords": [
     "smrt",
