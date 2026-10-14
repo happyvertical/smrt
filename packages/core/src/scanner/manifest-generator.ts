@@ -308,6 +308,11 @@ export class ManifestGenerator {
       for (const objectDef of result.objects) {
         if (objectDef.decoratorConfig?.abstract === true) {
           const config = objectDef.decoratorConfig;
+          // Hosted concrete descendants inherit the author's restrictions,
+          // not the write exclusions synthesized for this abstract type.
+          if (!Object.hasOwn(objectDef, 'abstractDeclaredApi')) {
+            objectDef.abstractDeclaredApi = config.api ?? null;
+          }
           for (const surface of ['api', 'mcp', 'cli'] as const) {
             if (config[surface] === false) continue;
             const current = config[surface];

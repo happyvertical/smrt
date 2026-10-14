@@ -189,6 +189,9 @@ describe('separateHostedStiCollections', () => {
         },
       },
     };
+    (
+      abstractManifest.objects[ref('SalesContract')] as any
+    ).abstractDeclaredApi = null;
     const next = separateHostedStiCollections(
       abstractManifest,
       [ref('Order')],
@@ -203,6 +206,31 @@ describe('separateHostedStiCollections', () => {
     ).toEqual({
       exclude: ['create', 'update', 'delete'],
     });
+  });
+
+  it.each([
+    [false, false],
+    [{ exclude: ['delete', 'create', 'update'] }, { exclude: ['delete'] }],
+  ])('preserves authored API restrictions on an abstract STI parent', (api, declared) => {
+    const restricted = {
+      version: '1',
+      objects: {
+        ...manifestObjects(),
+        [ref('SalesContract')]: {
+          ...stiChild('SalesContract', { abstract: true, api }),
+          abstractDeclaredApi: declared,
+        },
+        [ref('Order')]: { ...stiChild('Order'), extends: 'SalesContract' },
+      },
+    };
+    const next = separateHostedStiCollections(
+      restricted,
+      [ref('Order')],
+      refOf,
+    ) as typeof restricted;
+    expect((next.objects[ref('Order')] as any).decoratorConfig.api).toEqual(
+      declared,
+    );
   });
 
   it('keeps the STI base permission namespace on a moved subclass (#3770)', () => {

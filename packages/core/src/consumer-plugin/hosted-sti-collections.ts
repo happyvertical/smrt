@@ -56,11 +56,15 @@ function inheritedApi(
       parent.decoratorConfig?.tableStrategy === 'sti';
     if (!sti) return undefined;
     const api = parent.decoratorConfig?.api;
-    // An abstract intermediate's read-only API describes that discriminator,
-    // not its concrete leaves. Continue to the concrete/root contract so a
-    // hosted leaf keeps its write routes (#3898).
-    if (api !== undefined && parent.decoratorConfig?.abstract !== true)
+    // Preserve authored restrictions on an abstract ancestor, but do not
+    // inherit the write exclusions synthesized for its own discriminator.
+    // Old manifests without the marker keep their API policy (fail closed).
+    if (parent.decoratorConfig?.abstract === true) {
+      if (parent.abstractDeclaredApi !== null)
+        return parent.abstractDeclaredApi ?? api;
+    } else if (api !== undefined) {
       return api;
+    }
     child = parent;
     parentName = parent.extendsQualified || parent.extends;
   }

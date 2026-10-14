@@ -100,10 +100,14 @@ describe('ManifestGenerator coverage', () => {
             api: { include: ['list', 'create'] },
           },
         }),
+        def('NoPolicyWidget', { decoratorConfig: { abstract: true } }),
       ]),
     ]);
     const config = manifest.objects.abstractwidget.decoratorConfig;
     expect(config.abstract).toBe(true);
+    expect(manifest.objects.abstractwidget.abstractDeclaredApi).toEqual({
+      include: ['list', 'get', 'create', 'browse'],
+    });
     for (const surface of ['api', 'mcp', 'cli'] as const) {
       expect(config[surface]).toMatchObject({
         include: ['list', 'get', 'create', 'browse'],
@@ -114,6 +118,10 @@ describe('ManifestGenerator coverage', () => {
       include: ['list', 'create'],
       exclude: ['create', 'update', 'delete'],
     });
+    expect(manifest.objects.listonlywidget.abstractDeclaredApi).toEqual({
+      include: ['list', 'create'],
+    });
+    expect(manifest.objects.nopolicywidget.abstractDeclaredApi).toBeNull();
   });
 
   describe('schema generation strategies', () => {
