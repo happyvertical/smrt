@@ -99,5 +99,10 @@ useControlRegistration(() => {
   .toggle-button:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .toggle-button:disabled { opacity: .5; cursor: not-allowed; }
   .toggle-button[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .toggle-button.pressed { background: Highlight; color: HighlightText; border-color: Highlight; }
+    .toggle-button:disabled, .toggle-button.pressed:disabled { opacity: 1; background: Canvas; color: GrayText; border-color: GrayText; }
+  }
 }
 </style>

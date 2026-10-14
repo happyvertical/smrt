@@ -121,5 +121,10 @@ const role = $derived(
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .smrt-alert__root { background: Canvas; border-color: CanvasText; }
+    .smrt-alert__marker { background: CanvasText; }
+  }
 }
 </style>

@@ -158,5 +158,10 @@ function handleClick(value: string) {
   .filter-chips[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .filter-chips[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .filter-chip { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .filter-chip.active { background-color: Highlight; color: HighlightText; border-color: Highlight; }
+    .filter-chip:disabled, .filter-chip.active:disabled { opacity: 1; background: Canvas; color: GrayText; border-color: GrayText; }
+  }
 }
 </style>

@@ -287,5 +287,14 @@ useControlRegistration(() => {
       transition: none;
     }
   }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .smrt-checkbox__box { background: Canvas; border-color: CanvasText; }
+    input:checked + .smrt-checkbox__box, input:indeterminate + .smrt-checkbox__box { background: Highlight; border-color: Highlight; color: HighlightText; }
+    .smrt-checkbox__dash { background: HighlightText; }
+    .smrt-checkbox__disabled { opacity: 1; color: GrayText; }
+    .smrt-checkbox__disabled .smrt-checkbox__box, .smrt-checkbox__disabled input:checked + .smrt-checkbox__box, .smrt-checkbox__disabled input:indeterminate + .smrt-checkbox__box { background: Canvas; border-color: GrayText; color: GrayText; }
+    .smrt-checkbox__disabled .smrt-checkbox__dash { background: GrayText; }
+  }
 }
 </style>

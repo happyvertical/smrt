@@ -69,6 +69,12 @@ sample data source are not part of it.
   `validateCookbook` is where it is rejected). A brand colour becomes the preset
   id `cookbook-brand-<hex>[-<font>]`; the colour/font pair is encoded in the id
   because `ThemeProvider` looks a registered theme up once per id.
+  `borderRadius`, `density` and `contrast` pass through (also leniently: an
+  unknown value is dropped) to `AppShell`'s props of the same names, which hand
+  them to `ThemeProvider`. As with `preset` and `colorScheme`, a user's persisted
+  `ThemeProvider` preference wins after mount. The brand colour is
+  `createThemeFromColor` and replaces the preset; it is not `ThemeProvider`'s
+  `primaryColor`, which tints the current preset and which the cookbook never sets.
   A top-level `fontFamily` keeps the built-in preset's palette, spacing and
   shape while replacing its typography. It takes precedence over the legacy
   `custom.fontFamily` when both are present.

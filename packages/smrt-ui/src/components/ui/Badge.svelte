@@ -71,5 +71,9 @@ const { variant = 'default', size = 'md', children, ...rest }: Props = $props();
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .smrt-badge__root { background: Canvas; color: CanvasText; border-color: CanvasText; }
+  }
 }
 </style>

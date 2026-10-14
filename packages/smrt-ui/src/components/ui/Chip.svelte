@@ -195,5 +195,10 @@ const {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .smrt-chip__root.smrt-chip__selected { border-color: Highlight; outline: var(--smrt-focus-ring-width) solid Highlight; outline-offset: calc(-1 * var(--smrt-focus-ring-width)); }
+    .smrt-chip__root.smrt-chip__disabled, .smrt-chip__root.smrt-chip__selected.smrt-chip__disabled { opacity: 1; color: GrayText; border-color: GrayText; outline-color: GrayText; }
+  }
 }
 </style>

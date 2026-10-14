@@ -247,5 +247,15 @@ useControlRegistration(() => {
       transition: none;
     }
   }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .smrt-switch__track { background: Canvas; border-color: CanvasText; }
+    .smrt-switch__thumb { background: CanvasText; }
+    input:checked + .smrt-switch__track { background: Highlight; border-color: Highlight; }
+    input:checked + .smrt-switch__track .smrt-switch__thumb { background: HighlightText; }
+    .smrt-switch__disabled { opacity: 1; color: GrayText; }
+    .smrt-switch__disabled .smrt-switch__track, .smrt-switch__disabled input:checked + .smrt-switch__track { background: Canvas; border-color: GrayText; }
+    .smrt-switch__disabled .smrt-switch__thumb, .smrt-switch__disabled input:checked + .smrt-switch__track .smrt-switch__thumb { background: GrayText; }
+  }
 }
 </style>

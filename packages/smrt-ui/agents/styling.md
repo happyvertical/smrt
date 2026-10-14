@@ -206,6 +206,28 @@ Headings, role utilities (`.smrt-display-large` ... `.smrt-label-small`) and tab
 
 Built-in presets stay static (no inline token payload); only user overrides go inline: non-`md` `borderRadius` (control radius tokens), `primaryColor` (derived set via `derivePrimaryOverrides`) and `density`. `data-smrt-theme-changing` marks one `--smrt-duration-scheme` after a post-mount scheme change (not on first paint, not under reduced motion); `data-contrast` (`standard|more|forced`) and `data-forced-colors` come from `prefers-contrast`/`forced-colors` or the `contrast` prop. `themeScript()` stamps `data-contrast`/`data-density` pre-paint from the same persisted config; keep it tiny. Forced-colors contract: hairlines `CanvasText`, focus rings `Highlight`, no painting over system colours.
 
+## Forced colors
+
+Contract and token table: [Forced colors](../src/themes/README.md#forced-colors).
+
+- The token layer (hairlines `CanvasText`, focus ring `Highlight` 3px, inert elevations,
+  no glass blur, `Canvas` glass and scrim, zeroed state layers) lives in `base.css`,
+  **unlayered** (preset token blocks are unlayered, so only an unlayered rule beats them),
+  and as `FORCED_COLORS_TOKENS` for `ThemeProvider`. Components never redeclare those
+  tokens; they consume them.
+- A component adds a `@media (forced-colors: active)` block inside its `smrt.theme` layer
+  only where colour alone carries meaning (selected, checked, pressed, open, disabled),
+  using system colours: `Canvas`, `CanvasText`, `Highlight`, `HighlightText`, `GrayText`.
+  Paint a non-colour cue too (indicator bar, outline, bold text). Do not use `opacity` to
+  express disabled; use `GrayText`.
+- If a rule sets `outline` for selection, scope it `:not(:focus-visible)` so it never
+  replaces the focus ring.
+- Keep `forced-color-adjust: auto`. The only valid reason for `none` is an element whose
+  author colour is the content (colour picker, swatch); say why in a comment.
+- Test with `page.emulateMedia({ forcedColors: 'active' })` and assert computed values
+  (`border-color` resolves to a system colour, no visible `box-shadow`, `backdrop-filter`
+  blur 0, focus ring `Highlight` and at least 2px).
+
 
 Use `--smrt-hairline` / `--smrt-hairline-strong` for quiet / strong edges, `--smrt-hairline-color` / `--smrt-hairline-strong-color` for edge colours and matching `--smrt-inset-highlight` shadows (transparent when neutral, never `none` in shadow lists); run `node scripts/codemod-smrt-hairlines.mjs` to convert supported literals and list exceptions, and spell concrete token names in markdown because `scripts/check-svelte-tokens.mjs` scans docs under `src`.
 

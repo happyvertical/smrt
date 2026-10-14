@@ -522,5 +522,15 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     border-bottom: 0;
     border-radius: var(--smrt-radius-extra-small);
   }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .smrt-tabs__active-indicator { background-color: Highlight; }
+    .smrt-tabs__tab-button.smrt-tabs__active, .smrt-tabs__tab-link.smrt-tabs__active { color: Highlight; }
+    .smrt-tabs__tab-link { border-bottom-color: Canvas; }
+    .smrt-tabs__tab-link.smrt-tabs__active { border-bottom-color: Highlight; }
+    .smrt-tabs__tab-dot { background: CanvasText; }
+    .smrt-tabs__tab-badge { background: Canvas; border: var(--smrt-hairline-strong); }
+    .smrt-tabs__tab-button:disabled, .smrt-tabs__tab-link[aria-disabled='true'] { opacity: 1; color: GrayText; }
+  }
 }
 </style>
