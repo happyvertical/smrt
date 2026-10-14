@@ -125,7 +125,23 @@ export class TaxSettings extends SmrtObject {
     return this.saveValidated(true);
   }
 
-  private async saveValidated(allowMoneyModelWrite: boolean): Promise<this> {
+  /** @internal Caller already owns the transaction-bound migration barrier. */
+  async saveMoneyModelOnTransaction(
+    capability: MoneyMigrationWriteCapability,
+  ): Promise<this> {
+    if (capability !== MONEY_MIGRATION_WRITE) {
+      throw new MoneyValidationError(
+        'FROZEN_DOCUMENT',
+        'Tenant money model requires the migration capability',
+      );
+    }
+    return this.saveValidated(true, true);
+  }
+
+  private async saveValidated(
+    allowMoneyModelWrite: boolean,
+    transactionBound = false,
+  ): Promise<this> {
     if (
       !['exclusive', 'inclusive', 'none'].includes(this.defaultLineAmountType)
     )
@@ -148,7 +164,7 @@ export class TaxSettings extends SmrtObject {
       )
     )
       throw new Error('Tax registrations require component, number and label');
-    return this.withTransaction(async () => {
+    const persist = async (): Promise<this> => {
       const { TaxCodeCollection } = await import(
         '../collections/TaxCodeCollection.js'
       );
@@ -191,7 +207,8 @@ export class TaxSettings extends SmrtObject {
           );
       }
       return (await super.save()) as this;
-    });
+    };
+    return transactionBound ? persist() : this.withTransaction(persist);
   }
 
   private parsedRegistrations(): TaxRegistration[] | null {

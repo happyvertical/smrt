@@ -3,6 +3,8 @@
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { MoneyValidationError } from './money.js';
 
+const activeMoneyTransactions = new WeakSet<object>();
+
 /**
  * Capability required by derived money rows. This module is intentionally not
  * exported from the package root; aggregate persistence owns every mutation.
@@ -61,13 +63,21 @@ export async function withDocumentMoneyTransaction<T>(
   db: DatabaseInterface,
   operation: (tx: DatabaseInterface) => Promise<T>,
 ): Promise<T> {
+  if (activeMoneyTransactions.has(db as object)) return operation(db);
   if (!db.transaction) {
     throw new MoneyValidationError(
       'INVALID_MONEY_INPUT',
       'Document money persistence requires transaction support',
     );
   }
-  return db.transaction(operation);
+  return db.transaction(async (tx) => {
+    activeMoneyTransactions.add(tx as object);
+    try {
+      return await operation(tx);
+    } finally {
+      activeMoneyTransactions.delete(tx as object);
+    }
+  });
 }
 
 /**
