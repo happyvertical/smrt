@@ -13,7 +13,10 @@ import { RoleCollection } from '../collections/RoleCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import type { User } from '../models/User.js';
-import { DEFAULT_PASSWORD_MANAGE_PERMISSION } from '../services/PasswordCredentialService.js';
+import {
+  DEFAULT_PASSWORD_MANAGE_PERMISSION,
+  outOfBandProofSessionData,
+} from '../services/PasswordCredentialService.js';
 import { SessionService } from '../services/SessionService.js';
 import {
   createPasswordCredentialHandlers,
@@ -372,5 +375,51 @@ describe('createPasswordCredentialHandlers', () => {
     expect(changed.status).toBe(200);
     expect(await read(changed)).toMatchObject({ signedOut: true });
     expect(change.jar.deleted).toEqual(['sid']);
+  });
+
+  it('replaces a forgotten password from a fresh recovery session and signs it out', async () => {
+    const recoverySession = await sessionService.createSession(
+      person.id as string,
+      tenantId,
+      {
+        authMethod: 'owner-recovery',
+        data: outOfBandProofSessionData(),
+      },
+    );
+    const locals = await localsFor(recoverySession);
+    const body = { newPassword: 'a remembered secret' };
+
+    // Not configured on these handlers: refused.
+    const disabled = makeEvent({ body, locals });
+    expect(
+      (await handlers.replaceForgottenPassword(disabled.event)).status,
+    ).toBe(403);
+
+    const recovering = createPasswordCredentialHandlers({
+      ...options,
+      tenantId: () => tenantId,
+      password: { scrypt: { N: 2 ** 10 } },
+      limiter: { maxAttempts: 3, windowSeconds: 60, audit: false },
+      recovery: { authMethods: ['owner-recovery'] },
+    });
+    const anonymous = makeEvent({ body });
+    expect(
+      (await recovering.replaceForgottenPassword(anonymous.event)).status,
+    ).toBe(401);
+    const ok = makeEvent({ body, locals, cookies: { sid: recoverySession } });
+    const response = await recovering.replaceForgottenPassword(ok.event);
+    expect(response.status).toBe(200);
+    expect(await read(response)).toMatchObject({ signedOut: true });
+    expect(ok.jar.deleted).toEqual(['sid']);
+    expect(await sessionService.loadSessionContext(recoverySession)).toBeNull();
+    const again = makeEvent({ body, locals });
+    expect(
+      (await recovering.replaceForgottenPassword(again.event)).status,
+    ).toBe(403);
+    const { response: signedIn } = await signIn(
+      'pat@example.com',
+      'a remembered secret',
+    );
+    expect(signedIn.status).toBe(200);
   });
 });

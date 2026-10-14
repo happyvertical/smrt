@@ -14,9 +14,17 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { platform, tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { JobHandle, SmrtJobCollection } from '@happyvertical/smrt-jobs';
+import {
+  MembershipCollection,
+  MembershipStatus,
+  RoleCollection,
+  TenantCollection,
+  UserCollection,
+  UserStatus,
+} from '@happyvertical/smrt-users';
 import * as sql from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as localRuntimeApi from './index.js';
@@ -47,10 +55,14 @@ const filesystemInterleave = vi.hoisted(() => ({
     | ((
         path: Parameters<typeof import('node:fs/promises').unlink>[0],
       ) => Promise<void>),
+  lstatOwner: undefined as undefined | ((path: string) => number | undefined),
+  lstatSymlink: undefined as undefined | ((path: string) => boolean),
+  uidMap: undefined as undefined | string,
 }));
 
 const initializationLockWorkerInterleave = vi.hoisted(() => ({
   releaseFailure: undefined as Error | undefined,
+  lockPaths: [] as string[],
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -74,6 +86,27 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       await filesystemInterleave.beforeUnlink?.(path);
       return actual.unlink(path);
     },
+    readFile: async (...args: unknown[]) => {
+      if (
+        args[0] === '/proc/self/uid_map' &&
+        filesystemInterleave.uidMap !== undefined
+      ) {
+        return filesystemInterleave.uidMap;
+      }
+      return Reflect.apply(actual.readFile, actual, args);
+    },
+    lstat: async (...args: unknown[]) => {
+      const details = await Reflect.apply(actual.lstat, actual, args);
+      const uid = filesystemInterleave.lstatOwner?.(String(args[0]));
+      const symlink = filesystemInterleave.lstatSymlink?.(String(args[0]));
+      if (uid === undefined && !symlink) return details;
+      return Object.assign(Object.create(Object.getPrototypeOf(details)), {
+        ...details,
+        ...(uid === undefined ? {} : { uid }),
+        // S_IFLNK in place of the file-type bits.
+        ...(symlink ? { mode: (details.mode & 0o7777) | 0o120000 } : {}),
+      });
+    },
   };
 });
 
@@ -82,6 +115,14 @@ vi.mock('node:worker_threads', async (importOriginal) => {
   return {
     ...actual,
     Worker: class extends actual.Worker {
+      constructor(...args: ConstructorParameters<typeof actual.Worker>) {
+        super(...args);
+        const path = (args[1]?.workerData as { path?: unknown } | undefined)
+          ?.path;
+        if (typeof path === 'string') {
+          initializationLockWorkerInterleave.lockPaths.push(path);
+        }
+      }
       override postMessage(value: unknown): void {
         const releaseFailure =
           initializationLockWorkerInterleave.releaseFailure;
@@ -109,6 +150,9 @@ afterEach(async () => {
   filesystemInterleave.beforeLink = undefined;
   filesystemInterleave.afterReaddir = undefined;
   filesystemInterleave.beforeUnlink = undefined;
+  filesystemInterleave.lstatOwner = undefined;
+  filesystemInterleave.lstatSymlink = undefined;
+  filesystemInterleave.uidMap = undefined;
   initializationLockWorkerInterleave.releaseFailure = undefined;
   vi.restoreAllMocks();
   await Promise.all(
@@ -156,6 +200,22 @@ async function initializationLockPath(dataDirectory: string): Promise<string> {
   const lockPath = join(lockRoot, lockKey, 'initialization.sqlite');
   initializationLockPaths.add(lockPath);
   return lockPath;
+}
+
+function besideDataLockPath(dataDirectory: string): string {
+  const lockIdentity =
+    platform() === 'darwin' || platform() === 'win32'
+      ? dataDirectory.toLowerCase()
+      : dataDirectory;
+  const lockKey = createHash('sha256')
+    .update(lockIdentity)
+    .digest('hex')
+    .slice(0, 32);
+  return join(
+    dirname(dataDirectory),
+    `.smrt-lease-${lockKey}`,
+    'initialization.sqlite',
+  );
 }
 
 async function holdInitializationDatabaseUntilKilled(
@@ -344,6 +404,180 @@ describe('local application runtime', () => {
     expect((await initialized.runtime.diagnostics()).bootstrap.status).toBe(
       'claimed',
     );
+  });
+
+  describe('owner tenant (#3032)', () => {
+    async function seedTenant(
+      db: Parameters<typeof TenantCollection.create>[0]['db'],
+      values: { name: string; slug: string; parentTenantId?: string },
+    ) {
+      const tenants = await TenantCollection.create({ db });
+      const tenant = await tenants.create(values);
+      await tenant.save();
+      return tenant.id as string;
+    }
+
+    it('fails closed instead of replacing an existing default tenant, and stays claimable', async () => {
+      const directories = await localDirectories('tenant-conflict');
+      const initialized = await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+      });
+      const db = initialized.runtime.db;
+      const seededId = await seedTenant(db, {
+        name: 'Seeded',
+        slug: 'default',
+      });
+      const input = {
+        token: initialized.bootstrap?.token as string,
+        name: 'Owner',
+        email: 'owner@example.com',
+      };
+
+      await expect(initialized.runtime.claimOwner(input)).rejects.toMatchObject(
+        { code: 'owner_tenant_conflict' },
+      );
+      const tenants = await db.query('SELECT id, slug, name FROM tenants');
+      expect(tenants.rows).toEqual([
+        { id: seededId, slug: 'default', name: 'Seeded' },
+      ]);
+      expect(await countRows(db, 'users')).toBe(0);
+      expect(await countRows(db, 'memberships')).toBe(0);
+      expect((await initialized.runtime.diagnostics()).bootstrap.status).toBe(
+        'available',
+      );
+      await initialized.runtime.db.close?.();
+
+      const reopened = await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        ownerTenant: { slug: 'workspace', name: 'Workspace' },
+      });
+      const claim = await reopened.runtime.claimOwner(input);
+      expect(claim.tenantId).not.toBe(seededId);
+      const created = await reopened.runtime.db.query(
+        'SELECT slug, name FROM tenants WHERE id = ?',
+        claim.tenantId,
+      );
+      expect(created.rows[0]).toEqual({ slug: 'workspace', name: 'Workspace' });
+      expect(await countRows(reopened.runtime.db, 'tenants')).toBe(2);
+    });
+
+    it('adopts an application-seeded member-less tenant and keeps its id', async () => {
+      const directories = await localDirectories('tenant-adopt');
+      const initialized = await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        ownerTenant: { slug: 'shop', adoptExisting: true },
+      });
+      const db = initialized.runtime.db;
+      const seededId = await seedTenant(db, { name: 'Shop', slug: 'shop' });
+
+      const claim = await initialized.runtime.claimOwner({
+        token: initialized.bootstrap?.token as string,
+        name: 'Owner',
+        email: 'owner@example.com',
+        tenantName: 'Ignored For Adoption',
+      });
+
+      expect(claim.tenantId).toBe(seededId);
+      const tenants = await db.query('SELECT id, slug, name FROM tenants');
+      expect(tenants.rows).toEqual([
+        { id: seededId, slug: 'shop', name: 'Shop' },
+      ]);
+      const membership = await db.query(
+        `SELECT memberships.tenant_id, memberships.status, roles.slug
+         FROM memberships JOIN roles ON roles.id = memberships.role_id
+         WHERE memberships.id = ?`,
+        claim.membershipId,
+      );
+      expect(membership.rows[0]).toMatchObject({
+        tenant_id: seededId,
+        status: MembershipStatus.ACTIVE,
+        slug: 'owner',
+      });
+      const restored = await initialized.runtime.restoreSession(
+        claim.sessionId,
+      );
+      expect(restored?.tenantId).toBe(seededId);
+    });
+
+    it('refuses to adopt a tenant that already has a membership', async () => {
+      const directories = await localDirectories('tenant-adopt-members');
+      const initialized = await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        ownerTenant: { adoptExisting: true },
+      });
+      const db = initialized.runtime.db;
+      const seededId = await seedTenant(db, {
+        name: 'Seeded',
+        slug: 'default',
+      });
+      const roles = await RoleCollection.create({ db });
+      await roles.seedSystemRoles();
+      const viewer = await roles.findSystemRoleBySlug('viewer');
+      const users = await UserCollection.create({ db });
+      const member = await users.create({
+        email: 'member@example.com',
+        status: UserStatus.ACTIVE,
+      });
+      await member.save();
+      const memberships = await MembershipCollection.create({ db });
+      const invited = await memberships.create({
+        userId: member.id as string,
+        tenantId: seededId,
+        roleId: viewer?.id as string,
+        status: MembershipStatus.INVITED,
+      });
+      await invited.save();
+
+      await expect(
+        initialized.runtime.claimOwner({
+          token: initialized.bootstrap?.token as string,
+          name: 'Owner',
+          email: 'owner@example.com',
+        }),
+      ).rejects.toMatchObject({ code: 'owner_tenant_conflict' });
+      expect(await countRows(db, 'memberships')).toBe(1);
+      expect(await countRows(db, 'users')).toBe(1);
+    });
+
+    it('refuses to adopt a child tenant that can inherit access', async () => {
+      const directories = await localDirectories('tenant-adopt-child');
+      const initialized = await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        ownerTenant: { slug: 'branch', adoptExisting: true },
+      });
+      const db = initialized.runtime.db;
+      const parentId = await seedTenant(db, { name: 'Head', slug: 'head' });
+      await seedTenant(db, {
+        name: 'Branch',
+        slug: 'branch',
+        parentTenantId: parentId,
+      });
+
+      await expect(
+        initialized.runtime.claimOwner({
+          token: initialized.bootstrap?.token as string,
+          name: 'Owner',
+          email: 'owner@example.com',
+        }),
+      ).rejects.toMatchObject({ code: 'owner_tenant_conflict' });
+      expect(await countRows(db, 'memberships')).toBe(0);
+    });
+
+    it('rejects an invalid owner tenant slug at initialization', async () => {
+      const directories = await localDirectories('tenant-slug');
+      await expect(
+        initializeLocalApplicationRuntime({
+          appId: 'lolaus',
+          ...directories,
+          ownerTenant: { slug: 'Not A Slug' },
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    });
   });
 
   it('is restart-idempotent and never duplicates an active invitation or owner records', async () => {
@@ -1106,6 +1340,364 @@ describe('local application runtime', () => {
       await expect(stat(directories.dataDirectory)).rejects.toMatchObject({
         code: 'ENOENT',
       });
+    },
+  );
+
+  it('places the initialization lease beside the data root and keeps the /tmp compatibility lease', async () => {
+    const directories = await localDirectories('lease-beside-data');
+    const temporaryLockPath = await initializationLockPath(
+      directories.dataDirectory,
+    );
+    const besideLockPath = besideDataLockPath(directories.dataDirectory);
+
+    await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+
+    expect((await stat(dirname(besideLockPath))).mode & 0o777).toBe(0o700);
+    expect((await stat(besideLockPath)).isFile()).toBe(true);
+    expect((await stat(temporaryLockPath)).isFile()).toBe(true);
+  });
+
+  it('serializes initialization beside the data when /tmp reads as owned by an unmapped user (#3877)', async () => {
+    const directories = await localDirectories('lease-userns');
+    const temporaryLockPath = await initializationLockPath(
+      directories.dataDirectory,
+    );
+    const canonicalTemporaryRoot = await realpath('/tmp');
+    filesystemInterleave.lstatOwner = (path) =>
+      path === canonicalTemporaryRoot ? 65534 : undefined;
+
+    let activeMigrations = 0;
+    let maximumActiveMigrations = 0;
+    const prepareDatabase = async () => {
+      activeMigrations += 1;
+      maximumActiveMigrations = Math.max(
+        maximumActiveMigrations,
+        activeMigrations,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      activeMigrations -= 1;
+    };
+    const initialized = await Promise.all([
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase,
+      }),
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase,
+      }),
+    ]);
+
+    expect(initialized).toHaveLength(2);
+    expect(maximumActiveMigrations).toBe(1);
+    expect(
+      (await stat(besideDataLockPath(directories.dataDirectory))).isFile(),
+    ).toBe(true);
+    // The legacy lease is still taken, lock-only, so older releases on the
+    // host stay excluded.
+    expect((await stat(temporaryLockPath)).mode & 0o777).toBe(0o600);
+  });
+
+  it('waits for a live legacy /tmp lease even when /tmp reads as owned by an unmapped user (#3877)', async () => {
+    const directories = await localDirectories('lease-userns-legacy');
+    const temporaryLockPath = await initializationLockPath(
+      directories.dataDirectory,
+    );
+    const canonicalTemporaryRoot = await realpath('/tmp');
+    filesystemInterleave.lstatOwner = (path) =>
+      path === canonicalTemporaryRoot ? 65534 : undefined;
+    await mkdir(dirname(temporaryLockPath), { recursive: true, mode: 0o700 });
+    await rm(temporaryLockPath, { force: true });
+    await writeFile(temporaryLockPath, '', { mode: 0o600 });
+    // An older release holds the legacy lease: BEGIN IMMEDIATE, as its
+    // secure node:sqlite acquisition does.
+    const legacyHolder = spawn(
+      process.execPath,
+      [
+        '-e',
+        "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(process.argv[1]);db.exec('BEGIN IMMEDIATE');process.stdout.write('ready\\n');setInterval(()=>{},1000);",
+        temporaryLockPath,
+      ],
+      { stdio: ['ignore', 'pipe', 'inherit'] },
+    );
+    await once(legacyHolder.stdout as NodeJS.ReadableStream, 'data');
+
+    let prepareDatabaseCalled = false;
+    const initializing = initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+      prepareDatabase: async () => {
+        prepareDatabaseCalled = true;
+      },
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      expect(prepareDatabaseCalled).toBe(false);
+    } finally {
+      legacyHolder.kill('SIGKILL');
+      await once(legacyHolder, 'exit');
+    }
+    await expect(initializing).resolves.toMatchObject({
+      diagnostics: { runtime: { profile: 'local' } },
+    });
+    expect(prepareDatabaseCalled).toBe(true);
+  });
+
+  it('names the legacy lease after the uid outside a remapping user namespace (#3877)', async () => {
+    const directories = await localDirectories('lease-uid-map');
+    const currentUid = process.getuid?.() as number;
+    const outsideUid = 4_000_000 + (currentUid % 1000);
+    filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
+    const lockKey = createHash('sha256')
+      .update(
+        platform() === 'darwin'
+          ? directories.dataDirectory.toLowerCase()
+          : directories.dataDirectory,
+      )
+      .digest('hex')
+      .slice(0, 32);
+    const outsideLockRoot = join(await realpath('/tmp'), `.smrt-${outsideUid}`);
+    const legacyLockPath = join(
+      outsideLockRoot,
+      lockKey,
+      'initialization.sqlite',
+    );
+    const inNamespaceLockPath = await initializationLockPath(
+      directories.dataDirectory,
+    );
+    await mkdir(dirname(legacyLockPath), { recursive: true, mode: 0o700 });
+    await chmod(outsideLockRoot, 0o700);
+    await writeFile(legacyLockPath, '', { mode: 0o600 });
+    // The host process (outside uid) holds its legacy lease.
+    const legacyHolder = spawn(
+      process.execPath,
+      [
+        '-e',
+        "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(process.argv[1]);db.exec('BEGIN IMMEDIATE');process.stdout.write('ready\\n');setInterval(()=>{},1000);",
+        legacyLockPath,
+      ],
+      { stdio: ['ignore', 'pipe', 'inherit'] },
+    );
+    try {
+      await once(legacyHolder.stdout as NodeJS.ReadableStream, 'data');
+      let prepareDatabaseCalled = false;
+      const initializing = initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase: async () => {
+          prepareDatabaseCalled = true;
+        },
+      });
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        expect(prepareDatabaseCalled).toBe(false);
+      } finally {
+        legacyHolder.kill('SIGKILL');
+        await once(legacyHolder, 'exit');
+      }
+      await expect(initializing).resolves.toMatchObject({
+        diagnostics: { runtime: { profile: 'local' } },
+      });
+      expect(prepareDatabaseCalled).toBe(true);
+      // The in-namespace candidate is taken too, for older releases running
+      // inside the same namespace.
+      expect((await stat(inNamespaceLockPath)).isFile()).toBe(true);
+    } finally {
+      if (legacyHolder.exitCode === null) legacyHolder.kill('SIGKILL');
+      await rm(outsideLockRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('also waits for an older release in the same remapped namespace (#3877)', async () => {
+    const directories = await localDirectories('lease-uid-map-inner');
+    const currentUid = process.getuid?.() as number;
+    const outsideUid = 4_000_000 + (currentUid % 1000);
+    filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
+    const outsideLockRoot = join(await realpath('/tmp'), `.smrt-${outsideUid}`);
+    // An older release in this namespace locks the in-namespace uid's lease.
+    const innerLockPath = await initializationLockPath(
+      directories.dataDirectory,
+    );
+    await mkdir(dirname(innerLockPath), { recursive: true, mode: 0o700 });
+    await rm(innerLockPath, { force: true });
+    await writeFile(innerLockPath, '', { mode: 0o600 });
+    const legacyHolder = spawn(
+      process.execPath,
+      [
+        '-e',
+        "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(process.argv[1]);db.exec('BEGIN IMMEDIATE');process.stdout.write('ready\\n');setInterval(()=>{},1000);",
+        innerLockPath,
+      ],
+      { stdio: ['ignore', 'pipe', 'inherit'] },
+    );
+    try {
+      await once(legacyHolder.stdout as NodeJS.ReadableStream, 'data');
+      let prepareDatabaseCalled = false;
+      const initializing = initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase: async () => {
+          prepareDatabaseCalled = true;
+        },
+      });
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        expect(prepareDatabaseCalled).toBe(false);
+      } finally {
+        legacyHolder.kill('SIGKILL');
+        await once(legacyHolder, 'exit');
+      }
+      await expect(initializing).resolves.toMatchObject({
+        diagnostics: { runtime: { profile: 'local' } },
+      });
+      expect(prepareDatabaseCalled).toBe(true);
+      // Both legacy candidates were taken.
+      expect(
+        (
+          await stat(
+            join(
+              outsideLockRoot,
+              basename(dirname(innerLockPath)),
+              'initialization.sqlite',
+            ),
+          )
+        ).isFile(),
+      ).toBe(true);
+    } finally {
+      if (legacyHolder.exitCode === null) legacyHolder.kill('SIGKILL');
+      await rm(outsideLockRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('takes exactly one legacy lease under an identity uid map', async () => {
+    const directories = await localDirectories('lease-uid-map-identity');
+    filesystemInterleave.uidMap = '         0          0 4294967295\n';
+    initializationLockWorkerInterleave.lockPaths.length = 0;
+    await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    expect(initializationLockWorkerInterleave.lockPaths).toEqual([
+      besideDataLockPath(directories.dataDirectory),
+      await initializationLockPath(directories.dataDirectory),
+    ]);
+  });
+
+  it('skips a foreign-owned in-namespace legacy root and takes the mapped lease (#3877)', async () => {
+    const directories = await localDirectories('lease-uid-map-foreign');
+    const currentUid = process.getuid?.() as number;
+    const outsideUid = 4_000_000 + (currentUid % 1000);
+    filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
+    const canonicalTemporaryRoot = await realpath('/tmp');
+    const innerLockRoot = join(canonicalTemporaryRoot, `.smrt-${currentUid}`);
+    const outsideLockRoot = join(canonicalTemporaryRoot, `.smrt-${outsideUid}`);
+    await mkdir(innerLockRoot, { recursive: true, mode: 0o700 });
+    // `unshare -Ur`: the in-namespace `.smrt-0` belongs to host root and
+    // reads as the overflow uid.
+    filesystemInterleave.lstatOwner = (path) =>
+      path === innerLockRoot ? 65534 : undefined;
+    const innerLockPath = await initializationLockPath(
+      directories.dataDirectory,
+    );
+    initializationLockWorkerInterleave.lockPaths.length = 0;
+    try {
+      await expect(
+        initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+      ).resolves.toMatchObject({
+        diagnostics: { runtime: { profile: 'local' } },
+      });
+      expect(initializationLockWorkerInterleave.lockPaths).toEqual([
+        besideDataLockPath(directories.dataDirectory),
+        join(
+          outsideLockRoot,
+          basename(dirname(innerLockPath)),
+          'initialization.sqlite',
+        ),
+      ]);
+    } finally {
+      await rm(outsideLockRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('still fails closed on a symlinked in-namespace legacy root (#3877)', async () => {
+    const directories = await localDirectories('lease-uid-map-symlink');
+    const currentUid = process.getuid?.() as number;
+    const outsideUid = 4_000_000 + (currentUid % 1000);
+    filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
+    const canonicalTemporaryRoot = await realpath('/tmp');
+    const innerLockRoot = join(canonicalTemporaryRoot, `.smrt-${currentUid}`);
+    await mkdir(innerLockRoot, { recursive: true, mode: 0o700 });
+    filesystemInterleave.lstatOwner = (path) =>
+      path === innerLockRoot ? 65534 : undefined;
+    filesystemInterleave.lstatSymlink = (path) => path === innerLockRoot;
+    let prepareDatabaseCalled = false;
+    try {
+      await expect(
+        initializeLocalApplicationRuntime({
+          appId: 'lolaus',
+          ...directories,
+          prepareDatabase: async () => {
+            prepareDatabaseCalled = true;
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_configuration' });
+      expect(prepareDatabaseCalled).toBe(false);
+    } finally {
+      await rm(join(canonicalTemporaryRoot, `.smrt-${outsideUid}`), {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it.each([
+    ['malformed', 'not a uid map\n'],
+    ['non-covering', '0 4000000 1\n'],
+  ])('fails closed before migrations when the uid map is %s', async (_label, uidMap) => {
+    const directories = await localDirectories('lease-uid-map-bad');
+    filesystemInterleave.uidMap =
+      process.getuid?.() === 0 ? uidMap.replace(/^0 /, '1 ') : uidMap;
+    let prepareDatabaseCalled = false;
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase: async () => {
+          prepareDatabaseCalled = true;
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    expect(prepareDatabaseCalled).toBe(false);
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    'falls back to the /tmp lease when the data parent cannot hold one',
+    async () => {
+      const directories = await localDirectories('lease-readonly-parent');
+      const temporaryLockPath = await initializationLockPath(
+        directories.dataDirectory,
+      );
+      await mkdir(directories.dataDirectory, { mode: 0o700 });
+      await chmod(directories.dataDirectory, 0o700);
+      await chmod(directories.root, 0o500);
+      try {
+        await initializeLocalApplicationRuntime({
+          appId: 'lolaus',
+          ...directories,
+        });
+      } finally {
+        await chmod(directories.root, 0o700);
+      }
+
+      await expect(
+        stat(dirname(besideDataLockPath(directories.dataDirectory))),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+      expect((await stat(temporaryLockPath)).isFile()).toBe(true);
     },
   );
 

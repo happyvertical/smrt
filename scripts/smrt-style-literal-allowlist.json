@@ -241,7 +241,7 @@
     "packages/smrt-ui/src/components/ui/Card.svelte": 1,
     "packages/smrt-ui/src/components/ui/IconToggle.svelte": 2,
     "packages/smrt-ui/src/components/ui/IconToggleGroup.svelte": 1,
-    "packages/smrt-ui/src/components/ui/Pagination.svelte": 2,
+    "packages/smrt-ui/src/components/ui/Pagination.svelte": 3,
     "packages/smrt-ui/src/components/ui/Skeleton.svelte": 3,
     "packages/smrt-ui/src/svelte/playground/BaseControlsPreview.svelte": 1,
     "packages/smrt-ui/src/svelte/playground/DataTablePreview.svelte": 1,

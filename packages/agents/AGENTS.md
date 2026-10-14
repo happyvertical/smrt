@@ -85,7 +85,7 @@ from `./ui` filters, builds `href`, and sorts. Non-relative routes are dropped.
 
 ## AgentSchedule
 
-Cron-based scheduling stored in `_smrt_agent_schedules`. Fields: `agentType`, `cron`, `method` (default: 'run'), `maxConcurrent`, `timeout`. Executed by ScheduleRunner from smrt-jobs.
+Cron-based scheduling stored in `_smrt_agent_schedules`. Fields: `agentType`, `cron`, `timezone` (IANA, default `UTC`; blank → `UTC`), `method` (default: 'run'), `maxConcurrent`, `timeout`. Executed by ScheduleRunner from smrt-jobs. `calculateNextRun()` and the runner re-arm share smrt-jobs' `getNextCronDate(cron, timezone)`, so both evaluate the cron in the row's zone, DST-correct (#3859); an unknown zone sets `status: 'error'` with the parser message in `lastError`.
 
 ## Lazy agent_config Resolution (issue #1161)
 

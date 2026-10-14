@@ -13,6 +13,20 @@ Application infrastructure composition for the validated runtime profiles in
 - SQLite is acquired through `@happyvertical/sql`'s explicit
   `{ driver: 'node:sqlite', custody: 'trusted-parent' }` boundary after the
   runtime establishes its user-owned mode-0700 data root.
+- The initialization lease lives beside the data root
+  (`<parent>/.smrt-lease-<key>/initialization.sqlite`, #3877), then the legacy
+  `/tmp/.smrt-<uid>/<key>` lease, which older releases take alone: secure when
+  its ancestry is trusted, else lock-only (owner check on unmapped ancestors
+  relaxed, nothing written; skipped only if its directory cannot be created
+  and no lock file exists). It is required (secure) when the parent cannot hold
+  a lease. Legacy candidates, deduplicated and in this order: the in-namespace
+  uid, then that uid mapped through `/proc/self/uid_map` (identity when absent;
+  unparseable/non-covering fails closed); ownership checks still use the
+  in-namespace uid. The beside-data lease taken first keeps that order
+  deadlock-free. Only the in-namespace candidate (when it differs) is skipped
+  if its root is an existing real directory owned by another uid. Acquire in that order; never make the
+  lease location configurable per process — every process sharing a data root
+  must derive the same lease.
 - Application migrations are explicit through `prepareDatabase`; runtime never
   creates application model tables implicitly. A rejected `prepareDatabase` is
   normalized into `LocalRuntimeError` with the stable `migration_failed` code
@@ -28,7 +42,11 @@ Application infrastructure composition for the validated runtime profiles in
   app-bound marker, source separation, real path chain, ownership, and mode
   without creating or repairing storage.
 - Owner bootstrap creates normal `Person`, `User`, `Tenant`, owner `Role` /
-  `Membership`, and `Session` records in one transaction.
+  `Membership`, and `Session` records in one transaction. `ownerTenant`
+  selects the tenant slug (default `default`); because `Tenant` upserts on
+  slug, the claim must look the slug up first and fail closed
+  (`owner_tenant_conflict`) rather than save over it. `adoptExisting` adopts
+  only an active root tenant with zero memberships (#3032).
 - Bootstrap is loopback-only. Only an HMAC of the short-lived token is stored.
   A token that cannot claim fails a read-only preflight before role/catalog
   seeding (#3323); the claim transaction's conditional UPDATE stays the

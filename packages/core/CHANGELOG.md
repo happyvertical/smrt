@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.55.23
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - repair DuckDB retry timestamps and concurrent initialization (#3953) (core)
+- @happyvertical/smrt-config@0.55.23
+  - @happyvertical/smrt-scanner@0.55.23
+  - @happyvertical/smrt-types@0.55.23
+
 ## 0.55.22
 
 ### Patch Changes

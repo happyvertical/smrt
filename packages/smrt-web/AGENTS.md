@@ -35,7 +35,7 @@ module you are editing. This file keeps what holds in every module.
 
 | Module | Scope | Module doc |
 |---|---|---|
-| `index.ts` hooks + `durable-store.ts` | the six capability hook points, hook error isolation, the no-op guarantee, and the shared durable-store namespacing/wipe registry | [agents/capability-seam.md](agents/capability-seam.md) |
+| `index.ts` hooks + `durable-store.ts` + `durable-store-sweep.ts` | the six capability hook points, hook error isolation, the no-op guarantee, the shared durable-store namespacing/wipe registry, and the shared-device namespace list/prune sweep | [agents/capability-seam.md](agents/capability-seam.md) |
 | `offline/` | durable offline writes — config, sync-apply or consumer-declared transport replay (#3021), idempotency, the shared namespace-keyed engine, and Web Locks leader election | [agents/offline-outbox.md](agents/offline-outbox.md) |
 | `sse-client.ts` | the client half of live cache invalidation — the app-wide subscriber, the wire contract it consumes, and SSE-vs-polling behaviour | [agents/live-invalidation.md](agents/live-invalidation.md) |
 | `webmcp.ts` | framework-agnostic WebMCP registrar; validates an optionally bounded/namespaced, effect-filtered prospective set atomically, keeps legacy list-backed tools on collection state, and executes canonical tool-only definitions directly through REST fetchers. `registerWebMcpBespokeTool` is the single-tool sibling a UI layer's hand-written component tool routes through (`useWebMcpTool` in smrt-svelte, #2586): same fail-closed effect classification and `effects` policy, no `namespace`/`maxTools` | — |
