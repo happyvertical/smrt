@@ -101,6 +101,63 @@ The calculator throws `MoneyValidationError`. Applications should branch on its
 stable `code` (for example `DISCOUNT_EXCEEDS_GROSS`, `TAX_CODE_SCOPE`, or
 `PERCENT_OUT_OF_RANGE`) rather than parse the error message.
 
+## Tenant tax catalogue
+
+The package root exports the tenant-scoped `TaxComponent`, `TaxCode`, and
+`TaxSettings` models together with their collections. They provide the
+configuration from which an application can create calculator inputs; the
+calculator stays pure and accepts only the small input shape shown above.
+
+A `TaxComponent` has a display name, an exact decimal `percent`, an optional
+same-tenant liability account, a `recoverable` flag for fully recoverable
+purchase tax, and `active`. A component rate is immutable after the component
+is in use. Archive the component, create a replacement, and repoint editable
+codes when a rate changes.
+
+A `TaxCode` has a tenant-unique `code`, display name, `kind`, direction
+(`sales`, `purchases`, or `both`), ordered component IDs, and `active`. A
+`taxable` code requires one or more distinct non-compound components. The
+`zero-rated`, `exempt`, and `out-of-scope` kinds must have none. Components and
+defaults must belong to the same tenant as the code or settings that reference
+them; inactive codes remain useful for historical display but should not be
+selected for new drafts.
+
+`TaxSettingsCollection.getOrCreateForTenant(tenantId)` returns the one settings
+row for a tenant. Its public fields are `defaultSalesTaxCodeId`,
+`defaultPurchaseTaxCodeId`, `defaultLineAmountType` (`exclusive`, `inclusive`,
+or `none`), `taxRoundingScope` (`line` or `document`), and `taxRegistrations`.
+Each registration supplies a component ID, number, and label. Settings validate
+that their code and registration references belong to the tenant.
+
+## Seeding and defaults
+
+Run `ensureTenantTaxCodes(db, tenantId)` during tenant setup to idempotently
+provide `exempt`, `zero-rated`, and `out-of-scope`. It also creates the inactive
+`legacy-unreconciled` code and its zero-percent component so historical
+migration data remains visible without being selectable for new work.
+
+`COMMON_TAX_CODE_EXAMPLE_PACK` contains illustrative Canada GST, BC GST + PST,
+Ontario HST, UK VAT, Australian GST, and New Zealand GST components and codes.
+`applyTaxCodeExamplePack(db, tenantId)` saves the pack idempotently and returns
+its component and code IDs. It is a starting point: review local applicability
+and set each liability account before a code is used in production.
+
+For a host that owns the database and authenticated tenant context, use the
+explicit server-side cookbook activation boundary after schema setup:
+
+```ts
+import { applyCommerceCookbookSettings } from '@happyvertical/smrt-commerce';
+
+await applyCommerceCookbookSettings(db, session.tenantId, cookbook);
+```
+
+`applyCommerceCookbookSettings()` reads core's portable cookbook policy and
+creates or reuses the component, code, and tenant settings in a transaction.
+Cookbook `taxRate` is a fraction (`0.05` means 5%); the commerce API
+`applyCookbookTaxSettings()` accepts a percentage (`5` means 5%). A zero rate
+uses the `out-of-scope` default. The cookbook CLI alone does not write tenant
+tax records because it has neither a database nor authoritative tenant context.
+
 ## Svelte invoice editor
 
 `@happyvertical/smrt-commerce/svelte` exports `InvoiceEditor`,
@@ -118,10 +175,9 @@ does not recalculate its totals or tax rows. This lets issued-document display
 stay faithful to its recorded allocation even when tax configuration later
 changes.
 
-## Not part of this API
+## Not part of this guide
 
-The calculator and editor adapter do not define persistent `TaxComponent`,
-`TaxCode`, `DocumentTax`, or Invoice schema; seed packs; migrations; credit-note
-posting; reports; or currency conversion. Those application and persistence
+This guide does not define Invoice persistence or migrations, issued-document
+credit-note posting, reports, or currency conversion. Those application
 contracts are released separately. The external documentation follow-up is
 tracked in [s-m-r-t.dev #309](https://github.com/happyvertical/s-m-r-t.dev/issues/309).

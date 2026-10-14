@@ -110,6 +110,23 @@ recalculation. See the [commerce money calculator guide](../../docs/content/comm
 for pricing modes, rounding, input and result types, the native-form editor
 contract, and the boundaries this package does not define.
 
+### Tenant tax catalogue and defaults
+
+The package root also exports tenant-scoped `TaxComponent`, `TaxCode`, and
+`TaxSettings` models and their collections. Components hold exact percentage
+rates and optional liability accounts; codes combine compatible components; the
+one settings row per tenant supplies sales/purchase defaults, amount mode,
+rounding scope, and labelled registration numbers. A referenced component rate
+is immutable: archive it and create a replacement for a rate change.
+
+`ensureTenantTaxCodes(db, tenantId)` idempotently creates the baseline
+non-taxable codes. `applyTaxCodeExamplePack(db, tenantId)` installs illustrative
+regional examples for review, and `applyCommerceCookbookSettings(db, tenantId,
+cookbook)` explicitly materializes a validated cookbook's defaults after schema
+setup and authentication establish the tenant. See the [commerce money
+calculator guide](../../docs/content/commerce-money.md#tenant-tax-catalogue) for
+the supported kinds, seed behavior, and cookbook rate units.
+
 ## API
 
 ### Models
