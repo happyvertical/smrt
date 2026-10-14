@@ -111,6 +111,36 @@ let {
 const i18n = useI18n();
 const { t } = i18n;
 const fields = $derived({ ...quoteFieldNames, ...names });
+function normalizedMoneyText(value: string): string | null {
+  if (!/^\d+(?:\.\d+)?$/u.test(value)) return null;
+  const [whole, fraction = ''] = value.split('.');
+  return `${whole.replace(/^0+(?=\d)/u, '') || '0'}.${fraction.replace(/0+$/u, '') || '0'}`;
+}
+function calculatedTaxError(
+  enteredTax: string,
+  hasLines: boolean,
+  header: MoneyHeaderDisplay | undefined,
+  headerCurrency: string,
+): string | undefined {
+  if (!header || !hasLines) return undefined;
+  const calculatedTax = quoteMinorText({
+    currency: headerCurrency,
+    minorUnitDigits: header.minorUnitDigits,
+    amountMinor: header.taxMinor,
+  });
+  return normalizedMoneyText(enteredTax) ===
+    normalizedMoneyText(calculatedTax ?? '')
+    ? undefined
+    : 'Tax must match calculated line tax.';
+}
+const moneyTaxError = $derived.by(() =>
+  calculatedTaxError(
+    values.tax,
+    values.lines.length > 0,
+    money,
+    values.currency,
+  ),
+);
 const title = $derived(
   labels.title ??
     t(
@@ -143,7 +173,7 @@ const title = $derived(
         </Select>
       </FormGroup>
       {#each [{key:'reference',label:'commerce.quote.reference'}, {key:'date',label:'commerce.quote.date'}, {key:'validUntil',label:'commerce.quote.expiry'}, {key:'currency',label:'commerce.quote.currency'}, {key:'total',label:'commerce.quote.total'}, {key:'tax',label:'commerce.quote.tax'}] as field}
-        <FormGroup label={t(Q[field.label as keyof typeof Q])} error={errors[field.key]}>
+        <FormGroup label={t(Q[field.label as keyof typeof Q])} error={field.key === 'tax' ? errors.tax ?? moneyTaxError : errors[field.key]}>
           {#if field.key === 'currency'}
             <CurrencySelect name={fields.currency} value={values.currency} options={currencyOptions} locale={i18n.locale} readOnly={readonly} disabled={busy} density="touch" />
           {:else}

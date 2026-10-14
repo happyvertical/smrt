@@ -73,7 +73,11 @@ const totals = $derived(
             return {
               id: `${tax.taxCodeId}:${tax.taxComponentId ?? ''}`,
               taxComponentId: tax.taxComponentId,
-              name: code?.name ?? code?.code ?? 'Tax',
+              name:
+                code?.componentNames?.[tax.taxComponentId ?? ''] ??
+                code?.name ??
+                code?.code ??
+                'Tax',
               percent: component?.percent ?? '0',
               taxableMinor: tax.taxableMinor,
               taxMinor: tax.taxMinor,

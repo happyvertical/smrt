@@ -14,6 +14,8 @@ export interface MoneyEditorTaxCode extends MoneyTaxCodeInput {
   /** Stable label stored with the code supplied by the authorized adapter. */
   code: string;
   name?: string;
+  /** Stored component labels; a component can be shared by more than one code. */
+  componentNames?: Readonly<Record<string, string>>;
 }
 
 export interface MoneyEditorLineDraft {
