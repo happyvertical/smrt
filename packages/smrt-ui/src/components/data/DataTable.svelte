@@ -1918,7 +1918,7 @@ $effect(() => {
     {#if canScrollRight}<span>{t(M['ui.data_table.more_columns'])} →</span>{/if}
   </div>
 {/if}
-{#if tableState.pageSize && totalPages && totalPages > 1}<Pagination currentPage={tableState.page} {totalPages} onPageChange={handlePageChange} aria-label={t(M['ui.data_table.pagination'])} />{/if}
+{#if tableState.pageSize && totalPages && totalPages > 1}<Pagination currentPage={tableState.page} {totalPages} {density} onPageChange={handlePageChange} aria-label={t(M['ui.data_table.pagination'])} />{/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
