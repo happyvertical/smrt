@@ -11,6 +11,7 @@ export { default as DataTable } from './DataTable.svelte';
 export * from './DataTableController.js';
 export * from './DataTableIdentity.js';
 export * from './DataTablePerformance.js';
+export * from './DataTableSummaries.js';
 export * from './DataTableVirtualization.js';
 export * from './data-surface.js';
 export * from './data-table-surface.js';

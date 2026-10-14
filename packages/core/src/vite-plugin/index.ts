@@ -2369,6 +2369,7 @@ declare module '@happyvertical/smrt-virt-web' {
     order?: number;
     locked?: boolean;
     widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
+    format?: 'money' | 'date' | 'datetime' | 'percent';
   }
 
   export interface SmrtWebFieldDefinition {
@@ -2397,6 +2398,7 @@ declare module '@happyvertical/smrt-virt-web' {
     field: string;
     kind: SmrtWebRelationshipKind;
     relatedCollection: string;
+    role?: 'items';
   }
 
   export interface WebToolRouteDescriptor {

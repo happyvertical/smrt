@@ -2,8 +2,9 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 import { smrtVitestPlugin } from '../vitest/src/index.ts';
 
-// Behaviour tests for the customer and vendor selectors need a DOM, so they
-// run under jsdom with Svelte's client runtime (the `browser` condition).
+// Behaviour tests for the customer and vendor selectors and the party form
+// submit hooks need a DOM, so they run under jsdom with Svelte's client
+// runtime (the `browser` condition).
 export default defineConfig({
   plugins: [smrtVitestPlugin(), svelte()],
   resolve: { conditions: ['browser'] },

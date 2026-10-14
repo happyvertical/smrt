@@ -20,6 +20,16 @@ switch (params.get('surface')) {
     });
     break;
   }
+  case 'pager': {
+    const { default: Pager } = await import(
+      '../src/components/data/__tests__/pager-density.fixture.svelte',
+    );
+    mount(Pager, {
+      target,
+      props: { target: params.get('target') ?? '48px' },
+    });
+    break;
+  }
   case 'segments': {
     const { default: Segments } = await import(
       '../src/components/forms/__tests__/segmented-posting.fixture.svelte',

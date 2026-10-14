@@ -4093,17 +4093,24 @@ export class SmrtObject extends SmrtClass {
       const target =
         ObjectRegistry.resolveRelationshipTarget(source, fieldName) ??
         field.related?.split('.')[0];
-      if (!target) continue;
+      const unavailable = (cause?: Error) =>
+        new ValidationError(
+          `${this.constructor.name}.${fieldName} cannot validate its STI reference because target ${target ?? '(unknown)'} is unavailable`,
+          'VALIDATION_STI_REFERENCE_TARGET_UNAVAILABLE',
+          { className: this.constructor.name, fieldName, target, value },
+          cause,
+        );
+      if (!target) throw unavailable();
       let targetClass = ObjectRegistry.getClass(target);
       if (!targetClass && field.type === 'crossPackageRef') {
         try {
           await ObjectRegistry.ensureManifestLoaded(target);
           targetClass = ObjectRegistry.getClass(target);
-        } catch {
-          // The ordinary cross-package validation owns missing-target errors.
+        } catch (error) {
+          throw unavailable(error instanceof Error ? error : undefined);
         }
       }
-      if (!targetClass) continue;
+      if (!targetClass) throw unavailable();
       const targetName = targetClass.qualifiedName || targetClass.name;
       const root = ObjectRegistry.getSTIBase(targetName);
       if (!root || root === targetName) continue;

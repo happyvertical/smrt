@@ -45,6 +45,48 @@ export function isFieldUIWidget(value: unknown): value is FieldUIWidget {
   );
 }
 
+/** Presentation formats a field may declare via `@field({ ui: { format } })`. */
+export const FIELD_UI_FORMATS = [
+  'money',
+  'date',
+  'datetime',
+  'percent',
+] as const;
+
+export type FieldUIFormat = (typeof FIELD_UI_FORMATS)[number];
+
+/**
+ * Manifest field types each format may be applied to. Money is integer
+ * minor units only (rates and confidences are the only decimals).
+ */
+export const FIELD_UI_FORMAT_TYPES: Readonly<
+  Record<FieldUIFormat, readonly string[]>
+> = {
+  money: ['integer'],
+  date: ['datetime'],
+  datetime: ['datetime'],
+  percent: ['decimal', 'integer'],
+};
+
+export function isFieldUIFormat(value: unknown): value is FieldUIFormat {
+  return (
+    typeof value === 'string' &&
+    (FIELD_UI_FORMATS as readonly string[]).includes(value)
+  );
+}
+
+/** Relationship roles a `foreignKey` / `crossPackageRef` may declare. */
+export const RELATIONSHIP_ROLES = ['items'] as const;
+
+export type RelationshipRole = (typeof RELATIONSHIP_ROLES)[number];
+
+export function isRelationshipRole(value: unknown): value is RelationshipRole {
+  return (
+    typeof value === 'string' &&
+    (RELATIONSHIP_ROLES as readonly string[]).includes(value)
+  );
+}
+
 /**
  * Fields tried, in order, when a model declares no
  * `@smrt({ display: { label } })`.

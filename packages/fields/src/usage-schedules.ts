@@ -41,13 +41,12 @@ export const FIELD_USAGE_MAINTENANCE_METHOD = 'runUsageMaintenance';
 export const FIELD_USAGE_SUGGESTION_METHOD = 'runSuggestionGeneration';
 
 /**
- * Default cadence for counter maintenance: daily at 02:30 — in the SCHEDULER
- * HOST'S LOCAL TIME. See {@link ensureFieldUsageLearningSchedules} for why no
- * timezone can be selected here.
+ * Default cadence for counter maintenance: daily at 02:30 UTC (the
+ * `AgentSchedule.timezone` default). See {@link ensureFieldUsageLearningSchedules}.
  */
 export const DEFAULT_FIELD_USAGE_MAINTENANCE_CRON = '30 2 * * *';
 
-/** Default cadence for suggestion generation: weekly, Monday 03:00 host-local. */
+/** Default cadence for suggestion generation: weekly, Monday 03:00 UTC. */
 export const DEFAULT_FIELD_USAGE_SUGGESTION_CRON = '0 3 * * 1';
 
 /**
@@ -140,14 +139,11 @@ export interface EnsureFieldUsageLearningSchedulesResult {
  * than an error. Insert-only also means an existing row's operator state
  * (enabled/disabled, edited cron) is never overwritten by a later install.
  *
- * **No timezone option, deliberately.** `AgentSchedule` carries a `timezone`
- * column, but `getNextCronDate(cron, _timezone)` ignores the argument and
- * matches against host-local `getHours()`/`getDate()`, and smrt-jobs'
- * `ScheduleRunner` recalculates with the same host-local parser. Accepting a
- * timezone here would advertise control this stack does not have, so these
- * schedules fire in the SCHEDULER HOST'S LOCAL TIME — pick crons accordingly
- * (see `agents/usage-learning.md`). Fixing the agents-side parser is out of
- * scope for this package.
+ * Time zone: rows are installed with the `AgentSchedule.timezone` default,
+ * `UTC`, and both `calculateNextRun()` and smrt-jobs' `ScheduleRunner`
+ * evaluate the cron in the row's zone (#3859), so the crons above fire in
+ * UTC regardless of the scheduler host's `TZ`. An operator may set the row's
+ * `timezone`; insert-only installs never overwrite that edit.
  *
  * System operation: global schedules are platform state, so a non-bypass
  * ambient tenant context is rejected (fail closed) — call this from trusted

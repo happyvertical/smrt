@@ -17,7 +17,7 @@
 
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createScheduleRunner } from '../schedule-runner.js';
 import { SmrtJobCollection } from '../smrt-job.js';
 
@@ -36,6 +36,7 @@ async function createSchedulesTable(db: DatabaseInterface): Promise<void> {
       tenant_id TEXT,
       agent_config TEXT,
       cron TEXT,
+      timezone TEXT DEFAULT 'UTC',
       method TEXT,
       method_args TEXT,
       timeout INTEGER,
@@ -195,5 +196,95 @@ describe('ScheduleRunner triggerSchedule enqueue failure (#1401 #4)', () => {
       `SELECT COUNT(*) as count FROM _smrt_jobs WHERE queue = 'agents'`,
     );
     expect(Number((jobs.rows[0] as { count: number }).count)).toBe(1);
+  });
+});
+
+describe('ScheduleRunner triggerSchedule re-arm time zone (#3859)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function rearm(
+    timezone: string | null,
+    cron = '5 3 * * *',
+    now = '2025-06-01T00:00:00Z',
+  ): Promise<{ next_run: string; status: string; last_error: string | null }> {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await SmrtJobCollection.create({ db });
+    await createSchedulesTable(db);
+    await db.query(
+      `INSERT INTO _smrt_agent_schedules
+         (id, agent_type, cron, timezone, method, next_run,
+          enabled, status, running_count, max_concurrent)
+       VALUES (?, ?, ?, ?, ?, ?, TRUE, 'active', 0, 1)`,
+      'sched-tz',
+      'SomeAgent',
+      cron,
+      timezone,
+      'run',
+      '2025-06-01T00:00:00.000Z',
+    );
+
+    const runner = createScheduleRunner();
+    await runner.initialize(db);
+
+    // Fake only the clock so the in-memory database keeps real timers.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(now));
+
+    const scheduleRow = {
+      id: 'sched-tz',
+      agent_type: 'SomeAgent',
+      agent_id: null,
+      tenant_id: null,
+      agent_config: null,
+      cron,
+      timezone,
+      method: 'run',
+      method_args: null,
+      timeout: null,
+    };
+    await (
+      runner as unknown as {
+        triggerSchedule(row: typeof scheduleRow): Promise<void>;
+      }
+    ).triggerSchedule(scheduleRow);
+
+    const result = await db.query(
+      'SELECT next_run, status, last_error FROM _smrt_agent_schedules WHERE id = ?',
+      'sched-tz',
+    );
+    return result.rows[0] as {
+      next_run: string;
+      status: string;
+      last_error: string | null;
+    };
+  }
+
+  it("re-arms next_run in the row's zone, not the process zone", async () => {
+    // 03:05 in Edmonton (MDT, UTC-6) is 09:05Z regardless of the host TZ.
+    expect((await rearm('America/Edmonton')).next_run).toBe(
+      '2025-06-01T09:05:00.000Z',
+    );
+  });
+
+  it('falls back to the UTC column default when the row has no zone', async () => {
+    expect((await rearm(null)).next_run).toBe('2025-06-01T03:05:00.000Z');
+    expect((await rearm('  ')).next_run).toBe('2025-06-01T03:05:00.000Z');
+  });
+
+  it('moves a row with an unknown zone to error instead of retrying it every poll', async () => {
+    const row = await rearm('Mars/Olympus_Mons');
+    expect(row.status).toBe('error');
+    expect(row.last_error).toContain('Invalid cron timezone');
+    // The due slot is left as-is; the row simply leaves the active poll.
+    expect(row.next_run).toBe('2025-06-01T00:00:00.000Z');
+  });
+
+  it('keeps a valid schedule active when its next run is beyond the search horizon', async () => {
+    // Feb 29 after 2025-03-01 is 2028, past the one-year scan: transient, not invalid.
+    const row = await rearm('UTC', '0 0 29 2 *', '2025-03-01T00:00:00Z');
+    expect(row.status).toBe('active');
+    expect(row.last_error).toContain('Could not find next run date');
   });
 });

@@ -18,6 +18,7 @@
  * // routes/account/password/+server.ts      → export const PUT = passwordAuth.changePassword;
  * //                                            export const POST = passwordAuth.setPassword;
  * //                                            export const DELETE = passwordAuth.clearPassword;
+ * // routes/account/password/recover/+server.ts → export const POST = passwordAuth.replaceForgottenPassword;
  * // routes/admin/password-reset/+server.ts   → export const POST = passwordAuth.resetPassword;
  * ```
  *
@@ -107,6 +108,12 @@ export interface PasswordCredentialHandlers {
   changePassword: (event: PasswordRequestEvent) => Promise<Response>;
   resetPassword: (event: PasswordRequestEvent) => Promise<Response>;
   clearPassword: (event: PasswordRequestEvent) => Promise<Response>;
+  /**
+   * Replace a forgotten password from a fresh out-of-band recovery session
+   * (#3905). Needs `recovery` configured; ends every session, this one too,
+   * and clears the cookie.
+   */
+  replaceForgottenPassword: (event: PasswordRequestEvent) => Promise<Response>;
   /** The lazily created service, for form actions and admin screens. */
   service: () => Promise<PasswordCredentialService>;
 }
@@ -357,6 +364,16 @@ export function createPasswordCredentialHandlers(
         ipAddress: event.getClientAddress?.(),
       }),
     ),
+
+    replaceForgottenPassword: management(async (svc, actor, input, event) => {
+      const result = await svc.replaceForgottenPassword({
+        actor,
+        newPassword: str(input.newPassword) || str(input.password),
+        ipAddress: event.getClientAddress?.(),
+      });
+      clearCookie(event);
+      return { revokedSessions: result.revokedSessions, signedOut: true };
+    }),
 
     clearPassword: management((svc, actor, input, event) =>
       svc.clearPassword({

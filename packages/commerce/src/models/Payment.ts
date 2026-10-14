@@ -171,7 +171,7 @@ export class Payment extends SmrtObject {
    * `PaymentAllocation.save()` caps allocations against and `Invoice.amountPaid`
    * is summed from, so it must be in the same exact units as both (#2401).
    */
-  @field({ description: 'How much was paid.' })
+  @field({ description: 'How much was paid.', ui: { format: 'money' } })
   amount: number = 0;
 
   /**

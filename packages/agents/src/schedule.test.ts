@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getNextCronDate } from './schedule.js';
+import { AgentSchedule, getNextCronDate } from './schedule.js';
 
 /**
  * Regression for the deep-review #1397 major finding (T2): the cron parser
@@ -8,8 +8,9 @@ import { getNextCronDate } from './schedule.js';
  * not only on Friday-the-13th. When only one of the two is restricted, that
  * field alone applies (AND semantics with the rest).
  *
- * `getNextCronDate` reads the host's local clock, so these tests pin time with
- * fake timers to keep the assertions deterministic.
+ * `getNextCronDate` is the smrt-jobs parser (re-exported since #3859 removed
+ * the agents twin). Called without a zone it reads the host's local clock, so
+ * these tests pin time with fake timers to keep the assertions deterministic.
  */
 describe('getNextCronDate — DOM/DOW OR semantics', () => {
   afterEach(() => {
@@ -116,5 +117,80 @@ describe('getNextCronDate — basic field matching', () => {
 
   it('throws on the wrong field count', () => {
     expect(() => getNextCronDate('* * * *')).toThrow(/expected 5 fields/);
+  });
+});
+
+/**
+ * #3859: `calculateNextRun()` evaluates the cron in the schedule's own IANA
+ * zone. Assertions are absolute instants and each case runs under several
+ * host zones (Node re-reads `process.env.TZ` on assignment), so a regression
+ * to process-zone evaluation fails on every host.
+ */
+describe.each([
+  'UTC',
+  'America/Edmonton',
+  'Asia/Kolkata',
+])('AgentSchedule.calculateNextRun — schedule time zone, host TZ=%s', (hostZone) => {
+  const originalTz = process.env.TZ;
+
+  beforeEach(() => {
+    process.env.TZ = hostZone;
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+  });
+
+  function scheduleAt(
+    nowIso: string,
+    timezone: string,
+    cron = '5 3 * * *',
+  ): AgentSchedule {
+    vi.setSystemTime(new Date(nowIso));
+    const schedule = new AgentSchedule();
+    schedule.cron = cron;
+    schedule.timezone = timezone;
+    schedule.enabled = true;
+    schedule.calculateNextRun();
+    return schedule;
+  }
+
+  it('arms next_run in the schedule zone (issue repro)', () => {
+    // 03:05 Edmonton is 09:05Z in summer (MDT) …
+    expect(
+      scheduleAt(
+        '2025-06-01T00:00:00Z',
+        'America/Edmonton',
+      ).nextRun?.toISOString(),
+    ).toBe('2025-06-01T09:05:00.000Z');
+    // … and 10:05Z after the 2025-11-02 fall-back (MST).
+    expect(
+      scheduleAt(
+        '2025-11-01T12:00:00Z',
+        'America/Edmonton',
+      ).nextRun?.toISOString(),
+    ).toBe('2025-11-02T10:05:00.000Z');
+  });
+
+  it('defaults to UTC, including for a blank zone', () => {
+    expect(new AgentSchedule().timezone).toBe('UTC');
+    expect(
+      scheduleAt('2025-06-01T00:00:00Z', 'UTC').nextRun?.toISOString(),
+    ).toBe('2025-06-01T03:05:00.000Z');
+    expect(scheduleAt('2025-06-01T00:00:00Z', '').nextRun?.toISOString()).toBe(
+      '2025-06-01T03:05:00.000Z',
+    );
+  });
+
+  it('puts the schedule in error with the zone named for an unknown zone', () => {
+    const schedule = scheduleAt('2025-06-01T00:00:00Z', 'Mars/Olympus_Mons');
+    expect(schedule.nextRun).toBeNull();
+    expect(schedule.status).toBe('error');
+    expect(schedule.lastError).toMatch(
+      /Invalid cron timezone: "Mars\/Olympus_Mons"/,
+    );
   });
 });

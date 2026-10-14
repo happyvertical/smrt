@@ -237,6 +237,60 @@ afterEach(() => {
 });
 
 describe('createRuntimeReportTools', () => {
+  it('uses the current source field policy for discovery, preview, save and saved runs', async () => {
+    sources[0] = {
+      ...sources[0],
+      fields: ['status', 'totalAmount', 'createdAt'],
+      excludeFields: ['createdAt'],
+    };
+    const confirmSave = vi.fn().mockResolvedValue(undefined);
+    const tools = toolMap({
+      sources: () => sources,
+      confirmation: { confirmSave },
+    });
+    const preview = await call(
+      tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+      fakeRun(),
+      {
+        phase: 'preview',
+        spec: SPEC,
+      },
+    );
+    expect(preview.result.rows).toHaveLength(2);
+    const saved = await call(
+      tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+      fakeRun(),
+      {
+        phase: 'apply',
+        spec: SPEC,
+        specHash: preview.specHash,
+      },
+    );
+    sources[0] = { ...sources[0], excludeFields: ['totalAmount', 'createdAt'] };
+    const described = await call(
+      tools.get(RUNTIME_REPORT_SOURCES_TOOL_SLUG),
+      fakeRun(),
+    );
+    expect(
+      described.sources[0].fields.map((field: { name: string }) => field.name),
+    ).toEqual(['status']);
+    for (const phase of ['preview', 'apply']) {
+      await expect(
+        call(tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG), fakeRun(), {
+          phase,
+          spec: SPEC,
+          specHash: preview.specHash,
+        }),
+      ).rejects.toMatchObject({ code: 'unknown_field' });
+    }
+    await expect(
+      call(tools.get(RUNTIME_REPORT_RUN_TOOL_SLUG), fakeRun(), {
+        reportId: saved.reportId,
+      }),
+    ).rejects.toMatchObject({ code: 'unknown_field' });
+    expect(confirmSave).toHaveBeenCalledTimes(1);
+  });
+
   it('exposes four principal tools with stable slugs, names and strict schemas', () => {
     const tools = createRuntimeReportTools({ sources });
     expect(tools.map((t) => t.slug)).toEqual(ALL_TOOLS);

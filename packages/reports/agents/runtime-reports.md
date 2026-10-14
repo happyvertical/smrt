@@ -17,6 +17,29 @@ grammar. Declared (`@report`) reports are unchanged and remain the way to get a
 Assistant tools live in `@happyvertical/smrt-chat` (`createRuntimeReportTools()`,
 `src/runtime-report-tools.ts`).
 
+
+Source definitions may set `fields` (an allow-list) and `excludeFields` (a deny-list).
+Both use exact public model field names. Omitted `fields` retains all eligible
+fields; `fields: []` exposes none. Exclusions win, and neither option bypasses
+model sensitivity, field permissions, or tenant restrictions. Invalid lists and
+unknown names reject the source with `unsupported_source`, including misspelled
+exclusions. Descriptions, assistant tools, confirmation and saved-report runs
+resolve this same policy on every invocation.
+
+Standard timestamps have one public spelling: `createdAt` and `updatedAt`.
+Snake-case `created_at`/`updated_at` remain physical SQL columns, not accepted
+spec or configuration field names. Existing saved specs using those aliases must
+be proposed again with canonical names and confirmed. Model restrictions on any
+alias protect the whole physical column; host exclusions also cover aliases.
+
+```typescript
+{ id: 'incidents', className: 'Incident', collection: 'incidents',
+  fields: ['id', 'title', 'createdAt', 'status'],
+  excludeFields: ['signatureAssetId'] }
+```
+The example assumes `signatureAssetId` is a declared model field; exclusions
+are validated even if an allow-list already omits that field.
+
 ## Spec
 
 `version: 1`, `title`, optional `description`, `source` (a server-owned source

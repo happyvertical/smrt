@@ -17,6 +17,7 @@ import {
   type SecretProvider,
 } from '@happyvertical/smrt-config';
 import {
+  SCHEDULED_JOB_QUEUE,
   ScheduleRunner,
   type ScheduleRunnerConfig,
   TaskRunner,
@@ -223,6 +224,7 @@ export interface DeployedApplicationRuntime {
   restoreSession(
     sessionId: string,
   ): ReturnType<SessionService['loadSessionContext']>;
+  /** Polls `default` and the schedule queue unless `config.queues` is set. */
   createTaskWorker(config?: TaskRunnerConfig): Promise<TaskRunner>;
   createScheduleWorker(config?: ScheduleRunnerConfig): Promise<ScheduleRunner>;
   diagnostics(): DeployedRuntimeDiagnostics;
@@ -810,7 +812,13 @@ class InitializedDeployedApplicationRuntime
   ): Promise<TaskRunner> {
     let runner: TaskRunner | undefined;
     try {
-      runner = new TaskRunner(config);
+      // Poll the schedule queue by default: the runtime's own schedule worker
+      // enqueues there, so a task worker on `['default']` alone leaves
+      // scheduled jobs pending forever (#3141).
+      runner = new TaskRunner({
+        ...config,
+        queues: config.queues ?? ['default', SCHEDULED_JOB_QUEUE],
+      });
       await runner.initialize(this.db);
     } catch {
       if (runner) await this.stopOrRetainUnreturnedWorker(runner);

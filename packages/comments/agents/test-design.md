@@ -13,8 +13,8 @@
 New feature, so a base-regression comparison is N/A. Comment insertion is one
 save on the provided executor, with validation/authorization before mutation.
 Notification delivery intentionally occurs after save and is not atomic with it;
-the failure test asserts the saved-row contract. No comment retry/idempotency
-contract is promised: clients must not blindly retry create after delivery error.
+the failure test asserts the saved-row contract. Unkeyed creates have no retry contract. Explicit keyed creates now support
+retry recovery; see [idempotent creation](idempotent-create.md).
 The fixture-only playground does not replace the authenticated record surface.
 
 Recipe metadata follow-up (#3604): the comments catalog group, embedded-only

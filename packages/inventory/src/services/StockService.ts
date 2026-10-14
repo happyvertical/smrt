@@ -706,13 +706,17 @@ async function adjustLevel(
   }
 
   // SmrtCollection.create() saves the row before returning, so no further
-  // save() is needed here. Calling save() again would emit a redundant
-  // upsert round-trip on every hot-path first write.
+  // save() is needed here. The first row is insert-only: as an upsert, a
+  // concurrent first write that also read "no row" overwrote this qty with
+  // its own delta on PostgreSQL. Now the loser hits the unique key and its
+  // transaction rolls back, like a revision conflict on the update path
+  // (#3204).
   const level = await levels.create({
     skuId: options.skuId,
     locationId: options.locationId,
     state: options.state,
     qty: next,
+    _insertOnly: true,
   });
   return level;
 }

@@ -896,6 +896,11 @@ export class APIGenerator {
       if (routeMethod !== req.method.toUpperCase()) {
         continue;
       }
+      if (ObjectRegistry.getConfig(objectName).abstract) {
+        const refusal = this.refuseWithheldAction(req, actionName, 'abstract');
+        if (refusal) return refusal;
+        continue;
+      }
       // Past this point the request matched a DECLARATION's own path and verb,
       // so it was aimed at that action and nothing else. Withholding it must
       // not silently become a CRUD write -- see `refuseWithheldAction` (#2686).

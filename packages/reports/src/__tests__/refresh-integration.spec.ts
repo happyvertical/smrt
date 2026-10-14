@@ -33,6 +33,8 @@ class IntegrationRevenueReport extends SmrtReport {}
 class IntegrationMonthlyRevenueReport extends SmrtReport {}
 class IntegrationDefaultWatermarkReport extends SmrtReport {}
 class IntegrationPaidRevenueReport extends SmrtReport {}
+class IntegrationUnscopedSource extends SmrtObject {}
+class IntegrationUnscopedReport extends SmrtReport {}
 
 const SOURCE_TABLE = 'integration_invoices';
 const REPORT_TABLE = 'integration_revenue_reports';
@@ -650,7 +652,215 @@ async function paidRows(db: DatabaseInterface) {
   return result.rows;
 }
 
+function useDiscoveredTenants() {
+  ObjectRegistry.register(IntegrationRevenueReport, {
+    tableName: REPORT_TABLE,
+    tenantScoped: { mode: 'optional' },
+    conflictColumns: ['tenant_id', 'customer_id'],
+    report: {
+      source: 'IntegrationInvoice',
+      refresh: {
+        mode: 'rebuild',
+        schedule: '* * * * *',
+        tenantFanout: 'discover',
+      },
+    },
+  });
+}
+
+async function runDiscovery(
+  db: DatabaseInterface,
+  tenantId: string | null = null,
+  trigger: 'schedule' | 'job' = 'schedule',
+) {
+  const task = new SmrtReportRefreshTask({ db });
+  task.tenantId = tenantId;
+  await task.initialize();
+  const args = {
+    reportClass: 'IntegrationRevenueReport',
+    mode: 'rebuild',
+    trigger,
+    tenantId,
+    adapterType: 'sqlite',
+  } as const;
+  return task.run({ ...args, integrity: JOB_SIGNER.sign(args) });
+}
+
 describe('report refresh integration', () => {
+  it('discovers source tenants on each scheduled execution without reseeding schedules', async () => {
+    useDiscoveredTenants();
+    const db = await setupDb();
+    await ensureReportRefreshSchedules({
+      db,
+      reports: [IntegrationRevenueReport],
+    });
+    expect(
+      (await db.query('SELECT tenant_id FROM _smrt_report_schedules')).rows,
+    ).toEqual([{ tenant_id: null }]);
+    await insertInvoice(db, {
+      id: 'a1',
+      tenantId: 'tenant-a',
+      customerId: 'customer-a',
+      amount: 10,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await insertInvoice(db, {
+      id: 'a2',
+      tenantId: 'tenant-a',
+      customerId: 'customer-a',
+      amount: 20,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await insertInvoice(db, {
+      id: 'global',
+      customerId: 'global',
+      amount: 999,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect(await runDiscovery(db)).toMatchObject({
+      tenantResults: [{ tenantId: 'tenant-a', rowCount: 1 }],
+    });
+    await insertInvoice(db, {
+      id: 'b1',
+      tenantId: 'tenant-b',
+      customerId: 'customer-b',
+      amount: 40,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect(await runDiscovery(db)).toMatchObject({
+      tenantResults: [{ tenantId: 'tenant-a' }, { tenantId: 'tenant-b' }],
+    });
+    expect(await reportRows(db)).toMatchObject([
+      { tenant_id: 'tenant-a', revenue: 30 },
+      { tenant_id: 'tenant-b', revenue: 40 },
+    ]);
+    expect(
+      (await db.query('SELECT id FROM _smrt_report_schedules')).rows,
+    ).toHaveLength(1);
+  });
+
+  it('does not rebuild the global slice when discovery finds no tenants', async () => {
+    useDiscoveredTenants();
+    const db = await setupDb();
+    await db.insert(REPORT_TABLE, {
+      id: 'global-cache',
+      customer_id: 'global',
+      tenant_id: null,
+      revenue: 7,
+      invoice_count: 1,
+    });
+    const before = await reportRows(db);
+    expect(await runDiscovery(db)).toMatchObject({
+      rowCount: 0,
+      tenantResults: [],
+    });
+    expect(await reportRows(db)).toEqual(before);
+  });
+
+  it('keeps a tenant-bound schedule scoped even when the declaration uses discovery', async () => {
+    useDiscoveredTenants();
+    const db = await setupDb();
+    for (const tenantId of ['tenant-a', 'tenant-b']) {
+      await insertInvoice(db, {
+        id: tenantId,
+        tenantId,
+        customerId: tenantId,
+        amount: 10,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+    }
+    expect(await runDiscovery(db, 'tenant-a')).toMatchObject({
+      tenantId: 'tenant-a',
+    });
+    expect(await reportRows(db)).toMatchObject([{ tenant_id: 'tenant-a' }]);
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      await expect(runDiscovery(db)).rejects.toThrow(/execution tenant/);
+    });
+  });
+
+  it.each([
+    'source',
+    'report',
+  ])('rejects discovery without a %s tenant column', async (missing) => {
+    const db = await setupDb();
+    ObjectRegistry.register(IntegrationUnscopedSource, {
+      tableName: 'unscoped_source',
+    });
+    const report =
+      missing === 'report'
+        ? IntegrationUnscopedReport
+        : IntegrationRevenueReport;
+    ObjectRegistry.register(report, {
+      tableName: missing === 'report' ? 'unscoped_report' : REPORT_TABLE,
+      report: {
+        source:
+          missing === 'source'
+            ? 'IntegrationUnscopedSource'
+            : 'IntegrationInvoice',
+        refresh: { mode: 'rebuild', tenantFanout: 'discover' },
+      },
+    });
+    const task = new SmrtReportRefreshTask({ db });
+    await task.initialize();
+    const args = {
+      reportClass: report.name,
+      trigger: 'schedule',
+      tenantId: null,
+    } as const;
+    await expect(
+      task.run({ ...args, integrity: JOB_SIGNER.sign(args) }),
+    ).rejects.toThrow(
+      'Tenant discovery requires tenant columns on the source and report',
+    );
+  });
+
+  it('rejects an explicit tenant list combined with discovery', async () => {
+    useDiscoveredTenants();
+    const db = await setupDb();
+    const task = new SmrtReportRefreshTask({ db });
+    await task.initialize();
+    const args = {
+      reportClass: 'IntegrationRevenueReport',
+      trigger: 'schedule',
+      tenantId: null,
+      tenantIds: ['tenant-a'],
+    } as const;
+    await expect(
+      task.run({
+        ...args,
+        tenantIds: [...args.tenantIds],
+        integrity: JOB_SIGNER.sign(args),
+      }),
+    ).rejects.toThrow(
+      'Discovered report refresh cannot also specify tenantIds',
+    );
+  });
+
+  it('does not discover tenants for a non-scheduled maintenance job', async () => {
+    useDiscoveredTenants();
+    const db = await setupDb();
+    await insertInvoice(db, {
+      id: 'global-job',
+      customerId: 'global',
+      amount: 7,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await insertInvoice(db, {
+      id: 'tenant-job',
+      tenantId: 'tenant-a',
+      customerId: 'private',
+      amount: 90,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect(await runDiscovery(db, null, 'job')).toMatchObject({
+      tenantId: null,
+      rowCount: 1,
+    });
+    expect(await reportRows(db)).toMatchObject([
+      { tenant_id: null, revenue: 7 },
+    ]);
+  });
+
   it('reauthorizes principal refreshes delivered by TaskRunner', async () => {
     const db = await setupDb();
     await insertInvoice(db, {
@@ -1431,6 +1641,131 @@ describe('report refresh integration', () => {
     });
   });
 
+  it('binds failed completions safely and unsubscribes without duplicate listeners', async () => {
+    const db = await setupDb();
+    await ensureReportRefreshSchedules({
+      db,
+      reports: [IntegrationRevenueReport],
+      tenantIds: ['tenant-a'],
+    });
+    const schedule = (await db.query('SELECT id FROM _smrt_report_schedules'))
+      .rows[0];
+    await db.update(
+      '_smrt_report_schedules',
+      { id: schedule.id },
+      { running_count: 1 },
+    );
+    const runner = new ReportScheduleRunner();
+    await runner.initialize(db);
+    const tasks = createTaskRunner();
+    const firstUnbind = runner.bindTaskRunner(tasks);
+    expect(runner.bindTaskRunner(tasks)).toBe(firstUnbind);
+    firstUnbind();
+    const unbind = runner.bindTaskRunner(tasks);
+    firstUnbind(); // An old disposer must not remove the new binding.
+    expect(runner.bindTaskRunner(tasks)).toBe(unbind);
+    expect(tasks.listenerCount('job:failed')).toBe(1);
+    const type = ObjectRegistry.getClassByConstructor(SmrtReportRefreshTask);
+    const args = {
+      reportClass: 'IntegrationRevenueReport',
+      mode: 'rebuild',
+      trigger: 'schedule',
+      tenantId: 'tenant-a',
+      scheduleId: String(schedule.id),
+    } as const;
+    const job = {
+      objectType: type?.qualifiedName ?? type?.name,
+      method: 'run',
+      tenantId: 'tenant-a',
+      args: { ...args, integrity: JOB_SIGNER.sign(args) },
+    };
+    const failures: Error[] = [];
+    runner.on('runner:error', (error) => failures.push(error));
+    tasks.emit(
+      'job:failed',
+      { ...job, args: { ...job.args, scheduleId: 'tampered' } },
+      new Error('bad payload'),
+    );
+    tasks.emit('job:completed', { ...job, objectType: 'UnrelatedTask' }, {});
+    expect(failures).toHaveLength(1);
+    expect(
+      (
+        await db.query(
+          'SELECT running_count, run_count FROM _smrt_report_schedules',
+        )
+      ).rows,
+    ).toEqual([{ running_count: 1, run_count: 0 }]);
+    const finished = new Promise<void>((resolve) =>
+      runner.once('schedule:failed', () => resolve()),
+    );
+    tasks.emit(
+      'job:failed',
+      job,
+      new Error('refresh failed: password=synthetic-canary'),
+    );
+    await finished;
+    expect(
+      (
+        await db.query(
+          'SELECT running_count, run_count, failure_count, last_error FROM _smrt_report_schedules',
+        )
+      ).rows,
+    ).toEqual([
+      {
+        running_count: 0,
+        run_count: 1,
+        failure_count: 1,
+        last_error: 'refresh failed: password=***REDACTED***',
+      },
+    ]);
+    const counterFailure = new Error('counter update failed');
+    const update = vi
+      .spyOn(runner, 'handleJobCompletion')
+      .mockRejectedValueOnce(counterFailure);
+    const reported = new Promise<Error>((resolve) =>
+      runner.once('runner:error', resolve),
+    );
+    tasks.emit('job:completed', job, {});
+    await expect(reported).resolves.toBe(counterFailure);
+    update.mockRestore();
+    unbind();
+    unbind();
+    expect(tasks.listenerCount('job:completed')).toBe(0);
+    expect(tasks.listenerCount('job:failed')).toBe(0);
+  });
+
+  it('preserves schedule history and operator state when ensured repeatedly', async () => {
+    const db = await setupDb();
+    const options = {
+      db,
+      reports: [IntegrationRevenueReport],
+      tenantIds: ['tenant-a'],
+    };
+    await ensureReportRefreshSchedules(options);
+    await db.update(
+      '_smrt_report_schedules',
+      { tenant_id: 'tenant-a' },
+      {
+        next_run: '2030-01-01T00:00:00.000Z',
+        last_run: '2026-01-01T00:00:00.000Z',
+        run_count: 7,
+        success_count: 5,
+        failure_count: 2,
+        running_count: 1,
+        last_status: 'failed',
+        last_error: 'previous failure',
+        enabled: false,
+        status: 'paused',
+        max_concurrent: 3,
+      },
+    );
+    const before = await db.query('SELECT * FROM _smrt_report_schedules');
+    await ensureReportRefreshSchedules({ ...options, priority: 99 });
+    await ensureReportRefreshSchedules(options);
+    const after = await db.query('SELECT * FROM _smrt_report_schedules');
+    expect(after.rows).toEqual(before.rows);
+  });
+
   it('creates schedule jobs and onChange refresh jobs', async () => {
     const db = await setupDb();
     await ensureReportRefreshSchedules({
@@ -1444,10 +1779,17 @@ describe('report refresh integration', () => {
       { next_run: '2026-01-01T00:00:00.000Z' },
     );
 
+    const sign = vi.fn(JOB_SIGNER.sign).mockImplementationOnce(() => {
+      throw new Error('password=synthetic-canary');
+    });
     const runner = new ReportScheduleRunner({
       pollInterval: 1000,
+      integritySigner: { ...JOB_SIGNER, sign },
     });
     await runner.initialize(db);
+    await runner.poll();
+    const failed = await db.get('_smrt_report_schedules', { enabled: true });
+    expect(failed?.last_error).toBe('password=***REDACTED***');
     await runner.poll();
 
     let jobs = await db.query(
@@ -1469,6 +1811,11 @@ describe('report refresh integration', () => {
       retention: false,
     });
     await taskRunner.initialize(db);
+    const unbind = runner.bindTaskRunner(taskRunner);
+    expect(runner.bindTaskRunner(taskRunner)).toBe(unbind);
+    const scheduleCompleted = new Promise<void>((resolve) => {
+      runner.once('schedule:completed', () => resolve());
+    });
     const completion = new Promise<{ result?: unknown }>((resolve, reject) => {
       taskRunner.once('job:completed', (_job, result) =>
         resolve(result as { result?: unknown }),
@@ -1481,7 +1828,15 @@ describe('report refresh integration', () => {
       await expect(completion).resolves.toMatchObject({
         result: { tenantId: 'tenant-a' },
       });
+      await scheduleCompleted;
+      const counters = await db.query(
+        'SELECT running_count, run_count, success_count FROM _smrt_report_schedules',
+      );
+      expect(counters.rows).toEqual([
+        { running_count: 0, run_count: 1, success_count: 1 },
+      ]);
     } finally {
+      unbind();
       await taskRunner.stop();
     }
 
