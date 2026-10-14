@@ -138,10 +138,8 @@ export function attendanceSuite(
         service.startWork(at(9), { ...work, taskRefType: 'x:Op' }),
       ).rejects.toThrow('together');
       await service.startWork(at(9), work);
-      await service.punchOut(at(10), work);
-      const [punch] = await withTenant({ tenantId: actor.tenantId }, async () =>
-        (await AttendancePunchCollection.create({ db })).list({}),
-      );
+      // The punch punchOut returns: an unfiltered list also sees other tests' rows on PostgreSQL.
+      const punch = await service.punchOut(at(10), work);
       expect((await service.segments(punch.id!)).at(-1)?.closedReason).toBe(
         'punchOut',
       );
