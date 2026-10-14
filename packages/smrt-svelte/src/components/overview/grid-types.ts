@@ -1,10 +1,9 @@
 import type { Component, Snippet } from 'svelte';
 import type { OverviewController } from './controller.svelte.js';
 import type {
-  OverviewOptions,
   OverviewWidget,
-  RegisteredWidget,
   WidgetComponentProps,
+  WidgetOptionsEditorProps,
 } from './types.js';
 
 /** A model the option editor offers for `model` fields. */
@@ -23,6 +22,8 @@ export interface OverviewGridProps {
    * unavailable.
    */
   components?: ReadonlyMap<string, Component<WidgetComponentProps>>;
+  /** Resolved custom option editors (see `resolveWidgetOptionsEditors`). */
+  optionEditors?: ReadonlyMap<string, Component<WidgetOptionsEditorProps>>;
   /**
    * Edit mode. Omit to follow the shell's layout editor (the pencil), so a
    * grid inside `AppShell` edits with the rest of the page.
@@ -49,13 +50,6 @@ export interface OverviewFormIssue {
 }
 
 /** Props of `WidgetOptionsForm`. */
-export interface WidgetOptionsFormProps {
-  /** The widget type being configured. */
-  definition: RegisteredWidget;
-  /** Current options (an existing widget) or starting values. */
-  initial: OverviewOptions;
-  models?: readonly OverviewModelChoice[];
-  /** Saves; returns issues to show, or `null` when it worked. */
-  onsave: (options: OverviewOptions) => OverviewFormIssue[] | null;
-  oncancel: () => void;
-}
+export type WidgetOptionsFormProps = WidgetOptionsEditorProps & {
+  optionsEditor?: Component<WidgetOptionsEditorProps>;
+};

@@ -35,6 +35,7 @@ export const RECIPE_WIDGET_KEYS = [
   'icon',
   'version',
   'migrate',
+  'optionsEditor',
   'options',
   'data',
   'allowedIn',
@@ -406,6 +407,11 @@ export function readWidgetSurface(
     else if (version < 2) {
       bad('.migrate needs a `version` above 1');
     } else out.migrate = ref;
+  }
+  if (entry.optionsEditor !== undefined) {
+    const ref = readRef(entry.optionsEditor, at, 'optionsEditor');
+    if (ref === undefined) ok = false;
+    else out.optionsEditor = ref;
   }
 
   if (entry.options !== undefined) {

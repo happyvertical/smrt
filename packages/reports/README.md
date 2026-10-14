@@ -330,6 +330,15 @@ chat package offers matching assistant tools that propose a spec, preview it,
 and save only after a human confirms. See
 [`agents/runtime-reports.md`](./agents/runtime-reports.md).
 
+## Browser components
+
+`@happyvertical/smrt-reports/svelte` exports saved-report and detail screens,
+a confirmation card, a report/measure picker, and a shared-chart result view.
+They accept a principal-scoped browser transport and show an unavailable state
+when no server is supplied. See the [browser integration contract](./agents/runtime-report-browser.md)
+for route-host identity and capability props, confirmation wiring, recipe
+surfaces, and playground previews.
+
 ## Development
 
 ```bash

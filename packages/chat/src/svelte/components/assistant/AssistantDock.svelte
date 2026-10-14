@@ -23,7 +23,7 @@ import type {
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { type Snippet, tick, untrack } from 'svelte';
+import { type Component, type Snippet, tick, untrack } from 'svelte';
 import type { AssistantStatus } from '../../../assistant-turn-events.js';
 import { M } from '../../i18n.js';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
@@ -139,6 +139,12 @@ export interface Props {
    * is host-defined, so the dock never stringifies it or injects it as HTML.
    * Render it with ordinary Svelte markup in the host's own snippet. */
   toolCall?: Snippet<[AssistantMessage]>;
+  /** Trusted host selection of a component for a tool result. Unknown results
+   * retain their ordinary message text and optional toolCall snippet. This
+   * seam only renders: it grants no tool execution or confirmation authority. */
+  toolResultComponent?: (
+    message: AssistantMessage,
+  ) => Component<{ message: AssistantMessage }> | undefined;
   /** Hands the host this dock's own controller once, on mount (#2989), so it
    * can propose an action with `controller.previewAction(request)`. The
    * proposal renders with Confirm/Reject like any other; everything else
@@ -230,6 +236,7 @@ const {
   conversations = 'multiple',
   threadList = true,
   toolCall,
+  toolResultComponent,
   oncontroller,
   onactionapplied,
   onactionsettled,
@@ -770,7 +777,12 @@ async function handleConfirmAction(requestId: string) {
                 own={message.role === 'user'}
               >
                 {#snippet children()}
-                  <p class="assistant-dock-message-content">{message.content}</p>
+                  {@const ResultComponent = message.role === 'tool' ? toolResultComponent?.(message) : undefined}
+                  {#if ResultComponent}
+                    <ResultComponent {message} />
+                  {:else}
+                    <p class="assistant-dock-message-content">{message.content}</p>
+                  {/if}
                 {#if toolCall && message.toolCallData != null}
                   <div class="assistant-dock-tool-call">
                     {@render toolCall(message)}

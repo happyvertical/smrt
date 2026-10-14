@@ -33,12 +33,17 @@ import type { OverviewOpResult } from './controller.svelte.js';
 import type { OverviewGridProps } from './grid-types.js';
 import { spanFromKey, spanFromPointer } from './resize.js';
 import { defaultWidgetOptions } from './schema.js';
-import type { OverviewOptions, OverviewWidget } from './types.js';
+import type {
+  OverviewOptions,
+  OverviewWidget,
+  WidgetOptionIssue,
+} from './types.js';
 import WidgetOptionsForm from './WidgetOptionsForm.svelte';
 
 let {
   controller,
   components,
+  optionEditors,
   editing: editingProp,
   label,
   headingLevel = 2,
@@ -299,9 +304,7 @@ function chooseType(type: string): void {
   }
 }
 
-function saveOptions(
-  options: OverviewOptions,
-): { key: string; code: string }[] | null {
+function saveOptions(options: OverviewOptions): WidgetOptionIssue[] | null {
   const current = configure;
   if (!current) return null;
   const result: OverviewOpResult =
@@ -531,6 +534,7 @@ const headingTag = $derived(`h${headingLevel}`);
           definition={configureDef}
           initial={configure.initial}
           {models}
+          optionsEditor={optionEditors?.get(configure.type) ?? configureDef.optionsEditor}
           onsave={saveOptions}
           oncancel={() => (configure = null)}
         />

@@ -116,6 +116,7 @@ static surfaces = [
     icon: 'chart',
     version: 2,                                // option-schema version (default 1)
     migrate: '@acme/shop/server#migrateSalesTotal', // needs version above 1
+    optionsEditor: '@acme/shop/svelte#SalesOptions', // optional dependent-choice editor
     options: [
       { key: 'model', type: 'model', label: 'Model', required: true },
       { key: 'style', type: 'enum', label: 'Style', default: 'bar',
@@ -129,14 +130,16 @@ static surfaces = [
 ```
 
 Emitted keys, in this order: `kind`, `type`, `export`, `label`, `description`,
-`icon`, `version`, `migrate`, `options`, `data`, `allowedIn`, `defaultSpan`,
+`icon`, `version`, `migrate`, `optionsEditor`, `options`, `data`, `allowedIn`, `defaultSpan`,
 `minSpan`, `maxSpan`; absent ones are omitted. Rules (each violation is a scan
 error, same strictness as the other kinds):
 
 - `type` is a lowercase kebab id (`[a-z][a-z0-9-]{0,31}`), unique among a
-  recipe's surfaces and across the package's recipes. `export`, `data.load` and
-  `migrate` are `'<package specifier>#<ExportName>'`; relative specifiers are
-  rejected. `label` is required.
+  recipe's surfaces and across the package's recipes. `export`, `data.load`,
+  `migrate`, and `optionsEditor` are `'<package specifier>#<ExportName>'`;
+  relative specifiers are rejected. `label` is required. A UI host resolves an
+  `optionsEditor` lazily for dependent or remote choices; the server registry
+  never imports it, and every saved value still passes the ordinary option schema.
 - `options` is a non-empty list of plain-JSON fields limited to the overview
   option types: `text`, `markdown`, `identifier`, `model`, `integer`, `number`,
   `boolean`, closed `enum` (non-empty distinct `choices`). There is no free-form

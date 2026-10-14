@@ -88,3 +88,47 @@ test('confirms once and returns enveloped viewer-run and archive results', async
     }
   }
 });
+
+test('approves an assistant proposal with a browser gesture and renders it through recipe UI', async ({
+  ownerPage,
+}) => {
+  await ownerPage.goto('/_test/runtime-reports');
+  await expect(
+    ownerPage.getByRole('heading', { name: 'Browser note count' }),
+  ).toBeVisible();
+  await ownerPage.getByRole('button', { name: 'Approve' }).click();
+  await expect(ownerPage.getByText('Report saved.')).toBeVisible();
+  const saved = ownerPage.getByRole('link', { name: 'Browser note count' });
+  const detailPath = await saved.getAttribute('href');
+  expect(detailPath).toMatch(/^\/reports\/[^/]+$/);
+
+  await ownerPage.goto('/reports');
+  const listed = ownerPage.locator(`a[href="${detailPath}"]`);
+  await expect(listed).toHaveText('Browser note count');
+  await Promise.all([
+    ownerPage.waitForURL((url) => url.pathname === detailPath),
+    listed.click(),
+  ]);
+  await expect(
+    ownerPage.getByRole('heading', { name: 'Browser note count', level: 1 }),
+  ).toBeVisible();
+  await expect(ownerPage.getByRole('button', { name: 'Table view' })).toBeVisible();
+
+  const reportId = detailPath?.split('/').at(-1);
+  if (!reportId) throw new Error('Saved report link did not include an id');
+  await ownerPage.goto(`/reports-overview/${reportId}`);
+  await expect(
+    ownerPage.getByRole('heading', { name: 'Report overview' }),
+  ).toBeVisible();
+  await expect(
+    ownerPage.locator('[data-smrt-component="RuntimeReportChartWidget"]'),
+  ).toBeVisible();
+  await ownerPage.getByRole('button', { name: 'Add widget' }).click();
+  const chooser = ownerPage.getByRole('dialog', { name: 'Add a widget' });
+  await chooser.getByRole('button', { name: /Report chart/ }).click();
+  const form = ownerPage.getByRole('dialog', { name: 'Add Report chart' });
+  const approvedOption = form.locator(`option[value="${reportId}"]`);
+  await expect(approvedOption).toHaveText('Browser note count');
+  await form.getByLabel('Report').selectOption(reportId);
+  await expect(form.getByRole('option', { name: 'notes' })).toBeAttached();
+});

@@ -113,7 +113,18 @@ describe('reports recipes (#3719)', () => {
         models: ['@happyvertical/smrt-reports:RuntimeReport'],
       });
       expect(runtime?.nav).toHaveLength(1);
-      expect(runtime?.surfaces ?? []).toEqual([]);
+      expect(runtime?.surfaces).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'route', path: '/reports' }),
+          expect.objectContaining({ kind: 'route', path: '/reports/:id' }),
+          expect.objectContaining({
+            kind: 'widget',
+            type: 'runtime-report-chart',
+            optionsEditor:
+              '@happyvertical/smrt-reports/svelte#RuntimeReportWidgetOptions',
+          }),
+        ]),
+      );
       const [recipe] = built.recipes;
       expect(recipe.id).toBe('reports.materialized');
       expect(recipe.className).toBe('MaterializedReportsRecipe');

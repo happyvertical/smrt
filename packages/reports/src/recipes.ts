@@ -67,5 +67,45 @@ export class RuntimeReportsRecipe extends SmrtRecipe {
   static help = './runtime.recipe.md';
   static models = [RuntimeReport];
   static nav = [{ label: 'Reports', model: RuntimeReport, icon: 'fileText' }];
+  static surfaces = [
+    {
+      kind: 'route',
+      path: '/reports',
+      export: '@happyvertical/smrt-reports/svelte#RuntimeReportsRoute',
+      label: 'Reports',
+    },
+    {
+      kind: 'route',
+      path: '/reports/:id',
+      export: '@happyvertical/smrt-reports/svelte#RuntimeReportDetailRoute',
+      label: 'Report detail',
+    },
+    {
+      kind: 'widget',
+      type: 'runtime-report-chart',
+      export: '@happyvertical/smrt-reports/svelte#RuntimeReportChartWidget',
+      label: 'Report chart',
+      description: 'Chart a measure from a saved report.',
+      icon: 'chart',
+      optionsEditor:
+        '@happyvertical/smrt-reports/svelte#RuntimeReportWidgetOptions',
+      options: [
+        { key: 'reportId', type: 'text', label: 'Report', required: true },
+        {
+          key: 'measure',
+          type: 'identifier',
+          label: 'Measure',
+          required: true,
+        },
+        { key: 'dimension', type: 'identifier', label: 'Dimension' },
+      ],
+      data: {
+        load: '@happyvertical/smrt-reports#loadRuntimeReportChart',
+        models: ['@happyvertical/smrt-reports:RuntimeReport'],
+      },
+      defaultSpan: 2,
+      maxSpan: 4,
+    },
+  ] as const;
   static runtime = 'server' as const;
 }

@@ -192,6 +192,7 @@ export function copyRuntimeProfileReference(
   if (!release) throw new Error('Reference fixture requires smrt-core.');
   for (const dependency of [
     '@happyvertical/smrt-assets',
+    '@happyvertical/smrt-chat',
     '@happyvertical/smrt-jobs',
   ]) {
     packageJson.dependencies[dependency] ??= release;
