@@ -9,7 +9,7 @@
 
 import type { Cookies } from '@sveltejs/kit';
 import { type ActionFailure, fail, redirect } from '@sveltejs/kit';
-import type { LocalOwnerClaimResult } from '../index.js';
+import { type LocalOwnerClaimResult, LocalRuntimeError } from '../index.js';
 import { removeOnboardingHandoff } from '../state-root.js';
 import type { SmrtSvelteKitRuntime } from './runtime.js';
 
@@ -44,7 +44,9 @@ export type OwnerSetupErrorCode =
   /** Missing token, blank name, or email without `@` (HTTP 400). */
   | 'setup_invalid_input'
   /** Token wrong, expired, or already used; owner already claimed (HTTP 400). */
-  | 'setup_invalid';
+  | 'setup_invalid'
+  /** The bootstrap tenant slug already exists (HTTP 409). */
+  | 'setup_conflict';
 
 /** `form` data returned with `fail(status, …)`. */
 export interface OwnerSetupFailure {
@@ -69,6 +71,8 @@ export const DEFAULT_OWNER_SETUP_MESSAGES: Readonly<
   setup_invalid_input: 'Name, email, and a valid setup token are required.',
   setup_invalid:
     'The setup invitation is invalid, expired, or already used. Run pnpm app:stop, pnpm app:recover, pnpm app:start, then pnpm app:open.',
+  setup_conflict:
+    'A workspace with the configured owner tenant slug already exists. Configure ownerTenant with another slug or adoptExisting.',
 });
 
 /** The request fields the setup page reads. */
@@ -202,7 +206,13 @@ export function createOwnerSetupPage(
         userAgent: event.request.headers.get('user-agent') || undefined,
         ipAddress: event.getClientAddress(),
       });
-    } catch {
+    } catch (error) {
+      if (
+        error instanceof LocalRuntimeError &&
+        error.code === 'owner_tenant_conflict'
+      ) {
+        return failure(409, 'setup_conflict');
+      }
       return failure(400, 'setup_invalid');
     }
 

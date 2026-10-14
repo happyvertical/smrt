@@ -457,7 +457,8 @@ installer creates them dormant by default; enablement is a deployment decision,
 not an automatic side effect.
 
 The default maintenance schedule runs daily at 02:30 and the suggestion run
-every Monday at 03:00, both in the scheduler host’s local time. Maintenance
+every Monday at 03:00, both in UTC (the schedule row’s default `timezone`,
+which operators may change). Maintenance
 keeps usage counters for 90 days and at most 100,000 rows, and removes accepted
 suggestions after 180 days. The suggestion window is 30 days: promotion needs
 five distinct users, while a default needs 10 submissions with at least 80%

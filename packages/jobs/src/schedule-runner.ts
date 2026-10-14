@@ -15,6 +15,13 @@ import { isWorkerAlive } from './worker-liveness.js';
 /**
  * ScheduleRunner configuration
  */
+/**
+ * Queue that {@link ScheduleRunner} enqueues triggered schedules to. A task
+ * worker must poll it (alongside `default`) or scheduled jobs stay `pending`
+ * (#3141).
+ */
+export const SCHEDULED_JOB_QUEUE = 'agents';
+
 export interface ScheduleRunnerConfig {
   /** Runner ID (auto-generated if not provided) */
   id?: string;
@@ -492,8 +499,37 @@ export class ScheduleRunner extends EventEmitter {
             : (schedule.agent_config as Record<string, unknown>);
       }
 
-      // Compute next run time from cron before creating the job
-      const nextRun = getNextCronDate(schedule.cron as string);
+      // Compute next run time from cron before creating the job, evaluated
+      // in the row's zone; a missing/blank zone falls back to the column
+      // default (UTC) rather than the host's process zone (#3859).
+      // An invalid cron or zone is a deterministic configuration failure:
+      // retrying it every poll can never succeed, so move the row to
+      // status='error' (as AgentSchedule.calculateNextRun does). Only these
+      // validation errors are terminal; a valid cron whose next run lies past
+      // the search horizon (a leap-day schedule) stays active.
+      const timezone =
+        typeof schedule.timezone === 'string' && schedule.timezone.trim()
+          ? schedule.timezone.trim()
+          : 'UTC';
+      try {
+        validateCronExpression(schedule.cron as string);
+        validateCronTimezone(timezone);
+      } catch (error) {
+        await this.db.query(
+          `UPDATE _smrt_agent_schedules
+           SET status = 'error', last_error = ?
+           WHERE id = ?`,
+          redactErrorForPersistence(error),
+          schedule.id,
+        );
+        this.emit('schedule:error', scheduleInfo, error as Error);
+        this.logger.error('Schedule has an invalid cron or time zone', {
+          scheduleId: schedule.id,
+          error,
+        });
+        return;
+      }
+      const nextRun = getNextCronDate(schedule.cron as string, timezone);
 
       // Create a job for this schedule
       // Nest agent_config under _agentConfig so TaskRunner can pass it
@@ -526,7 +562,7 @@ export class ScheduleRunner extends EventEmitter {
           schedule.tenant_id.length > 0
             ? (schedule.tenant_id as string)
             : null,
-        queue: 'agents',
+        queue: SCHEDULED_JOB_QUEUE,
         objectType: canonicalAgentType,
         objectId: schedule.agent_id as string | null,
         method: (schedule.method as string) || 'run',
@@ -591,6 +627,7 @@ interface ScheduleRow {
   tenant_id: unknown;
   agent_config: unknown;
   cron: unknown;
+  timezone: unknown;
   method: unknown;
   method_args: unknown;
   timeout: unknown;
@@ -709,109 +746,272 @@ export function validateCronExpression(cron: string): string[] {
   return parts;
 }
 
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+/** Wall-clock minutes scanned before giving up (one year, as before). */
+const CRON_SEARCH_HORIZON_MS = 525_600 * MINUTE_MS;
+
+/** UTC offset (ms, east-positive) of a zone at an instant. */
+type ZoneOffsetAt = (epochMs: number) => number;
+
+const zoneFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * Resolve the offset function for a cron time zone. `undefined`/`null` keeps
+ * the legacy host-local behaviour (the process `TZ`); any other value must be
+ * an IANA zone name accepted by `Intl.DateTimeFormat`.
+ */
+function resolveZoneOffset(timezone: string | null | undefined): ZoneOffsetAt {
+  if (timezone === undefined || timezone === null) {
+    return (epochMs) => -new Date(epochMs).getTimezoneOffset() * MINUTE_MS;
+  }
+
+  let formatter = zoneFormatters.get(timezone);
+  if (!formatter) {
+    try {
+      formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        hourCycle: 'h23',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+      });
+    } catch {
+      throw new Error(
+        `Invalid cron timezone: "${timezone}" is not a recognized IANA time zone`,
+      );
+    }
+    zoneFormatters.set(timezone, formatter);
+  }
+
+  const zoned = formatter;
+  return (epochMs) => {
+    const fields: Record<string, number> = {};
+    for (const part of zoned.formatToParts(epochMs)) {
+      if (part.type !== 'literal') fields[part.type] = Number(part.value);
+    }
+    const wallMs = Date.UTC(
+      fields.year,
+      fields.month - 1,
+      fields.day,
+      // `% 24` guards ICU builds that render midnight as hour 24.
+      fields.hour % 24,
+      fields.minute,
+      fields.second,
+    );
+    return wallMs - (epochMs - (((epochMs % 1000) + 1000) % 1000));
+  };
+}
+
+/**
+ * Instants at which a wall-clock time (given as UTC-epoch ms of its naive
+ * fields) occurs in the zone: one normally, two in a backward-transition
+ * overlap (earlier first), none in a forward-transition gap. Assumes at most
+ * one offset transition within a day either side, true of every IANA zone.
+ */
+function wallTimeInstants(
+  wallMs: number,
+  offsetAt: ZoneOffsetAt,
+): { instants: number[]; offsetBefore: number; offsetAfter: number } {
+  const offsetBefore = offsetAt(wallMs - DAY_MS);
+  const offsetAfter = offsetAt(wallMs + DAY_MS);
+  const instants: number[] = [];
+  for (const offset of new Set([offsetBefore, offsetAfter])) {
+    const instant = wallMs - offset;
+    if (offsetAt(instant) === offset) instants.push(instant);
+  }
+  instants.sort((a, b) => a - b);
+  return { instants, offsetBefore, offsetAfter };
+}
+
+/**
+ * Validate a cron time zone without computing a run date.
+ *
+ * @throws `Invalid cron timezone` when the name is not an IANA zone.
+ */
+function validateCronTimezone(timezone: string): void {
+  resolveZoneOffset(timezone);
+}
+
 /**
  * Parse a cron expression and get the next run date.
  * Supports standard 5-field cron: minute hour day-of-month month day-of-week
+ *
+ * Fields are matched against the wall clock of `timezone`, an IANA zone name
+ * such as `America/Edmonton` (DST-correct via `Intl.DateTimeFormat`). When
+ * `timezone` is omitted (`undefined`/`null`) the host process's local zone is
+ * used — the legacy behaviour, kept for callers that have no zone to pass.
+ * Persisted schedules should always pass their row's zone; the
+ * `_smrt_agent_schedules.timezone` column defaults to `UTC`.
+ *
+ * Daylight-saving transitions follow Vixie cron's split:
+ * - **Fixed-time** expressions (no `*` in the minute or hour field) run once
+ *   per matching day. A wall time skipped by a forward transition runs
+ *   shifted forward by the gap (`30 2 * * *` on the spring-forward day in
+ *   `America/Edmonton` runs at 03:30 MDT, RFC 5545 / Temporal "compatible"
+ *   resolution); a wall time repeated by a backward transition runs only at
+ *   its first occurrence.
+ * - **Wildcard** expressions (`*` in the minute or hour field, including
+ *   `*\/n`) follow elapsed time: skipped wall times do not run and repeated
+ *   wall times run again in the repeated hour.
  *
  * Limitations:
  * - Numeric values only (no abbreviated names like JAN, MON)
  * - Day-of-week accepts 0-7 where both 0 and 7 represent Sunday
  *
- * Out-of-range fields are rejected eagerly (see {@link validateCronExpression}).
+ * Out-of-range fields and unknown time zones are rejected eagerly (see
+ * {@link validateCronExpression}).
  *
- * Exported for unit testing of the matching logic (not re-exported from the
- * package index — the public surface is unchanged).
+ * @param cron - 5-field cron expression.
+ * @param timezone - IANA zone the cron is evaluated in; omit for host-local.
+ * @returns The first matching instant at least one minute after now.
  */
-export function getNextCronDate(cron: string): Date {
+export function getNextCronDate(cron: string, timezone?: string | null): Date {
   const [minuteExpr, hourExpr, dayExpr, monthExpr, dowExpr] =
     validateCronExpression(cron);
-
-  const now = new Date();
-  const candidate = new Date(now);
-  candidate.setSeconds(0);
-  candidate.setMilliseconds(0);
-
-  // Move to next minute at minimum
-  candidate.setMinutes(candidate.getMinutes() + 1);
+  const offsetAt = resolveZoneOffset(timezone);
 
   // Standard cron DOM/DOW semantics:
   // When both day-of-month and day-of-week are restricted (not *),
   // a date matches if EITHER condition is met (OR logic).
   const dayIsWildcard = dayExpr === '*';
   const dowIsWildcard = dowExpr === '*';
+  const fixedTime = !minuteExpr.includes('*') && !hourExpr.includes('*');
 
-  // Search for next matching date (limit to 1 year)
-  const maxIterations = 525600;
-  for (let i = 0; i < maxIterations; i++) {
-    const dayMatches = matchesCronField(candidate.getDate(), dayExpr);
-    // getDay() returns 0 for Sunday; standard cron accepts both 0 and 7
-    const dow = candidate.getDay();
+  const dayMatches = (wall: Date): boolean => {
+    const domMatches = matchesCronField(
+      wall.getUTCDate(),
+      dayExpr,
+      CRON_FIELD_RANGES[2],
+    );
+    // getUTCDay() returns 0 for Sunday; standard cron accepts both 0 and 7
+    const dow = wall.getUTCDay();
     const dowMatches =
-      matchesCronField(dow, dowExpr) ||
-      (dow === 0 && matchesCronField(7, dowExpr));
+      matchesCronField(dow, dowExpr, CRON_FIELD_RANGES[4]) ||
+      (dow === 0 && matchesCronField(7, dowExpr, CRON_FIELD_RANGES[4]));
+    if (!dayIsWildcard && !dowIsWildcard) return domMatches || dowMatches;
+    if (!dayIsWildcard) return domMatches;
+    if (!dowIsWildcard) return dowMatches;
+    return true;
+  };
 
-    let dayOfMonthOrWeekMatches: boolean;
-    if (!dayIsWildcard && !dowIsWildcard) {
-      dayOfMonthOrWeekMatches = dayMatches || dowMatches;
-    } else if (!dayIsWildcard) {
-      dayOfMonthOrWeekMatches = dayMatches;
-    } else if (!dowIsWildcard) {
-      dayOfMonthOrWeekMatches = dowMatches;
-    } else {
-      dayOfMonthOrWeekMatches = true;
+  // The earliest eligible instant: the start of the next minute.
+  const now = Date.now();
+  const threshold =
+    now - (((now % MINUTE_MS) + MINUTE_MS) % MINUTE_MS) + MINUTE_MS;
+
+  // Scan naive wall-clock minutes (UTC accessors on wall-time epochs). A
+  // transition near the threshold can map earlier wall times to eligible
+  // instants (the repeated hour, or a gap shifted forward), so start the
+  // scan one transition-width before the threshold's wall time.
+  const thresholdOffset = offsetAt(threshold);
+  const thresholdSpread = Math.abs(
+    offsetAt(threshold - DAY_MS) - offsetAt(threshold + DAY_MS),
+  );
+  let wallMs = threshold + thresholdOffset - thresholdSpread;
+  const wallEnd = threshold + thresholdOffset + CRON_SEARCH_HORIZON_MS;
+
+  let best: number | null = null;
+  let stopAfterWall = Number.POSITIVE_INFINITY;
+
+  while (wallMs <= wallEnd && wallMs <= stopAfterWall) {
+    const wall = new Date(wallMs);
+    const year = wall.getUTCFullYear();
+    const month = wall.getUTCMonth();
+    const day = wall.getUTCDate();
+    const hour = wall.getUTCHours();
+
+    if (!matchesCronField(month + 1, monthExpr, CRON_FIELD_RANGES[3])) {
+      wallMs = Date.UTC(year, month + 1, 1);
+      continue;
     }
-
+    if (!dayMatches(wall)) {
+      wallMs = Date.UTC(year, month, day + 1);
+      continue;
+    }
+    if (!matchesCronField(hour, hourExpr, CRON_FIELD_RANGES[1])) {
+      wallMs = Date.UTC(year, month, day, hour + 1);
+      continue;
+    }
     if (
-      matchesCronField(candidate.getMonth() + 1, monthExpr) &&
-      dayOfMonthOrWeekMatches &&
-      matchesCronField(candidate.getHours(), hourExpr) &&
-      matchesCronField(candidate.getMinutes(), minuteExpr)
+      !matchesCronField(wall.getUTCMinutes(), minuteExpr, CRON_FIELD_RANGES[0])
     ) {
-      return candidate;
+      wallMs += MINUTE_MS;
+      continue;
     }
 
-    candidate.setMinutes(candidate.getMinutes() + 1);
+    const { instants, offsetBefore, offsetAfter } = wallTimeInstants(
+      wallMs,
+      offsetAt,
+    );
+    let candidates = instants;
+    if (instants.length === 0) {
+      // Forward-transition gap: fixed-time runs shift forward by the gap.
+      candidates = fixedTime ? [wallMs - offsetBefore] : [];
+    } else if (instants.length > 1 && fixedTime) {
+      // Backward-transition overlap: fixed-time runs fire once, first.
+      candidates = [instants[0]];
+    }
+
+    for (const instant of candidates) {
+      if (instant >= threshold && (best === null || instant < best)) {
+        if (best === null) {
+          // Later wall times within one transition width can still map to
+          // an earlier instant (the repeated hour); keep scanning that far.
+          stopAfterWall = wallMs + Math.abs(offsetBefore - offsetAfter);
+        }
+        best = instant;
+      }
+    }
+
+    wallMs += MINUTE_MS;
   }
 
-  throw new Error(`Could not find next run date for cron: ${cron}`);
+  if (best === null) {
+    throw new Error(`Could not find next run date for cron: ${cron}`);
+  }
+  return new Date(best);
 }
 
 /**
- * Check if a value matches a cron field expression
+ * Check if a value matches a cron field expression.
+ *
+ * Each comma-separated term is evaluated on its own, so mixed lists such as
+ * `1-5,10` or `0,30-40/5` match every term rather than parsing the whole
+ * list as one range. `*\/step` steps from the field minimum (day-of-month
+ * `*\/2` is 1,3,5,…; month `*\/3` is 1,4,7,10), and `base/step` without a range
+ * (`5/15`) steps from `base` to the field maximum — the common cron extension
+ * the validator already accepts.
  */
-function matchesCronField(value: number, expr: string): boolean {
+function matchesCronField(
+  value: number,
+  expr: string,
+  range: { min: number; max: number },
+): boolean {
   if (expr === '*') return true;
-
-  // Step values (*/5, 0-30/2)
-  if (expr.includes('/')) {
-    const [range, stepStr] = expr.split('/');
-    const step = parseInt(stepStr, 10);
-    if (range === '*') return value % step === 0;
-    if (range.includes('-')) {
-      const [startStr, endStr] = range.split('-');
-      const start = parseInt(startStr, 10);
-      const end = parseInt(endStr, 10);
-      if (value < start || value > end) return false;
-      return (value - start) % step === 0;
+  return expr.split(',').some((term) => {
+    const [body, stepStr] = term.split('/');
+    const step = stepStr === undefined ? 1 : parseInt(stepStr, 10);
+    let start: number;
+    let end: number;
+    if (body === '*') {
+      start = range.min;
+      end = range.max;
+    } else if (body.includes('-')) {
+      const [startStr, endStr] = body.split('-');
+      start = parseInt(startStr, 10);
+      end = parseInt(endStr, 10);
+    } else {
+      start = parseInt(body, 10);
+      end = stepStr === undefined ? start : range.max;
     }
-  }
-
-  // Ranges (1-5)
-  if (expr.includes('-')) {
-    const [startStr, endStr] = expr.split('-');
-    const start = parseInt(startStr, 10);
-    const end = parseInt(endStr, 10);
-    return value >= start && value <= end;
-  }
-
-  // Lists (1,3,5)
-  if (expr.includes(',')) {
-    const values = expr.split(',').map((v) => parseInt(v.trim(), 10));
-    return values.includes(value);
-  }
-
-  // Exact match
-  return value === parseInt(expr, 10);
+    return value >= start && value <= end && (value - start) % step === 0;
+  });
 }
 
 /**

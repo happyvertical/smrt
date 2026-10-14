@@ -1,5 +1,35 @@
 # @happyvertical/smrt-core
 
+## 0.55.23
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - repair DuckDB retry timestamps and concurrent initialization (#3953) (core)
+- @happyvertical/smrt-config@0.55.23
+  - @happyvertical/smrt-scanner@0.55.23
+  - @happyvertical/smrt-types@0.55.23
+
+## 0.55.22
+
+### Patch Changes
+
+- ### Features
+  
+  - restrict runtime source fields with host policy (#3911) (reports)
+  - discover scheduled tenants and preserve refresh history (#3909) (reports)
+  - add exact percentage labour reconciliation (#3914) (timesheets)
+  - wave 2 — visual-regression harness, hairline tokens, structure/theme pilot (#3896) (styling)
+  
+  ### Bug Fixes
+  
+  - scheduling, chat registry, and inventory patch train from #3906 (#3915)
+  - preserve bundled registration and query value contracts (#3907) (reports)
+- @happyvertical/smrt-config@0.55.22
+  - @happyvertical/smrt-scanner@0.55.22
+  - @happyvertical/smrt-types@0.55.22
+
 ## 0.55.21
 
 ### Patch Changes
