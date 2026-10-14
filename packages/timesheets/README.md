@@ -401,3 +401,12 @@ reconstructing a resolver after an interrupted approval, the host must restore
 **the originally selected authorized date and rate terms**, not reselect from a
 newly edited schedule; this helper introduces no persistence schema or schedule
 lookup service. Fully completed approval retries retain their existing snapshots.
+
+### Percentage burden and analytical labour valuation
+
+`DatedPercentageLabourCommercialResolver` adds opt-in exact percentage-derived
+burden without changing the additive dated resolver. `reconcileLabourValuation`
+compares canonical approved loaded costs with an explicitly selected analytical
+aggregate; it never reprices or posts approval facts. Both retain private
+compensation boundaries. See [the exact contract and validation matrix](agents/labour-valuation.md)
+for input units, immutable provenance, supported modes and host responsibilities.
