@@ -5,8 +5,8 @@
  */
 
 import {
-  ContractCollection,
   ContractLineItemCollection,
+  PurchaseContractCollection,
 } from '@happyvertical/smrt-commerce';
 import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import { Expense } from '../models/Expense.js';
@@ -143,7 +143,7 @@ export class ExpenseCollection extends SmrtCollection<Expense> {
     commitmentId: string,
     options: { lineId?: string } = {},
   ): Promise<CommitmentPosition> {
-    const contracts = await ContractCollection.create({ db: this.db });
+    const contracts = await PurchaseContractCollection.create({ db: this.db });
     const commitment = await contracts.get({ id: commitmentId });
     if (!commitment) {
       throw new ExpenseError(

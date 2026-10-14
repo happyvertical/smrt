@@ -86,6 +86,8 @@ export {
   type PaymentIntentIdempotencyArgs,
   type PaymentIntentSeed,
   PayoutCollection,
+  PurchaseContractCollection,
+  SalesContractCollection,
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
@@ -104,6 +106,12 @@ export {
   migrateCommerceMoneyToMinorUnits,
   preflightCommerceMoneyMinorUnits,
 } from './migrations/moneyMinorUnits.js';
+export {
+  type CommerceContractTypeGroup,
+  type CommercePartyLinkRow,
+  type CommercePartyLinksPreflight,
+  preflightCommercePartyLinks,
+} from './migrations/partyLinks.js';
 // Models
 export {
   Agreement,
@@ -137,7 +145,9 @@ export {
   PaymentIntent,
   Payout,
   ProductionOrder,
+  PurchaseContract,
   PurchaseOrder,
+  SalesContract,
   Vendor,
   WholesaleOrder,
 } from './models/index.js';
@@ -173,9 +183,11 @@ export {
   type PaymentOption,
   PaymentStatus,
   PayoutStatus,
+  type PurchaseContractOptions,
   type PurchaseOrderOptions,
   type RecognizeRevenueOptions,
   type RecordPaymentOptions,
+  type SalesContractOptions,
   VendorStatus,
 } from './types/index.js';
 

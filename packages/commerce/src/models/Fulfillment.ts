@@ -100,7 +100,7 @@ export class Fulfillment extends SmrtObject {
    * Parent contract being fulfilled
    */
   @field({ description: 'The order being fulfilled.' })
-  @foreignKey('Contract')
+  @foreignKey('SalesContract', { validateSubtype: true })
   contractId: string = '';
 
   /**

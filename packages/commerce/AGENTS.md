@@ -5,7 +5,7 @@ E-commerce with Contract STI hierarchy, invoice lifecycle, payment tracking, pay
 ## Models
 
 - **Customer** / **Vendor**: linked to Profile via string ID (not FK). Customer has creditLimit, paymentTerms, customerType (DTC / WHOLESALE / RETAIL). Vendor has leadTimeDays, minimumOrder, and `payoutAddresses: Record<string, string>` — a flat map from payout-rail-qualified currency code (`USDC-base`, `BTC`, `USD-stripe`, ...) to destination string (EVM address, BTC address, Stripe Connect account id, IBAN). Use `getPayoutAddress(currency)` for a `Map.get`-style lookup; missing entries return `undefined` (caller decides skip-vs-error).
-- **Contract** (STI base → Estimate, Order, Lease, Agreement, PurchaseOrder, WholesaleOrder, ProductionOrder, Cart, LicenseSale): 9 contract types sharing one table. Carries `channelId` (open-ended string — `dtc-web`, `wholesale-b2b`, `pos-store-N`, etc.) so the same model serves DTC checkout, B2B portals, and POS.
+- **Contract** (STI base): common fields for nine leaf types sharing `contracts`. Abstract **SalesContract** owns `customerId` for Estimate, Order, Lease, Agreement, WholesaleOrder, Cart, and LicenseSale. Abstract **PurchaseContract** owns `vendorId` for PurchaseOrder and ProductionOrder. `Contract` remains concrete for existing base-typed rows. `channelId` is an open-ended string (`dtc-web`, `wholesale-b2b`, `pos-store-N`, etc.). Run `preflightCommercePartyLinks(db)` before upgrading existing data; sales rows carrying a vendor and purchase rows carrying a customer need operator review.
 - **WholesaleOrder**: B2B order. Conventional pairing — customer has `customerType: 'wholesale'`, NET-30/60 terms, delivered via wholesale-portal channel.
 - **ProductionOrder**: manufacturing equivalent of a PurchaseOrder — commission your factory to make finished goods. Consumes raw materials per BOM (`@happyvertical/smrt-manufacturing`) and produces SKU stock (`@happyvertical/smrt-inventory`).
 - **Cart**: transient order-in-progress. Same shape as Order; the application promotes the row from `_meta_type: Cart` to `_meta_type: Order` at checkout instead of copying data between tables.
@@ -150,6 +150,7 @@ for usage.
 ## Cross-Package References
 
 - `customerId` → `@foreignKey('Customer')` (hard reference within package)
+- `vendorId` → `@foreignKey('Vendor')` on PurchaseContract only
 - `profileId` → plain string to smrt-profiles
 - `arJournalId`, `revenueJournalId` → plain string to smrt-ledgers
 - `skuId` (on `PaymentIntent`, `LicenseSale`) → plain string to smrt-products

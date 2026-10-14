@@ -71,9 +71,11 @@ export class AdGroup extends SmrtObject {
   tenantId: string | null = null;
 
   /**
-   * Contract ID (FK to smrt-commerce Contract, cross-package)
+   * Sales contract ID (cross-package reference to smrt-commerce)
    */
-  @crossPackageRef('@happyvertical/smrt-commerce:Contract')
+  @crossPackageRef('@happyvertical/smrt-commerce:SalesContract', {
+    validateSubtype: true,
+  })
   contractId: string = '';
 
   /**

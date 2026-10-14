@@ -7,6 +7,8 @@ import { SmrtCollection } from '@happyvertical/smrt-core';
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Contract } from '../models/Contract.js';
 import { ContractStatus, ContractType } from '../types/index.js';
+import { PurchaseContractCollection } from './PurchaseContractCollection.js';
+import { SalesContractCollection } from './SalesContractCollection.js';
 
 export class ContractCollection extends SmrtCollection<Contract> {
   static readonly _itemClass = Contract;
@@ -16,12 +18,14 @@ export class ContractCollection extends SmrtCollection<Contract> {
    *
    * @param customerId - Customer ID
    * @returns Array of contracts
+   * @deprecated Use SalesContractCollection.findByCustomer.
    */
   async findByCustomer(customerId: string): Promise<Contract[]> {
-    return await this.list({
-      where: { customerId },
-      orderBy: 'created_at DESC',
+    const sales = await SalesContractCollection.create({
+      ...this.options,
+      db: this.db,
     });
+    return sales.findByCustomer(customerId);
   }
 
   /**
@@ -29,12 +33,14 @@ export class ContractCollection extends SmrtCollection<Contract> {
    *
    * @param vendorId - Vendor ID
    * @returns Array of contracts
+   * @deprecated Use PurchaseContractCollection.findByVendor.
    */
   async findByVendor(vendorId: string): Promise<Contract[]> {
-    return await this.list({
-      where: { vendorId },
-      orderBy: 'created_at DESC',
+    const purchases = await PurchaseContractCollection.create({
+      ...this.options,
+      db: this.db,
     });
+    return purchases.findByVendor(vendorId);
   }
 
   /**

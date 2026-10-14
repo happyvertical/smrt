@@ -210,7 +210,7 @@ export class Invoice extends SmrtObject {
   @field({
     description: 'The order or agreement this invoice bills for, if any.',
   })
-  @foreignKey('Contract')
+  @foreignKey('SalesContract', { validateSubtype: true })
   contractId: string = '';
 
   // ============================================================================

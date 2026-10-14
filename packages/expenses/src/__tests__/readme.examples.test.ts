@@ -5,7 +5,10 @@
 
 import { randomUUID } from 'node:crypto';
 import { AssetCollection } from '@happyvertical/smrt-assets';
-import { ContractCollection } from '@happyvertical/smrt-commerce';
+import {
+  ContractCollection,
+  VendorCollection,
+} from '@happyvertical/smrt-commerce';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import {
@@ -42,9 +45,13 @@ describe('README examples', () => {
     const fileBytes = new TextEncoder().encode('%PDF-1.7 lumber receipt');
 
     await withTenant({ tenantId }, async () => {
+      const vendor = await (await VendorCollection.create({ db })).create({
+        profileId: randomUUID(),
+      });
       const purchaseOrder = await (await ContractCollection.create({ db }))
         .create({
           _meta_type: 'PurchaseOrder',
+          vendorId: vendor.id,
           totalAmount: 460000,
           currency: 'USD',
         } as never)
