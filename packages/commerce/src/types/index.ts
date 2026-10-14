@@ -112,6 +112,8 @@ export enum PaymentStatus {
   CANCELLED = 'cancelled',
 }
 
+export type PaymentKind = 'payment' | 'refund';
+
 /**
  * Lifecycle status for a saved {@link PaymentInstrument} (card on file).
  * `active` while chargeable, `expired` once the card lapses, `removed` when the
@@ -519,10 +521,36 @@ export type InvoiceCollectionMethod =
   | 'send_invoice'
   | 'charge_automatically';
 
+export type InvoiceKind = 'invoice' | 'credit_note';
+
+/** Frozen source pricing plus the one authoritative credit calculation basis. */
+export type InvoiceCreditCalculationBasis =
+  | {
+      kind: 'quantity';
+      quantity: string;
+      sourceQuantity: string;
+      sourceUnitPrice: number;
+      sourceDiscountType: 'none' | 'percent' | 'amount';
+      sourceDiscountRate: string;
+      sourceDiscountMinor: number;
+    }
+  | {
+      kind: 'net_amount';
+      netMinor: number;
+      sourceQuantity: string;
+      sourceUnitPrice: number;
+      sourceDiscountType: 'none' | 'percent' | 'amount';
+      sourceDiscountRate: string;
+      sourceDiscountMinor: number;
+    };
+
 /**
  * Constructor options for {@link Invoice}.
  */
 export interface InvoiceOptions extends SmrtObjectOptions {
+  kind?: InvoiceKind;
+  creditedInvoiceId?: string | null;
+  creditedAmount?: number;
   tenantId?: string | null;
   customerId?: string;
   contractId?: string;
@@ -579,6 +607,9 @@ export interface InvoiceLineEditorState {
 
 /** Constructor options for {@link InvoiceLineItem}. */
 export interface InvoiceLineItemOptions extends SmrtObjectOptions {
+  creditedLineId?: string | null;
+  creditCalculationBasis?: InvoiceCreditCalculationBasis | null;
+  creditCalculationBasisJson?: string;
   /** Optional retained editor modes and their original calculation context. */
   invoiceEditorState?: InvoiceLineEditorState | null;
   /** Serialized editor state loaded from persistence; malformed JSON is ignored. */
@@ -644,6 +675,7 @@ export interface FulfillmentLineItemOptions extends SmrtObjectOptions {
  * Constructor options for {@link Payment}.
  */
 export interface PaymentOptions extends SmrtObjectOptions {
+  kind?: PaymentKind;
   tenantId?: string | null;
   contractId?: string | null;
   customerId?: string | null;

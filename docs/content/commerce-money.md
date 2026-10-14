@@ -215,10 +215,25 @@ helper that sums stored line `amount` values. It is not the Invoice amount due
 in v2: use the persisted `Invoice.totalAmount`, which includes resolved tax and
 `providerTaxAmount`, for the document total.
 
+Credit notes are `Invoice` rows with `kind: 'credit_note'` and a frozen
+`creditedInvoiceId`. They store positive document totals; reports, sync, and
+posting apply the credit direction once from `kind`. Targeted lines use the
+issued source line's price, discount, tax-code, component, and account
+snapshots, so later rate changes cannot alter the reversal. Partial quantity
+credits prorate flat discounts, while the final credit across every remaining
+source line consumes the exact stored document-tax residual. Free-form credit
+lines require an explicit tax code.
+
+Use `previewInvoiceMoney()` to calculate a proposed draft overlay without
+writing. It requires the active tenant and rejects frozen documents. Use
+`getInvoiceMoneyFacts()` when a tool or integration needs the authoritative
+stored header, line snapshots, stable `moneySnapshotId`, and `DocumentTax`
+rows without recomputation.
+
 ## Not part of this guide
 
 This guide does not define the tenant migration or marker-transition procedure,
-Contract money persistence, issued-document credit-note posting, reports, or
-currency conversion. Those application contracts are released separately. The
+Contract money persistence, reports, or currency conversion. Those application
+contracts are released separately. The
 external documentation follow-up is tracked in
 [s-m-r-t.dev #309](https://github.com/happyvertical/s-m-r-t.dev/issues/309).

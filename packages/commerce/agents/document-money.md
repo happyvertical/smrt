@@ -24,6 +24,31 @@ money edits, child moves, additions, and deletions then fail with
 `FROZEN_DOCUMENT`; status, payment, reminder, and delivery metadata continue
 through their existing lifecycle guards.
 
+Credit notes reuse `Invoice` with `kind: 'credit_note'` and a frozen
+`creditedInvoiceId`; their `DocumentTax.documentType` is `credit_note`. Stored
+header amounts remain positive and posting/report direction comes from `kind`.
+A targeted credit line carries `creditedLineId` plus a server-derived frozen
+calculation basis. Quantity credits reuse the source price and prorate its flat
+discount; amount credits use an explicit tax-exclusive magnitude and restore
+the source line sign. Tax components, labels, rates, and accounts come from the
+issued source snapshot. When a request exhausts every remaining original line,
+the final line receives the exact remaining document/component residual.
+Free-form goodwill lines require an explicit tax code and do not consume source
+line capacity.
+
+Issued credit notes reduce the source `getBalance()` and update its
+server-managed `creditedAmount` under the same locks. Refunds are positive
+`Payment` rows with `kind: 'refund'`, allocated only to credit notes; their
+available amount is the unapplied issued credit after source settlement and
+prior settled refunds. Incoming payments debit cash and credit receivables;
+refund journals reverse those sides.
+
+`previewInvoiceMoney({ db, tenantId, invoiceId, draft })` applies a proposed
+draft overlay through the owning resolver/calculator without writes and rejects
+frozen documents. `getInvoiceMoneyFacts({ db, tenantId, invoiceId })` reads the
+authoritative stored header, lines, `moneySnapshotId`, and `DocumentTax` rows
+without recalculation.
+
 `InvoiceLineItem.amount` is tax-exclusive net money in `v2`.
 `taxAmount` is separate, while `legacyAmount` is reserved for rollback during
 the compatibility migration. `taxCodeId` and component identity may be null for
