@@ -820,6 +820,38 @@ describe('generated SvelteKit helper runtime', () => {
     ]).toEqual(['widgets.read']);
   });
 
+  it('rejects an unbound ambient super-admin context before generated-action lookup', async () => {
+    const route = await importGeneratedRuntimeReportAction('run');
+    let lookups = 0;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => {
+        lookups += 1;
+        return { run: async () => ({ ok: true }) };
+      },
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+        tenantId: 'tenant-a',
+      };
+
+    await expect(
+      route.POST({
+        locals: {
+          permissions: ['widgets.read'],
+          tenantId: 'tenant-a',
+          user: { id: 'user-a' },
+        },
+        params: { id: 'report-a' },
+        request: new Request('http://localhost/api/widgets/report-a/run', {
+          method: 'POST',
+        }),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(lookups).toBe(0);
+  });
+
   it('executes emitted DELETE routes with safe typed 4xx errors and opaque 5xx errors', async () => {
     const route = await importGeneratedItemDelete();
     const routeCollection = globalThis as Record<string, unknown>;

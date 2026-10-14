@@ -908,6 +908,9 @@ function generateTenantContextHelper(
   const contextArgument = requirePrincipal
     ? '{ tenantId, userId, permissions }'
     : '{ tenantId }';
+  const activeUserMismatch = requirePrincipal
+    ? 'active.userId !== userId'
+    : "typeof userId === 'string' && userId && active.userId && active.userId !== userId";
   const tenancyImport = includeReadScope
     ? 'enterTenantContext, getCurrentTenant, hasTenantContext, isSuperAdminBypass, isTenancyEnabled'
     : 'enterTenantContext, getCurrentTenant';
@@ -963,7 +966,7 @@ ${principalGuard}
   if (active) {
     if (
       (typeof tenantId === 'string' && tenantId && active.tenantId !== tenantId) ||
-      (typeof userId === 'string' && userId && active.userId && active.userId !== userId)
+      (${activeUserMismatch})
     ) {
       throw error(403, 'Tenant context does not match authenticated principal');
     }
