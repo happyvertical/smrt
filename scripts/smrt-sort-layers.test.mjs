@@ -45,6 +45,16 @@ test('ratchet reports exact debt, stale shrink/deletion, sorted regression and g
   assert.match(compareRatchet(old, { version: 2 }).join(), /schema/);
 });
 
+test('named, anonymous and dotted sublayers inherit structure/theme placement enforcement', () => {
+  for (const child of ['overrides', '']) {
+    assert.match(layerViolations(sorted('', `@layer ${child} {.thing{display:flex}}`))[0], /display belongs in smrt.structure/);
+    assert.match(layerViolations(sorted(`@layer ${child} {.thing{color:red}}`, ''))[0], /color belongs in smrt.theme/);
+    assert.deepEqual(layerViolations(sorted(`@layer ${child} {.thing{display:flex}}`, `@layer ${child} {.thing{color:red}}`)), []);
+  }
+  assert.match(layerViolations(source('@layer smrt.structure.controls {} @layer smrt.theme.colors {.thing{padding:0}}'))[0], /padding belongs in smrt.structure/);
+  assert.match(layerViolations(source('@layer smrt.structure.controls {.thing{color:red}}'))[0], /color belongs in smrt.theme/);
+});
+
 test('classes count distinct local CSS/static markup/directives but not global or child props', () => {
   const ast = parseComponent(`<div class="unused smrt-thing__root" class:active={true}/><Child class="consumer"/>
     <style>.thing, .thing:hover, :global(.third-party) .local:is(.other) {color:red} :global {.external {color:red}}</style>`);

@@ -98,10 +98,15 @@ export function walkCss(node, callback, context = { layer: '', path: [], keyfram
   if (node.block) walkCss(node.block, callback, next);
 }
 
+/** Nested named/anonymous layers retain their owning structure/theme category. */
+function owningLayer(layer) {
+  return /^smrt\.(structure|theme)(?:\.|$)/.exec(layer)?.[1];
+}
+
 export function hasStructure(css) {
   let found = false;
   walkCss(css, (node, context) => {
-    if (node.type === 'Atrule' && node.block && context.layer === 'smrt.structure') found = true;
+    if (node.type === 'Atrule' && node.block && owningLayer(context.layer) === 'structure') found = true;
   });
   return found;
 }
@@ -159,7 +164,8 @@ export function layerViolations(source, ast = parseComponent(source)) {
     if (node.type !== 'Declaration' || context.keyframes) return;
     const category = classifyProperty(node.property);
     const expected = category === 'structure' || category === 'theme' ? `smrt.${category}` : null;
-    if (expected && ['smrt.structure', 'smrt.theme'].includes(context.layer) && context.layer !== expected) {
+    const owner = owningLayer(context.layer);
+    if (expected && owner && `smrt.${owner}` !== expected) {
       errors.push(`line ${source.slice(0, node.start).split('\n').length}: ${node.property} belongs in ${expected}, found ${context.layer}`);
     }
   });
