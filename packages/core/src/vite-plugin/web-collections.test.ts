@@ -1312,7 +1312,8 @@ describe('buildWebRelationships', () => {
         productId: field({
           type: 'foreignKey',
           related: 'Product',
-          _meta: { role: 'lines' },
+          // An unknown role, as a hand-edited or newer manifest could carry.
+          _meta: { role: 'lines' as unknown as 'items' },
         }),
       },
     });
