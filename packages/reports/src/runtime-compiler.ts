@@ -58,6 +58,10 @@ export interface RuntimeReportSourceDefinition {
    */
   collection?: string;
   description?: string;
+  /** Canonical public field names to expose; omitted means all eligible fields. */
+  fields?: readonly string[];
+  /** Canonical public field names to remove; exclusions always win. */
+  excludeFields?: readonly string[];
 }
 
 export interface RuntimeReportCompileContext {
@@ -245,36 +249,94 @@ async function loadSourceFields(
   qualifiedName: string,
   tenantField: string | null,
   permissions: ReadonlySet<string>,
+  source: RuntimeReportSourceDefinition,
 ): Promise<Map<string, SourceField>> {
   const registered = (await ObjectRegistry.getAllFields(qualifiedName)) as Map<
     string,
     RegistryFieldShape
   >;
-  const fields = new Map<string, SourceField>();
+  const baseNames = new Map(
+    Object.keys(BASE_FIELDS).map((name) => [toSnakeCase(name), name]),
+  );
+  const columns = new Map<
+    string,
+    { name: string; field: RegistryFieldShape }[]
+  >();
   for (const [name, field] of registered) {
-    if (isExcluded(name, field, tenantField, permissions)) continue;
-    const type = columnTypeFor(field.type);
-    if (!type) continue;
-    const format = strictFormat(field);
-    fields.set(name, {
-      name,
-      column: toSnakeCase(explicitColumn(field) ?? name),
-      type,
-      ...(format ? { format } : {}),
-      label:
-        typeof field.description === 'string' && field.description.length > 0
-          ? field.description
-          : humanize(name),
-    });
+    const column = toSnakeCase(explicitColumn(field) ?? name);
+    const entries = columns.get(column) ?? [];
+    entries.push({ name, field });
+    columns.set(column, entries);
   }
   for (const [name, type] of Object.entries(BASE_FIELDS)) {
-    if (fields.has(name) || registered.has(name)) continue;
-    fields.set(name, {
-      name,
-      column: toSnakeCase(name),
-      type,
-      label: humanize(name),
-    });
+    const column = toSnakeCase(name);
+    if (!columns.has(column) && !registered.has(name)) {
+      columns.set(column, [
+        {
+          name,
+          field: {
+            type:
+              type === 'id' ? 'foreignKey' : type === 'string' ? 'text' : type,
+          },
+        },
+      ]);
+    }
+  }
+  // Collapse base-column aliases before applying either model or host policy.
+  // Any restriction on a physical column also protects its other spellings.
+  const knownNames = new Set<string>();
+  for (const [column, entries] of columns) {
+    for (const entry of entries)
+      knownNames.add(baseNames.get(column) ?? entry.name);
+  }
+  const policy = (key: 'fields' | 'excludeFields'): Set<string> | undefined => {
+    const value = source[key];
+    if (value === undefined) return undefined;
+    if (
+      !Array.isArray(value) ||
+      Array.from(value).some(
+        (name) => typeof name !== 'string' || !knownNames.has(name),
+      )
+    ) {
+      throw new RuntimeReportError(
+        'unsupported_source',
+        `source.${key}`,
+        `${key} must contain canonical field names declared on the source`,
+      );
+    }
+    return new Set(value);
+  };
+  const included = policy('fields');
+  const excluded = policy('excludeFields');
+  const fields = new Map<string, SourceField>();
+  for (const [column, entries] of columns) {
+    if (
+      column === tenantField ||
+      column === 'tenant_id' ||
+      entries.some(
+        ({ name, field }) =>
+          isExcluded(name, field, tenantField, permissions) ||
+          excluded?.has(baseNames.get(column) ?? name),
+      )
+    )
+      continue;
+    for (const { name: registeredName, field } of entries) {
+      const name = baseNames.get(column) ?? registeredName;
+      if (fields.has(name) || (included && !included.has(name))) continue;
+      const type = columnTypeFor(field.type);
+      if (!type) continue;
+      const format = strictFormat(field);
+      fields.set(name, {
+        name,
+        column,
+        type,
+        ...(format ? { format } : {}),
+        label:
+          typeof field.description === 'string' && field.description.length > 0
+            ? field.description
+            : humanize(name),
+      });
+    }
   }
   return fields;
 }
@@ -516,6 +578,7 @@ async function prepareSource(
     qualifiedName,
     tenantCol,
     new Set(context.permissions ?? []),
+    source,
   );
   return {
     source,
