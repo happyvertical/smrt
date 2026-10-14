@@ -13,6 +13,7 @@ import {
   setBasePath,
 } from '../src/lib/planner/app.svelte.ts';
 import { PLANNER_TAB_IDS } from '../src/lib/planner/commands/index.ts';
+import { CHEF_HAT_ICON } from '../src/lib/planner/header-icons.ts';
 import Planner from '../src/lib/planner/Planner.svelte';
 import PlannerControls from '../src/lib/planner/PlannerControls.svelte';
 import { selection } from '../src/lib/planner/selection.svelte.ts';
@@ -46,6 +47,21 @@ describe('Planner component', () => {
     expect(body).toContain('data-planner-back');
     expect(body).toContain('href="/docs"');
     expect(body).toContain('Back to documentation');
+  });
+
+  it("puts the chef's hat, not a second pencil, at the end of its header", () => {
+    const { body } = render(Planner, { props: { basePath: '/planner' } });
+    // The shell's pencil edits the layout; the planner's own pages are behind
+    // the chef's hat (`#/configure/`), so the header never shows two pencils.
+    const hat = body.match(
+      /<a class="header-link[^>]*aria-label="Plan the app"[^>]*>/,
+    );
+    expect(hat, 'Plan the app link').toBeTruthy();
+    expect(hat?.[0]).toContain('href="#/configure/"');
+    expect(hat?.[0]).toContain('title="Plan the app"');
+    expect(body).not.toContain('aria-label="Customize"');
+    expect(body).toContain(CHEF_HAT_ICON);
+    expect(body).toContain('aria-label="Edit layout"');
   });
 
   it('has an assistant toggle and dock only when the host gives it a model', () => {
