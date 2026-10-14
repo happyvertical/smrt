@@ -1047,6 +1047,21 @@ export async function previewInvoiceMoney(
     await InvoiceLineItemCollection.create({ db: input.db })
   ).findByInvoice(input.invoiceId);
   const storedById = new Map(storedLines.map((line) => [line.id, line]));
+  const providedIds =
+    input.draft?.lines
+      ?.map((line) => line.id)
+      .filter((id): id is string => !!id) ?? [];
+  if (new Set(providedIds).size !== providedIds.length)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Invoice preview line ids must be distinct',
+    );
+  const unknownId = providedIds.find((id) => !storedById.has(id));
+  if (unknownId)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      `Invoice preview line ${unknownId} was not found on the invoice`,
+    );
   const proposedLines = input.draft?.lines
     ? input.draft.lines.map((proposed) => {
         const line = proposed.id ? storedById.get(proposed.id) : undefined;
@@ -1113,6 +1128,13 @@ export async function getInvoiceMoneyFacts(
     throw new MoneyValidationError(
       'INVALID_MONEY_INPUT',
       'Invoice money facts require their active principal tenant',
+    );
+  const settings = await settingsForTenant(input.db, input.tenantId);
+  assertRuntimeAvailable(settings);
+  if (settings?.moneyModel !== 'v2')
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Invoice money facts require active money v2 settings',
     );
   const { invoice } = await loadInvoice(input.db, input.invoiceId);
   if (invoice.tenantId !== input.tenantId)

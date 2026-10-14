@@ -383,7 +383,63 @@ describe('credit note money persistence (#3939)', () => {
         header: { subtotalMinor: 100, taxAmountMinor: 5 },
       });
       expect(stored.taxes).toHaveLength(1);
+      await expect(
+        previewInvoiceMoney({
+          db,
+          tenantId: 'credit-preview',
+          invoiceId: invoice.id,
+          draft: {
+            lines: [
+              { id: line.id, unitPrice: 200 },
+              { id: line.id, unitPrice: 300 },
+            ],
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_MONEY_INPUT' });
+      await expect(
+        previewInvoiceMoney({
+          db,
+          tenantId: 'credit-preview',
+          invoiceId: invoice.id,
+          draft: {
+            lines: [{ id: crypto.randomUUID(), unitPrice: 200 }],
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_MONEY_INPUT' });
+      const proposed = await previewInvoiceMoney({
+        db,
+        tenantId: 'credit-preview',
+        invoiceId: invoice.id,
+        draft: {
+          lines: [{ description: 'New preview line', unitPrice: 50 }],
+        },
+      });
+      expect(proposed.lines).toHaveLength(1);
+      expect(proposed.lines[0]?.id).toBeTruthy();
     });
+  });
+
+  it('refuses stored facts for legacy and migrating tenants', async () => {
+    for (const state of ['legacy', 'migrating'] as const) {
+      const tenantId = `facts-${state}`;
+      await ensureTenantTaxCodes(db, tenantId);
+      await withTenant({ tenantId }, async () => {
+        const invoice = await (await InvoiceCollection.create({ db })).create({
+          invoiceNumber: `FACTS-${state}`,
+          currency: 'CAD',
+        });
+        if (state === 'migrating')
+          await (
+            await TaxSettingsCollection.create({ db })
+          ).beginMoneyMigration(tenantId);
+        await expect(
+          getInvoiceMoneyFacts({ db, tenantId, invoiceId: invoice.id }),
+        ).rejects.toMatchObject({
+          code:
+            state === 'migrating' ? 'FROZEN_DOCUMENT' : 'INVALID_MONEY_INPUT',
+        });
+      });
+    }
   });
 
   it('uses frozen component rates for a partial quantity after a live rate change', async () => {
