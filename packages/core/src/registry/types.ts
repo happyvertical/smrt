@@ -281,6 +281,8 @@ export interface ReportConfig {
  * @interface SmartObjectConfig
  */
 export interface SmartObjectConfig {
+  /** Prevent instances of this STI type while allowing concrete descendants. */
+  abstract?: boolean;
   /** Opt in to transactional collection CRUD audit recording. */
   audit?: boolean;
   /**

@@ -91,6 +91,8 @@ export interface FieldOptions {
   sqlType?: SQLDataType;
   /** Whether the field is required */
   required?: boolean;
+  /** Validate that an STI reference resolves to the declared subtype on save/load. */
+  validateSubtype?: boolean;
   /** Default value for the field */
   default?: unknown;
   /**

@@ -2626,7 +2626,6 @@ async function generateCollectionRoutesForObject(
     semanticManifest,
     lookupClassName,
   );
-
   const { exposed: customActions, rejected } = resolveApiCustomActions(
     objectDef,
     semanticManifest,
@@ -2736,6 +2735,14 @@ export function resolveApiCustomActions(
   exposed: Array<[string, MethodDefinition]>;
   rejected: Array<[string, ApiMethodExposure]>;
 } {
+  if (
+    objectIsCollectionClass &&
+    manifest &&
+    resolveCollectionItemObject(manifest, objectDef)?.decoratorConfig
+      ?.abstract === true
+  ) {
+    return { exposed: [], rejected: [] };
+  }
   const apiConfig = objectDef.decoratorConfig?.api;
   const isModelClassName =
     wireability.isModelClassName ?? createManifestClassNamePredicate(manifest);

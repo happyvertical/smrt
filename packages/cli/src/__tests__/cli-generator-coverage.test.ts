@@ -227,6 +227,7 @@ describe('CLIGenerator - generateObjectCommands', () => {
 
   function stubRegistry(opts: {
     cli?: any;
+    abstract?: boolean;
     fields?: Map<string, any>;
     methods?: Map<string, any>;
   }) {
@@ -236,6 +237,7 @@ describe('CLIGenerator - generateObjectCommands', () => {
     } as any);
     vi.spyOn(ObjectRegistry, 'getConfig').mockReturnValue({
       cli: opts.cli,
+      abstract: opts.abstract,
       api: false,
       mcp: false,
     } as any);
@@ -251,6 +253,19 @@ describe('CLIGenerator - generateObjectCommands', () => {
     stubRegistry({ cli: false });
     const cmds = await (cli as any).generateObjectCommands('Widget', {});
     expect(cmds).toEqual([]);
+  });
+
+  it('generates read commands only for abstract models', async () => {
+    stubRegistry({
+      cli: { include: ['list', 'get', 'browse'] },
+      abstract: true,
+      methods: new Map([['browse', { isPublic: true, parameters: [] }]]),
+    });
+    const commands = await (cli as any).generateObjectCommands('Widget', {});
+    expect(commands.map((command: CLICommand) => command.name)).toEqual([
+      'widget:list',
+      'widget:get',
+    ]);
   });
 
   it('generates full CRUD command set with field options when cli is true', async () => {

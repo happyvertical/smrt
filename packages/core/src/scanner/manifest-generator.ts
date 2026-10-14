@@ -423,6 +423,15 @@ export class ManifestGenerator {
       assertScopedPackageName(options?.packageName);
     }
 
+    // Capture authored API exposure before making the abstract class itself
+    // read-only so hosted concrete descendants can inherit the authored part.
+    for (const objectDef of Object.values(manifest.objects)) {
+      if (objectDef.decoratorConfig?.abstract !== true) continue;
+      if (!Object.hasOwn(objectDef, 'abstractDeclaredApi')) {
+        objectDef.abstractDeclaredApi = objectDef.decoratorConfig.api ?? null;
+      }
+    }
+
     // Deprecated qualified-name aliases (#3338) fail closed at build time, the
     // same as the registry refuses them at runtime.
     this.assertQualifiedNameAliases(manifest);
@@ -439,6 +448,68 @@ export class ManifestGenerator {
     // Third pass: Merge inherited fields for STI classes
     // This ensures STI subclasses have all parent fields inline in the manifest
     this.mergeInheritedFields(manifest);
+
+    // All producers, including OXC, must suppress custom actions on abstract
+    // resources and their collection classes. Do this after inheritance so
+    // ancestor methods are covered and projections share the same exclusions.
+    const objectsByName = new Map(
+      Object.values(manifest.objects).map((objectDef) => [
+        objectDef.className,
+        objectDef,
+      ]),
+    );
+    for (const objectDef of Object.values(manifest.objects)) {
+      const config = objectDef.decoratorConfig;
+      const isCollection =
+        objectDef.extends === 'SmrtCollection' ||
+        this.extendsCollection(objectDef, objectsByName);
+      let collectionItem: SmartObjectDefinition | undefined;
+      if (isCollection) {
+        const seenParents = new Set<string>();
+        let candidate: SmartObjectDefinition | undefined = objectDef;
+        while (candidate) {
+          if (candidate.extendsTypeArg || candidate.fields._itemClass) {
+            collectionItem = this.findItemClass(
+              candidate,
+              manifest,
+              objectsByName,
+            );
+            break;
+          }
+          const parentName = candidate.extendsQualified || candidate.extends;
+          if (!parentName || seenParents.has(parentName)) break;
+          seenParents.add(parentName);
+          candidate = lookupInManifest(manifest, parentName) as
+            | SmartObjectDefinition
+            | undefined;
+        }
+        collectionItem ??= this.findItemClass(
+          objectDef,
+          manifest,
+          objectsByName,
+        );
+      }
+      const itemIsAbstract = collectionItem?.decoratorConfig?.abstract === true;
+      if (config?.abstract !== true && !itemIsAbstract) continue;
+      const methods = Object.entries(objectDef.methods || {})
+        .filter(([, method]) => method.isPublic)
+        .map(([name]) => name)
+        .filter((name) => name !== 'list' && name !== 'get');
+      for (const surface of ['api', 'mcp', 'cli'] as const) {
+        if (config[surface] === false) continue;
+        const current = config[surface];
+        const excludes =
+          current && typeof current === 'object' && current.exclude
+            ? current.exclude
+            : [];
+        config[surface] = {
+          ...(current && typeof current === 'object' ? current : {}),
+          exclude: [
+            ...new Set([...excludes, 'create', 'update', 'delete', ...methods]),
+          ],
+        };
+      }
+    }
 
     // Recipe options may only name fields the merged model declares (#3590).
     this.assertRecipeOptions(manifest);

@@ -1043,6 +1043,7 @@ export class ManifestAdapter {
         // runtime decorator.
         'onDelete',
         'onUpdate',
+        'validateSubtype',
         // #3718: `role: 'items'` marks the declaring model as the target's
         // line items; it rides the generated web relationship edge.
         'role',
@@ -1124,6 +1125,7 @@ export class ManifestAdapter {
         // consumers, matching the runtime decorator.
         'onDelete',
         'onUpdate',
+        'validateSubtype',
         // #3718: `role: 'items'` marks the declaring model as the target's
         // line items; it rides the generated web relationship edge.
         'role',

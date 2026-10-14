@@ -85,6 +85,13 @@ class InvalidActionAgent extends SmrtObject {
   }
 }
 
+@smrt({ abstract: true, mcp: { include: ['list', 'get', 'create', 'browse'] } })
+class MCPAbstractAgent extends SmrtObject {
+  async browse(): Promise<string> {
+    return 'ok';
+  }
+}
+
 // Test class with excluded custom actions
 @smrt({
   mcp: {
@@ -308,6 +315,15 @@ describe('MCPGenerator with Custom Actions', () => {
   });
 
   describe('Tool Generation', () => {
+    it('omits write tools for abstract models', async () => {
+      const tools = await generator.generateTools();
+      const names = tools.map((tool) => tool.name);
+      expect(names).toContain('mcpabstractagent_list');
+      expect(names).toContain('mcpabstractagent_get');
+      expect(names).not.toContain('mcpabstractagent_create');
+      expect(names).not.toContain('mcpabstractagent_browse');
+    });
+
     it('should generate tools for custom actions', async () => {
       const tools = await generator.generateTools();
 

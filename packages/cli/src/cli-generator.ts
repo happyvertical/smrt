@@ -1098,6 +1098,8 @@ export class CLIGenerator {
     const shouldInclude = (
       command: 'list' | 'get' | 'create' | 'update' | 'delete',
     ) => {
+      if (config.abstract && command !== 'list' && command !== 'get')
+        return false;
       if (included && !included.includes(command)) return false;
       if (excluded.includes(command)) return false;
       return true;
@@ -1232,6 +1234,10 @@ export class CLIGenerator {
         },
       });
     }
+
+    // Abstract resources expose reads only, even when a custom method was
+    // explicitly included or the manifest predates abstract normalization.
+    if (config.abstract) return commands;
 
     // CUSTOM METHODS - discover from manifest (including inherited methods)
     const methods = await ObjectRegistry.getAllMethods(objectName);

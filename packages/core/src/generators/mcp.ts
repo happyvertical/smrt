@@ -538,6 +538,9 @@ export class MCPGenerator {
         typeof mcpConfig === 'object' ? mcpConfig?.include : undefined;
 
       const shouldInclude = (endpoint: string) => {
+        if (config.abstract && endpoint !== 'list' && endpoint !== 'get') {
+          return false;
+        }
         if (included && !included.includes(endpoint)) return false;
         if (excluded.includes(endpoint)) return false;
         return true;
@@ -681,8 +684,9 @@ export class MCPGenerator {
       });
     }
 
-    // CUSTOM METHODS - discover from manifest and show by default
-    if (classInfo) {
+    // Abstract resources expose reads only, including when a manifest still
+    // lists an explicitly included custom method.
+    if (classInfo && !ObjectRegistry.getConfig(objectName).abstract) {
       const config = ObjectRegistry.getConfig(objectName);
       const mcpConfig = config.mcp;
       const included: string[] | undefined =

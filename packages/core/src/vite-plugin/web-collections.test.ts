@@ -630,6 +630,28 @@ describe('canonical WebMCP tool definitions (#2518)', () => {
     });
   });
 
+  it('withholds collection-class tools for an abstract item', () => {
+    const product = obj({
+      className: 'Product',
+      collection: 'products',
+      decoratorConfig: { abstract: true, api: { include: ['list', 'get'] } },
+    });
+    const products = obj({
+      className: 'ProductCollection',
+      collection: 'products',
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'Product',
+      methods: { publish: publicMethod('publish') },
+      decoratorConfig: { api: { include: ['publish'] } },
+    });
+
+    expect(
+      buildWebMcpToolDefinitions(manifest(product, products)).map(
+        (definition) => definition.action,
+      ),
+    ).not.toContain('publish');
+  });
+
   it('publishes dynamic route inputs alongside a custom options bag', () => {
     const product = obj({
       className: 'Product',

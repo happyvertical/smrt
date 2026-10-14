@@ -544,6 +544,11 @@ export interface SmartObjectDefinition {
   fields: Record<string, FieldDefinition>;
   methods: Record<string, MethodDefinition>;
   decoratorConfig: SmartObjectConfig;
+  /** API policy authored on an abstract class before read-only normalization.
+   * `null` means no policy was declared, so hosted concrete descendants inherit
+   * from the next STI ancestor. Absent on older manifests, which fail closed.
+   */
+  abstractDeclaredApi?: SmartObjectConfig['api'] | null;
   extends?: string; // Base class name (simple name, not qualified)
   extendsQualified?: string; // Base class qualified name
   extendsTypeArg?: string; // Generic type argument (e.g., "Meeting" from "SmrtCollection<Meeting>")
