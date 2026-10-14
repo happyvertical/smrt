@@ -11,14 +11,17 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CustomerCollection } from '../collections/CustomerCollection';
 import { DocumentTaxCollection } from '../collections/DocumentTaxCollection';
 import { InvoiceCollection } from '../collections/InvoiceCollection';
 import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection';
+import { PaymentAllocationCollection } from '../collections/PaymentAllocationCollection';
+import { PaymentCollection } from '../collections/PaymentCollection';
 import { TaxCodeCollection } from '../collections/TaxCodeCollection';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection';
+import { previewInvoiceMoney } from '../document-money';
 import { serializeInvoiceMcpGet } from '../invoice-mcp';
 import { DocumentTax } from '../models/DocumentTax';
 import { Invoice } from '../models/Invoice';
@@ -265,6 +268,235 @@ describe('invoice money persistence (#3933)', () => {
         }),
       );
       expect(crossTenant.isError).toBe(true);
+    });
+  });
+
+  it('retains an issued freeze after an undelivered paid invoice returns to draft', async () => {
+    const taxCodeId = await activateV2('tenant-payment-freeze');
+    await withTenant({ tenantId: 'tenant-payment-freeze' }, async () => {
+      const customer = await (await CustomerCollection.create({ db })).create({
+        defaultTaxCodeId: taxCodeId,
+      });
+      const invoices = await InvoiceCollection.create({ db });
+      const invoice = await invoices.create({
+        customerId: customer.id,
+        invoiceNumber: 'PAYMENT-FREEZE',
+        currency: 'CAD',
+      });
+      const lines = await InvoiceLineItemCollection.create({ db });
+      const line = await lines.create({
+        invoiceId: invoice.id,
+        description: 'Undelivered taxable line',
+        quantity: 1,
+        unitPrice: 20,
+      });
+      const payment = await (await PaymentCollection.create({ db })).create({
+        customerId: customer.id,
+        currency: 'CAD',
+        amount: 21,
+      });
+      const allocations = await PaymentAllocationCollection.create({ db });
+      const allocationId = crypto.randomUUID();
+      await allocations.allocatePayment({
+        paymentId: payment.id,
+        allocations: [{ id: allocationId, invoiceId: invoice.id, amount: 21 }],
+      });
+      const paid = await invoices.get({ id: invoice.id }, { cache: false });
+      expect(paid).toMatchObject({ status: InvoiceStatus.PAID });
+      expect(paid?.moneySnapshotId).not.toBe('');
+      const snapshotId = paid?.moneySnapshotId;
+
+      await allocations.removeAllocation(allocationId);
+      const reverted = await invoices.get({ id: invoice.id }, { cache: false });
+      expect(reverted).toMatchObject({
+        status: InvoiceStatus.DRAFT,
+        moneySnapshotId: snapshotId,
+      });
+      await expect(
+        previewInvoiceMoney({
+          db,
+          invoiceId: invoice.id,
+          tenantId: 'tenant-payment-freeze',
+        }),
+      ).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      } satisfies Partial<MoneyValidationError>);
+      if (!reverted) throw new Error('Expected reverted invoice');
+      reverted.currency = 'USD';
+      await expect(reverted.save()).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      } satisfies Partial<MoneyValidationError>);
+      const persistedLine = await lines.get({ id: line.id }, { cache: false });
+      if (!persistedLine) throw new Error('Expected frozen line');
+      persistedLine.unitPrice = 30;
+      await expect(persistedLine.save()).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      } satisfies Partial<MoneyValidationError>);
+      await expect(persistedLine.delete()).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      } satisfies Partial<MoneyValidationError>);
+    });
+  });
+
+  it('retries the same invoice and line instances after transaction failures', async () => {
+    const taxCodeId = await activateV2('tenant-retry');
+    await withTenant({ tenantId: 'tenant-retry' }, async () => {
+      const customer = await (await CustomerCollection.create({ db })).create({
+        defaultTaxCodeId: taxCodeId,
+      });
+      const invoices = await InvoiceCollection.create({ db });
+      const invoice = await invoices.create({
+        customerId: customer.id,
+        invoiceNumber: 'RETRY',
+        currency: 'CAD',
+      });
+      const lines = await InvoiceLineItemCollection.create({ db });
+      const line = await lines.create({
+        invoiceId: invoice.id,
+        description: 'Retry line',
+        quantity: 1,
+        unitPrice: 20,
+      });
+      await invoice.loadFromId();
+
+      await expect(
+        invoice.withTransaction(async (bound) => {
+          bound.status = InvoiceStatus.SENT;
+          await bound.save();
+          throw new Error('outer issue aborted');
+        }),
+      ).rejects.toThrow('outer issue aborted');
+      expect(
+        await invoices.get({ id: invoice.id }, { cache: false }),
+      ).toMatchObject({ status: InvoiceStatus.DRAFT, moneySnapshotId: '' });
+      await invoice.save();
+      expect(invoice).toMatchObject({ status: InvoiceStatus.SENT });
+      expect(invoice.moneySnapshotId).not.toBe('');
+
+      // A separate draft proves the aggregate can retry the same line object
+      // after a downstream header write completed in memory but rolled back.
+      const draft = await invoices.create({
+        customerId: customer.id,
+        invoiceNumber: 'RETRY-LINE',
+        currency: 'CAD',
+      });
+      const retryingLine = await lines.create({
+        invoiceId: draft.id,
+        description: 'Retry after header failure',
+        quantity: 1,
+        unitPrice: 20,
+      });
+      retryingLine.unitPrice = 40;
+      const saveDerived = Invoice.prototype.saveDerived;
+      const injected = vi
+        .spyOn(Invoice.prototype, 'saveDerived')
+        .mockImplementationOnce(async function (...args) {
+          await saveDerived.apply(this, args);
+          throw new Error('injected header completion failure');
+        });
+      await expect(retryingLine.save()).rejects.toThrow(
+        'injected header completion failure',
+      );
+      injected.mockRestore();
+      expect(
+        await invoices.get({ id: draft.id }, { cache: false }),
+      ).toMatchObject({ subtotal: 20, taxAmount: 1, totalAmount: 21 });
+      await retryingLine.save();
+      expect(
+        await invoices.get({ id: draft.id }, { cache: false }),
+      ).toMatchObject({ subtotal: 40, taxAmount: 2, totalAmount: 42 });
+    });
+  });
+
+  it('rejects a stale sibling without overwriting recalculated allocations', async () => {
+    const taxCodeId = await activateV2('tenant-stale-sibling');
+    await withTenant({ tenantId: 'tenant-stale-sibling' }, async () => {
+      const customer = await (await CustomerCollection.create({ db })).create({
+        defaultTaxCodeId: taxCodeId,
+      });
+      const invoices = await InvoiceCollection.create({ db });
+      const invoice = await invoices.create({
+        customerId: customer.id,
+        invoiceNumber: 'STALE-SIBLING',
+        currency: 'CAD',
+      });
+      const lines = await InvoiceLineItemCollection.create({ db });
+      const first = await lines.create({
+        invoiceId: invoice.id,
+        description: 'First',
+        quantity: 1,
+        unitPrice: 10,
+      });
+      await lines.create({
+        invoiceId: invoice.id,
+        description: 'Second',
+        quantity: 1,
+        unitPrice: 10,
+      });
+      const held = await lines.get({ id: first.id }, { cache: false });
+      const current = await lines.get({ id: first.id }, { cache: false });
+      if (!held || !current) throw new Error('Expected sibling instances');
+      current.unitPrice = 40;
+      await current.save();
+      held.unitPrice = 50;
+      await expect(held.save()).rejects.toBeDefined();
+      const storedLines = await lines.findByInvoice(invoice.id);
+      const stored = await invoices.get({ id: invoice.id }, { cache: false });
+      expect(stored).toMatchObject({
+        subtotal: 50,
+        taxAmount: 3,
+        totalAmount: 53,
+      });
+      expect(
+        storedLines.reduce(
+          (sum, item) => sum + item.amount + item.taxAmount,
+          0,
+        ),
+      ).toBe(53);
+    });
+  });
+
+  it('rejects invalid revenue recognition without freezing its editable draft', async () => {
+    const taxCodeId = await activateV2('tenant-invalid-posting');
+    await withTenant({ tenantId: 'tenant-invalid-posting' }, async () => {
+      const customer = await (await CustomerCollection.create({ db })).create({
+        defaultTaxCodeId: taxCodeId,
+      });
+      const invoice = await (await InvoiceCollection.create({ db })).create({
+        customerId: customer.id,
+        invoiceNumber: 'INVALID-POSTING',
+        currency: 'CAD',
+      });
+      const line = await (
+        await InvoiceLineItemCollection.create({ db })
+      ).create({
+        invoiceId: invoice.id,
+        description: 'Still editable',
+        quantity: 1,
+        unitPrice: 20,
+      });
+      await expect(
+        invoice.recognizeRevenue({
+          arAccountId: crypto.randomUUID(),
+          revenueAccountId: crypto.randomUUID(),
+          bookCurrency: 'CAD',
+        }),
+      ).rejects.toBeDefined();
+      await invoice.loadFromId();
+      expect(invoice).toMatchObject({
+        status: InvoiceStatus.DRAFT,
+        moneySnapshotId: '',
+      });
+      expect(invoice.arJournalId).toBeFalsy();
+      await line.loadFromId();
+      line.unitPrice = 30;
+      await line.save();
+      await invoice.loadFromId();
+      expect(invoice).toMatchObject({
+        subtotal: 30,
+        taxAmount: 2,
+        totalAmount: 32,
+      });
     });
   });
 

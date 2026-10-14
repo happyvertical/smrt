@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import {
   disableTenancy,
@@ -359,5 +360,114 @@ describePostgres('invoice money aggregate on PostgreSQL (#3933)', () => {
         }
       });
     }
+  });
+});
+
+describePostgres('independent PostgreSQL invoice money writers (#3933)', () => {
+  let primaryDb: DatabaseInterface;
+  let otherDb: DatabaseInterface;
+
+  beforeEach(async () => {
+    const url = process.env.DATABASE_URL;
+    if (!url) throw new Error('PostgreSQL tests require DATABASE_URL');
+    primaryDb = await getTestDatabase({
+      type: 'postgres',
+      url,
+      classes: [
+        'Customer',
+        'DocumentTax',
+        'Invoice',
+        'InvoiceLineItem',
+        'PaymentAllocation',
+        'TaxCode',
+        'TaxComponent',
+        'TaxSettings',
+      ],
+    });
+    otherDb = await getTestDatabase({
+      type: 'postgres',
+      url,
+      classes: [],
+      includeSystemTables: false,
+    });
+    enableTenancy();
+  });
+
+  afterEach(async () => {
+    disableTenancy();
+    await Promise.all([primaryDb.close?.(), otherDb.close?.()]);
+  });
+
+  it('serializes line writers and conserves the document allocation', async () => {
+    const tenantId = randomUUID();
+    await ensureTenantTaxCodes(primaryDb, tenantId);
+    await withTenant({ tenantId }, async () => {
+      const gst = await (
+        await TaxComponentCollection.create({ db: primaryDb })
+      ).create({ name: 'GST', percent: '5' });
+      const code = await (
+        await TaxCodeCollection.create({ db: primaryDb })
+      ).create({
+        code: 'gst-concurrent',
+        name: 'GST concurrent',
+        components: [{ taxComponentId: gst.id, compound: false }],
+      });
+      const settings = await TaxSettingsCollection.create({ db: primaryDb });
+      const setting = await settings.getOrCreateForTenant(tenantId);
+      setting.defaultSalesTaxCodeId = code.id;
+      setting.taxRoundingScope = 'document';
+      await setting.save();
+      const migrationId = await settings.beginMoneyMigration(tenantId);
+      await settings.activateMoneyV2(tenantId, migrationId);
+      const customer = await (
+        await CustomerCollection.create({ db: primaryDb })
+      ).create({ defaultTaxCodeId: code.id });
+      const invoices = await InvoiceCollection.create({ db: primaryDb });
+      const invoice = await invoices.create({
+        customerId: customer.id,
+        invoiceNumber: 'PG-INDEPENDENT-WRITERS',
+        currency: 'CAD',
+      });
+      const lines = await InvoiceLineItemCollection.create({ db: primaryDb });
+      await lines.create({
+        invoiceId: invoice.id,
+        description: 'Existing first',
+        unitPrice: 10,
+      });
+      await lines.create({
+        invoiceId: invoice.id,
+        description: 'Existing second',
+        unitPrice: 10,
+      });
+      const otherLines = await InvoiceLineItemCollection.create({
+        db: otherDb,
+      });
+      await Promise.all([
+        lines.create({
+          invoiceId: invoice.id,
+          tenantId,
+          description: 'Concurrent first',
+          unitPrice: 10,
+        }),
+        withTenant({ tenantId }, () =>
+          otherLines.create({
+            invoiceId: invoice.id,
+            tenantId,
+            description: 'Concurrent second',
+            unitPrice: 10,
+          }),
+        ),
+      ]);
+
+      expect(await lines.findByInvoice(invoice.id)).toHaveLength(4);
+      expect(
+        await invoices.get({ id: invoice.id }, { cache: false }),
+      ).toMatchObject({ subtotal: 40, taxAmount: 2, totalAmount: 42 });
+      expect(
+        await (
+          await DocumentTaxCollection.create({ db: primaryDb })
+        ).findByDocument(tenantId, 'invoice', invoice.id),
+      ).toMatchObject([{ taxableMinor: 40, taxMinor: 2 }]);
+    });
   });
 });

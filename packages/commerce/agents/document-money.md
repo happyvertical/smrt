@@ -26,6 +26,9 @@ transaction executor; tenant-owned and catalog-global products are accepted.
 The first transition away from `DRAFT`, or setting `arJournalId`, freezes the
 money document. The invoice and every line receive the same stable
 `moneySnapshotId`. Later payment and lifecycle saves keep that identity.
+That persisted snapshot identity remains the freeze authority if payment
+allocation changes move the lifecycle status back to `DRAFT`; it does not turn
+an issued document back into an editable money draft.
 Frozen fields include party/customer identity, currency, issue and due dates,
 document amount/rounding settings, seller and party tax snapshots, line
 description/SKU/product, quantity/pricing/discount modes, tax code and component

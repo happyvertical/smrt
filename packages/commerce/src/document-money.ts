@@ -19,6 +19,7 @@ import {
 import {
   DOCUMENT_MONEY_WRITE,
   lockDocumentMoneyParents,
+  withDocumentMoneyObjectTransaction,
   withDocumentMoneyTransaction,
 } from './document-money-internal.js';
 import type { DocumentTax } from './models/DocumentTax.js';
@@ -227,7 +228,11 @@ async function lockRuntimeSettings(
 }
 
 function isFrozen(invoice: Invoice): boolean {
-  return invoice.status !== InvoiceStatus.DRAFT || !!invoice.arJournalId;
+  return (
+    invoice.status !== InvoiceStatus.DRAFT ||
+    !!invoice.arJournalId ||
+    !!invoice.moneySnapshotId
+  );
 }
 
 function aggregateSignature(invoice: Invoice): string {
@@ -1422,7 +1427,7 @@ export async function materializeInvoiceMoneyDraft(input: {
     input.invoiceId,
     input.tenantId,
   );
-  if (invoice.status !== InvoiceStatus.DRAFT || invoice.arJournalId)
+  if (isFrozen(invoice))
     throw new MoneyValidationError(
       'FROZEN_DOCUMENT',
       'Only an unfrozen draft invoice can be migration-recomputed',
@@ -1436,97 +1441,95 @@ export async function materializeInvoiceMoneyDraft(input: {
 export async function saveInvoiceLineItem(
   input: InvoiceLineItem,
 ): Promise<InvoiceLineItem> {
-  return withDocumentMoneyTransaction(input.db, async (tx) =>
-    input.withDatabase(tx, async (line) => {
-      const candidateTenantId = getTenantId() ?? line.tenantId ?? null;
-      const settings = await lockRuntimeSettings(tx, candidateTenantId);
-      const persisted = line.id
-        ? await (await InvoiceLineItemCollection.create({ db: tx })).get(
-            { id: line.id },
-            { cache: false },
-          )
-        : null;
-      const parentId = persisted?.invoiceId ?? line.invoiceId;
-      const first = await loadInvoice(tx, parentId);
-      if (candidateTenantId && first.invoice.tenantId !== candidateTenantId)
-        throw new MoneyValidationError(
-          'INVALID_MONEY_INPUT',
-          'Invoice line tenant does not match its active money barrier',
-        );
-      if (settings?.moneyModel !== 'v2')
-        return line.saveDerived(DOCUMENT_MONEY_WRITE, true);
-      assertTenantId(first.invoice.tenantId);
-      const { invoice, source } = await lockAndReloadMoneyInvoice(
-        tx,
-        parentId,
-        first.invoice.tenantId,
-        first.invoice.creditedInvoiceId,
+  return withDocumentMoneyObjectTransaction(input, async (line, tx) => {
+    const candidateTenantId = getTenantId() ?? line.tenantId ?? null;
+    const settings = await lockRuntimeSettings(tx, candidateTenantId);
+    const persisted = line.id
+      ? await (await InvoiceLineItemCollection.create({ db: tx })).get(
+          { id: line.id },
+          { cache: false },
+        )
+      : null;
+    const parentId = persisted?.invoiceId ?? line.invoiceId;
+    const first = await loadInvoice(tx, parentId);
+    if (candidateTenantId && first.invoice.tenantId !== candidateTenantId)
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Invoice line tenant does not match its active money barrier',
       );
-      if (persisted && line.invoiceId !== persisted.invoiceId)
+    if (settings?.moneyModel !== 'v2')
+      return line.saveDerived(DOCUMENT_MONEY_WRITE, true);
+    assertTenantId(first.invoice.tenantId);
+    const { invoice, source } = await lockAndReloadMoneyInvoice(
+      tx,
+      parentId,
+      first.invoice.tenantId,
+      first.invoice.creditedInvoiceId,
+    );
+    if (persisted && line.invoiceId !== persisted.invoiceId)
+      throw new MoneyValidationError(
+        'FROZEN_DOCUMENT',
+        'Invoice line cannot move between parents',
+      );
+    line.invoiceId = requireId(invoice.id, 'Invoice');
+    line.tenantId = invoice.tenantId;
+    if (invoice.kind === 'invoice' && line.creditedLineId)
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Ordinary invoice lines cannot reference credited lines',
+      );
+    if (
+      invoice.kind === 'credit_note' &&
+      line.creditedLineId &&
+      (!source || source.id !== invoice.creditedInvoiceId)
+    )
+      throw new MoneyValidationError(
+        'CREDIT_TARGET_NOT_ISSUED',
+        'Credit source changed while saving its line',
+      );
+    if (isFrozen(invoice)) {
+      if (!persisted)
         throw new MoneyValidationError(
           'FROZEN_DOCUMENT',
-          'Invoice line cannot move between parents',
+          'Cannot add a line to a frozen invoice',
         );
-      line.invoiceId = requireId(invoice.id, 'Invoice');
-      line.tenantId = invoice.tenantId;
-      if (invoice.kind === 'invoice' && line.creditedLineId)
-        throw new MoneyValidationError(
-          'INVALID_MONEY_INPUT',
-          'Ordinary invoice lines cannot reference credited lines',
-        );
-      if (
-        invoice.kind === 'credit_note' &&
-        line.creditedLineId &&
-        (!source || source.id !== invoice.creditedInvoiceId)
-      )
-        throw new MoneyValidationError(
-          'CREDIT_TARGET_NOT_ISSUED',
-          'Credit source changed while saving its line',
-        );
-      if (isFrozen(invoice)) {
-        if (!persisted)
-          throw new MoneyValidationError(
-            'FROZEN_DOCUMENT',
-            'Cannot add a line to a frozen invoice',
-          );
-        assertFieldsUnchanged(
-          line,
-          persisted,
-          FROZEN_LINE_FIELDS,
-          'Invoice line',
-        );
-        return line.saveDerived(DOCUMENT_MONEY_WRITE, false);
+      assertFieldsUnchanged(
+        line,
+        persisted,
+        FROZEN_LINE_FIELDS,
+        'Invoice line',
+      );
+      return line.saveDerived(DOCUMENT_MONEY_WRITE, false);
+    }
+    await line.saveDerived(DOCUMENT_MONEY_WRITE, false);
+    const priorAggregate = aggregateSignature(invoice);
+    await recomputeInvoiceAggregate(tx, invoice, settings);
+    if (aggregateSignature(invoice) !== priorAggregate) {
+      await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
+        recomputeLegacy: false,
+      });
+    }
+    const refreshed = await (
+      await InvoiceLineItemCollection.create({ db: tx })
+    ).get({ id: requireId(line.id, 'Invoice line') }, { cache: false });
+    if (refreshed) {
+      for (const field of [
+        'discount',
+        'amount',
+        'taxAmount',
+        'taxRate',
+        'taxCodeId',
+        'taxCodeCode',
+        'taxCodeName',
+        'taxComponentsJson',
+        'moneySnapshotId',
+        'updated_at',
+      ] as const) {
+        line[field] = refreshed[field] as never;
       }
-      await line.saveDerived(DOCUMENT_MONEY_WRITE, false);
-      const priorAggregate = aggregateSignature(invoice);
-      await recomputeInvoiceAggregate(tx, invoice, settings);
-      if (aggregateSignature(invoice) !== priorAggregate) {
-        await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-          recomputeLegacy: false,
-        });
-      }
-      const refreshed = await (
-        await InvoiceLineItemCollection.create({ db: tx })
-      ).get({ id: requireId(line.id, 'Invoice line') }, { cache: false });
-      if (refreshed) {
-        for (const field of [
-          'discount',
-          'amount',
-          'taxAmount',
-          'taxRate',
-          'taxCodeId',
-          'taxCodeCode',
-          'taxCodeName',
-          'taxComponentsJson',
-          'moneySnapshotId',
-          'updated_at',
-        ] as const) {
-          line[field] = refreshed[field] as never;
-        }
-      }
-      return line;
-    }),
-  );
+    }
+    return line;
+  });
 }
 
 export async function deleteInvoiceLineItem(
