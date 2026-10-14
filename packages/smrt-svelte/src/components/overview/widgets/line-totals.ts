@@ -3,6 +3,7 @@
  * Node-tested. The record's own subtotal / discount / tax / total are
  * authoritative and shown as they are; a missing one is computed from the
  * lines (subtotal = sum of line amounts, total = subtotal - discount + tax).
+ * Lines that add up to the recorded total are tax-inclusive and agree.
  * When the record's figures disagree with the lines, the block flags it
  * ("Lines add up to $X") instead of silently overriding either side.
  *
@@ -75,8 +76,15 @@ export function lineItemTotals(
   const tax = money(record?.tax);
   const totalRecorded = money(record?.total);
   const lines: LineTotalLine[] = [];
+  // Line amounts may be tax-inclusive (smrt-commerce's are: qty x price -
+  // discount + tax), so lines adding up to the recorded total agree with the
+  // record, and a missing subtotal is backed out of that total, not the sum.
+  const inclusive =
+    lineSum !== null && totalRecorded !== null && lineSum === totalRecorded;
 
-  const subtotal = subtotalRecorded ?? lineSum;
+  const subtotal =
+    subtotalRecorded ??
+    (inclusive ? totalRecorded + (discount ?? 0) - (tax ?? 0) : lineSum);
   if (subtotal !== null) {
     lines.push({
       key: 'subtotal',
@@ -102,7 +110,7 @@ export function lineItemTotals(
   }
 
   let mismatch: LineTotalsMismatch | null = null;
-  if (lineSum !== null) {
+  if (lineSum !== null && !inclusive) {
     if (subtotalRecorded !== null && subtotalRecorded !== lineSum) {
       mismatch = {
         field: 'subtotal',

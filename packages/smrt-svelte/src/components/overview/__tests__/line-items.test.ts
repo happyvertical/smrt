@@ -60,6 +60,28 @@ describe('lineItemTotals', () => {
     expect(lineItemTotals({ subtotal: 1 }, null).mismatch).toBeNull();
   });
 
+  it('accepts tax-inclusive line amounts that add up to the total', () => {
+    // smrt-commerce lines: amount = qty x price - discount + tax.
+    const taxed = lineItemTotals(
+      { subtotal: 10000, tax: 500, total: 10500 },
+      10500,
+    );
+    expect(taxed.mismatch).toBeNull();
+    expect(taxed.lines.map((l) => [l.key, l.value])).toEqual([
+      ['subtotal', 10000],
+      ['tax', 500],
+      ['total', 10500],
+    ]);
+    // A missing subtotal is backed out of the total, not the line sum.
+    const noSubtotal = lineItemTotals({ tax: 500, total: 10500 }, 10500);
+    expect(noSubtotal.mismatch).toBeNull();
+    expect(noSubtotal.lines[0]).toEqual({
+      key: 'subtotal',
+      value: 10000,
+      computed: true,
+    });
+  });
+
   it('sums minor units exactly and refuses non-integers', () => {
     expect(sumLineAmounts([100, null, '', 250])).toBe(350);
     expect(sumLineAmounts([1.5])).toBeNull();
