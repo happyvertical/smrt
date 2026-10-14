@@ -73,6 +73,12 @@ export const M = defineMessages({
   'ui.overview.widget.records.title': 'Record list',
   'ui.overview.widget.records.description':
     'The latest or top records of a model.',
+  'ui.overview.widget.line_items.title': 'Line items',
+  'ui.overview.widget.line_items.description':
+    "A document's lines with their totals.",
+  'ui.overview.widget.related.title': 'Related records',
+  'ui.overview.widget.related.description':
+    'Records linked to this one, a tab per kind, with totals.',
   'ui.overview.widget.shortcuts.title': 'Shortcuts',
   'ui.overview.widget.shortcuts.description':
     'Cards that link to a section’s pages.',
@@ -112,6 +118,21 @@ export const M = defineMessages({
   'ui.overview.opt.direction_desc': 'Newest or largest first',
   'ui.overview.opt.direction_asc': 'Oldest or smallest first',
   'ui.overview.opt.limit': 'Rows',
+  'ui.overview.opt.parent_field': 'Link to this record',
+  'ui.overview.opt.parent_field_help':
+    'With the parent filter: the field that points at this record, when Field is the one to measure.',
+  'ui.overview.opt.relation': 'Relation',
+  'ui.overview.opt.relation_help':
+    'The line-item relation to show, as its key (OrderLine-orderId). Leave empty for the first one.',
+  'ui.overview.opt.relations': 'Relations',
+  'ui.overview.opt.relations_help':
+    'Which related records get a tab, as relation keys separated by commas (Order-customerId). Leave empty for all of them.',
+  'ui.overview.opt.columns': 'Columns',
+  'ui.overview.opt.columns_help':
+    'Field names to show as columns, separated by commas. Leave empty for a plain list.',
+  'ui.overview.opt.summaries': 'Totals row',
+  'ui.overview.opt.summaries_help':
+    'Count the rows and add up money and quantity columns. On by default when there are such columns.',
   'ui.overview.opt.section': 'Section',
   'ui.overview.opt.section_help':
     'The navigation section whose pages are shown.',
@@ -128,6 +149,18 @@ export const M = defineMessages({
   'ui.overview.records.empty': 'No records to show.',
   'ui.overview.records.view_all': 'View all',
   'ui.overview.records.total': '{count} in total',
+  'ui.overview.table.total': 'Total',
+  'ui.overview.related.empty': 'No related records yet.',
+  'ui.overview.line_items.empty': 'No line items.',
+  'ui.overview.line_items.subtotal': 'Subtotal',
+  'ui.overview.line_items.discount': 'Discount',
+  'ui.overview.line_items.tax': 'Tax',
+  'ui.overview.line_items.total': 'Total',
+  'ui.overview.line_items.computed': '(from the lines)',
+  'ui.overview.line_items.mismatch': 'Lines add up to {amount}.',
+  'ui.overview.line_items.mismatch_subtotal':
+    'The recorded subtotal is {amount}.',
+  'ui.overview.line_items.mismatch_total': 'The recorded total is {amount}.',
   'ui.overview.shortcuts.empty': 'No pages to show.',
   'ui.overview.shortcuts.records_one': '{count} record',
   'ui.overview.shortcuts.records_other': '{count} records',

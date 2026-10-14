@@ -117,6 +117,23 @@ describe('ManifestGenerator coverage', () => {
           },
           methods: { browse: method('browse') },
         }),
+        def('AbstractWidgetCollection', {
+          collection: 'abstractwidgets',
+          extends: 'SmrtCollection',
+          extendsTypeArg: 'AbstractWidget',
+          methods: { browse: method('browse') },
+          decoratorConfig: {
+            api: { include: ['browse'] },
+            mcp: { include: ['browse'] },
+            cli: { include: ['browse'] },
+          },
+        }),
+        def('SpecialWidgetCollection', {
+          collection: 'abstractwidgets',
+          extends: 'AbstractWidgetCollection',
+          methods: { browse: method('browse') },
+          decoratorConfig: { api: { include: ['browse'] } },
+        }),
         def('ListOnlyWidget', {
           decoratorConfig: {
             abstract: true,
@@ -134,9 +151,21 @@ describe('ManifestGenerator coverage', () => {
     for (const surface of ['api', 'mcp', 'cli'] as const) {
       expect(config[surface]).toMatchObject({
         include: ['list', 'get', 'create', 'browse'],
-        exclude: ['create', 'update', 'delete'],
+        exclude: ['create', 'update', 'delete', 'browse'],
+      });
+      expect(
+        manifest.objects.abstractwidgetcollection.decoratorConfig[surface],
+      ).toMatchObject({
+        include: ['browse'],
+        exclude: ['create', 'update', 'delete', 'browse'],
       });
     }
+    expect(
+      new ManifestGenerator().generateRestEndpoints(manifest),
+    ).not.toContain('/abstractwidgets/browse');
+    expect(
+      manifest.objects.specialwidgetcollection.decoratorConfig.api,
+    ).toMatchObject({ exclude: ['create', 'update', 'delete', 'browse'] });
     expect(manifest.objects.listonlywidget.decoratorConfig.api).toMatchObject({
       include: ['list', 'create'],
       exclude: ['create', 'update', 'delete'],

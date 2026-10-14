@@ -256,7 +256,11 @@ describe('CLIGenerator - generateObjectCommands', () => {
   });
 
   it('generates read commands only for abstract models', async () => {
-    stubRegistry({ cli: true, abstract: true });
+    stubRegistry({
+      cli: { include: ['list', 'get', 'browse'] },
+      abstract: true,
+      methods: new Map([['browse', { isPublic: true, parameters: [] }]]),
+    });
     const commands = await (cli as any).generateObjectCommands('Widget', {});
     expect(commands.map((command: CLICommand) => command.name)).toEqual([
       'widget:list',

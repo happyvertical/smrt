@@ -92,6 +92,47 @@ for (const density of ['comfortable', 'touch']) {
   }
 }
 
+for (const width of [390, 768]) {
+  for (const target of [48, 56]) {
+    test(`touch pagers meet the ${target}px target at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      await page.goto(
+        `/e2e/density-responsive.html?surface=pager&target=${target}px`,
+      );
+      await expect(
+        page.getByRole('navigation', { name: 'Touch links' }),
+      ).toBeVisible();
+      const measure = (pager: string) =>
+        page
+          .locator(`[data-pager="${pager}"] .page-link`)
+          .evaluateAll((elements) =>
+            elements
+              .map((element) => element.getBoundingClientRect())
+              // First/Last collapse below 640px; skip the hidden ones.
+              .filter((rect) => rect.width > 0)
+              .map((rect) => ({ height: rect.height, width: rect.width })),
+          );
+      for (const pager of ['table-touch', 'link-touch']) {
+        const sizes = await measure(pager);
+        expect(sizes.length).toBeGreaterThanOrEqual(5);
+        expect(
+          sizes.every((size) => size.height >= target && size.width >= target),
+        ).toBe(true);
+      }
+      const comfortable = await measure('comfortable');
+      expect(comfortable.length).toBeGreaterThanOrEqual(5);
+      expect(comfortable.every((size) => size.height < 48)).toBe(true);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+    });
+  }
+}
+
 test('comfortable theme preserves defaults while a local touch override expands', async ({
   page,
 }) => {

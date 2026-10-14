@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import EditForm from '../EditForm.svelte';
 import { taskDefinition, taskPolicy, taskRows } from './fixtures.js';
+import { orderRecord, orders } from './shop-fixtures.js';
 
 describe('EditForm', () => {
   it('create: prefills policy defaults and submits wire values for the displayed fields', async () => {
@@ -164,6 +165,37 @@ describe('EditForm', () => {
         onsubmit: vi.fn(),
       },
     });
+    await expectNoA11yViolations(container);
+  });
+
+  it('edits an enum as a select and keeps derived totals read-only and out of the payload', async () => {
+    const onsubmit = vi.fn();
+    const { container } = render(EditForm, {
+      props: {
+        definition: orders,
+        record: orderRecord,
+        fields: ['number', 'status', 'subtotal', 'totalAmount'],
+        derivedFields: ['subtotal', 'totalAmount'],
+        onsubmit,
+      },
+    });
+    const status = screen.getByRole('combobox', { name: /Status/ });
+    expect(status).toHaveValue('sent');
+    expect(
+      [...(status as HTMLSelectElement).options].map((o) => o.textContent),
+    ).toEqual(['Not set', 'Draft', 'Sent', 'Paid', 'Cancelled']);
+    await userEvent.selectOptions(status, 'paid');
+    const total = screen.getByLabelText(/Total amount/);
+    expect(total).toHaveAttribute('readonly');
+    expect(total).toHaveValue('$5,134.50');
+    expect(screen.getAllByText('Worked out from the line items.')).toHaveLength(
+      2,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onsubmit).toHaveBeenCalledWith(
+      { number: 'GRA-3159', status: 'paid' },
+      { isNew: false },
+    );
     await expectNoA11yViolations(container);
   });
 });

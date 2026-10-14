@@ -1192,8 +1192,10 @@ pnpm verify:pack
 
 Set `<ThemeProvider density="touch">` for floor tablets and phones, or set
 `density="touch"` on Input, Select, Textarea, Checkbox, Switch, RadioGroup,
-Button (including links), FilterChips, SegmentedControl, or DataTable. DataTable
-applies density to its sort buttons. Density is independent of existing `size`
+Button (including links), FilterChips, SegmentedControl, Pagination, or
+DataTable. DataTable applies density to its sort buttons and passes it to its
+pager; Pagination raises every page and First/Previous/Next/Last control (links
+or buttons) to the target size. Density is independent of existing `size`
 props, including native Input/Select sizes. Omitted density inherits; explicitly
 setting `density="comfortable"` opts that control out and keeps its usual size.
 RadioGroup expands each option's clickable label, and Checkbox/Switch expand

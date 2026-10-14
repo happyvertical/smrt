@@ -61,37 +61,29 @@ export class GroupMemberCollection extends SmrtCollection<GroupMember> {
   }
 
   /**
-   * Add user to a group
+   * Add a user to a group. Idempotent on the `(group_id, user_id)` natural
+   * key (#3375): an existing membership is returned without a write, and
+   * concurrent first adds converge on one row.
    */
   async addMember(groupId: string, userId: string): Promise<GroupMember> {
-    // Check if already a member
-    const existing = await this.list({
+    const [existing] = await this.list({
       where: { groupId, userId },
       limit: 1,
     });
-    if (existing.length > 0) {
-      return existing[0];
-    }
-
-    const member = await this.create({ groupId, userId });
-    await member.save();
-    return member;
+    return existing ?? (await this.create({ groupId, userId }));
   }
 
   /**
-   * Remove user from a group
+   * Remove a user from a group, returning whether they were a member. Every
+   * row for the pair is removed, so a pre-migration duplicate cannot keep the
+   * membership in force.
    */
   async removeMember(groupId: string, userId: string): Promise<boolean> {
     const existing = await this.list({
       where: { groupId, userId },
-      limit: 1,
     });
-    if (existing.length === 0) {
-      return false;
-    }
-
-    await existing[0].delete();
-    return true;
+    for (const member of existing) await member.delete();
+    return existing.length > 0;
   }
 
   /**

@@ -114,7 +114,10 @@ export class PaymentAllocation extends SmrtObject {
    * dollars-vs-cents split there would reject every allocation as
    * over-applying.
    */
-  @field({ description: 'How much of the payment goes to this invoice.' })
+  @field({
+    description: 'How much of the payment goes to this invoice.',
+    ui: { format: 'money' },
+  })
   amount: number = 0;
 
   /**

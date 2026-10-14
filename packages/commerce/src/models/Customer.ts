@@ -11,11 +11,13 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { normalizePartyContacts } from '../party-contacts.js';
 import {
   type Address,
   type CustomerOptions,
   CustomerStatus,
   CustomerType,
+  type PartyContact,
 } from '../types/index.js';
 
 /**
@@ -69,6 +71,7 @@ export class Customer extends SmrtObject {
   @field({
     description:
       'The most this customer may owe you at one time. Leave it at zero if you do not set limits.',
+    ui: { format: 'money' },
   })
   creditLimit: number = 0;
 
@@ -158,6 +161,16 @@ export class Customer extends SmrtObject {
   })
   notes: string = '';
 
+  /**
+   * People to reach at this customer, stored as a JSON column (#3501). Write
+   * form rows through `savePartyContacts()`; every save normalizes the shape.
+   */
+  @field({
+    description:
+      'The people you deal with at this customer, with their role and how to reach them.',
+  })
+  contacts: PartyContact[] = [];
+
   constructor(options: CustomerOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -186,6 +199,24 @@ export class Customer extends SmrtObject {
       this.customerType = options.customerType;
     }
     if (options.notes !== undefined) this.notes = options.notes;
+    if (options.contacts !== undefined)
+      this.contacts = normalizePartyContacts(options.contacts);
+  }
+
+  /**
+   * Re-normalize contacts after the framework's option-override pass, which
+   * re-applies raw option values (including a stored JSON string).
+   */
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    this.contacts = normalizePartyContacts(this.contacts);
+    return this;
+  }
+
+  /** Save with a final contacts normalization against direct assignment. */
+  override async save(): Promise<this> {
+    this.contacts = normalizePartyContacts(this.contacts);
+    return super.save() as Promise<this>;
   }
 
   /**

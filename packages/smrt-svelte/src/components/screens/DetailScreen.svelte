@@ -8,6 +8,12 @@
  * behind a "More details" disclosure. Hidden fields and fields outside the
  * policy never render, so a sensitive field the policy omits cannot leak
  * through this screen.
+ *
+ * Empty values (an empty JSON object or array included) show the "Not set"
+ * placeholder; a JSON object shows as a compact key/value list. A reference
+ * shows its target's label from `labels` (a link when `hrefFor` gives one);
+ * without a label it falls back to a shortened id in `<code>`, the full id in
+ * its tooltip.
  */
 import { Alert, ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
@@ -17,6 +23,7 @@ import { M } from '../../i18n/strings.screens.js';
 import {
   deriveScreenFields,
   groupScreenFields,
+  humanizeFieldName,
   screenSourceError,
   screenTitles,
 } from './fields.js';
@@ -27,7 +34,11 @@ import type {
   ScreenPolicy,
   ScreenRecord,
 } from './types.js';
-import { formatScreenValue } from './values.js';
+import {
+  formatScreenValue,
+  jsonScreenEntries,
+  shortScreenId,
+} from './values.js';
 
 let {
   definition,
@@ -45,6 +56,12 @@ let {
   ondelete,
   extraActions,
   children,
+  relations = [],
+  hrefFor,
+  labels,
+  exclude,
+  hideEmpty = false,
+  variant = 'plain',
 }: DetailScreenProps = $props();
 
 const { t } = useI18n();
@@ -57,8 +74,17 @@ const allFields = $derived(
     ? []
     : deriveScreenFields(definition, policy, { mode: 'view', include }),
 );
-const primary = $derived(allFields.filter((f) => f.tier === 'basic'));
-const secondary = $derived(allFields.filter((f) => f.tier === 'advanced'));
+const listed = $derived(
+  exclude ? allFields.filter((f) => !exclude.includes(f.name)) : allFields,
+);
+const filled = $derived(
+  hideEmpty ? listed.filter((f) => display(f) !== '') : listed,
+);
+const empty = $derived(
+  hideEmpty ? listed.filter((f) => display(f) === '') : [],
+);
+const primary = $derived(filled.filter((f) => f.tier === 'basic'));
+const secondary = $derived(filled.filter((f) => f.tier === 'advanced'));
 
 const heading = $derived.by(() => {
   if (title) return title;
@@ -87,6 +113,19 @@ function safeHref(field: ScreenField, text: string): string | null {
   return null;
 }
 
+/** A reference field's target model, from the `reference` relations. */
+function targetModel(field: ScreenField): string | undefined {
+  return relations.find((r) => r.kind === 'reference' && r.field === field.name)
+    ?.model;
+}
+
+/** The referenced record's label, or `undefined` when nothing names it. */
+function referenceLabel(field: ScreenField, id: string): string | undefined {
+  const model = targetModel(field);
+  const label = model ? labels?.[model]?.(id) : undefined;
+  return label && label.trim() !== '' ? label : undefined;
+}
+
 let confirmOpen = $state(false);
 let deleteError = $state(false);
 
@@ -102,6 +141,8 @@ async function confirmDelete(): Promise<void> {
 }
 </script>
 
+{#snippet shortId(id: string)}<code title={id}>{shortScreenId(id)}</code>{/snippet}
+
 {#snippet fieldList(list: ScreenField[])}
   {#each groupScreenFields(list) as [group, groupFields] (group ?? '')}
     <section class="smrt-detail-screen__group">
@@ -114,12 +155,34 @@ async function confirmDelete(): Promise<void> {
             <dd>
               {#if text === ''}
                 <span class="smrt-detail-screen__empty">{t(M['ui.screens.not_set'])}</span>
-              {:else if field.kind === 'json' || field.kind === 'textarea'}
+              {:else if field.kind === 'json'}
+                {@const entries = jsonScreenEntries(record[field.name])}
+                {#if entries}
+                  <dl class="smrt-detail-screen__pairs">
+                    {#each entries as entry (entry.key)}
+                      <div>
+                        <dt>{humanizeFieldName(entry.key)}</dt>
+                        <dd>{entry.value}</dd>
+                      </div>
+                    {/each}
+                  </dl>
+                {:else}
+                  <pre class="smrt-detail-screen__block">{text}</pre>
+                {/if}
+              {:else if field.kind === 'textarea'}
                 <pre class="smrt-detail-screen__block">{text}</pre>
               {:else if safeHref(field, text)}
                 <a href={safeHref(field, text)}>{text}</a>
               {:else if field.kind === 'reference'}
-                <code>{text}</code>
+                {@const href = hrefFor?.(field, text)}
+                {@const label = referenceLabel(field, text)}
+                {#if href}
+                  <a href={href} class="smrt-detail-screen__reference">{#if label}{label}{:else}{@render shortId(text)}{/if}</a>
+                {:else if label}
+                  <span class="smrt-detail-screen__reference">{label}</span>
+                {:else}
+                  {@render shortId(text)}
+                {/if}
               {:else}
                 {text}
               {/if}
@@ -152,7 +215,12 @@ async function confirmDelete(): Promise<void> {
   </PageHeader>
 {/if}
 
-<article class="smrt-detail-screen" aria-label={heading} data-smrt-component="DetailScreen">
+<article
+  class="smrt-detail-screen"
+  class:smrt-detail-screen--card={variant === 'card'}
+  aria-label={variant === 'card' ? t(M['ui.screens.details']) : heading}
+  data-smrt-component="DetailScreen"
+>
   {#if sourceError}
     <Alert variant="error">{sourceError}</Alert>
   {:else}
@@ -165,6 +233,11 @@ async function confirmDelete(): Promise<void> {
     {#if secondary.length > 0}
       <Disclosure title={t(M['ui.screens.more_details'])}>
         {@render fieldList(secondary)}
+      </Disclosure>
+    {/if}
+    {#if empty.length > 0}
+      <Disclosure title={t(M['ui.screens.show_empty'], { count: empty.length })}>
+        {@render fieldList(empty)}
       </Disclosure>
     {/if}
     {@render children?.()}
@@ -193,6 +266,15 @@ async function confirmDelete(): Promise<void> {
     flex-direction: column;
     gap: var(--smrt-spacing-lg, 1.5rem);
   }
+  .smrt-detail-screen--card {
+    padding: var(--smrt-spacing-md, 1rem);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-lg);
+    background: var(--smrt-color-surface);
+  }
+  .smrt-detail-screen--card .smrt-detail-screen__fields {
+    grid-template-columns: repeat(auto-fill, minmax(max(14rem, 40%), 1fr));
+  }
   .smrt-detail-screen__group-title {
     margin: 0 0 var(--smrt-spacing-sm, 0.5rem);
     font-size: var(--smrt-typography-title-medium-size, 1rem);
@@ -213,6 +295,23 @@ async function confirmDelete(): Promise<void> {
   }
   .smrt-detail-screen__empty {
     color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-detail-screen__pairs {
+    display: grid;
+    gap: var(--smrt-spacing-1, 0.25rem);
+    margin: 0;
+  }
+  .smrt-detail-screen__pairs div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--smrt-spacing-sm, 0.5rem);
+  }
+  .smrt-detail-screen__pairs dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-detail-screen__pairs dd {
+    margin: 0;
   }
   .smrt-detail-screen__block {
     margin: 0;

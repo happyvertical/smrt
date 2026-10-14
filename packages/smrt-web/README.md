@@ -138,6 +138,24 @@ leader, with the same backoff and `pending → uploading → synced | failed` st
 machine. A reloaded write waits until a queue with its name attaches; it is
 never re-routed to `sync/apply`.
 
+### Sweeping stale data on shared devices
+
+`listDurableNamespaces()` returns the durable-store namespaces this browser
+holds (names only, no contents). `pruneDurableNamespace(namespace, { olderThan })`
+removes that namespace's queued offline writes enqueued before `olderThan` (a
+`Date` or epoch ms) without mounting its queue: nothing replays, no transport
+attaches, and only `{ removed, skipped }` counts come back. Items on a route a
+live queue (in any tab) is replaying are skipped. Use it to age out another
+person's queued work on shared hardware; persisted read snapshots carry no age
+and are left to `wipeDurableStore`.
+
+```ts
+const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+for (const namespace of await listDurableNamespaces()) {
+  await pruneDurableNamespace(namespace, { olderThan: cutoff });
+}
+```
+
 ### Persisted read cache
 
 `persistCollection()` warm-starts from an IndexedDB snapshot, then revalidates
@@ -179,7 +197,7 @@ core.
 | Remote queries | `createSmrtWebQuery`, `SmrtWebQueryTransport` |
 | Data-surface actions | `executeSmrtWebDataSurfaceAction`, `SmrtWebDataSurfaceActionTransport`, `dataSurfaceActionCommandTransport` |
 | HTTP | `createDefinitionFetchers`, `unwrapListResult`, `unwrapItemResult` |
-| Offline | `offlineOutbox`, `offlineCommandQueue`, `getOutboxHandle` |
+| Offline | `offlineOutbox`, `offlineCommandQueue`, `getOutboxHandle`, `listDurableNamespaces`, `pruneDurableNamespace` |
 | Persistence | `persistCollection`, `persistDataSurface`, `wipeDurableStore` |
 | Live updates | `createSmrtWebEventSubscriber`, `liveInvalidation` |
 | Version awareness | `createUpdateState` |

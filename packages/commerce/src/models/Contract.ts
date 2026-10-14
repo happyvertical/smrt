@@ -151,7 +151,7 @@ export class Contract extends SmrtObject {
    * as minor units and never as a float — `$19.99` is `1999`, not `19.99`
    * (#2401).
    */
-  @field({ description: 'The amount before tax.' })
+  @field({ description: 'The amount before tax.', ui: { format: 'money' } })
   subtotal: number = 0;
 
   /** Informational sum of resolved line discounts, in integer minor units. */
@@ -160,13 +160,16 @@ export class Contract extends SmrtObject {
   /**
    * Tax amount, in integer minor units (#2401).
    */
-  @field({ description: 'The tax charged.' })
+  @field({ description: 'The tax charged.', ui: { format: 'money' } })
   taxAmount: number = 0;
 
   /**
    * Total amount including tax, in integer minor units (#2401).
    */
-  @field({ description: 'The full amount, tax included.' })
+  @field({
+    description: 'The full amount, tax included.',
+    ui: { format: 'money' },
+  })
   totalAmount: number = 0;
 
   /**

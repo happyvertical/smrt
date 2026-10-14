@@ -8,6 +8,12 @@ import {
   redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
+// Commerce is an optional command provider. Keeping the specifier non-literal
+// avoids a CLI -> Commerce workspace edge (Commerce reaches CLI through its UI
+// dependencies); the command reports the normal module-load error when a host
+// invokes it without installing @happyvertical/smrt-commerce.
+const COMMERCE_PACKAGE: string = '@happyvertical/smrt-commerce';
+
 interface CommerceMoneyReportOptions {
   'csv-path'?: string;
   'json-path'?: string;
@@ -140,9 +146,7 @@ export const dbPreflightCommerceMoneyCommand: CLICommand = {
         'db:preflight-commerce-money',
       );
       db = configured.db;
-      const { preflightCommerceLineAmounts } = await import(
-        '@happyvertical/smrt-commerce'
-      );
+      const { preflightCommerceLineAmounts } = await import(COMMERCE_PACKAGE);
       console.log('\n💰 Commerce money preflight\n');
       console.log(
         `✓ Connected to ${formatDatabaseDisplayUrl(configured.dbType, configured.dbUrl)}\n`,
@@ -192,9 +196,7 @@ export const dbMigrateCommerceMoneyCommand: CLICommand = {
       const tenantId = requiredOption(options['tenant-id'], 'tenant-id');
       const configured = await configuredDatabase('db:migrate-commerce-money');
       db = configured.db;
-      const { migrateCommerceLineAmounts } = await import(
-        '@happyvertical/smrt-commerce'
-      );
+      const { migrateCommerceLineAmounts } = await import(COMMERCE_PACKAGE);
       console.log('\n💰 Commerce money migration\n');
       console.log(
         `✓ Connected to ${formatDatabaseDisplayUrl(configured.dbType, configured.dbUrl)}\n`,
@@ -246,9 +248,7 @@ export const dbRollbackCommerceMoneyCommand: CLICommand = {
       );
       const configured = await configuredDatabase('db:rollback-commerce-money');
       db = configured.db;
-      const { rollbackCommerceLineAmounts } = await import(
-        '@happyvertical/smrt-commerce'
-      );
+      const { rollbackCommerceLineAmounts } = await import(COMMERCE_PACKAGE);
       console.log('\n💰 Commerce money rollback\n');
       console.log(
         `✓ Connected to ${formatDatabaseDisplayUrl(configured.dbType, configured.dbUrl)}\n`,

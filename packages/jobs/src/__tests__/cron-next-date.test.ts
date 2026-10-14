@@ -66,3 +66,51 @@ describe('ScheduleRunner getNextCronDate — DOM/DOW OR semantics', () => {
     expect(viaSeven.getTime()).toBe(viaZero.getTime());
   });
 });
+
+describe('ScheduleRunner getNextCronDate — list, range, and step terms', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('matches every term of a mixed range/value list', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 1, 6, 0, 0, 0));
+
+    // `1-5,10`: after 06:00 the 10:00 term must fire, not be dropped by
+    // parsing the whole list as the range `1-5`.
+    const next = getNextCronDate('0 1-5,10 * * *');
+    expect(next.getDate()).toBe(1);
+    expect(next.getHours()).toBe(10);
+  });
+
+  it('does not widen a value-then-range list into one range', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 1, 6, 1, 0, 0));
+
+    // `0,30-40`: 06:02 is not in the list, the next match is 06:30.
+    const next = getNextCronDate('0,30-40 * * * *');
+    expect(next.getHours()).toBe(6);
+    expect(next.getMinutes()).toBe(30);
+  });
+
+  it('steps `*/n` from the field minimum for day-of-month', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 1, 12, 0, 0, 0));
+
+    // Day-of-month starts at 1, so `*/2` is 1,3,5,… — after June 1 noon the
+    // next run is June 3, not June 2.
+    const next = getNextCronDate('0 0 */2 * *');
+    expect(next.getMonth()).toBe(5);
+    expect(next.getDate()).toBe(3);
+  });
+
+  it('steps `base/n` from base to the field maximum', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 1, 6, 21, 0, 0));
+
+    // `5/15` is 5,20,35,50.
+    const next = getNextCronDate('5/15 * * * *');
+    expect(next.getHours()).toBe(6);
+    expect(next.getMinutes()).toBe(35);
+  });
+});

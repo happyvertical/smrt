@@ -21,6 +21,7 @@ import { parseScryptHash } from '../services/credential-hash.js';
 import { LoginRateLimitError } from '../services/LoginAttemptLimiter.js';
 import {
   DEFAULT_PASSWORD_MANAGE_PERMISSION,
+  outOfBandProofSessionData,
   PasswordCredentialError,
   PasswordCredentialForbiddenError,
   PasswordCredentialService,
@@ -244,5 +245,133 @@ describePostgres('PasswordCredentialService on PostgreSQL', () => {
         ipAddress: '10.3.0.1',
       }),
     ).rejects.toBeInstanceOf(LoginRateLimitError);
+  });
+
+  it('replaces a forgotten password from a stamped recovery session (#3905)', async () => {
+    isolated = await createIsolatedTestDbFromManifest({
+      includeObjects: [
+        'User',
+        'Tenant',
+        'Role',
+        'Membership',
+        'Session',
+        'UsersPasswordCredential',
+        'UsersLoginAttempt',
+        'UsersLoginAuditEvent',
+      ],
+    });
+    if (isolated.config.type !== 'postgres') {
+      throw new Error('Expected a PostgreSQL test database.');
+    }
+    const options = { db: isolated.db };
+    const users = await UserCollection.create(options);
+    const credentials = await UsersPasswordCredentialCollection.create(options);
+    const sessionService = await SessionService.create(options);
+    const personId = randomUUID();
+    const person = await users.create({
+      id: personId,
+      email: 'owner@recovery.example',
+    });
+    await person.save();
+    await credentials.insertIfAbsent(personId, {
+      passwordHash: 'scrypt$forgotten',
+      mustChange: false,
+      rotatedAt: new Date(),
+      rotatedBy: 'self',
+    });
+    const service = await PasswordCredentialService.create({
+      ...options,
+      password: { scrypt: { N: 2 ** 10 } },
+      limiter: { audit: false },
+      recovery: { authMethods: ['owner-recovery'] },
+    });
+    const unstamped = await sessionService.createSession(personId, undefined, {
+      authMethod: 'owner-recovery',
+    });
+    const unstampedActor = await sessionService.loadSessionContext(unstamped);
+    if (!unstampedActor) throw new Error('missing session');
+    await expect(
+      service.replaceForgottenPassword({
+        actor: unstampedActor,
+        newPassword: 'a remembered secret',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+
+    const sessionId = await sessionService.createSession(personId, undefined, {
+      authMethod: 'owner-recovery',
+      data: outOfBandProofSessionData(),
+    });
+    const actor = await sessionService.loadSessionContext(sessionId);
+    if (!actor) throw new Error('missing session');
+    const result = await service.replaceForgottenPassword({
+      actor,
+      newPassword: 'a remembered secret',
+    });
+    expect(result.revokedSessions).toBe(2);
+    expect(await sessionService.loadSessionContext(sessionId)).toBeNull();
+    const replaced = await credentials.findByUserId(personId);
+    expect(replaced?.version).toBe(2);
+    expect(replaced?.rotatedBy).toBe('self-recovery');
+    const signedIn = await service.signIn({
+      identifier: 'owner@recovery.example',
+      password: 'a remembered secret',
+    });
+    expect(signedIn.userId).toBe(personId);
+
+    // Two interleaved uses of one proof, on independent connections' worth
+    // of concurrency: exactly one succeeds, the other is refused.
+    let arrived = 0;
+    let release!: () => void;
+    const bothArrived = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const racing = await PasswordCredentialService.create({
+      ...options,
+      password: { scrypt: { N: 2 ** 10 } },
+      limiter: { audit: false },
+      recovery: {
+        authMethods: ['owner-recovery'],
+        assertProof: async () => {
+          arrived += 1;
+          if (arrived === 2) release();
+          await bothArrived;
+          return true;
+        },
+      },
+    });
+    const raceSession = await sessionService.createSession(
+      personId,
+      undefined,
+      { authMethod: 'owner-recovery', data: outOfBandProofSessionData() },
+    );
+    const raceActor = await sessionService.loadSessionContext(raceSession);
+    if (!raceActor) throw new Error('missing session');
+    const outcomes = await Promise.allSettled(
+      ['first racer secret', 'second racer secret'].map((newPassword) =>
+        racing.replaceForgottenPassword({ actor: raceActor, newPassword }),
+      ),
+    );
+    expect(arrived).toBe(2);
+    expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+    const lost = outcomes.find(
+      (o): o is PromiseRejectedResult => o.status === 'rejected',
+    );
+    expect(
+      lost?.reason instanceof PasswordCredentialForbiddenError ||
+        lost?.reason instanceof PasswordCredentialError,
+    ).toBe(true);
+    const winner =
+      outcomes[0].status === 'fulfilled'
+        ? 'first racer secret'
+        : 'second racer secret';
+    expect((await credentials.findByUserId(personId))?.version).toBe(3);
+    expect(
+      (
+        await racing.signIn({
+          identifier: 'owner@recovery.example',
+          password: winner,
+        })
+      ).userId,
+    ).toBe(personId);
   });
 });

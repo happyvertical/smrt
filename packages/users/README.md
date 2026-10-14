@@ -749,6 +749,48 @@ limiter for approvals, keyed on the approving user only under its own subject
 prefix, so that budget never pools with the same person's PIN or password
 budget; pass `loginLimiter` to share one instance and audit sink.
 
+#### Separate account and address budgets (#3531)
+
+By default both budgets use `maxAttempts`, `windowSeconds` and `lockout`.
+Size them independently with `subject` and `source` (each field falls back to
+the top-level option), or turn the address budget off with `source: false`:
+
+```ts
+const limiter = await LoginAttemptLimiter.create({
+  db,
+  subject: { maxFailures: 5, lockout: { baseSeconds: 60, maxSeconds: 3600 } },
+  source: { maxFailures: 100, windowSeconds: 300, lockout: false },
+  // or: source: false,
+});
+```
+
+When a failure starts a **source** lockout the audit sink also receives one
+`source-locked` entry carrying the source hash and `retryAfterSeconds` but no
+subject hash and none of the caller's metadata, so it attributes an outage to
+an address or device without naming the accounts that were tried. It is
+reported at most once per source per `sourceLockoutAuditSeconds` (default 300)
+per limiter instance. Refusals are recorded as `denied` entries with the
+refusing `scope` in their metadata.
+
+**Deployments without a trustworthy client address.** If the app sits behind
+a reverse proxy that does not forward a client address you can trust, every
+browser shares one `source`, and a handful of failures from anyone — including
+for emails that do not exist — locks password sign-in out for everyone.
+Prefer, in order:
+
+1. Make the proxy set a client address you trust (and strip any the client
+   sent), and pass that, not a raw `X-Forwarded-For`, as `ipAddress`.
+2. Otherwise give the source budget a much larger allowance with no lockout
+   (`source: { maxFailures: 200, lockout: false }`), so it only caps bursts.
+3. Or disable it (`source: false`) and rate limit `/signin` at the proxy
+   instead. The per-account budget still applies to every attempt.
+
+`source: false` applies to every credential kind using that limiter. A PIN
+sign-in keys its source on the enrolled device, which is what stops guessing
+across many people's short PINs on one tablet, so if PIN and password share an
+instance, prefer option 2 or give `PasswordCredentialService` its own
+`limiter` options rather than disabling the source budget for both.
+
 ### Per-person PIN on an enrolled device
 
 A shared tablet enrolled through the terminal device-code grant holds a
@@ -917,6 +959,7 @@ words). There are no composition rules. Optional `pepper`. Violations are
 | `changePassword` | the person, proving the current password (from the sign-in budget) | every other session of theirs |
 | `resetPassword` | an admin with `users.password.manage`, never for themself; `mustChange` defaults to true | every session of the person |
 | `clearPassword` | an admin, or the person proving the current password | the person's password sessions |
+| `replaceForgottenPassword` | the person, from a fresh out-of-band recovery session (off unless `recovery` is configured) | every session of the person, this one included |
 
 Self-service writes are guarded on the exact credential the person proved
 (or, for a first password, insert-only), so a reset that lands while a change
@@ -939,6 +982,56 @@ permission. It is registered in the runtime catalog
 (`seedRolePermissions()`) grants it to `owner` and `admin` (`*`), not to
 `member` or `viewer`.
 
+**Forgotten password (#3905).** A person who signed in some other way — an
+owner-recovery or operator-issued link, an emailed code — can replace a
+password they forgot, without the current one, through
+`replaceForgottenPassword({ actor, newPassword })`. It is disabled until the
+host opts in, and every condition is checked on the stored session row, not
+on the caller's context:
+
+```ts
+import {
+  outOfBandProofSessionData,
+  PasswordCredentialService,
+  SessionService,
+} from '@happyvertical/smrt-users';
+
+const sessions = await SessionService.create({ db });
+
+const passwords = await PasswordCredentialService.create({
+  db,
+  recovery: {
+    authMethods: ['owner-recovery'], // channels minted ONLY after an out-of-band proof
+    maxAgeSeconds: 600,              // default 10 minutes, at most 1 hour
+    assertProof: ({ actor, provenAt }) => true, // optional extra host check
+  },
+});
+
+// In the recovery flow, after verifying the link or code (never from client input):
+const sessionId = await sessions.createSession(user.id, tenantId, {
+  authMethod: 'owner-recovery',
+  data: outOfBandProofSessionData(), // stamps SESSION_DATA_KEYS.outOfBandProofAt
+});
+```
+
+The call is refused (`PasswordCredentialForbiddenError` / 403) unless the
+session is valid and the person's own, first-class (not layered, no
+permission ceiling), has one of the listed `authMethods` (`password` and
+`pin` can never be listed), and carries a proof stamp no older than
+`maxAgeSeconds` (a stamp more than 30 seconds in the future is refused). The
+freshness bound is measured from the stamp, which a tenant switch copies to
+the rotated session, so switching tenants never makes an old proof look new.
+`assertProof`, when given, must return exactly `true`. On success the new
+password (policy-checked, `mustChange` cleared) is written guarded on the row
+read before any hashing — or inserted if the person had none — in the same
+transaction as a conditional update that consumes the recovery session, so
+of any concurrent uses of one proof exactly one succeeds and a failed write
+leaves the proof unconsumed. Every other session of the person ends before
+and after the write, and a `managed` audit entry records
+`action: 'recover'` with the channel and the proof's age. Do not list a
+channel whose sessions an ordinary sign-in can mint: whoever holds such a
+session can then choose the account's password.
+
 #### Consumer wiring (SvelteKit)
 
 ```ts
@@ -958,6 +1051,7 @@ export const passwordAuth = createPasswordCredentialHandlers({
 // POST   /account/password         → passwordAuth.setPassword     ({ password } or admin { userId, password })
 // DELETE /account/password         → passwordAuth.clearPassword   ({ currentPassword } or admin { userId })
 // POST   /admin/users/password     → passwordAuth.resetPassword   ({ userId, password, mustChange? })
+// POST   /account/password/recover → passwordAuth.replaceForgottenPassword ({ newPassword }; needs `recovery`)
 // sign out                         → destroySessionCookie(event, { db })
 ```
 
@@ -1355,6 +1449,41 @@ against the new constraint. Apply the remaining application schema migrations,
 run `smrt doctor --db` / `db:status --parity`, deploy the new version to every
 writer, then resume traffic. Do not roll back application writers without also
 restoring the pre-upgrade schema/database backup.
+
+### Upgrade duplicate overrides and group members (#3375)
+
+`MembershipOverride` is unique on `(membership_id, permission_id)`,
+`TenantPermissionOverride` on `(tenant_id, permission_id)` and `GroupMember` on
+`(group_id, user_id)`. `setOverride()` (and the grant/deny/inherit helpers) is
+an upsert on that key: concurrent calls leave one row, the last effect written
+wins, and an existing override keeps its id. `addMember()` is idempotent.
+`removeOverride()` / `removeMember()` delete every row for the pair. Their
+`(slug, context)` index is no longer unique, and the single-column
+`membership_id` / `group_id` indexes are replaced by the composite ones.
+
+Existing deployments upgrade exactly like the role-grant upgrade above, in the
+same maintenance window and **before ordinary schema migration**:
+
+```typescript
+import { deduplicateAuthorityPairs } from '@happyvertical/smrt-users';
+
+console.log(await deduplicateAuthorityPairs(db, { dryRun: true }));
+console.log(await deduplicateAuthorityPairs(db, {
+  maintenanceConfirmed: true,
+}));
+```
+
+For an override pair it keeps the row whose effect the resolver already
+applies — DENY, then GRANT, then INHERIT — so no pair's effective authority
+changes; ties, and group members, keep the earliest `created_at` (lowest `id`
+breaks ties; null timestamps sort last). It creates
+`membership_overrides_membership_id_permission_id_idx`,
+`tenant_permission_overrides_tenant_id_permission_id_idx` and
+`group_members_group_id_user_id_idx` in the same transaction as the deletes,
+locks the three tables on PostgreSQL, and is safe to rerun. Until it has run,
+new-version override and group-member writes fail (there is no unique index for
+their upsert to target), so writers stay stopped until it and the schema
+migration complete.
 
 ## Hosted OAuth authorization
 

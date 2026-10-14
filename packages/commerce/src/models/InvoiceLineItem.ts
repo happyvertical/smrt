@@ -110,7 +110,7 @@ export class InvoiceLineItem extends SmrtObject {
    * Parent invoice
    */
   @field({ description: 'The invoice this line belongs to.' })
-  @foreignKey('Invoice')
+  @foreignKey('Invoice', { role: 'items' })
   invoiceId: string = '';
 
   @foreignKey('InvoiceLineItem', { nullable: true })
@@ -205,12 +205,16 @@ export class InvoiceLineItem extends SmrtObject {
    * `$19.99` is `1999`. An integer literal is what maps this to an INTEGER
    * column (#2361).
    */
-  @field({ description: 'The price of one, before tax.' })
+  @field({
+    description: 'The price of one, before tax.',
+    ui: { format: 'money' },
+  })
   unitPrice: number = 0;
 
   /**
    * Discount amount (flat, not percentage), in integer minor units (#2361).
    */
+  @field({ ui: { format: 'money' } })
   discount: number = 0;
 
   discountType: 'none' | 'percent' | 'amount' = 'none';
@@ -277,7 +281,7 @@ export class InvoiceLineItem extends SmrtObject {
   /**
    * Calculated line amount, in integer minor units (#2361).
    */
-  @field({ description: 'The line total.' })
+  @field({ description: 'The line total.', ui: { format: 'money' } })
   amount: number = 0;
 
   // ============================================================================

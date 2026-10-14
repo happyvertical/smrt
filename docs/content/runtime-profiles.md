@@ -125,9 +125,19 @@ generated application-secret file are mode `0600`. SQLite enables foreign keys,
 WAL, full synchronous durability, and a busy timeout. The local server binds to
 `127.0.0.1` by default, and owner bootstrap refuses a non-loopback bind.
 Concurrent initializers are serialized across processes by an exclusive
-transaction in a dedicated SQLite lock database under a private per-user,
-root-keyed custody directory. The released SQL trusted-parent boundary validates
-the lock directory, ancestor chain, leaf, and macOS ACLs before opening it.
+transaction in a dedicated SQLite lock database under a private, root-keyed
+custody directory beside the data root (`<parent>/.smrt-lease-<key>`), so it
+also works in user-namespace sandboxes where `/tmp` reads as owned by the
+overflow uid. The legacy per-user `/tmp/.smrt-<uid>` lease is taken afterwards
+so older releases stay excluded; when `/tmp`'s owner is unmapped it is taken
+lock-only (never written, private current-user lock directories and file), and
+it is required when the parent cannot hold a lease. In a uid-remapping
+namespace both the in-namespace `<uid>` and its `/proc/self/uid_map` host
+mapping are locked, in that order, so older releases inside the namespace and
+on the host both contend; the in-namespace candidate is skipped only when its
+root is an existing real directory owned by another user (no one in the
+namespace can hold it), and an unusable map fails closed. The released SQL trusted-parent boundary validates
+each lock directory, ancestor chain, leaf, and macOS ACLs before opening it.
 SQLite elects one owner atomically without deleting a lock pathname; process or
 worker death releases the kernel lock without PID/time leases. A read-only
 storage-path and marker preflight rejects obvious invalid configurations before
@@ -156,7 +166,11 @@ expires within fifteen minutes, and is consumed in the same serialized database
 transaction that creates the real global `Person`, `User`, default `Tenant`,
 owner `Role` / `Membership`, and server-side `Session`. Repeated setup or startup
 does not duplicate those records. Tenancy can remain hidden in the local UI, but
-the durable default tenant is preserved for later logical migration.
+the durable default tenant is preserved for later logical migration. The
+`ownerTenant` option chooses that tenant's slug (default `default`) and name;
+a claim never writes over an existing tenant with the slug: it fails closed with
+`owner_tenant_conflict` unless `ownerTenant.adoptExisting` is set, and then
+adopts only an active root tenant that has no memberships, keeping its id.
 Authenticated session TTLs are whole seconds with a minimum of one second;
 invalid TTL configuration is rejected before any filesystem mutation.
 

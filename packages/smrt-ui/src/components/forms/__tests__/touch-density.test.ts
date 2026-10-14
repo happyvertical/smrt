@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import DataTable from '../../data/DataTable.svelte';
 import FilterChips from '../../nav/FilterChips.svelte';
 import Button from '../../ui/Button.svelte';
+import Pagination from '../../ui/Pagination.svelte';
 import Checkbox from '../Checkbox.svelte';
 import Input from '../Input.svelte';
 import RadioGroup from '../RadioGroup.svelte';
@@ -49,12 +50,53 @@ describe('touch density', () => {
     ['FilterChips', FilterChips, { options: [], selected: '' }],
     ['SegmentedControl', SegmentedControl, { options: [], label: 'Segments' }],
     ['DataTable', DataTable, { columns: [], data: [] }],
+    ['Pagination', Pagination, { currentPage: 1, totalPages: 3 }],
   ])('%s consumes density on its target root', (_name, component, props) => {
     const { container } = render(component as typeof Input, {
       props: { ...props, density: 'touch' },
     });
     expect(container.querySelector('[data-density="touch"]')).toBeTruthy();
     expect(container.querySelector('[density]')).toBeNull();
+  });
+
+  it.each([
+    'touch',
+    'comfortable',
+  ] as const)('DataTable passes density=%s through to its pager', (density) => {
+    const { container } = render(DataTable, {
+      props: {
+        columns: [{ id: 'title', label: 'Title' }],
+        data: [
+          { id: 'one', title: 'One' },
+          { id: 'two', title: 'Two' },
+        ],
+        rowKey: 'id',
+        pageSize: 1,
+        density,
+      },
+    });
+    expect(
+      container.querySelector('nav[data-smrt-component="Pagination"]'),
+    ).toHaveAttribute('data-density', density);
+  });
+
+  it('DataTable leaves its pager to inherit when density is omitted', () => {
+    const { container } = render(DataTable, {
+      props: {
+        columns: [{ id: 'title', label: 'Title' }],
+        data: [
+          { id: 'one', title: 'One' },
+          { id: 'two', title: 'Two' },
+        ],
+        rowKey: 'id',
+        pageSize: 1,
+      },
+    });
+    const pager = container.querySelector(
+      'nav[data-smrt-component="Pagination"]',
+    );
+    expect(pager).toBeTruthy();
+    expect(pager).not.toHaveAttribute('data-density');
   });
 
   it('inherits global density while preserving native size and local overrides', () => {

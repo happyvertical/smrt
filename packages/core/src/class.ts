@@ -502,6 +502,10 @@ export class SmrtClass {
    */
   private static _systemTablesInitialized = new WeakSet<DatabaseInterface>();
   private static _systemTablesInitializedByUrl = new Set<string>();
+  private static _systemTablesInitializing = new WeakMap<
+    DatabaseInterface,
+    Promise<void>
+  >();
 
   /**
    * Creates a new SmrtClass instance
@@ -1068,24 +1072,37 @@ export class SmrtClass {
       }
     }
 
-    try {
-      await ensureFrameworkSystemTables(this._db, this._dbEngineHint);
-      await this.settleDeferredSystemTableCompatibility(this._db);
-      await this.ensureNativeVectorStorage();
+    const db = this._db;
+    const pending = SmrtClass._systemTablesInitializing.get(db);
+    if (pending) return pending;
 
-      // Mark as initialized using appropriate tracking mechanism
-      if (useInstanceTracking) {
-        SmrtClass._systemTablesInitialized.add(this._db);
-      } else {
-        SmrtClass._systemTablesInitializedByUrl.add(dbUrl);
+    // Share only an actual handle: another handle at the same URL may need
+    // to wait for this caller's outer transaction to commit, not just for its
+    // initialization statements. Database locks coordinate those handles.
+    const initialization = (async () => {
+      try {
+        await ensureFrameworkSystemTables(db, this._dbEngineHint);
+        await this.settleDeferredSystemTableCompatibility(db);
+        await this.ensureNativeVectorStorage();
+
+        if (useInstanceTracking) {
+          SmrtClass._systemTablesInitialized.add(db);
+        } else {
+          SmrtClass._systemTablesInitializedByUrl.add(dbUrl);
+        }
+      } catch (error) {
+        const dbInfo = db.constructor?.name || 'unknown database';
+        throw new Error(
+          `Failed to create system tables for ${dbInfo}: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
       }
-    } catch (error) {
-      // DO NOT SWALLOW ERRORS - fail loudly so we know what's wrong
-      const dbInfo = this._db.constructor?.name || 'unknown database';
-      throw new Error(
-        `Failed to create system tables for ${dbInfo}: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error },
-      );
+    })();
+    SmrtClass._systemTablesInitializing.set(db, initialization);
+    try {
+      await initialization;
+    } finally {
+      SmrtClass._systemTablesInitializing.delete(db);
     }
   }
 

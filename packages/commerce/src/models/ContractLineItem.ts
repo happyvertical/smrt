@@ -73,7 +73,7 @@ export class ContractLineItem extends SmrtObject {
    * Parent contract
    */
   @field({ description: 'The order, quote or agreement this line belongs to.' })
-  @foreignKey('Contract')
+  @foreignKey('Contract', { role: 'items' })
   contractId: string = '';
 
   /**
@@ -96,12 +96,16 @@ export class ContractLineItem extends SmrtObject {
    * INTEGER and a decimal literal to DECIMAL. Money is exact, so `$49.99` is
    * `4999` (#2401).
    */
-  @field({ description: 'The price of one, before tax.' })
+  @field({
+    description: 'The price of one, before tax.',
+    ui: { format: 'money' },
+  })
   unitPrice: number = 0;
 
   /**
    * Discount amount (flat, not percentage), in integer minor units (#2401).
    */
+  @field({ ui: { format: 'money' } })
   discount: number = 0;
 
   discountType: 'none' | 'percent' | 'amount' = 'none';
@@ -171,7 +175,7 @@ export class ContractLineItem extends SmrtObject {
    * units. Derived by {@link ContractLineItem.calculateAmount}, which rounds
    * the fractional tax to a whole minor unit (#2401).
    */
-  @field({ description: 'The line total.' })
+  @field({ description: 'The line total.', ui: { format: 'money' } })
   amount: number = 0;
 
   /**

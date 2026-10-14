@@ -66,6 +66,10 @@ const text = $derived({
 </script>
 
 <section class="contacts" aria-labelledby={headingId} data-smrt-component="PartyContactFields">
+  {#if !readOnly}
+    <!-- Presence marker: the server only treats zero posted rows as "remove all" when this block rendered. -->
+    <Input interaction={false} type="hidden" name={names.contactCount} value={String(contacts.length)} />
+  {/if}
   <div class="contacts-heading">
     <h2 id={headingId}>{text.heading}</h2>
     {#if !readOnly && canAdd}

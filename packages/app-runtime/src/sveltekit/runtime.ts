@@ -78,6 +78,7 @@ import {
   type LocalApplicationRuntime,
   type LocalMcpTokenPrincipal,
   type LocalOwnerBootstrapInvitation,
+  type LocalOwnerTenantOptions,
   resolveLocalRuntimePaths,
   validateApplicationId,
 } from '../index.js';
@@ -217,6 +218,12 @@ export interface SmrtSvelteKitRuntimeOptions {
   readonly bootstrapTtlSeconds?: number;
   /** Session lifetime for the owner-bootstrap session cookie. Default 7 days. */
   readonly sessionTtlSeconds?: number;
+  /**
+   * Tenant the owner-setup claim creates or adopts (`slug`, `name`,
+   * `adoptExisting`). Defaults to a new `default` tenant; an existing tenant
+   * with the slug fails the claim closed unless adoption is enabled.
+   */
+  readonly ownerTenant?: LocalOwnerTenantOptions;
   /**
    * Local single-writer lease held for the web process, released when local
    * startup fails. Defaults to the state-root writer lease shared with
@@ -626,6 +633,7 @@ export function composeSmrtSvelteKitRuntime(
       paidCapabilities: options.paidCapabilities,
       bootstrapTtlSeconds: options.bootstrapTtlSeconds,
       sessionTtlSeconds: options.sessionTtlSeconds,
+      ownerTenant: options.ownerTenant,
       prepareDatabase: options.prepareDatabase,
       now: options.now,
     })
