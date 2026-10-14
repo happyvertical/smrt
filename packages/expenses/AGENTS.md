@@ -113,6 +113,11 @@ source in id order before either refund check, while SQLite serializes writes.
 The inbound projected lookup uses the existing `refund_of_id` index and an
 explicit owner filter. Keep caller transaction affinity and per-row revision
 checks; neither an unlocked lookup nor revision CAS alone protects this pair.
+
+`ExpenseCollection.listReviewedTaxFacts({ tenantId, from, to, currency? })`
+is the reporting input for supplier facts: it returns only that tenant's reviewed,
+non-duplicate expenses in the inclusive calendar-date range. A null
+`financialBreakdown` remains an unknown legacy fact, never zero tax.
 All three fields participate in the reviewed-money freeze. See the README and
 [financial facts test matrix](agents/financial-facts-test-matrix.md).
 

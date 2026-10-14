@@ -9,6 +9,41 @@ import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { JournalEntry } from '../models/JournalEntry';
 import { BALANCE_EPSILON, type TrialBalanceRow } from '../types';
 
+/** One posted ledger movement in its raw stored unit (ledgers are unit-agnostic). */
+export interface PostedJournalMovement {
+  entryId: string;
+  journalId: string;
+  accountId: string;
+  journalDate: Date;
+  journalNumber: string;
+  sourceModule: string;
+  sourceRef: string | null;
+  currency: string;
+  debit: number;
+  credit: number;
+  /** Credit minus debit, suitable for liability-account reconciliation. */
+  creditMinusDebit: number;
+}
+
+export interface PostedJournalMovementOptions {
+  tenantId: string;
+  accountIds: readonly string[];
+  from: Date;
+  to: Date;
+  currency: string;
+}
+
+const MAX_MOVEMENT_ACCOUNTS = 1_000;
+
+function storedUnit(value: unknown, label: string): number {
+  const number = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(number) || Math.abs(number) > Number.MAX_SAFE_INTEGER)
+    throw new RangeError(
+      `Posted journal ${label} is outside the supported numeric range.`,
+    );
+  return number;
+}
+
 export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
   static readonly _itemClass = JournalEntry;
 
@@ -173,6 +208,80 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
     // Use single query with IN clause to avoid N+1 problem
     return await this.list({
       where: { accountId: accountIds },
+    });
+  }
+
+  /**
+   * Read tenant-owned movements from posted journals only. Amounts deliberately
+   * remain raw ledger units; commerce validates its minor-unit convention at
+   * the reporting boundary.
+   */
+  async listPostedMovements(
+    options: PostedJournalMovementOptions,
+  ): Promise<PostedJournalMovement[]> {
+    const accountIds = [...new Set(options.accountIds)];
+    if (
+      !options.tenantId?.trim() ||
+      !options.currency?.trim() ||
+      !(options.from instanceof Date) ||
+      !(options.to instanceof Date) ||
+      !Number.isFinite(options.from.getTime()) ||
+      !Number.isFinite(options.to.getTime()) ||
+      options.from > options.to
+    )
+      throw new Error(
+        'Posted movements require tenant, currency and ordered dates.',
+      );
+    if (accountIds.length === 0) return [];
+    if (accountIds.length > MAX_MOVEMENT_ACCOUNTS)
+      throw new RangeError(
+        `Posted movements allow at most ${MAX_MOVEMENT_ACCOUNTS} accounts per query.`,
+      );
+    if (
+      accountIds.some((id) => typeof id !== 'string' || !id || id.trim() !== id)
+    )
+      throw new Error('Posted movement account IDs must be nonempty.');
+    const placeholders = accountIds.map(() => '?').join(', ');
+    const result = await this.db.query(
+      `SELECT e.id AS entry_id, e.journal_id, e.account_id, e.currency,
+              e.debit, e.credit, j.date AS journal_date, j.number AS journal_number,
+              j.source_module, j.source_ref
+         FROM journal_entries e
+         JOIN journals j ON j.id = e.journal_id AND j.tenant_id = e.tenant_id
+        WHERE e.tenant_id = ? AND e.account_id IN (${placeholders})
+          AND e.currency = ? AND j.status = 'posted'
+          AND j.date >= ? AND j.date <= ?
+        ORDER BY j.date ASC, j.id ASC, e.id ASC`,
+      options.tenantId,
+      ...accountIds,
+      options.currency,
+      options.from.toISOString(),
+      options.to.toISOString(),
+    );
+    return result.rows.map((row) => {
+      const debit = storedUnit(row.debit, 'debit');
+      const credit = storedUnit(row.credit, 'credit');
+      const movement = credit - debit;
+      if (
+        !Number.isFinite(movement) ||
+        Math.abs(movement) > Number.MAX_SAFE_INTEGER
+      )
+        throw new RangeError(
+          'Posted journal movement is outside the supported numeric range.',
+        );
+      return {
+        entryId: String(row.entry_id),
+        journalId: String(row.journal_id),
+        accountId: String(row.account_id),
+        journalDate: new Date(String(row.journal_date)),
+        journalNumber: String(row.journal_number),
+        sourceModule: String(row.source_module),
+        sourceRef: row.source_ref == null ? null : String(row.source_ref),
+        currency: String(row.currency),
+        debit,
+        credit,
+        creditMinusDebit: movement,
+      };
     });
   }
 
