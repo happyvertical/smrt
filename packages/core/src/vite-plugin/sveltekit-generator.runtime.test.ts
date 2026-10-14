@@ -660,6 +660,108 @@ describe('generated SvelteKit helper runtime', () => {
     expect(lookups).toBe(0);
   });
 
+  it.each(
+    (['run', 'archive'] as const).flatMap((actionName) =>
+      (
+        [
+          [
+            'permissionSet',
+            { permissionSet: ['widgets.read', 'widgets.create'] },
+          ],
+          [
+            'smrtPermissions',
+            { smrtPermissions: ['widgets.read', 'widgets.create'] },
+          ],
+          [
+            'tenantContext.permissions',
+            {
+              tenantContext: {
+                permissions: new Set(['widgets.read', 'widgets.create']),
+              },
+            },
+          ],
+        ] as const
+      ).map(([permissionSource, permissionLocals]) => ({
+        actionName,
+        permissionLocals,
+        permissionSource,
+      })),
+    ),
+  )('rejects conflicting ambient authority before generated $actionName lookup with $permissionSource', async ({
+    actionName,
+    permissionLocals,
+  }) => {
+    const route = await importGeneratedRuntimeReportAction(actionName);
+    let lookups = 0;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => {
+        lookups += 1;
+        return { [actionName]: async () => ({ ok: true }) };
+      },
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        permissions: new Set(['widgets.read', 'widgets.create']),
+        tenantId: 'tenant-b',
+        userId: 'user-b',
+      };
+
+    await expect(
+      route.POST({
+        locals: {
+          ...permissionLocals,
+          tenantId: 'tenant-a',
+          user: { id: 'user-a' },
+        },
+        params: { id: 'report-b' },
+        request: new Request(
+          `http://localhost/api/widgets/report-b/${actionName}`,
+          {
+            ...(actionName === 'archive'
+              ? {
+                  body: JSON.stringify({ archived: true }),
+                  headers: { 'content-type': 'application/json' },
+                }
+              : {}),
+            method: 'POST',
+          },
+        ),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(lookups).toBe(0);
+  });
+
+  it('rejects an incomplete generated-action principal before lookup', async () => {
+    const route = await importGeneratedRuntimeReportAction('run');
+    let lookups = 0;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => {
+        lookups += 1;
+        return { run: async () => ({ ok: true }) };
+      },
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        permissions: new Set(['widgets.read']),
+        tenantId: 'tenant-b',
+        userId: 'user-b',
+      };
+
+    await expect(
+      route.POST({
+        locals: {
+          permissionSet: ['widgets.read'],
+          user: { id: 'user-a' },
+        },
+        params: { id: 'report-b' },
+        request: new Request('http://localhost/api/widgets/report-b/run', {
+          method: 'POST',
+        }),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(lookups).toBe(0);
+  });
+
   it('executes emitted DELETE routes with safe typed 4xx errors and opaque 5xx errors', async () => {
     const route = await importGeneratedItemDelete();
     const routeCollection = globalThis as Record<string, unknown>;

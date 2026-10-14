@@ -900,7 +900,9 @@ function generateTenantContextHelper(
     typeof tenantId !== 'string' || !tenantId ||
     typeof userId !== 'string' || !userId ||
     !permissions
-  ) return;
+  ) {
+    throw error(403, 'Authenticated principal context is incomplete');
+  }
 `
     : '';
   const contextArgument = requirePrincipal
@@ -945,9 +947,11 @@ function establishTenantContext(locals: unknown): void {
   const l = locals as Record<string, unknown>;
   const user = l.user as Record<string, unknown> | undefined;
   const session = l.session as Record<string, unknown> | undefined;
-  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId;
-  const userId = l.userId ?? user?.id ?? user?.userId ?? session?.userId;
-  const rawPermissions = l.permissions;
+  const tenantContext = l.tenantContext as Record<string, unknown> | undefined;
+  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId ?? tenantContext?.tenantId;
+  const userId = l.userId ?? user?.id ?? user?.userId ?? session?.userId ?? tenantContext?.userId;
+  const rawPermissions =
+    l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? tenantContext?.permissions;
   const permissions =
     rawPermissions instanceof Set && [...rawPermissions].every((value) => typeof value === 'string')
       ? rawPermissions

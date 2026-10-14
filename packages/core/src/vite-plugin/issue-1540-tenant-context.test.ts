@@ -168,9 +168,14 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
       expect(route).toContain("from '@happyvertical/smrt-tenancy'");
       expect(route).toContain('function establishTenantContext');
       expect(route).toContain('const userId = l.userId ?? user?.id');
-      expect(route).toContain('const rawPermissions = l.permissions;');
+      expect(route).toContain(
+        'l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? tenantContext?.permissions',
+      );
       expect(route).toContain("typeof userId !== 'string' || !userId");
       expect(route).toContain('!permissions');
+      expect(route).toContain(
+        "throw error(403, 'Authenticated principal context is incomplete')",
+      );
       expect(route).toContain('enterTenantContext(');
       expect(route).toContain('{ tenantId, userId, permissions }');
       expect(route).toContain('establishTenantContext(locals);');
