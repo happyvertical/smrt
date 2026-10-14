@@ -55,9 +55,42 @@ complete ancestor/root chain, including macOS ACLs. Failed custody removes the
 pending claim and every directory only when they were created by that attempt;
 an inherited pending claim and its database remain authoritative for retry.
 Initializers for the same data root are serialized across processes by an
-exclusive transaction in a dedicated SQLite lock database under a private
-per-user, root-keyed custody directory. The released `@happyvertical/sql`
-trusted-parent boundary validates that directory, its ancestors, and the lock
+exclusive transaction in a dedicated SQLite lock database under a private,
+root-keyed custody directory kept beside the data it protects:
+`<parent of the data root>/.smrt-lease-<key>/initialization.sqlite`. That
+parent has already passed the custody preflight and is the one location every
+process sharing the data directory sees, so the lease also works inside a user
+namespace (agent sandboxes, rootless containers) where `/tmp` reads as owned by
+the overflow uid. The historical per-user `/tmp/.smrt-<uid>/<key>` lease is
+still taken afterwards, so a process running an older release (which takes
+only that lease) stays excluded. When `/tmp` fails the ancestry owner check
+because its owner is unmapped, the legacy lease is taken lock-only: the lock
+file is never written, every ancestor must still be a real directory that is
+not group/world writable unless sticky, and the lock directories and file must
+be current-user-owned and private. A held legacy lease therefore makes the new
+process wait (and fail closed after two minutes). Inside a user namespace that
+remaps the uid (for example `unshare -Ur`, where host uid 1000 reads as 0), the
+legacy lease is taken for both the in-namespace uid (`/tmp/.smrt-0`, what an
+older release inside the namespace locks) and, in that order, the uid's mapping
+in `/proc/self/uid_map` (`/tmp/.smrt-<host uid>`, what an older host process
+locks); identical paths are taken once, so a host process takes the single
+lease it always did. Every new process takes the beside-data lease first, which
+is what keeps the fixed legacy order deadlock-free. When the in-namespace uid
+differs from its mapping and its `/tmp/.smrt-<uid>` root already exists as a
+real directory owned by someone else (under `unshare -Ur`, host root's
+`/tmp/.smrt-0` reads as the overflow uid), that one candidate is skipped: no
+process in the namespace can hold a lease beneath a root it does not own. A
+symlink there, and any problem with the mapped candidate, still fails closed.
+A map that
+cannot be read, parsed, or does not cover the current uid fails closed. Only
+one namespace level is visible, so a doubly nested remap is not translated
+past its parent. The residual rule: when the
+legacy lock directory cannot be created at all (`/tmp` not writable or
+read-only in that view) and no legacy lock file exists, the legacy lease is
+skipped. When the data root's parent is not writable by the current user (or is
+read-only) the secure `/tmp` lease is required instead, as before. The
+released `@happyvertical/sql`
+trusted-parent boundary validates each lease directory, its ancestors, and the lock
 leaf for ownership, write permissions, static links, and macOS ACLs before it
 opens the lock database. Atomic SQLite locking elects one owner without deleting
 or replacing a pathname, so there is no stale-file ABA window and no PID or
@@ -97,6 +130,14 @@ literals (`127.0.0.0/8` or `::1`), avoiding hostname-resolution ambiguity.
 The first valid claim creates a real global `Person`, `User`, default `Tenant`,
 owner `Role` / `Membership`, and server-side `Session` atomically. Startup and
 setup are idempotent; replayed, expired, or concurrent claims fail closed.
+`ownerTenant: { slug, name, adoptExisting }` (also accepted by the SvelteKit
+runtime) selects the bootstrap tenant; the default is a new tenant with slug
+`default`. Because `Tenant` upserts on its slug, the claim checks first and
+never replaces an existing tenant: it fails with `owner_tenant_conflict`, or,
+with `adoptExisting: true`, adds the owner membership to an application-seeded
+tenant only when that tenant is active, has no parent, and has no memberships of
+any status. An adopted tenant keeps its id and name. A failed claim rolls back
+and leaves the invitation claimable.
 Authenticated session TTLs are configured in whole seconds with a minimum of
 one second, and invalid values are rejected before filesystem mutation.
 
@@ -194,8 +235,8 @@ re-checks on every request that both the peer address and the URL host are
 loopback; its `default` action reads `token`, `name`, `email`, and optional
 `tenantName`, sets the session cookie, and redirects 303, or returns
 `fail(status, { code, message })` with `setup_disabled` (404),
-`setup_unavailable` (403), `setup_invalid_input` (400), or `setup_invalid`
-(400). Claim error text is never returned. After the claim commits, the
+`setup_unavailable` (403), `setup_invalid_input` (400), `setup_invalid`
+(400), or `setup_conflict` (409, the `ownerTenant` slug already exists). Claim error text is never returned. After the claim commits, the
 runtime removes the `smrt app setup` / `recover` hand-off files
 (`ONBOARDING_HANDOFF_FILES`: `onboarding.json`, `onboarding-launch.html`) from
 `runtime.applicationStateRoot()`, so `pnpm app:open` stops offering the spent

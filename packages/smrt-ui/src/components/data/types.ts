@@ -172,7 +172,7 @@ export interface SortState {
  * DataTable props
  */
 export interface DataTableProps<T> {
-  /** Sort-control target density; omit to inherit ThemeProvider. */
+  /** Sort-control and pager target density; omit to inherit ThemeProvider. */
   density?: 'comfortable' | 'touch';
   /** Opt-in container-width column collapse; default keeps horizontal scrolling. */
   responsiveMode?: 'scroll' | 'hide-columns';

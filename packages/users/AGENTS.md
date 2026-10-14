@@ -78,6 +78,9 @@ are not prerequisites for unrelated user-package work.
   them on failure, release on success or abort, never skip the reserve.
   Limiter writes are raw SQL and bypass the change feed; the audit sink is the
   observability seam, and it must never throw into the sign-in path.
+  Subject and source budgets are sized independently (#3531); `source: false`
+  ignores the source key, so a reservation then needs a subject (fail closed).
+  The `source-locked` audit entry never carries a subject or caller metadata.
 - `DeviceCredentialService` accepts a person credential only from a
   first-class session whose `authMethod` is a device-enrollment method
   (`terminal` by default) and that the host's `assertEnrolledDevice` confirms.
@@ -109,6 +112,11 @@ are not prerequisites for unrelated user-package work.
   set; `users.password.manage` follows the PIN's single-tenant target
   rule and never resets the actor's own. Layered sessions never manage
   passwords; a `mustChange` sign-in mints an empty ceiling.
+  `replaceForgottenPassword` (#3905, opt-in `recovery`) is the only
+  self-service write without the current password: it decides on the stored
+  session row (owner, first-class, no ceiling, listed non-password/pin
+  `authMethod`, fresh `outOfBandProofAt` stamp) and ends every session,
+  its own included. Never set that stamp from client input.
 - A layered session whose tenant differs from its parent's never loads (null
   is allowed: narrower). Limiter rows carry `retain_until`; retention must
   not fall back to a process-wide horizon.

@@ -42,18 +42,22 @@ export interface GroupMemberOptions extends SmrtObjectOptions {
   mcp: { include: ['list', 'get'] },
   // #3742: CLI mirrors the read-only surface; `cli: true` is full CRUD.
   cli: { include: ['list', 'get'] },
+  // One membership row per group/user pair (#3375); core makes natural-key writes conflict
+  // tolerant. NO ACTION keeps deletion semantics: a natural-key column would
+  // otherwise default to CASCADE.
+  conflictColumns: ['group_id', 'user_id'],
 })
 export class GroupMember extends SmrtObject {
   /**
    * Foreign key to Group
    */
-  @foreignKey('Group', { required: true })
+  @foreignKey('Group', { required: true, onDelete: 'NO ACTION' })
   groupId?: string;
 
   /**
    * Foreign key to User
    */
-  @foreignKey('User', { required: true })
+  @foreignKey('User', { required: true, onDelete: 'NO ACTION' })
   userId?: string;
 
   constructor(options: GroupMemberOptions = {}) {

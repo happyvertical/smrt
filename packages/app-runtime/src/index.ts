@@ -18,6 +18,7 @@ import {
   mkdir,
   open,
   readdir,
+  readFile,
   realpath,
   rmdir,
   unlink,
@@ -41,7 +42,10 @@ import {
   RoleCollection,
   SessionCollection,
   SessionService,
+  type Tenant,
+  TenantCollection,
   TenantService,
+  TenantStatus,
   UserCollection,
   UserStatus,
 } from '@happyvertical/smrt-users';
@@ -79,10 +83,15 @@ const DEFAULT_BIND_HOST = '127.0.0.1';
 const DEFAULT_BOOTSTRAP_TTL_SECONDS = 10 * 60;
 const MAX_BOOTSTRAP_TTL_SECONDS = 15 * 60;
 const DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_OWNER_TENANT_SLUG = 'default';
+const DEFAULT_OWNER_TENANT_NAME = 'My Workspace';
+const OWNER_TENANT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const BOOTSTRAP_TABLE = '_smrt_local_owner_bootstrap';
 const SECRET_FILE_NAME = 'application.secret';
 const DATABASE_FILE_NAME = 'application.sqlite';
 const ROOT_MARKER_PREFIX = '.smrt-local-runtime-';
+const LEASE_DIRECTORY_PREFIX = '.smrt-lease-';
+const UID_MAP_PATH = '/proc/self/uid_map';
 const PREFLIGHT_RETRY_LIMIT = 4;
 const INITIALIZATION_LOCK_TIMEOUT_MS = 120_000;
 const INITIALIZATION_LOCK_WORKER = `
@@ -91,6 +100,19 @@ const INITIALIZATION_LOCK_WORKER = `
   let transaction;
   (async () => {
     try {
+      if (workerData.lockOnly) {
+        // Legacy /tmp lease probe (#3877): the same BEGIN IMMEDIATE lock an
+        // older release's secure acquisition takes, on a pre-validated,
+        // already-existing, never-written lock file.
+        const { DatabaseSync } = require('node:sqlite');
+        const lockDatabase = new DatabaseSync(workerData.path, {
+          timeout: workerData.timeout,
+        });
+        database = { close: async () => lockDatabase.close() };
+        lockDatabase.exec('BEGIN IMMEDIATE');
+        transaction = { rollback: async () => lockDatabase.exec('ROLLBACK') };
+        parentPort.postMessage({ type: 'acquired' });
+      } else {
       const { getDatabase } = await import(workerData.sqlModuleUrl);
       database = await getDatabase({
         type: 'sqlite',
@@ -108,6 +130,7 @@ const INITIALIZATION_LOCK_WORKER = `
       await database.query('PRAGMA busy_timeout = ' + workerData.timeout);
       transaction = await database.beginTransaction();
       parentPort.postMessage({ type: 'acquired' });
+      }
     } catch (error) {
       try { await database?.close?.(); } catch {}
       parentPort.postMessage({ type: 'error', message: String(error) });
@@ -172,8 +195,47 @@ export interface LocalApplicationRuntimeOptions
   backgroundJobs?: boolean;
   /** Explicit opt-in for application-defined paid capabilities. Default false. */
   paidCapabilities?: boolean;
+  /**
+   * The tenant `claimOwner()` creates or adopts for the owner. Defaults to a
+   * new tenant with slug `default`; see {@link LocalOwnerTenantOptions}.
+   */
+  ownerTenant?: LocalOwnerTenantOptions;
   /** Testable clock. */
   now?: () => Date;
+}
+
+/**
+ * Bootstrap tenant selection for `claimOwner()` (#3032).
+ *
+ * The claim never writes over an existing tenant: when a tenant with `slug`
+ * already exists the claim fails closed with `owner_tenant_conflict` unless
+ * `adoptExisting` is set, and adoption itself fails closed unless that tenant
+ * is an active root tenant with no memberships of any status.
+ */
+export interface LocalOwnerTenantOptions {
+  /**
+   * Slug of the owner's tenant: lowercase letters, digits, and inner hyphens,
+   * at most 64 characters. Default `default`.
+   */
+  readonly slug?: string;
+  /**
+   * Name of a newly created tenant when the claim supplies no `tenantName`.
+   * Default `My Workspace`. An adopted tenant keeps its own name.
+   */
+  readonly name?: string;
+  /**
+   * Adopt an application-seeded tenant with `slug` instead of failing: the
+   * owner gets an owner membership in it and its id (and every row that
+   * points at it) is kept. When no tenant has the slug, one is created.
+   * Default false.
+   */
+  readonly adoptExisting?: boolean;
+}
+
+interface ResolvedOwnerTenant {
+  readonly slug: string;
+  readonly name: string;
+  readonly adoptExisting: boolean;
 }
 
 /**
@@ -403,6 +465,7 @@ export type LocalRuntimeErrorCode =
   | 'invalid_configuration'
   | 'invalid_scope'
   | 'migration_failed'
+  | 'owner_tenant_conflict'
   | 'owner_unavailable'
   | 'unsafe_public_exposure';
 
@@ -494,6 +557,7 @@ export async function initializeLocalApplicationRuntime(
   const sessionTtlSeconds = validateSessionTtl(
     options.sessionTtlSeconds ?? DEFAULT_SESSION_TTL_SECONDS,
   );
+  const ownerTenant = resolveOwnerTenant(options.ownerTenant);
   const resolvedRuntime = resolveApplicationRuntime({
     profile: 'local',
     providers: options.providers,
@@ -531,6 +595,7 @@ export async function initializeLocalApplicationRuntime(
       sessionTtlSeconds,
       backgroundJobs: options.backgroundJobs === true,
       paidCapabilities: options.paidCapabilities === true,
+      ownerTenant,
       now: options.now ?? (() => new Date()),
       canonicalSourceRoot,
     });
@@ -584,6 +649,7 @@ interface LocalApplicationRuntimeState {
   sessionTtlSeconds: number;
   backgroundJobs: boolean;
   paidCapabilities: boolean;
+  ownerTenant: ResolvedOwnerTenant;
   now: () => Date;
   canonicalSourceRoot: string;
 }
@@ -623,6 +689,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   readonly mcpTokens: LocalMcpTokenStore;
   private readonly bootstrapTtlSeconds: number;
   private readonly sessionTtlSeconds: number;
+  private readonly ownerTenant: ResolvedOwnerTenant;
   private readonly now: () => Date;
   private readonly canonicalSourceRoot: string;
 
@@ -633,6 +700,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     this.resolvedRuntime = state.resolvedRuntime;
     this.bootstrapTtlSeconds = state.bootstrapTtlSeconds;
     this.sessionTtlSeconds = state.sessionTtlSeconds;
+    this.ownerTenant = state.ownerTenant;
     this.backgroundJobsEnabled = state.backgroundJobs;
     this.paidCapabilitiesEnabled = state.paidCapabilities;
     this.now = state.now;
@@ -759,7 +827,12 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
         );
       }
 
-      return createLocalOwnerRecords(tx, input, this.sessionTtlSeconds);
+      return createLocalOwnerRecords(
+        tx,
+        input,
+        this.sessionTtlSeconds,
+        this.ownerTenant,
+      );
     });
   }
 
@@ -886,7 +959,18 @@ async function createLocalOwnerRecords(
   db: DatabaseInterface,
   input: ClaimLocalOwnerInput,
   sessionTtlSeconds: number,
+  ownerTenant: ResolvedOwnerTenant,
 ): Promise<LocalOwnerClaimResult> {
+  // Resolve the tenant before writing anything: `Tenant` upserts on its slug,
+  // so creating over an existing slug would replace that row with a new id
+  // and orphan every row that points at it (#3032).
+  const tenants = await TenantCollection.create({ db });
+  const existingTenant = await tenants.findBySlug(ownerTenant.slug);
+  const memberships = await MembershipCollection.create({ db });
+  if (existingTenant) {
+    await assertAdoptableOwnerTenant(existingTenant, ownerTenant, memberships);
+  }
+
   const profileTypes = await ProfileTypeCollection.create({ db });
   const personType = await withSystemContext(() =>
     profileTypes.getOrCreateGlobalBySlug('person', {
@@ -912,25 +996,41 @@ async function createLocalOwnerRecords(
     lastLoginAt: new Date(),
   });
   await user.save();
+  const userId = requireId(user.id, 'User');
 
-  const tenantService = new TenantService(
-    { db },
-    {
-      mode: 'required',
-      maxTenants: 1,
-      defaultName: input.tenantName?.trim() || 'My Workspace',
-    },
-  );
-  await tenantService.initialize();
-  const { tenant, membership } = await tenantService.createTenantWithOwnership(
-    requireId(user.id, 'User'),
-    input.tenantName?.trim() || 'My Workspace',
-    { slug: 'default' },
-  );
+  let tenant: Tenant;
+  let membership: { id?: string | null };
+  if (existingTenant) {
+    const roles = await RoleCollection.create({ db });
+    const ownerRole = await roles.findSystemRoleBySlug(
+      DEFAULT_ROLE_SLUGS.OWNER,
+    );
+    const created = await memberships.create({
+      userId,
+      tenantId: requireId(existingTenant.id, 'Tenant'),
+      roleId: requireId(ownerRole?.id, 'Owner role'),
+      status: MembershipStatus.ACTIVE,
+    });
+    await created.save();
+    tenant = existingTenant;
+    membership = created;
+  } else {
+    const tenantName = input.tenantName?.trim() || ownerTenant.name;
+    const tenantService = new TenantService(
+      { db },
+      { mode: 'required', maxTenants: 1, defaultName: tenantName },
+    );
+    await tenantService.initialize();
+    ({ tenant, membership } = await tenantService.createTenantWithOwnership(
+      userId,
+      tenantName,
+      { slug: ownerTenant.slug },
+    ));
+  }
 
   const sessions = await SessionCollection.create({ db });
   const session = await sessions.createSession({
-    userId: requireId(user.id, 'User'),
+    userId,
     tenantId: requireId(tenant.id, 'Tenant'),
     ttl: sessionTtlSeconds,
     userAgent: input.userAgent,
@@ -940,10 +1040,58 @@ async function createLocalOwnerRecords(
 
   return Object.freeze({
     profileId: requireId(person.id, 'Person'),
-    userId: requireId(user.id, 'User'),
+    userId,
     tenantId: requireId(tenant.id, 'Tenant'),
     membershipId: requireId(membership.id, 'Membership'),
     sessionId: requireId(session.id, 'Session'),
+  });
+}
+
+async function assertAdoptableOwnerTenant(
+  tenant: Tenant,
+  ownerTenant: ResolvedOwnerTenant,
+  memberships: MembershipCollection,
+): Promise<void> {
+  if (!ownerTenant.adoptExisting) {
+    throw new LocalRuntimeError(
+      'owner_tenant_conflict',
+      'A tenant with the owner tenant slug already exists; set ownerTenant.adoptExisting to adopt it or choose another slug.',
+    );
+  }
+  // Only an untouched, application-seeded tenant may be adopted. A child
+  // tenant can grant inherited access through its parent, and any membership
+  // (active, invited, or suspended) means someone else already has a claim.
+  const tenantId = requireId(tenant.id, 'Tenant');
+  if (
+    tenant.status !== TenantStatus.ACTIVE ||
+    tenant.parentTenantId ||
+    (await memberships.findByTenant(tenantId)).length > 0
+  ) {
+    throw new LocalRuntimeError(
+      'owner_tenant_conflict',
+      'The existing owner tenant cannot be adopted: it must be an active root tenant with no memberships.',
+    );
+  }
+}
+
+function resolveOwnerTenant(
+  options: LocalOwnerTenantOptions | undefined,
+): ResolvedOwnerTenant {
+  const slug = options?.slug ?? DEFAULT_OWNER_TENANT_SLUG;
+  if (typeof slug !== 'string' || !OWNER_TENANT_SLUG_PATTERN.test(slug)) {
+    throw new LocalRuntimeError(
+      'invalid_configuration',
+      'ownerTenant.slug must be 1-64 lowercase letters, digits, or inner hyphens.',
+    );
+  }
+  const name =
+    typeof options?.name === 'string' && options.name.trim()
+      ? options.name.trim()
+      : DEFAULT_OWNER_TENANT_NAME;
+  return Object.freeze({
+    slug,
+    name,
+    adoptExisting: options?.adoptExisting === true,
   });
 }
 
@@ -1410,6 +1558,24 @@ async function prepareDedicatedRoot(
   };
 }
 
+/**
+ * Serialize initialization of one data root across processes.
+ *
+ * The primary lease lives beside the data it protects, in a private
+ * `.smrt-lease-<key>` directory inside the data root's parent: that parent has
+ * already passed trusted-parent custody preflight, and it is the only
+ * location every process sharing the data directory is guaranteed to see,
+ * including processes in a user namespace where `/tmp` reads as owned by the
+ * overflow uid (#3877). The historical per-user `/tmp/.smrt-<uid>` leases are
+ * still taken afterwards — for the in-namespace uid, then for its host
+ * mapping when that differs — so a process running an older release that
+ * knows only that lease stays excluded, whether it runs in this namespace or
+ * on the host: each through the secure boundary when its ancestry is
+ * trusted, otherwise as a lock-only probe that fails closed (see
+ * {@link acquireLegacyLeaseWithoutTrustedAncestry}). When the parent cannot
+ * hold a lease (not writable by the current user, or a read-only filesystem)
+ * the secure `/tmp` leases are required exactly as before.
+ */
 async function acquireInitializationLock(
   root: string,
 ): Promise<LocalInitializationLock> {
@@ -1419,28 +1585,228 @@ async function acquireInitializationLock(
       'Local runtime initialization locks require a numeric current-user identity.',
     );
   }
+  const lockKey = createHash('sha256')
+    .update(normalizeFilesystemIdentity(root))
+    .digest('hex')
+    .slice(0, 32);
+
+  const besideData = await prepareDataParentLeaseRoot(
+    root,
+    lockKey,
+    currentUid,
+  );
+  // Legacy `/tmp/.smrt-<uid>` candidates, in this fixed order: the
+  // in-namespace uid (what an older release running in this same namespace
+  // locks), then that uid mapped through `/proc/self/uid_map` (what an older
+  // release on the host locks). Identical paths are taken once, so a host
+  // process with an identity map takes exactly the one lease it always did.
   const canonicalTemporaryRoot = await realpath('/tmp');
-  const lockRoot = resolve(canonicalTemporaryRoot, `.smrt-${currentUid}`);
+  const mappedUid = await legacyLeaseUid(currentUid);
+  const legacyLockRoots = [...new Set([currentUid, mappedUid])].map((uid) =>
+    resolve(canonicalTemporaryRoot, `.smrt-${uid}`),
+  );
+  // In a remapping namespace the in-namespace uid can equal a real host uid
+  // (`unshare -Ur` reads as 0), so its `.smrt-<uid>` root may belong to that
+  // host user and read as a foreign owner here. No process in this namespace
+  // can create or hold a lease beneath a root it does not own (an older
+  // in-namespace release fails there too), so that one candidate is skipped.
+  // A symlink or non-directory still falls through and fails closed.
+  if (
+    mappedUid !== currentUid &&
+    (await isForeignOwnedDirectory(legacyLockRoots[0], currentUid))
+  ) {
+    legacyLockRoots.shift();
+  }
+
+  const held: LocalInitializationLock[] = [];
+  try {
+    if (besideData === null) {
+      // The parent cannot hold a lease: every legacy lease is required on
+      // the secure boundary, exactly as before.
+      for (const lockRoot of legacyLockRoots) {
+        held.push(
+          await acquireTemporaryInitializationLease(
+            lockRoot,
+            lockKey,
+            currentUid,
+          ),
+        );
+      }
+    } else {
+      // Every new process takes the beside-data lease first, which
+      // serializes new processes against each other before any legacy lease
+      // is requested; older releases hold only one legacy lease and wait on
+      // nothing, so the fixed legacy order below cannot deadlock.
+      held.push(
+        await acquireInitializationDatabaseLease(
+          resolve(besideData, 'initialization.sqlite'),
+          besideData,
+        ),
+      );
+      for (const lockRoot of legacyLockRoots) {
+        const legacy = (await hasTrustedLeaseAncestry(lockRoot, currentUid))
+          ? await acquireTemporaryInitializationLease(
+              lockRoot,
+              lockKey,
+              currentUid,
+            )
+          : await acquireLegacyLeaseWithoutTrustedAncestry(
+              lockRoot,
+              lockKey,
+              currentUid,
+            );
+        if (legacy) held.push(legacy);
+      }
+    }
+  } catch (error) {
+    try {
+      await releaseInitializationLeases(held);
+    } catch (releaseError) {
+      throw preservePrimaryFailure(
+        error,
+        releaseError,
+        'initializationLockReleaseError',
+        'Local runtime initialization-lock acquisition and release both failed.',
+      );
+    }
+    throw error;
+  }
+  let released = false;
+  return {
+    release: async () => {
+      if (released) return;
+      released = true;
+      await releaseInitializationLeases(held);
+    },
+  };
+}
+
+async function isForeignOwnedDirectory(
+  path: string,
+  currentUid: number,
+): Promise<boolean> {
+  let details: Awaited<ReturnType<typeof lstat>>;
+  try {
+    details = await lstat(path);
+  } catch (error) {
+    if (isMissingFile(error)) return false;
+    throw error;
+  }
+  return (
+    !details.isSymbolicLink() &&
+    details.isDirectory() &&
+    details.uid !== currentUid
+  );
+}
+
+/** Release leases in reverse acquisition order, reporting the first failure. */
+async function releaseInitializationLeases(
+  leases: readonly LocalInitializationLock[],
+): Promise<void> {
+  let failure: unknown;
+  for (const lease of leases.toReversed()) {
+    try {
+      await lease.release();
+    } catch (error) {
+      failure =
+        failure === undefined
+          ? error
+          : preservePrimaryFailure(
+              failure,
+              error,
+              'initializationLockReleaseError',
+              'Several local runtime initialization leases failed to release.',
+            );
+    }
+  }
+  if (failure !== undefined) throw failure;
+}
+
+/**
+ * The uid that names the legacy `/tmp/.smrt-<uid>` lease directory.
+ *
+ * An older release names it after the uid it sees. Inside a user namespace
+ * that remaps the uid (`unshare -Ur` maps host uid 1000 to 0), an older host
+ * process locks the host uid's directory, so the current uid is translated
+ * through `/proc/self/uid_map` into the parent namespace and that lease is
+ * taken in addition to the in-namespace one. Ownership checks keep using
+ * the in-namespace uid, which is how the remapped owner reads here. Without
+ * the file (non-Linux) the uid is used as is; an unreadable, malformed, or
+ * non-covering map fails closed. Only one namespace level is visible.
+ */
+async function legacyLeaseUid(currentUid: number): Promise<number> {
+  let map: string;
+  try {
+    map = await readFile(UID_MAP_PATH, 'utf8');
+  } catch (error) {
+    if (isMissingFile(error)) return currentUid;
+    throw unsafeFilesystemEntry(
+      'Local runtime could not read the user-namespace uid map for its legacy lease.',
+      error,
+    );
+  }
+  for (const line of map.split('\n')) {
+    if (!line.trim()) continue;
+    const fields = line.trim().split(/\s+/);
+    const [inside, outside, count] = fields.map((field) =>
+      /^\d+$/.test(field) ? Number(field) : Number.NaN,
+    );
+    if (
+      fields.length !== 3 ||
+      !Number.isSafeInteger(inside) ||
+      !Number.isSafeInteger(outside) ||
+      !Number.isSafeInteger(count)
+    ) {
+      throw unsafeFilesystemEntry(
+        'Local runtime could not parse the user-namespace uid map for its legacy lease.',
+      );
+    }
+    if (currentUid >= inside && currentUid - inside < count) {
+      return outside + (currentUid - inside);
+    }
+  }
+  throw unsafeFilesystemEntry(
+    'The user-namespace uid map does not cover the current user; the legacy local runtime lease cannot be located.',
+  );
+}
+
+/**
+ * Create (or validate) the private lease directory beside the data root.
+ * Returns `null` only when the parent cannot hold a lease for the current
+ * user; any other unexpected state fails closed.
+ */
+async function prepareDataParentLeaseRoot(
+  root: string,
+  lockKey: string,
+  currentUid: number,
+): Promise<string | null> {
+  const parent = resolve(root, '..');
+  const leaseRoot = resolve(parent, `${LEASE_DIRECTORY_PREFIX}${lockKey}`);
+  try {
+    // Preflight has already verified every existing ancestor of the data root
+    // (real directories, trusted owners, no foreign write access); missing
+    // components are created private, as data-root creation would.
+    await mkdir(parent, { recursive: true, mode: 0o700 });
+    await mkdir(leaseRoot, { mode: 0o700 });
+  } catch (error) {
+    if (isLeaseLocationUnavailable(error)) return null;
+    if (!isFileAlreadyExists(error)) throw error;
+  }
+  await assertPrivateLeaseDirectory(leaseRoot, currentUid);
+  return leaseRoot;
+}
+
+async function acquireTemporaryInitializationLease(
+  lockRoot: string,
+  lockKey: string,
+  currentUid: number,
+): Promise<LocalInitializationLock> {
   try {
     await mkdir(lockRoot, { mode: 0o700 });
   } catch (error) {
     if (!isFileAlreadyExists(error)) throw error;
   }
-  const lockRootDetails = await lstat(lockRoot);
-  if (
-    !lockRootDetails.isDirectory() ||
-    lockRootDetails.isSymbolicLink() ||
-    lockRootDetails.uid !== currentUid ||
-    (lockRootDetails.mode & 0o777) !== 0o700
-  ) {
-    throw unsafeFilesystemEntry(
-      `Local runtime lock directory must be current-user-owned with mode 0700: ${lockRoot}`,
-    );
-  }
-  const lockKey = createHash('sha256')
-    .update(normalizeFilesystemIdentity(root))
-    .digest('hex')
-    .slice(0, 32);
+  await assertPrivateLeaseDirectory(lockRoot, currentUid);
   const custodyRoot = resolve(lockRoot, lockKey);
   try {
     await mkdir(custodyRoot, { mode: 0o700 });
@@ -1451,15 +1817,149 @@ async function acquireInitializationLock(
   return acquireInitializationDatabaseLease(path, custodyRoot);
 }
 
+async function assertPrivateLeaseDirectory(
+  path: string,
+  currentUid: number,
+): Promise<void> {
+  const details = await lstat(path);
+  if (
+    !details.isDirectory() ||
+    details.isSymbolicLink() ||
+    details.uid !== currentUid ||
+    (details.mode & 0o777) !== 0o700
+  ) {
+    throw unsafeFilesystemEntry(
+      `Local runtime lock directory must be current-user-owned with mode 0700: ${path}`,
+    );
+  }
+}
+
+/**
+ * Take the legacy `/tmp` lease when `/tmp` fails the secure ancestry rule
+ * only because its owner is not mapped into this user namespace (#3877).
+ *
+ * An older release on the host takes nothing but this lease, so skipping it
+ * would let both initialize one data root at once. The lock database is only
+ * ever locked, never written or read for content, so this path relaxes the
+ * ancestor *owner* check alone: every ancestor must still be a real directory
+ * that is not group/world writable unless sticky, and the per-user lock
+ * directory, key directory, and lock file must be current-user-owned and
+ * private, exactly as the secure path requires. Returns `null` only when the
+ * lock directory cannot be created at all (not writable, read-only), where no
+ * process sharing this view of `/tmp` can hold the lease either.
+ */
+async function acquireLegacyLeaseWithoutTrustedAncestry(
+  lockRoot: string,
+  lockKey: string,
+  currentUid: number,
+): Promise<LocalInitializationLock | null> {
+  for (const component of absolutePathComponents(resolve(lockRoot, '..'))) {
+    const details = await lstat(component);
+    if (
+      details.isSymbolicLink() ||
+      !details.isDirectory() ||
+      ((details.mode & 0o022) !== 0 && (details.mode & 0o1000) === 0)
+    ) {
+      throw unsafeFilesystemEntry(
+        `Legacy local runtime lock ancestry permits replacement by another principal: ${component}`,
+      );
+    }
+  }
+  const custodyRoot = resolve(lockRoot, lockKey);
+  const path = resolve(custodyRoot, 'initialization.sqlite');
+  try {
+    await mkdir(lockRoot, { mode: 0o700 });
+  } catch (error) {
+    if (isLeaseLocationUnavailable(error)) {
+      try {
+        await lstat(path);
+      } catch (probeError) {
+        if (isMissingFile(probeError)) return null;
+        throw probeError;
+      }
+      // A legacy lease file exists but this process cannot lock it: fail
+      // closed rather than risk overlapping an older live initializer.
+      throw error;
+    }
+    if (!isFileAlreadyExists(error)) throw error;
+  }
+  await assertPrivateLeaseDirectory(lockRoot, currentUid);
+  try {
+    await mkdir(custodyRoot, { mode: 0o700 });
+  } catch (error) {
+    if (!isFileAlreadyExists(error)) throw error;
+  }
+  await assertPrivateLeaseDirectory(custodyRoot, currentUid);
+  let created: FileHandle | undefined;
+  try {
+    created = await open(
+      path,
+      constants.O_RDWR |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+  } catch (error) {
+    if (!isFileAlreadyExists(error)) throw error;
+  } finally {
+    await created?.close();
+  }
+  const leaf = await lstat(path);
+  if (
+    leaf.isSymbolicLink() ||
+    !leaf.isFile() ||
+    leaf.uid !== currentUid ||
+    (leaf.mode & 0o022) !== 0
+  ) {
+    throw unsafeFilesystemEntry(
+      `Legacy local runtime lock file must be a current-user-owned private file: ${path}`,
+    );
+  }
+  return acquireInitializationDatabaseLease(path, custodyRoot, true);
+}
+
+/**
+ * Whether every existing ancestor of `path` meets the secure SQLite ancestry
+ * rule (owned by the current user or root; group/world writable only when
+ * sticky). In a user namespace an unmapped owner reads as the overflow uid,
+ * so the shared `/tmp` fails this and the legacy lease is taken through
+ * {@link acquireLegacyLeaseWithoutTrustedAncestry} instead.
+ */
+async function hasTrustedLeaseAncestry(
+  path: string,
+  currentUid: number,
+): Promise<boolean> {
+  for (const component of absolutePathComponents(resolve(path, '..'))) {
+    const details = await lstat(component);
+    if (details.isSymbolicLink() || !details.isDirectory()) return false;
+    if (details.uid !== currentUid && details.uid !== 0) return false;
+    if ((details.mode & 0o022) !== 0 && (details.mode & 0o1000) === 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isLeaseLocationUnavailable(error: unknown): boolean {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return code === 'EACCES' || code === 'EPERM' || code === 'EROFS';
+}
+
 async function acquireInitializationDatabaseLease(
   path: string,
   custodyRoot: string,
+  lockOnly = false,
 ): Promise<LocalInitializationLock> {
   const worker = new Worker(INITIALIZATION_LOCK_WORKER, {
     eval: true,
     workerData: {
       path,
       custodyRoot,
+      lockOnly,
       timeout: INITIALIZATION_LOCK_TIMEOUT_MS,
       sqlModuleUrl: import.meta.resolve('@happyvertical/sql'),
     },

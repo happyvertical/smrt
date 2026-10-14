@@ -60,6 +60,15 @@ export const SESSION_DATA_KEYS = {
   absoluteExpiresAt: 'absoluteExpiresAt',
   /** Sliding idle timeout in seconds, applied on every recorded activity. */
   idleSeconds: 'idleSeconds',
+  /**
+   * ISO timestamp of the out-of-band proof (a recovery link, an operator-
+   * issued code) a host verified before minting this session (#3905). Set
+   * only by the host's recovery flow at mint; it is what
+   * `PasswordCredentialService.replaceForgottenPassword` measures freshness
+   * from, and it survives tenant-switch rotation (unlike the row's
+   * `created_at`).
+   */
+  outOfBandProofAt: 'outOfBandProofAt',
 } as const;
 
 /**
