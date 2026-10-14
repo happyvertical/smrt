@@ -58,6 +58,12 @@ because that word names the learner's plan below.
 - `difficulty = 0.0` (decimal 0–1), `estimatedMinutes = 0`
 - `modality`: `online`, `printable`, `kit`, `video`, `game`, `mixed`
 - `status`: `draft`, `published`, `archived`
+- `licenseKind`: `own-work`, `open-license` (with `license` naming it),
+  `personal-use-copy` (third-party material a family holds for its own
+  use), `licensed-for-sharing` (written permission on file, `licenseNote`
+  says from whom). `personal-use-copy` pins the course and its assets to the
+  family tenant: no promote-to-group, no catalog listing, no public asset
+  URLs. The attestation is chosen at upload and recorded with the actor.
 - STI subclasses only where behaviour differs: `ExternalCourse` (completion is
   attested or reported, content lives elsewhere), `AuthoredCourse` (content is
   our lessons). A CrunchLabs box is an `ExternalCourse` with `modality: kit`.
@@ -171,6 +177,18 @@ the import is per family.
 - If written permission arrives, flipping the source's `sharing` to `group`
   is the only change needed to share one family's imported index with the
   co-op.
+
+**Families uploading their own copies.** A parent may upload the free
+per-day PDFs or the whole-course packet into the family tenant as
+`personal-use-copy`. That is the same act as saving them to a home drive:
+the site invites families to print them, the family makes the copy, and a
+tenant-scoped private store is not "publishing to another site". The
+guardrails are the `licenseKind` pin above, signed tenant-scoped asset URLs
+with no static links, and that the app treats such files as user content
+the family owns, with a takedown path. A packet upload is split into
+per-lesson `Worksheet` assets by page range at upload time, so one file
+yields a dispensable course. Scanning the printables books sold in their
+store is not supported; the free PDFs cover the same worksheets.
 
 ### Learner: who is learning and what they did
 
