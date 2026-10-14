@@ -9,12 +9,18 @@ describe('custom operation permission aliases', () => {
         {
           operationPermissions: {
             run: { action: 'read' },
-            archive: { action: 'create', databaseActions: ['UPDATE'] },
+            archive: {
+              action: 'create',
+              databaseActions: ['SELECT', 'UPDATE'],
+            },
           },
         },
         'archive',
       ),
-    ).toEqual({ action: 'create', databaseActions: ['UPDATE'] });
+    ).toEqual({
+      action: 'create',
+      databaseActions: ['SELECT', 'UPDATE'],
+    });
   });
   it.each([
     null,

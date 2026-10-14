@@ -80,7 +80,7 @@ const confirmedSaves = new WeakMap<object, string>();
   ],
   operationPermissions: {
     run: { action: 'read' },
-    archive: { action: 'create', databaseActions: ['UPDATE'] },
+    archive: { action: 'create', databaseActions: ['SELECT', 'UPDATE'] },
   },
   // Raw create exists to catalog the confirmed-save grant; model validation
   // still refuses every JSON-authored insert. Custom methods reuse the read

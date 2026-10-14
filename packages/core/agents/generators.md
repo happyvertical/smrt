@@ -323,9 +323,11 @@ method reuse an existing CRUD grant in its own collection. Generated SvelteKit
 POST routes and smrt-users operation guards resolve the same mapping; the
 catalog emits the target grant rather than a second method-named permission.
 CRUD itself cannot be aliased. Malformed declarations fail closed. Optional
-`databaseActions: ['UPDATE']` adds explicit PostgreSQL policy bindings for the
-aliased grant (for example a status-only archive guarded by `create`). This is
-server-authored authority metadata: review it with the method's model-level
-validation. Regenerate RLS policies when adopting a changed binding.
+`databaseActions: ['SELECT', 'UPDATE']` adds explicit PostgreSQL policy bindings
+for the aliased grant (for example a status-only archive guarded by `create`
+that must load its item before updating it). This is server-authored authority
+metadata: grant only the actions the method needs, review it with the method's
+model-level validation, and regenerate RLS policies when adopting a changed
+binding.
 
 Custom actions retain the `{ action, result }` response envelope.

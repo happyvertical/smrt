@@ -682,7 +682,7 @@ describe('PermissionCatalogService', () => {
   cli: { include: ['list', 'run', 'archive'] },
   operationPermissions: {
     run: { action: 'read' },
-    archive: { action: 'create', databaseActions: ['UPDATE'] },
+    archive: { action: 'create', databaseActions: ['SELECT', 'UPDATE'] },
   },
 })
 class AliasPermissionRecord extends SmrtObject {
@@ -743,6 +743,11 @@ describe('custom action permission aliases (#3878)', () => {
       policy.targets.find(
         (entry) => entry.tableName === 'alias_permission_records',
       )?.actions.UPDATE,
+    ).toContain('alias_permission_records.create');
+    expect(
+      policy.targets.find(
+        (entry) => entry.tableName === 'alias_permission_records',
+      )?.actions.SELECT,
     ).toContain('alias_permission_records.create');
   });
 });

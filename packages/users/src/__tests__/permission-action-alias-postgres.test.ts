@@ -18,7 +18,7 @@ import { resetPostgresPermissionPolicies } from './helpers/postgres-rls-reset.js
     routes: { archive: { method: 'POST' } },
   },
   operationPermissions: {
-    archive: { action: 'create', databaseActions: ['UPDATE'] },
+    archive: { action: 'create', databaseActions: ['SELECT', 'UPDATE'] },
   },
 })
 class AliasedActionRlsRecord extends SmrtObject {
@@ -31,7 +31,7 @@ void AliasedActionRlsRecord;
 describe.skipIf(!isPostgresAvailable())(
   'custom action alias SQL authority',
   () => {
-    it('uses the aliased grant for UPDATE while retaining tenant and read-only denials', async () => {
+    it('lets a create-only action load and update its tenant row while retaining denials', async () => {
       const isolated = await createIsolatedTestDbFromManifest();
       const db = await getDatabase(isolated.config);
       const admin = await getDatabase({
@@ -62,7 +62,7 @@ describe.skipIf(!isPostgresAvailable())(
           otherTenant,
         );
         await applyPostgresPermissionPolicies({ db });
-        async function update(permissions: string[]) {
+        async function loadAndUpdate(permissions: string[]) {
           return admin.transaction(async (tx) => {
             await tx.query(`SET LOCAL ROLE "${role}"`);
             await tx.query(
@@ -73,21 +73,31 @@ describe.skipIf(!isPostgresAvailable())(
               "SELECT set_config('smrt.permissions', $1, true)",
               JSON.stringify(permissions),
             );
-            const result = await tx.query(
+            const visible = await tx.query(
+              'SELECT id FROM aliased_action_rls_records WHERE id IN ($1, $2) ORDER BY id',
+              id,
+              otherId,
+            );
+            const updated = await tx.query(
               "UPDATE aliased_action_rls_records SET status = 'archived' WHERE id IN ($1, $2) RETURNING id",
               id,
               otherId,
             );
-            return result.rows.map((row) => row.id);
+            return {
+              visible: visible.rows.map((row) => row.id),
+              updated: updated.rows.map((row) => row.id),
+            };
           });
         }
-        expect(await update(['aliased_action_rls_records.read'])).toEqual([]);
         expect(
-          await update([
-            'aliased_action_rls_records.read',
-            'aliased_action_rls_records.create',
-          ]),
-        ).toEqual([id]);
+          await loadAndUpdate(['aliased_action_rls_records.read']),
+        ).toEqual({
+          visible: [id],
+          updated: [],
+        });
+        expect(
+          await loadAndUpdate(['aliased_action_rls_records.create']),
+        ).toEqual({ visible: [id], updated: [id] });
         const rows = await admin.query(
           'SELECT status FROM aliased_action_rls_records WHERE id = $1',
           otherId,
