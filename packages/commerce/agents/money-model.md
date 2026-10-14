@@ -60,6 +60,27 @@ a positive `Payment` of kind `refund`, allocated only to a credit note. See
 [document money](document-money.md) before presenting either balance as an
 ordinary incoming payment.
 
+## Invoice MCP `get` projection
+
+The standard Invoice MCP `get` tool uses `serializeInvoiceMcpGet`. For a
+legacy tenant, or when tenant settings are absent, it returns the ordinary
+public Invoice projection and omits the `money` alias. For a v2 tenant, the
+optional `money` value is the stored `InvoiceMoneyFacts` projection: its
+header, line snapshots, and `DocumentTax` facts are read from the issued
+snapshot and are never recalculated.
+
+A tenant in the `migrating` gate refuses this read with the stable
+`FROZEN_DOCUMENT` code and the public message `Tenant money migration is in
+progress`. If the caller's `PublicJsonOptions` hide any Invoice,
+`InvoiceLineItem`, or `DocumentTax` field needed by the money projection, the
+serializer returns the base Invoice and omits the entire `money` alias. It does
+not expose restricted values through a partial plain-object alias.
+
+This applies only to standard MCP `get`. Invoice list and MCP write behavior
+remain their existing public contracts. The general serializer configuration,
+authorization order, and projection rule are in [core MCP get
+serializers](../../core/agents/generators.md#mcp-get-serializers).
+
 ## Reporting and integrations
 
 The materialized `TaxSummaryReport` and its public descriptor/drilldown bridge
