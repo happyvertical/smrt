@@ -18,6 +18,8 @@ Import it from `@happyvertical/smrt-commerce/money` (or the package root).
 - `taxes` is split by tax code and component for persistence. Shared components
   are rounded across codes at document scope. Non-taxable codes use a null
   component row with zero tax and taxable minor units equal to summed line net.
+  A genuinely unassigned exclusive/inclusive line uses `taxCode: null` and emits
+  `{ taxCodeId: null, taxComponentId: null }`; no synthetic ID is persisted.
 - Resolve already-loaded codes with `resolveLineTaxCode()`. `none` mode always
   chooses the supplied out-of-scope code before an override. Active/scope checks
   happen during resolution; issued snapshots are not passed back through it.
