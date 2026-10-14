@@ -134,6 +134,7 @@ describe('v2 money editor adapter', () => {
     expect(body).toContain('Rounded per document');
     expect(body).toContain('name="lineAmountType"');
     expect(body).toContain('disabled');
+    expect(body).toContain('title="Credit notes are not available yet"');
     expect(body).not.toContain('Amounts must be non-negative decimal text');
   });
   it('does not produce an inclusive tax row for exempt stored values', () => {
