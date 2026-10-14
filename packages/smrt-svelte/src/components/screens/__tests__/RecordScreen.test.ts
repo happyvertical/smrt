@@ -4,7 +4,9 @@ import userEvent from '@testing-library/user-event';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { recordOverview } from '../../overview/record.js';
+import { createWidgetRegistry } from '../../overview/registry.js';
 import type { WidgetLoadContext } from '../../overview/types.js';
+import { registerCoreWidgets } from '../../overview/widgets/core.js';
 import RecordScreen from '../RecordScreen.svelte';
 import { deriveScreenRelations, type ScreenRelation } from '../relations.js';
 import { taskDefinition, taskPolicy, taskRows } from './fixtures.js';
@@ -390,6 +392,25 @@ describe('RecordScreen (record page anatomy)', () => {
     expect(totals).toHaveTextContent('Total $5,134.50');
     expect(screen.queryByText(/Lines add up to/)).toBeNull();
     await expectNoA11yViolations(container);
+  });
+
+  it('keeps the totals in the details card when no line-items block renders', () => {
+    mountOrder({ loaders: { metric: () => ({ value: 0 }) } });
+    const details = screen.getByRole('article', { name: 'Details' });
+    expect(
+      within(details).getByText('Subtotal', { selector: 'dt' }),
+    ).toBeInTheDocument();
+    expect(document.querySelector('.smrt-line-items__totals')).toBeNull();
+  });
+
+  it('adds the record widgets to a host registry without changing it', async () => {
+    const host = createWidgetRegistry();
+    registerCoreWidgets(host, { metric: () => ({ value: 0 }) });
+    const before = host.types();
+    const { container } = mountOrder({ registry: host });
+    expect(await screen.findByText('Labour')).toBeInTheDocument();
+    expect(container.querySelector('.smrt-line-items__totals')).not.toBeNull();
+    expect(host.types()).toEqual(before);
   });
 
   it('flags lines that disagree with the recorded subtotal', async () => {

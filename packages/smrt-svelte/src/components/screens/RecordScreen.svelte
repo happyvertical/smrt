@@ -128,37 +128,35 @@ const recordCurrency = $derived.by(() => {
     ? value.trim().toUpperCase()
     : undefined;
 });
-/**
- * The details card leaves out what the header shows, the currency code
- * (every amount is formatted in it) and, when line items carry the totals
- * block, the subtotal / discount / tax / total fields.
- */
 /** Derived fields of the edit form: the host's, else the totals under line items. */
 const formDerived = $derived(
   derivedFields ?? (hasItems ? totalsFields(roles) : []),
 );
-const detailExclude = $derived([
-  ...header.shown,
-  ...(currencyField ? [currencyField] : []),
-  ...(hasItems ? totalsFields(roles) : []),
-]);
 
 // The registry and the overview definition are fixed for the life of the
 // component (a controller is built once); the loaders read live props.
 const widgetRegistry = untrack(() => {
-  if (registry) return registry;
+  const records = loaders?.records;
+  if (registry && !records) return registry;
+  // A host registry (recipe widgets) is copied, so the record widgets below
+  // join it without touching the host's shared registry.
   const own = createWidgetRegistry();
-  registerCoreWidgets(own, loaders ?? {});
+  if (registry) for (const def of registry.list()) own.register(def);
+  else registerCoreWidgets(own, loaders ?? {});
   // `related` and `line-items` load through the `records` loader, one
-  // parent-filtered load per relation.
-  if (loaders?.records) {
-    registerRecordWidgets(own, {
+  // parent-filtered load per relation. A host's own registration wins.
+  if (records) {
+    const recordWidgets = createWidgetRegistry();
+    registerRecordWidgets(recordWidgets, {
       relations,
-      records: loaders.records,
+      records,
       viewAllHref: (relation) => viewAllHref?.(relation),
       totals: () => recordTotals(record, roles, viewFields),
       currency: () => recordCurrency,
     });
+    for (const def of recordWidgets.list()) {
+      if (!own.has(def.type)) own.register(def);
+    }
   }
   return own;
 });
@@ -231,6 +229,20 @@ const controller = createOverview({
   },
 });
 onDestroy(() => controller.destroy());
+
+/**
+ * The details card leaves out what the header shows, the currency code
+ * (every amount is formatted in it) and, while the overview renders a
+ * line-items totals block, the subtotal / discount / tax / total fields.
+ */
+const totalsBlockShown = $derived(
+  hasItems && controller.document.widgets.some((w) => w.type === 'line-items'),
+);
+const detailExclude = $derived([
+  ...header.shown,
+  ...(currencyField ? [currencyField] : []),
+  ...(totalsBlockShown ? totalsFields(roles) : []),
+]);
 
 // A host-owned override can change outside the controller; a record change
 // means every panel reads a different parent.
