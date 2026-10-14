@@ -1,5 +1,13 @@
 # @happyvertical/smrt-sites
 
+## 0.55.22
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.22
+  - @happyvertical/smrt-tenancy@0.55.22
+
 ## 0.55.21
 
 ### Patch Changes
