@@ -43,6 +43,7 @@ export { default as OverviewAssistantUndo } from './OverviewAssistantUndo.svelte
 export { default as OverviewGrid } from './OverviewGrid.svelte';
 export { spanFromKey, spanFromPointer } from './resize.js';
 export * from './server.js';
+export type { WidgetOptionsEditorProps } from './types.js';
 export { default as WidgetOptionsForm } from './WidgetOptionsForm.svelte';
 export { default as ChartWidget } from './widgets/ChartWidget.svelte';
 export {

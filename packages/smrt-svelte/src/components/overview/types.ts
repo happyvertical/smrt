@@ -251,6 +251,15 @@ export type WidgetComponentModule<Data> =
   | Component<WidgetComponentProps<Data>>
   | { default: Component<WidgetComponentProps<Data>> };
 
+/** Props for a custom widget option editor. Saving still passes through the registry schema. */
+export interface WidgetOptionsEditorProps {
+  definition: RegisteredWidget;
+  initial: OverviewOptions;
+  models?: readonly { value: string; label: string }[];
+  onsave: (options: OverviewOptions) => WidgetOptionIssue[] | null;
+  oncancel: () => void;
+}
+
 /** What `registerWidget` takes. */
 export interface WidgetDefinition<Data = unknown> {
   /** Lowercase kebab id, e.g. `metric`. */
@@ -272,6 +281,13 @@ export interface WidgetDefinition<Data = unknown> {
    * resolves these before rendering with `resolveWidgetComponents`.
    */
   loadComponent?: () => Promise<WidgetComponentModule<Data>>;
+  /** Custom editor for dependent or remotely loaded option choices. */
+  optionsEditor?: Component<WidgetOptionsEditorProps>;
+  /** Resolves a custom editor lazily from a recipe export. */
+  loadOptionsEditor?: () => Promise<
+    | Component<WidgetOptionsEditorProps>
+    | { default: Component<WidgetOptionsEditorProps> }
+  >;
   /** Server loader; absent for widgets that render from options alone. */
   load?: WidgetLoad<Data>;
   /** Overview ids this widget may appear in; omit for any. */

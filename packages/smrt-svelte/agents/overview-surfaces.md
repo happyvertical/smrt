@@ -22,6 +22,11 @@ assistant operations with Undo ("Assistant operations").
 | `./overview/server` (`server.ts`) | Svelte-free: types, `validateWidgetOptions`, the model (`resolveOverview`, `checkOverviewOverride`, `applyOverviewOverride`, `diffOverview`, `sanitizeOverview`, ...), `WidgetRegistry` / `registerWidget`, `loadOverview`, the operations (`planOverviewOperations`, `describeOverview`) and `createOverviewAssistantSurface`. Safe in a `+page.server.ts` or a save endpoint. |
 | `./overview` (`index.ts`) | Everything above plus `OverviewGrid`, `createOverview` (controller), `WidgetOptionsForm`, the core widgets and `registerCoreWidgets`, `shortcutsFromNav`, `formatWidgetValue`, `parseMarkdown` / `safeHref`, `createOverviewAssistant` / `useOverviewAssistantTools` / `OverviewAssistantUndo`. |
 
+`ChartWidget` delegates to `@happyvertical/smrt-ui/charts` so domain packages
+can reuse the same renderer without depending on this integration package.
+`formatWidgetValue` remains a compatibility re-export of the Svelte-free
+`@happyvertical/smrt-ui/charts/format` entry. Existing translation keys stay stable.
+
 ## Data model (`types.ts`, `model.ts`)
 
 A saved overview is data, never code:
@@ -306,6 +311,7 @@ turns the manifest's widget surfaces into `registry.register(...)` calls:
 | `type`, `label`, `description`, `icon`, `version` | `type`, `title`, `description`, `icon`, `version` |
 | `options` | `options` (plain JSON; `registry.register` re-validates the schema) |
 | `export` | `loadComponent` (lazy; the export may be a component or a `{ default }` module) |
+| `optionsEditor` | `loadOptionsEditor` (lazy; lets dependent choices use a package-owned editor without importing UI on the server) |
 | `data.load` | `load` (resolved on first use; a missing or non-function loader is that widget's error tile) |
 | `migrate` | `migrate`, **resolved eagerly** because the registry's `migrate` is synchronous |
 | `allowedIn`, `defaultSpan`, `minSpan`, `maxSpan` | same names |
@@ -314,8 +320,9 @@ turns the manifest's widget surfaces into `registry.register(...)` calls:
 - **The module resolver is injected.** `resolveExport(specifier, exportName)` is
   the host's: a static map of dynamic imports in a bundled app, a stub in tests.
   Nothing is imported when the manifest is read, and the registration itself
-  imports nothing except `migrate` exports. Relative or absolute specifiers
-  are refused.
+  imports nothing except `migrate` exports. UI hosts resolve lazy components
+  with `resolveWidgetComponents(...)` and custom editors with
+  `resolveWidgetOptionsEditors(...)`. Relative or absolute specifiers are refused.
 - **Never throws for a bad surface.** The result is `{ registered, skipped,
   dispose }`; a skip carries `reason` `duplicate_type` (a core widget or another
   recipe owns the type; `replace` overrides), `invalid` (the registry refused the

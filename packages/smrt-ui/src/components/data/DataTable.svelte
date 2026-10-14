@@ -2379,7 +2379,7 @@ $effect(() => {
   }
   .data-table-container[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .data-table-container[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .data-table__sort-button { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+  .data-table__sort-button { min-height: var(--smrt-control-target-min); min-width: var(--smrt-control-target-min); }
   .data-table-container--narrow .data-table { table-layout: fixed; }
   .data-table-container--narrow .data-table__cell { white-space: normal; overflow-wrap: anywhere; }
   .data-table-container--narrow .data-table__sort-button { max-width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }

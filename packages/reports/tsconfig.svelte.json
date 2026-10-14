@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.package-svelte.json",
+  "include": [
+    "ambient.d.ts",
+    "src/playground.ts",
+    "src/svelte/**/*.ts",
+    "src/svelte/**/*.svelte"
+  ],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

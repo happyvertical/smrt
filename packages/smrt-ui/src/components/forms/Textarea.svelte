@@ -206,6 +206,6 @@ export function getElement(): HTMLTextAreaElement | null {
 
   .textarea[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .textarea[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .textarea { min-height: max(80px, var(--smrt-control-target-min, 0px)); }
+  .textarea { min-height: max(80px, var(--smrt-control-target-min)); }
 }
 </style>

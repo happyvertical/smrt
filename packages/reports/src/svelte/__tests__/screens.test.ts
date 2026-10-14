@@ -1,0 +1,181 @@
+// @vitest-environment jsdom
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { client, proposal, result, saved } from '../preview-data.js';
+import ReportConfirmation from '../ReportConfirmation.svelte';
+import ReportDetail from '../ReportDetail.svelte';
+import ReportPicker from '../ReportPicker.svelte';
+import ReportResult from '../ReportResult.svelte';
+import RuntimeReportsRoute from '../RuntimeReportsRoute.svelte';
+import { validReportProposal, validReportResult } from '../result.js';
+import SavedReports from '../SavedReports.svelte';
+
+afterEach(cleanup);
+
+describe('saved report screens', () => {
+  it('shows the unavailable explanation without a client', () => {
+    render(RuntimeReportsRoute, { serverAvailable: false });
+    expect(screen.getByText(/host has no server/)).toBeTruthy();
+  });
+  it('loads tenant-shared reports, filters, and archives through the client', async () => {
+    const list = vi.fn(async () => [saved]);
+    const archive = vi.fn(async () => {});
+    render(SavedReports, { client: client({ list, archive }) });
+    expect(await screen.findByRole('link', { name: saved.title })).toBeTruthy();
+    expect(list).toHaveBeenCalledWith({
+      onlyMine: false,
+      includeArchived: false,
+    });
+    await fireEvent.click(screen.getByLabelText('Only mine'));
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith({
+        onlyMine: true,
+        includeArchived: false,
+      }),
+    );
+    await fireEvent.click(screen.getByLabelText('Show archived reports'));
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith({
+        onlyMine: true,
+        includeArchived: true,
+      }),
+    );
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Archive' }),
+    );
+    expect(archive).toHaveBeenCalledWith(saved.id, true);
+  });
+  it('offers no archive action for a reader and explains assistant-only creation on empty', async () => {
+    const mounted = render(SavedReports, {
+      client: client({ list: async () => [{ ...saved, canArchive: false }] }),
+    });
+    await screen.findByRole('link', { name: saved.title });
+    expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull();
+    await mounted.rerender({ client: client({ list: async () => [] }) });
+    expect(await screen.findByText(/Ask the assistant/)).toBeTruthy();
+  });
+  it('discards a previous viewer response after the transport changes', async () => {
+    let resolve!: (value: (typeof saved)[]) => void;
+    const mounted = render(SavedReports, {
+      client: client({
+        list: () =>
+          new Promise((r) => {
+            resolve = r;
+          }),
+      }),
+    });
+    await waitFor(() => expect(resolve).toBeDefined());
+    await mounted.rerender({ client: client({ list: async () => [] }) });
+    await screen.findByText(/Ask the assistant/);
+    resolve([saved]);
+    await Promise.resolve();
+    expect(screen.queryByRole('link', { name: saved.title })).toBeNull();
+  });
+  it('runs as the current viewer on open and re-run, formatting minor units', async () => {
+    const run = vi.fn(async () => result);
+    render(ReportDetail, {
+      id: saved.id,
+      client: client({ run }),
+      locale: 'en-US',
+    });
+    await screen.findByText('$123.45');
+    expect(run).toHaveBeenCalledWith(saved.id);
+    await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+    expect(screen.getByRole('cell', { name: '$123.45' })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Re-run' }));
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+  });
+  it.each([
+    [{ status: 403 }, /do not have permission/],
+    [{ code: 'unknown_field' }, /do not have permission/],
+    [{ code: 'invalid_result' }, /invalid result/],
+    [new Error('private database detail'), /request failed/],
+  ])('shows a safe error state: %s', async (error, message) => {
+    render(ReportDetail, {
+      id: saved.id,
+      client: client({
+        run: async () => {
+          throw error;
+        },
+      }),
+    });
+    expect(await screen.findByText(message)).toBeTruthy();
+    expect(screen.queryByText('private database detail')).toBeNull();
+  });
+  it('renders empty data and rejects unsafe integer results', () => {
+    render(ReportResult, { result: { ...result, rows: [], rowCount: 0 } });
+    expect(screen.getByText('No results match this report.')).toBeTruthy();
+    expect(
+      validReportResult({
+        ...result,
+        rows: [{ region: 'West', total: 2 ** 53 }],
+      }),
+    ).toBe(false);
+    expect(validReportResult({ ...result, chart: { type: 'radar' } })).toBe(
+      false,
+    );
+    expect(validReportResult({ ...result, chart: { type: 'table' } })).toBe(
+      true,
+    );
+  });
+  it('describes the proposal and rejects synthetic approval; decline saves nothing', async () => {
+    const confirm = vi.fn(async () => saved);
+    render(ReportConfirmation, { proposal, confirm });
+    expect(screen.getByText('Sum of amount')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(confirm).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    expect(
+      screen.getByText('Report declined. Nothing was saved.'),
+    ).toBeTruthy();
+  });
+  it('refuses a mismatching preview hash', () => {
+    render(ReportConfirmation, {
+      proposal: { ...proposal, specHash: 'other' },
+      confirm: async () => saved,
+    });
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.getByRole('alert').textContent).toContain('invalid result');
+  });
+  it('offers saved reports and resets the measure when changing reports', async () => {
+    const onchange = vi.fn();
+    const mounted = render(ReportPicker, { client: client(), onchange });
+    await screen.findByRole('option', { name: saved.title });
+    await fireEvent.change(screen.getByLabelText('Report'), {
+      target: { value: saved.id },
+    });
+    expect(onchange).toHaveBeenCalledWith({
+      reportId: saved.id,
+      measure: '',
+      dimension: '',
+    });
+    await mounted.rerender({ reportId: saved.id });
+    expect(screen.getByRole('option', { name: 'total' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'region' })).toBeTruthy();
+  });
+});
+
+it('refuses malformed proposal projections before showing approval', () => {
+  for (const value of [
+    null,
+    {},
+    { ...proposal, spec: {} },
+    { ...proposal, spec: { ...proposal.spec, tenantId: 'other' } },
+    {
+      ...proposal,
+      spec: {
+        ...proposal.spec,
+        chart: { ...proposal.spec.chart, y: ['not_declared'] },
+      },
+    },
+    { ...proposal, sourceLabel: null },
+  ]) {
+    expect(validReportProposal(value)).toBe(false);
+  }
+});

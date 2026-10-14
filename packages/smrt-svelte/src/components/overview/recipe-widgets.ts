@@ -11,8 +11,8 @@
  * Svelte-free apart from type imports, so a server load can call it.
  */
 import type {
-  RecipeDefinition,
   RecipeExportRef,
+  RecipeSurface,
   RecipeWidgetSurface,
 } from '@happyvertical/smrt-types';
 import type { Component } from 'svelte';
@@ -37,9 +37,11 @@ export type RecipeExportResolver = (
   exportName: string,
 ) => unknown | Promise<unknown>;
 
-/** The part of a recipe this helper reads; a manifest `RecipeDefinition` fits. */
-export type RecipeWidgetSource = Pick<RecipeDefinition, 'id'> &
-  Partial<Pick<RecipeDefinition, 'surfaces'>>;
+/** The part of a recipe this helper reads; manifests and readonly recipe statics fit. */
+export interface RecipeWidgetSource {
+  id: string;
+  surfaces?: readonly RecipeSurface[];
+}
 
 export interface RegisterRecipeWidgetsOptions {
   /** Replace a type that is already registered instead of skipping it. */
@@ -133,6 +135,11 @@ function toDefinition(
   migrate: WidgetMigrate | undefined,
 ): WidgetDefinition {
   const component = once(() => resolveRef(surface.export, resolveExport));
+  const optionsEditor = surface.optionsEditor
+    ? once(() =>
+        resolveRef(surface.optionsEditor as RecipeExportRef, resolveExport),
+      )
+    : undefined;
   const loadFn = surface.data?.load
     ? once(() =>
         resolveRef(surface.data?.load as RecipeExportRef, resolveExport),
@@ -158,6 +165,14 @@ function toDefinition(
   if (surface.minSpan !== undefined) def.minSpan = surface.minSpan;
   if (surface.maxSpan !== undefined) def.maxSpan = surface.maxSpan;
   if (migrate) def.migrate = migrate;
+  if (optionsEditor) {
+    def.loadOptionsEditor = async () => {
+      const value = await optionsEditor();
+      return (isModuleWithDefault(value) ? value.default : value) as Component<
+        import('./types.js').WidgetOptionsEditorProps
+      >;
+    };
+  }
   if (loadFn) {
     const load: WidgetLoad = async (
       options: OverviewOptions,

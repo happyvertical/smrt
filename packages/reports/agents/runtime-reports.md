@@ -267,10 +267,10 @@ supplies `context.reportPrincipal` from its authenticated request and optionally
 `{ points: [{label, value}], format, currency?, href }`. The loader has no
 smrt-svelte dependency and receives no authority from widget options.
 
-## Recipe and remaining UI work
+## Recipe UI
 
-`reports.runtime` declares the RuntimeReport model, Reports navigation and
-`runtime: 'server'`. #3895 supplies browser screens, the confirmation card, and
-the actual route/widget exports; that branch adds recipe surfaces only once
-those exports exist. Static hosts must show the section as unavailable.
-Rename, scheduling and export remain deferred.
+`reports.runtime` declares the RuntimeReport model, Reports navigation, the
+`/reports` routes and `runtime-report-chart` widget. The widget options are only
+`{ reportId, measure, dimension? }`; the authenticated server host supplies the
+loader's `reportPrincipal`. Static hosts render the Reports route unavailable.
+Rename, scheduling and manual report construction remain deferred.

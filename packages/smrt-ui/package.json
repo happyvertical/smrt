@@ -127,6 +127,15 @@
     "./test-support/*": {
       "types": "./dist/test-support/*.d.ts",
       "default": "./dist/test-support/*.js"
+    },
+    "./charts": {
+      "types": "./dist/charts/index.d.ts",
+      "svelte": "./dist/charts/index.js",
+      "import": "./dist/charts/index.js"
+    },
+    "./charts/format": {
+      "types": "./dist/charts/format.d.ts",
+      "import": "./dist/charts/format.js"
     }
   },
   "files": [

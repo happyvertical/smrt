@@ -1005,3 +1005,16 @@ cost something); only they dismiss it.
    again, it gets a fresh idempotency key. Retaining unknown outcomes per
    context without leaking them across the swap boundary needs its own
    design.
+
+## Tool result components
+
+A trusted host can pass `toolResultComponent(message)` to `AssistantDock`.
+Return a Svelte component accepting `{ message: AssistantMessage }` for a
+recognized tool result, or `undefined` to keep the ordinary message text.
+Only `role: 'tool'` messages are eligible. The HTTP transport preserves the
+server's `toolCallData` for this selection; unknown payloads remain inert data.
+The existing `toolCall` snippet still renders additional message details.
+
+This is a rendering seam, not an execution or approval API. A domain component
+must call its own authenticated server endpoint from a human action; the host
+must never interpret a model-supplied `confirmed` flag as approval.

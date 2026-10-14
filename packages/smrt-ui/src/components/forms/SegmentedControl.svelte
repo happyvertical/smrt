@@ -261,7 +261,7 @@ useControlRegistration(() => {
 
   .segmented[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .segmented[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  label { min-height: max(2.5rem, var(--smrt-control-target-min, 0px)); min-width: var(--smrt-control-target-min, 0px); }
+  label { min-height: max(2.5rem, var(--smrt-control-target-min)); min-width: var(--smrt-control-target-min); }
   input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {

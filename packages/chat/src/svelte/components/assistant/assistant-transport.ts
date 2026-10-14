@@ -416,6 +416,7 @@ export interface AssistantThreadSummaryWire {
 
 export interface AssistantMessageWire {
   id: string;
+  toolCallData?: unknown;
   threadId?: string;
   content?: string;
   role?: AssistantMessage['role'];
@@ -514,6 +515,7 @@ export function normalizeAssistantMessage(
     createdAt: raw.createdAt ?? raw.created_at ?? new Date(),
     attachments: normalizeAssistantAttachments(raw.attachments),
     clientRequestId: raw.clientRequestId ?? raw.client_request_id,
+    ...(raw.toolCallData != null ? { toolCallData: raw.toolCallData } : {}),
   };
 }
 
