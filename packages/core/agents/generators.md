@@ -42,6 +42,39 @@ identifier, or annotation changes cannot alter persisted row hydration.
 
 Per-field web emission (#2046): `buildWebFieldDefinitions` carries `description` (from `@field({ description })`) and sanitized `ui` hints (from `@field({ ui: { basic, group, order, locked } })`, read off the manifest `_meta.ui` bag through per-key type guards) into each emitted field definition, and `buildWebToolDescriptors` threads the same `description` into browser MCP tool schemas. `sensitive`/`transient` fields are excluded from emission entirely, so their descriptions never ship. Both keys are conditional, so hint-less schemas emit byte-identical definitions (and hashes) as before; adding a description/ui hint changes the manifest hash — deliberate over-invalidation, harmless per the #1764 contract.
 
+## MCP `get` serializers
+
+A model may add an async serializer only to its standard generated MCP `get`
+tool. Configure a module specifier and named export under `mcp.serializers.get`:
+
+```ts
+@smrt({
+  mcp: {
+    serializers: {
+      get: {
+        importPath: '@scope/package',
+        exportName: 'serializeThingMcpGet',
+      },
+    },
+  },
+})
+```
+
+The named export receives `(item, options: PublicJsonOptions)` and returns the
+get result (or a promise for it). The MCP runtime imports and caches the named
+module, then calls the serializer after normal authentication, tenant-scoped
+lookup, and read access have admitted and loaded the item. A missing or
+non-function export makes that `get` call fail. The hook replaces only the
+standard `get` result; generated `list`, writes, deletes, and custom actions
+keep their existing contracts.
+
+The serializer owns its public projection. Start with
+`item.toPublicJSON(options)`, and project each related model with that model's
+`toPublicJSON(options)` before adding it. The final transport pass cannot make
+arbitrary plain aliases permission-safe: returning a DTO does not cause fields
+inside it to be filtered by model policy. Do not use `toJSON()` or spread model
+instances into a serializer result.
+
 ## Generated MCP server output language
 
 `MCPGenerator` builds every file as TypeScript, so the requested `outputPath`
