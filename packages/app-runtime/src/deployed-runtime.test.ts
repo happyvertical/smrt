@@ -1,5 +1,6 @@
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import {
+  SCHEDULED_JOB_QUEUE,
   ScheduleRunner,
   type ScheduleRunnerConfig,
   TaskRunner,
@@ -1196,6 +1197,25 @@ describe('deployed application runtime', () => {
     expect(schedule).toBeInstanceOf(ScheduleRunner);
     expect(taskInitialize).toHaveBeenCalledWith(db);
     expect(scheduleInitialize).toHaveBeenCalledWith(db);
+  });
+
+  it('task workers poll the schedule queue unless queues are given (#3141)', async () => {
+    const { db } = databaseFixture();
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const queuesOf = (runner: TaskRunner) =>
+      (Reflect.get(runner, 'config') as { queues: string[] }).queues;
+
+    expect(SCHEDULED_JOB_QUEUE).toBe('agents');
+    expect(queuesOf(await initialized.createTaskWorker())).toEqual([
+      'default',
+      SCHEDULED_JOB_QUEUE,
+    ]);
+    expect(
+      queuesOf(await initialized.createTaskWorker({ queues: ['reports'] })),
+    ).toEqual(['reports']);
   });
 
   it('stops returned workers before closing their shared database', async () => {
