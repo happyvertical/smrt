@@ -176,6 +176,61 @@ function exampleB(
   });
 }
 
+function exampleNonTaxable(
+  lineAmountType: 'exclusive' | 'inclusive' | 'none',
+  taxRoundingScope: 'line' | 'document',
+): FrozenAccountingDocumentSnapshot {
+  return document({
+    lineAmountType,
+    taxRoundingScope,
+    subtotalMinor: 114_498,
+    taxAmountMinor: 0,
+    totalAmountMinor: 114_498,
+    lineItems: [
+      {
+        id: '1',
+        description: 'Example non-taxable line 1',
+        quantity: 10,
+        unitPriceMinor: 8500,
+        discountMinor: 8500,
+        amountMinor: 76_500,
+        taxMinor: 0,
+        taxComponents: [],
+      },
+      {
+        id: '2',
+        description: 'Example non-taxable line 2',
+        quantity: 2,
+        unitPriceMinor: 4999,
+        discountMinor: 500,
+        amountMinor: 9498,
+        taxMinor: 0,
+        taxComponents: [],
+      },
+      {
+        id: '3',
+        description: 'Example non-taxable line 3',
+        quantity: 12,
+        unitPriceMinor: 2000,
+        discountMinor: 0,
+        amountMinor: 24_000,
+        taxMinor: 0,
+        taxComponents: [],
+      },
+      {
+        id: '4',
+        description: 'Example non-taxable line 4',
+        quantity: 1,
+        unitPriceMinor: 4500,
+        discountMinor: 0,
+        amountMinor: 4500,
+        taxMinor: 0,
+        taxComponents: [],
+      },
+    ],
+  });
+}
+
 describe('mapFrozenAccountingSnapshot', () => {
   it.each([
     'line',
@@ -204,6 +259,35 @@ describe('mapFrozenAccountingSnapshot', () => {
       amount: 94.98,
       taxAmount: 11.4,
     });
+  });
+
+  it.each([
+    ['C exempt-exclusive', 'exclusive', 'TaxExcluded'],
+    ['C out-of-scope', 'none', 'NotApplicable'],
+    ['D inclusive-exempt', 'inclusive', 'TaxInclusive'],
+  ] as const)('maps actual %s zero-tax facts without fabricating components', (_name, lineAmountType, globalTaxCalculation) => {
+    for (const taxRoundingScope of ['line', 'document'] as const) {
+      const result = mapFrozenAccountingSnapshot(
+        exampleNonTaxable(lineAmountType, taxRoundingScope),
+        mapping,
+      );
+      expect(result).toMatchObject({
+        subtotal: 1144.98,
+        taxAmount: 0,
+        totalAmount: 1144.98,
+        quickbooksMapping: { globalTaxCalculation },
+      });
+      expect(
+        result.lineItems.every((line) => line.taxComponents.length === 0),
+      ).toBe(true);
+      if (lineAmountType === 'inclusive') {
+        expect(result.lineItems[2]).toMatchObject({
+          amount: 240,
+          taxAmount: 0,
+          taxInclusiveAmount: 240,
+        });
+      }
+    }
   });
 
   it.each([
@@ -345,6 +429,29 @@ describe('mapFrozenAccountingSnapshot', () => {
         mapping,
       ),
     ).rejects.toThrow('Frozen line tax amounts do not equal frozen tax total');
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('refuses positive inclusive tax without component facts before a credit-memo write', async () => {
+    const push = vi.fn(async () => ({ externalId: 'should-not-write' }));
+    const snapshot = exampleNonTaxable('inclusive', 'document');
+    const lineItems = snapshot.lineItems.map((line, index) =>
+      index === 0 ? { ...line, taxMinor: 1 } : line,
+    );
+    await expect(
+      pushFrozenCreditMemo(
+        { type: 'quickbooks', creditMemos: { push, sync: push } },
+        {
+          ...snapshot,
+          kind: 'creditMemo',
+          creditedInvoiceExternalId: 'qbo-invoice-1',
+          taxAmountMinor: 1,
+          totalAmountMinor: 114_499,
+          lineItems,
+        },
+        mapping,
+      ),
+    ).rejects.toThrow('frozen component tax 0 does not equal line tax 1');
     expect(push).not.toHaveBeenCalled();
   });
 
