@@ -402,6 +402,36 @@ describe.each([
       return { db, input, service: new CommentService({ ...access, db }) };
     }
 
+    it('lists preexisting comments with the original uppercase tenant spelling', async () => {
+      const { db, input } = await fixture();
+      const upperTenant = input.tenantId.toUpperCase();
+      const id = crypto.randomUUID();
+      // Pre-key service persisted the trusted actor's original spelling.
+      await db.query(
+        'INSERT INTO record_comments (id, slug, context, meta_type, meta_id, role, tenant_id, author_user_id, body, mentions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        id,
+        id,
+        '',
+        input.metaType,
+        input.metaId,
+        '',
+        upperTenant,
+        input.authorUserId,
+        'Historical discussion',
+        '[]',
+      );
+      const service = new CommentService({
+        db,
+        actor: { tenantId: upperTenant, userId: input.authorUserId },
+        authorizeRecord: async () => true,
+      });
+      expect(
+        (await service.listForRecord(input.metaType, input.metaId)).map(
+          (row) => row.id,
+        ),
+      ).toEqual([id]);
+    });
+
     it('replays uppercase UUID tenant and author identities without a committed unavailable row', async () => {
       const { db, input } = await fixture();
       const upperTenant = input.tenantId.toUpperCase();
@@ -440,13 +470,27 @@ describe.each([
       expect(
         authorizeRecord.mock.calls.every(
           ([context]: [CommentRecordAccess]) =>
-            context.tenantId === upperTenant.toLowerCase() &&
-            context.userId === upperAuthor.toLowerCase(),
+            context.tenantId === upperTenant && context.userId === upperAuthor,
         ),
       ).toBe(true);
       expect(notifyMention).not.toHaveBeenCalled();
       await expect(
         service.create({ ...request, authorUserId: crypto.randomUUID() }),
+      ).rejects.toThrow('actor context mismatch');
+      await expect(
+        service.create({ ...request, tenantId: crypto.randomUUID() }),
+      ).rejects.toThrow('actor context mismatch');
+      const textual = new CommentService({
+        db,
+        actor: { tenantId: 'TenantCase', userId: 'AuthorCase' },
+        authorizeRecord: async () => true,
+      });
+      await expect(
+        textual.create({
+          ...request,
+          tenantId: 'tenantcase',
+          authorUserId: 'AuthorCase',
+        }),
       ).rejects.toThrow('actor context mismatch');
     });
 

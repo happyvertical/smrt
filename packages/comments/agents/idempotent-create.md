@@ -6,8 +6,9 @@ its server-generated UUID. Keys are optional, trimmed nonempty strings of at mos
 behavior. The service allowlists input: identity, slug, context, executor and
 requestDigest cannot be supplied by the caller.
 
-Valid UUID tenant/author identities are canonicalized to lowercase before actor
-comparison, authorization, hashing and persistence; parent record keys remain exact.
+Valid UUID tenant/author identities use lowercase for equality, arbitration and
+digest comparisons. Authorization, storage and listing preserve the trusted actor
+context spelling, including existing SQLite rows; parent record keys remain exact.
 The trusted actor and record authorization run before every attempt, including
 replays. A key binds the actual author, qualified parent, exact body and sorted,
 deduplicated validated mentions. Reusing a key with different bound content throws

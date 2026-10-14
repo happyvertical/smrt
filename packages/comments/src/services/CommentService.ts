@@ -41,16 +41,7 @@ export class CommentService {
       authorizeRecord: (access: CommentRecordAccess) => Promise<boolean>;
       mentionNotifications?: CommentMentionNotificationAdapter;
     },
-  ) {
-    this.options = {
-      ...options,
-      actor: {
-        ...options.actor,
-        tenantId: canonicalUuid(options.actor.tenantId),
-        userId: canonicalUuid(options.actor.userId),
-      },
-    };
-  }
+  ) {}
 
   private async authorize(
     recordType: string,
@@ -97,17 +88,20 @@ export class CommentService {
       mentions,
       idempotencyKey,
     } = commentOptions;
-    const tenantId = canonicalUuid(inputTenantId);
-    const authorUserId = canonicalUuid(inputAuthorUserId);
-    if (!tenantId || !authorUserId) {
+    if (!inputTenantId || !inputAuthorUserId) {
       throw new TypeError('Comments require a tenant and author.');
     }
     if (
-      tenantId !== this.options.actor.tenantId ||
-      authorUserId !== this.options.actor.userId
+      canonicalUuid(inputTenantId) !==
+        canonicalUuid(this.options.actor.tenantId) ||
+      canonicalUuid(inputAuthorUserId) !==
+        canonicalUuid(this.options.actor.userId)
     ) {
       throw new Error('Comment actor context mismatch.');
     }
+    // Preserve the trusted context's stored spelling on text-backed databases.
+    const tenantId = this.options.actor.tenantId;
+    const authorUserId = this.options.actor.userId;
     await this.authorize(metaType ?? '', metaId ?? '', 'comment');
     if (!body?.trim()) throw new TypeError('Comment body is required.');
     // Validate through the model's public setter before collection.create()
@@ -127,8 +121,8 @@ export class CommentService {
     }
     const normalizedMentions = [...prepared.mentionUserIds].sort();
     const requestDigest = digestRunOnceContent({
-      tenantId,
-      authorUserId,
+      tenantId: canonicalUuid(tenantId),
+      authorUserId: canonicalUuid(authorUserId),
       metaType,
       metaId,
       body,
@@ -162,7 +156,7 @@ export class CommentService {
       const receipt = await runOnce(
         {
           db: collection.db,
-          tenantId,
+          tenantId: canonicalUuid(tenantId),
           actor: 'smrt-comments.create:v1',
           token: idempotencyKey,
           content: 'comment-request-binding:v1',
@@ -184,12 +178,12 @@ export class CommentService {
       const row = receipt.id ? await collection.get(receipt.id) : null;
       if (
         !row ||
-        row.tenantId !== tenantId ||
+        canonicalUuid(row.tenantId) !== canonicalUuid(tenantId) ||
         row.idempotencyKey !== idempotencyKey ||
         row.requestDigest !== requestDigest ||
         digestRunOnceContent({
-          tenantId: row.tenantId,
-          authorUserId: row.authorUserId,
+          tenantId: canonicalUuid(row.tenantId),
+          authorUserId: canonicalUuid(row.authorUserId),
           metaType: row.metaType,
           metaId: row.metaId,
           body: row.body,
@@ -202,7 +196,10 @@ export class CommentService {
     });
     if (!this.options.mentionNotifications || !comment.id) return comment;
     for (const recipientUserId of comment.mentionUserIds) {
-      if (canonicalUuid(recipientUserId) === comment.authorUserId) continue;
+      if (
+        canonicalUuid(recipientUserId) === canonicalUuid(comment.authorUserId)
+      )
+        continue;
       await this.options.mentionNotifications.notifyMention({
         commentId: comment.id,
         tenantId: comment.tenantId,
