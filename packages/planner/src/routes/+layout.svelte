@@ -40,7 +40,7 @@ import { kitchenState } from '$lib/kitchen/state.svelte.ts';
 import { libraryState } from '$lib/library/state.svelte.ts';
 import { createOnNavigateViewTransition } from '$lib/motion/view-transition.ts';
 import { appHref, appQuery, setBasePath } from '$lib/planner/app.svelte.ts';
-import { CHEF_HAT_ICON } from '$lib/planner/header-icons.ts';
+import { CHEF_HAT_ICON, EXPORT_ICON } from '$lib/planner/header-icons.ts';
 import { plannerRuntime } from '$lib/planner/instance.ts';
 import { hasAppState, withTab } from '$lib/planner/query.ts';
 import { recordFilter, recordFilterQuery } from '$lib/planner/routes.ts';
@@ -388,8 +388,20 @@ function flushOnHide() {
     href={appHref('/')}
     label="Plan the app"
     path={CHEF_HAT_ICON}
-    current={page.route.id === '/'}
+    current={page.route.id === '/' && plannerTab.active !== 'export'}
     transitionName="planner-customize"
+  />
+{/snippet}
+
+<!-- The export shortcut: the Planner's Export tab (`?tab=export`, read after
+     navigation like any tab). -->
+{#snippet exportLink()}
+  <HeaderIconLink
+    href={appHref('/?tab=export')}
+    label="Export the app"
+    icon={EXPORT_ICON}
+    current={page.route.id === '/' && plannerTab.active === 'export'}
+    transitionName="planner-export"
   />
 {/snippet}
 
@@ -423,6 +435,12 @@ function flushOnHide() {
       label: 'Plan the app',
       slot: 'header.end',
       render: plan,
+    },
+    {
+      id: 'planner-export',
+      label: 'Export the app',
+      slot: 'header.end',
+      render: exportLink,
     },
   ]}
   dockToggles={[plannerAssistantToggle(appHref('/ai/'), aiState.assistantReady)]}

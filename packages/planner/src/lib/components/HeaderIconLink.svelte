@@ -48,6 +48,9 @@ let {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .header-link {
+    /* The shell's header slot is a shrinking flex row: keep the hit area, as
+       the shell's own icon buttons do. */
+    flex: 0 0 auto;
     display: inline-grid;
     place-items: center;
     inline-size: 2rem;

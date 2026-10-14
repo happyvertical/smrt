@@ -52,5 +52,12 @@ describe('header icon links', () => {
     expect(layoutSource).toContain('label="Plan the app"');
     expect(layoutSource).toContain('path={CHEF_HAT_ICON}');
     expect(layoutSource).not.toContain('Customize');
+    // And the export shortcut after it, to the Export tab.
+    expect(layoutSource).toContain("id: 'planner-export'");
+    expect(layoutSource).toContain('label="Export the app"');
+    expect(layoutSource).toContain("appHref('/?tab=export')");
+    expect(layoutSource.indexOf("id: 'planner-export'")).toBeGreaterThan(
+      layoutSource.indexOf("id: 'planner-customize'"),
+    );
   });
 });

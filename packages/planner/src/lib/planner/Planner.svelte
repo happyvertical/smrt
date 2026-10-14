@@ -42,11 +42,13 @@ import { sectionInfo, sectionTitle } from '../sections/info.ts';
 import { sectionIdFromSlug } from '../sections/path.ts';
 import { DEFAULT_PRESET } from '../theme/theme.ts';
 import { appHref, setBasePath } from './app.svelte.ts';
-import { CHEF_HAT_ICON } from './header-icons.ts';
+import { PLANNER_TAB_IDS } from './commands/index.ts';
+import { CHEF_HAT_ICON, EXPORT_ICON } from './header-icons.ts';
 import PlannerControls from './PlannerControls.svelte';
 import PlannerLifecycle from './PlannerLifecycle.svelte';
 import { parseModelRoute, recordFilter, splitRoute } from './routes.ts';
 import { plannerAssistantToggle, plannerShellProps } from './shell.ts';
+import { plannerTab } from './tab.svelte.ts';
 import { currentPlannerTitle } from './title.svelte.ts';
 import type { PlannerProps } from './types.ts';
 
@@ -216,6 +218,17 @@ const configuring = $derived(
     pathParts[0] !== 'ai' &&
     !(applied && model),
 );
+// `#/configure/<tab>/` opens that tab (the header's export shortcut is
+// `#/configure/export/`); the tabs themselves keep the route as it is.
+const routeTab = $derived(
+  pathParts[0] === 'configure'
+    ? PLANNER_TAB_IDS.find((id) => id === pathParts[1])
+    : undefined,
+);
+$effect(() => {
+  if (routeTab) plannerTab.active = routeTab;
+});
+const exporting = $derived(configuring && plannerTab.active === 'export');
 /** The mount's own way around: a fragment route. */
 const navigate = (path: string) => {
   location.hash = path;
@@ -241,6 +254,12 @@ const slotItems = $derived<ShellSlotItem[]>([
     label: 'Plan the app',
     slot: 'header.end' as const,
     render: customize,
+  },
+  {
+    id: 'planner-export',
+    label: 'Export the app',
+    slot: 'header.end' as const,
+    render: exportLink,
   },
 ]);
 // The shell's own `dock:assistant` button (header end, the dock tab on phones)
@@ -283,8 +302,24 @@ const dockToggles = $derived(
     href="#/configure/"
     label="Plan the app"
     path={CHEF_HAT_ICON}
-    current={configuring}
+    current={configuring && !exporting}
     transitionName="planner-customize"
+  />
+{/snippet}
+
+<!-- The export shortcut: the Export tab, where the cookbook is downloaded or
+     sent to the kitchen. The route selects the tab; the click also does, for
+     when the hash is already there. -->
+{#snippet exportLink()}
+  <HeaderIconLink
+    href="#/configure/export/"
+    label="Export the app"
+    icon={EXPORT_ICON}
+    current={exporting}
+    transitionName="planner-export"
+    onclick={() => {
+      plannerTab.active = 'export';
+    }}
   />
 {/snippet}
 
