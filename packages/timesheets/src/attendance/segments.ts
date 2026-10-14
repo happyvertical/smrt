@@ -132,7 +132,18 @@ export async function continueSegment(
 ): Promise<AttendanceSegment> {
   const all = await listSegments(tx, punch);
   const last = all[all.length - 1];
-  if (last?.closedReason !== 'break')
+  // Only the latest break may be the one that interrupted the work: a later,
+  // idle break (taken after the work was left unresumed) must not reopen it.
+  const breaks = await tx.breaks.list({
+    where: { tenantId: punch.tenantId, punchId: punch.id },
+    orderBy: 'started_at DESC',
+    limit: 1,
+  });
+  if (
+    last?.closedReason !== 'break' ||
+    !last.endedAt ||
+    last.endedAt.getTime() !== breaks[0]?.startedAt.getTime()
+  )
     throw new AttendanceConflict(
       'No work interrupted by a break to resume.',
       'no_resumable_work',

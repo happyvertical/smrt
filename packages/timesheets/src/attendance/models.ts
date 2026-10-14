@@ -229,6 +229,24 @@ export class AttendanceBreak extends SmrtObject {
       new Date(prior.ended_at as string).getTime() !== this.endedAt?.getTime()
     )
       throw new Error('Closed breaks are immutable.');
+    const brStart = this.startedAt.getTime();
+    const brEnd = this.endedAt?.getTime() ?? Number.POSITIVE_INFINITY;
+    if (
+      (
+        await this.db.list('attendance_segments', {
+          tenant_id: this.tenantId,
+          punch_id: this.punchId,
+        })
+      ).some(
+        (row) =>
+          brStart <
+            (row.ended_at
+              ? new Date(row.ended_at as string).getTime()
+              : Number.POSITIVE_INFINITY) &&
+          brEnd > new Date(row.started_at as string).getTime(),
+      )
+    )
+      throw new Error('Break must not overlap a work segment.');
     this.id ??= crypto.randomUUID();
     this.openSlot = this.endedAt ? JSON.stringify(['closed', this.id]) : 'open';
     return super.save();

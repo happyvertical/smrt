@@ -938,6 +938,56 @@ export function attendanceSuite(
           await expect(stored!.delete()).rejects.toThrow('cannot be deleted');
         });
       });
+      it('resumes only the work the latest break interrupted', async () => {
+        await service.punchIn(at(8));
+        await service.startWork(at(8), work);
+        await service.startBreak(at(9));
+        await service.endBreak(at(10));
+        await service.startBreak(at(11)); // idle: no work was running
+        await expect(
+          service.endBreak(at(12), { resumeWork: true }),
+        ).rejects.toThrow('No work interrupted');
+        const punch = await service.punchOut(at(13));
+        expect(punch.endedAt).toEqual(at(13));
+      });
+      it('refuses a direct break that overlaps a work segment', async () => {
+        const punch = await service.punchIn(at(8));
+        await service.startWork(at(8), work);
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          await expect(
+            (await AttendanceBreakCollection.create({ db })).create({
+              tenantId: actor.tenantId,
+              punchId: punch.id!,
+              startedAt: at(9),
+            }),
+          ).rejects.toThrow('overlap a work segment');
+        });
+      });
+      it('refuses to relink evidence with a different task or kind', async () => {
+        await service.punchIn(at(8));
+        const punch = await service.punchOut(at(16), {
+          ...work,
+          taskRefType: '@fixture/work:Operation',
+          taskRefId: 'op-1',
+          kind: 'weld',
+        });
+        await service.linkServiceTimeEntry(punch.id!, {
+          ...work,
+          taskRefType: '@fixture/work:Operation',
+          taskRefId: 'op-1',
+          kind: 'weld',
+        });
+        for (const change of [{ taskRefId: 'op-2' }, { kind: 'bend' }] as const)
+          await expect(
+            service.linkServiceTimeEntry(punch.id!, {
+              ...work,
+              taskRefType: '@fixture/work:Operation',
+              taskRefId: 'op-1',
+              kind: 'weld',
+              ...change,
+            }),
+          ).rejects.toThrow('different work');
+      });
       it('refuses a generic insert of a break or segment into a closed punch', async () => {
         const punch = await day();
         await withTenant({ tenantId: actor.tenantId }, async () => {

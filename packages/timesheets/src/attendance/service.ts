@@ -5,6 +5,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { getTenantId, withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { parseTimesheetJson } from '../models/json.js';
 import { ServiceTimeEntryCollection } from '../models/service-time-entry.js';
 import {
   type AttendanceActor,
@@ -33,6 +34,16 @@ import {
   openSegment,
   replaceSegment,
 } from './segments.js';
+
+/** Whether stored evidence metadata carries this work's task reference and kind. */
+function sameAttribution(metadata: string, work: AttendanceWork): boolean {
+  const stored = parseTimesheetJson<Record<string, unknown>>(metadata, {});
+  return (
+    (stored.taskRefType ?? '') === (work.taskRefType ?? '') &&
+    (stored.taskRefId ?? '') === (work.taskRefId ?? '') &&
+    (stored.kind ?? '') === (work.kind ?? '')
+  );
+}
 
 export {
   type AttendanceActor,
@@ -520,7 +531,8 @@ export class AttendanceService {
         !existing ||
         existing.workRefType !== work.workRefType ||
         existing.workRefId !== work.workRefId ||
-        existing.description !== work.description
+        existing.description !== work.description ||
+        !sameAttribution(existing.metadata, work)
       )
         throw new AttendanceConflict('Punch already linked to different work.');
       return;
