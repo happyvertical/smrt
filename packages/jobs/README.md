@@ -191,7 +191,7 @@ ownership record before displaying it.
 
 ### Schedule recurring jobs with ScheduleRunner
 
-The `ScheduleRunner` polls the `_smrt_agent_schedules` table for due cron entries and creates `SmrtJob` records for the `TaskRunner` to execute. Wire them together via events:
+The `ScheduleRunner` polls the `_smrt_agent_schedules` table for due cron entries and creates `SmrtJob` records for the `TaskRunner` to execute. Each schedule's cron is evaluated in its row's IANA `timezone` (default `UTC`, DST-correct), independent of the host `TZ`. Wire them together via events:
 
 ```typescript
 import { ScheduleRunner } from '@happyvertical/smrt-jobs';

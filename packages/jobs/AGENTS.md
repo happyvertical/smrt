@@ -70,7 +70,7 @@ The job is enqueued **before** `next_run` is advanced and `running_count` is inc
 
 `next_run` is always recomputed from *now*, never from the previous `next_run` — this is **fire-once-forward**: runs that came due while the runner was down are not caught up, only the next future occurrence fires. There is no missed-run backfill.
 
-Custom cron parser: 5-field (minute hour dom month dow). `*`, ranges, lists, steps supported. **Not timezone-aware**: cron fields are matched against the **server's local time** (the parser uses `getHours`/`getDate`/`getDay`/… local accessors), so `0 0 * * *` fires at local midnight on the host, not at 00:00 UTC. Deploy runners in a known timezone (e.g. `TZ=UTC`) for UTC semantics. A per-schedule timezone option is a possible future enhancement.
+Custom cron parser (`getNextCronDate(cron, timezone?)`): 5-field (minute hour dom month dow); `*`, ranges, lists, steps supported, each list term matched on its own. Fields match the wall clock of the schedule's IANA `timezone` (`Intl.DateTimeFormat`, DST-correct, no dependency); the re-arm passes the row's `timezone`, and a NULL/blank zone falls back to the column default `UTC`. Unknown zones throw `Invalid cron timezone`. Only an omitted argument uses the host process zone (legacy; `smrt-reports` still relies on it). DST follows Vixie cron: fixed-time crons (no `*` in minute or hour) run once per day, a gap-skipped wall time runs shifted forward by the gap, a repeated one only at its first occurrence; wildcard crons follow elapsed time (gap minutes skipped, the repeated hour runs again) (#3859).
 
 ## JobBuilder — Fluent API
 
@@ -201,7 +201,7 @@ the framework retention sweep in `@happyvertical/smrt-core`.
 
 - The shared claim/recovery projection casts both job and tenant UUIDs to strings; DuckDB otherwise returns native UUID objects. Preserve NULL for global jobs.
 
-- **Cron not timezone-aware**: cron fields match the server's **local** time, not UTC (set `TZ` for UTC); no missed-run catch-up (fire-once-forward)
+- **Cron zone comes from the row**: `_smrt_agent_schedules.timezone` (default `UTC`), not the host `TZ`; no missed-run catch-up (fire-once-forward)
 - **At-least-once execution**: a timeout cannot preempt a running handler; timed-out jobs fail without retry but the handler keeps running — make handlers idempotent (see "Timeouts & at-least-once")
 - **No dead letter queue**: failed jobs stay in DB with `status='failed'` — manual intervention
 - **Forge deliveries are not SmrtJobs**: they use their own replayable
