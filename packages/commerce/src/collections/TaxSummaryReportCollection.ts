@@ -20,6 +20,7 @@ import {
   type TaxSummaryComponentMapping,
   type TaxSummaryExpenseFact,
   type TaxSummaryLedgerMovement,
+  type TaxSummarySourceScope,
 } from '../tax-summary.js';
 import {
   DocumentTaxCollection,
@@ -71,6 +72,86 @@ export interface TaxSummaryInvoiceDrilldownOptions {
   reportId: string;
 }
 
+/** A numeric report cell, selected explicitly rather than inferred from a row. */
+export type TaxSummaryReportMeasure =
+  | 'taxable'
+  | 'tax'
+  | 'recoverable'
+  | 'net'
+  | 'ledgerMovement'
+  | 'difference'
+  | 'documentCount'
+  | 'warning';
+
+/** Detail shape supplied by the ledger owner for a reconciliation drilldown. */
+export interface TaxSummaryLedgerDrilldownFact
+  extends TaxSummaryLedgerMovement {
+  journalId: string;
+  journalDate: Date;
+  journalNumber: string;
+  sourceModule: string;
+  sourceRef: string | null;
+  debit: number;
+  credit: number;
+}
+
+/** Dependency-inverted because commerce cannot import the ledgers package. */
+export interface TaxSummaryLedgerDrilldownSource {
+  listPostedMovements(options: {
+    tenantId: string;
+    accountIds: string[];
+    from: Date;
+    to: Date;
+    currency: string;
+    db: DatabaseInterface;
+  }): Promise<readonly TaxSummaryLedgerDrilldownFact[]>;
+}
+
+export interface TaxSummaryContributorDrilldownOptions
+  extends TaxSummaryInvoiceDrilldownOptions {
+  measure: TaxSummaryReportMeasure;
+  /** Required only when the materialized row says that it contains expenses. */
+  expenseSource?: TaxSummaryExpenseSource;
+  /** Required for ledger and reconciliation cells. */
+  ledgerSource?: TaxSummaryLedgerDrilldownSource;
+  expenseComponentMappings?: readonly TaxSummaryComponentMapping[];
+}
+
+export type TaxSummaryDrilldownPending =
+  | 'expense-source'
+  | 'ledger-source'
+  | 'purchase-source'
+  | 'source-provenance-missing'
+  | 'source-state-diverged'
+  | 'materialized-incomplete';
+
+export type TaxSummaryDrilldownContributor =
+  | {
+      source: 'invoice';
+      valueMinor: number;
+      fact: InvoiceTaxReportFact;
+    }
+  | {
+      source: 'expense';
+      valueMinor: number;
+      expense: TaxSummaryExpenseFact;
+      expenseCode: string | null;
+    }
+  | {
+      source: 'ledger';
+      valueMinor: number;
+      movement: TaxSummaryLedgerDrilldownFact;
+    };
+
+export interface TaxSummaryContributorDrilldown {
+  row: TaxSummaryReport;
+  measure: TaxSummaryReportMeasure;
+  contributors: TaxSummaryDrilldownContributor[];
+  /** False means this detail cannot establish the materialized cell exactly. */
+  complete: boolean;
+  pending: TaxSummaryDrilldownPending[];
+}
+
 function requiredTenant(value: string): void {
   if (!value?.trim()) throw new Error('Tax summary report requires a tenant.');
 }
@@ -94,6 +175,132 @@ function stableDimension(parts: readonly (string | null)[]): string {
   // PostgreSQL text rejects NUL bytes; JSON preserves null/empty distinctions
   // while remaining portable across every report table dialect.
   return JSON.stringify(parts);
+}
+
+function sourceScopes(scopes: readonly TaxSummarySourceScope[]): string {
+  return [...new Set(scopes)].sort().join(',');
+}
+
+function storedScopes(row: TaxSummaryReport): Set<string> {
+  return new Set(
+    row.sourceScopes
+      .split(',')
+      .map((scope) => scope.trim())
+      .filter(Boolean),
+  );
+}
+
+function assertMeasure(
+  row: TaxSummaryReport,
+  measure: TaxSummaryReportMeasure,
+): void {
+  const allowed: Record<
+    TaxSummaryReport['rowKind'],
+    readonly TaxSummaryReportMeasure[]
+  > = {
+    component: ['taxable', 'tax', 'recoverable', 'net', 'documentCount'],
+    kind: ['taxable', 'documentCount'],
+    reconciliation: ['tax', 'ledgerMovement', 'difference'],
+    warning: ['warning'],
+  };
+  if (!allowed[row.rowKind].includes(measure))
+    throw new Error(
+      `Tax summary measure ${measure} is not available for ${row.rowKind} rows.`,
+    );
+}
+
+function signedFact(fact: InvoiceTaxReportFact, value: number): number {
+  if (!Number.isSafeInteger(value))
+    throw new RangeError('Invoice drilldown value must be a safe integer.');
+  return fact.documentKind === 'credit_note' ? -value : value;
+}
+
+function addDrilldownValue(left: number, right: number): number {
+  const sum = left + right;
+  if (!Number.isSafeInteger(sum))
+    throw new RangeError('Tax summary drilldown exceeds safe integer range.');
+  return sum;
+}
+
+function reportMeasureValue(
+  row: TaxSummaryReport,
+  measure: TaxSummaryReportMeasure,
+): number | null {
+  switch (measure) {
+    case 'taxable':
+      return row.taxableMinor;
+    case 'tax':
+      return row.taxMinor;
+    case 'recoverable':
+      return row.recoverableMinor;
+    case 'net':
+      return row.netTaxMinor;
+    case 'ledgerMovement':
+      return row.ledgerMovementMinor;
+    case 'difference':
+      return row.differenceMinor;
+    case 'documentCount':
+      return row.documentCount;
+    case 'warning':
+      return null;
+  }
+}
+
+function reportFactIdentity(fact: InvoiceTaxReportFact): string {
+  return `${fact.documentType}\u0000${fact.documentId}`;
+}
+
+function reportWarningIdentity(fact: InvoiceTaxReportFact): string {
+  return JSON.stringify([fact.documentType, fact.documentId]);
+}
+
+function matchingExpenseTaxes(
+  expenses: readonly TaxSummaryExpenseFact[],
+  row: Pick<
+    TaxSummaryReport,
+    'tenantId' | 'currency' | 'periodFrom' | 'periodTo' | 'taxComponentId'
+  >,
+  mappings: readonly TaxSummaryComponentMapping[],
+): Array<{
+  expense: TaxSummaryExpenseFact;
+  code: string;
+  recoverableMinor: number;
+}> {
+  if (!row.taxComponentId) return [];
+  const byCode = new Map(
+    mappings
+      .filter((mapping) => mapping.tenantId === row.tenantId)
+      .map((mapping) => [mapping.expenseCode, mapping]),
+  );
+  const from = calendarDate(row.periodFrom);
+  const to = calendarDate(row.periodTo);
+  const matches: Array<{
+    expense: TaxSummaryExpenseFact;
+    code: string;
+    recoverableMinor: number;
+  }> = [];
+  for (const expense of expenses) {
+    if (
+      expense.tenantId !== row.tenantId ||
+      expense.currency !== row.currency ||
+      expense.incurredOn < from ||
+      expense.incurredOn > to ||
+      !expense.financialBreakdown
+    )
+      continue;
+    for (const tax of expense.financialBreakdown.taxes) {
+      const mapping = byCode.get(tax.code);
+      if (mapping?.taxComponentId !== row.taxComponentId) continue;
+      if (!Number.isSafeInteger(tax.recoverableAmount))
+        throw new RangeError('Expense drilldown value must be a safe integer.');
+      matches.push({
+        expense,
+        code: tax.code,
+        recoverableMinor: tax.recoverableAmount,
+      });
+    }
+  }
+  return matches;
 }
 
 export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryReport> {
@@ -311,8 +518,312 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
         if (row.rowKind === 'component')
           return fact.taxComponentId === row.taxComponentId;
         if (row.rowKind === 'kind') return fact.taxCodeKind === row.taxCodeKind;
-        return true;
+        if (row.rowKind === 'reconciliation')
+          return (
+            fact.taxComponentId === row.taxComponentId &&
+            (row.liabilityAccountId === null ||
+              fact.liabilityAccountId === row.liabilityAccountId)
+          );
+        if (row.warningSourceType === 'document')
+          return reportWarningIdentity(fact) === row.warningSourceId;
+        if (row.warningSourceType === 'component')
+          return fact.taxComponentId === row.warningSourceId;
+        return false;
       });
+    });
+  }
+
+  /**
+   * Re-read the owning sources for one explicitly selected materialized cell.
+   * Missing owners and source drift are reported as incomplete instead of being
+   * displayed as a zero or as unrelated Invoice facts.
+   */
+  async drilldownContributors(
+    options: TaxSummaryContributorDrilldownOptions,
+  ): Promise<TaxSummaryContributorDrilldown> {
+    requiredTenant(options.tenantId);
+    if (!options.reportId?.trim())
+      throw new Error('Tax summary drilldown requires a row id.');
+    return withTenant({ tenantId: options.tenantId }, async () => {
+      const row = await this.get({ id: options.reportId }, { cache: false });
+      if (!row || row.tenantId !== options.tenantId)
+        throw new Error(
+          'Tax summary report row is not visible to this tenant.',
+        );
+      assertMeasure(row, options.measure);
+
+      const pending = new Set<TaxSummaryDrilldownPending>();
+      if (!row.complete) pending.add('materialized-incomplete');
+      const scopes = storedScopes(row);
+      if (row.rowKind === 'component' && scopes.size === 0)
+        pending.add('source-provenance-missing');
+      if (
+        row.rowKind === 'warning' &&
+        (!row.warningSourceType || !row.warningSourceId)
+      )
+        pending.add('source-provenance-missing');
+
+      const documentTaxes = await DocumentTaxCollection.create({ db: this.db });
+      const facts = await documentTaxes.listReportFacts({
+        tenantId: row.tenantId,
+        from: row.periodFrom,
+        to: row.periodTo,
+        currency: row.currency,
+      });
+      const contributors: TaxSummaryDrilldownContributor[] = [];
+      const addInvoiceFacts = (
+        matches: readonly InvoiceTaxReportFact[],
+        value: (fact: InvoiceTaxReportFact) => number,
+        distinctDocuments = false,
+      ) => {
+        const seen = new Set<string>();
+        for (const fact of matches) {
+          const identity = reportFactIdentity(fact);
+          if (distinctDocuments && seen.has(identity)) continue;
+          seen.add(identity);
+          contributors.push({
+            source: 'invoice',
+            valueMinor: value(fact),
+            fact,
+          });
+        }
+      };
+      const componentFacts = facts.filter(
+        (fact) => fact.taxComponentId === row.taxComponentId,
+      );
+
+      const includeExpenses = async (
+        sign: 1 | -1,
+        distinctExpenses = false,
+        exactExpenseId?: string,
+      ) => {
+        if (!options.expenseSource) {
+          pending.add('expense-source');
+          return;
+        }
+        const expenses = await options.expenseSource.listReviewedTaxFacts({
+          tenantId: row.tenantId,
+          from: calendarDate(row.periodFrom),
+          to: calendarDate(row.periodTo),
+          db: this.db,
+        });
+        if (row.rowKind === 'warning' && exactExpenseId !== undefined) {
+          const from = calendarDate(row.periodFrom);
+          const to = calendarDate(row.periodTo);
+          for (const expense of expenses) {
+            if (
+              expense.tenantId !== row.tenantId ||
+              expense.currency !== row.currency ||
+              expense.expenseId !== exactExpenseId ||
+              expense.incurredOn < from ||
+              expense.incurredOn > to
+            )
+              continue;
+            contributors.push({
+              source: 'expense',
+              valueMinor: 0,
+              expense,
+              expenseCode: null,
+            });
+          }
+          return;
+        }
+        const matches = matchingExpenseTaxes(
+          expenses,
+          row,
+          options.expenseComponentMappings ?? [],
+        ).filter(({ expense }) =>
+          exactExpenseId === undefined
+            ? true
+            : expense.expenseId === exactExpenseId,
+        );
+        const seen = new Set<string>();
+        for (const match of matches) {
+          if (distinctExpenses && seen.has(match.expense.expenseId)) continue;
+          seen.add(match.expense.expenseId);
+          contributors.push({
+            source: 'expense',
+            valueMinor: distinctExpenses ? 1 : sign * match.recoverableMinor,
+            expense: match.expense,
+            expenseCode: match.code,
+          });
+        }
+      };
+      const includeLedger = async (sign: 1 | -1) => {
+        if (!row.liabilityAccountId && row.rowKind !== 'warning') {
+          pending.add('source-provenance-missing');
+          return;
+        }
+        if (!options.ledgerSource) {
+          pending.add('ledger-source');
+          return;
+        }
+        const accountId =
+          row.rowKind === 'warning'
+            ? row.warningSourceId
+            : row.liabilityAccountId;
+        if (!accountId) {
+          pending.add('source-provenance-missing');
+          return;
+        }
+        const movements = await options.ledgerSource.listPostedMovements({
+          tenantId: row.tenantId,
+          accountIds: [accountId],
+          from: row.periodFrom,
+          to: row.periodTo,
+          currency: row.currency,
+          db: this.db,
+        });
+        for (const movement of movements) {
+          const journalTime = movement.journalDate.getTime();
+          if (
+            movement.tenantId !== row.tenantId ||
+            movement.accountId !== accountId ||
+            movement.currency !== row.currency ||
+            !Number.isFinite(journalTime) ||
+            journalTime < row.periodFrom.getTime() ||
+            journalTime > row.periodTo.getTime() ||
+            !Number.isSafeInteger(movement.creditMinusDebit)
+          )
+            continue;
+          contributors.push({
+            source: 'ledger',
+            valueMinor: sign * movement.creditMinusDebit,
+            movement,
+          });
+        }
+      };
+
+      if (row.rowKind === 'component') {
+        switch (options.measure) {
+          case 'taxable':
+            addInvoiceFacts(componentFacts, (fact) =>
+              signedFact(fact, fact.taxableMinor),
+            );
+            if (scopes.has('purchase')) pending.add('purchase-source');
+            break;
+          case 'tax':
+            addInvoiceFacts(componentFacts, (fact) =>
+              signedFact(fact, fact.taxMinor),
+            );
+            break;
+          case 'recoverable':
+            if (scopes.has('expense')) await includeExpenses(1);
+            if (scopes.has('purchase')) pending.add('purchase-source');
+            break;
+          case 'net':
+            addInvoiceFacts(componentFacts, (fact) =>
+              signedFact(fact, fact.taxMinor),
+            );
+            if (scopes.has('expense')) await includeExpenses(-1);
+            if (scopes.has('purchase')) pending.add('purchase-source');
+            break;
+          case 'documentCount':
+            addInvoiceFacts(componentFacts, () => 1, true);
+            if (scopes.has('expense')) await includeExpenses(1, true);
+            if (scopes.has('purchase')) pending.add('purchase-source');
+            break;
+        }
+      } else if (row.rowKind === 'kind') {
+        const kindFacts = facts.filter(
+          (fact) =>
+            fact.taxCodeKind === row.taxCodeKind &&
+            fact.direction === row.direction,
+        );
+        if (row.direction === 'purchase') pending.add('purchase-source');
+        else if (options.measure === 'taxable') {
+          const seen = new Set<string>();
+          addInvoiceFacts(
+            kindFacts.filter((fact) => {
+              const key = `${reportFactIdentity(fact)}\u0000${fact.taxCodeId}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            }),
+            (fact) => signedFact(fact, fact.taxableMinor),
+          );
+        } else addInvoiceFacts(kindFacts, () => 1, true);
+      } else if (row.rowKind === 'reconciliation') {
+        const reconciliationFacts = componentFacts.filter(
+          (fact) =>
+            row.liabilityAccountId === null ||
+            fact.liabilityAccountId === row.liabilityAccountId,
+        );
+        if (options.measure === 'tax')
+          addInvoiceFacts(reconciliationFacts, (fact) =>
+            signedFact(fact, fact.taxMinor),
+          );
+        if (options.measure === 'ledgerMovement') await includeLedger(1);
+        if (options.measure === 'difference') {
+          addInvoiceFacts(
+            reconciliationFacts,
+            (fact) => -signedFact(fact, fact.taxMinor),
+          );
+          await includeLedger(1);
+        }
+      } else {
+        if (row.warningSourceType === 'document') {
+          addInvoiceFacts(
+            facts.filter(
+              (fact) => reportWarningIdentity(fact) === row.warningSourceId,
+            ),
+            () => 0,
+          );
+        } else if (row.warningSourceType === 'expense') {
+          await includeExpenses(1, false, row.warningSourceId ?? undefined);
+        } else if (row.warningSourceType === 'component') {
+          addInvoiceFacts(
+            facts.filter((fact) => fact.taxComponentId === row.warningSourceId),
+            () => 0,
+          );
+          if (options.expenseSource) {
+            const expenses = await options.expenseSource.listReviewedTaxFacts({
+              tenantId: row.tenantId,
+              from: calendarDate(row.periodFrom),
+              to: calendarDate(row.periodTo),
+              db: this.db,
+            });
+            for (const match of matchingExpenseTaxes(
+              expenses,
+              { ...row, taxComponentId: row.warningSourceId },
+              options.expenseComponentMappings ?? [],
+            ))
+              contributors.push({
+                source: 'expense',
+                valueMinor: 0,
+                expense: match.expense,
+                expenseCode: match.code,
+              });
+          } else pending.add('expense-source');
+        } else if (row.warningSourceType === 'account') {
+          await includeLedger(1);
+        }
+      }
+
+      const expected = reportMeasureValue(row, options.measure);
+      const sourceUnavailable = [...pending].some((reason) =>
+        [
+          'expense-source',
+          'ledger-source',
+          'purchase-source',
+          'source-provenance-missing',
+        ].includes(reason),
+      );
+      if (expected !== null && !sourceUnavailable) {
+        const actual = contributors.reduce(
+          (total, contributor) =>
+            addDrilldownValue(total, contributor.valueMinor),
+          0,
+        );
+        if (actual !== expected) pending.add('source-state-diverged');
+      }
+      return {
+        row,
+        measure: options.measure,
+        contributors,
+        complete: pending.size === 0,
+        pending: [...pending].sort(),
+      };
     });
   }
 }
@@ -345,8 +856,11 @@ export async function materializeTaxSummaryRows(
       netTaxMinor: row.netTaxMinor,
       differenceMinor: null,
       documentCount: row.documentCount,
+      sourceScopes: sourceScopes(row.sourceScopes),
       warningCode: null,
       warningMessage: null,
+      warningSourceType: null,
+      warningSourceId: null,
     })),
     ...result.kindRows.map((row) => ({
       ...period,
@@ -364,8 +878,11 @@ export async function materializeTaxSummaryRows(
       netTaxMinor: null,
       differenceMinor: null,
       documentCount: row.documentCount,
+      sourceScopes: sourceScopes(row.sourceScopes),
       warningCode: null,
       warningMessage: null,
+      warningSourceType: null,
+      warningSourceId: null,
     })),
     ...result.reconciliationRows.map((row) => ({
       ...period,
@@ -383,8 +900,11 @@ export async function materializeTaxSummaryRows(
       netTaxMinor: null,
       differenceMinor: row.differenceMinor,
       documentCount: 0,
+      sourceScopes: sourceScopes(row.sourceScopes),
       warningCode: null,
       warningMessage: null,
+      warningSourceType: null,
+      warningSourceId: null,
     })),
     ...result.warnings.map((warning, index) => ({
       ...period,
@@ -407,8 +927,11 @@ export async function materializeTaxSummaryRows(
       netTaxMinor: null,
       differenceMinor: null,
       documentCount: 0,
+      sourceScopes: warning.sourceType,
       warningCode: warning.code,
       warningMessage: warning.message,
+      warningSourceType: warning.sourceType,
+      warningSourceId: warning.sourceId,
     })),
   ];
   return Promise.all(

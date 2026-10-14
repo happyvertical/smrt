@@ -7,6 +7,7 @@ import {
   type ReportAdapterOptions,
 } from '@happyvertical/smrt-reports';
 import {
+  type TaxSummaryContributorDrilldownOptions,
   type TaxSummaryInvoiceDrilldownOptions,
   TaxSummaryReportCollection,
 } from './collections/TaxSummaryReportCollection.js';
@@ -52,4 +53,16 @@ export async function drilldownTaxSummaryInvoiceFacts(
 ) {
   const reports = await TaxSummaryReportCollection.create({ db });
   return reports.drilldownInvoiceFacts(options);
+}
+
+/**
+ * Application bridge for a specific report cell. Expense and ledger owners are
+ * injected by the host so commerce does not create a package dependency cycle.
+ */
+export async function drilldownTaxSummaryContributors(
+  db: DatabaseInterface,
+  options: TaxSummaryContributorDrilldownOptions,
+) {
+  const reports = await TaxSummaryReportCollection.create({ db });
+  return reports.drilldownContributors(options);
 }

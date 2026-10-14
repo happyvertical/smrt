@@ -91,6 +91,8 @@ export interface TaxSummaryComponentRow {
   /** Null when the corresponding ITC is incomplete. */
   netTaxMinor: number | null;
   documentCount: number;
+  /** Stable source classes used to reproduce a materialized drilldown. */
+  sourceScopes: readonly TaxSummarySourceScope[];
 }
 
 export interface TaxSummaryKindRow {
@@ -100,6 +102,7 @@ export interface TaxSummaryKindRow {
   taxCodeKind: TaxCodeKind;
   taxableMinor: number;
   documentCount: number;
+  sourceScopes: readonly TaxSummarySourceScope[];
 }
 
 export interface TaxSummaryReconciliationRow {
@@ -111,7 +114,15 @@ export interface TaxSummaryReconciliationRow {
   ledgerMovementMinor: number | null;
   differenceMinor: number | null;
   status: 'reconciled' | 'difference' | 'unassigned' | 'ambiguous';
+  sourceScopes: readonly TaxSummarySourceScope[];
 }
+
+/** Source classes persisted for drilldown; amounts remain in the report rows. */
+export type TaxSummarySourceScope =
+  | 'invoice'
+  | 'purchase'
+  | 'expense'
+  | 'ledger';
 
 export interface TaxSummaryWarning {
   code:
@@ -123,6 +134,7 @@ export interface TaxSummaryWarning {
     | 'unassigned-tax-code';
   currency: string;
   sourceId: string;
+  sourceType: 'document' | 'expense' | 'component' | 'account';
   message: string;
 }
 
@@ -168,6 +180,13 @@ function componentKey(currency: string, componentId: string) {
   return `${currency}\u0000${componentId}`;
 }
 
+function mergeSourceScopes(
+  current: readonly TaxSummarySourceScope[],
+  next: TaxSummarySourceScope,
+): TaxSummarySourceScope[] {
+  return [...new Set<TaxSummarySourceScope>([...current, next])];
+}
+
 /** Aggregate normalized stored facts without querying persistence. */
 export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
   if (!input.tenantId || !input.from || !input.to || input.from > input.to)
@@ -207,6 +226,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         inputTaxCreditMinor: 0,
         netTaxMinor: 0,
         documentCount: 0,
+        sourceScopes: [],
       };
       components.set(key, row);
     }
@@ -225,7 +245,10 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
       warnings.push({
         code: 'unassigned-tax-code',
         currency: fact.currency,
-        sourceId: documentIdentity,
+        // Persisted warning identities cannot contain NUL (PostgreSQL text
+        // rejects it and SQLite truncates it), unlike in-memory map keys.
+        sourceId: JSON.stringify([fact.documentType, fact.documentId]),
+        sourceType: 'document',
         message:
           'Document tax snapshot has no tax-code kind and cannot be classified.',
       });
@@ -248,6 +271,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         taxCodeKind: fact.taxCodeKind,
         taxableMinor: 0,
         documentCount: 0,
+        sourceScopes: [fact.direction === 'sales' ? 'invoice' : 'purchase'],
       };
       row.taxableMinor = addMinor(
         row.taxableMinor,
@@ -282,6 +306,10 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         documents,
       );
       row.documentCount = documents.size;
+      row.sourceScopes = mergeSourceScopes(
+        row.sourceScopes,
+        fact.direction === 'sales' ? 'invoice' : 'purchase',
+      );
       if (fact.direction === 'sales')
         row.collectedMinor = addMinor(
           row.collectedMinor,
@@ -315,6 +343,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         code: 'unknown-expense-tax',
         currency: expense.currency,
         sourceId: expense.expenseId,
+        sourceType: 'expense',
         message: 'Expense has no stored supplier tax facts.',
       });
       continue;
@@ -335,6 +364,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         code: 'linked-purchase-expense',
         currency: expense.currency,
         sourceId: expense.expenseId,
+        sourceType: 'expense',
         message:
           'Linked purchase and expense need allocation before their ITC can be reconciled.',
       });
@@ -349,6 +379,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
           code: 'unmapped-expense-component',
           currency: expense.currency,
           sourceId: expense.expenseId,
+          sourceType: 'expense',
           message: `Expense tax component ${tax.code} has no tenant-approved mapping.`,
         });
         continue;
@@ -364,6 +395,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         tax.recoverableAmount,
         'expense ITC total',
       );
+      row.sourceScopes = mergeSourceScopes(row.sourceScopes, 'expense');
       const documents =
         componentDocuments.get(
           componentKey(expense.currency, mapping.taxComponentId),
@@ -432,6 +464,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         code: 'unassigned-liability-account',
         currency: row.currency,
         sourceId: row.taxComponentId,
+        sourceType: 'component',
         message: 'Tax component has no liability account for reconciliation.',
       });
       return {
@@ -443,6 +476,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         ledgerMovementMinor: null,
         differenceMinor: null,
         status: 'unassigned' as const,
+        sourceScopes: row.sourceScopes,
       };
     }
     if (
@@ -454,6 +488,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         code: 'shared-liability-account',
         currency: row.currency,
         sourceId: row.liabilityAccountId,
+        sourceType: 'account',
         message:
           'Multiple tax components share one liability account, so per-component reconciliation is ambiguous.',
       });
@@ -466,6 +501,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         ledgerMovementMinor: null,
         differenceMinor: null,
         status: 'ambiguous' as const,
+        sourceScopes: mergeSourceScopes(row.sourceScopes, 'ledger'),
       };
     }
     const ledgerMovementMinor =
@@ -488,6 +524,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         differenceMinor === 0
           ? ('reconciled' as const)
           : ('difference' as const),
+      sourceScopes: mergeSourceScopes(row.sourceScopes, 'ledger'),
     };
   });
   return {

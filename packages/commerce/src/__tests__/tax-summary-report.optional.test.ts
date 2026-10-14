@@ -17,7 +17,10 @@ import {
   TaxSummaryReportCollection,
 } from '../collections/TaxSummaryReportCollection.js';
 import { aggregateTaxSummary } from '../tax-summary.js';
-import { drilldownTaxSummaryInvoiceFacts } from '../tax-summary-report-adapter.js';
+import {
+  drilldownTaxSummaryContributors,
+  drilldownTaxSummaryInvoiceFacts,
+} from '../tax-summary-report-adapter.js';
 import { seedInvoiceTaxReportFacts } from './helpers/invoice-tax-report-facts.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
@@ -97,6 +100,19 @@ describePostgres('TaxSummaryReport on PostgreSQL (#3940)', () => {
       reportId: gst.id,
     });
     expect(facts).toHaveLength(4);
+    await expect(
+      drilldownTaxSummaryContributors(db, {
+        tenantId,
+        reportId: gst.id,
+        measure: 'tax',
+      }),
+    ).resolves.toMatchObject({
+      complete: true,
+      pending: [],
+      contributors: expect.arrayContaining([
+        expect.objectContaining({ source: 'invoice', valueMinor: 4_050 }),
+      ]),
+    });
     const foreignTenantId = randomUUID();
     await withTenant({ tenantId: foreignTenantId }, async () => {
       const settings = await TaxSettingsCollection.create({ db });
