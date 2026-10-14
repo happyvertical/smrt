@@ -100,10 +100,13 @@ export class TaxSummaryReport extends SmrtReport {
   taxMinor = 0;
 
   @field({
-    description: 'Recoverable tax in integer minor units when complete.',
+    type: 'integer',
+    nullable: true,
+    description:
+      'Recoverable tax in integer minor units, or null when incomplete.',
   })
   @groupBy('recoverableMinor')
-  recoverableMinor = 0;
+  recoverableMinor: number | null = null;
 
   @field({
     nullable: true,
@@ -113,6 +116,7 @@ export class TaxSummaryReport extends SmrtReport {
   ledgerMovementMinor: number | null = null;
 
   @field({
+    type: 'integer',
     nullable: true,
     description: 'Collected less recoverable tax in integer minor units.',
   })
