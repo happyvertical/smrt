@@ -3,6 +3,7 @@ import { withTenant } from '@happyvertical/smrt-tenancy';
 import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
+import { ensureTenantTaxCodes } from './legacy.js';
 
 /** The tax subset emitted by core's cookbook engine, expressed as a percent. */
 export interface CookbookTaxSettingsInput {
@@ -34,6 +35,18 @@ export async function applyCookbookTaxSettings(
       const components = await TaxComponentCollection.create({ db: tx });
       const codes = await TaxCodeCollection.create({ db: tx });
       const settings = await TaxSettingsCollection.create({ db: tx });
+      if (input.taxRate === 0) {
+        await ensureTenantTaxCodes(tx, tenantId);
+        const codes = await TaxCodeCollection.create({ db: tx });
+        const outOfScope = await codes.findByCode('out-of-scope');
+        const current = await settings.getOrCreateForTenant(tenantId);
+        current.defaultSalesTaxCodeId = outOfScope?.id ?? '';
+        current.defaultPurchaseTaxCodeId = outOfScope?.id ?? '';
+        current.defaultLineAmountType = 'none';
+        current.taxRoundingScope = input.taxRounding;
+        await current.save();
+        return;
+      }
       const percent = String(input.taxRate);
       const componentName = `Cookbook ${percent}%`;
       let component = (

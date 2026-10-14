@@ -840,6 +840,7 @@ describe('smrt kitchen mcp over stdio', () => {
       currency: 'CAD',
       taxRate: 5,
     });
+    expect(changed.text).toContain('tax 5% excluded, line rounding');
 
     // The same batch id again applies nothing, even though expectedRevision is stale.
     const retry = await call('run_commands', {

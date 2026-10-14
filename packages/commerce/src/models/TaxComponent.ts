@@ -144,12 +144,24 @@ export class TaxComponent extends SmrtObject {
     const { TaxCodeCollection } = await import(
       '../collections/TaxCodeCollection.js'
     );
+    const { DocumentTaxCollection } = await import(
+      '../collections/DocumentTaxCollection.js'
+    );
     const codes = await TaxCodeCollection.create({ db: this.db });
-    return (await codes.list({ where: { tenantId: this.tenantId } })).some(
-      (code) =>
-        code.components.some(
-          (component) => component.taxComponentId === this.id,
-        ),
+    const usedByCode = (
+      await codes.list({ where: { tenantId: this.tenantId } })
+    ).some((code) =>
+      code.components.some((component) => component.taxComponentId === this.id),
+    );
+    if (usedByCode) return true;
+    const documentTaxes = await DocumentTaxCollection.create({ db: this.db });
+    return (
+      (
+        await documentTaxes.list({
+          where: { tenantId: this.tenantId, taxComponentId: this.id },
+          limit: 1,
+        })
+      ).length > 0
     );
   }
 }

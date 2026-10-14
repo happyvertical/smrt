@@ -79,16 +79,36 @@ export async function ensureTenantTaxCodes(
       ['exempt', 'Exempt', 'exempt'],
       ['zero-rated', 'Zero rated', 'zero-rated'],
       ['out-of-scope', 'Out of scope', 'out-of-scope'],
-      [
-        'legacy-unreconciled',
-        'Legacy rate requires reconciliation',
-        'out-of-scope',
-      ],
     ] as const) {
       const existing = await codes.findByCode(code);
       if (existing) result.push(existing);
       else result.push(await codes.create({ tenantId, code, name, kind }));
     }
+    const components = await TaxComponentCollection.create({ db });
+    const componentName = 'Legacy unreconciled residual';
+    let component = (
+      await components.list({ where: { name: componentName }, limit: 1 })
+    )[0];
+    if (!component)
+      component = await components.create({
+        tenantId,
+        name: componentName,
+        percent: '0',
+        active: false,
+      });
+    let unreconciled = await codes.findByCode('legacy-unreconciled');
+    if (!unreconciled) {
+      if (!component.id) throw new Error('Saved residual component has no ID.');
+      unreconciled = await codes.create({
+        tenantId,
+        code: 'legacy-unreconciled',
+        name: 'Legacy rate requires reconciliation',
+        kind: 'taxable',
+        active: false,
+        components: [{ taxComponentId: component.id, compound: false }],
+      });
+    }
+    result.push(unreconciled);
     return result;
   });
 }
