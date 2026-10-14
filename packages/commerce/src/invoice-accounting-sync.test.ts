@@ -402,6 +402,10 @@ describe('frozen invoice accounting sync (#3937)', () => {
         'accountingSyncStateJson',
       );
       const config = ObjectRegistry.getConfig('Invoice');
+      const stateField = ObjectRegistry.getFields('Invoice').get(
+        'accountingSyncStateJson',
+      );
+      expect(stateField).toMatchObject({ sensitive: true });
       const writable = (config.api as { writable?: string[] })?.writable;
       expect(writable).toBeDefined();
       expect(writable).not.toContain('accountingSyncStateJson');
