@@ -87,6 +87,7 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/smrt-ledgers": "workspace:*",
+    "@happyvertical/smrt-products": "workspace:*",
     "@happyvertical/smrt-subscriptions": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",

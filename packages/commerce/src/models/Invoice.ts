@@ -17,6 +17,10 @@ import {
   claimAllocationParent,
 } from '../allocation-integrity.js';
 import { minorToMajorUnits } from '../billing/units.js';
+import {
+  DOCUMENT_MONEY_WRITE,
+  type DocumentMoneyWriteCapability,
+} from '../document-money-internal.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import {
   type AccountingInvoiceInput,
@@ -24,6 +28,7 @@ import {
   type InvoiceOptions,
   InvoiceStatus,
   type RecognizeRevenueOptions,
+  type TaxRegistrationOptions,
 } from '../types/index.js';
 import type { InvoiceLineItem } from './InvoiceLineItem.js';
 
@@ -170,6 +175,8 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
       'issueDate',
       'dueDate',
       'currency',
+      'lineAmountType',
+      'taxRoundingScope',
       'notes',
       'customerNotes',
       'terms',
@@ -303,6 +310,46 @@ export class Invoice extends SmrtObject {
     ui: { widget: 'currency' },
   })
   currency: string = 'CAD';
+
+  /** Pricing interpretation fixed for the document before issue. */
+  lineAmountType: 'exclusive' | 'inclusive' | 'none' = 'exclusive';
+
+  /** Component rounding scope fixed for the document before issue. */
+  taxRoundingScope: 'line' | 'document' = 'line';
+
+  /** Informational sum of resolved line discounts, in minor units. */
+  discountTotal = 0;
+
+  /** Immutable seller registration snapshot once the invoice leaves draft. */
+  sellerTaxRegistrationsJson = '[]';
+
+  get sellerTaxRegistrations(): TaxRegistrationOptions[] {
+    try {
+      const value: unknown = JSON.parse(this.sellerTaxRegistrationsJson);
+      if (!Array.isArray(value)) return [];
+      return value.filter(
+        (entry): entry is TaxRegistrationOptions =>
+          !!entry &&
+          typeof entry === 'object' &&
+          typeof (entry as TaxRegistrationOptions).taxComponentId ===
+            'string' &&
+          typeof (entry as TaxRegistrationOptions).number === 'string' &&
+          typeof (entry as TaxRegistrationOptions).label === 'string',
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  set sellerTaxRegistrations(value: TaxRegistrationOptions[]) {
+    this.sellerTaxRegistrationsJson = JSON.stringify(value);
+  }
+
+  /** Immutable customer tax identifier snapshot once issued. */
+  partyTaxId = '';
+
+  /** Stable issue/freeze identity, independent of lifecycle updated_at. */
+  moneySnapshotId = '';
 
   // ============================================================================
   // Status
@@ -441,6 +488,21 @@ export class Invoice extends SmrtObject {
       this.totalAmount = options.totalAmount;
     if (options.amountPaid !== undefined) this.amountPaid = options.amountPaid;
     if (options.currency !== undefined) this.currency = options.currency;
+    if (options.lineAmountType !== undefined)
+      this.lineAmountType = options.lineAmountType;
+    if (options.taxRoundingScope !== undefined)
+      this.taxRoundingScope = options.taxRoundingScope;
+    if (options.discountTotal !== undefined)
+      this.discountTotal = options.discountTotal;
+    if (options.sellerTaxRegistrationsJson !== undefined)
+      this.sellerTaxRegistrationsJson = options.sellerTaxRegistrationsJson;
+    if (options.sellerTaxRegistrations !== undefined)
+      this.sellerTaxRegistrations = structuredClone(
+        options.sellerTaxRegistrations,
+      );
+    if (options.partyTaxId !== undefined) this.partyTaxId = options.partyTaxId;
+    if (options.moneySnapshotId !== undefined)
+      this.moneySnapshotId = options.moneySnapshotId;
     if (options.status !== undefined) this.status = options.status;
     if (options.arJournalId !== undefined)
       this.arJournalId = options.arJournalId;
@@ -509,25 +571,51 @@ export class Invoice extends SmrtObject {
    *  - **Status transitions** are validated against the prior persisted status.
    */
   override async save(): Promise<this> {
-    return this.withTransaction(async () => {
-      await claimAllocationParent(this, 'invoice');
-      const persisted = await this.isSaved();
-      const prior = await this.resolvePriorStatus(persisted);
+    const { saveInvoice } = await import('../document-money.js');
+    return (await saveInvoice(this)) as this;
+  }
 
-      this.assertAmountsAreMinorUnits();
-      await this.recomputeAmountsForSave(persisted);
-      this.assertNonNegativeAmounts();
-      this.assertStatusTransition(prior);
-      this.assertPaymentStatusConsistent();
-      await this.assertDraftDeliveryHistory(persisted);
+  /** @internal Aggregate persistence only. */
+  async saveDerived(
+    capability: DocumentMoneyWriteCapability,
+    options: { recomputeLegacy: boolean },
+  ): Promise<this> {
+    if (capability !== DOCUMENT_MONEY_WRITE)
+      throw new Error('Invoice money write capability is required');
+    await claimAllocationParent(this, 'invoice');
+    const persisted = await this.isSaved();
+    const prior = await this.resolvePriorStatus(persisted);
 
-      await assertAllocationParent(this, 'invoice');
-      const result = (await super.save()) as this;
-      // Once written, the current status becomes the new "prior" for the next
-      // save in this instance's lifetime.
-      loadedInvoiceStatus.set(this, this.status);
-      return result;
-    });
+    this.assertAmountsAreMinorUnits();
+    if (options.recomputeLegacy) await this.recomputeAmountsForSave(persisted);
+    else if (persisted && this.id) await this.recomputeAmountPaid();
+    else this.amountPaid = 0;
+    this.assertNonNegativeAmounts();
+    this.assertStatusTransition(prior);
+    this.assertPaymentStatusConsistent();
+    await this.assertDraftDeliveryHistory(persisted);
+
+    await assertAllocationParent(this, 'invoice');
+    const result = (await super.save()) as this;
+    loadedInvoiceStatus.set(this, this.status);
+    return result;
+  }
+
+  override async delete(
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    const { deleteInvoice } = await import('../document-money.js');
+    await deleteInvoice(this, options);
+  }
+
+  /** @internal Aggregate persistence only. */
+  async deleteDerived(
+    capability: DocumentMoneyWriteCapability,
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    if (capability !== DOCUMENT_MONEY_WRITE)
+      throw new Error('Invoice money write capability is required');
+    await super.delete(options);
   }
 
   /**
@@ -600,17 +688,7 @@ export class Invoice extends SmrtObject {
       }
 
       // amountPaid is the sum of PaymentAllocations — never trust the caller.
-      const { PaymentAllocationCollection } = await import(
-        '../collections/PaymentAllocationCollection.js'
-      );
-      const allocationCollection = await PaymentAllocationCollection.create({
-        ...this.options,
-        db: this.db,
-      });
-      const allocated = await allocationCollection.getTotalAllocatedToInvoice(
-        this.id,
-      );
-      this.amountPaid = allocated;
+      await this.recomputeAmountPaid();
     } else {
       // Not-yet-persisted invoice: no line items / allocations exist yet, so
       // enforce the arithmetic invariant on the caller-supplied totals.
@@ -635,6 +713,20 @@ export class Invoice extends SmrtObject {
         );
       }
     }
+  }
+
+  private async recomputeAmountPaid(): Promise<void> {
+    const { PaymentAllocationCollection } = await import(
+      '../collections/PaymentAllocationCollection.js'
+    );
+    const allocationCollection = await PaymentAllocationCollection.create({
+      ...this.options,
+      db: this.db,
+    });
+    if (!this.id) throw new Error('Persisted invoice is missing its ID');
+    this.amountPaid = await allocationCollection.getTotalAllocatedToInvoice(
+      this.id,
+    );
   }
 
   /**
@@ -1018,9 +1110,11 @@ export class Invoice extends SmrtObject {
     // the wrong amount already in the books. Recomputing first means the
     // journal is built from the same authoritative figures save() would accept,
     // and a forged total is rejected before any ledger mutation happens.
-    const persisted = await this.isSaved();
-    await this.recomputeAmountsForSave(persisted);
-    this.assertNonNegativeAmounts();
+    // Route through the tenant money gate before journal creation. In v2 this
+    // recomputes the complete aggregate; in legacy mode it preserves the
+    // existing calculation. Either way the journal reads persisted-authority
+    // totals and migration maintenance blocks before any ledger write.
+    await this.save();
 
     if (this.totalAmount <= 0) {
       throw new Error(

@@ -35,6 +35,8 @@ See [payment allocation integrity](agents/payment-allocations.md) for atomic spl
 retry identity, parent corrections and supported dialects.
 See [tax codes](agents/tax-codes.md) for tenant-owned rate components, default codes,
 and legacy-rate migration.
+See [document money persistence](agents/document-money.md) for the per-tenant
+legacy/v2 gate, atomic aggregate writes, issued snapshots, and frozen fields.
 
 ## Ledger Integration
 

@@ -998,6 +998,9 @@ importers:
       '@happyvertical/smrt-ledgers':
         specifier: workspace:*
         version: link:../ledgers
+      '@happyvertical/smrt-products':
+        specifier: workspace:*
+        version: link:../products
       '@happyvertical/smrt-subscriptions':
         specifier: workspace:*
         version: link:../subscriptions
