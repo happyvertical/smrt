@@ -38,6 +38,29 @@ section is what is left after it.
 | Catalog import | `smrt-ingestion` | External sources become ingestion sources with review-before-apply; v1 can bypass it with manual entry. |
 | Certificates for training courses | `smrt-human-resources` `Qualification` | A completed training course can issue a `HeldQualification`. Not needed for v1. |
 | Enjoyment and interest signals | `smrt-personas` learning loop pattern | The feedback → confidence → reflection shape is reused for learner attributes, but on education's own rows. |
+| Phone camera for scans | `smrt-ui` `CameraCapture` | Already upstream; the app wires it to the scan capture service. |
+| First-run setup | `smrt-app-runtime` owner setup | Creates the family tenant and guardian owner. |
+
+### Pieces to upstream first
+
+anytown.ai and ergot.io each carry generic tenancy code that smrt still
+lacks. Both apps are pinned to older smrt and also carry things that have
+since landed upstream (mobile auth, camera capture, owner bootstrap, host
+tenant resolution, role seeding, device PINs); those are not ported. The
+genuine gaps are filed as Phase 0.5 under the epic and run alongside the
+catalog models:
+
+| Issue | From | Fills |
+|---|---|---|
+| [#3973](https://github.com/happyvertical/smrt/issues/3973) Invitation model and service | anytown dashboard | co-op invites by email or link; smrt has only the modal UI |
+| [#3974](https://github.com/happyvertical/smrt/issues/3974) membership upsert | anytown, rewritten again in ergot | idempotent add and remove used by invites and joins |
+| [#3975](https://github.com/happyvertical/smrt/issues/3975) hierarchy traversal | anytown ancestor walk, ergot child-scope checks | group views over family sub-tenants |
+| [#3976](https://github.com/happyvertical/smrt/issues/3976) SvelteKit guards | ergot factory dashboard, anytown | `requireTenantContext` / `requirePermission` |
+| [#3977](https://github.com/happyvertical/smrt/issues/3977) approval-based join | anytown reporter onboarding | a family asks to join the co-op |
+
+Neither app has anything for courses, lessons, sectioned authoring,
+markdown editing, PDF splitting, comments, person-to-person messaging, or
+shared-device user switching; those stay new work here.
 
 ## New primitives
 
@@ -399,6 +422,8 @@ is filed; later phases are filed when Phase 0 is usable.
   - [#3969](https://github.com/happyvertical/smrt/issues/3969) feat(education): submissions, submission assets, grades, scan capture service
   - [#3970](https://github.com/happyvertical/smrt/issues/3970) feat(app): fork smrt-start, family tenant, learner auth
   - [#3971](https://github.com/happyvertical/smrt/issues/3971) feat(app): learner dashboard and print-and-scan flow
+- Phase 0.5 (upstream ports, same wave as the catalog models): #3973,
+  #3974, #3975, #3976, #3977, see "Pieces to upstream first"
 - Phase 1
     - feat(education): skills, lesson skills, mastery job
     - feat(education): assessments and questions, printable rendering
