@@ -167,7 +167,7 @@ export interface InvoiceMinorLineInput {
   quantity: number;
   /** Signed integer minor units; negative prices support existing credit lines. */
   unitPrice: number;
-  /** Nonnegative flat discount in integer minor units. */
+  /** Legacy uses a nonnegative flat discount; v2 stores the gross sign. */
   discount: number;
   /** Resolved tax fraction, at most eight fractional digits, in [0, 1]. */
   taxRate: number;
@@ -247,13 +247,14 @@ export function calculateInvoiceMinorLine(
   for (const amount of [input.unitPrice, input.discount])
     if (!Number.isSafeInteger(amount))
       throw new RangeError('Invoice money must be safe integer minor units.');
-  if (input.discount < 0 || input.taxRate > 1)
+  const moneyModel = options.moneyModel ?? 'legacy';
+  if ((moneyModel === 'legacy' && input.discount < 0) || input.taxRate > 1)
     throw new RangeError(
       'Invoice discount or tax rate is outside the supported range.',
     );
   const quantity = numberDecimal(input.quantity, 6);
   const tax = numberDecimal(input.taxRate, 8);
-  if ((options.moneyModel ?? 'legacy') === 'legacy') {
+  if (moneyModel === 'legacy') {
     const gross = roundSignedLegacy(
       quantity.coefficient * BigInt(input.unitPrice),
       quantity.scale,
@@ -275,8 +276,7 @@ export function calculateInvoiceMinorLine(
       totalMinor: Number(total),
     };
   }
-  if (options.moneyModel !== 'v2')
-    throw new TypeError('Unknown invoice money model');
+  if (moneyModel !== 'v2') throw new TypeError('Unknown invoice money model');
   const percent = decimalText({
     coefficient: tax.coefficient * 100n,
     scale: tax.scale,
@@ -295,10 +295,7 @@ export function calculateInvoiceMinorLine(
           discount:
             input.discount === 0
               ? { kind: 'none' }
-              : {
-                  kind: 'amount',
-                  minor: input.unitPrice < 0 ? -input.discount : input.discount,
-                },
+              : { kind: 'amount', minor: input.discount },
           taxCode: legacyTaxCode(percent),
         },
       ],
