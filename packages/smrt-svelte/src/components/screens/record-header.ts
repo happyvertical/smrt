@@ -138,11 +138,14 @@ export function deriveRecordHeader(
 
 /**
  * The record's own totals, read by role (`subtotal`, `discount`, `tax`,
- * `total`): what the line-items totals block shows as authoritative.
+ * `total`): what the line-items totals block shows as authoritative. With
+ * `visible` (the policy-filtered view fields), a field the policy omits is
+ * never read.
  */
 export function recordTotals(
   record: ScreenRecord,
   roles: ScreenFieldRoles,
+  visible?: readonly { name: string }[],
 ): {
   subtotal?: number | null;
   discount?: number | null;
@@ -151,8 +154,10 @@ export function recordTotals(
 } {
   const out: Record<string, number | null> = {};
   for (const role of ['subtotal', 'discount', 'tax', 'total'] as const) {
-    const field = Object.keys(roles).find((name) =>
-      roles[name]?.includes(role),
+    const field = Object.keys(roles).find(
+      (name) =>
+        roles[name]?.includes(role) &&
+        (!visible || visible.some((f) => f.name === name)),
     );
     if (!field) continue;
     const value = record[field];

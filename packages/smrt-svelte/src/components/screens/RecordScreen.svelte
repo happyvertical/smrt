@@ -156,7 +156,7 @@ const widgetRegistry = untrack(() => {
       relations,
       records: loaders.records,
       viewAllHref: (relation) => viewAllHref?.(relation),
-      totals: () => recordTotals(record, roles),
+      totals: () => recordTotals(record, roles, viewFields),
       currency: () => recordCurrency,
     });
   }

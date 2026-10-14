@@ -92,6 +92,12 @@ describe('record totals', () => {
       total: 513450,
     });
     expect(recordTotals({ subtotal: '12' }, roles).subtotal).toBeNull();
+    // A totals field the policy omits is never read.
+    const policy: ScreenPolicy = {
+      objectRef: orders.objectRef,
+      fields: { number: { visibility: 'basic' } },
+    };
+    expect(recordTotals(orderRecord, roles, view(orders, policy))).toEqual({});
     expect(totalsFields(roles)).toEqual([
       'subtotal',
       'discountAmount',
