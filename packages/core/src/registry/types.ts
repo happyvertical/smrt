@@ -60,6 +60,18 @@ export interface ApiSerializerReference {
   exportName: string;
 }
 
+export interface McpSerializersConfig {
+  /**
+   * Async serializer used only for the standard MCP `get` response.
+   *
+   * The function receives the loaded object and the caller's public JSON
+   * options. It runs after authentication and tenant-scoped lookup, and must
+   * build its base projection with `toPublicJSON(options)` before adding any
+   * related public data.
+   */
+  get?: ApiSerializerReference;
+}
+
 export interface ApiCustomRouteConfig {
   /**
    * Route scope for custom methods.
@@ -575,6 +587,9 @@ export interface SmartObjectConfig {
          * withhold is still emitted.
          */
         exclude?: string[];
+
+        /** Optional async enrichment for the standard read-only get tool. */
+        serializers?: McpSerializersConfig;
 
         /**
          * Enable the MCP Tasks extension for long-running custom actions.

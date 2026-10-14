@@ -196,7 +196,15 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
   // application code that enforces permissions. MCP create/update honor the
   // same `api.writable` allowlist, so status/amounts are unsettable over MCP
   // too. See S5 audit #1390.
-  mcp: { include: ['list', 'get'] },
+  mcp: {
+    include: ['list', 'get'],
+    serializers: {
+      get: {
+        importPath: '@happyvertical/smrt-commerce',
+        exportName: 'serializeInvoiceMcpGet',
+      },
+    },
+  },
   cli: { skipApiCheck: true },
 })
 export class Invoice extends SmrtObject {
