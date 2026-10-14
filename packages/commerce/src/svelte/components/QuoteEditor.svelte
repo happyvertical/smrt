@@ -13,12 +13,14 @@ import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import type { Attachment } from 'svelte/attachments';
 import type { HTMLFormAttributes } from 'svelte/elements';
+import type { MoneyHeaderDisplay } from '../invoices/money-editor.js';
 import { Q } from '../quote-i18n.js';
 import {
   type QuoteDocumentKind,
   type QuoteDraftValues,
   type QuoteFieldNames,
   quoteFieldNames,
+  quoteMinorText,
 } from '../quote-types.js';
 
 /** Narrow native attributes and Svelte attachment keys; avoids recursive HTML prop unions. */
@@ -73,6 +75,10 @@ export interface Props {
   extensions?: Snippet;
   /** Authorized attachment composition; this component never loads private files. */
   attachments?: Snippet;
+  /** Explicit v2 stored header facts; this editor never recomputes them. */
+  money?: MoneyHeaderDisplay;
+  /** Native field name for the explicit document mode. */
+  moneyFieldName?: string;
 }
 let {
   kind,
@@ -99,6 +105,8 @@ let {
   formAttributes = {},
   extensions,
   attachments,
+  money,
+  moneyFieldName = 'lineAmountType',
 }: Props = $props();
 const i18n = useI18n();
 const { t } = i18n;
@@ -118,10 +126,12 @@ const title = $derived(
 <section class="quote-editor" aria-label={title} data-smrt-component="QuoteEditor">
   <h2>{title}</h2>
   <p>{t(Q[kind === 'vendor-quotation' ? 'commerce.quote.vendor_hint' : 'commerce.quote.estimate_hint'])}</p>
+  {#if money}<p>Amounts are {money.lineAmountType === 'inclusive' ? 'tax inclusive' : money.lineAmountType === 'exclusive' ? 'tax exclusive' : 'no tax'}.</p>{#if money.lineAmountType === 'inclusive' && money.taxMinor !== 0}<p>Includes tax of {quoteMinorText({currency: values.currency, minorUnitDigits: money.minorUnitDigits, amountMinor: money.taxMinor})}.</p>{/if}{/if}
   {#if readonly}<p>{t(Q['commerce.quote.readonly'])}</p>{/if}
   {#if message}<p role="alert">{message}</p>{/if}
   <Form {...formAttributes} {action} {method} {onsubmit} preventDefault={false}>
     {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} />{/each}
+    {#if money}<Input type="hidden" name={moneyFieldName} value={money.lineAmountType} />{/if}
     <fieldset disabled={readonly || busy}>
       <legend>{title}</legend>
       {#if !readonly}<div class="actions"><Button type="submit" name={intents.name} value={intents.save} density="touch">{labels.save ?? t(Q['commerce.quote.save'])}</Button></div>{/if}

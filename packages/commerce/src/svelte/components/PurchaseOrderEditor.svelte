@@ -11,6 +11,7 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import type { HTMLFormAttributes } from 'svelte/elements';
+import type { MoneyHeaderDisplay } from '../invoices/money-editor.js';
 import { P } from '../purchasing-i18n.js';
 import {
   type PurchaseDraftValues,
@@ -78,6 +79,10 @@ export interface Props {
   extensions?: Snippet;
   /** Authorized private attachment surface outside the editor form; never loaded by Commerce. */
   attachments?: Snippet;
+  /** Explicit v2 stored header facts; no totals are recomputed in this surface. */
+  money?: MoneyHeaderDisplay;
+  /** Native field name for the explicit document mode. */
+  moneyFieldName?: string;
 }
 let {
   operation = 'create',
@@ -109,6 +114,8 @@ let {
   formAttributes = {},
   extensions,
   attachments,
+  money: moneyDisplay,
+  moneyFieldName = 'lineAmountType',
 }: Props = $props();
 const { t } = useI18n();
 const fields = $derived({ ...purchaseFieldNames, ...names });
@@ -144,9 +151,11 @@ const money = (amountMinor: number | null) =>
  {#if source.notice}<p role="status">{source.notice}</p>{/if}
  {#if operation==='reduce'}<p>{t(P['commerce.purchase.reduction_hint'])}</p>{/if}
  {#if readonly}<p>{t(P['commerce.purchase.readonly'])}</p>{/if}
+ {#if moneyDisplay}<p>Amounts are {moneyDisplay.lineAmountType === 'inclusive' ? 'tax inclusive' : moneyDisplay.lineAmountType === 'exclusive' ? 'tax exclusive' : 'no tax'}.</p>{#if moneyDisplay.lineAmountType === 'inclusive' && moneyDisplay.taxMinor !== 0}<p>Includes tax of {displayMoney({currency, minorUnitDigits: moneyDisplay.minorUnitDigits, amountMinor: moneyDisplay.taxMinor})} {currency}.</p>{/if}{/if}
  {#if message}<p role="alert">{message}</p>{/if}
  <Form {...formAttributes} {action} method="post" {onsubmit} preventDefault={false}>
   {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} />{/each}
+  {#if moneyDisplay}<Input type="hidden" name={moneyFieldName} value={moneyDisplay.lineAmountType} />{/if}
   <fieldset disabled={readonly || busy || source.disabled}>
    <legend>{title}</legend>
    <!-- The first submitter is the safe default for native Enter-in-input submission. -->

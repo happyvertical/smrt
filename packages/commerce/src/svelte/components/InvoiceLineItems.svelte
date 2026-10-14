@@ -66,8 +66,8 @@ const onadd = $derived(legacy?.onadd);
 const showSource = $derived(legacy?.showSource ?? false);
 const emptyMessage = $derived(props.emptyMessage ?? 'No line items');
 
-// Format decimal-dollar amounts. The commerce models store DECIMAL dollars
-// (AGENTS.md "Currency in decimal fields"), not integer cents.
+// This legacy branch receives decimal-major values from its historical API.
+// Exact retained views above use integer minor units through formatInvoiceMinorUnits.
 function formatMoney(amount: number): string {
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
@@ -178,7 +178,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
       </tbody>
       <tfoot>
         <tr class="total-row">
-          <td colspan={showSource ? 4 : 3} class="total-label">Subtotal</td>
+          <td colspan={showSource ? 4 : 3} class="total-label">Line total</td>
           <td class="col-amount">{formatMoney(total)}</td>
           {#if editable}
             <td></td>
