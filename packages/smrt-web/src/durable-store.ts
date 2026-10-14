@@ -16,8 +16,8 @@
  * and persistence modules importing each other. A logout / tenant-switch wipes
  * every durable artifact for a namespace in one place.
  *
- * Nothing in this package calls these yet — the seam ships ahead of its
- * consumers by design (see PRD #1755).
+ * Consumers: the offline outbox (`offline.ts`), persisted collections and data
+ * surfaces (`persistence.ts`), and version metadata (`update-state.ts`).
  */
 
 /**
