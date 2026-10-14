@@ -587,9 +587,8 @@ export class ProductionOrder extends PurchaseContract {
  *
  * A Cart starts in {@link ContractStatus.DRAFT} via the base `Contract.status`
  * default — the subclass doesn't need its own override. Application code
- * is responsible for promoting the row to `ContractStatus.PENDING` /
- * `ACCEPTED` at checkout time; the framework doesn't enforce a state
- * machine on the cart → order transition.
+ * is responsible for assigning the appropriate Order status at checkout;
+ * the framework doesn't enforce a state machine on the cart → order transition.
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
