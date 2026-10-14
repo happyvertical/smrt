@@ -1023,9 +1023,11 @@ freshness bound is measured from the stamp, which a tenant switch copies to
 the rotated session, so switching tenants never makes an old proof look new.
 `assertProof`, when given, must return exactly `true`. On success the new
 password (policy-checked, `mustChange` cleared) is written guarded on the row
-just read — or inserted if the person had none — every session of the person
-ends before and after the write, including the recovery session, so one proof
-replaces the password once, and a `managed` audit entry records
+read before any hashing — or inserted if the person had none — in the same
+transaction as a conditional update that consumes the recovery session, so
+of any concurrent uses of one proof exactly one succeeds and a failed write
+leaves the proof unconsumed. Every other session of the person ends before
+and after the write, and a `managed` audit entry records
 `action: 'recover'` with the channel and the proof's age. Do not list a
 channel whose sessions an ordinary sign-in can mint: whoever holds such a
 session can then choose the account's password.

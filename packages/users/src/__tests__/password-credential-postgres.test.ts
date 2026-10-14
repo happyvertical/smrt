@@ -317,5 +317,61 @@ describePostgres('PasswordCredentialService on PostgreSQL', () => {
       password: 'a remembered secret',
     });
     expect(signedIn.userId).toBe(personId);
+
+    // Two interleaved uses of one proof, on independent connections' worth
+    // of concurrency: exactly one succeeds, the other is refused.
+    let arrived = 0;
+    let release!: () => void;
+    const bothArrived = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const racing = await PasswordCredentialService.create({
+      ...options,
+      password: { scrypt: { N: 2 ** 10 } },
+      limiter: { audit: false },
+      recovery: {
+        authMethods: ['owner-recovery'],
+        assertProof: async () => {
+          arrived += 1;
+          if (arrived === 2) release();
+          await bothArrived;
+          return true;
+        },
+      },
+    });
+    const raceSession = await sessionService.createSession(
+      personId,
+      undefined,
+      { authMethod: 'owner-recovery', data: outOfBandProofSessionData() },
+    );
+    const raceActor = await sessionService.loadSessionContext(raceSession);
+    if (!raceActor) throw new Error('missing session');
+    const outcomes = await Promise.allSettled(
+      ['first racer secret', 'second racer secret'].map((newPassword) =>
+        racing.replaceForgottenPassword({ actor: raceActor, newPassword }),
+      ),
+    );
+    expect(arrived).toBe(2);
+    expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+    const lost = outcomes.find(
+      (o): o is PromiseRejectedResult => o.status === 'rejected',
+    );
+    expect(
+      lost?.reason instanceof PasswordCredentialForbiddenError ||
+        lost?.reason instanceof PasswordCredentialError,
+    ).toBe(true);
+    const winner =
+      outcomes[0].status === 'fulfilled'
+        ? 'first racer secret'
+        : 'second racer secret';
+    expect((await credentials.findByUserId(personId))?.version).toBe(3);
+    expect(
+      (
+        await racing.signIn({
+          identifier: 'owner@recovery.example',
+          password: winner,
+        })
+      ).userId,
+    ).toBe(personId);
   });
 });

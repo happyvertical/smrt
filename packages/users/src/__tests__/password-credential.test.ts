@@ -1205,6 +1205,66 @@ describe('PasswordCredentialService', () => {
       ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
     });
 
+    it('lets exactly one of two interleaved uses of one proof succeed', async () => {
+      for (const target of ['existing', 'none'] as const) {
+        const userId = target === 'existing' ? personId : noPasswordId;
+        const email =
+          target === 'existing' ? 'pat@example.com' : 'nopass@example.com';
+        // Hold both calls at the host assertion until both have validated
+        // the same session, then let them race to the write.
+        let arrived = 0;
+        let release!: () => void;
+        const bothArrived = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const recovering = await recoveryService({
+          assertProof: async () => {
+            arrived += 1;
+            if (arrived === 2) release();
+            await bothArrived;
+            return true;
+          },
+        });
+        const actor = await mint(userId);
+        const outcomes = await Promise.allSettled([
+          recovering.replaceForgottenPassword({
+            actor,
+            newPassword: 'first racer secret',
+          }),
+          recovering.replaceForgottenPassword({
+            actor,
+            newPassword: 'second racer secret',
+          }),
+        ]);
+        expect(arrived).toBe(2);
+        const won = outcomes.filter((o) => o.status === 'fulfilled');
+        const lost = outcomes.filter(
+          (o): o is PromiseRejectedResult => o.status === 'rejected',
+        );
+        expect(won).toHaveLength(1);
+        expect(lost).toHaveLength(1);
+        expect(
+          lost[0].reason instanceof PasswordCredentialForbiddenError ||
+            lost[0].reason instanceof PasswordCredentialError,
+        ).toBe(true);
+        const winner =
+          outcomes[0].status === 'fulfilled'
+            ? 'first racer secret'
+            : 'second racer secret';
+        const loser =
+          winner === 'first racer secret'
+            ? 'second racer secret'
+            : 'first racer secret';
+        expect((await credentials.findByUserId(userId))?.rotatedBy).toBe(
+          'self-recovery',
+        );
+        await expect(signIn(email, loser)).rejects.toBeInstanceOf(
+          PasswordCredentialError,
+        );
+        expect((await signIn(email, winner)).userId).toBe(userId);
+      }
+    });
+
     it('sets a first password for someone who never had one', async () => {
       const recovering = await recoveryService();
       await recovering.replaceForgottenPassword({

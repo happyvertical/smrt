@@ -47,8 +47,13 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  isEmbeddedDatabase,
+  type SmrtClassOptions,
+  withEmbeddedWriteTransaction,
+} from '@happyvertical/smrt-core';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { UsersPasswordCredentialCollection } from '../collections/PasswordCredentialCollection.js';
 import { SessionCollection } from '../collections/SessionCollection.js';
@@ -60,6 +65,7 @@ import {
   type SessionAuthMethod,
 } from '../models/Session.js';
 import { normalizeEmail, type User } from '../models/User.js';
+import { SessionStatus } from '../types/index.js';
 import { withoutListBounds } from './authorization-read-options.js';
 import {
   hashSecret,
@@ -919,8 +925,11 @@ export class PasswordCredentialService {
    * minted after verifying an out-of-band proof (#3905); see
    * {@link PasswordRecoveryOptions} for every condition. Works whether or not
    * a password exists, clears `mustChange`, and ends EVERY session of the
-   * person — this one too, so one proof replaces the password once — before
-   * and after the write. Refusals are {@link PasswordCredentialForbiddenError};
+   * person before and after the write. The recovery session is consumed by a
+   * conditional update in the same transaction as the guarded credential
+   * write, so of any concurrent uses of one proof exactly one can succeed
+   * (and a failed write leaves the proof unconsumed). Refusals are
+   * {@link PasswordCredentialForbiddenError};
    * a write that lost a race with another change is
    * {@link PasswordCredentialError}.
    */
@@ -961,6 +970,10 @@ export class PasswordCredentialService {
     }
     const user = await this.requireUser(userId);
     if (!user.isActive()) throw new PasswordCredentialForbiddenError();
+    // The credential the proof is about, read BEFORE any slow work: a
+    // concurrent use of the same proof that wins writes a new generation,
+    // so this one's guarded write below can never replace it.
+    const existing = await this.credentials.findByUserId(userId);
     const provenAt = new Date(provenAtMs);
     if (
       recovery.assertProof &&
@@ -971,24 +984,60 @@ export class PasswordCredentialService {
     const password = await this.assertPolicy(input.newPassword, user);
     const passwordHash = await this.hashPassword(password);
 
-    const existing = await this.credentials.findByUserId(userId);
-    const endAll = () => this.sessionService.destroyAllUserSessions(userId);
+    const recoverySessionId = input.actor.sessionId;
     // Before AND after the write: a failure between the two leaves the
-    // person signed out, never signed in under a password that is gone.
-    let revokedSessions = await endAll();
+    // person signed out, never signed in under a password that is gone. The
+    // recovery session itself is consumed inside the write transaction.
+    let revokedSessions = await this.sessionService.destroyAllUserSessions(
+      userId,
+      { exceptSessionId: recoverySessionId },
+    );
     const write = {
       passwordHash,
       mustChange: false,
       rotatedAt: new Date(),
       rotatedBy: 'self-recovery',
     };
-    // Guarded on the row read above: a change or reset that landed meanwhile
-    // is never silently overwritten.
-    const written = existing
-      ? await this.credentials.replaceIfCurrent(existing, write)
-      : (await this.credentials.insertIfAbsent(userId, write)) !== null;
-    if (!written) throw new PasswordCredentialError();
-    revokedSessions += await endAll();
+    const db = this.credentials.db as DatabaseInterface;
+    await withEmbeddedWriteTransaction(
+      db,
+      isEmbeddedDatabase(db),
+      async (tx) => {
+        // Consume the proof: one conditional update that only the first of
+        // any concurrent uses can make. A second request validated the same
+        // session but finds it no longer active and is refused.
+        const sessionTable = this.sessionRows.tableName;
+        const nowIso = new Date().toISOString();
+        const consumed = await tx.query(
+          `UPDATE ${sessionTable}
+              SET status = ?, updated_at = ?
+            WHERE id = ? AND user_id = ? AND status = ? AND expires_at > ?
+            RETURNING id`,
+          SessionStatus.REVOKED,
+          nowIso,
+          recoverySessionId,
+          userId,
+          SessionStatus.ACTIVE,
+          nowIso,
+        );
+        if (consumed.rows?.length !== 1) {
+          throw new PasswordCredentialForbiddenError();
+        }
+        // Guarded on the row read before hashing; a failure rolls the
+        // consumption back with it.
+        const credentials = await UsersPasswordCredentialCollection.create({
+          ...this.options,
+          db: tx,
+        });
+        const written = existing
+          ? await credentials.replaceIfCurrent(existing, write)
+          : (await credentials.insertIfAbsent(userId, write)) !== null;
+        if (!written) throw new PasswordCredentialError();
+      },
+      true,
+    );
+    revokedSessions += 1;
+    revokedSessions += await this.sessionService.destroyAllUserSessions(userId);
     await this.recordManagement(userId, input.ipAddress, {
       action: 'recover',
       self: true,
