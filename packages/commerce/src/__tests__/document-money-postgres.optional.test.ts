@@ -207,4 +207,157 @@ describePostgres('invoice money aggregate on PostgreSQL (#3933)', () => {
       ).toMatchObject([{ taxableMinor: 200, taxMinor: 10 }]);
     });
   });
+
+  it('reverses persisted epic A and B snapshots exactly', async () => {
+    for (const scenario of [
+      { mode: 'exclusive', scope: 'line' },
+      { mode: 'inclusive', scope: 'document' },
+    ] as const) {
+      const tenantId = randomUUID();
+      await ensureTenantTaxCodes(db, tenantId);
+      await withTenant({ tenantId }, async () => {
+        const components = await TaxComponentCollection.create({ db });
+        const gst = await components.create({ name: 'GST', percent: '5' });
+        const pst = await components.create({ name: 'PST', percent: '7' });
+        const codes = await TaxCodeCollection.create({ db });
+        const gstCode = await codes.create({
+          code: `gst-${scenario.mode}`,
+          name: 'GST',
+          components: [{ taxComponentId: gst.id, compound: false }],
+        });
+        const gstPstCode = await codes.create({
+          code: `gst-pst-${scenario.mode}`,
+          name: 'GST + PST',
+          components: [
+            { taxComponentId: gst.id, compound: false },
+            { taxComponentId: pst.id, compound: false },
+          ],
+        });
+        const settings = await TaxSettingsCollection.create({ db });
+        const setting = await settings.getOrCreateForTenant(tenantId);
+        setting.defaultSalesTaxCodeId = gstCode.id;
+        setting.defaultLineAmountType = scenario.mode;
+        setting.taxRoundingScope = scenario.scope;
+        await setting.save();
+        const migrationId = await settings.beginMoneyMigration(tenantId);
+        await settings.activateMoneyV2(tenantId, migrationId);
+        const customer = await (await CustomerCollection.create({ db })).create(
+          { defaultTaxCodeId: gstCode.id },
+        );
+        const invoices = await InvoiceCollection.create({ db });
+        const lines = await InvoiceLineItemCollection.create({ db });
+        const source = await invoices.create({
+          customerId: customer.id,
+          invoiceNumber: `PG-EPIC-${scenario.mode}`,
+          currency: 'CAD',
+        });
+        const sourceLines = [];
+        for (const specification of [
+          {
+            description: 'Design',
+            quantity: 10,
+            unitPrice: 8_500,
+            discountType: 'percent' as const,
+            discountRate: '10',
+            taxCodeId: gstCode.id,
+          },
+          {
+            description: 'Laptop stand',
+            quantity: 2,
+            unitPrice: 4_999,
+            discountType: 'amount' as const,
+            discount: 500,
+            taxCodeId: gstPstCode.id,
+          },
+          {
+            description: 'Software licence',
+            quantity: 12,
+            unitPrice: 2_000,
+            taxCodeId: gstPstCode.id,
+          },
+          {
+            description: 'Book',
+            quantity: 1,
+            unitPrice: 4_500,
+            taxCodeId: gstCode.id,
+          },
+        ])
+          sourceLines.push(
+            await lines.create({
+              invoiceId: source.id,
+              taxMode: 'override',
+              ...specification,
+            }),
+          );
+        const issuedSource = await invoices.get(
+          { id: source.id },
+          { cache: false },
+        );
+        if (!issuedSource) throw new Error('Expected epic source');
+        issuedSource.status = InvoiceStatus.SENT;
+        await issuedSource.save();
+        const credit = await invoices.create({
+          kind: 'credit_note',
+          creditedInvoiceId: issuedSource.id,
+          customerId: customer.id,
+          invoiceNumber: `PG-CN-${scenario.mode}`,
+          currency: 'CAD',
+        });
+        for (const sourceLine of sourceLines)
+          await lines.create({
+            invoiceId: credit.id,
+            creditedLineId: sourceLine.id,
+            description: `Credit ${sourceLine.description}`,
+            quantity: sourceLine.quantity,
+            unitPrice: 0,
+          });
+        const issuedCredit = await invoices.get(
+          { id: credit.id },
+          { cache: false },
+        );
+        if (!issuedCredit) throw new Error('Expected epic credit');
+        issuedCredit.status = InvoiceStatus.SENT;
+        await issuedCredit.save();
+        expect(issuedCredit).toMatchObject({
+          subtotal: issuedSource.subtotal,
+          taxAmount: issuedSource.taxAmount,
+          totalAmount: issuedSource.totalAmount,
+        });
+        const documents = await DocumentTaxCollection.create({ db });
+        const project = (
+          rows: Awaited<ReturnType<typeof documents.findByDocument>>,
+        ) =>
+          rows.map((row) => [
+            row.taxComponentId,
+            row.taxableMinor,
+            row.taxMinor,
+          ]);
+        expect(
+          project(
+            await documents.findByDocument(
+              tenantId,
+              'credit_note',
+              issuedCredit.id,
+            ),
+          ),
+        ).toEqual(
+          project(
+            await documents.findByDocument(
+              tenantId,
+              'invoice',
+              issuedSource.id,
+            ),
+          ),
+        );
+        if (scenario.mode === 'inclusive') {
+          const software = (await lines.findByInvoice(issuedCredit.id)).find(
+            (line) => line.description.includes('Software licence'),
+          );
+          expect(
+            software?.taxComponents.map((component) => component.taxMinor),
+          ).toEqual([1_072, 1_500]);
+        }
+      });
+    }
+  });
 });
