@@ -55,9 +55,18 @@ complete ancestor/root chain, including macOS ACLs. Failed custody removes the
 pending claim and every directory only when they were created by that attempt;
 an inherited pending claim and its database remain authoritative for retry.
 Initializers for the same data root are serialized across processes by an
-exclusive transaction in a dedicated SQLite lock database under a private
-per-user, root-keyed custody directory. The released `@happyvertical/sql`
-trusted-parent boundary validates that directory, its ancestors, and the lock
+exclusive transaction in a dedicated SQLite lock database under a private,
+root-keyed custody directory kept beside the data it protects:
+`<parent of the data root>/.smrt-lease-<key>/initialization.sqlite`. That
+parent has already passed the custody preflight and is the one location every
+process sharing the data directory sees, so the lease also works inside a user
+namespace (agent sandboxes, rootless containers) where `/tmp` reads as owned by
+the overflow uid. The historical per-user `/tmp/.smrt-<uid>/<key>` lease is
+still taken afterwards whenever its ancestry is trusted, so a process running an
+older release stays excluded; when the parent is not writable by the current
+user (or is read-only) the `/tmp` lease is required instead, as before. The
+released `@happyvertical/sql`
+trusted-parent boundary validates each lease directory, its ancestors, and the lock
 leaf for ownership, write permissions, static links, and macOS ACLs before it
 opens the lock database. Atomic SQLite locking elects one owner without deleting
 or replacing a pathname, so there is no stale-file ABA window and no PID or

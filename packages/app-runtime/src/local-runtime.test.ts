@@ -47,6 +47,7 @@ const filesystemInterleave = vi.hoisted(() => ({
     | ((
         path: Parameters<typeof import('node:fs/promises').unlink>[0],
       ) => Promise<void>),
+  lstatOwner: undefined as undefined | ((path: string) => number | undefined),
 }));
 
 const initializationLockWorkerInterleave = vi.hoisted(() => ({
@@ -73,6 +74,15 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     unlink: async (path: Parameters<typeof actual.unlink>[0]) => {
       await filesystemInterleave.beforeUnlink?.(path);
       return actual.unlink(path);
+    },
+    lstat: async (...args: unknown[]) => {
+      const details = await Reflect.apply(actual.lstat, actual, args);
+      const uid = filesystemInterleave.lstatOwner?.(String(args[0]));
+      if (uid === undefined) return details;
+      return Object.assign(Object.create(Object.getPrototypeOf(details)), {
+        ...details,
+        uid,
+      });
     },
   };
 });
@@ -109,6 +119,7 @@ afterEach(async () => {
   filesystemInterleave.beforeLink = undefined;
   filesystemInterleave.afterReaddir = undefined;
   filesystemInterleave.beforeUnlink = undefined;
+  filesystemInterleave.lstatOwner = undefined;
   initializationLockWorkerInterleave.releaseFailure = undefined;
   vi.restoreAllMocks();
   await Promise.all(
@@ -156,6 +167,22 @@ async function initializationLockPath(dataDirectory: string): Promise<string> {
   const lockPath = join(lockRoot, lockKey, 'initialization.sqlite');
   initializationLockPaths.add(lockPath);
   return lockPath;
+}
+
+function besideDataLockPath(dataDirectory: string): string {
+  const lockIdentity =
+    platform() === 'darwin' || platform() === 'win32'
+      ? dataDirectory.toLowerCase()
+      : dataDirectory;
+  const lockKey = createHash('sha256')
+    .update(lockIdentity)
+    .digest('hex')
+    .slice(0, 32);
+  return join(
+    dirname(dataDirectory),
+    `.smrt-lease-${lockKey}`,
+    'initialization.sqlite',
+  );
 }
 
 async function holdInitializationDatabaseUntilKilled(
@@ -1106,6 +1133,92 @@ describe('local application runtime', () => {
       await expect(stat(directories.dataDirectory)).rejects.toMatchObject({
         code: 'ENOENT',
       });
+    },
+  );
+
+  it('places the initialization lease beside the data root and keeps the /tmp compatibility lease', async () => {
+    const directories = await localDirectories('lease-beside-data');
+    const temporaryLockPath = await initializationLockPath(
+      directories.dataDirectory,
+    );
+    const besideLockPath = besideDataLockPath(directories.dataDirectory);
+
+    await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+
+    expect((await stat(dirname(besideLockPath))).mode & 0o777).toBe(0o700);
+    expect((await stat(besideLockPath)).isFile()).toBe(true);
+    expect((await stat(temporaryLockPath)).isFile()).toBe(true);
+  });
+
+  it('serializes initialization beside the data when /tmp reads as owned by an unmapped user (#3877)', async () => {
+    const directories = await localDirectories('lease-userns');
+    const temporaryLockPath = await initializationLockPath(
+      directories.dataDirectory,
+    );
+    const canonicalTemporaryRoot = await realpath('/tmp');
+    filesystemInterleave.lstatOwner = (path) =>
+      path === canonicalTemporaryRoot ? 65534 : undefined;
+
+    let activeMigrations = 0;
+    let maximumActiveMigrations = 0;
+    const prepareDatabase = async () => {
+      activeMigrations += 1;
+      maximumActiveMigrations = Math.max(
+        maximumActiveMigrations,
+        activeMigrations,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      activeMigrations -= 1;
+    };
+    const initialized = await Promise.all([
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase,
+      }),
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase,
+      }),
+    ]);
+
+    expect(initialized).toHaveLength(2);
+    expect(maximumActiveMigrations).toBe(1);
+    expect(
+      (await stat(besideDataLockPath(directories.dataDirectory))).isFile(),
+    ).toBe(true);
+    await expect(stat(temporaryLockPath)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    'falls back to the /tmp lease when the data parent cannot hold one',
+    async () => {
+      const directories = await localDirectories('lease-readonly-parent');
+      const temporaryLockPath = await initializationLockPath(
+        directories.dataDirectory,
+      );
+      await mkdir(directories.dataDirectory, { mode: 0o700 });
+      await chmod(directories.dataDirectory, 0o700);
+      await chmod(directories.root, 0o500);
+      try {
+        await initializeLocalApplicationRuntime({
+          appId: 'lolaus',
+          ...directories,
+        });
+      } finally {
+        await chmod(directories.root, 0o700);
+      }
+
+      await expect(
+        stat(dirname(besideDataLockPath(directories.dataDirectory))),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+      expect((await stat(temporaryLockPath)).isFile()).toBe(true);
     },
   );
 

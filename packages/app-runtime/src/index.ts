@@ -83,6 +83,7 @@ const BOOTSTRAP_TABLE = '_smrt_local_owner_bootstrap';
 const SECRET_FILE_NAME = 'application.secret';
 const DATABASE_FILE_NAME = 'application.sqlite';
 const ROOT_MARKER_PREFIX = '.smrt-local-runtime-';
+const LEASE_DIRECTORY_PREFIX = '.smrt-lease-';
 const PREFLIGHT_RETRY_LIMIT = 4;
 const INITIALIZATION_LOCK_TIMEOUT_MS = 120_000;
 const INITIALIZATION_LOCK_WORKER = `
@@ -1410,6 +1411,20 @@ async function prepareDedicatedRoot(
   };
 }
 
+/**
+ * Serialize initialization of one data root across processes.
+ *
+ * The primary lease lives beside the data it protects, in a private
+ * `.smrt-lease-<key>` directory inside the data root's parent: that parent has
+ * already passed trusted-parent custody preflight, and it is the only
+ * location every process sharing the data directory is guaranteed to see,
+ * including processes in a user namespace where `/tmp` reads as owned by the
+ * overflow uid (#3877). The historical per-user `/tmp/.smrt-<uid>` lease is
+ * still taken, in that order, whenever its ancestry is trusted, so a process
+ * running an older release that knows only the `/tmp` lease stays excluded.
+ * When the parent cannot hold a lease (not writable by the current user, or a
+ * read-only filesystem) the `/tmp` lease is required exactly as before.
+ */
 async function acquireInitializationLock(
   root: string,
 ): Promise<LocalInitializationLock> {
@@ -1419,28 +1434,116 @@ async function acquireInitializationLock(
       'Local runtime initialization locks require a numeric current-user identity.',
     );
   }
-  const canonicalTemporaryRoot = await realpath('/tmp');
-  const lockRoot = resolve(canonicalTemporaryRoot, `.smrt-${currentUid}`);
+  const lockKey = createHash('sha256')
+    .update(normalizeFilesystemIdentity(root))
+    .digest('hex')
+    .slice(0, 32);
+
+  const besideData = await prepareDataParentLeaseRoot(
+    root,
+    lockKey,
+    currentUid,
+  );
+  const temporaryLockRoot = resolve(
+    await realpath('/tmp'),
+    `.smrt-${currentUid}`,
+  );
+  if (besideData === null) {
+    return acquireTemporaryInitializationLease(
+      temporaryLockRoot,
+      lockKey,
+      currentUid,
+    );
+  }
+
+  const primary = await acquireInitializationDatabaseLease(
+    resolve(besideData, 'initialization.sqlite'),
+    besideData,
+  );
+  if (!(await hasTrustedLeaseAncestry(temporaryLockRoot, currentUid))) {
+    return primary;
+  }
+  let compatibility: LocalInitializationLock;
+  try {
+    compatibility = await acquireTemporaryInitializationLease(
+      temporaryLockRoot,
+      lockKey,
+      currentUid,
+    );
+  } catch (error) {
+    try {
+      await primary.release();
+    } catch (releaseError) {
+      throw preservePrimaryFailure(
+        error,
+        releaseError,
+        'initializationLockReleaseError',
+        'Local runtime initialization-lock acquisition and release both failed.',
+      );
+    }
+    throw error;
+  }
+  return {
+    release: async () => {
+      let failure: unknown;
+      try {
+        await compatibility.release();
+      } catch (error) {
+        failure = error;
+      }
+      try {
+        await primary.release();
+      } catch (error) {
+        if (failure === undefined) throw error;
+        throw preservePrimaryFailure(
+          failure,
+          error,
+          'initializationLockReleaseError',
+          'Both local runtime initialization leases failed to release.',
+        );
+      }
+      if (failure !== undefined) throw failure;
+    },
+  };
+}
+
+/**
+ * Create (or validate) the private lease directory beside the data root.
+ * Returns `null` only when the parent cannot hold a lease for the current
+ * user; any other unexpected state fails closed.
+ */
+async function prepareDataParentLeaseRoot(
+  root: string,
+  lockKey: string,
+  currentUid: number,
+): Promise<string | null> {
+  const parent = resolve(root, '..');
+  const leaseRoot = resolve(parent, `${LEASE_DIRECTORY_PREFIX}${lockKey}`);
+  try {
+    // Preflight has already verified every existing ancestor of the data root
+    // (real directories, trusted owners, no foreign write access); missing
+    // components are created private, as data-root creation would.
+    await mkdir(parent, { recursive: true, mode: 0o700 });
+    await mkdir(leaseRoot, { mode: 0o700 });
+  } catch (error) {
+    if (isLeaseLocationUnavailable(error)) return null;
+    if (!isFileAlreadyExists(error)) throw error;
+  }
+  await assertPrivateLeaseDirectory(leaseRoot, currentUid);
+  return leaseRoot;
+}
+
+async function acquireTemporaryInitializationLease(
+  lockRoot: string,
+  lockKey: string,
+  currentUid: number,
+): Promise<LocalInitializationLock> {
   try {
     await mkdir(lockRoot, { mode: 0o700 });
   } catch (error) {
     if (!isFileAlreadyExists(error)) throw error;
   }
-  const lockRootDetails = await lstat(lockRoot);
-  if (
-    !lockRootDetails.isDirectory() ||
-    lockRootDetails.isSymbolicLink() ||
-    lockRootDetails.uid !== currentUid ||
-    (lockRootDetails.mode & 0o777) !== 0o700
-  ) {
-    throw unsafeFilesystemEntry(
-      `Local runtime lock directory must be current-user-owned with mode 0700: ${lockRoot}`,
-    );
-  }
-  const lockKey = createHash('sha256')
-    .update(normalizeFilesystemIdentity(root))
-    .digest('hex')
-    .slice(0, 32);
+  await assertPrivateLeaseDirectory(lockRoot, currentUid);
   const custodyRoot = resolve(lockRoot, lockKey);
   try {
     await mkdir(custodyRoot, { mode: 0o700 });
@@ -1449,6 +1552,52 @@ async function acquireInitializationLock(
   }
   const path = resolve(custodyRoot, 'initialization.sqlite');
   return acquireInitializationDatabaseLease(path, custodyRoot);
+}
+
+async function assertPrivateLeaseDirectory(
+  path: string,
+  currentUid: number,
+): Promise<void> {
+  const details = await lstat(path);
+  if (
+    !details.isDirectory() ||
+    details.isSymbolicLink() ||
+    details.uid !== currentUid ||
+    (details.mode & 0o777) !== 0o700
+  ) {
+    throw unsafeFilesystemEntry(
+      `Local runtime lock directory must be current-user-owned with mode 0700: ${path}`,
+    );
+  }
+}
+
+/**
+ * Whether every existing ancestor of `path` meets the secure SQLite ancestry
+ * rule (owned by the current user or root; group/world writable only when
+ * sticky). In a user namespace an unmapped owner reads as the overflow uid,
+ * so the shared `/tmp` fails this and its compatibility lease is skipped.
+ */
+async function hasTrustedLeaseAncestry(
+  path: string,
+  currentUid: number,
+): Promise<boolean> {
+  for (const component of absolutePathComponents(resolve(path, '..'))) {
+    const details = await lstat(component);
+    if (details.isSymbolicLink() || !details.isDirectory()) return false;
+    if (details.uid !== currentUid && details.uid !== 0) return false;
+    if ((details.mode & 0o022) !== 0 && (details.mode & 0o1000) === 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isLeaseLocationUnavailable(error: unknown): boolean {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return code === 'EACCES' || code === 'EPERM' || code === 'EROFS';
 }
 
 async function acquireInitializationDatabaseLease(

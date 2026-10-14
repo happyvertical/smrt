@@ -125,9 +125,13 @@ generated application-secret file are mode `0600`. SQLite enables foreign keys,
 WAL, full synchronous durability, and a busy timeout. The local server binds to
 `127.0.0.1` by default, and owner bootstrap refuses a non-loopback bind.
 Concurrent initializers are serialized across processes by an exclusive
-transaction in a dedicated SQLite lock database under a private per-user,
-root-keyed custody directory. The released SQL trusted-parent boundary validates
-the lock directory, ancestor chain, leaf, and macOS ACLs before opening it.
+transaction in a dedicated SQLite lock database under a private, root-keyed
+custody directory beside the data root (`<parent>/.smrt-lease-<key>`), so it
+also works in user-namespace sandboxes where `/tmp` reads as owned by the
+overflow uid. The legacy per-user `/tmp/.smrt-<uid>` lease is taken afterwards
+whenever its ancestry is trusted, and is required when the parent cannot hold a
+lease. The released SQL trusted-parent boundary validates
+each lock directory, ancestor chain, leaf, and macOS ACLs before opening it.
 SQLite elects one owner atomically without deleting a lock pathname; process or
 worker death releases the kernel lock without PID/time leases. A read-only
 storage-path and marker preflight rejects obvious invalid configurations before

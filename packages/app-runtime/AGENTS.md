@@ -13,6 +13,12 @@ Application infrastructure composition for the validated runtime profiles in
 - SQLite is acquired through `@happyvertical/sql`'s explicit
   `{ driver: 'node:sqlite', custody: 'trusted-parent' }` boundary after the
   runtime establishes its user-owned mode-0700 data root.
+- The initialization lease lives beside the data root
+  (`<parent>/.smrt-lease-<key>/initialization.sqlite`, #3877), then the legacy
+  `/tmp/.smrt-<uid>/<key>` lease when its ancestry is trusted (required only
+  when the parent cannot hold a lease). Acquire in that order; never make the
+  lease location configurable per process — every process sharing a data root
+  must derive the same lease.
 - Application migrations are explicit through `prepareDatabase`; runtime never
   creates application model tables implicitly. A rejected `prepareDatabase` is
   normalized into `LocalRuntimeError` with the stable `migration_failed` code
