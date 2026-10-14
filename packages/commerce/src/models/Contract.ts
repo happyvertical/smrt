@@ -71,6 +71,19 @@ const CONTRACT_STATUS_TRANSITIONS: Record<ContractStatus, ContractStatus[]> = {
  */
 const loadedContractStatus = new WeakMap<Contract, ContractStatus>();
 
+/** Whether a Contract belongs to the purchase STI branch, including descendants. */
+export function classifyContractPurchase(contract: Contract): boolean {
+  return 'vendorId' in contract;
+}
+
+/** A frozen Contract snapshot is reportable except when cancelled. */
+export function isContractSnapshotReportEligible(contract: Contract): boolean {
+  return (
+    contract.status !== ContractStatus.DRAFT &&
+    contract.status !== ContractStatus.CANCELLED
+  );
+}
+
 /**
  * Contract is the base class for all commercial agreements.
  *

@@ -16,7 +16,11 @@ import {
   DOCUMENT_MONEY_WRITE,
   lockDocumentMoneyParents,
 } from './document-money-internal.js';
-import type { Contract } from './models/Contract.js';
+import {
+  type Contract,
+  classifyContractPurchase,
+  isContractSnapshotReportEligible,
+} from './models/Contract.js';
 import type { ContractLineItem } from './models/ContractLineItem.js';
 import {
   calculateMoneyDocument,
@@ -101,18 +105,8 @@ function assertUnchanged<T extends object>(
 function isFrozen(contract: Contract): boolean {
   return contract.status !== ContractStatus.DRAFT || !!contract.moneySnapshotId;
 }
-/** Classify the STI branch from its public party field, including descendants. */
-export function classifyContractPurchase(contract: Contract): boolean {
-  return 'vendorId' in contract;
-}
 
-/** Frozen Contract facts are reportable after draft except for cancelled rows. */
-export function isContractSnapshotReportEligible(contract: Contract): boolean {
-  return (
-    contract.status !== ContractStatus.DRAFT &&
-    contract.status !== ContractStatus.CANCELLED
-  );
-}
+export { classifyContractPurchase, isContractSnapshotReportEligible };
 
 function direction(contract: Contract): 'sales' | 'purchases' {
   return classifyContractPurchase(contract) ? 'purchases' : 'sales';
