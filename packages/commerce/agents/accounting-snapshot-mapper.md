@@ -67,7 +67,9 @@ Recovery is an explicit application flow rather than a database repair:
 
 1. Load the invoice and call `readFrozenAccountingSyncState()`.
 2. Use its realm, environment, `requestId`, and payload hash to query the
-   configured QuickBooks realm. Wait until the original sync owner has stopped.
+   configured QuickBooks realm. An absence result does not establish that an
+   active request has stopped. For `in_flight`, first terminate or otherwise
+   positively establish that the original process/request owner cannot finish.
 3. Call `reconcileFrozenInvoiceAccountingSync()` with that same request ID,
    attempt ID, and mapping. Report `found` with the provider document ID and
    observed timestamp, or report `absent` only after QuickBooks authoritatively
@@ -78,8 +80,12 @@ Recovery is an explicit application flow rather than a database repair:
 The reconciliation API accepts both `unknown` and interrupted `in_flight`
 records so a process crash after the remote write cannot wedge the invoice.
 It rejects a changed snapshot, request, realm, environment, or mapping. It does
-not perform the remote lookup itself and must not be used while the original
-owner can still complete.
+not perform the remote lookup itself. A normal caller cannot reconcile an
+`in_flight` record; the trusted server caller must pass
+`confirmInterruptedOwnerStopped: true` after establishing quiescence. That flag
+is an explicit operational assertion, not a lease inferred from time or from a
+provider lookup. `unknown` records already have no live local owner and do not
+require it.
 
 ## Deployment and current SDK boundary
 
