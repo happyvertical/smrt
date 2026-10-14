@@ -195,6 +195,16 @@ export {
   WholesaleRecipe,
 } from './recipes.js';
 export {
+  buildRevenueJournalEntries,
+  type RevenueJournalDocumentInput,
+  type RevenueJournalEntry,
+  type RevenueJournalLineInput,
+  type RevenueJournalOptions,
+  type RevenueJournalResult,
+  type RevenueJournalTaxInput,
+  type RevenueJournalWarning,
+} from './revenue-journal.js';
+export {
   applyCommerceCookbookSettings,
   applyCookbookTaxSettings,
   applyTaxCodeExamplePack,
@@ -213,6 +223,7 @@ export {
 // Types
 export {
   type Address,
+  type CancelRevenueOptions,
   ContractStatus,
   ContractType,
   CustomerStatus,
