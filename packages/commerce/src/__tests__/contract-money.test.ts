@@ -12,6 +12,11 @@ import { DocumentTaxCollection } from '../collections/DocumentTaxCollection.js';
 import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
+import {
+  classifyContractPurchase,
+  isContractSnapshotReportEligible,
+} from '../contract-money.js';
+import { Order, PurchaseOrder } from '../models/Contract.js';
 import { ContractStatus } from '../types/index.js';
 
 describe('Contract money persistence (#3933)', () => {
@@ -47,6 +52,26 @@ describe('Contract money persistence (#3933)', () => {
       return code.id;
     });
   }
+
+  it('classifies both STI branches and keeps declined snapshots reportable', () => {
+    expect(classifyContractPurchase(new Order())).toBe(false);
+    expect(classifyContractPurchase(new PurchaseOrder())).toBe(true);
+    expect(
+      isContractSnapshotReportEligible(
+        new Order({ status: ContractStatus.DECLINED }),
+      ),
+    ).toBe(true);
+    expect(
+      isContractSnapshotReportEligible(
+        new Order({ status: ContractStatus.DRAFT }),
+      ),
+    ).toBe(false);
+    expect(
+      isContractSnapshotReportEligible(
+        new Order({ status: ContractStatus.CANCELLED }),
+      ),
+    ).toBe(false);
+  });
 
   it('persists one draft aggregate and freezes it after sent', async () => {
     const codeId = await activateV2('contract-tenant');
