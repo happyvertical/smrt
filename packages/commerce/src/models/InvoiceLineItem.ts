@@ -207,7 +207,8 @@ export class InvoiceLineItem extends SmrtObject {
    * truncate every rate to 0 (#2361).
    */
   @field({
-    description: 'The tax rate for this line, as a percentage (5 means 5%).',
+    description:
+      'The stored fractional tax rate for this line (0.05 means 5%).',
   })
   taxRate: number = 0.0;
 

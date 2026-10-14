@@ -144,8 +144,12 @@ without creating an application tax code. In v2,
 `InvoiceLineItemCollection.getTotalForInvoice()` sums line amounts for
 compatibility; use persisted `Invoice.totalAmount` for the amount due. The
 [commerce money calculator guide](../../docs/content/commerce-money.md#persisted-invoice-money)
-documents the v2 Invoice semantics and boundaries; tenant migration, Contract
-persistence, credit notes, posting, and reporting are not covered here.
+and [document-money contract](agents/document-money.md) cover persisted Invoice-v2
+semantics, credits, refunds, and posting. The materialized Invoice tax-report
+descriptor and tenant-safe drilldown are documented in
+[tax-summary contract](agents/tax-summary.md). A tenant migration procedure,
+Contract money persistence, and the production reports UI remain pending their
+own releases.
 
 ## API
 

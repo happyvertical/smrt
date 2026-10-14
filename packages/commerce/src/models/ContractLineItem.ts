@@ -85,7 +85,8 @@ export class ContractLineItem extends SmrtObject {
    * so it stays DECIMAL — INTEGER would truncate every meaningful value.
    */
   @field({
-    description: 'The tax rate for this line, as a percentage (5 means 5%).',
+    description:
+      'The stored fractional tax rate for this line (0.05 means 5%).',
   })
   taxRate: number = 0.0;
 
