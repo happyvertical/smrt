@@ -53,6 +53,8 @@ import {
   PrincipalToolNotAllowedError,
 } from '@happyvertical/smrt-agents';
 import {
+  applySyncWritablePolicy,
+  fieldTypeToJsonSchema,
   ObjectRegistry,
   type SmrtClassOptions,
   ValidationError,
@@ -388,6 +390,48 @@ function actionFromDefinition(def: PermissionDefinition): string | null {
   return action.length > 0 ? action : null;
 }
 
+/** Prefer the catalog's collision-safe registry key whenever it supplies one. */
+function registryKeyFor(tool: ManifestTool): string {
+  return tool.qualifiedName ?? tool.className;
+}
+
+/**
+ * Resolve the generated CRUD write policy for a manifest tool.
+ *
+ * This deliberately delegates filtering to core's public policy helper, which
+ * is also used by generated REST and sync surfaces. Keeping the policy in one
+ * place prevents a chat-only mass-assignment exception from drifting away from
+ * `api.writable`, framework-managed fields, or `@field({ readonly: true })`.
+ */
+function writablePolicyFor(tool: ManifestTool): {
+  readonlyFields: string[];
+  writableAllowlist: string[] | null;
+} {
+  const registryKey = registryKeyFor(tool);
+  const readonlyFields: string[] = [];
+  for (const [name, field] of ObjectRegistry.getFields(registryKey)) {
+    if (field.readonly === true || field._meta?.readonly === true) {
+      readonlyFields.push(name);
+    }
+  }
+
+  const api = ObjectRegistry.getConfig(registryKey).api;
+  const writable =
+    api !== false && typeof api === 'object' ? api.writable : undefined;
+  return {
+    readonlyFields,
+    writableAllowlist: Array.isArray(writable) ? writable : null,
+  };
+}
+
+/** Apply the generated CRUD surface's public write policy to manifest input. */
+function writableToolInput(
+  tool: ManifestTool,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  return applySyncWritablePolicy(input, writablePolicyFor(tool));
+}
+
 /**
  * Build the closed catalog of manifest operations available as tools.
  *
@@ -467,10 +511,30 @@ function toolParameters(tool: ManifestTool): Record<string, unknown> {
   const fieldProps = (): Record<string, unknown> => {
     const props: Record<string, unknown> = {};
     try {
-      for (const [name] of ObjectRegistry.getFields(tool.className)) {
-        if (typeof name === 'string') {
-          props[name] = { type: 'string' };
+      const registryKey = registryKeyFor(tool);
+      const policy = writablePolicyFor(tool);
+      for (const [name, field] of ObjectRegistry.getFields(registryKey)) {
+        // Create/update offer exactly the fields that the execution path can
+        // write. The core helper owns all mass-assignment filtering rules.
+        if (!(name in applySyncWritablePolicy({ [name]: true }, policy))) {
+          continue;
         }
+        props[name] = fieldTypeToJsonSchema({
+          name,
+          type: field.type,
+          description:
+            field.description ??
+            field._meta?.description ??
+            field.options?.description,
+          default: field.default ?? field._meta?.default,
+          maxLength: field.maxLength,
+          minLength: field.minLength,
+          min: field.min,
+          max: field.max,
+          enum: field.enum ?? field._meta?.enum,
+          nullable: field._meta?.nullable === true,
+          related: field.related,
+        });
       }
     } catch {
       // No field metadata available — fall back to a free-form object.
@@ -595,7 +659,7 @@ export async function invokeManifestTool(
   // auto-filtering bound the query; fall back to the supplied handle otherwise.
   const db = (run.context.database ?? options.db) as SmrtClassOptions['db'];
   const collection = await ObjectRegistry.getCollection(
-    tool.className,
+    registryKeyFor(tool),
     db ? { db } : {},
   );
 
@@ -614,7 +678,9 @@ export async function invokeManifestTool(
       return items.map(itemToObservation);
     }
     case 'create': {
-      const item = (await collection.create(args)) as unknown as OperableItem;
+      const item = (await collection.create(
+        writableToolInput(tool, args),
+      )) as unknown as OperableItem;
       await item.save();
       return itemToObservation(item);
     }
@@ -627,7 +693,7 @@ export async function invokeManifestTool(
       if (!item) {
         return { found: false };
       }
-      Object.assign(item, rest);
+      Object.assign(item, writableToolInput(tool, rest));
       await item.save();
       return itemToObservation(item);
     }
