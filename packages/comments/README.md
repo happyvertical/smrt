@@ -65,3 +65,9 @@ and mention policies are callbacks, not a selectable external provider.
 Validation: `pnpm --filter @happyvertical/smrt-comments test` covers SQLite and
 DuckDB. `pnpm --filter @happyvertical/smrt-comments test:postgres` adds PostgreSQL
 using the repository's disposable-database wrapper and ordinary CI role.
+
+Keyed retries use a separate canonical tenant binding while preserving stored
+tenant and author references. UUID casing changes across trusted actor contexts
+reuse the same comment, including after generic receipt retention. Unkeyed legacy SQLite
+listing remains scoped to its original tenant spelling; keyed rows are merged
+by equivalent UUID tenant without folding arbitrary textual tenant IDs.

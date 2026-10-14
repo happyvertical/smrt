@@ -19,7 +19,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   indexes: [
     {
       name: 'record_comments_tenant_request_key',
-      columns: ['tenantId', 'idempotencyKey'],
+      columns: ['retryTenantId', 'idempotencyKey'],
       unique: true,
     },
     {
@@ -45,6 +45,10 @@ export class Comment extends SmrtPolymorphicAssociation {
   @field({ type: 'text', nullable: true, readonly: true })
   idempotencyKey: string | null = null;
 
+  /** Canonical retry namespace; never rewrites stored tenant/user references. */
+  @field({ type: 'text', nullable: true, readonly: true })
+  retryTenantId: string | null = null;
+
   /** Digest of the original authenticated author, parent and normalized payload. */
   @field({ type: 'text', nullable: true, readonly: true })
   requestDigest: string | null = null;
@@ -57,6 +61,8 @@ export class Comment extends SmrtPolymorphicAssociation {
     if (options.body !== undefined) this.body = options.body;
     if (options.idempotencyKey !== undefined)
       this.idempotencyKey = options.idempotencyKey;
+    if (options.retryTenantId !== undefined)
+      this.retryTenantId = options.retryTenantId;
     if (options.requestDigest !== undefined)
       this.requestDigest = options.requestDigest;
     const mentions = options.mentions as unknown;

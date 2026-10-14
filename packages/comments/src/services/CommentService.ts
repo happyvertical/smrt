@@ -70,12 +70,71 @@ export class CommentService {
     recordId: string,
   ): Promise<Comment[]> {
     await this.authorize(recordType, recordId, 'read');
-    return withTenant({ tenantId: this.options.actor.tenantId }, async () =>
+    const tenantId = this.options.actor.tenantId;
+    const binding = canonicalUuid(tenantId);
+    const rows = await withTenant({ tenantId }, async () =>
       (await CommentCollection.create({ db: this.options.db })).listForRecord(
         recordType,
         recordId,
       ),
     );
+    const collection = await withTenant({ tenantId }, () =>
+      CommentCollection.create({ db: this.options.db }),
+    );
+    // The canonical retry namespace is separate from legacy reference spelling.
+    // This query is tenant/parent-bound before any scoped hydration.
+    const bound = await collection.db.query(
+      'SELECT CAST(id AS TEXT) AS id, CAST(tenant_id AS TEXT) AS tenant_id FROM record_comments WHERE retry_tenant_id = ? AND meta_type = ? AND meta_id = ? AND idempotency_key IS NOT NULL',
+      binding,
+      recordType,
+      recordId,
+    );
+    for (const stored of bound.rows) {
+      const row = await this.loadBoundComment(collection.db, stored, binding);
+      if (row.metaType !== recordType || row.metaId !== recordId) {
+        throw new CommentIdempotencyError('COMMENT_REQUEST_UNAVAILABLE');
+      }
+      rows.push(row);
+    }
+    for (const row of rows) {
+      if (row.idempotencyKey !== null && row.retryTenantId !== binding) {
+        throw new CommentIdempotencyError('COMMENT_REQUEST_UNAVAILABLE');
+      }
+    }
+    return [...new Map(rows.map((row) => [row.id, row])).values()].sort(
+      (a, b) =>
+        (a.created_at?.getTime() ?? 0) - (b.created_at?.getTime() ?? 0) ||
+        (a.id ?? '').localeCompare(b.id ?? ''),
+    );
+  }
+
+  private async loadBoundComment(
+    db: CommentCollection['db'],
+    stored: { [key: string]: unknown },
+    binding: string,
+  ): Promise<Comment> {
+    const id = stored.id;
+    const tenantId = stored.tenant_id;
+    if (
+      typeof id !== 'string' ||
+      typeof tenantId !== 'string' ||
+      canonicalUuid(tenantId) !== binding
+    ) {
+      throw new CommentIdempotencyError('COMMENT_REQUEST_UNAVAILABLE');
+    }
+    // This is the original spelling of the same authorized tenant, not a bypass.
+    const row = await withTenant({ tenantId }, async () =>
+      (await CommentCollection.create({ db })).get(id),
+    );
+    if (
+      !row ||
+      canonicalUuid(row.tenantId) !== binding ||
+      row.retryTenantId !== binding ||
+      row.idempotencyKey === null
+    ) {
+      throw new CommentIdempotencyError('COMMENT_REQUEST_UNAVAILABLE');
+    }
+    return row;
   }
 
   async create(commentOptions: CreateCommentInput): Promise<Comment> {
@@ -147,6 +206,8 @@ export class CommentService {
           mentions: prepared.mentions,
           idempotencyKey: idempotencyKey ?? null,
           requestDigest: idempotencyKey === undefined ? null : requestDigest,
+          retryTenantId:
+            idempotencyKey === undefined ? null : canonicalUuid(tenantId),
         });
       };
       if (idempotencyKey === undefined) return insert(collection);
@@ -163,19 +224,35 @@ export class CommentService {
         },
         async (tx) => {
           const scoped = await CommentCollection.create({ db: tx });
-          const prior = (
-            await scoped.list({
-              where: { tenantId, idempotencyKey },
-              limit: 1,
-            })
-          )[0];
-          const row = prior ?? (await insert(scoped));
-          return { id: row.id, digest: row.requestDigest };
+          const matches = await tx.query(
+            'SELECT CAST(id AS TEXT) AS id, CAST(tenant_id AS TEXT) AS tenant_id FROM record_comments WHERE retry_tenant_id = ? AND idempotency_key = ?',
+            canonicalUuid(tenantId),
+            idempotencyKey,
+          );
+          if (matches.rows.length > 1) {
+            throw new CommentIdempotencyError('COMMENT_REQUEST_UNAVAILABLE');
+          }
+          const row = matches.rows[0]
+            ? await this.loadBoundComment(
+                tx,
+                matches.rows[0],
+                canonicalUuid(tenantId),
+              )
+            : await insert(scoped);
+          return {
+            id: row.id,
+            digest: row.requestDigest,
+            tenant_id: row.tenantId,
+          };
         },
       );
       if (receipt.digest !== requestDigest)
         throw new CommentIdempotencyError('COMMENT_REQUEST_CONFLICT');
-      const row = receipt.id ? await collection.get(receipt.id) : null;
+      const row = await this.loadBoundComment(
+        collection.db,
+        receipt,
+        canonicalUuid(tenantId),
+      );
       if (
         !row ||
         canonicalUuid(row.tenantId) !== canonicalUuid(tenantId) ||

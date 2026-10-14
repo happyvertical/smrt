@@ -402,6 +402,221 @@ describe.each([
       return { db, input, service: new CommentService({ ...access, db }) };
     }
 
+    it('shares durable retries across every trusted actor and request UUID spelling', async () => {
+      const { db, input } = await fixture();
+      const tenant = input.tenantId;
+      const author = 'abcdefab-cdef-4abc-8def-abcdefabcdef';
+      const make = (tenantId: string, userId: string) =>
+        new CommentService({
+          db,
+          actor: { tenantId, userId },
+          authorizeRecord: async () => true,
+        });
+      const first = await make(
+        tenant.toUpperCase(),
+        author.toUpperCase(),
+      ).create({ ...input, authorUserId: author });
+      for (const retained of [true, false]) {
+        if (!retained)
+          await db.query(
+            'DELETE FROM _smrt_run_once_claims WHERE tenant_id = ?',
+            tenant,
+          );
+        for (let bits = 0; bits < 16; bits++) {
+          const spelling = (value: string, bit: number) =>
+            bits & bit ? value.toUpperCase() : value;
+          const service = make(spelling(tenant, 1), spelling(author, 2));
+          const replay = await service.create({
+            ...input,
+            tenantId: spelling(tenant, 4),
+            authorUserId: spelling(author, 8),
+          });
+          expect(replay.id).toBe(first.id);
+          expect(
+            (await service.listForRecord(input.metaType, input.metaId)).map(
+              (row) => row.id,
+            ),
+          ).toEqual([first.id]);
+        }
+      }
+      const rows = await db.query(
+        'SELECT id FROM record_comments WHERE retry_tenant_id = ? AND idempotency_key = ?',
+        tenant,
+        input.idempotencyKey,
+      );
+      expect(rows.rows).toHaveLength(1);
+      // The durable constraint, independently of the retained generic claim.
+      await expect(
+        db.query(
+          'UPDATE record_comments SET retry_tenant_id = ? WHERE id = ?',
+          crypto.randomUUID(),
+          first.id,
+        ),
+      ).resolves.toBeDefined();
+      await expect(
+        make(tenant, author).create({ ...input, authorUserId: author }),
+      ).rejects.toMatchObject({ code: 'COMMENT_REQUEST_UNAVAILABLE' });
+    });
+
+    it('arbitrates cold cross-case actors and enforces canonical binding uniqueness', async () => {
+      const { db, input } = await fixture();
+      const author = 'abcdefab-cdef-4abc-8def-abcdefabcdef';
+      const lower = new CommentService({
+        db,
+        actor: { tenantId: input.tenantId, userId: author },
+        authorizeRecord: async () => true,
+      });
+      const upper = new CommentService({
+        db,
+        actor: {
+          tenantId: input.tenantId.toUpperCase(),
+          userId: author.toUpperCase(),
+        },
+        authorizeRecord: async () => true,
+      });
+      const request = { ...input, authorUserId: author };
+      const [a, b] = await Promise.all([
+        upper.create(request),
+        lower.create(request),
+      ]);
+      expect(a.id).toBe(b.id);
+      await db.query(
+        'DELETE FROM _smrt_run_once_claims WHERE tenant_id = ?',
+        input.tenantId,
+      );
+      const [c, d] = await Promise.all([
+        lower.create(request),
+        upper.create(request),
+      ]);
+      expect([c.id, d.id]).toEqual([a.id, a.id]);
+      const duplicateId = crypto.randomUUID();
+      await expect(
+        db.query(
+          'INSERT INTO record_comments (id, slug, context, meta_type, meta_id, role, tenant_id, author_user_id, body, mentions, idempotency_key, retry_tenant_id, request_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          duplicateId,
+          duplicateId,
+          '',
+          input.metaType,
+          input.metaId,
+          '',
+          input.tenantId.toUpperCase(),
+          author.toUpperCase(),
+          input.body,
+          '[]',
+          input.idempotencyKey,
+          input.tenantId,
+          a.requestDigest,
+        ),
+      ).rejects.toThrow();
+      expect(
+        (await lower.listForRecord(input.metaType, input.metaId)).map(
+          (row) => row.id,
+        ),
+      ).toEqual([a.id]);
+    });
+
+    it('merges legacy and bound comments in order without exposing another tenant or parent', async () => {
+      const { db, input } = await fixture();
+      const upperTenant = input.tenantId.toUpperCase();
+      const actor = { tenantId: upperTenant, userId: input.authorUserId };
+      const service = new CommentService({
+        db,
+        actor,
+        authorizeRecord: async () => true,
+      });
+      const legacy = await service.create({
+        ...input,
+        tenantId: upperTenant,
+        idempotencyKey: undefined,
+      });
+      await db.query(
+        'UPDATE record_comments SET created_at = ? WHERE id = ?',
+        '2020-01-01T00:00:00.000Z',
+        legacy.id,
+      );
+      const keyed = await service.create(input);
+      const otherTenant = crypto.randomUUID();
+      await new CommentService({
+        db,
+        actor: { tenantId: otherTenant, userId: input.authorUserId },
+        authorizeRecord: async () => true,
+      }).create({ ...input, tenantId: otherTenant });
+      await service.create({
+        ...input,
+        idempotencyKey: crypto.randomUUID(),
+        metaId: 'different-parent',
+      });
+      expect(
+        (await service.listForRecord(input.metaType, input.metaId)).map(
+          (row) => row.id,
+        ),
+      ).toEqual([legacy.id, keyed.id]);
+      const lower = new CommentService({
+        db,
+        actor: { ...actor, tenantId: input.tenantId },
+        authorizeRecord: async () => true,
+      });
+      const expected =
+        dialect === 'sqlite' ? [keyed.id] : [legacy.id, keyed.id];
+      expect(
+        (await lower.listForRecord(input.metaType, input.metaId)).map(
+          (row) => row.id,
+        ),
+      ).toEqual(expected);
+      // A forged trusted low-level binding cannot grant cross-tenant read access.
+      const forgedTenant = crypto.randomUUID();
+      await db.query(
+        'UPDATE record_comments SET retry_tenant_id = ? WHERE id = ?',
+        forgedTenant,
+        keyed.id,
+      );
+      const other = new CommentService({
+        db,
+        actor: { tenantId: forgedTenant, userId: input.authorUserId },
+        authorizeRecord: async () => true,
+      });
+      await expect(
+        other.listForRecord(input.metaType, input.metaId),
+      ).rejects.toMatchObject({ code: 'COMMENT_REQUEST_UNAVAILABLE' });
+    });
+
+    if (dialect === 'sqlite') {
+      it('keeps opaque textual tenant identifiers case-sensitive', async () => {
+        const { db, input } = await fixture();
+        const create = (tenantId: string) =>
+          new CommentService({
+            db,
+            actor: { tenantId, userId: input.authorUserId },
+            authorizeRecord: async () => true,
+          });
+        const a = await create('TenantCase').create({
+          ...input,
+          tenantId: 'TenantCase',
+        });
+        const b = await create('tenantcase').create({
+          ...input,
+          tenantId: 'tenantcase',
+        });
+        expect(a.id).not.toBe(b.id);
+        expect(
+          (
+            await create('TenantCase').listForRecord(
+              input.metaType,
+              input.metaId,
+            )
+          ).map((row) => row.id),
+        ).toEqual([a.id]);
+        expect(
+          (
+            await create('tenantcase').listForRecord(
+              input.metaType,
+              input.metaId,
+            )
+          ).map((row) => row.id),
+        ).toEqual([b.id]);
+      });
+    }
+
     it('lists preexisting comments with the original uppercase tenant spelling', async () => {
       const { db, input } = await fixture();
       const upperTenant = input.tenantId.toUpperCase();
@@ -502,6 +717,7 @@ describe.each([
         id: input.idempotencyKey,
         slug: 'attacker',
         requestDigest: 'attacker',
+        retryTenantId: crypto.randomUUID(),
         _insertOnly: false,
         context: 'attacker',
       };
@@ -514,6 +730,7 @@ describe.each([
       expect(first.slug).toBe(first.id);
       expect(second.id).toBe(first.id);
       expect(second.requestDigest).not.toBe('attacker');
+      expect(second.retryTenantId).toBe(input.tenantId);
       expect(
         await service.listForRecord(input.metaType, input.metaId),
       ).toHaveLength(1);

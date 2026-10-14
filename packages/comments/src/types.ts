@@ -7,6 +7,7 @@ export interface CommentOptions extends SmrtPolymorphicAssociationOptions {
   mentions?: readonly string[];
   idempotencyKey?: string | null;
   requestDigest?: string | null;
+  retryTenantId?: string | null;
 }
 
 /** Public service input; persistence identity and executor are server-owned. */
