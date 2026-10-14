@@ -33,6 +33,10 @@
  * - `resetPassword`: an administrator replaces someone else's and, by
  *   default, flags `mustChange`. Ends every session of theirs.
  * - `clearPassword`: an administrator, or the person proving the current one.
+ * - `replaceForgottenPassword`: the person replaces their own WITHOUT the
+ *   current one, from a fresh session the host minted after verifying an
+ *   out-of-band proof (#3905). Off unless `recovery` is configured. Ends every
+ *   session of theirs, this one included, so the proof is single use.
  *
  * A layered (device PIN) session never manages passwords, and an
  * administrator may only manage people whose every active membership is in
@@ -47,6 +51,7 @@ import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { UsersPasswordCredentialCollection } from '../collections/PasswordCredentialCollection.js';
+import { SessionCollection } from '../collections/SessionCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import type { UsersPasswordCredential } from '../models/PasswordCredential.js';
 import {
@@ -86,6 +91,17 @@ export const DEFAULT_PASSWORD_MIN_LENGTH = 10;
 export const DEFAULT_PASSWORD_MAX_LENGTH = 256;
 /** No configuration may raise the maximum above this: it bounds hashing work. */
 export const PASSWORD_MAX_LENGTH_CEILING = 1024;
+/** Default freshness bound for an out-of-band recovery proof (10 minutes). */
+export const DEFAULT_PASSWORD_RECOVERY_MAX_AGE_SECONDS = 10 * 60;
+/** No configuration may accept an out-of-band proof older than this (1 hour). */
+export const PASSWORD_RECOVERY_MAX_AGE_CEILING_SECONDS = 60 * 60;
+/** Clock skew tolerated for a proof stamped slightly in the future. */
+const RECOVERY_CLOCK_SKEW_MS = 30 * 1000;
+/** Session channels that can never stand in for an out-of-band proof. */
+const NON_RECOVERY_AUTH_METHODS: ReadonlySet<string> = new Set([
+  PASSWORD_LOGIN_KIND,
+  'pin',
+]);
 /** Longest identifier accepted (RFC 5321 path limit). */
 const MAX_IDENTIFIER_LENGTH = 320;
 
@@ -212,6 +228,60 @@ export interface PasswordPolicyOptions {
   scrypt?: Partial<ScryptParams>;
 }
 
+/**
+ * Session data a host's recovery flow passes to `createSession({ data })`
+ * after it has verified an out-of-band proof (#3905): it stamps when the
+ * proof was verified, which `replaceForgottenPassword` checks for freshness.
+ * Never derive `provenAt` from client input.
+ */
+export function outOfBandProofSessionData(
+  provenAt: Date = new Date(),
+): Record<string, string> {
+  if (Number.isNaN(provenAt.getTime())) {
+    throw new Error('outOfBandProofSessionData needs a valid date.');
+  }
+  return { [SESSION_DATA_KEYS.outOfBandProofAt]: provenAt.toISOString() };
+}
+
+/** What the host's recovery assertion is shown. */
+export interface PasswordRecoveryProofContext {
+  /** The actor the call was made with; its session row has already passed every check. */
+  actor: SessionContext;
+  /** When the out-of-band proof was verified (the session's stamp). */
+  provenAt: Date;
+}
+
+/**
+ * Self-service replacement of a forgotten password (#3905). Every condition
+ * must hold, and any doubt refuses:
+ *
+ * - the actor's stored session is first-class (not layered, no permission
+ *   ceiling), still valid, and belongs to the person;
+ * - its server-set `authMethod` is one of `authMethods`, which the host mints
+ *   ONLY after verifying an out-of-band proof (never `password` or `pin`);
+ * - it carries a `SESSION_DATA_KEYS.outOfBandProofAt` stamp (see
+ *   {@link outOfBandProofSessionData}) no older than `maxAgeSeconds`;
+ * - `assertProof`, when given, returns true.
+ */
+export interface PasswordRecoveryOptions {
+  /** Session `authMethod`s the host mints only from an out-of-band proof. */
+  authMethods: readonly SessionAuthMethod[];
+  /**
+   * Oldest accepted proof, in seconds. Default
+   * {@link DEFAULT_PASSWORD_RECOVERY_MAX_AGE_SECONDS}; at most
+   * {@link PASSWORD_RECOVERY_MAX_AGE_CEILING_SECONDS}.
+   */
+  maxAgeSeconds?: number;
+  /**
+   * Optional host check run after the package's own, e.g. that the proof was
+   * a recovery link rather than an ordinary sign-in link. Anything but
+   * `true` refuses.
+   */
+  assertProof?: (
+    context: PasswordRecoveryProofContext,
+  ) => boolean | Promise<boolean>;
+}
+
 export interface PasswordCredentialServiceOptions extends SmrtClassOptions {
   /** Lifetime of a password session in seconds. Default seven days. */
   sessionTtl?: number;
@@ -227,6 +297,12 @@ export interface PasswordCredentialServiceOptions extends SmrtClassOptions {
   managePermission?: string;
   /** Password policy. */
   password?: PasswordPolicyOptions;
+  /**
+   * Enables {@link PasswordCredentialService.replaceForgottenPassword}.
+   * Omitted: there is no way to replace a password without the current one
+   * except an administrator's reset.
+   */
+  recovery?: PasswordRecoveryOptions;
 }
 
 export interface PasswordSignInInput {
@@ -289,6 +365,13 @@ export interface ResetPasswordInput {
   ipAddress?: string;
 }
 
+export interface ReplaceForgottenPasswordInput {
+  /** The person's own session, minted by the host's recovery flow. */
+  actor: SessionContext;
+  newPassword: string;
+  ipAddress?: string;
+}
+
 export interface ClearPasswordInput {
   actor: SessionContext;
   userId: string;
@@ -325,7 +408,13 @@ export class PasswordCredentialService {
     pepper: string;
     scrypt: ScryptParams;
   };
+  private readonly recovery: {
+    authMethods: ReadonlySet<string>;
+    maxAgeMs: number;
+    assertProof: PasswordRecoveryOptions['assertProof'];
+  } | null;
   private sessionService!: SessionService;
+  private sessionRows!: SessionCollection;
   private memberships!: MembershipCollection;
   private users!: UserCollection;
   private credentials!: UsersPasswordCredentialCollection;
@@ -380,6 +469,51 @@ export class PasswordCredentialService {
       pepper: configured.pepper ?? '',
       scrypt,
     };
+    this.recovery = options.recovery
+      ? PasswordCredentialService.resolveRecovery(options.recovery)
+      : null;
+  }
+
+  private static resolveRecovery(recovery: PasswordRecoveryOptions) {
+    const methods = Array.isArray(recovery.authMethods)
+      ? recovery.authMethods
+      : [];
+    if (
+      methods.length === 0 ||
+      methods.some(
+        (method) =>
+          typeof method !== 'string' ||
+          !method.trim() ||
+          NON_RECOVERY_AUTH_METHODS.has(method),
+      )
+    ) {
+      throw new Error(
+        'PasswordCredentialService recovery.authMethods must list the out-of-band session methods (never password or pin).',
+      );
+    }
+    const maxAgeSeconds =
+      recovery.maxAgeSeconds ?? DEFAULT_PASSWORD_RECOVERY_MAX_AGE_SECONDS;
+    if (
+      !(Number.isFinite(maxAgeSeconds) && maxAgeSeconds > 0) ||
+      maxAgeSeconds > PASSWORD_RECOVERY_MAX_AGE_CEILING_SECONDS
+    ) {
+      throw new Error(
+        `PasswordCredentialService recovery.maxAgeSeconds must be positive and at most ${PASSWORD_RECOVERY_MAX_AGE_CEILING_SECONDS}.`,
+      );
+    }
+    if (
+      recovery.assertProof !== undefined &&
+      typeof recovery.assertProof !== 'function'
+    ) {
+      throw new Error(
+        'PasswordCredentialService recovery.assertProof must be a function.',
+      );
+    }
+    return {
+      authMethods: new Set<string>(methods),
+      maxAgeMs: maxAgeSeconds * 1000,
+      assertProof: recovery.assertProof,
+    };
   }
 
   static async create(
@@ -400,6 +534,7 @@ export class PasswordCredentialService {
       withoutListBounds(this.options),
     );
     this.users = await UserCollection.create(this.options);
+    this.sessionRows = await SessionCollection.create(this.options);
     this.credentials = await UsersPasswordCredentialCollection.create(
       this.options,
     );
@@ -777,6 +912,92 @@ export class PasswordCredentialService {
       revokedSessions,
     });
     return { revokedSessions };
+  }
+
+  /**
+   * The person replaces a forgotten password from a fresh session the host
+   * minted after verifying an out-of-band proof (#3905); see
+   * {@link PasswordRecoveryOptions} for every condition. Works whether or not
+   * a password exists, clears `mustChange`, and ends EVERY session of the
+   * person — this one too, so one proof replaces the password once — before
+   * and after the write. Refusals are {@link PasswordCredentialForbiddenError};
+   * a write that lost a race with another change is
+   * {@link PasswordCredentialError}.
+   */
+  async replaceForgottenPassword(
+    input: ReplaceForgottenPasswordInput,
+  ): Promise<{ revokedSessions: number; endedCurrentSession: true }> {
+    const recovery = this.recovery;
+    if (!recovery) throw new PasswordCredentialForbiddenError();
+    this.assertNotLayered(input.actor);
+    const userId = input.actor.user?.id;
+    if (!userId || !UUID_PATTERN.test(userId)) {
+      throw new PasswordCredentialForbiddenError();
+    }
+    // Decide on the stored session, never on the caller-built context: the
+    // channel, ownership, layering, ceiling and stamp are all server-set.
+    const session =
+      typeof input.actor.sessionId === 'string' &&
+      UUID_PATTERN.test(input.actor.sessionId)
+        ? await this.sessionRows.findValidSession(input.actor.sessionId)
+        : null;
+    const now = Date.now();
+    const stamp = session?.getData<unknown>(SESSION_DATA_KEYS.outOfBandProofAt);
+    const provenAtMs =
+      typeof stamp === 'string' ? Date.parse(stamp) : Number.NaN;
+    if (
+      !session ||
+      session.userId !== userId ||
+      session.parentSessionId ||
+      session.getPermissionCeiling() !== null ||
+      typeof session.authMethod !== 'string' ||
+      NON_RECOVERY_AUTH_METHODS.has(session.authMethod) ||
+      !recovery.authMethods.has(session.authMethod) ||
+      !Number.isFinite(provenAtMs) ||
+      provenAtMs > now + RECOVERY_CLOCK_SKEW_MS ||
+      now - provenAtMs > recovery.maxAgeMs
+    ) {
+      throw new PasswordCredentialForbiddenError();
+    }
+    const user = await this.requireUser(userId);
+    if (!user.isActive()) throw new PasswordCredentialForbiddenError();
+    const provenAt = new Date(provenAtMs);
+    if (
+      recovery.assertProof &&
+      (await recovery.assertProof({ actor: input.actor, provenAt })) !== true
+    ) {
+      throw new PasswordCredentialForbiddenError();
+    }
+    const password = await this.assertPolicy(input.newPassword, user);
+    const passwordHash = await this.hashPassword(password);
+
+    const existing = await this.credentials.findByUserId(userId);
+    const endAll = () => this.sessionService.destroyAllUserSessions(userId);
+    // Before AND after the write: a failure between the two leaves the
+    // person signed out, never signed in under a password that is gone.
+    let revokedSessions = await endAll();
+    const write = {
+      passwordHash,
+      mustChange: false,
+      rotatedAt: new Date(),
+      rotatedBy: 'self-recovery',
+    };
+    // Guarded on the row read above: a change or reset that landed meanwhile
+    // is never silently overwritten.
+    const written = existing
+      ? await this.credentials.replaceIfCurrent(existing, write)
+      : (await this.credentials.insertIfAbsent(userId, write)) !== null;
+    if (!written) throw new PasswordCredentialError();
+    revokedSessions += await endAll();
+    await this.recordManagement(userId, input.ipAddress, {
+      action: 'recover',
+      self: true,
+      authMethod: session.authMethod,
+      proofAgeSeconds: Math.max(0, Math.round((now - provenAtMs) / 1000)),
+      replaced: existing !== null,
+      revokedSessions,
+    });
+    return { revokedSessions, endedCurrentSession: true };
   }
 
   /** Whether the person has a password (for admin UIs; never for sign-in responses). */

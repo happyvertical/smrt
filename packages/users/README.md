@@ -959,6 +959,7 @@ words). There are no composition rules. Optional `pepper`. Violations are
 | `changePassword` | the person, proving the current password (from the sign-in budget) | every other session of theirs |
 | `resetPassword` | an admin with `users.password.manage`, never for themself; `mustChange` defaults to true | every session of the person |
 | `clearPassword` | an admin, or the person proving the current password | the person's password sessions |
+| `replaceForgottenPassword` | the person, from a fresh out-of-band recovery session (off unless `recovery` is configured) | every session of the person, this one included |
 
 Self-service writes are guarded on the exact credential the person proved
 (or, for a first password, insert-only), so a reset that lands while a change
@@ -981,6 +982,54 @@ permission. It is registered in the runtime catalog
 (`seedRolePermissions()`) grants it to `owner` and `admin` (`*`), not to
 `member` or `viewer`.
 
+**Forgotten password (#3905).** A person who signed in some other way — an
+owner-recovery or operator-issued link, an emailed code — can replace a
+password they forgot, without the current one, through
+`replaceForgottenPassword({ actor, newPassword })`. It is disabled until the
+host opts in, and every condition is checked on the stored session row, not
+on the caller's context:
+
+```ts
+import {
+  outOfBandProofSessionData,
+  PasswordCredentialService,
+  SessionService,
+} from '@happyvertical/smrt-users';
+
+const sessions = await SessionService.create({ db });
+
+const passwords = await PasswordCredentialService.create({
+  db,
+  recovery: {
+    authMethods: ['owner-recovery'], // channels minted ONLY after an out-of-band proof
+    maxAgeSeconds: 600,              // default 10 minutes, at most 1 hour
+    assertProof: ({ actor, provenAt }) => true, // optional extra host check
+  },
+});
+
+// In the recovery flow, after verifying the link or code (never from client input):
+const sessionId = await sessions.createSession(user.id, tenantId, {
+  authMethod: 'owner-recovery',
+  data: outOfBandProofSessionData(), // stamps SESSION_DATA_KEYS.outOfBandProofAt
+});
+```
+
+The call is refused (`PasswordCredentialForbiddenError` / 403) unless the
+session is valid and the person's own, first-class (not layered, no
+permission ceiling), has one of the listed `authMethods` (`password` and
+`pin` can never be listed), and carries a proof stamp no older than
+`maxAgeSeconds` (a stamp more than 30 seconds in the future is refused). The
+freshness bound is measured from the stamp, which a tenant switch copies to
+the rotated session, so switching tenants never makes an old proof look new.
+`assertProof`, when given, must return exactly `true`. On success the new
+password (policy-checked, `mustChange` cleared) is written guarded on the row
+just read — or inserted if the person had none — every session of the person
+ends before and after the write, including the recovery session, so one proof
+replaces the password once, and a `managed` audit entry records
+`action: 'recover'` with the channel and the proof's age. Do not list a
+channel whose sessions an ordinary sign-in can mint: whoever holds such a
+session can then choose the account's password.
+
 #### Consumer wiring (SvelteKit)
 
 ```ts
@@ -1000,6 +1049,7 @@ export const passwordAuth = createPasswordCredentialHandlers({
 // POST   /account/password         → passwordAuth.setPassword     ({ password } or admin { userId, password })
 // DELETE /account/password         → passwordAuth.clearPassword   ({ currentPassword } or admin { userId })
 // POST   /admin/users/password     → passwordAuth.resetPassword   ({ userId, password, mustChange? })
+// POST   /account/password/recover → passwordAuth.replaceForgottenPassword ({ newPassword }; needs `recovery`)
 // sign out                         → destroySessionCookie(event, { db })
 ```
 

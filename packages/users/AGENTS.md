@@ -112,6 +112,11 @@ are not prerequisites for unrelated user-package work.
   set; `users.password.manage` follows the PIN's single-tenant target
   rule and never resets the actor's own. Layered sessions never manage
   passwords; a `mustChange` sign-in mints an empty ceiling.
+  `replaceForgottenPassword` (#3905, opt-in `recovery`) is the only
+  self-service write without the current password: it decides on the stored
+  session row (owner, first-class, no ceiling, listed non-password/pin
+  `authMethod`, fresh `outOfBandProofAt` stamp) and ends every session,
+  its own included. Never set that stamp from client input.
 - A layered session whose tenant differs from its parent's never loads (null
   is allowed: narrower). Limiter rows carry `retain_until`; retention must
   not fall back to a process-wide horizon.
