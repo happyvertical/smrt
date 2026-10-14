@@ -71,6 +71,26 @@ customer/party id, issue date, stored taxable base, and stored tax. A runtime
 host may resolve that party id to an authorized display name; the commerce
 source does not cross-join profile data.
 
+`drilldownTaxSummaryContributors()` is the cell-level backend boundary. The
+host supplies one of the closed measures (`taxable`, `tax`, `recoverable`,
+`net`, `ledgerMovement`, `difference`, `documentCount`, or a warning detail),
+and the collection rejects measures that do not belong to that row kind. It
+returns only Invoice facts, mapped reviewed Expense facts, and posted Journal
+movements that match the persisted tenant, period, currency, component, code
+kind, or liability account. Net and reconciliation-difference detail carries
+the signed contribution that sums to the selected cell; credit notes are
+signed once here from their stored Invoice kind.
+
+Rows persist compact source-class provenance plus an exact warning source
+identity, not a duplicate set of source amounts. A missing injected owner,
+missing historical provenance, or a source total that no longer equals the
+materialized cell returns `complete: false` with a machine-readable pending
+reason. The Purchase/Contract source is still #3898: a row with purchase
+contributors returns `purchase-source` incomplete instead of claiming a zero
+or exact ITC. The Ledger detail port is adapted from the public
+`JournalEntryCollection.listPostedMovements()` and remains raw ledger units;
+the host must retain the commerce minor-unit convention.
+
 This release has no runtime reports UI consumer. The descriptor/query bridge is
 covered independently, while #3878 (server report contract) and #3895 (the
 reports/Svelte minor-unit formatter and drilldown UI) are the external

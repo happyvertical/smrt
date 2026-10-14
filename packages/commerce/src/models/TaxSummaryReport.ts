@@ -134,6 +134,14 @@ export class TaxSummaryReport extends SmrtReport {
   @groupBy('documentCount')
   documentCount = 0;
 
+  /** Canonical source classes present when this row was materialized. */
+  @field({
+    description:
+      'Comma-separated source classes used to reproduce this row drilldown.',
+  })
+  @groupBy('sourceScopes')
+  sourceScopes = '';
+
   @field({
     description: 'Whether this row belongs to a complete tax-summary result.',
   })
@@ -143,6 +151,16 @@ export class TaxSummaryReport extends SmrtReport {
   @field({ nullable: true, description: 'Incomplete-source warning code.' })
   @groupBy('taxCodeCode')
   warningCode: string | null = null;
+
+  /** Stable source category for an incomplete-source warning drilldown. */
+  @field({ nullable: true, description: 'Warning source category.' })
+  @groupBy('warningSourceType')
+  warningSourceType: string | null = null;
+
+  /** Stable source identity for an incomplete-source warning drilldown. */
+  @field({ nullable: true, description: 'Warning source identity.' })
+  @groupBy('warningSourceId')
+  warningSourceId: string | null = null;
 
   @field({
     nullable: true,

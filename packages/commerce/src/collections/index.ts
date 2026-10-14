@@ -36,10 +36,17 @@ export { TaxComponentCollection } from './TaxComponentCollection.js';
 export { TaxSettingsCollection } from './TaxSettingsCollection.js';
 export {
   type RefreshTaxSummaryReportOptions,
+  type TaxSummaryContributorDrilldown,
+  type TaxSummaryContributorDrilldownOptions,
+  type TaxSummaryDrilldownContributor,
+  type TaxSummaryDrilldownPending,
   type TaxSummaryExpenseSource,
   type TaxSummaryInvoiceDrilldownOptions,
+  type TaxSummaryLedgerDrilldownFact,
+  type TaxSummaryLedgerDrilldownSource,
   type TaxSummaryLedgerSource,
   TaxSummaryReportCollection,
+  type TaxSummaryReportMeasure,
   type TaxSummaryReportRefreshResult,
 } from './TaxSummaryReportCollection.js';
 export { VendorCollection } from './VendorCollection.js';

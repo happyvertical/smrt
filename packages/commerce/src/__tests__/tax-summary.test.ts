@@ -254,7 +254,10 @@ describe('aggregateTaxSummary', () => {
     expect(result.kindRows).toEqual([]);
     expect(result.warnings).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'unassigned-tax-code' }),
+        expect.objectContaining({
+          code: 'unassigned-tax-code',
+          sourceType: 'document',
+        }),
       ]),
     );
   });

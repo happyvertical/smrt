@@ -19,6 +19,7 @@ import { TaxSummaryReport } from '../models/TaxSummaryReport.js';
 import { aggregateTaxSummary } from '../tax-summary.js';
 import {
   buildTaxSummaryReportAdapterDescriptor,
+  drilldownTaxSummaryContributors,
   drilldownTaxSummaryInvoiceFacts,
   TAX_SUMMARY_REPORT_ADAPTER,
 } from '../tax-summary-report-adapter.js';
@@ -149,6 +150,17 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
         }),
       ]),
     );
+    const gstReconciliation = rows.find(
+      (row) => row.rowKind === 'reconciliation' && row.taxComponentId === 'gst',
+    );
+    if (!gstReconciliation?.id)
+      throw new Error('Expected GST reconciliation report row.');
+    await expect(
+      drilldownTaxSummaryInvoiceFacts(db, {
+        tenantId: fixture.tenantId,
+        reportId: gstReconciliation.id,
+      }),
+    ).resolves.toHaveLength(4);
     await withTenant({ tenantId: 'tenant-b' }, () => activateV2('tenant-b'));
     await expect(
       drilldownTaxSummaryInvoiceFacts(db, {
@@ -263,6 +275,203 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
     );
   });
 
+  it('selects only the requested component or reconciliation contributors and marks stale sources incomplete', async () => {
+    const fixture = await withTenant({ tenantId: 'tenant-a' }, () =>
+      seedInvoiceTaxReportFacts(db),
+    );
+    await withTenant({ tenantId: fixture.tenantId }, () =>
+      activateV2(fixture.tenantId),
+    );
+    const expense = {
+      tenantId: fixture.tenantId,
+      expenseId: 'expense-gst',
+      incurredOn: '2026-09-15',
+      currency: 'CAD',
+      commitmentId: null,
+      commitmentLineId: null,
+      financialBreakdown: {
+        taxes: [{ code: 'GST', amount: 50, recoverableAmount: 50 }],
+      },
+    };
+    const mapping = {
+      tenantId: fixture.tenantId,
+      expenseCode: 'GST',
+      taxComponentId: 'gst',
+      componentName: 'GST',
+      liabilityAccountId: 'gst-payable',
+    };
+    const reports = await TaxSummaryReportCollection.create({ db });
+    await reports.refreshTaxSummary({
+      tenantId: fixture.tenantId,
+      from,
+      to,
+      expenseSource: { listReviewedTaxFacts: async () => [expense] },
+      ledgerSource: {
+        listPostedMovements: async ({ accountIds }) =>
+          accountIds.map((accountId) => ({
+            tenantId: fixture.tenantId,
+            entryId: `refresh-${accountId}`,
+            accountId,
+            currency: 'CAD',
+            creditMinusDebit: accountId === 'gst-payable' ? 11_078 : 4_439,
+          })),
+      },
+      expenseComponentMappings: [mapping],
+    });
+    const rows = await withTenant({ tenantId: fixture.tenantId }, () =>
+      reports.list({ where: { tenantId: fixture.tenantId } }),
+    );
+    const gst = rows.find(
+      (row) => row.rowKind === 'component' && row.taxComponentId === 'gst',
+    );
+    const reconciliation = rows.find(
+      (row) => row.rowKind === 'reconciliation' && row.taxComponentId === 'gst',
+    );
+    if (!gst?.id || !reconciliation?.id)
+      throw new Error('Expected GST report rows.');
+
+    const recoverable = await drilldownTaxSummaryContributors(db, {
+      tenantId: fixture.tenantId,
+      reportId: gst.id,
+      measure: 'recoverable',
+      expenseSource: {
+        listReviewedTaxFacts: async () => [
+          expense,
+          { ...expense, tenantId: 'tenant-b', expenseId: 'foreign' },
+          { ...expense, currency: 'USD', expenseId: 'usd' },
+        ],
+      },
+      expenseComponentMappings: [mapping],
+    });
+    expect(recoverable).toMatchObject({ complete: true, pending: [] });
+    expect(recoverable.contributors).toEqual([
+      expect.objectContaining({
+        source: 'expense',
+        valueMinor: 50,
+        expense: expect.objectContaining({ expenseId: 'expense-gst' }),
+      }),
+    ]);
+
+    const collected = await drilldownTaxSummaryContributors(db, {
+      tenantId: fixture.tenantId,
+      reportId: gst.id,
+      measure: 'tax',
+    });
+    expect(collected).toMatchObject({ complete: true, pending: [] });
+    expect(collected.contributors).toHaveLength(4);
+    expect(
+      collected.contributors.reduce(
+        (sum, contributor) => sum + contributor.valueMinor,
+        0,
+      ),
+    ).toBe(11_078);
+
+    const difference = await drilldownTaxSummaryContributors(db, {
+      tenantId: fixture.tenantId,
+      reportId: reconciliation.id,
+      measure: 'difference',
+      ledgerSource: {
+        listPostedMovements: async () => [
+          {
+            tenantId: fixture.tenantId,
+            entryId: 'manual-gst',
+            journalId: 'journal-manual',
+            accountId: 'gst-payable',
+            journalDate: from,
+            journalNumber: 'JNL-1',
+            sourceModule: 'manual',
+            sourceRef: null,
+            currency: 'CAD',
+            debit: 0,
+            credit: 11_078,
+            creditMinusDebit: 11_078,
+          },
+          {
+            tenantId: fixture.tenantId,
+            entryId: 'wrong-account',
+            journalId: 'journal-other',
+            accountId: 'other',
+            journalDate: from,
+            journalNumber: 'JNL-2',
+            sourceModule: 'manual',
+            sourceRef: null,
+            currency: 'CAD',
+            debit: 0,
+            credit: 99,
+            creditMinusDebit: 99,
+          },
+          {
+            tenantId: fixture.tenantId,
+            entryId: 'out-of-period',
+            journalId: 'journal-old',
+            accountId: 'gst-payable',
+            journalDate: new Date('2026-08-31T23:59:59.999Z'),
+            journalNumber: 'JNL-3',
+            sourceModule: 'manual',
+            sourceRef: null,
+            currency: 'CAD',
+            debit: 0,
+            credit: 99,
+            creditMinusDebit: 99,
+          },
+        ],
+      },
+    });
+    expect(difference).toMatchObject({ complete: true, pending: [] });
+    expect(difference.contributors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: 'ledger', valueMinor: 11_078 }),
+        expect.objectContaining({ source: 'invoice', valueMinor: -4_050 }),
+      ]),
+    );
+    expect(difference.contributors).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'ledger',
+          movement: expect.objectContaining({ entryId: 'out-of-period' }),
+        }),
+      ]),
+    );
+    await expect(
+      drilldownTaxSummaryContributors(db, {
+        tenantId: fixture.tenantId,
+        reportId: gst.id,
+        measure: 'recoverable',
+      }),
+    ).resolves.toMatchObject({
+      complete: false,
+      pending: expect.arrayContaining(['expense-source']),
+    });
+    await expect(
+      drilldownTaxSummaryContributors(db, {
+        tenantId: fixture.tenantId,
+        reportId: gst.id,
+        measure: 'recoverable',
+        expenseSource: {
+          listReviewedTaxFacts: async () => [
+            {
+              ...expense,
+              financialBreakdown: {
+                taxes: [{ code: 'GST', amount: 51, recoverableAmount: 51 }],
+              },
+            },
+          ],
+        },
+        expenseComponentMappings: [mapping],
+      }),
+    ).resolves.toMatchObject({
+      complete: false,
+      pending: expect.arrayContaining(['source-state-diverged']),
+    });
+    await expect(
+      drilldownTaxSummaryContributors(db, {
+        tenantId: fixture.tenantId,
+        reportId: gst.id,
+        measure: 'ledgerMovement',
+      }),
+    ).rejects.toThrow('not available for component rows');
+  });
+
   it('persists null recoverable and net tax for an ambiguous linked purchase and expense', async () => {
     const tenantId = 'tenant-a';
     const result = aggregateTaxSummary({
@@ -350,6 +559,63 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
     });
   });
 
+  it('returns a structured purchase-source gap instead of treating a purchase ITC as zero', async () => {
+    const tenantId = 'tenant-a';
+    await withTenant({ tenantId }, () => activateV2(tenantId));
+    const aggregate = aggregateTaxSummary({
+      tenantId,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      facts: [
+        {
+          tenantId,
+          documentType: 'contract',
+          documentId: 'purchase-1',
+          documentKind: 'contract',
+          issueDate: '2026-09-10T00:00:00.000Z',
+          status: 'sent',
+          direction: 'purchase',
+          currency: 'CAD',
+          taxCodeId: 'purchase-gst',
+          taxCodeKind: 'taxable',
+          taxableMinor: 1_000,
+          taxMinor: 50,
+          recoverableMinor: 50,
+          taxComponentId: 'gst',
+          componentName: 'GST',
+          liabilityAccountId: 'gst-payable',
+          commitmentId: null,
+          commitmentLineId: null,
+        },
+      ],
+      expenses: [],
+      expenseComponentMappings: [],
+      ledgerMovements: [],
+    });
+    expect(aggregate.complete).toBe(true);
+    const rows = await materializeTaxSummaryRows(
+      { tenantId, from, to },
+      aggregate,
+    );
+    const component = rows.find(
+      (row) => row.rowKind === 'component' && row.taxComponentId === 'gst',
+    );
+    if (!component?.id) throw new Error('Expected purchase component row.');
+    const reports = await TaxSummaryReportCollection.create({ db });
+    await withTenant({ tenantId }, () => reports.create(component));
+    await expect(
+      drilldownTaxSummaryContributors(db, {
+        tenantId,
+        reportId: component.id as string,
+        measure: 'recoverable',
+      }),
+    ).resolves.toMatchObject({
+      complete: false,
+      pending: expect.arrayContaining(['purchase-source']),
+      contributors: [],
+    });
+  });
+
   it('refuses a legacy tenant or missing owner adapters instead of presenting an incomplete total', async () => {
     const reports = await TaxSummaryReportCollection.create({ db });
     await expect(
@@ -425,11 +691,33 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
         expect.objectContaining({
           rowKind: 'warning',
           warningCode: 'unassigned-tax-code',
+          warningSourceType: 'document',
+          warningSourceId: JSON.stringify(['invoice', fixture.invoiceAId]),
           taxCodeKind: null,
           complete: false,
         }),
       ]),
     );
+    const warning = rows.find(
+      (row) => row.warningCode === 'unassigned-tax-code',
+    );
+    if (!warning?.id) throw new Error('Expected unassigned tax warning row.');
+    await expect(
+      drilldownTaxSummaryContributors(db, {
+        tenantId: fixture.tenantId,
+        reportId: warning.id,
+        measure: 'warning',
+      }),
+    ).resolves.toMatchObject({
+      complete: false,
+      pending: expect.arrayContaining(['materialized-incomplete']),
+      contributors: [
+        expect.objectContaining({
+          source: 'invoice',
+          fact: expect.objectContaining({ documentId: fixture.invoiceAId }),
+        }),
+      ],
+    });
     expect(rows).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
