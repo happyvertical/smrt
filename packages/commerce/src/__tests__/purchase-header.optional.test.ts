@@ -5,12 +5,16 @@ import {
 } from '@happyvertical/smrt-vitest';
 import { describe, expect, it } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
+import { VendorCollection } from '../collections/VendorCollection.js';
 import type { PurchaseOrder } from '../models/Contract.js';
 
 async function proveHeader(db: Awaited<ReturnType<typeof getTestDatabase>>) {
   const contracts = await ContractCollection.create({ db });
+  const vendors = await VendorCollection.create({ db });
+  const vendor = await vendors.create({ name: 'Purchase header vendor' });
   const order = await contracts.create({
     _meta_type: 'PurchaseOrder',
+    vendorId: vendor.id,
     expectedDate: '2026-11-02',
     shipTo: 'Dock 2\nEdmonton',
   });
