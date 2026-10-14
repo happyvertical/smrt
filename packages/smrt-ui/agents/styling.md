@@ -274,3 +274,66 @@ is experimental and only takes effect while **Apply unstyled.css** is enabled.
 The candidate strips transition and decorative opacity too; production retains
 its prior behavior. Pixel baselines for the original fixture establish that the
 split itself does not change rendering; fixture additions are reviewed separately.
+
+## Sorting a wave-3 slice
+
+Preview only the assigned files, then write the same selection:
+
+```sh
+node scripts/codemod-smrt-sort-layers.mjs --check --file packages/smrt-ui/src/components/ui/Avatar.svelte --report /tmp/avatar-sort.json
+node scripts/codemod-smrt-sort-layers.mjs --write --file packages/smrt-ui/src/components/ui/Avatar.svelte --report /tmp/avatar-sort.json
+```
+
+Repeat `--file` for a slice, or use `--package smrt-ui` only when the whole package
+is assigned. A selection is required; no arguments never rewrites the repository.
+`--check` (also the default) is read-only and exits 1 for pending changes or TODOs.
+`--write` exits 1 when TODOs remain, even after writing the mechanical split.
+A second run leaves the output unchanged and reports the remaining TODO markers.
+Already sorted files are not reclassified.
+
+The codemod puts `display`, `flex`, `grid-template-columns`, `gap`, `padding`,
+`margin`, `width`, `height`, `position`, `inset`, `overflow`, `clip`, `white-space`,
+`text-overflow`, and `cursor` in `smrt.structure`. It puts `color`, `background`,
+`border` (including `border-width`), `border-radius`, `box-shadow`, `font-size`,
+`outline`, `filter`, `transition`, and `animation` in `smrt.theme`. Selectors,
+`:global()`, conditional wrappers, and declaration order within each layer are
+preserved; keyframes stay intact in theme with animation, including declarations
+such as `transform` inside them. Forced-colors paint stays in theme.
+
+The JSON report contains each file's TODO line, selector/wrapper path, declaration,
+and reason. `opacity`, `transform`, `transform-origin`, `visibility`, `content`,
+and `pointer-events` need role review; the codemod conservatively reports all
+`pointer-events`, including hit areas. Custom properties such as
+`--smrt-checkbox-hit` need consumer review. Unknown properties, unsupported
+wrappers and parse failures are reported rather than guessed. Unresolved CSS
+stays in its original theme layer with a `smrt-sort-todo:` comment; parse failures
+leave the entire file unchanged. Move each declaration to its reviewed layer and
+remove its marker only after deciding it. The gate rejects unresolved markers.
+The codemod does not rename classes, add parts, remove token fallbacks, or invent
+forced-colors rules. Complete those judgment steps under the pilot rules above.
+
+`node scripts/check-smrt-sort-layers.mjs` runs inside root `pnpm lint`. Once a
+component uses a `smrt.structure` block, layout in theme or paint in structure
+fails. `opacity`, `transform`, `visibility`, and `content` are allowed in either;
+keyframe declarations are exempt from ordinary property placement checks.
+The checked-in `scripts/smrt-sort-ratchet.json` records unsorted files and distinct
+un-namespaced owned class names per file (local CSS selectors, static native-element
+class attributes and class directives; repeated selectors count once, and
+`:global()` classes and classes passed to child components do not count).
+Dynamic class expressions are covered where they have local CSS selectors; this
+inventory does not prove all runtime-generated class names are namespaced.
+After completing and namespacing a slice, run
+`node scripts/check-smrt-sort-layers.mjs --write`. Stale entries fail lint;
+`--write` accepts shrinking debt but refuses increased counts or a sorted/new
+file becoming unsorted. An empty `smrt.structure` block explicitly marks a
+paint-only component as sorted. The existing cascade-layer gate still enforces
+layer ownership and order.
+
+Reproduce the ten-primitive experiment with
+`node scripts/compare-smrt-sort-pilot.mjs --report /tmp/smrt-sort-pilot.json`.
+It reads pre-pilot sources from `716e55114`, writes temporary before/after files,
+and compares declarations against the working-tree pilots using
+`scripts/smrt-sort-pilot-map.json`. It reports exact-value matches, value changes,
+wrong-layer placements, TODOs and hand-only additions separately, without sorting
+any repository component. Value differences from removed token fallbacks or
+private density overrides remain visible in the generated PR table and details.

@@ -1,0 +1,12 @@
+{
+  "Button": {"button":"root","disabled":"disabled","sm":"sm","md":"md","lg":"lg","primary":"primary","secondary":"secondary","ghost":"ghost","danger":"danger","full-width":"full-width","loading":"loading","spinner":"spinner","content":"content"},
+  "Badge": {"badge":"root","sm":"sm","md":"md","default":"default","primary":"primary","success":"success","warning":"warning","error":"error","info":"info"},
+  "Chip": {"chip":"root","selectable":"selectable","sm":"sm","md":"md","selected":"selected","disabled":"disabled","chip__body":"body","chip__close":"close"},
+  "Card": {"card":"root","default":"default","outlined":"outlined","elevated":"elevated","hoverable":"hoverable","padding-none":"padding-none","card-content":"content","padding-sm":"padding-sm","padding-md":"padding-md","padding-lg":"padding-lg","card-header":"header","card-footer":"footer"},
+  "Alert": {"alert":"root","alert--info":"info","alert--success":"success","alert--warning":"warning","alert--error":"error","marker":"marker","content":"content","message":"message","action":"action","dismiss":"dismiss"},
+  "Input": {"input":"root"},
+  "Select": {"select":"root"},
+  "Checkbox": {"checkbox":"root","checkbox--disabled":"disabled","checkbox__box":"box","checkbox__label":"label","checkbox__check":"check","checkbox__dash":"dash"},
+  "Switch": {"switch":"root","switch--disabled":"disabled","switch__control":"control","switch__label":"label","switch__track":"track","switch__thumb":"thumb","switch--sm":"sm","switch--lg":"lg"},
+  "Tabs": {"tabs-container":"container","tabs-nav":"nav","tab-button":"tab-button","sm":"sm","lg":"lg","active":"active","tab-content-wrapper":"tab-content-wrapper","tab-count":"tab-count","active-indicator":"active-indicator","secondary":"secondary","tab-panel":"tab-panel","tab-badge":"tab-badge","tabs-links":"links","tabs-links-row":"links-row","tab-link":"tab-link","tab-dot":"tab-dot","tabs-more":"more","tabs-more-menu":"more-menu","visually-hidden":"visually-hidden"}
+}
