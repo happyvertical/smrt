@@ -12,9 +12,13 @@ import { M } from './strings.js';
 import type { ChartData } from './types.js';
 
 export interface Props {
+  /** Validated chart data to render, or null for the empty state. */
   data: ChartData | null;
+  /** Requested chart presentation; unsupported values fall back to bars. */
   style?: string;
+  /** Accessible heading shown above the chart. */
   title?: string;
+  /** Locale used to format displayed numeric values. */
   locale?: string;
 }
 let {

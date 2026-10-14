@@ -24,7 +24,9 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   collectConsumedByPackage,
+  collectDefinedInCss,
   collectInlineByPackage,
+  listFiles,
   OVERRIDE_HOOKS,
   ROOT,
 } from './smrt-token-scan-lib.mjs';
@@ -41,6 +43,10 @@ const END = '<!-- smrt-required-tokens:end -->';
 export function computeTokenSets() {
   const { byPackage } = collectConsumedByPackage({ exts: ['.svelte'] });
   const inlineByPkg = collectInlineByPackage();
+  const themeDefined = new Set();
+  for (const file of listFiles(join(ROOT, 'packages/smrt-ui/src/themes/styles'), ['.css'])) {
+    collectDefinedInCss(readFileSync(file, 'utf8'), themeDefined);
+  }
   const required = new Set();
   const optional = new Set();
   for (const [token, consumers] of byPackage) {
@@ -50,7 +56,7 @@ export function computeTokenSets() {
     }
     // Private to the consuming set only when every consumer defines it itself.
     const allPrivate = [...consumers].every((pkg) => inlineByPkg.get(pkg)?.has(token));
-    if (!allPrivate) required.add(token);
+    if (themeDefined.has(token) || !allPrivate) required.add(token);
   }
   return { required: [...required].sort(), optional: [...optional].sort() };
 }

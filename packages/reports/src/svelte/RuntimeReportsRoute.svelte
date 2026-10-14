@@ -54,12 +54,14 @@ const resolveAuthor = (userId: string): string | undefined =>
   (userId === currentUserId ? currentUserLabel : undefined);
 </script>
 
-{#if serverAvailable && !browserClient}
-  <p role="status">{t(M['reports.loading'])}</p>
-{:else}
-  <SavedReports
-    client={serverAvailable ? browserClient : undefined}
-    {reportHref}
-    authorLabel={resolveAuthor}
-  />
-{/if}
+<div data-smrt-component="RuntimeReportsRoute">
+  {#if serverAvailable && !browserClient}
+    <p role="status">{t(M['reports.loading'])}</p>
+  {:else}
+    <SavedReports
+      client={serverAvailable ? browserClient : undefined}
+      {reportHref}
+      authorLabel={resolveAuthor}
+    />
+  {/if}
+</div>

@@ -53,13 +53,15 @@ onMount(() => {
 });
 </script>
 
-{#if serverAvailable && !browserClient}
-  <p role="status">{t(M['reports.loading'])}</p>
-{:else}
-  <ReportDetail
-    id={reportId}
-    client={serverAvailable ? browserClient : undefined}
-    {locale}
-    {currency}
-  />
-{/if}
+<div data-smrt-component="RuntimeReportDetailRoute">
+  {#if serverAvailable && !browserClient}
+    <p role="status">{t(M['reports.loading'])}</p>
+  {:else}
+    <ReportDetail
+      id={reportId}
+      client={serverAvailable ? browserClient : undefined}
+      {locale}
+      {currency}
+    />
+  {/if}
+</div>

@@ -19,6 +19,8 @@ onMount(() => {
 });
 </script>
 
-{#if proposal && client}
-  <ReportConfirmation {proposal} confirm={client.confirm} />
-{/if}
+<div data-smrt-component="RuntimeReportToolResult">
+  {#if proposal && client}
+    <ReportConfirmation {proposal} confirm={client.confirm} />
+  {/if}
+</div>
