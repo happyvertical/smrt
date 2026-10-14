@@ -101,6 +101,89 @@ The calculator throws `MoneyValidationError`. Applications should branch on its
 stable `code` (for example `DISCOUNT_EXCEEDS_GROSS`, `TAX_CODE_SCOPE`, or
 `PERCENT_OUT_OF_RANGE`) rather than parse the error message.
 
+## Worked examples
+
+These examples use CAD (two decimal places), BC GST at 5%, and PST at 7%.
+GST has GST only; GST+PST has both non-compound components; Exempt has none.
+The shared four-line document is:
+
+| # | Line | Quantity | Unit price | Discount | Code |
+| --- | --- | ---: | ---: | ---: | --- |
+| 1 | Design (service) | 10 | $85.00 | 10% | GST |
+| 2 | Laptop stand | 2 | $49.99 | $5.00 | GST+PST |
+| 3 | Software licence | 12 | $20.00 | — | GST+PST |
+| 4 | Book | 1 | $45.00 | — | GST |
+
+### A. Exclusive
+
+For either rounding scope, the post-discount net amounts are $765.00,
+$94.98, $240.00, and $45.00. GST is $38.25, $4.75, $12.00, and $2.25;
+PST is $6.65 and $16.80 on lines 2 and 3.
+
+| Subtotal | GST | PST | Tax | Total | Discounts |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| $1,144.98 | $57.25 on $1,144.98 | $23.45 on $334.98 | $80.70 | $1,225.68 | $90.00 |
+
+The exact GST total is $57.249 and PST total is $23.4486, so both scopes
+round to the same stored figures.
+
+### B. Inclusive
+
+The same visible post-discount amounts are tax-inclusive: $765.00, $94.98,
+$240.00, and $45.00.
+
+| # | GST, line | PST, line | Net, line | GST, document | PST, document | Net, document |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | $36.43 | — | $728.57 | $36.43 | — | $728.57 |
+| 2 | $4.24 | $5.94 | $84.80 | $4.24 | $5.94 | $84.80 |
+| 3 | $10.71 | $15.00 | $214.29 | $10.72 | $15.00 | $214.28 |
+| 4 | $2.14 | — | $42.86 | $2.14 | — | $42.86 |
+
+| Scope | Subtotal excluding tax | GST | PST | Tax | Total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Line | $1,070.52 | $53.52 | $20.94 | $74.46 | $1,144.98 |
+| Document | $1,070.51 | $53.53 | $20.94 | $74.47 | $1,144.98 |
+
+At document scope, GST's exact line values total $53.5259. Truncation yields
+$53.51, then the two residual cents go to the largest remainders: line 1 and
+line 3. The cent that differs from line scope is therefore on line 3
+($10.72 GST and $214.28 net). PST remains $20.94 in both scopes. Component
+taxable amounts are always net in inclusive mode: at line scope GST is on
+$1,070.52 and PST is on $299.09; at document scope they are $1,070.51 and
+$299.08.
+
+### C. Exempt customer with product defaults
+
+Use A's exclusive prices, but mark the customer exempt. Exemption resolves at
+step 2 before any product default: every line uses Exempt, including the
+Laptop stand and Software licence that would otherwise select GST+PST.
+The result is subtotal $1,144.98, tax $0.00, and total $1,144.98. The single
+stored non-taxable row is Exempt on $1,144.98 with zero tax.
+
+### D. Exempt customer with inclusive prices
+
+Use B's inclusive prices with the same exemption. Each amount remains unchanged
+and is all net: $765.00, $94.98, $240.00, and $45.00. Both rounding scopes give
+subtotal $1,144.98, tax $0.00, and total $1,144.98. An inclusive exempt
+document has no “includes tax” amount: display the equal subtotal and total,
+plus the $90.00 informational discount.
+
+### E. Three $0.10 GST+PST lines
+
+For three lines of one × $0.10 with no discount:
+
+| Mode | Scope | GST allocation | PST allocation | Tax | Subtotal | Total |
+| --- | --- | --- | --- | ---: | ---: | ---: |
+| Exclusive | Line | $0.01, $0.01, $0.01 | $0.01, $0.01, $0.01 | $0.06 | $0.30 | $0.36 |
+| Exclusive | Document | $0.01, $0.01, $0.00 | $0.01, $0.01, $0.00 | $0.04 | $0.30 | $0.34 |
+| Inclusive | Line | $0.00, $0.00, $0.00 | $0.01, $0.01, $0.01 | $0.03 | $0.27 | $0.30 |
+| Inclusive | Document | $0.01, $0.00, $0.00 | $0.01, $0.01, $0.00 | $0.03 | $0.27 | $0.30 |
+
+Document scope never leaves a residual: its component total is authoritative
+and allocation preserves that exact sum. The scopes can differ by up to
+ceil(n / 2) minor units per component across n small lines, so the rounding
+scope is stored with the document and is never silently changed after issue.
+
 ## Tenant tax catalogue
 
 The package root exports the tenant-scoped `TaxComponent`, `TaxCode`, and
