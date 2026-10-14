@@ -198,3 +198,11 @@ must run `deduplicateRolePermissions()` with stopped writers before ordinary
 schema migration; see README's "Upgrade duplicate role grants". It keeps the
 oldest row and installs uniqueness atomically. Runtime seeding never performs
 this schema repair.
+
+MembershipOverride `(membership_id, permission_id)`, TenantPermissionOverride
+`(tenant_id, permission_id)` and GroupMember `(group_id, user_id)` are natural
+keys too (#3375): `setOverride()` upserts (last effect wins), removal deletes by
+the pair, and their FKs declare `onDelete: 'NO ACTION'` so the natural key does
+not turn them into CASCADE. Existing deployments run
+`deduplicateAuthorityPairs()` in the same stopped-writer window; it keeps the
+effective override (DENY > GRANT > INHERIT) so authority never widens.

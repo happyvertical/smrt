@@ -21,7 +21,9 @@
  * the client submitted — an email key or user id, never a resolved account)
  * and the **source** (client IP, or the device/station the attempt came
  * from). Either one being exhausted refuses the attempt. Both are stored as
- * hashes.
+ * hashes. Each budget can be sized on its own (`subject`, `source`), and the
+ * source budget can be turned off (`source: false`) where no trustworthy
+ * client address exists (#3531).
  *
  * ## Non-enumeration
  *
@@ -49,7 +51,10 @@
  *
  * Every decision is reported to a {@link LoginAuditSink}. The default sink
  * persists {@link UsersLoginAuditEvent} rows; pass `audit: false` to disable
- * or supply a sink that forwards to the host's own log.
+ * or supply a sink that forwards to the host's own log. When a failure starts
+ * a SOURCE lockout the limiter also reports one `source-locked` entry that
+ * carries the source hash but no subject (so it never names the accounts that
+ * were tried), at most once per source per `sourceLockoutAuditSeconds`.
  *
  * @packageDocumentation
  */
@@ -71,6 +76,10 @@ export const DEFAULT_LOGIN_LOCKOUT_BASE_SECONDS = 60;
 export const DEFAULT_LOGIN_LOCKOUT_FACTOR = 2;
 /** Default lockout ceiling (1 hour). */
 export const DEFAULT_LOGIN_LOCKOUT_MAX_SECONDS = 60 * 60;
+/** Default minimum spacing of `source-locked` audit entries per source (5 minutes). */
+export const DEFAULT_SOURCE_LOCKOUT_AUDIT_SECONDS = 5 * 60;
+/** Sources remembered for `source-locked` rate limiting, per limiter instance. */
+const SOURCE_LOCKOUT_AUDIT_MEMORY = 1024;
 
 export interface LoginLockoutOptions {
   baseSeconds?: number;
@@ -87,6 +96,19 @@ export interface LoginAuditEntry {
   retryAfterSeconds?: number;
   occurredAt: Date;
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * One budget's sizing (#3531). Every field falls back to the limiter's
+ * top-level option of the same meaning.
+ */
+export interface LoginBudgetOptions {
+  /** Failed attempts allowed per window (top-level `maxAttempts`). */
+  maxFailures?: number;
+  /** Sliding window in seconds (top-level `windowSeconds`). */
+  windowSeconds?: number;
+  /** Lockout once the budget is exhausted; `false` keeps only the window. */
+  lockout?: LoginLockoutOptions | false;
 }
 
 /** Where sign-in decisions are reported. Must not throw into the sign-in path. */
@@ -106,8 +128,29 @@ export interface LoginAttemptLimiterOptions extends SmrtClassOptions {
    */
   lockout?: LoginLockoutOptions | false;
   /**
+   * Per-account budget (#3531). Omitted fields use the top-level options.
+   */
+  subject?: LoginBudgetOptions;
+  /**
+   * Per-address (or per-device) budget (#3531). Omitted fields use the
+   * top-level options. `false` ignores the source key entirely — for a
+   * deployment that cannot see a trustworthy client address, where every
+   * browser would otherwise share one budget and a handful of failures from
+   * anyone would lock everyone out. A reservation then needs a subject.
+   * This applies to every credential kind using this instance, so a host
+   * whose PIN sign-ins share it should prefer a larger source budget (or a
+   * separate limiter for passwords) over disabling it.
+   */
+  source?: LoginBudgetOptions | false;
+  /**
+   * Minimum spacing, per source, of the `source-locked` audit entry reported
+   * when a failure starts a source lockout. Defaults to
+   * {@link DEFAULT_SOURCE_LOCKOUT_AUDIT_SECONDS}. Tracked per instance.
+   */
+  sourceLockoutAuditSeconds?: number;
+  /**
    * Time since a key's last failure after which its streak is forgiven. Defaults to
-   * twice the larger of the window and the lockout ceiling.
+   * twice the larger of the budget's window and lockout ceiling.
    */
   streakResetSeconds?: number;
   /**
@@ -241,6 +284,62 @@ interface ReservedKey {
   windowStartedAt: string;
 }
 
+/** Resolved sizing of one budget. */
+interface Budget {
+  maxAttempts: number;
+  windowMs: number;
+  lockout: Required<LoginLockoutOptions> | null;
+  streakResetMs: number;
+  /** How long a row this budget writes must outlive the retention sweep. */
+  retainMs: number;
+}
+
+function resolveBudget(
+  options: LoginAttemptLimiterOptions,
+  budget: LoginBudgetOptions = {},
+): Budget {
+  const maxAttempts = Math.max(
+    1,
+    Math.floor(
+      budget.maxFailures ?? options.maxAttempts ?? DEFAULT_LOGIN_MAX_ATTEMPTS,
+    ),
+  );
+  const windowSeconds =
+    budget.windowSeconds ??
+    options.windowSeconds ??
+    DEFAULT_LOGIN_ATTEMPT_WINDOW_SECONDS;
+  if (!(Number.isFinite(maxAttempts) && windowSeconds > 0)) {
+    throw new Error(
+      'LoginAttemptLimiter budgets need a finite maxFailures and a positive windowSeconds.',
+    );
+  }
+  const windowMs = windowSeconds * 1000;
+  const configured =
+    budget.lockout !== undefined ? budget.lockout : options.lockout;
+  const lockout =
+    configured === false
+      ? null
+      : {
+          baseSeconds:
+            configured?.baseSeconds ?? DEFAULT_LOGIN_LOCKOUT_BASE_SECONDS,
+          factor: configured?.factor ?? DEFAULT_LOGIN_LOCKOUT_FACTOR,
+          maxSeconds:
+            configured?.maxSeconds ?? DEFAULT_LOGIN_LOCKOUT_MAX_SECONDS,
+        };
+  const lockoutCeilingMs = (lockout?.maxSeconds ?? 0) * 1000;
+  const streakResetMs =
+    options.streakResetSeconds !== undefined
+      ? options.streakResetSeconds * 1000
+      : Math.max(windowMs, lockoutCeilingMs) * 2;
+  return {
+    maxAttempts,
+    windowMs,
+    lockout,
+    streakResetMs,
+    retainMs: Math.max(windowMs, streakResetMs),
+  };
+}
+
 function normalizeKey(scope: LoginAttemptScope, raw: string): string {
   const trimmed = raw.trim();
   return scope === 'subject' ? trimmed.toLowerCase() : trimmed;
@@ -248,44 +347,39 @@ function normalizeKey(scope: LoginAttemptScope, raw: string): string {
 
 export class LoginAttemptLimiter {
   private readonly options: LoginAttemptLimiterOptions;
-  private readonly maxAttempts: number;
-  private readonly windowMs: number;
-  private readonly lockout: Required<LoginLockoutOptions> | null;
-  private readonly streakResetMs: number;
+  private readonly budgets: {
+    subject: Budget;
+    source: Budget | null;
+  };
   private readonly sourceStreakDecayMs: number;
+  private readonly sourceLockoutAuditMs: number;
+  /** Source hash → earliest time its next `source-locked` entry may be reported. */
+  private readonly sourceLockoutAudited = new Map<string, number>();
   private attempts!: UsersLoginAttemptCollection;
   private audit: LoginAuditSink | null = null;
 
   constructor(options: LoginAttemptLimiterOptions) {
     this.options = options;
-    this.maxAttempts = Math.max(
-      1,
-      Math.floor(options.maxAttempts ?? DEFAULT_LOGIN_MAX_ATTEMPTS),
-    );
-    this.windowMs =
-      (options.windowSeconds ?? DEFAULT_LOGIN_ATTEMPT_WINDOW_SECONDS) * 1000;
-    this.lockout =
-      options.lockout === false
-        ? null
-        : {
-            baseSeconds:
-              options.lockout?.baseSeconds ??
-              DEFAULT_LOGIN_LOCKOUT_BASE_SECONDS,
-            factor: options.lockout?.factor ?? DEFAULT_LOGIN_LOCKOUT_FACTOR,
-            maxSeconds:
-              options.lockout?.maxSeconds ?? DEFAULT_LOGIN_LOCKOUT_MAX_SECONDS,
-          };
-    const lockoutCeilingMs = (this.lockout?.maxSeconds ?? 0) * 1000;
-    this.streakResetMs =
-      options.streakResetSeconds !== undefined
-        ? options.streakResetSeconds * 1000
-        : Math.max(this.windowMs, lockoutCeilingMs) * 2;
+    const subject = resolveBudget(options, options.subject);
+    const source =
+      options.source === false ? null : resolveBudget(options, options.source);
+    this.budgets = { subject, source };
     this.sourceStreakDecayMs = Math.max(
       0,
       options.sourceStreakDecaySeconds !== undefined
         ? options.sourceStreakDecaySeconds * 1000
-        : this.windowMs * 2,
+        : (source ?? subject).windowMs * 2,
     );
+    this.sourceLockoutAuditMs = Math.max(
+      0,
+      (options.sourceLockoutAuditSeconds ??
+        DEFAULT_SOURCE_LOCKOUT_AUDIT_SECONDS) * 1000,
+    );
+  }
+
+  /** False when this limiter was configured with `source: false`. */
+  get limitsSource(): boolean {
+    return this.budgets.source !== null;
   }
 
   static async create(
@@ -307,11 +401,6 @@ export class LoginAttemptLimiter {
     }
   }
 
-  /** How long a row this limiter writes must outlive the retention sweep. */
-  private get retainMs(): number {
-    return Math.max(this.windowMs, this.streakResetMs);
-  }
-
   /** Stable, peppered hash for a key. Exposed so hosts can correlate audit rows. */
   hashKey(scope: LoginAttemptScope, raw: string): string {
     return createHash('sha256')
@@ -321,14 +410,25 @@ export class LoginAttemptLimiter {
       .digest('hex');
   }
 
-  /** Lockout length for the n-th consecutive exhausted budget (0-based). */
-  lockoutMsFor(exhaustedBudgets: number): number {
-    if (!this.lockout) return 0;
+  /**
+   * Lockout length for the n-th consecutive exhausted budget (0-based) of the
+   * given scope's budget (the subject's by default).
+   */
+  lockoutMsFor(
+    exhaustedBudgets: number,
+    scope: LoginAttemptScope = 'subject',
+  ): number {
+    const lockout = this.budgetFor(scope)?.lockout;
+    if (!lockout) return 0;
     const seconds = Math.min(
-      this.lockout.maxSeconds,
-      this.lockout.baseSeconds * this.lockout.factor ** exhaustedBudgets,
+      lockout.maxSeconds,
+      lockout.baseSeconds * lockout.factor ** exhaustedBudgets,
     );
     return Math.max(0, Math.floor(seconds * 1000));
+  }
+
+  private budgetFor(scope: LoginAttemptScope): Budget | null {
+    return scope === 'source' ? this.budgets.source : this.budgets.subject;
   }
 
   /**
@@ -343,15 +443,19 @@ export class LoginAttemptLimiter {
       input.subject != null && input.subject.trim() !== ''
         ? this.hashKey('subject', input.subject)
         : null;
+    // A disabled source budget ignores the key, so it cannot stand in for a
+    // missing subject below.
     const sourceHash =
-      input.source != null && input.source.trim() !== ''
+      this.budgets.source && input.source != null && input.source.trim() !== ''
         ? this.hashKey('source', input.source)
         : null;
     if (!subjectHash && !sourceHash) {
       // Fail closed: a limiter call that limits nothing is a caller bug (a
       // verifier whose subjectKey() returned ''), not an unlimited lease.
       throw new Error(
-        'LoginAttemptLimiter.reserve() needs a subject or a source key.',
+        this.budgets.source
+          ? 'LoginAttemptLimiter.reserve() needs a subject or a source key.'
+          : 'LoginAttemptLimiter.reserve() needs a subject key: the source budget is disabled.',
       );
     }
     const reserved: ReservedKey[] = [];
@@ -373,14 +477,15 @@ export class LoginAttemptLimiter {
       ['subject', subjectHash],
       ['source', sourceHash],
     ] as const) {
-      if (!hash) continue;
+      const budget = this.budgetFor(scope);
+      if (!hash || !budget) continue;
       const reservation = await this.attempts.reserveAttempt({
         limiterKey: hash,
         scope,
-        maxAttempts: this.maxAttempts,
-        windowMs: this.windowMs,
-        streakResetMs: this.streakResetMs,
-        retainMs: this.retainMs,
+        maxAttempts: budget.maxAttempts,
+        windowMs: budget.windowMs,
+        streakResetMs: budget.streakResetMs,
+        retainMs: budget.retainMs,
       });
       if (reservation.allowed) {
         reserved.push({
@@ -421,14 +526,16 @@ export class LoginAttemptLimiter {
         settle();
         let lockedOut = false;
         let retryAfterSeconds: number | null = null;
+        let sourceLocked: { hash: string; seconds: number } | null = null;
         for (const key of reserved) {
+          const budget = this.budgetFor(key.scope) as Budget;
           const outcome = await this.attempts.recordFailure({
             limiterKey: key.hash,
-            maxAttempts: this.maxAttempts,
-            retainMs: this.retainMs,
+            maxAttempts: budget.maxAttempts,
+            retainMs: budget.retainMs,
             streakDecayMs:
               key.scope === 'source' ? this.sourceStreakDecayMs : 0,
-            lockoutMsFor: (n) => this.lockoutMsFor(n),
+            lockoutMsFor: (n) => this.lockoutMsFor(n, key.scope),
           });
           if (outcome.lockedUntil) {
             lockedOut = true;
@@ -437,12 +544,22 @@ export class LoginAttemptLimiter {
               Math.ceil((Date.parse(outcome.lockedUntil) - Date.now()) / 1000),
             );
             retryAfterSeconds = Math.max(retryAfterSeconds ?? 0, seconds);
+            if (key.scope === 'source') {
+              sourceLocked = { hash: key.hash, seconds };
+            }
           }
         }
         await audit(lockedOut ? 'locked' : 'failed', {
           retryAfterSeconds: retryAfterSeconds ?? undefined,
           metadata: { ...input.metadata, ...metadata },
         });
+        if (sourceLocked) {
+          await this.reportSourceLockout(
+            input.kind,
+            sourceLocked.hash,
+            sourceLocked.seconds,
+          );
+        }
         return { lockedOut, retryAfterSeconds };
       },
       succeed: async (metadata) => {
@@ -503,6 +620,48 @@ export class LoginAttemptLimiter {
         // apparent failure; retaining the reservation is the safe fallback.
       }
     }
+  }
+
+  /**
+   * Report that a source lockout started, without the subject or the caller's
+   * metadata, so the entry attributes the outage to the address or device but
+   * never names an attempted account. Rate limited per source, in memory, so
+   * a sustained attack yields a bounded number of entries per instance.
+   */
+  private async reportSourceLockout(
+    kind: string,
+    sourceKeyHash: string,
+    retryAfterSeconds: number,
+  ): Promise<void> {
+    if (!this.audit) return;
+    const now = Date.now();
+    const next = this.sourceLockoutAudited.get(sourceKeyHash);
+    if (next !== undefined && next > now) return;
+    this.sourceLockoutAudited.delete(sourceKeyHash);
+    if (this.sourceLockoutAudited.size >= SOURCE_LOCKOUT_AUDIT_MEMORY) {
+      for (const [hash, until] of this.sourceLockoutAudited) {
+        if (until <= now) this.sourceLockoutAudited.delete(hash);
+      }
+      // Still full of live entries: forget the oldest rather than grow.
+      while (this.sourceLockoutAudited.size >= SOURCE_LOCKOUT_AUDIT_MEMORY) {
+        const oldest = this.sourceLockoutAudited.keys().next().value;
+        if (oldest === undefined) break;
+        this.sourceLockoutAudited.delete(oldest);
+      }
+    }
+    this.sourceLockoutAudited.set(
+      sourceKeyHash,
+      now + this.sourceLockoutAuditMs,
+    );
+    await this.report({
+      kind,
+      outcome: 'source-locked',
+      subjectKeyHash: null,
+      sourceKeyHash,
+      retryAfterSeconds,
+      occurredAt: new Date(now),
+      metadata: { scope: 'source' },
+    });
   }
 
   private async report(entry: LoginAuditEntry): Promise<void> {

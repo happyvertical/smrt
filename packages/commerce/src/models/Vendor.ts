@@ -10,7 +10,12 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { type VendorOptions, VendorStatus } from '../types/index.js';
+import { normalizePartyContacts } from '../party-contacts.js';
+import {
+  type PartyContact,
+  type VendorOptions,
+  VendorStatus,
+} from '../types/index.js';
 
 /**
  * Vendor represents the vendor/supplier role for a Profile.
@@ -149,6 +154,16 @@ export class Vendor extends SmrtObject {
   })
   payoutAddresses: Record<string, string> = {};
 
+  /**
+   * People to reach at this vendor, stored as a JSON column (#3501). Write
+   * form rows through `savePartyContacts()`; every save normalizes the shape.
+   */
+  @field({
+    description:
+      'The people you deal with at this vendor, with their role and how to reach them.',
+  })
+  contacts: PartyContact[] = [];
+
   constructor(options: VendorOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -171,6 +186,8 @@ export class Vendor extends SmrtObject {
         options.payoutAddresses,
       );
     }
+    if (options.contacts !== undefined)
+      this.contacts = normalizePartyContacts(options.contacts);
   }
 
   /**
@@ -187,6 +204,7 @@ export class Vendor extends SmrtObject {
     this.payoutAddresses = Vendor.normalizePayoutAddresses(
       this.payoutAddresses as unknown,
     );
+    this.contacts = normalizePartyContacts(this.contacts);
     return this;
   }
 
@@ -199,6 +217,7 @@ export class Vendor extends SmrtObject {
     this.payoutAddresses = Vendor.normalizePayoutAddresses(
       this.payoutAddresses as unknown,
     );
+    this.contacts = normalizePartyContacts(this.contacts);
     return super.save() as Promise<this>;
   }
 

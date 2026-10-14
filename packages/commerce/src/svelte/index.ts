@@ -93,6 +93,7 @@ export type {
   PartyDirectoryItem,
   PartyExtension,
   PartyFieldNames,
+  PartyFormEnhance,
   PartyFormErrors,
   PartyFormTransport,
   PartyIdentityKind,

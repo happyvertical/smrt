@@ -61,3 +61,7 @@ reject invoice-rounded records explicitly. They do not silently request provider
 recalculation. Canonical model JSON, tax/amount getters, and invoice totals remain
 available for reports. A provider-specific adapter must establish its exact tax
 representation separately before export is supported; no provider is posted here.
+
+## Existing monetary arithmetic
+
+**Rounding happens where a rate meets money, and nowhere else**: `InvoiceLineItem` uses exact shared invoice arithmetic to round fractional quantity × price and then tax to minor units; `ContractLineItem.calculateAmount()` uses `Math.round()` for tax. Everything downstream is exact integer arithmetic, which is why **there are no `EPSILON` tolerances left on any money path** (#2401). `Invoice`, `PaymentAllocation`, `Payout` and `PaymentIntent` compare with `===` / `>` / `>=`. Do not reintroduce a tolerance: against integers it forgives a real one-cent discrepancy rather than float fuzz. (`FulfillmentLineItem`'s quantity epsilon is unrelated — quantities are genuinely decimal there.)

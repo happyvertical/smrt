@@ -579,7 +579,10 @@ describe('LoginAttemptLimiter', () => {
       'denied',
       'locked',
       'managed',
+      // The failure also started the device's source lockout (#3531).
+      'source-locked',
     ]);
+    expect(byOutcome('source-locked')?.subjectKeyHash).toBeNull();
     expect(byOutcome('locked')?.subjectKeyHash).toBe(
       limiter.hashKey('subject', 'u'),
     );
@@ -611,6 +614,173 @@ describe('LoginAttemptLimiter', () => {
     expect(seen[0]?.outcome).toBe('succeeded');
     const events = await UsersLoginAuditEventCollection.create(options);
     expect(await events.list({})).toHaveLength(0);
+  });
+
+  describe('independent subject and source budgets (#3531)', () => {
+    it('keeps a strict per-account budget with a larger per-address one', async () => {
+      const limiter = await LoginAttemptLimiter.create({
+        ...options,
+        audit: false,
+        subject: { maxFailures: 2, lockout: { baseSeconds: 60 } },
+        source: { maxFailures: 6, lockout: false },
+      });
+      const attempt = (subject: string) =>
+        limiter.reserve({ kind: 'password', subject, source: 'proxy' });
+      for (let i = 0; i < 2; i++) {
+        const outcome = await expectAllowed(
+          await attempt('a@example.com'),
+        ).fail();
+        if (i === 1) expect(outcome.lockedOut).toBe(true);
+      }
+      const account = await attempt('a@example.com');
+      expect(account.allowed).toBe(false);
+      if (!account.allowed) {
+        expect(account.scope).toBe('subject');
+        expect(account.lockedOut).toBe(true);
+      }
+      // Other people behind the same address still have the address budget.
+      for (const subject of ['b@example.com', 'c@example.com']) {
+        await expectAllowed(await attempt(subject)).fail();
+        await expectAllowed(await attempt(subject)).fail();
+      }
+      const address = await attempt('d@example.com');
+      expect(address.allowed).toBe(false);
+      // The source budget has no lockout: only its window refuses.
+      if (!address.allowed) {
+        expect(address.scope).toBe('source');
+        expect(address.lockedOut).toBe(false);
+      }
+    });
+
+    it('keeps today’s shared defaults when no budget is configured', async () => {
+      const limiter = await LoginAttemptLimiter.create({
+        ...options,
+        audit: false,
+        maxAttempts: 2,
+        lockout: false,
+      });
+      expect(limiter.limitsSource).toBe(true);
+      await expectAllowed(
+        await limiter.reserve({ kind: 'p', subject: 'x', source: 'ip' }),
+      ).fail();
+      await expectAllowed(
+        await limiter.reserve({ kind: 'p', subject: 'y', source: 'ip' }),
+      ).fail();
+      const refused = await limiter.reserve({
+        kind: 'p',
+        subject: 'z',
+        source: 'ip',
+      });
+      expect(refused.allowed).toBe(false);
+      if (!refused.allowed) expect(refused.scope).toBe('source');
+    });
+
+    it('ignores the address entirely with source: false, and fails closed without a subject', async () => {
+      const limiter = await LoginAttemptLimiter.create({
+        ...options,
+        audit: false,
+        maxAttempts: 2,
+        source: false,
+      });
+      expect(limiter.limitsSource).toBe(false);
+      for (let i = 0; i < 10; i++) {
+        await expectAllowed(
+          await limiter.reserve({
+            kind: 'password',
+            subject: `user-${i}`,
+            source: 'shared-proxy',
+          }),
+        ).fail();
+      }
+      const attempts = await UsersLoginAttemptCollection.create(options);
+      expect(
+        await attempts.list({
+          where: { limiterKey: limiter.hashKey('source', 'shared-proxy') },
+        }),
+      ).toEqual([]);
+      await expect(
+        limiter.reserve({ kind: 'password', source: 'shared-proxy' }),
+      ).rejects.toThrow('source budget is disabled');
+      // The account budget still applies.
+      await expectAllowed(
+        await limiter.reserve({ kind: 'password', subject: 'user-0' }),
+      ).fail();
+      expect(
+        (await limiter.reserve({ kind: 'password', subject: 'user-0' }))
+          .allowed,
+      ).toBe(false);
+    });
+
+    it('audits a source lockout once, without the attempted accounts, rate limited per source', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+      const seen: LoginAuditEntry[] = [];
+      const limiter = await LoginAttemptLimiter.create({
+        ...options,
+        audit: { record: async (entry) => void seen.push(entry) },
+        subject: { maxFailures: 10 },
+        source: { maxFailures: 2, lockout: { baseSeconds: 30 } },
+        sourceStreakDecaySeconds: 0,
+        sourceLockoutAuditSeconds: 600,
+      });
+      const burst = async () => {
+        for (const subject of [
+          'victim-1@example.com',
+          'victim-2@example.com',
+        ]) {
+          await expectAllowed(
+            await limiter.reserve({
+              kind: 'password',
+              subject,
+              source: '203.0.113.9',
+              metadata: { tenantId: 'tenant-1' },
+            }),
+          ).fail();
+        }
+      };
+      const sourceLocked = () =>
+        seen.filter((entry) => entry.outcome === 'source-locked');
+
+      await burst();
+      expect(sourceLocked()).toHaveLength(1);
+      const [entry] = sourceLocked();
+      expect(entry.subjectKeyHash).toBeNull();
+      expect(entry.sourceKeyHash).toBe(
+        limiter.hashKey('source', '203.0.113.9'),
+      );
+      expect(entry.metadata).toEqual({ scope: 'source' });
+      expect(entry.retryAfterSeconds).toBe(30);
+      expect(JSON.stringify(entry)).not.toContain('victim');
+      expect(JSON.stringify(entry)).not.toContain(
+        limiter.hashKey('subject', 'victim-1@example.com'),
+      );
+
+      // A second lockout inside the audit interval is not reported again.
+      vi.advanceTimersByTime(31_000);
+      await burst();
+      expect(sourceLocked()).toHaveLength(1);
+
+      // After the interval the next lockout start is reported.
+      vi.advanceTimersByTime(601_000);
+      await burst();
+      expect(sourceLocked()).toHaveLength(2);
+
+      // A subject-only lockout never produces a source entry.
+      const subjectOnly = await LoginAttemptLimiter.create({
+        ...options,
+        audit: { record: async (e) => void seen.push(e) },
+        maxAttempts: 1,
+        source: false,
+      });
+      await expectAllowed(
+        await subjectOnly.reserve({
+          kind: 'password',
+          subject: 'solo',
+          source: '203.0.113.10',
+        }),
+      ).fail();
+      expect(sourceLocked()).toHaveLength(2);
+    });
   });
 
   it('refuses to settle a lease twice', async () => {

@@ -145,6 +145,27 @@ export {
   WholesaleOrder,
 } from './models/index.js';
 export { assertIntegerMinorUnits } from './money.js';
+// Customer and vendor contact rows posted by the party forms (#3501)
+export {
+  applyPartyContactIntent,
+  DEFAULT_PARTY_CONTACT_FIELD_NAMES,
+  normalizePartyContacts,
+  PARTY_CONTACT_MAX_LENGTHS,
+  type PartyContactErrorCode,
+  type PartyContactField,
+  type PartyContactFieldNames,
+  type PartyContactFormSource,
+  type PartyContactInput,
+  type PartyContactIntents,
+  PartyContactPartyNotFoundError,
+  PartyContactPayloadError,
+  type PartyContactRowErrors,
+  PartyContactValidationError,
+  readPartyContactRows,
+  type SavePartyContactsOptions,
+  savePartyContacts,
+  validatePartyContactRows,
+} from './party-contacts.js';
 export {
   AgreementsRecipe,
   CustomersRecipe,
@@ -169,6 +190,7 @@ export {
   FulfillmentType,
   type InvoiceCollectionMethod,
   InvoiceStatus,
+  type PartyContact,
   PaymentInstrumentStatus,
   PaymentIntentStatus,
   PaymentMethod,
