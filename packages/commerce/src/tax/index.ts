@@ -1,4 +1,8 @@
 export {
+  applyCookbookTaxSettings,
+  type CookbookTaxSettingsInput,
+} from './cookbook.js';
+export {
   ensureTenantTaxCodes,
   type LegacyTaxMapReport,
   type LegacyTaxRateRow,

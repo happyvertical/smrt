@@ -4,6 +4,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import { AccountCollection } from '@happyvertical/smrt-ledgers';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { MoneyValidationError } from '../money.js';
 import type { TaxComponentOptions } from '../types/index.js';
@@ -32,15 +33,24 @@ function canonicalPercent(value: string): string {
  * component's percent is immutable after it has been saved: archive it and
  * repoint editable codes to a replacement rate instead of rewriting history.
  */
-@TenantScoped({ mode: 'optional' })
+@TenantScoped({ mode: 'required' })
 @smrt({
-  api: { include: ['list', 'get', 'create', 'update'] },
+  api: {
+    include: ['list', 'get', 'create', 'update'],
+    writable: [
+      'name',
+      'percent',
+      'liabilityAccountId',
+      'recoverable',
+      'active',
+    ],
+  },
   mcp: { include: ['list', 'get'] },
   cli: { skipApiCheck: true },
 })
 export class TaxComponent extends SmrtObject {
-  @tenantId({ nullable: true })
-  tenantId: string | null = null;
+  @tenantId()
+  tenantId = '';
 
   @field({ description: 'The name of this tax component, for example GST.' })
   name = '';
@@ -66,11 +76,9 @@ export class TaxComponent extends SmrtObject {
   @field({ description: 'Whether new tax codes and overrides may select it.' })
   active = true;
 
-  private persistedPercent: string | null = null;
-
   constructor(options: TaxComponentOptions = {}) {
     super(options);
-    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId ?? '';
     if (options.name !== undefined) this.name = options.name;
     if (options.percent !== undefined) this.percent = options.percent;
     if (options.liabilityAccountId !== undefined)
@@ -80,14 +88,9 @@ export class TaxComponent extends SmrtObject {
     if (options.active !== undefined) this.active = options.active;
   }
 
-  override async initialize(): Promise<this> {
-    await super.initialize();
-    if (isPercent(this.percent)) this.percent = canonicalPercent(this.percent);
-    this.persistedPercent = this.percent;
-    return this;
-  }
-
   override async save(): Promise<this> {
+    if (!this.name.trim())
+      throw new Error('Tax component requires a nonempty name');
     if (!isPercent(this.percent)) {
       throw new MoneyValidationError(
         'PERCENT_OUT_OF_RANGE',
@@ -95,17 +98,58 @@ export class TaxComponent extends SmrtObject {
       );
     }
     this.percent = canonicalPercent(this.percent);
-    if (
-      this.persistedPercent !== null &&
-      this.persistedPercent !== this.percent
-    ) {
-      throw new MoneyValidationError(
-        'PERCENT_OUT_OF_RANGE',
-        'A referenced tax component rate is immutable; archive it and repoint its tax codes.',
+    return this.withTransaction(async () => {
+      const { TaxComponentCollection } = await import(
+        '../collections/TaxComponentCollection.js'
       );
-    }
-    const saved = (await super.save()) as this;
-    this.persistedPercent = this.percent;
-    return saved;
+      const components = await TaxComponentCollection.create({ db: this.db });
+      const persisted = this.id
+        ? await components.get({ id: this.id }, { cache: false })
+        : null;
+      if (persisted && canonicalPercent(persisted.percent) !== this.percent) {
+        const referenced = await this.isReferenced(persisted);
+        // claimRevision advanced the row's version; the pending save must use
+        // that version rather than its stale caller snapshot.
+        this.updated_at = persisted.updated_at;
+        if (referenced) {
+          throw new MoneyValidationError(
+            'PERCENT_OUT_OF_RANGE',
+            'A referenced tax component rate is immutable; archive it and repoint its tax codes.',
+          );
+        }
+      }
+      if (this.liabilityAccountId) {
+        const accounts = await AccountCollection.create({ db: this.db });
+        const account = await accounts.get(
+          { id: this.liabilityAccountId },
+          { cache: false },
+        );
+        if (!account || account.tenantId !== this.tenantId) {
+          throw new Error(
+            'Tax component liability account must belong to its tenant',
+          );
+        }
+      }
+      return (await super.save()) as this;
+    });
+  }
+
+  private async isReferenced(persisted: TaxComponent): Promise<boolean> {
+    if (!this.id) return false;
+    if (!persisted.updated_at)
+      throw new Error('Referenced tax component is missing its revision');
+    // Claim before inspecting references. TaxCode.save() claims the same row
+    // before attaching it, so a concurrent rate edit must reload and retry.
+    await persisted.claimRevision(persisted.updated_at);
+    const { TaxCodeCollection } = await import(
+      '../collections/TaxCodeCollection.js'
+    );
+    const codes = await TaxCodeCollection.create({ db: this.db });
+    return (await codes.list({ where: { tenantId: this.tenantId } })).some(
+      (code) =>
+        code.components.some(
+          (component) => component.taxComponentId === this.id,
+        ),
+    );
   }
 }

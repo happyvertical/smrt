@@ -6,6 +6,7 @@
 import {
   crossPackageRef,
   field,
+  foreignKey,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
@@ -100,7 +101,7 @@ export class Vendor extends SmrtObject {
   taxId: string = '';
 
   /** Tax code normally used for purchases from this vendor. */
-  @crossPackageRef('@happyvertical/smrt-commerce:TaxCode', {
+  @foreignKey('TaxCode', {
     description: 'The tax code normally used when buying from this vendor.',
   })
   defaultTaxCodeId: string = '';

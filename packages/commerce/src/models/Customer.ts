@@ -6,6 +6,7 @@
 import {
   crossPackageRef,
   field,
+  foreignKey,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
@@ -107,7 +108,7 @@ export class Customer extends SmrtObject {
    * An exempt customer always resolves to the tenant's exempt code before
    * this preference is considered.
    */
-  @crossPackageRef('@happyvertical/smrt-commerce:TaxCode', {
+  @foreignKey('TaxCode', {
     description: 'The tax code normally used when selling to this customer.',
   })
   defaultTaxCodeId: string = '';

@@ -33,6 +33,8 @@ language for end users and update them when a recipe's fields change. See
 
 See [payment allocation integrity](agents/payment-allocations.md) for atomic splits,
 retry identity, parent corrections and supported dialects.
+See [tax codes](agents/tax-codes.md) for tenant-owned rate components, default codes,
+and legacy-rate migration.
 
 ## Ledger Integration
 

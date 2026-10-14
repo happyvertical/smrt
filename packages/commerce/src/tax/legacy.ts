@@ -9,6 +9,14 @@ export interface LegacyTaxMapReport {
   createdComponents: number;
   createdCodes: number;
   missingLiabilityAccountComponentIds: string[];
+  /** Every legacy source rate and the durable tax code selected for it. */
+  mappings: Array<{
+    sourceRate: string;
+    taxCodeId: string;
+    taxComponentId: string | null;
+  }>;
+  /** Invalid legacy rates are retained through `legacy-unreconciled`. */
+  unreconciledRates: string[];
 }
 
 export interface MapLegacyTaxRatesOptions {
@@ -71,6 +79,11 @@ export async function ensureTenantTaxCodes(
       ['exempt', 'Exempt', 'exempt'],
       ['zero-rated', 'Zero rated', 'zero-rated'],
       ['out-of-scope', 'Out of scope', 'out-of-scope'],
+      [
+        'legacy-unreconciled',
+        'Legacy rate requires reconciliation',
+        'out-of-scope',
+      ],
     ] as const) {
       const existing = await codes.findByCode(code);
       if (existing) result.push(existing);
@@ -80,21 +93,37 @@ export async function ensureTenantTaxCodes(
   });
 }
 
-async function rateRows(db: DatabaseInterface): Promise<LegacyTaxRateRow[]> {
+async function rateRows(
+  db: DatabaseInterface,
+  tenantId: string,
+): Promise<LegacyTaxRateRow[]> {
   const sql = `
     SELECT i.tenant_id AS "tenantId", li.tax_rate AS "taxRate",
-      COALESCE(c.tax_exempt, 0) AS "customerTaxExempt"
+      CASE WHEN c.tax_exempt THEN TRUE ELSE FALSE END AS "customerTaxExempt"
     FROM invoice_line_items li
     JOIN invoices i ON i.id = li.invoice_id
-    LEFT JOIN customers c ON c.id = i.customer_id
+    LEFT JOIN customers c ON c.id = i.customer_id AND c.tenant_id = i.tenant_id
+    WHERE i.tenant_id = ?
     UNION ALL
     SELECT c.tenant_id AS "tenantId", li.tax_rate AS "taxRate",
-      COALESCE(customer.tax_exempt, 0) AS "customerTaxExempt"
+      CASE WHEN customer.tax_exempt THEN TRUE ELSE FALSE END AS "customerTaxExempt"
     FROM contract_line_items li
     JOIN contracts c ON c.id = li.contract_id
-    LEFT JOIN customers customer ON customer.id = c.customer_id`;
-  const result = await db.query(sql);
+    LEFT JOIN customers customer ON customer.id = c.customer_id AND customer.tenant_id = c.tenant_id
+    WHERE c.tenant_id = ?`;
+  const result = await db.query(sql, tenantId, tenantId);
   return result.rows as LegacyTaxRateRow[];
+}
+
+async function sourceTenantIds(db: DatabaseInterface): Promise<string[]> {
+  const result = await db.query(`
+    SELECT DISTINCT tenant_id AS "tenantId" FROM invoices WHERE tenant_id IS NOT NULL
+    UNION
+    SELECT DISTINCT tenant_id AS "tenantId" FROM contracts WHERE tenant_id IS NOT NULL`);
+  return (result.rows as LegacyTaxRateRow[])
+    .map(tenantIdOf)
+    .filter(Boolean)
+    .sort();
 }
 
 /**
@@ -110,18 +139,12 @@ export async function mapLegacyTaxRates(
     throw new Error(
       'Legacy tax mapping requires database transaction support.',
     );
-  const rows = await rateRows(db);
-  const byTenant = new Map<string, LegacyTaxRateRow[]>();
-  for (const row of rows) {
-    const tenantId = tenantIdOf(row);
-    if (!tenantId || (options.tenantId && tenantId !== options.tenantId))
-      continue;
-    const bucket = byTenant.get(tenantId) ?? [];
-    bucket.push(row);
-    byTenant.set(tenantId, bucket);
-  }
+  const tenantIds = options.tenantId
+    ? [options.tenantId]
+    : await sourceTenantIds(db);
   const reports: LegacyTaxMapReport[] = [];
-  for (const [tenantId, tenantRows] of byTenant) {
+  for (const tenantId of tenantIds) {
+    const tenantRows = await rateRows(db, tenantId);
     reports.push(
       await db.transaction((tx) =>
         mapLegacyTaxRatesInTransaction(tx, tenantId, tenantRows),
@@ -150,14 +173,32 @@ export async function mapLegacyTaxRatesInTransaction(
     let createdComponents = 0;
     let createdCodes = 0;
     const missingLiabilityAccountComponentIds: string[] = [];
+    const mappings: LegacyTaxMapReport['mappings'] = [];
+    const unreconciledRates: string[] = [];
     for (const row of tenantRows) {
       const percent = fractionToPercent(taxRateOf(row));
-      if (percent === null) continue;
+      if (percent === null || Number(percent) > 100) {
+        const code = byCode.get('legacy-unreconciled');
+        if (!code?.id) throw new Error('Expected tenant unreconciled code.');
+        const sourceRate = String(taxRateOf(row) ?? '');
+        unreconciledRates.push(sourceRate);
+        mappings.push({
+          sourceRate,
+          taxCodeId: code.id,
+          taxComponentId: null,
+        });
+        continue;
+      }
       if (percent === '0') {
         const code = customerExemptOf(row)
           ? byCode.get('exempt')
           : byCode.get('out-of-scope');
-        if (!code) throw new Error('Expected tenant non-taxable codes.');
+        if (!code?.id) throw new Error('Expected tenant non-taxable codes.');
+        mappings.push({
+          sourceRate: String(taxRateOf(row) ?? ''),
+          taxCodeId: code.id,
+          taxComponentId: null,
+        });
         continue;
       }
       const suffix = percent.replace('.', '_');
@@ -177,9 +218,10 @@ export async function mapLegacyTaxRatesInTransaction(
         missingLiabilityAccountComponentIds.push(component.id);
       }
       const codeName = `legacy-${suffix}`;
-      if (!(await codes.findByCode(codeName))) {
+      let code = await codes.findByCode(codeName);
+      if (!code) {
         if (!component.id) throw new Error('Saved tax component has no ID.');
-        await codes.create({
+        code = await codes.create({
           tenantId,
           code: codeName,
           name: `Legacy ${percent}%`,
@@ -188,12 +230,21 @@ export async function mapLegacyTaxRatesInTransaction(
         });
         createdCodes++;
       }
+      if (!code.id || !component.id)
+        throw new Error('Expected saved tax mapping.');
+      mappings.push({
+        sourceRate: String(taxRateOf(row) ?? ''),
+        taxCodeId: code.id,
+        taxComponentId: component.id,
+      });
     }
     return {
       tenantId,
       createdComponents,
       createdCodes,
       missingLiabilityAccountComponentIds,
+      mappings,
+      unreconciledRates,
     };
   });
 }
