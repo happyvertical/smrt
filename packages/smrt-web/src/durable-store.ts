@@ -133,3 +133,26 @@ export async function wipeDurableStore(namespace: string): Promise<void> {
   registry.delete(namespace);
   await Promise.allSettled(snapshot.map((resource) => resource.clear()));
 }
+
+/**
+ * Whether a resource of `kind` is registered under `namespace` in THIS page
+ * load — i.e. a live outbox engine (or persisted store) holds it here. Internal:
+ * `pruneDurableNamespace` uses it to refuse a sweep under a queue this page has
+ * mounted when Web Locks cannot arbitrate.
+ */
+export function hasDurableResource(
+  namespace: string,
+  kind: DurableResource['kind'],
+): boolean {
+  const resources = registry.get(namespace);
+  if (!resources) return false;
+  for (const resource of resources) {
+    if (resource.kind === kind) return true;
+  }
+  return false;
+}
+
+/** Every namespace with a resource registered in THIS page load. Internal. */
+export function registeredDurableNamespaces(): string[] {
+  return [...registry.keys()];
+}
