@@ -989,6 +989,9 @@ importers:
       '@happyvertical/payments':
         specifier: ^0.103.5
         version: 0.103.5(@noble/curves@2.0.1)(@noble/hashes@2.0.1)(@scure/bip32@2.0.1)
+      '@happyvertical/smrt-agents':
+        specifier: workspace:*
+        version: link:../agents
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core

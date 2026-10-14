@@ -56,7 +56,9 @@ import {
   applySyncWritablePolicy,
   fieldTypeToJsonSchema,
   ObjectRegistry,
+  type PublicJsonOptions,
   type SmrtClassOptions,
+  type SmrtObject,
   ValidationError,
 } from '@happyvertical/smrt-core';
 import {
@@ -618,13 +620,67 @@ export function manifestToolToAITool(tool: ManifestTool): AITool {
 
 interface OperableItem {
   toJSON: () => Record<string, unknown>;
+  toPublicJSON?: (options?: PublicJsonOptions) => Record<string, unknown>;
   save: () => Promise<unknown>;
   delete: () => Promise<unknown>;
 }
 
-function itemToObservation(item: unknown): unknown {
-  const candidate = item as { toJSON?: () => unknown } | null;
-  return typeof candidate?.toJSON === 'function' ? candidate.toJSON() : item;
+interface McpGetSerializerReference {
+  importPath: string;
+  exportName: string;
+}
+
+type McpGetSerializer = (
+  item: SmrtObject,
+  options: PublicJsonOptions,
+) => unknown | Promise<unknown>;
+
+function mcpGetSerializerReference(
+  tool: ManifestTool,
+): McpGetSerializerReference | undefined {
+  const mcp = ObjectRegistry.getConfig(registryKeyFor(tool)).mcp;
+  if (!mcp || typeof mcp !== 'object') return undefined;
+  const serializers = (mcp as { serializers?: unknown }).serializers;
+  if (!serializers || typeof serializers !== 'object') return undefined;
+  const get = (serializers as { get?: unknown }).get;
+  if (!get || typeof get !== 'object') return undefined;
+  const { importPath, exportName } = get as {
+    importPath?: unknown;
+    exportName?: unknown;
+  };
+  return typeof importPath === 'string' && typeof exportName === 'string'
+    ? { importPath, exportName }
+    : undefined;
+}
+
+async function itemToObservation(
+  item: unknown,
+  run: PrincipalRun,
+  serializerReference?: McpGetSerializerReference,
+): Promise<unknown> {
+  const publicOptions: PublicJsonOptions = { permissions: run.permissions };
+  if (serializerReference) {
+    const module = (await import(serializerReference.importPath)) as Record<
+      string,
+      unknown
+    >;
+    const serializer = module[serializerReference.exportName];
+    if (typeof serializer !== 'function') {
+      throw new Error(
+        `MCP get serializer '${serializerReference.exportName}' was not exported by '${serializerReference.importPath}'.`,
+      );
+    }
+    return (serializer as McpGetSerializer)(item as SmrtObject, publicOptions);
+  }
+  const candidate = item as {
+    toPublicJSON?: (options?: PublicJsonOptions) => unknown;
+    toJSON?: () => unknown;
+  } | null;
+  return typeof candidate?.toPublicJSON === 'function'
+    ? candidate.toPublicJSON(publicOptions)
+    : typeof candidate?.toJSON === 'function'
+      ? candidate.toJSON()
+      : item;
 }
 
 /**
@@ -668,21 +724,23 @@ export async function invokeManifestTool(
       const id = typeof args.id === 'string' ? args.id : undefined;
       if (id) {
         const item = await collection.get(id);
-        return item ? itemToObservation(item) : { found: false };
+        return item
+          ? itemToObservation(item, run, mcpGetSerializerReference(tool))
+          : { found: false };
       }
       const items = await collection.list({
         where: asRecord(args.where),
         limit: typeof args.limit === 'number' ? args.limit : 50,
         offset: typeof args.offset === 'number' ? args.offset : 0,
       });
-      return items.map(itemToObservation);
+      return Promise.all(items.map((item) => itemToObservation(item, run)));
     }
     case 'create': {
       const item = (await collection.create(
         writableToolInput(tool, args),
       )) as unknown as OperableItem;
       await item.save();
-      return itemToObservation(item);
+      return itemToObservation(item, run);
     }
     case 'update': {
       const { id, ...rest } = args;
@@ -695,7 +753,7 @@ export async function invokeManifestTool(
       }
       Object.assign(item, writableToolInput(tool, rest));
       await item.save();
-      return itemToObservation(item);
+      return itemToObservation(item, run);
     }
     case 'delete': {
       const id = typeof args.id === 'string' ? args.id : undefined;
@@ -730,7 +788,7 @@ export async function invokeManifestTool(
       ).call(item, rest);
       return result === undefined
         ? { success: true }
-        : itemToObservation(result);
+        : itemToObservation(result, run);
     }
   }
 }
@@ -1231,6 +1289,22 @@ function errorStatus(error: unknown): number | undefined {
   return undefined;
 }
 
+/**
+ * Structural guard keeps the chat package independent of commerce while
+ * preserving the stable validation code emitted by its public money boundary.
+ */
+function isMoneyValidationError(
+  error: unknown,
+): error is { name: 'MoneyValidationError'; code: string } {
+  if (!error || typeof error !== 'object') return false;
+  const { name, code } = error as { name?: unknown; code?: unknown };
+  return (
+    name === 'MoneyValidationError' &&
+    typeof code === 'string' &&
+    code.length > 0
+  );
+}
+
 /** Statuses meaning the model's arguments were wrong and can be corrected. */
 const INVALID_REQUEST_STATUSES = new Set([400, 404, 409, 422]);
 
@@ -1249,6 +1323,7 @@ const INVALID_REQUEST_STATUSES = new Set([400, 404, 409, 422]);
  */
 export function classifyToolError(error: unknown): ToolErrorKind {
   if (error instanceof ValidationError) return 'invalid_request';
+  if (isMoneyValidationError(error)) return 'invalid_request';
   const status = errorStatus(error);
   if (status === 401 || status === 403) return 'not_permitted';
   if (status !== undefined && INVALID_REQUEST_STATUSES.has(status)) {
