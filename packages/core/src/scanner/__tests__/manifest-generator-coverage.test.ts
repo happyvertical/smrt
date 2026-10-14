@@ -82,6 +82,29 @@ function method(
 }
 
 describe('ManifestGenerator coverage', () => {
+  it('normalizes abstract exposure in the shared OXC generation pass', () => {
+    const object = def('OxcAbstractWidget', {
+      decoratorConfig: { abstract: true },
+    });
+    const manifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
+      objects: { '@test/widgets:OxcAbstractWidget': object },
+    };
+    const generator = new ManifestGenerator();
+    generator.applyGenerationPasses(manifest, {
+      packageName: '@test/widgets',
+    });
+    expect(object.abstractDeclaredApi).toBeNull();
+    expect(object.decoratorConfig.api).toMatchObject({
+      exclude: ['create', 'update', 'delete'],
+    });
+    generator.applyGenerationPasses(manifest, {
+      packageName: '@test/widgets',
+    });
+    expect(object.abstractDeclaredApi).toBeNull();
+  });
+
   it('limits generated surfaces of abstract models to reads', () => {
     const manifest = new ManifestGenerator().generateManifest([
       scan([

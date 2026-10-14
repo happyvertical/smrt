@@ -306,28 +306,6 @@ export class ManifestGenerator {
 
     for (const result of scanResults) {
       for (const objectDef of result.objects) {
-        if (objectDef.decoratorConfig?.abstract === true) {
-          const config = objectDef.decoratorConfig;
-          // Hosted concrete descendants inherit the author's restrictions,
-          // not the write exclusions synthesized for this abstract type.
-          if (!Object.hasOwn(objectDef, 'abstractDeclaredApi')) {
-            objectDef.abstractDeclaredApi = config.api ?? null;
-          }
-          for (const surface of ['api', 'mcp', 'cli'] as const) {
-            if (config[surface] === false) continue;
-            const current = config[surface];
-            const excludes =
-              current && typeof current === 'object' && current.exclude
-                ? current.exclude
-                : [];
-            config[surface] = {
-              ...(current && typeof current === 'object' ? current : {}),
-              exclude: [
-                ...new Set([...excludes, 'create', 'update', 'delete']),
-              ],
-            };
-          }
-        }
         // Set package metadata on object definition if provided
         if (options?.packageName) {
           objectDef.packageName = options.packageName;
@@ -438,6 +416,29 @@ export class ManifestGenerator {
     // that declares no classes generates no qualified names and still builds.
     if (Object.keys(manifest.objects).length > 0) {
       assertScopedPackageName(options?.packageName);
+    }
+
+    // All producers, including the OXC Vite path, must carry this policy.
+    // Capture authored API exposure before making the abstract class itself
+    // read-only so hosted concrete descendants can inherit the authored part.
+    for (const objectDef of Object.values(manifest.objects)) {
+      if (objectDef.decoratorConfig?.abstract !== true) continue;
+      const config = objectDef.decoratorConfig;
+      if (!Object.hasOwn(objectDef, 'abstractDeclaredApi')) {
+        objectDef.abstractDeclaredApi = config.api ?? null;
+      }
+      for (const surface of ['api', 'mcp', 'cli'] as const) {
+        if (config[surface] === false) continue;
+        const current = config[surface];
+        const excludes =
+          current && typeof current === 'object' && current.exclude
+            ? current.exclude
+            : [];
+        config[surface] = {
+          ...(current && typeof current === 'object' ? current : {}),
+          exclude: [...new Set([...excludes, 'create', 'update', 'delete'])],
+        };
+      }
     }
 
     // Deprecated qualified-name aliases (#3338) fail closed at build time, the
