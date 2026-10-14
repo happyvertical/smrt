@@ -20,6 +20,7 @@ import { TaxComponentCollection } from '../collections/TaxComponentCollection.js
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { MoneyValidationError } from '../money.js';
 import { ensureTenantTaxCodes } from '../tax/legacy.js';
+import { InvoiceStatus } from '../types/index.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -105,6 +106,105 @@ describePostgres('invoice money aggregate on PostgreSQL (#3933)', () => {
           invoice.id,
         ),
       ).toMatchObject([{ taxableMinor: 100, taxMinor: 5 }]);
+    });
+  });
+
+  it('serializes concurrent credit capacity and stores credit-note tax facts', async () => {
+    const tenantId = randomUUID();
+    await ensureTenantTaxCodes(db, tenantId);
+    await withTenant({ tenantId }, async () => {
+      const gst = await (await TaxComponentCollection.create({ db })).create({
+        name: 'GST',
+        percent: '5',
+      });
+      const code = await (await TaxCodeCollection.create({ db })).create({
+        code: 'gst-credit',
+        name: 'GST credit',
+        components: [{ taxComponentId: gst.id, compound: false }],
+      });
+      const settings = await TaxSettingsCollection.create({ db });
+      const setting = await settings.getOrCreateForTenant(tenantId);
+      setting.defaultSalesTaxCodeId = code.id;
+      setting.taxRoundingScope = 'document';
+      await setting.save();
+      const migrationId = await settings.beginMoneyMigration(tenantId);
+      await settings.activateMoneyV2(tenantId, migrationId);
+      const customer = await (await CustomerCollection.create({ db })).create({
+        defaultTaxCodeId: code.id,
+      });
+      const invoices = await InvoiceCollection.create({ db });
+      const lines = await InvoiceLineItemCollection.create({ db });
+      const source = await invoices.create({
+        customerId: customer.id,
+        invoiceNumber: 'PG-CREDIT-SOURCE',
+        currency: 'CAD',
+      });
+      const sourceLine = await lines.create({
+        invoiceId: source.id,
+        description: 'Two units',
+        quantity: 2,
+        unitPrice: 100,
+      });
+      const issuedSource = await invoices.get(
+        { id: source.id },
+        { cache: false },
+      );
+      if (!issuedSource) throw new Error('Expected source');
+      issuedSource.status = InvoiceStatus.SENT;
+      await issuedSource.save();
+      const credit = await invoices.create({
+        kind: 'credit_note',
+        creditedInvoiceId: issuedSource.id,
+        customerId: customer.id,
+        invoiceNumber: 'PG-CREDIT',
+        currency: 'CAD',
+      });
+      await lines.create({
+        invoiceId: credit.id,
+        creditedLineId: sourceLine.id,
+        description: 'All units',
+        quantity: 2,
+        unitPrice: 0,
+      });
+      const second = await invoices.create({
+        kind: 'credit_note',
+        creditedInvoiceId: issuedSource.id,
+        customerId: customer.id,
+        invoiceNumber: 'PG-CREDIT-2',
+        currency: 'CAD',
+      });
+      await lines.create({
+        invoiceId: second.id,
+        creditedLineId: sourceLine.id,
+        description: 'Competing full credit',
+        quantity: 2,
+        unitPrice: 0,
+      });
+      const firstIssue = await invoices.get(
+        { id: credit.id },
+        { cache: false },
+      );
+      const secondIssue = await invoices.get(
+        { id: second.id },
+        { cache: false },
+      );
+      if (!firstIssue || !secondIssue) throw new Error('Expected credit notes');
+      firstIssue.status = InvoiceStatus.SENT;
+      secondIssue.status = InvoiceStatus.SENT;
+      const results = await Promise.allSettled([
+        firstIssue.save(),
+        secondIssue.save(),
+      ]);
+      expect(results.filter((row) => row.status === 'fulfilled')).toHaveLength(
+        1,
+      );
+      expect(
+        await (await DocumentTaxCollection.create({ db })).findByDocument(
+          tenantId,
+          'credit_note',
+          credit.id,
+        ),
+      ).toMatchObject([{ taxableMinor: 200, taxMinor: 10 }]);
     });
   });
 });

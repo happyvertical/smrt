@@ -45,7 +45,9 @@ export type MoneyValidationCode =
   | 'TAX_CODE_SCOPE'
   | 'UNSAFE_MONEY'
   | 'FROZEN_DOCUMENT'
-  | 'CURRENCY_MISMATCH';
+  | 'CURRENCY_MISMATCH'
+  | 'CREDIT_EXCEEDS_LINE'
+  | 'CREDIT_TARGET_NOT_ISSUED';
 
 /** Stable validation error shared by model, editor, and transport adapters. */
 export class MoneyValidationError extends Error {
@@ -89,6 +91,8 @@ export interface MoneyLineInput {
   /** Signed safe integer minor units. */
   unitPrice: number;
   discount: MoneyDiscountInput;
+  /** Explicit tax-exclusive basis for credit-note amount allocations. */
+  netAmountMinor?: number;
   /** Null means no code resolved; `none` pricing requires an out-of-scope code. */
   taxCode: MoneyTaxCodeInput | null;
 }
@@ -371,13 +375,18 @@ export function calculateMoneyDocument(input: {
     if (ids.has(line.id))
       validationError('INVALID_MONEY_INPUT', 'Duplicate money line ID');
     ids.add(line.id);
+    const explicitNet =
+      line.netAmountMinor === undefined ? null : money(line.netAmountMinor);
     const quantity = numberDecimal(line.quantity, 6);
-    const gross = roundSignedRational(
-      quantity.coefficient * money(line.unitPrice),
-      quantity.scale,
-    );
+    const gross =
+      explicitNet ??
+      roundSignedRational(
+        quantity.coefficient * money(line.unitPrice),
+        quantity.scale,
+      );
     safeMoney(gross);
-    const discount = discountFor(gross, line.discount);
+    const discount =
+      explicitNet === null ? discountFor(gross, line.discount) : 0n;
     const amount = gross - discount;
     safeMoney(amount);
     if (input.lineAmountType === 'none' && !line.taxCode)
@@ -399,7 +408,7 @@ export function calculateMoneyDocument(input: {
       0n,
     );
     const denominator =
-      input.lineAmountType === 'inclusive'
+      explicitNet === null && input.lineAmountType === 'inclusive'
         ? PERCENT_DENOMINATOR + totalRate
         : PERCENT_DENOMINATOR;
     return {
@@ -407,6 +416,7 @@ export function calculateMoneyDocument(input: {
       gross,
       discount,
       amount,
+      explicitNet,
       exact:
         input.lineAmountType === 'none'
           ? []
@@ -458,12 +468,17 @@ export function calculateMoneyDocument(input: {
       0n,
     );
     const net =
-      input.lineAmountType === 'inclusive' ? line.amount - tax : line.amount;
+      line.explicitNet ??
+      (input.lineAmountType === 'inclusive' ? line.amount - tax : line.amount);
+    const amount =
+      line.explicitNet !== null && input.lineAmountType === 'inclusive'
+        ? net + tax
+        : line.amount;
     return {
       id: line.input.id,
       grossMinor: safeMoney(line.gross),
       discountMinor: safeMoney(line.discount),
-      amountMinor: safeMoney(line.amount),
+      amountMinor: safeMoney(amount),
       components,
       taxMinor: safeMoney(tax),
       netMinor: safeMoney(net),

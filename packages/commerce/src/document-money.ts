@@ -3,19 +3,28 @@
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
 import { CustomerCollection } from './collections/CustomerCollection.js';
-import { DocumentTaxCollection } from './collections/DocumentTaxCollection.js';
+import {
+  DocumentTaxCollection,
+  type DocumentTaxWriteInput,
+} from './collections/DocumentTaxCollection.js';
 import { InvoiceCollection } from './collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from './collections/InvoiceLineItemCollection.js';
 import { TaxCodeCollection } from './collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from './collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from './collections/TaxSettingsCollection.js';
 import {
+  allocateFrozenCredit,
+  type FrozenCreditAllocation,
+  type IssuedCreditConsumption,
+} from './credit-allocation.js';
+import {
   DOCUMENT_MONEY_WRITE,
   lockDocumentMoneyParents,
   withDocumentMoneyTransaction,
 } from './document-money-internal.js';
+import type { DocumentTax } from './models/DocumentTax.js';
 import type { Invoice } from './models/Invoice.js';
-import type { InvoiceLineItem } from './models/InvoiceLineItem.js';
+import { InvoiceLineItem } from './models/InvoiceLineItem.js';
 import type { TaxCode } from './models/TaxCode.js';
 import type { TaxSettings } from './models/TaxSettings.js';
 import {
@@ -25,6 +34,7 @@ import {
   type ResolvableTaxCodeInput,
   resolveLineTaxCode,
 } from './money.js';
+import type { InvoiceTaxComponentSnapshot } from './types/index.js';
 import { InvoiceStatus } from './types/index.js';
 
 type ProductTaxDefaults = {
@@ -34,7 +44,87 @@ type ProductTaxDefaults = {
 
 type DeleteOptions = { expectedUpdatedAt?: Date | string };
 
+export interface PreviewInvoiceMoneyInput {
+  db: DatabaseInterface;
+  tenantId: string;
+  invoiceId: string;
+  draft?: {
+    header?: Partial<
+      Pick<
+        Invoice,
+        | 'currency'
+        | 'lineAmountType'
+        | 'taxRoundingScope'
+        | 'providerTaxAmount'
+        | 'customerId'
+      >
+    >;
+    lines?: Array<
+      Partial<
+        Pick<
+          InvoiceLineItem,
+          | 'id'
+          | 'description'
+          | 'productId'
+          | 'quantity'
+          | 'unitPrice'
+          | 'discountType'
+          | 'discountRate'
+          | 'discount'
+          | 'taxMode'
+          | 'taxCodeId'
+        >
+      >
+    >;
+  };
+}
+
+export interface PreviewInvoiceMoneyResult {
+  source: 'calculated';
+  header: {
+    currency: string;
+    lineAmountType: Invoice['lineAmountType'];
+    taxRoundingScope: Invoice['taxRoundingScope'];
+    subtotalMinor: number;
+    discountTotalMinor: number;
+    taxAmountMinor: number;
+    providerTaxAmountMinor: number;
+    totalAmountMinor: number;
+  };
+  lines: Array<{
+    id: string;
+    grossMinor: number;
+    discountMinor: number;
+    amountMinor: number;
+    taxMinor: number;
+    taxCodeId: string | null;
+    taxCodeCode: string | null;
+    taxCodeName: string | null;
+    taxComponents: InvoiceLineItem['taxComponents'];
+  }>;
+  taxes: DocumentTaxWriteInput[];
+}
+
+export interface GetInvoiceMoneyFactsInput {
+  db: DatabaseInterface;
+  tenantId: string;
+  invoiceId: string;
+}
+
+export interface InvoiceMoneyFacts {
+  source: 'stored';
+  invoiceId: string;
+  moneySnapshotId: string;
+  kind: Invoice['kind'];
+  status: Invoice['status'];
+  header: PreviewInvoiceMoneyResult['header'];
+  lines: PreviewInvoiceMoneyResult['lines'];
+  taxes: DocumentTaxWriteInput[];
+}
+
 const FROZEN_INVOICE_FIELDS = [
+  'kind',
+  'creditedInvoiceId',
   'tenantId',
   'customerId',
   'contractId',
@@ -61,6 +151,8 @@ const FROZEN_INVOICE_FIELDS = [
 const FROZEN_LINE_FIELDS = [
   'tenantId',
   'invoiceId',
+  'creditedLineId',
+  'creditCalculationBasisJson',
   'description',
   'sku',
   'productId',
@@ -202,6 +294,45 @@ export async function lockAndReloadInvoice(
   return { collection: first.collection, invoice };
 }
 
+async function lockAndReloadMoneyInvoice(
+  db: DatabaseInterface,
+  invoiceId: string,
+  tenantId: string,
+  creditedInvoiceId: string | null,
+): Promise<{
+  collection: InvoiceCollection;
+  invoice: Invoice;
+  source: Invoice | null;
+}> {
+  const collection = await InvoiceCollection.create({ db });
+  const ids = [invoiceId, ...(creditedInvoiceId ? [creditedInvoiceId] : [])];
+  const loaded = await Promise.all(
+    ids.map((id) => collection.get({ id }, { cache: false })),
+  );
+  if (loaded.some((row) => !row || row.tenantId !== tenantId))
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Invoice money parents must exist in the active tenant',
+    );
+  await lockDocumentMoneyParents(
+    ids.map((id) => ({ id, tenantId, collection })),
+  );
+  const invoice = await collection.get({ id: invoiceId }, { cache: false });
+  const source = creditedInvoiceId
+    ? await collection.get({ id: creditedInvoiceId }, { cache: false })
+    : null;
+  if (
+    !invoice ||
+    invoice.tenantId !== tenantId ||
+    (source && source.tenantId !== tenantId)
+  )
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Invoice money parent identity changed while acquiring its lock',
+    );
+  return { collection, invoice, source };
+}
+
 function discountInput(line: InvoiceLineItem): MoneyDiscountInput {
   if (line.discountType === 'percent')
     return { kind: 'percent', rate: String(line.discountRate) };
@@ -215,19 +346,227 @@ function discountInput(line: InvoiceLineItem): MoneyDiscountInput {
   return { kind: 'none' };
 }
 
+type CreditPreparation = {
+  allocationByLineId: Map<string, FrozenCreditAllocation>;
+  sourceByLineId: Map<string, InvoiceLineItem>;
+  issuedLines: InvoiceLineItem[];
+  issuedParentById: Map<string, Invoice>;
+  sourceInvoice: Invoice;
+  sourceTaxes: DocumentTax[];
+  exhaustsDocument: boolean;
+};
+
+function issuedCredit(invoice: Invoice): boolean {
+  return (
+    invoice.kind === 'credit_note' &&
+    invoice.status !== InvoiceStatus.DRAFT &&
+    invoice.status !== InvoiceStatus.CANCELLED
+  );
+}
+
+async function refreshIssuedCreditBalance(
+  db: DatabaseInterface,
+  source: Invoice,
+): Promise<void> {
+  const sourceId = requireId(source.id, 'Credited invoice');
+  const credits = await (await InvoiceCollection.create({ db })).list({
+    where: { tenantId: source.tenantId, creditedInvoiceId: sourceId },
+  });
+  const issued = credits.filter(issuedCredit).sort((left, right) => {
+    const date = left.issueDate.getTime() - right.issueDate.getTime();
+    if (date) return date;
+    return String(left.id) < String(right.id)
+      ? -1
+      : String(left.id) > String(right.id)
+        ? 1
+        : 0;
+  });
+  const total = issued.reduce((sum, credit) => sum + credit.totalAmount, 0);
+  if (!Number.isSafeInteger(total) || total < 0)
+    throw new MoneyValidationError(
+      'UNSAFE_MONEY',
+      'Issued credit total is not a nonnegative safe integer',
+    );
+  let remainingSource = Math.max(0, source.totalAmount - source.amountPaid);
+  for (const credit of credits) {
+    const included = issued.includes(credit);
+    const applied = included
+      ? Math.min(credit.totalAmount, remainingSource)
+      : 0;
+    if (included) remainingSource -= applied;
+    if (credit.creditedAmount !== applied) {
+      credit.creditedAmount = applied;
+      credit.updatePaymentStatus(credit.amountPaid);
+      await credit.saveDerived(DOCUMENT_MONEY_WRITE, {
+        recomputeLegacy: false,
+      });
+    }
+  }
+  source.creditedAmount = total;
+  source.updatePaymentStatus(source.amountPaid);
+  await source.saveDerived(DOCUMENT_MONEY_WRITE, { recomputeLegacy: false });
+}
+
+function lineNet(line: InvoiceLineItem, parent: Invoice): number {
+  return parent.lineAmountType === 'inclusive'
+    ? line.amount - line.taxAmount
+    : line.amount;
+}
+
+async function prepareCreditLines(
+  db: DatabaseInterface,
+  invoice: Invoice,
+  lines: InvoiceLineItem[],
+): Promise<CreditPreparation> {
+  if (!invoice.creditedInvoiceId)
+    throw new MoneyValidationError(
+      'CREDIT_TARGET_NOT_ISSUED',
+      'A credit note requires a credited invoice',
+    );
+  const sourceInvoice = await findInvoice(db, invoice.creditedInvoiceId);
+  if (
+    !sourceInvoice ||
+    sourceInvoice.kind !== 'invoice' ||
+    sourceInvoice.tenantId !== invoice.tenantId ||
+    sourceInvoice.status === InvoiceStatus.DRAFT ||
+    sourceInvoice.status === InvoiceStatus.CANCELLED ||
+    !sourceInvoice.moneySnapshotId
+  )
+    throw new MoneyValidationError(
+      'CREDIT_TARGET_NOT_ISSUED',
+      'Credit target must be an issued, non-cancelled invoice in the same tenant',
+    );
+  if (sourceInvoice.currency !== invoice.currency)
+    throw new MoneyValidationError(
+      'CURRENCY_MISMATCH',
+      'Credit note currency must match its credited invoice',
+    );
+  if (sourceInvoice.customerId !== invoice.customerId)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Credit note customer must match its credited invoice',
+    );
+  const lineCollection = await InvoiceLineItemCollection.create({ db });
+  const sourceLines = await lineCollection.findByInvoice(
+    requireId(sourceInvoice.id, 'Credited invoice'),
+  );
+  const sourceTaxes = await (
+    await DocumentTaxCollection.create({ db })
+  ).findByDocument(
+    requireId(sourceInvoice.tenantId, 'Credited invoice tenant'),
+    'invoice',
+    requireId(sourceInvoice.id, 'Credited invoice'),
+  );
+  const sourceByLineId = new Map(
+    sourceLines.map((line) => [requireId(line.id, 'Credited line'), line]),
+  );
+  const invoices = await InvoiceCollection.create({ db });
+  const priorCredits = (
+    await invoices.list({
+      where: {
+        tenantId: invoice.tenantId,
+        creditedInvoiceId: invoice.creditedInvoiceId,
+      },
+    })
+  ).filter((row) => row.id !== invoice.id && issuedCredit(row));
+  const issuedLines: InvoiceLineItem[] = [];
+  const issuedParentById = new Map(
+    priorCredits.map((row) => [requireId(row.id, 'Issued credit note'), row]),
+  );
+  const consumptions: IssuedCreditConsumption[] = [];
+  for (const credit of priorCredits) {
+    for (const line of await lineCollection.findByInvoice(
+      requireId(credit.id, 'Issued credit note'),
+    )) {
+      if (!line.creditedLineId) continue;
+      issuedLines.push(line);
+      const basis = line.creditCalculationBasis;
+      consumptions.push({
+        creditedLineId: line.creditedLineId,
+        quantity: basis?.kind === 'quantity' ? basis.quantity : '0',
+        netMinor: lineNet(line, credit),
+        discountMinor: line.discount,
+      });
+    }
+  }
+  const targeted = lines.filter((line) => line.creditedLineId);
+  const allocation = targeted.length
+    ? allocateFrozenCredit(
+        sourceLines.map((line) => ({
+          id: requireId(line.id, 'Credited line'),
+          quantity: String(line.quantity),
+          netMinor: lineNet(line, sourceInvoice),
+          discountMinor: line.discount,
+          unitPrice: line.unitPrice,
+          discountType: line.discountType,
+          discountRate: line.discountRate,
+        })),
+        consumptions,
+        targeted.map((line) => {
+          const basis = line.creditCalculationBasis;
+          return basis?.kind === 'net_amount'
+            ? {
+                creditedLineId: requireId(line.creditedLineId, 'Credited line'),
+                netMinor: basis.netMinor,
+              }
+            : {
+                creditedLineId: requireId(line.creditedLineId, 'Credited line'),
+                quantity:
+                  basis?.kind === 'quantity'
+                    ? basis.quantity
+                    : String(line.quantity),
+              };
+        }),
+      )
+    : { allocations: [], exhaustsDocument: false };
+  const allocationByLineId = new Map<string, FrozenCreditAllocation>();
+  const targetBySource = new Map(
+    targeted.map((line) => [
+      requireId(line.creditedLineId, 'Credited line'),
+      line,
+    ]),
+  );
+  for (const row of allocation.allocations) {
+    const line = targetBySource.get(row.creditedLineId);
+    if (!line)
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Credit allocation lost its target line',
+      );
+    line.creditCalculationBasis = row.basis;
+    allocationByLineId.set(requireId(line.id, 'Credit line'), row);
+  }
+  return {
+    allocationByLineId,
+    sourceByLineId,
+    issuedLines,
+    issuedParentById,
+    sourceInvoice,
+    sourceTaxes,
+    exhaustsDocument: allocation.exhaustsDocument,
+  };
+}
+
 async function recomputeInvoiceAggregate(
   db: DatabaseInterface,
   invoice: Invoice,
   settings: TaxSettings,
   freezeSnapshotId = '',
-): Promise<void> {
+  persist = true,
+  proposedLines?: InvoiceLineItem[],
+): Promise<{ lines: InvoiceLineItem[]; taxRows: DocumentTaxWriteInput[] }> {
   assertTenantId(invoice.tenantId);
   const tenantId = invoice.tenantId;
   const linesCollection = await InvoiceLineItemCollection.create({ db });
   const codesCollection = await TaxCodeCollection.create({ db });
   const componentsCollection = await TaxComponentCollection.create({ db });
   const invoiceId = requireId(invoice.id, 'Invoice calculation');
-  const lines = await linesCollection.findByInvoice(invoiceId);
+  const lines =
+    proposedLines ?? (await linesCollection.findByInvoice(invoiceId));
+  const credit =
+    invoice.kind === 'credit_note'
+      ? await prepareCreditLines(db, invoice, lines)
+      : null;
   const codes = await codesCollection.list({ where: { tenantId } });
   const components = await componentsCollection.list({ where: { tenantId } });
   const componentById = new Map(
@@ -259,6 +598,27 @@ async function recomputeInvoiceAggregate(
       }),
     };
   }
+  if (credit) {
+    for (const source of credit.sourceByLineId.values()) {
+      if (!source.taxCodeId) continue;
+      const frozenKind = credit.sourceTaxes.find(
+        (row) => row.taxCodeId === source.taxCodeId,
+      )?.kind;
+      codeInputs[source.taxCodeId] = {
+        id: source.taxCodeId,
+        kind:
+          frozenKind ??
+          (source.taxComponents.length ? 'taxable' : 'zero-rated'),
+        active: true,
+        appliesTo: 'sales',
+        components: source.taxComponents.map((component) => ({
+          taxComponentId: component.taxComponentId,
+          percent: component.percent,
+          compound: false,
+        })),
+      };
+    }
+  }
   const exempt = await codesCollection.findByCode('exempt');
   const outOfScope = await codesCollection.findByCode('out-of-scope');
   const customers = await CustomerCollection.create({ db });
@@ -276,6 +636,7 @@ async function recomputeInvoiceAggregate(
   const productIds = [
     ...new Set(
       lines
+        .filter((line) => !line.creditedLineId)
         .map((line) => line.productId)
         .filter((productId): productId is string => !!productId),
     ),
@@ -302,7 +663,14 @@ async function recomputeInvoiceAggregate(
     }
   }
 
-  const resolvedCodes = new Map<string, TaxCode | null>();
+  type ResolvedMetadata = {
+    id: string;
+    code: string | null;
+    name: string | null;
+    kind: 'taxable' | 'zero-rated' | 'exempt' | 'out-of-scope';
+    components: InvoiceTaxComponentSnapshot[];
+  };
+  const resolvedCodes = new Map<string, ResolvedMetadata | null>();
   const calculated = calculateMoneyDocument({
     currency: invoice.currency,
     lineAmountType: invoice.lineAmountType,
@@ -312,6 +680,75 @@ async function recomputeInvoiceAggregate(
         throw new MoneyValidationError(
           'INVALID_MONEY_INPUT',
           `Invoice line ${line.id} must belong to its parent tenant`,
+        );
+      const lineId = requireId(line.id, 'Invoice line');
+      if (line.creditedLineId) {
+        if (!credit)
+          throw new MoneyValidationError(
+            'INVALID_MONEY_INPUT',
+            'Only a credit note may reference a credited line',
+          );
+        const source = credit.sourceByLineId.get(line.creditedLineId);
+        const allocation = credit.allocationByLineId.get(lineId);
+        if (!source || !allocation)
+          throw new MoneyValidationError(
+            'INVALID_MONEY_INPUT',
+            'Credited line is not part of the frozen source invoice',
+          );
+        const taxCode = source.taxCodeId
+          ? (codeInputs[source.taxCodeId] ?? null)
+          : null;
+        resolvedCodes.set(
+          lineId,
+          source.taxCodeId
+            ? {
+                id: source.taxCodeId,
+                code: source.taxCodeCode,
+                name: source.taxCodeName,
+                kind: taxCode?.kind ?? 'zero-rated',
+                components: structuredClone(source.taxComponents),
+              }
+            : null,
+        );
+        line.description ||= source.description;
+        line.sku ||= source.sku;
+        line.productId = source.productId;
+        line.revenueAccountId = source.revenueAccountId;
+        if (allocation.basis.kind === 'quantity') {
+          line.quantity = Number(allocation.basis.quantity);
+          line.unitPrice = allocation.basis.sourceUnitPrice;
+          line.discountType = allocation.discountMinor ? 'amount' : 'none';
+          line.discountRate = '0';
+        } else {
+          line.quantity = 1;
+          line.unitPrice = allocation.netMinor ?? allocation.basis.netMinor;
+          line.discountType = 'none';
+          line.discountRate = '0';
+        }
+        line.discount = allocation.discountMinor;
+        return {
+          id: lineId,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          netAmountMinor:
+            allocation.basis.kind === 'net_amount'
+              ? (allocation.netMinor ?? allocation.basis.netMinor)
+              : undefined,
+          discount: allocation.discountMinor
+            ? ({ kind: 'amount', minor: allocation.discountMinor } as const)
+            : ({ kind: 'none' } as const),
+          taxCode,
+        };
+      }
+      if (invoice.kind === 'invoice' && line.creditCalculationBasis)
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          'Ordinary invoice lines cannot carry a credit calculation basis',
+        );
+      if (invoice.kind === 'credit_note' && line.taxMode !== 'override')
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          'Free-form credit lines require an explicit tax-code override',
         );
       const resolved = resolveLineTaxCode(
         {
@@ -332,8 +769,37 @@ async function recomputeInvoiceAggregate(
         },
       );
       resolvedCodes.set(
-        requireId(line.id, 'Invoice line'),
-        resolved.taxCode ? (codeById.get(resolved.taxCode.id) ?? null) : null,
+        lineId,
+        resolved.taxCode
+          ? (() => {
+              const code = codeById.get(resolved.taxCode.id);
+              if (!code)
+                throw new MoneyValidationError(
+                  'TAX_CODE_NOT_FOUND',
+                  `Tax code ${resolved.taxCode.id} was not loaded`,
+                );
+              return {
+                id: requireId(code.id, 'Tax code'),
+                code: code.code,
+                name: code.name,
+                kind: code.kind,
+                components: code.components.map((part) => {
+                  const component = componentById.get(part.taxComponentId);
+                  if (!component)
+                    throw new MoneyValidationError(
+                      'TAX_CODE_NOT_FOUND',
+                      `Tax component ${part.taxComponentId} was not loaded`,
+                    );
+                  return {
+                    taxComponentId: part.taxComponentId,
+                    name: component.name,
+                    percent: component.percent,
+                    taxMinor: 0,
+                  };
+                }),
+              };
+            })()
+          : null,
       );
       return {
         id: requireId(line.id, 'Invoice line'),
@@ -344,6 +810,130 @@ async function recomputeInvoiceAggregate(
       };
     }),
   });
+
+  // When every original line is exhausted, consume the exact remaining frozen
+  // component and taxable residual. This preserves document-rounding cents
+  // without consulting today's rates; free-form goodwill lines remain separate.
+  if (credit?.exhaustsDocument) {
+    const resultById = new Map(calculated.lines.map((row) => [row.id, row]));
+    const targeted = lines.filter((line) => !!line.creditedLineId);
+    const compare = (left: InvoiceLineItem, right: InvoiceLineItem) =>
+      String(left.id) < String(right.id)
+        ? -1
+        : String(left.id) > String(right.id)
+          ? 1
+          : 0;
+    const sourceCodeIds = [
+      ...new Set(credit.sourceTaxes.map((row) => row.taxCodeId)),
+    ];
+    for (const codeId of sourceCodeIds) {
+      const sourceRows = credit.sourceTaxes.filter(
+        (row) => row.taxCodeId === codeId,
+      );
+      const desiredNet = sourceRows[0]?.taxableMinor ?? 0;
+      const priorForCode = credit.issuedLines.filter(
+        (line) => line.taxCodeId === codeId,
+      );
+      const priorNet = priorForCode.reduce((sum, line) => {
+        const parent = credit.issuedParentById.get(line.invoiceId);
+        return sum + (parent ? lineNet(line, parent) : 0);
+      }, 0);
+      const currentLines = targeted
+        .filter(
+          (line) =>
+            resolvedCodes.get(requireId(line.id, 'Credit line'))?.id === codeId,
+        )
+        .sort(compare);
+      const currentResults = currentLines
+        .map((line) => resultById.get(requireId(line.id, 'Credit line')))
+        .filter((row): row is NonNullable<typeof row> => !!row);
+      if (!currentResults.length) continue;
+      const currentNet = currentResults.reduce(
+        (sum, row) => sum + row.netMinor,
+        0,
+      );
+      const last = currentResults[currentResults.length - 1];
+      const netDelta = desiredNet - priorNet - currentNet;
+      last.netMinor += netDelta;
+      last.amountMinor += netDelta;
+      for (const sourceRow of sourceRows) {
+        if (!sourceRow.taxComponentId) continue;
+        const priorTax = priorForCode.reduce(
+          (sum, line) =>
+            sum +
+            (line.taxComponents.find(
+              (part) => part.taxComponentId === sourceRow.taxComponentId,
+            )?.taxMinor ?? 0),
+          0,
+        );
+        const eligible = currentResults.filter((row) =>
+          row.components.some(
+            (part) => part.taxComponentId === sourceRow.taxComponentId,
+          ),
+        );
+        if (!eligible.length) continue;
+        const currentTax = eligible.reduce(
+          (sum, row) =>
+            sum +
+            (row.components.find(
+              (part) => part.taxComponentId === sourceRow.taxComponentId,
+            )?.taxMinor ?? 0),
+          0,
+        );
+        const taxTarget = eligible[eligible.length - 1];
+        const component = taxTarget.components.find(
+          (part) => part.taxComponentId === sourceRow.taxComponentId,
+        );
+        if (!component) continue;
+        const taxDelta = sourceRow.taxMinor - priorTax - currentTax;
+        component.taxMinor += taxDelta;
+        taxTarget.taxMinor += taxDelta;
+        if (invoice.lineAmountType === 'inclusive')
+          taxTarget.amountMinor += taxDelta;
+      }
+    }
+    const rebuilt = new Map<
+      string,
+      {
+        taxCodeId: string | null;
+        taxComponentId: string | null;
+        taxableMinor: number;
+        taxMinor: number;
+      }
+    >();
+    for (const result of calculated.lines) {
+      const metadata = resolvedCodes.get(result.id) ?? null;
+      const parts = result.components.length
+        ? result.components
+        : [{ taxComponentId: null, taxMinor: 0 }];
+      for (const part of parts) {
+        const key = `${metadata?.id ?? ''}\u0000${part.taxComponentId ?? ''}`;
+        const row = rebuilt.get(key) ?? {
+          taxCodeId: metadata?.id ?? null,
+          taxComponentId: part.taxComponentId,
+          taxableMinor: 0,
+          taxMinor: 0,
+        };
+        row.taxableMinor += result.netMinor;
+        row.taxMinor += part.taxMinor;
+        rebuilt.set(key, row);
+      }
+    }
+    calculated.taxes = [...rebuilt.values()].sort((left, right) => {
+      const a = `${left.taxCodeId ?? ''}\u0000${left.taxComponentId ?? ''}`;
+      const b = `${right.taxCodeId ?? ''}\u0000${right.taxComponentId ?? ''}`;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+    calculated.subtotalMinor = calculated.lines.reduce(
+      (sum, row) => sum + row.netMinor,
+      0,
+    );
+    calculated.taxMinor = calculated.lines.reduce(
+      (sum, row) => sum + row.taxMinor,
+      0,
+    );
+    calculated.totalMinor = calculated.subtotalMinor + calculated.taxMinor;
+  }
 
   const lineById = new Map(
     lines.map((line) => [requireId(line.id, 'Invoice line'), line]),
@@ -359,18 +949,20 @@ async function recomputeInvoiceAggregate(
     line.discount = result.discountMinor;
     line.amount = result.amountMinor;
     line.taxAmount = result.taxMinor;
-    line.taxCodeId = code ? requireId(code.id, 'Tax code') : null;
+    line.taxCodeId = code?.id ?? null;
     line.taxCodeCode = code?.code ?? null;
     line.taxCodeName = code?.name ?? null;
     line.taxComponents = result.components.map((entry) => {
-      const component = componentById.get(entry.taxComponentId);
+      const component = code?.components.find(
+        (candidate) => candidate.taxComponentId === entry.taxComponentId,
+      );
       if (!component)
         throw new MoneyValidationError(
           'TAX_CODE_NOT_FOUND',
           `Calculated component ${entry.taxComponentId} was not loaded`,
         );
       return {
-        taxComponentId: requireId(component.id, 'Tax component'),
+        taxComponentId: component.taxComponentId,
         name: component.name,
         percent: component.percent,
         taxMinor: entry.taxMinor,
@@ -378,163 +970,451 @@ async function recomputeInvoiceAggregate(
     });
     line.taxRate = code
       ? code.components.reduce(
-          (sum, part) =>
-            sum +
-            Number(componentById.get(part.taxComponentId)?.percent ?? 0) / 100,
+          (sum, part) => sum + Number(part.percent) / 100,
           0,
         )
       : 0;
     if (freezeSnapshotId) line.moneySnapshotId = freezeSnapshotId;
-    await line.saveDerived(DOCUMENT_MONEY_WRITE, false);
+    if (persist) await line.saveDerived(DOCUMENT_MONEY_WRITE, false);
   }
 
-  const documentTaxes = await DocumentTaxCollection.create({ db });
-  await documentTaxes.replaceDerivedForDocument(DOCUMENT_MONEY_WRITE, {
-    tenantId,
-    documentType: 'invoice',
-    documentId: invoiceId,
-    rows: calculated.taxes.map((tax) => {
-      const code = tax.taxCodeId ? codeById.get(tax.taxCodeId) : null;
-      const component = tax.taxComponentId
-        ? componentById.get(tax.taxComponentId)
-        : null;
-      if (tax.taxCodeId && !code)
-        throw new MoneyValidationError(
-          'TAX_CODE_NOT_FOUND',
-          `Document tax code ${tax.taxCodeId} was not loaded`,
-        );
-      if (tax.taxComponentId && !component)
-        throw new MoneyValidationError(
-          'TAX_CODE_NOT_FOUND',
-          `Document tax component ${tax.taxComponentId} was not loaded`,
-        );
-      return {
-        tenantId,
-        documentType: 'invoice' as const,
-        documentId: invoiceId,
-        currency: invoice.currency,
-        taxCodeId: code ? requireId(code.id, 'Tax code') : null,
-        taxCodeCode: code?.code ?? null,
-        kind: code?.kind ?? null,
-        taxComponentId: component
-          ? requireId(component.id, 'Tax component')
-          : null,
-        taxComponentName: component?.name ?? null,
-        percent: component?.percent ?? null,
-        liabilityAccountId: component?.liabilityAccountId || null,
-        taxableMinor: tax.taxableMinor,
-        taxMinor: tax.taxMinor,
-        recoverableMinor: 0,
-      };
-    }),
+  const taxRows = calculated.taxes.map((tax): DocumentTaxWriteInput => {
+    const code = tax.taxCodeId
+      ? ([...resolvedCodes.values()].find(
+          (candidate) => candidate?.id === tax.taxCodeId,
+        ) ?? null)
+      : null;
+    const snapshotComponent = tax.taxComponentId
+      ? code?.components.find(
+          (candidate) => candidate.taxComponentId === tax.taxComponentId,
+        )
+      : null;
+    const currentComponent = tax.taxComponentId
+      ? componentById.get(tax.taxComponentId)
+      : null;
+    const sourceTax = credit?.sourceTaxes.find(
+      (row) =>
+        row.taxCodeId === tax.taxCodeId &&
+        row.taxComponentId === tax.taxComponentId,
+    );
+    if (tax.taxCodeId && !code)
+      throw new MoneyValidationError(
+        'TAX_CODE_NOT_FOUND',
+        `Document tax code ${tax.taxCodeId} was not loaded`,
+      );
+    if (tax.taxComponentId && !snapshotComponent)
+      throw new MoneyValidationError(
+        'TAX_CODE_NOT_FOUND',
+        `Document tax component ${tax.taxComponentId} was not loaded`,
+      );
+    return {
+      tenantId,
+      documentType: invoice.kind,
+      documentId: invoiceId,
+      currency: invoice.currency,
+      taxCodeId: code ? requireId(code.id, 'Tax code') : null,
+      taxCodeCode: code?.code ?? null,
+      kind: code?.kind ?? null,
+      taxComponentId: snapshotComponent?.taxComponentId ?? null,
+      taxComponentName: snapshotComponent?.name ?? null,
+      percent: snapshotComponent?.percent ?? null,
+      liabilityAccountId:
+        sourceTax?.liabilityAccountId ||
+        currentComponent?.liabilityAccountId ||
+        null,
+      taxableMinor: tax.taxableMinor,
+      taxMinor: tax.taxMinor,
+      recoverableMinor: 0,
+    };
   });
+  if (persist) {
+    const documentTaxes = await DocumentTaxCollection.create({ db });
+    await documentTaxes.replaceDerivedForDocument(DOCUMENT_MONEY_WRITE, {
+      tenantId,
+      documentType: invoice.kind,
+      documentId: invoiceId,
+      rows: taxRows,
+    });
+  }
   invoice.subtotal = calculated.subtotalMinor;
   invoice.discountTotal = calculated.discountTotalMinor;
   invoice.taxAmount = calculated.taxMinor + invoice.providerTaxAmount;
   invoice.totalAmount = calculated.totalMinor + invoice.providerTaxAmount;
+  return { lines, taxRows };
+}
+
+/** Calculate a proposed draft invoice in memory through the owning resolver. */
+export async function previewInvoiceMoney(
+  input: PreviewInvoiceMoneyInput,
+): Promise<PreviewInvoiceMoneyResult> {
+  if (!input.tenantId || getTenantId() !== input.tenantId)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Invoice preview requires its active principal tenant',
+    );
+  const settings = await settingsForTenant(input.db, input.tenantId);
+  assertRuntimeAvailable(settings);
+  if (settings?.moneyModel !== 'v2')
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Invoice preview requires active money v2 settings',
+    );
+  const { invoice } = await loadInvoice(input.db, input.invoiceId);
+  if (invoice.tenantId !== input.tenantId)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Invoice preview cannot cross tenant boundaries',
+    );
+  if (invoice.status !== InvoiceStatus.DRAFT || invoice.moneySnapshotId)
+    throw new MoneyValidationError(
+      'FROZEN_DOCUMENT',
+      'Frozen invoice money cannot be previewed as a proposed draft',
+    );
+  const proposedHeader = input.draft?.header;
+  if (proposedHeader)
+    for (const field of [
+      'currency',
+      'lineAmountType',
+      'taxRoundingScope',
+      'providerTaxAmount',
+      'customerId',
+    ] as const)
+      if (proposedHeader[field] !== undefined)
+        invoice[field] = proposedHeader[field] as never;
+  const storedLines = await (
+    await InvoiceLineItemCollection.create({ db: input.db })
+  ).findByInvoice(input.invoiceId);
+  const storedById = new Map(storedLines.map((line) => [line.id, line]));
+  const proposedLines = input.draft?.lines
+    ? input.draft.lines.map((proposed) => {
+        const line = proposed.id ? storedById.get(proposed.id) : undefined;
+        const result = line ?? new InvoiceLineItem();
+        for (const field of [
+          'description',
+          'productId',
+          'quantity',
+          'unitPrice',
+          'discountType',
+          'discountRate',
+          'discount',
+          'taxMode',
+          'taxCodeId',
+        ] as const)
+          if (proposed[field] !== undefined)
+            result[field] = proposed[field] as never;
+        result.id ||= crypto.randomUUID();
+        result.invoiceId = input.invoiceId;
+        result.tenantId = input.tenantId;
+        return result;
+      })
+    : storedLines;
+  const calculated = await recomputeInvoiceAggregate(
+    input.db,
+    invoice,
+    settings,
+    '',
+    false,
+    proposedLines,
+  );
+  return {
+    source: 'calculated',
+    header: {
+      currency: invoice.currency,
+      lineAmountType: invoice.lineAmountType,
+      taxRoundingScope: invoice.taxRoundingScope,
+      subtotalMinor: invoice.subtotal,
+      discountTotalMinor: invoice.discountTotal,
+      taxAmountMinor: invoice.taxAmount,
+      providerTaxAmountMinor: invoice.providerTaxAmount,
+      totalAmountMinor: invoice.totalAmount,
+    },
+    lines: calculated.lines.map((line) => ({
+      id: requireId(line.id, 'Preview line'),
+      grossMinor: line.amount + line.discount,
+      discountMinor: line.discount,
+      amountMinor: line.amount,
+      taxMinor: line.taxAmount,
+      taxCodeId: line.taxCodeId,
+      taxCodeCode: line.taxCodeCode,
+      taxCodeName: line.taxCodeName,
+      taxComponents: structuredClone(line.taxComponents),
+    })),
+    taxes: calculated.taxRows,
+  };
+}
+
+/** Read authoritative persisted money facts without resolution or recalculation. */
+export async function getInvoiceMoneyFacts(
+  input: GetInvoiceMoneyFactsInput,
+): Promise<InvoiceMoneyFacts> {
+  if (!input.tenantId || getTenantId() !== input.tenantId)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Invoice money facts require their active principal tenant',
+    );
+  const { invoice } = await loadInvoice(input.db, input.invoiceId);
+  if (invoice.tenantId !== input.tenantId)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Invoice money facts cannot cross tenant boundaries',
+    );
+  const lines = await (
+    await InvoiceLineItemCollection.create({ db: input.db })
+  ).findByInvoice(input.invoiceId);
+  const taxes = await (
+    await DocumentTaxCollection.create({ db: input.db })
+  ).findByDocument(input.tenantId, invoice.kind, input.invoiceId);
+  return {
+    source: 'stored',
+    invoiceId: input.invoiceId,
+    moneySnapshotId: invoice.moneySnapshotId,
+    kind: invoice.kind,
+    status: invoice.status,
+    header: {
+      currency: invoice.currency,
+      lineAmountType: invoice.lineAmountType,
+      taxRoundingScope: invoice.taxRoundingScope,
+      subtotalMinor: invoice.subtotal,
+      discountTotalMinor: invoice.discountTotal,
+      taxAmountMinor: invoice.taxAmount,
+      providerTaxAmountMinor: invoice.providerTaxAmount,
+      totalAmountMinor: invoice.totalAmount,
+    },
+    lines: lines.map((line) => ({
+      id: requireId(line.id, 'Invoice line'),
+      grossMinor: line.amount + line.discount,
+      discountMinor: line.discount,
+      amountMinor: line.amount,
+      taxMinor: line.taxAmount,
+      taxCodeId: line.taxCodeId,
+      taxCodeCode: line.taxCodeCode,
+      taxCodeName: line.taxCodeName,
+      taxComponents: structuredClone(line.taxComponents),
+    })),
+    taxes: taxes.map((row) => ({
+      tenantId: requireId(row.tenantId, 'Document tax tenant'),
+      documentType: row.documentType,
+      documentId: row.documentId,
+      currency: row.currency,
+      taxCodeId: row.taxCodeId,
+      taxCodeCode: row.taxCodeCode,
+      kind: row.kind,
+      taxComponentId: row.taxComponentId,
+      taxComponentName: row.taxComponentName,
+      percent: row.percent,
+      liabilityAccountId: row.liabilityAccountId,
+      taxableMinor: row.taxableMinor,
+      taxMinor: row.taxMinor,
+      recoverableMinor: row.recoverableMinor,
+    })),
+  };
 }
 
 /** Persist an invoice through either legacy compatibility or the v2 aggregate. */
 export async function saveInvoice(input: Invoice): Promise<Invoice> {
-  return withDocumentMoneyTransaction(input.db, async (tx) =>
-    input.withDatabase(tx, async (invoice) => {
-      const existing = invoice.id ? await findInvoice(tx, invoice.id) : null;
-      const tenantId =
-        existing?.tenantId ?? invoice.tenantId ?? getTenantId() ?? null;
-      const settings = await settingsForTenant(tx, tenantId);
-      assertRuntimeAvailable(settings);
-      if (settings?.moneyModel !== 'v2') {
-        return invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-          recomputeLegacy: true,
-        });
-      }
-      assertTenantId(tenantId);
-      if (!existing) {
-        invoice.tenantId = tenantId;
-        invoice.lineAmountType = settings.defaultLineAmountType;
-        invoice.taxRoundingScope = settings.taxRoundingScope;
-        invoice.subtotal = 0;
-        invoice.discountTotal = 0;
-        invoice.taxAmount = invoice.providerTaxAmount;
-        invoice.totalAmount = invoice.providerTaxAmount;
-        if (invoice.status !== InvoiceStatus.DRAFT || invoice.arJournalId) {
+  const priorRevision = input.updated_at;
+  try {
+    return await withDocumentMoneyTransaction(input.db, async (tx) =>
+      input.withDatabase(tx, async (invoice) => {
+        if (invoice.kind !== 'invoice' && invoice.kind !== 'credit_note')
+          throw new MoneyValidationError(
+            'INVALID_MONEY_INPUT',
+            'Invoice kind must be invoice or credit_note',
+          );
+        if (invoice.kind === 'invoice' && invoice.creditedInvoiceId)
+          throw new MoneyValidationError(
+            'INVALID_MONEY_INPUT',
+            'Only a credit note may reference a credited invoice',
+          );
+        if (invoice.kind === 'credit_note' && !invoice.creditedInvoiceId)
+          throw new MoneyValidationError(
+            'CREDIT_TARGET_NOT_ISSUED',
+            'A credit note requires a credited invoice',
+          );
+        const existing = invoice.id ? await findInvoice(tx, invoice.id) : null;
+        const tenantId =
+          existing?.tenantId ?? invoice.tenantId ?? getTenantId() ?? null;
+        const settings = await settingsForTenant(tx, tenantId);
+        assertRuntimeAvailable(settings);
+        if (settings?.moneyModel !== 'v2') {
+          return invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
+            recomputeLegacy: true,
+          });
+        }
+        assertTenantId(tenantId);
+        if (!existing) {
+          invoice.tenantId = tenantId;
+          invoice.creditedAmount = 0;
+          if (invoice.kind === 'credit_note') {
+            const source = await findInvoice(
+              tx,
+              requireId(invoice.creditedInvoiceId, 'Credited invoice'),
+            );
+            if (!source || source.tenantId !== tenantId)
+              throw new MoneyValidationError(
+                'CREDIT_TARGET_NOT_ISSUED',
+                'Credit target must exist in the active tenant',
+              );
+            await lockDocumentMoneyParents([
+              {
+                id: requireId(source.id, 'Credited invoice'),
+                tenantId,
+                collection: await InvoiceCollection.create({ db: tx }),
+              },
+            ]);
+            if (
+              source.kind !== 'invoice' ||
+              source.status === InvoiceStatus.DRAFT ||
+              source.status === InvoiceStatus.CANCELLED ||
+              !source.moneySnapshotId
+            )
+              throw new MoneyValidationError(
+                'CREDIT_TARGET_NOT_ISSUED',
+                'Credit target must be an issued, non-cancelled invoice',
+              );
+            if (
+              invoice.currency !== source.currency ||
+              invoice.customerId !== source.customerId
+            )
+              throw new MoneyValidationError(
+                invoice.currency !== source.currency
+                  ? 'CURRENCY_MISMATCH'
+                  : 'INVALID_MONEY_INPUT',
+                'Credit note currency and customer must match its source invoice',
+              );
+          }
+          invoice.lineAmountType = settings.defaultLineAmountType;
+          invoice.taxRoundingScope = settings.taxRoundingScope;
+          invoice.subtotal = 0;
+          invoice.discountTotal = 0;
+          invoice.taxAmount = invoice.providerTaxAmount;
+          invoice.totalAmount = invoice.providerTaxAmount;
+          if (invoice.status !== InvoiceStatus.DRAFT || invoice.arJournalId) {
+            const customers = await CustomerCollection.create({ db: tx });
+            const customer = invoice.customerId
+              ? await customers.get(
+                  { id: invoice.customerId },
+                  { cache: false },
+                )
+              : null;
+            invoice.moneySnapshotId = crypto.randomUUID();
+            invoice.sellerTaxRegistrations = structuredClone(
+              settings.taxRegistrations,
+            );
+            invoice.partyTaxId = customer?.taxId ?? '';
+          }
+          return invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
+            recomputeLegacy: false,
+          });
+        }
+        if (invoice.tenantId !== existing.tenantId)
+          throw new MoneyValidationError(
+            'FROZEN_DOCUMENT',
+            'Invoice tenant identity cannot change',
+          );
+        if (
+          invoice.kind !== existing.kind ||
+          invoice.creditedInvoiceId !== existing.creditedInvoiceId
+        )
+          throw new MoneyValidationError(
+            'FROZEN_DOCUMENT',
+            'Invoice kind and credited invoice identity are immutable',
+          );
+        const existingId = requireId(existing.id, 'Invoice');
+        const locked = await lockAndReloadMoneyInvoice(
+          tx,
+          existingId,
+          tenantId,
+          existing.creditedInvoiceId,
+        );
+        invoice.creditedAmount = locked.invoice.creditedAmount;
+        if (isFrozen(locked.invoice)) {
+          if (
+            invoice.arReversalJournalId !== locked.invoice.arReversalJournalId
+          )
+            throw new MoneyValidationError(
+              'FROZEN_DOCUMENT',
+              'Invoice reversal journal identity is server-managed',
+            );
+          if (
+            locked.invoice.arJournalId &&
+            invoice.arJournalId !== locked.invoice.arJournalId
+          )
+            throw new MoneyValidationError(
+              'FROZEN_DOCUMENT',
+              'Invoice revenue journal identity is frozen once assigned',
+            );
+          if (
+            invoice.status === InvoiceStatus.CANCELLED &&
+            locked.invoice.status !== InvoiceStatus.CANCELLED &&
+            locked.invoice.kind === 'invoice' &&
+            locked.invoice.isPaid()
+          )
+            throw new MoneyValidationError(
+              'FROZEN_DOCUMENT',
+              'A paid invoice cannot be cancelled',
+            );
+          if (
+            invoice.status === InvoiceStatus.CANCELLED &&
+            locked.invoice.status !== InvoiceStatus.CANCELLED &&
+            locked.invoice.kind === 'credit_note' &&
+            locked.invoice.amountPaid > 0
+          )
+            throw new MoneyValidationError(
+              'FROZEN_DOCUMENT',
+              'A refunded credit note cannot be cancelled',
+            );
+          if (
+            invoice.status === InvoiceStatus.CANCELLED &&
+            locked.invoice.status !== InvoiceStatus.CANCELLED &&
+            locked.invoice.arJournalId &&
+            !locked.invoice.arReversalJournalId
+          )
+            throw new MoneyValidationError(
+              'FROZEN_DOCUMENT',
+              'A posted money-v2 invoice requires an atomic reversal before cancellation',
+            );
+          assertFieldsUnchanged(
+            invoice,
+            locked.invoice,
+            FROZEN_INVOICE_FIELDS,
+            'Invoice',
+          );
+          const saved = await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
+            recomputeLegacy: false,
+          });
+          if (locked.source)
+            await refreshIssuedCreditBalance(tx, locked.source);
+          return saved;
+        }
+        const freezing =
+          invoice.status !== InvoiceStatus.DRAFT || !!invoice.arJournalId;
+        const snapshotId = freezing
+          ? locked.invoice.moneySnapshotId || crypto.randomUUID()
+          : '';
+        await recomputeInvoiceAggregate(tx, invoice, settings, snapshotId);
+        if (freezing) {
           const customers = await CustomerCollection.create({ db: tx });
           const customer = invoice.customerId
             ? await customers.get({ id: invoice.customerId }, { cache: false })
             : null;
-          invoice.moneySnapshotId = crypto.randomUUID();
           invoice.sellerTaxRegistrations = structuredClone(
             settings.taxRegistrations,
           );
           invoice.partyTaxId = customer?.taxId ?? '';
+          invoice.moneySnapshotId = snapshotId;
         }
-        return invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
+        const saved = await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
           recomputeLegacy: false,
         });
-      }
-      if (invoice.tenantId !== existing.tenantId)
-        throw new MoneyValidationError(
-          'FROZEN_DOCUMENT',
-          'Invoice tenant identity cannot change',
-        );
-      const existingId = requireId(existing.id, 'Invoice');
-      const locked = await lockAndReloadInvoice(tx, existingId, tenantId);
-      if (isFrozen(locked.invoice)) {
-        if (invoice.arReversalJournalId !== locked.invoice.arReversalJournalId)
-          throw new MoneyValidationError(
-            'FROZEN_DOCUMENT',
-            'Invoice reversal journal identity is server-managed',
-          );
-        if (
-          locked.invoice.arJournalId &&
-          invoice.arJournalId !== locked.invoice.arJournalId
-        )
-          throw new MoneyValidationError(
-            'FROZEN_DOCUMENT',
-            'Invoice revenue journal identity is frozen once assigned',
-          );
-        if (
-          invoice.status === InvoiceStatus.CANCELLED &&
-          locked.invoice.status !== InvoiceStatus.CANCELLED &&
-          locked.invoice.arJournalId &&
-          !locked.invoice.arReversalJournalId
-        )
-          throw new MoneyValidationError(
-            'FROZEN_DOCUMENT',
-            'A posted money-v2 invoice requires an atomic reversal before cancellation',
-          );
-        assertFieldsUnchanged(
-          invoice,
-          locked.invoice,
-          FROZEN_INVOICE_FIELDS,
-          'Invoice',
-        );
-        return invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-          recomputeLegacy: false,
-        });
-      }
-      const freezing =
-        invoice.status !== InvoiceStatus.DRAFT || !!invoice.arJournalId;
-      const snapshotId = freezing
-        ? locked.invoice.moneySnapshotId || crypto.randomUUID()
-        : '';
-      await recomputeInvoiceAggregate(tx, invoice, settings, snapshotId);
-      if (freezing) {
-        const customers = await CustomerCollection.create({ db: tx });
-        const customer = invoice.customerId
-          ? await customers.get({ id: invoice.customerId }, { cache: false })
-          : null;
-        invoice.sellerTaxRegistrations = structuredClone(
-          settings.taxRegistrations,
-        );
-        invoice.partyTaxId = customer?.taxId ?? '';
-        invoice.moneySnapshotId = snapshotId;
-      }
-      return invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-        recomputeLegacy: false,
-      });
-    }),
-  );
+        if (locked.source) await refreshIssuedCreditBalance(tx, locked.source);
+        return saved;
+      }),
+    );
+  } catch (error) {
+    input.updated_at = priorRevision;
+    throw error;
+  }
 }
 
 /** Persist a line and recompute its complete invoice aggregate. */
@@ -556,10 +1436,11 @@ export async function saveInvoiceLineItem(
       if (settings?.moneyModel !== 'v2')
         return line.saveDerived(DOCUMENT_MONEY_WRITE, true);
       assertTenantId(first.invoice.tenantId);
-      const { invoice } = await lockAndReloadInvoice(
+      const { invoice, source } = await lockAndReloadMoneyInvoice(
         tx,
         parentId,
         first.invoice.tenantId,
+        first.invoice.creditedInvoiceId,
       );
       if (persisted && line.invoiceId !== persisted.invoiceId)
         throw new MoneyValidationError(
@@ -568,6 +1449,20 @@ export async function saveInvoiceLineItem(
         );
       line.invoiceId = requireId(invoice.id, 'Invoice');
       line.tenantId = invoice.tenantId;
+      if (invoice.kind === 'invoice' && line.creditedLineId)
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          'Ordinary invoice lines cannot reference credited lines',
+        );
+      if (
+        invoice.kind === 'credit_note' &&
+        line.creditedLineId &&
+        (!source || source.id !== invoice.creditedInvoiceId)
+      )
+        throw new MoneyValidationError(
+          'CREDIT_TARGET_NOT_ISSUED',
+          'Credit source changed while saving its line',
+        );
       if (isFrozen(invoice)) {
         if (!persisted)
           throw new MoneyValidationError(

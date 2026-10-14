@@ -68,7 +68,6 @@ import './__smrt-register__.js';
 
 // Billing-period close, provider events, prepaid credit (#3060)
 export * from './billing/index.js';
-// Collections
 export {
   ContractCollection,
   ContractLineItemCollection,
@@ -92,6 +91,25 @@ export {
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
+export {
+  type AvailableRefundInput,
+  allocateFrozenCredit,
+  calculateAvailableRefund,
+  type FrozenCreditAllocation,
+  type FrozenCreditAllocationResult,
+  type FrozenCreditRequest,
+  type FrozenCreditSourceLine,
+  type IssuedCreditConsumption,
+} from './credit-allocation.js';
+// Collections
+export {
+  type GetInvoiceMoneyFactsInput,
+  getInvoiceMoneyFacts,
+  type InvoiceMoneyFacts,
+  type PreviewInvoiceMoneyInput,
+  type PreviewInvoiceMoneyResult,
+  previewInvoiceMoney,
+} from './document-money.js';
 export {
   type CommerceLineAmountDocumentReport,
   type CommerceLineAmountReasonCode,
@@ -231,9 +249,12 @@ export {
   FulfillmentStatus,
   FulfillmentType,
   type InvoiceCollectionMethod,
+  type InvoiceCreditCalculationBasis,
+  type InvoiceKind,
   InvoiceStatus,
   PaymentInstrumentStatus,
   PaymentIntentStatus,
+  type PaymentKind,
   PaymentMethod,
   type PaymentOption,
   PaymentStatus,
