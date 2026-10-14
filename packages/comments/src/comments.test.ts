@@ -402,6 +402,54 @@ describe.each([
       return { db, input, service: new CommentService({ ...access, db }) };
     }
 
+    it('replays uppercase UUID tenant and author identities without a committed unavailable row', async () => {
+      const { db, input } = await fixture();
+      const upperTenant = input.tenantId.toUpperCase();
+      const upperAuthor = 'abcdefab-cdef-4abc-8def-abcdefabcdef'.toUpperCase();
+      const notifyMention = vi.fn(async () => {});
+      const authorizeRecord = vi.fn(
+        async (_context: CommentRecordAccess) => true,
+      );
+      const service = new CommentService({
+        db,
+        actor: { tenantId: upperTenant, userId: upperAuthor },
+        authorizeRecord,
+        mentionNotifications: { notifyMention },
+      });
+      const request = {
+        ...input,
+        tenantId: upperTenant,
+        authorUserId: upperAuthor,
+        mentions: [upperAuthor],
+      };
+      const first = await service.create(request);
+      const retry = await service.create(request);
+      expect(retry.id).toBe(first.id);
+      expect(
+        (
+          await service.create({
+            ...request,
+            tenantId: upperTenant.toLowerCase(),
+            authorUserId: upperAuthor.toLowerCase(),
+          })
+        ).id,
+      ).toBe(first.id);
+      expect(
+        await service.listForRecord(input.metaType, input.metaId),
+      ).toHaveLength(1);
+      expect(
+        authorizeRecord.mock.calls.every(
+          ([context]: [CommentRecordAccess]) =>
+            context.tenantId === upperTenant.toLowerCase() &&
+            context.userId === upperAuthor.toLowerCase(),
+        ),
+      ).toBe(true);
+      expect(notifyMention).not.toHaveBeenCalled();
+      await expect(
+        service.create({ ...request, authorUserId: crypto.randomUUID() }),
+      ).rejects.toThrow('actor context mismatch');
+    });
+
     it('replays a normalized request with a server-owned UUID and ignores injected digest', async () => {
       const { db, input, service } = await fixture();
       input.mentions = [authorUserId, mentionedUserId];

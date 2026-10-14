@@ -13,6 +13,12 @@ import type {
   CreateCommentInput,
 } from '../types.js';
 
+// Native UUID columns canonicalize case; identity and digests must agree with them.
+const canonicalUuid = (value: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    ? value.toLowerCase()
+    : value;
+
 /** A reused request differs, or its retained comment is no longer available. */
 export class CommentIdempotencyError extends Error {
   constructor(
@@ -35,7 +41,16 @@ export class CommentService {
       authorizeRecord: (access: CommentRecordAccess) => Promise<boolean>;
       mentionNotifications?: CommentMentionNotificationAdapter;
     },
-  ) {}
+  ) {
+    this.options = {
+      ...options,
+      actor: {
+        ...options.actor,
+        tenantId: canonicalUuid(options.actor.tenantId),
+        userId: canonicalUuid(options.actor.userId),
+      },
+    };
+  }
 
   private async authorize(
     recordType: string,
@@ -74,14 +89,16 @@ export class CommentService {
 
   async create(commentOptions: CreateCommentInput): Promise<Comment> {
     const {
-      tenantId,
-      authorUserId,
+      tenantId: inputTenantId,
+      authorUserId: inputAuthorUserId,
       metaType,
       metaId,
       body,
       mentions,
       idempotencyKey,
     } = commentOptions;
+    const tenantId = canonicalUuid(inputTenantId);
+    const authorUserId = canonicalUuid(inputAuthorUserId);
     if (!tenantId || !authorUserId) {
       throw new TypeError('Comments require a tenant and author.');
     }
@@ -185,7 +202,7 @@ export class CommentService {
     });
     if (!this.options.mentionNotifications || !comment.id) return comment;
     for (const recipientUserId of comment.mentionUserIds) {
-      if (recipientUserId === comment.authorUserId) continue;
+      if (canonicalUuid(recipientUserId) === comment.authorUserId) continue;
       await this.options.mentionNotifications.notifyMention({
         commentId: comment.id,
         tenantId: comment.tenantId,
