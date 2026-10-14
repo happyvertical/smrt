@@ -92,6 +92,12 @@ export interface ReconcileFrozenInvoiceAccountingInput
   /** The unresolved local owner observed with that request descriptor. */
   readonly attemptId: string;
   /**
+   * Required only for an interrupted `in_flight` record. The trusted server
+   * caller must first establish that the original process/request owner can no
+   * longer complete. A provider lookup reporting absence is not sufficient.
+   */
+  readonly confirmInterruptedOwnerStopped?: true;
+  /**
    * The authoritative result of looking up that request in QuickBooks.
    * `absent` means QuickBooks confirmed that no document was created.
    */
@@ -747,6 +753,14 @@ export async function reconcileFrozenInvoiceAccountingSync(
       throw new MoneyValidationError(
         'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
         'Accounting reconciliation does not match the unresolved frozen request',
+      );
+    if (
+      state.status === 'in_flight' &&
+      input.confirmInterruptedOwnerStopped !== true
+    )
+      throw new MoneyValidationError(
+        'ACCOUNTING_SYNC_IN_PROGRESS',
+        'Accounting reconciliation cannot release a live sync owner',
       );
 
     if (input.outcome.status === 'absent') {

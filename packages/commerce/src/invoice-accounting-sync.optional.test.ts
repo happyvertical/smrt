@@ -141,6 +141,20 @@ describe('frozen invoice accounting sync on PostgreSQL (#3937)', () => {
         requestId: expect.stringMatching(/^smrt_[a-f0-9]{40}$/),
         attemptId: expect.any(String),
       });
+      const ownedState = readFrozenAccountingSyncState(owned);
+      if (!ownedState) throw new Error('Expected owned accounting state');
+      await expect(
+        reconcileFrozenInvoiceAccountingSync({
+          db,
+          tenantId,
+          invoiceId: invoice.id,
+          mapping,
+          requestId: ownedState.requestId,
+          attemptId: ownedState.attemptId,
+          outcome: { status: 'absent' },
+        }),
+      ).rejects.toMatchObject({ code: 'ACCOUNTING_SYNC_IN_PROGRESS' });
+      expect(push).toHaveBeenCalledTimes(1);
 
       rejectFirst(new Error('connection lost after provider write'));
       await expect(first).rejects.toThrow(

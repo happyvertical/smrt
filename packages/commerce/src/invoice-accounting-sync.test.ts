@@ -232,6 +232,24 @@ describe('frozen invoice accounting sync (#3937)', () => {
       await expect(syncFrozenInvoiceToAccounting(input)).rejects.toMatchObject({
         code: 'ACCOUNTING_SYNC_IN_PROGRESS',
       });
+      const owned = await (await InvoiceCollection.create({ db })).get(
+        { id: seeded.invoice.id },
+        { cache: false },
+      );
+      if (!owned) throw new Error('Expected owned invoice');
+      const state = readFrozenAccountingSyncState(owned);
+      if (!state) throw new Error('Expected accounting state');
+      await expect(
+        reconcileFrozenInvoiceAccountingSync({
+          db,
+          tenantId: 'tenant-race',
+          invoiceId: seeded.invoice.id,
+          mapping: input.mapping,
+          requestId: state.requestId,
+          attemptId: state.attemptId,
+          outcome: { status: 'absent' },
+        }),
+      ).rejects.toMatchObject({ code: 'ACCOUNTING_SYNC_IN_PROGRESS' });
       expect(push).toHaveBeenCalledTimes(1);
       release({
         action: 'created',
