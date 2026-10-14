@@ -445,10 +445,24 @@ export class ManifestGenerator {
     this.mergeInheritedFields(manifest);
 
     // All producers, including OXC, must suppress custom actions on abstract
-    // resources. Do this after inheritance so ancestor methods are covered.
+    // resources and their collection classes. Do this after inheritance so
+    // ancestor methods are covered and projections share the same exclusions.
+    const objectsByName = new Map(
+      Object.values(manifest.objects).map((objectDef) => [
+        objectDef.className,
+        objectDef,
+      ]),
+    );
     for (const objectDef of Object.values(manifest.objects)) {
       const config = objectDef.decoratorConfig;
-      if (config?.abstract !== true) continue;
+      const isCollection =
+        objectDef.extends === 'SmrtCollection' ||
+        this.extendsCollection(objectDef, objectsByName);
+      const itemIsAbstract =
+        isCollection &&
+        this.findItemClass(objectDef, manifest, objectsByName)?.decoratorConfig
+          ?.abstract === true;
+      if (config?.abstract !== true && !itemIsAbstract) continue;
       const methods = Object.entries(objectDef.methods || {})
         .filter(([, method]) => method.isPublic)
         .map(([name]) => name)

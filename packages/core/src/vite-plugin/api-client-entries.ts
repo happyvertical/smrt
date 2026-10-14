@@ -185,6 +185,13 @@ function resolveGeneratedClientCustomMethods(
   if (apiConfig === false) return [];
 
   const isCollection = isCollectionManifestClass(manifest, obj);
+  if (
+    isCollection &&
+    resolveCollectionItemObject(manifest, obj)?.decoratorConfig?.abstract ===
+      true
+  ) {
+    return [];
+  }
   const isModelClassName = createManifestClassNamePredicate(manifest);
 
   return Object.entries(obj.methods ?? {}).flatMap(([name, method]) => {
