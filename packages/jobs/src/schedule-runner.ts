@@ -15,6 +15,13 @@ import { isWorkerAlive } from './worker-liveness.js';
 /**
  * ScheduleRunner configuration
  */
+/**
+ * Queue that {@link ScheduleRunner} enqueues triggered schedules to. A task
+ * worker must poll it (alongside `default`) or scheduled jobs stay `pending`
+ * (#3141).
+ */
+export const SCHEDULED_JOB_QUEUE = 'agents';
+
 export interface ScheduleRunnerConfig {
   /** Runner ID (auto-generated if not provided) */
   id?: string;
@@ -526,7 +533,7 @@ export class ScheduleRunner extends EventEmitter {
           schedule.tenant_id.length > 0
             ? (schedule.tenant_id as string)
             : null,
-        queue: 'agents',
+        queue: SCHEDULED_JOB_QUEUE,
         objectType: canonicalAgentType,
         objectId: schedule.agent_id as string | null,
         method: (schedule.method as string) || 'run',
