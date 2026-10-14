@@ -8,7 +8,7 @@ from the authenticated session and an `authorizeRecord` callback. The callback
 must verify that the record belongs to that tenant and that the actor may read
 or comment on it. Both `create` and `listForRecord` require that decision; request
 bodies cannot override the actor. `CreateCommentInput` contains only tenant,
-author, record type/id, body and mentions. The service ignores extra runtime
+author, record type/id, body, mentions and an optional `idempotencyKey`. The service ignores extra runtime
 properties, generates its own UUID/slug and inserts a new row without natural-key
 adoption. Caller-provided identity, context, database and constructor options
 never reach persistence. `CommentOptions` remains the separate trusted model
@@ -35,9 +35,12 @@ source reference so adapter replays deduplicate. Mentions are UUIDs, deduplicate
 and limited to 50; self-mentions do not notify. No adapter means no notifications.
 Mention validation finishes before the single comment insert; invalid or over-limit
 mentions leave no saved row. The comment is saved before notification delivery. A delivery rejection leaves
-the comment saved: reload it and retry delivery, not `create`, which creates a
-new comment. The component warns users to refresh and check the discussion before
-posting again when submission rejects. Delivery and persistence are deliberately not one transaction.
+the comment saved. With `idempotencyKey`, retry `create` with the same key and
+content to recover delivery without creating another comment. Without a key,
+reload and retry delivery rather than creating another comment. The component warns users to refresh and check the discussion before
+posting again when submission rejects. Delivery and persistence are separate unless the host composes both with the same
+outer transaction. See [idempotent creation](agents/idempotent-create.md) for key
+binding, typed conflicts, retention and transaction requirements.
 
 Import `RecordComments` from `@happyvertical/smrt-comments/svelte`. Pass authorized
 comment projections, an `onsubmit(body)` callback, and a `contextKey` containing

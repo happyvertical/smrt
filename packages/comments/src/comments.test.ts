@@ -369,4 +369,363 @@ describe.each([
     );
     expect(comments).toHaveLength(1);
   });
+  describe('idempotent create', () => {
+    let tenantId = '';
+    let access = {
+      actor: { tenantId, userId: authorUserId },
+      authorizeRecord: async () => true,
+    };
+    async function fixture() {
+      tenantId = crypto.randomUUID();
+      access = {
+        actor: { tenantId, userId: authorUserId },
+        authorizeRecord: async () => true,
+      };
+      const db = await getTestDatabase({
+        classes: ['Comment', 'UserNotification'],
+        type: dialect as 'sqlite' | 'duckdb' | 'postgres',
+        url:
+          dialect === 'postgres'
+            ? process.env.SMRT_TEST_POSTGRES_URL
+            : ':memory:',
+      });
+      dbs.push(db);
+      const input = {
+        tenantId,
+        authorUserId,
+        metaType: 'Record',
+        metaId: crypto.randomUUID(),
+        body: 'Original request',
+        idempotencyKey: crypto.randomUUID(),
+        mentions: [mentionedUserId],
+      };
+      return { db, input, service: new CommentService({ ...access, db }) };
+    }
+
+    it('replays a normalized request with a server-owned UUID and ignores injected digest', async () => {
+      const { db, input, service } = await fixture();
+      input.mentions = [authorUserId, mentionedUserId];
+      const injected = {
+        ...input,
+        id: input.idempotencyKey,
+        slug: 'attacker',
+        requestDigest: 'attacker',
+        _insertOnly: false,
+        context: 'attacker',
+      };
+      const first = await service.create(injected);
+      const second = await service.create({
+        ...input,
+        mentions: [mentionedUserId, authorUserId, mentionedUserId],
+      });
+      expect(first.id).not.toBe(input.idempotencyKey);
+      expect(first.slug).toBe(first.id);
+      expect(second.id).toBe(first.id);
+      expect(second.requestDigest).not.toBe('attacker');
+      expect(
+        await service.listForRecord(input.metaType, input.metaId),
+      ).toHaveLength(1);
+      // Generic receipt retention must not make an existing service-owned row duplicable.
+      await db.query(
+        'DELETE FROM _smrt_run_once_claims WHERE tenant_id = ?',
+        tenantId,
+      );
+      expect((await service.create(input)).id).toBe(first.id);
+    });
+
+    it.each([
+      'body',
+      'metaId',
+      'metaType',
+      'mentions',
+      'authorUserId',
+    ] as const)('rejects changed %s using the same tenant request key', async (field) => {
+      const { input, service, db } = await fixture();
+      const first = await service.create(input);
+      const changed = {
+        ...input,
+        [field]: field === 'mentions' ? [] : crypto.randomUUID(),
+      };
+      const next =
+        field === 'authorUserId'
+          ? new CommentService({
+              ...access,
+              db,
+              actor: { tenantId, userId: changed.authorUserId },
+            })
+          : service;
+      await expect(next.create(changed)).rejects.toMatchObject({
+        code: 'COMMENT_REQUEST_CONFLICT',
+      });
+      expect((await service.create(input)).id).toBe(first.id);
+    });
+
+    it.each([
+      '',
+      ' ',
+      ' padded',
+      'x'.repeat(201),
+      null,
+      7,
+    ])('rejects malformed key %s before saving', async (key) => {
+      const { input, service } = await fixture();
+      await expect(
+        service.create({ ...input, idempotencyKey: key as string }),
+      ).rejects.toThrow('idempotencyKey');
+      expect(
+        await service.listForRecord(input.metaType, input.metaId),
+      ).toHaveLength(0);
+    });
+
+    it('reauthorizes replay and isolates identical keys across tenants', async () => {
+      const { input, service, db } = await fixture();
+      const first = await service.create(input);
+      const denied = new CommentService({
+        ...access,
+        db,
+        authorizeRecord: async () => false,
+      });
+      await expect(denied.create(input)).rejects.toThrow('access denied');
+      await expect(
+        service.create({ ...input, tenantId: crypto.randomUUID() }),
+      ).rejects.toThrow('context mismatch');
+      const tenantB = crypto.randomUUID();
+      const other = new CommentService({
+        ...access,
+        db,
+        actor: { tenantId: tenantB, userId: authorUserId },
+      });
+      expect((await other.create({ ...input, tenantId: tenantB })).id).not.toBe(
+        first.id,
+      );
+    });
+
+    it.each([
+      'same',
+      'body',
+      'author',
+    ] as const)('arbitrates concurrent %s requests without duplicate comments', async (kind) => {
+      const { input, service, db } = await fixture();
+      const nextInput = {
+        ...input,
+        ...(kind === 'body' ? { body: 'Competing request' } : {}),
+        ...(kind === 'author' ? { authorUserId: mentionedUserId } : {}),
+      };
+      const next = new CommentService({
+        db,
+        ...access,
+        actor: { tenantId, userId: nextInput.authorUserId },
+      });
+      const results = await Promise.allSettled([
+        service.create(input),
+        next.create(nextInput),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(
+        kind === 'same' ? 2 : 1,
+      );
+      if (kind !== 'same')
+        expect(results.find((r) => r.status === 'rejected')).toMatchObject({
+          reason: { code: 'COMMENT_REQUEST_CONFLICT' },
+        });
+      expect(
+        await service.listForRecord(input.metaType, input.metaId),
+      ).toHaveLength(1);
+      await db.query('SELECT 1');
+    });
+
+    it('retries partial notification delivery using the original comment identity', async () => {
+      const { input, db } = await fixture();
+      const secondRecipient = crypto.randomUUID();
+      const mentions = [mentionedUserId, secondRecipient];
+      const adapter = createCommentMentionNotifications({
+        notifications: new UserNotificationService({ db }),
+        canNotify: async () => true,
+      });
+      let fail = true;
+      const service = new CommentService({
+        db,
+        ...access,
+        mentionNotifications: {
+          async notifyMention(mention) {
+            if (mention.recipientUserId === secondRecipient && fail)
+              throw new Error('partial delivery');
+            await adapter.notifyMention(mention);
+          },
+        },
+      });
+      await expect(service.create({ ...input, mentions })).rejects.toThrow(
+        'partial delivery',
+      );
+      expect(
+        await service.listForRecord(input.metaType, input.metaId),
+      ).toHaveLength(1);
+      fail = false;
+      const row = await service.create({ ...input, mentions });
+      await service.create({ ...input, mentions });
+      const notifications = await db.query(
+        'SELECT source_ref FROM user_notifications WHERE tenant_id = ?',
+        tenantId,
+      );
+      expect(notifications.rows).toHaveLength(2);
+      expect(
+        notifications.rows.every(
+          (n) => n.source_ref === `comments.mention:${row.id}`,
+        ),
+      ).toBe(true);
+    });
+
+    it.each([
+      'edit',
+      'delete',
+    ] as const)('does not recreate a retained request after trusted %s', async (action) => {
+      const { input, service, db } = await fixture();
+      const row = await service.create(input);
+      if (action === 'edit')
+        await db.query(
+          'UPDATE record_comments SET body = ? WHERE id = ?',
+          'Edited',
+          row.id,
+        );
+      else await db.query('DELETE FROM record_comments WHERE id = ?', row.id);
+      await expect(service.create(input)).rejects.toMatchObject({
+        code: 'COMMENT_REQUEST_UNAVAILABLE',
+      });
+      expect(
+        await service.listForRecord(input.metaType, input.metaId),
+      ).toHaveLength(action === 'edit' ? 1 : 0);
+    });
+
+    it('preserves caller transaction rollback or rejects unsupported nesting before mutation', async () => {
+      const { input, db, service } = await fixture();
+      await expect(
+        db.transaction!(async (tx) => {
+          const adapter = createCommentMentionNotifications({
+            notifications: new UserNotificationService({ db: tx }),
+            canNotify: async () => true,
+          });
+          await new CommentService({
+            ...access,
+            db: tx,
+            mentionNotifications: adapter,
+          }).create(input);
+          throw new Error('caller rollback');
+        }),
+      ).rejects.toThrow(
+        dialect === 'duckdb' ? /nested|savepoint/i : 'caller rollback',
+      );
+      expect(
+        await service.listForRecord(input.metaType, input.metaId),
+      ).toHaveLength(0);
+      expect(
+        (
+          await db.query(
+            'SELECT claim_key FROM _smrt_run_once_claims WHERE tenant_id = ?',
+            tenantId,
+          )
+        ).rows,
+      ).toHaveLength(0);
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM user_notifications WHERE tenant_id = ?',
+            tenantId,
+          )
+        ).rows,
+      ).toHaveLength(0);
+      await service.create(input);
+      expect(
+        await service.listForRecord(input.metaType, input.metaId),
+      ).toHaveLength(1);
+    });
+
+    if (dialect !== 'duckdb')
+      it('rolls back partial notification delivery with the caller transaction and retries', async () => {
+        const { input, db, service } = await fixture();
+        const secondRecipient = crypto.randomUUID();
+        const attempt = (fail: boolean) =>
+          db.transaction!(async (tx) => {
+            const adapter = createCommentMentionNotifications({
+              notifications: new UserNotificationService({ db: tx }),
+              canNotify: async () => true,
+            });
+            return new CommentService({
+              ...access,
+              db: tx,
+              mentionNotifications: {
+                async notifyMention(mention) {
+                  if (fail && mention.recipientUserId === secondRecipient)
+                    throw new Error('second notification failed');
+                  await adapter.notifyMention(mention);
+                },
+              },
+            }).create({
+              ...input,
+              mentions: [mentionedUserId, secondRecipient],
+            });
+          });
+        await expect(attempt(true)).rejects.toThrow(
+          'second notification failed',
+        );
+        expect(
+          await service.listForRecord(input.metaType, input.metaId),
+        ).toHaveLength(0);
+        expect(
+          (
+            await db.query(
+              'SELECT id FROM user_notifications WHERE tenant_id = ?',
+              tenantId,
+            )
+          ).rows,
+        ).toHaveLength(0);
+        const first = await attempt(false);
+        expect((await attempt(false)).id).toBe(first.id);
+        expect(
+          (
+            await db.query(
+              'SELECT id FROM user_notifications WHERE tenant_id = ?',
+              tenantId,
+            )
+          ).rows,
+        ).toHaveLength(2);
+      });
+
+    if (dialect === 'postgres')
+      it.each([
+        'body',
+        'author',
+      ] as const)('keeps concurrent outer transactions usable after %s arbitration', async (kind) => {
+        const { input, db, service } = await fixture();
+        let conflicts = 0;
+        const attempt = (body: string) =>
+          db.transaction!(async (tx) => {
+            const userId =
+              kind === 'author' && body === 'B'
+                ? mentionedUserId
+                : authorUserId;
+            const scoped = new CommentService({
+              ...access,
+              db: tx,
+              actor: { tenantId, userId },
+            });
+            try {
+              await scoped.create({
+                ...input,
+                authorUserId: userId,
+                body: kind === 'body' ? body : input.body,
+              });
+            } catch (error) {
+              expect(error).toMatchObject({ code: 'COMMENT_REQUEST_CONFLICT' });
+              conflicts += 1;
+            }
+            expect((await tx.query('SELECT 17 AS proof')).rows[0].proof).toBe(
+              17,
+            );
+          });
+        await Promise.all([attempt('A'), attempt('B')]);
+        expect(conflicts).toBe(1);
+        expect(
+          await service.listForRecord(input.metaType, input.metaId),
+        ).toHaveLength(1);
+      });
+  });
 });

@@ -5,6 +5,8 @@ export interface CommentOptions extends SmrtPolymorphicAssociationOptions {
   authorUserId?: string;
   body?: string;
   mentions?: readonly string[];
+  idempotencyKey?: string | null;
+  requestDigest?: string | null;
 }
 
 /** Public service input; persistence identity and executor are server-owned. */
@@ -15,6 +17,8 @@ export interface CreateCommentInput {
   metaId: string;
   body: string;
   mentions?: readonly string[];
+  /** Tenant-scoped request key; identical retries return the original comment. */
+  idempotencyKey?: string;
 }
 
 export interface CommentMention {
