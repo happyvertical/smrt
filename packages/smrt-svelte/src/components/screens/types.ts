@@ -1,4 +1,14 @@
 import type { Snippet } from 'svelte';
+import type { WidgetRegistry } from '../overview/registry.js';
+import type {
+  OverviewDefinition,
+  OverviewOverride,
+  WidgetLoadContext,
+} from '../overview/types.js';
+import type { CoreWidgetLoaders } from '../overview/widgets/core.js';
+import type { RecordStatusTone } from '../overview/widgets/data.js';
+import type { ScreenRelation } from './relations.js';
+import type { FieldRole } from './roles.js';
 
 /**
  * Structural types for the manifest-derived record screens (#3718).
@@ -21,13 +31,26 @@ export type ScreenFieldType =
   | 'foreignKey'
   | 'crossPackageRef';
 
+/**
+ * How a value is presented: `money` (integer minor units), `date` (a
+ * business date, shown without a time), `datetime`, `percent` (a rate, `0.08`
+ * shows as `8%`).
+ */
+export type ScreenFieldFormat = 'money' | 'date' | 'datetime' | 'percent';
+
 /** Static `@field({ ui })` presentation hints from the manifest. */
 export interface ScreenFieldUIHints {
   basic?: boolean;
   group?: string;
   order?: number;
   locked?: boolean;
+  /**
+   * `currency` on a TEXT field is the currency-code picker (the manifest
+   * meaning); on an INTEGER field it is read as the legacy money hint.
+   */
   widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
+  /** Manifest presentation format (`@field({ ui: { format } })`). */
+  format?: ScreenFieldFormat;
 }
 
 /** Browser-safe subset of one generated web field definition. */
@@ -39,10 +62,47 @@ export interface ScreenFieldDefinition {
   /** Developer-authored `@field({ description })`; the code-seed help text. */
   description?: string;
   ui?: ScreenFieldUIHints;
+  /**
+   * What the field means on a record page (`deriveFieldRoles`). Explicit
+   * roles are authoritative: name heuristics never add to them.
+   */
+  role?: FieldRole | readonly FieldRole[];
+  /** Allowed values; a text field with an enum edits as a select. */
+  enum?: readonly string[];
+  /** Presentation format; wins over `ui.format`. */
+  format?: ScreenFieldFormat;
+  /** This field is the record's display label (the `title` role). */
+  display?: boolean;
+}
+
+export type ScreenRelationshipKind =
+  | 'foreignKey'
+  | 'crossPackageRef'
+  | 'oneToMany'
+  | 'manyToMany';
+
+/**
+ * One manifest-derived relationship edge, structurally the generated
+ * `SmrtWebRelationship`: `field` is the FK field on this model and
+ * `relatedCollection` the sibling collection's name (the key in
+ * `collectionDefinitions`), not a qualified model id.
+ */
+export interface ScreenRelationshipDefinition {
+  field: string;
+  kind: ScreenRelationshipKind;
+  relatedCollection: string;
+  /**
+   * `items`: the declaring (child) model is the line items of the target
+   * (`@foreignKey(Order, { role: 'items' })`); `deriveScreenRelations`
+   * classifies the relation `items`.
+   */
+  role?: 'items';
 }
 
 /** Structural subset of a generated `SmrtWebCollectionDefinition`. */
 export interface ScreenCollectionDefinition {
+  /** Collection name (the key in `collectionDefinitions`); used to resolve relationships. */
+  name?: string;
   /** Canonical qualified model identity (`@package/name:ClassName`). */
   objectRef: string;
   /** Simple class name, used to derive default titles. */
@@ -50,6 +110,8 @@ export interface ScreenCollectionDefinition {
   /** Primary-key field name. Defaults to `id`. */
   idField?: string;
   fields: Readonly<Record<string, ScreenFieldDefinition>>;
+  /** Manifest-derived relationship edges; the source of `deriveScreenRelations`. */
+  relationships?: readonly ScreenRelationshipDefinition[];
 }
 
 export type ScreenFieldVisibility = 'basic' | 'advanced' | 'hidden';
@@ -91,7 +153,8 @@ export type ScreenInputKind =
   | 'boolean'
   | 'datetime'
   | 'json'
-  | 'reference';
+  | 'reference'
+  | 'select';
 
 /** A field selected and decorated for one screen. */
 export interface ScreenField {
@@ -107,6 +170,10 @@ export interface ScreenField {
   group: string | null;
   order: number | null;
   definition: ScreenFieldDefinition;
+  /** The field's roles (`deriveFieldRoles`); set by `deriveScreenFields`. */
+  roles?: readonly FieldRole[];
+  /** Choices of a `select` field (the definition's `enum`). */
+  options?: readonly string[];
 }
 
 /** Why a draft value could not become a payload value. */
@@ -205,6 +272,27 @@ export interface DetailScreenProps {
   extraActions?: Snippet;
   /** Extra content under the fields. */
   children?: Snippet;
+  /**
+   * Relations of this model (`deriveScreenRelations`). The `reference` ones
+   * map a FK field to its target model, which `labels` is keyed by.
+   */
+  relations?: readonly ScreenRelation[];
+  /** Link for a reference field's value; `undefined` renders no link. */
+  hrefFor?: (field: ScreenField, id: string) => string | undefined;
+  /**
+   * Display label for a referenced record, keyed by target model id
+   * (`relation.model`); `undefined` falls back to the raw id.
+   */
+  labels?: Readonly<Record<string, (id: string) => string | undefined>>;
+  /** Field names to leave out (the record header shows them). */
+  exclude?: readonly string[];
+  /**
+   * Move fields with no value behind a "Show empty fields" disclosure
+   * instead of listing "Not set" cells.
+   */
+  hideEmpty?: boolean;
+  /** `card`: the fields sit in a bordered card (the record page's details card). */
+  variant?: 'plain' | 'card';
 }
 
 /** What a submit handler may return to report server-side field problems. */
@@ -231,6 +319,11 @@ export interface EditFormProps {
   fieldErrors?: Readonly<Record<string, string>>;
   /** A form-level failure message from the host. */
   error?: string | null;
+  /**
+   * Fields computed elsewhere (a subtotal / tax / total worked out from the
+   * line items): shown read-only with a hint and never part of the payload.
+   */
+  derivedFields?: readonly string[];
   /** Receives wire-ready values for the displayed fields. */
   onsubmit: (
     values: Record<string, unknown>,
@@ -238,6 +331,103 @@ export interface EditFormProps {
     // biome-ignore lint/suspicious/noConfusingVoidType: a handler that returns nothing (sync or async) is the common case.
   ) => void | EditFormSubmitResult | Promise<void | EditFormSubmitResult>;
   oncancel?: () => void;
+}
+
+export type RecordScreenMode = 'view' | 'edit';
+
+/**
+ * Props of `RecordScreen`: the record view (#3718 record view). The detail
+ * header and fields sit at the top, a customizable overview of related
+ * records below; `mode: 'edit'` opens the edit form beside the header on
+ * desktop and in a full-screen sheet on phones.
+ */
+export interface RecordScreenProps {
+  definition: ScreenCollectionDefinition;
+  /** Resolved field policy for the same object; omit for the code seed. */
+  policy?: ScreenPolicy | null;
+  record: ScreenRecord;
+  /** Relations of this model (`deriveScreenRelations`). */
+  relations?: readonly ScreenRelation[];
+  mode: RecordScreenMode;
+  /**
+   * Loaders of the core widgets; the shell registers them on a registry of
+   * its own and runs them in the browser with the record context. A widget
+   * without a loader is not offered (and a default using it is dropped).
+   */
+  loaders?: CoreWidgetLoaders;
+  /** An explicit registry (recipe widgets included) instead of one built from `loaders`. */
+  registry?: WidgetRegistry;
+  /**
+   * Host capabilities for the widget loads (a `fetch`, a client, the
+   * locale). `overviewId` and `record` are set by the screen.
+   */
+  widgetContext?: Omit<WidgetLoadContext, 'overviewId' | 'record'>;
+  /** The overview to render; defaults to `recordOverview(definition, relations)`. */
+  overview?: OverviewDefinition;
+  /** The stored layout override for this model kind (host-owned when given). */
+  override?: OverviewOverride | null;
+  /** Receives the override after each layout edit (`null` = defaults). */
+  onoverviewchange?: (
+    override: OverviewOverride | null,
+  ) => void | Promise<void>;
+  /** Layout edit mode; omit to follow the shell's layout editor. */
+  layoutEditing?: boolean;
+  /** Whether the viewer may customize the layout (default true). */
+  canCustomize?: boolean;
+  /** Link for a reference field's value. */
+  hrefFor?: (field: ScreenField, id: string) => string | undefined;
+  /** Display labels for referenced records, keyed by target model id. */
+  labels?: Readonly<Record<string, (id: string) => string | undefined>>;
+  /** "View all" link of a related-records panel; `undefined` renders none. */
+  viewAllHref?: (relation: ScreenRelation) => string | undefined;
+  /** Page title. Defaults to the first basic text field, else the class name. */
+  title?: string;
+  /** Explicit field names, in order (overrides the derived set). */
+  fields?: readonly string[];
+  /** ISO 4217 code used by money fields. */
+  currency?: string;
+  /** BCP-47 locale for number and date formatting. */
+  locale?: string;
+  /** Label for the back action; defaults to the pluralized class name. */
+  backLabel?: string;
+  /** Mutation in flight; locks the delete confirmation. */
+  deleting?: boolean;
+  /** True while the host is persisting the edit; locks the form. */
+  submitting?: boolean;
+  /** Server-reported field messages for the edit form, keyed by field name. */
+  fieldErrors?: Readonly<Record<string, string>>;
+  /** A form-level failure message from the host. */
+  error?: string | null;
+  onback?: () => void;
+  /** When set, an Edit action is offered (the host switches `mode`). */
+  onedit?: () => void;
+  /** Closes the edit form (Cancel, the sheet's close button, Escape). */
+  oncancel?: () => void;
+  /** Receives the edit form's wire-ready values; `EditFormProps['onsubmit']`. */
+  onsave?: EditFormProps['onsubmit'];
+  /** When set, Delete (with a confirmation) is offered in the overflow menu. */
+  ondelete?: () => void | Promise<void>;
+  /** Extra actions, rendered in the header's overflow menu before Delete. */
+  extraActions?: Snippet;
+  /**
+   * Badge tone per status value (`paid: 'success'`); unmapped values use
+   * `DEFAULT_STATUS_TONES`, else neutral.
+   */
+  statusTones?: Readonly<Record<string, RecordStatusTone>>;
+  /** Extra content under the fields, inside the details card. */
+  children?: Snippet;
+  /**
+   * The edit form's derived (read-only, never submitted) fields. Defaults
+   * to the subtotal / discount / tax / total role fields when the model has
+   * an `items` relation, else none.
+   */
+  derivedFields?: readonly string[];
+  /**
+   * Editable line items (the host's own editor), rendered under the edit
+   * form: in the edit column on desktop and inside the edit sheet on
+   * phones, so lines are editable on a phone too.
+   */
+  items?: Snippet;
 }
 
 export interface RecipeScreensProps {
@@ -261,4 +451,25 @@ export interface RecipeScreensProps {
   can?: { create?: boolean; update?: boolean; delete?: boolean };
   /** Called on every user navigation, for router synchronization. */
   onnavigate?: (view: RecipeScreenView, recordId: string | null) => void;
+  /**
+   * Every exposed collection definition, keyed by collection name; the
+   * record view derives this model's relations from it. Omit for none.
+   */
+  definitions?: Readonly<Record<string, ScreenCollectionDefinition>>;
+  /** Passed to `RecordScreen` for the record view and edit. */
+  record?: Pick<
+    RecordScreenProps,
+    | 'loaders'
+    | 'registry'
+    | 'widgetContext'
+    | 'overview'
+    | 'override'
+    | 'onoverviewchange'
+    | 'layoutEditing'
+    | 'canCustomize'
+    | 'hrefFor'
+    | 'labels'
+    | 'viewAllHref'
+    | 'statusTones'
+  >;
 }

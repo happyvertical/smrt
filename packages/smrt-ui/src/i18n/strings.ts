@@ -49,4 +49,5 @@ export const M = defineMessages({
   'ui.data_table.subtotal': 'Subtotal',
   'ui.data_table.aggregate': 'Aggregate',
   'ui.data_table.footer_row': 'Footer',
+  'ui.data_table.total': 'Total',
 });

@@ -32,6 +32,17 @@ money amount; amounts are integer minor units and take no widget); an unknown
 value or a non-text field is an error. `ui.widget` is a hint only — it never changes
 the column type or validation.
 
+`ui.format` (#3718) says how a value is presented: `money` (an `integer` of
+minor units — the amount hint record pages format and total), `date` (a
+business date on a `datetime`, shown without a time), `datetime`, `percent`
+(a rate on a `decimal`/`integer`). Same channel, same emission, same build-time
+check against the field type. `@foreignKey(Target, { role: 'items' })` (or on
+`@crossPackageRef`) marks the declaring model as the target's line items; the
+scanner keeps it at `_meta.role`, the build rejects it on a non-reference or
+an unknown value, and the generated web relationship edge carries
+`role: 'items'` (edges without a role stay byte-stable). Both are hints: no
+schema, persistence or security effect.
+
 ## Presentation metadata (#3599)
 
 Pure helpers live in `src/ui-metadata.ts`, published browser-safe as

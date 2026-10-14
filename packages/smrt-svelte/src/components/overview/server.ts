@@ -66,6 +66,15 @@ export {
   registerRecipeWidgets,
 } from './recipe-widgets.js';
 export {
+  RECORD_OVERVIEW_ALLOWED,
+  RECORD_OVERVIEW_LIMIT,
+  RECORD_OVERVIEW_MAX_METRICS,
+  RECORD_OVERVIEW_PANEL_SPAN,
+  type RecordOverviewOptions,
+  recordOverview,
+  recordOverviewId,
+} from './record.js';
+export {
   createWidgetRegistry,
   defaultWidgetRegistry,
   registerWidget,
@@ -82,3 +91,37 @@ export {
   validateWidgetOptions,
 } from './schema.js';
 export * from './types.js';
+export {
+  type LineItemsTotals,
+  type LineTotalKey,
+  type LineTotalLine,
+  type LineTotalsMismatch,
+  type LineTotalsResult,
+  lineItemTotals,
+  sumLineAmounts,
+} from './widgets/line-totals.js';
+export {
+  createLineItemsLoader,
+  createRelatedLoader,
+  LINE_ITEMS_LIMIT,
+  lineItemsOptions,
+  lineItemsRelation,
+  RELATED_WIDGET_LIMIT,
+  RELATED_WIDGET_MAX_TABS,
+  type RecordWidgetsOptions,
+  relatedRelations,
+  relatedTabOptions,
+} from './widgets/record-loaders.js';
+export {
+  DEFAULT_STATUS_TONES,
+  formatColumnsOption,
+  formatRecordCell,
+  lineItemColumns,
+  parseColumnsOption,
+  RECORD_TABLE_MAX_COLUMNS,
+  RECORD_TABLE_MAX_ROWS,
+  type RecordCellContext,
+  relatedColumns,
+  statusLabel,
+  statusTone,
+} from './widgets/record-table.js';

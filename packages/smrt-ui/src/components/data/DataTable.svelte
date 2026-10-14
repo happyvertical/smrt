@@ -37,6 +37,10 @@ import {
 } from './DataTableLayout.js';
 import { responsiveColumns } from './DataTableResponsive.js';
 import {
+  buildDataTableSummaryRow,
+  isNumericSummary,
+} from './DataTableSummaries.js';
+import {
   maximumDataTableVirtualScrollTop,
   resolveDataTableVirtualWindow,
   scrollTopForDataTableRow,
@@ -56,7 +60,8 @@ import type {
 } from './types.js';
 import { defaultSort, getNestedValue } from './types.js';
 
-const { t } = useI18n();
+const i18n = useI18n();
+const { t } = i18n;
 
 interface ExtendedProps<T> extends DataTableProps<T> {
   /** Global cell renderer - takes precedence over column.cell */
@@ -67,7 +72,7 @@ interface ExtendedProps<T> extends DataTableProps<T> {
 
 let {
   data = [],
-  columns = [],
+  columns: declaredColumns = [],
   rowKey,
   agentAddressable = false,
   selectable = false,
@@ -94,6 +99,8 @@ let {
   toolbar,
   footer,
   structuralRows = [],
+  summaries,
+  summaryLabel,
   visibleColumnIds,
   loading = false,
   refreshing = false,
@@ -124,6 +131,18 @@ let {
 }: ExtendedProps<T> = $props();
 
 const dataTableId = $props.id();
+
+// A `sum` / `avg` summary marks a numeric column: right-aligned unless the
+// column says otherwise, so figures and their total line up.
+const columns = $derived(
+  summaries
+    ? declaredColumns.map((column) =>
+        column.align === undefined && isNumericSummary(summaries[column.id])
+          ? { ...column, align: 'right' as const }
+          : column,
+      )
+    : declaredColumns,
+);
 
 function legacyModes(): DataTableModes {
   return {
@@ -870,9 +889,22 @@ const visibleColumns = $derived(dataTableLayout.columns);
 const dataBodyStructuralRows = $derived(
   structuralRows.filter((row) => row.kind !== 'footer'),
 );
-const footerStructuralRows = $derived(
-  structuralRows.filter((row) => row.kind === 'footer'),
+const summaryRow = $derived.by(() =>
+  buildDataTableSummaryRow(
+    filteredRows.map(({ row }) => row),
+    visibleColumns.map((entry) => entry.column),
+    summaries,
+    {
+      id: `${dataTableId}-summary`,
+      label: summaryLabel ?? t(M['ui.data_table.total']),
+      locale: i18n.locale,
+    },
+  ),
 );
+const footerStructuralRows = $derived([
+  ...structuralRows.filter((row) => row.kind === 'footer'),
+  ...(summaryRow ? [summaryRow] : []),
+]);
 const structuralRowCount = $derived(
   dataBodyStructuralRows.length +
     footerStructuralRows.length +
