@@ -173,6 +173,8 @@ describe('Contract party branches', () => {
       }),
     );
     const base = await save(new Contract({ db: contracts.db }));
+    const cart = await save(new Cart({ db: contracts.db }));
+    const production = await save(new ProductionOrder({ db: contracts.db }));
     await contracts.db.query(
       'UPDATE contracts SET vendor_id = ? WHERE id = ?',
       'vendor-a',
@@ -186,6 +188,22 @@ describe('Contract party branches', () => {
     await contracts.db.query(
       "UPDATE contracts SET customer_id = NULL, contract_type = 'order' WHERE id = ?",
       estimate.id,
+    );
+    await contracts.db.query(
+      "UPDATE contracts SET customer_id = NULL, contract_type = 'cart' WHERE id = ?",
+      order.id,
+    );
+    await contracts.db.query(
+      "UPDATE contracts SET contract_type = 'order' WHERE id = ?",
+      cart.id,
+    );
+    await contracts.db.query(
+      "UPDATE contracts SET vendor_id = NULL, contract_type = 'production_order' WHERE id = ?",
+      purchase.id,
+    );
+    await contracts.db.query(
+      "UPDATE contracts SET contract_type = 'purchase_order' WHERE id = ?",
+      production.id,
     );
     const before = await contracts.db.query(
       'SELECT COUNT(*) AS n FROM contracts',
@@ -201,6 +219,18 @@ describe('Contract party branches', () => {
     expect(report.missingRequiredCustomer.map((row) => row.id)).toContain(
       estimate.id,
     );
+    expect(report.missingRequiredCustomer.map((row) => row.id)).toContain(
+      order.id,
+    );
+    expect(report.missingRequiredCustomer.map((row) => row.id)).not.toContain(
+      cart.id,
+    );
+    expect(report.missingRequiredVendor.map((row) => row.id)).toContain(
+      purchase.id,
+    );
+    expect(report.missingRequiredVendor.map((row) => row.id)).not.toContain(
+      production.id,
+    );
     expect(report.baseTypedRows.map((row) => row.id)).toContain(base.id);
     expect(
       report.discriminatorMismatches.some((row) =>
@@ -208,5 +238,76 @@ describe('Contract party branches', () => {
       ),
     ).toBe(true);
     expect(after.rows).toEqual(before.rows);
+  });
+
+  it('reports existing documents linked to base or wrong-branch contracts', async () => {
+    const order = await save(
+      new Order({ db: contracts.db, customerId: 'customer-a' }),
+    );
+    const purchase = await save(
+      new PurchaseOrder({ db: contracts.db, vendorId: 'vendor-a' }),
+    );
+    const base = await save(new Contract({ db: contracts.db }));
+    const invoice = new Invoice({
+      db: contracts.db,
+      customerId: 'customer-a',
+      contractId: order.id,
+      invoiceNumber: 'INV-PREFLIGHT',
+    });
+    const payment = new Payment({ db: contracts.db, contractId: order.id });
+    const fulfillment = new Fulfillment({
+      db: contracts.db,
+      contractId: order.id,
+    });
+    for (const document of [invoice, payment, fulfillment]) {
+      await document.initialize();
+      await document.save();
+    }
+    await contracts.db.query(
+      'CREATE TABLE expenses (id TEXT PRIMARY KEY, commitment_id TEXT)',
+    );
+    await contracts.db.query(
+      'CREATE TABLE ad_groups (id TEXT PRIMARY KEY, contract_id TEXT)',
+    );
+    await contracts.db.query(
+      'UPDATE invoices SET contract_id = ? WHERE id = ?',
+      base.id,
+      invoice.id,
+    );
+    await contracts.db.query(
+      'UPDATE payments SET contract_id = ? WHERE id = ?',
+      purchase.id,
+      payment.id,
+    );
+    await contracts.db.query(
+      'UPDATE fulfillments SET contract_id = ? WHERE id = ?',
+      base.id,
+      fulfillment.id,
+    );
+    await contracts.db.query(
+      'INSERT INTO expenses (id, commitment_id) VALUES (?, ?), (?, ?)',
+      'expense-sales',
+      order.id,
+      'expense-valid',
+      purchase.id,
+    );
+    await contracts.db.query(
+      'INSERT INTO ad_groups (id, contract_id) VALUES (?, ?)',
+      'ad-purchase',
+      purchase.id,
+    );
+    const report = await preflightCommercePartyLinks(contracts.db);
+    expect(report.invalidSalesReferences.map((row) => row.source_id)).toEqual(
+      expect.arrayContaining([
+        invoice.id,
+        payment.id,
+        fulfillment.id,
+        'ad-purchase',
+      ]),
+    );
+    expect(report.invalidSalesReferences).toHaveLength(4);
+    expect(
+      report.invalidPurchaseReferences.map((row) => row.source_id),
+    ).toEqual(['expense-sales']);
   });
 });

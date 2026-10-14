@@ -95,9 +95,16 @@ no longer accept `customerId`. `Order`, `Estimate`, `Agreement`, `Lease`, and
 
 Before upgrading existing data, run the read-only
 `preflightCommercePartyLinks(db)` and inspect its stray party links, missing
-required parties, base-typed rows, and discriminator mismatches. Clear a stray
-column or deliberately retype the row before deploying writers that save it.
-Missing required parties remain readable but fail their next save. Regenerate
+required parties, base-typed rows, discriminator mismatches, and invalid
+document references. The report checks invoice, payment, fulfillment, ad group,
+and expense links when those tables exist. A linked base-typed or wrong-branch
+contract blocks the next save of its document even when the link is unchanged;
+retype it to the correct leaf or repair the link before deployment. The
+deprecated `ContractCollection` party finders now return the appropriate branch
+only, so retype legacy base rows with party links before relying on those
+finders. Clear stray party columns and fill required parties before deploying
+writers that save affected rows. Missing required parties remain readable but
+fail their next save. Regenerate
 cached manifests, planner catalogs, and generated screens after upgrading.
 This preflight never edits rows; an operator chooses the data correction.
 

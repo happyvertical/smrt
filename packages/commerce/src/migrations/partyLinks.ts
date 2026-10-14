@@ -16,6 +16,14 @@ export interface CommerceContractTypeGroup {
   count: number;
 }
 
+/** Existing document whose contract link will fail branch validation on save. */
+export interface CommerceInvalidContractReference {
+  source_table: string;
+  source_id: string;
+  contract_id: string;
+  contract_meta_type: string | null;
+}
+
 export interface CommercePartyLinksPreflight {
   purchaseRowsWithCustomer: CommercePartyLinkRow[];
   salesRowsWithVendor: CommercePartyLinkRow[];
@@ -24,6 +32,8 @@ export interface CommercePartyLinksPreflight {
   baseTypedRows: CommercePartyLinkRow[];
   discriminatorGroups: CommerceContractTypeGroup[];
   discriminatorMismatches: CommerceContractTypeGroup[];
+  invalidSalesReferences: CommerceInvalidContractReference[];
+  invalidPurchaseReferences: CommerceInvalidContractReference[];
 }
 
 const COLUMNS =
@@ -57,8 +67,10 @@ function inSql(values: readonly string[]): string {
   return values.map((value) => `'${value}'`).join(', ');
 }
 
-function leafMatches(names: readonly string[]): string {
-  return names.map((name) => `_meta_type LIKE '%:${name}'`).join(' OR ');
+function leafMatches(names: readonly string[], column = '_meta_type'): string {
+  return names
+    .map((name) => `(${column} = '${name}' OR ${column} LIKE '%:${name}')`)
+    .join(' OR ');
 }
 
 /** Inspect existing party links before deploying the new STI hierarchy. Never writes. */
@@ -72,9 +84,11 @@ export async function preflightCommercePartyLinks(
     return result.rows as CommercePartyLinkRow[];
   };
   const missing = (column: 'customer_id' | 'vendor_id') =>
-    `(${column} IS NULL OR ${column} = '')`;
+    `(${column} IS NULL OR CAST(${column} AS TEXT) = '')`;
   const present = (column: 'customer_id' | 'vendor_id') =>
-    `(${column} IS NOT NULL AND ${column} <> '')`;
+    `(${column} IS NOT NULL AND CAST(${column} AS TEXT) <> '')`;
+  const knownLeaf = leafMatches(Object.keys(leafTypes));
+  const fallbackType = `(_meta_type IS NULL OR NOT (${knownLeaf}))`;
   const salesSide = `(contract_type IN (${inSql(salesTypes)}) OR ${leafMatches([
     'Estimate',
     'Order',
@@ -98,15 +112,23 @@ export async function preflightCommercePartyLinks(
     rows(`${purchaseSide} AND ${present('customer_id')}`),
     rows(`${salesSide} AND ${present('vendor_id')}`),
     rows(
-      `contract_type IN (${inSql([
+      `(${leafMatches([
+        'Estimate',
+        'Order',
+        'WholesaleOrder',
+        'Lease',
+        'Agreement',
+      ])} OR (${fallbackType} AND contract_type IN (${inSql([
         'estimate',
         'order',
         'wholesale_order',
         'lease',
         'agreement',
-      ])}) AND ${missing('customer_id')}`,
+      ])}))) AND ${missing('customer_id')}`,
     ),
-    rows(`contract_type = 'purchase_order' AND ${missing('vendor_id')}`),
+    rows(
+      `(${leafMatches(['PurchaseOrder'])} OR (${fallbackType} AND contract_type = 'purchase_order')) AND ${missing('vendor_id')}`,
+    ),
     rows("_meta_type = 'Contract' OR _meta_type LIKE '%:Contract'"),
     db.query(
       'SELECT _meta_type, contract_type, COUNT(*) AS n FROM contracts GROUP BY _meta_type, contract_type ORDER BY n DESC',
@@ -127,6 +149,46 @@ export async function preflightCommercePartyLinks(
     const leaf = group._meta_type?.split(':').at(-1);
     return leaf && leafTypes[leaf] && leafTypes[leaf] !== group.contract_type;
   });
+  const invalidReferences = async (
+    table: string,
+    column: 'contract_id' | 'commitment_id',
+    allowed: readonly string[],
+  ): Promise<CommerceInvalidContractReference[]> => {
+    if (!(await db.tableExists(table))) return [];
+    const result = await db.query(
+      `SELECT '${table}' AS source_table, source.id AS source_id,
+              CAST(source.${column} AS TEXT) AS contract_id,
+              contract._meta_type AS contract_meta_type
+         FROM ${table} source
+         LEFT JOIN contracts contract
+           ON CAST(source.${column} AS TEXT) = CAST(contract.id AS TEXT)
+        WHERE source.${column} IS NOT NULL
+          AND CAST(source.${column} AS TEXT) <> ''
+          AND (contract.id IS NULL OR contract._meta_type IS NULL
+               OR NOT (${leafMatches(allowed, 'contract._meta_type')}))`,
+    );
+    return result.rows as CommerceInvalidContractReference[];
+  };
+  const invalidSalesReferences = (
+    await Promise.all(
+      ['invoices', 'payments', 'fulfillments', 'ad_groups'].map((table) =>
+        invalidReferences(table, 'contract_id', [
+          'Estimate',
+          'Order',
+          'WholesaleOrder',
+          'Cart',
+          'Lease',
+          'Agreement',
+          'LicenseSale',
+        ]),
+      ),
+    )
+  ).flat();
+  const invalidPurchaseReferences = await invalidReferences(
+    'expenses',
+    'commitment_id',
+    ['PurchaseOrder', 'ProductionOrder'],
+  );
   return {
     purchaseRowsWithCustomer,
     salesRowsWithVendor,
@@ -135,5 +197,7 @@ export async function preflightCommercePartyLinks(
     baseTypedRows,
     discriminatorGroups,
     discriminatorMismatches,
+    invalidSalesReferences,
+    invalidPurchaseReferences,
   };
 }
