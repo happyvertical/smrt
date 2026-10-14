@@ -334,6 +334,20 @@ const handlers: { [N in CommandName]?: Handler<N> } = {
         parts.push(`terms ${terms}`);
       }
     }
+    if (input.pricesIncludeTax !== undefined) {
+      if (input.pricesIncludeTax !== before.pricesIncludeTax) {
+        next.pricesIncludeTax = input.pricesIncludeTax;
+        parts.push(
+          input.pricesIncludeTax ? 'prices include tax' : 'prices exclude tax',
+        );
+      }
+    }
+    if (input.taxRounding !== undefined) {
+      if (input.taxRounding !== before.taxRounding) {
+        next.taxRounding = input.taxRounding;
+        parts.push(`${input.taxRounding} tax rounding`);
+      }
+    }
     if (!parts.length) return done(state);
     const text = parts.join(', ');
     return done(

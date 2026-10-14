@@ -258,6 +258,8 @@ export function createCookbookEngine(
         currency: settings.currency,
         taxRate: Number((settings.taxRate * 100).toFixed(4)),
         paymentTerms: settings.paymentTerms,
+        pricesIncludeTax: settings.pricesIncludeTax,
+        taxRounding: settings.taxRounding,
       },
       theme: {
         text: describeTheme(doc.theme),

@@ -40,4 +40,7 @@ export { PaymentAllocation } from './PaymentAllocation.js';
 export { PaymentInstrument } from './PaymentInstrument.js';
 export { PaymentIntent } from './PaymentIntent.js';
 export { Payout } from './Payout.js';
+export { TaxCode, type TaxCodeAppliesTo, type TaxCodeKind } from './TaxCode.js';
+export { TaxComponent } from './TaxComponent.js';
+export { type TaxRegistration, TaxSettings } from './TaxSettings.js';
 export { Vendor } from './Vendor.js';

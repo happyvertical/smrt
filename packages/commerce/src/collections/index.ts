@@ -26,4 +26,7 @@ export {
   type CreatePayoutFromPaymentArgs,
   PayoutCollection,
 } from './PayoutCollection.js';
+export { TaxCodeCollection } from './TaxCodeCollection.js';
+export { TaxComponentCollection } from './TaxComponentCollection.js';
+export { TaxSettingsCollection } from './TaxSettingsCollection.js';
 export { VendorCollection } from './VendorCollection.js';
