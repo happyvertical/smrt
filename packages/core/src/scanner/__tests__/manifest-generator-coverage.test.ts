@@ -88,10 +88,11 @@ describe('ManifestGenerator coverage', () => {
         def('AbstractWidget', {
           decoratorConfig: {
             abstract: true,
-            api: { include: ['list', 'get', 'create'] },
-            mcp: { include: ['list', 'get', 'create'] },
-            cli: { include: ['list', 'get', 'create'] },
+            api: { include: ['list', 'get', 'create', 'browse'] },
+            mcp: { include: ['list', 'get', 'create', 'browse'] },
+            cli: { include: ['list', 'get', 'create', 'browse'] },
           },
+          methods: { browse: method('browse') },
         }),
         def('ListOnlyWidget', {
           decoratorConfig: {
@@ -103,11 +104,15 @@ describe('ManifestGenerator coverage', () => {
     ]);
     const config = manifest.objects.abstractwidget.decoratorConfig;
     expect(config.abstract).toBe(true);
-    expect(config.api).toMatchObject({ include: ['list', 'get'] });
-    expect(config.mcp).toMatchObject({ include: ['list', 'get'] });
-    expect(config.cli).toMatchObject({ include: ['list', 'get'] });
+    for (const surface of ['api', 'mcp', 'cli'] as const) {
+      expect(config[surface]).toMatchObject({
+        include: ['list', 'get', 'create', 'browse'],
+        exclude: ['create', 'update', 'delete'],
+      });
+    }
     expect(manifest.objects.listonlywidget.decoratorConfig.api).toMatchObject({
-      include: ['list'],
+      include: ['list', 'create'],
+      exclude: ['create', 'update', 'delete'],
     });
   });
 

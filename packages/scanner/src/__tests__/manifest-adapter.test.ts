@@ -94,6 +94,28 @@ describe('ManifestAdapter', () => {
     });
 
     describe('@foreignKey decorator - Issue #846', () => {
+      it.each([
+        ['foreignKey', 'Organization'],
+        ['crossPackageRef', "'@example/accounts:Organization'"],
+      ])('preserves validateSubtype for %s in manifest metadata', (name, target) => {
+        const field: RawFieldDefinition = {
+          name: 'organizationId',
+          accessibility: 'public',
+          typeAnnotation: 'string',
+          initializer: "''",
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [
+            {
+              name,
+              arguments: [target, '{ validateSubtype: true }'],
+            },
+          ],
+        };
+        expect(adapter.inferFieldType(field)._meta?.validateSubtype).toBe(true);
+      });
+
       it('should respect TypeScript optional marker (?) for @foreignKey fields', () => {
         // Create a field with @foreignKey decorator and optional marker
         const field: RawFieldDefinition = {

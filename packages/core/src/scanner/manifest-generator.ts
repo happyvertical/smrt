@@ -311,15 +311,15 @@ export class ManifestGenerator {
           for (const surface of ['api', 'mcp', 'cli'] as const) {
             if (config[surface] === false) continue;
             const current = config[surface];
-            const includes =
-              current && typeof current === 'object' && current.include
-                ? current.include.filter(
-                    (action) => action === 'list' || action === 'get',
-                  )
-                : ['list', 'get'];
+            const excludes =
+              current && typeof current === 'object' && current.exclude
+                ? current.exclude
+                : [];
             config[surface] = {
               ...(current && typeof current === 'object' ? current : {}),
-              include: includes,
+              exclude: [
+                ...new Set([...excludes, 'create', 'update', 'delete']),
+              ],
             };
           }
         }
