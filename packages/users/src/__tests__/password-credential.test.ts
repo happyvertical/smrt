@@ -461,6 +461,8 @@ describe('PasswordCredentialService', () => {
       'failed',
       'failed',
       'locked',
+      // The address's lockout start, reported without a subject (#3531).
+      'source-locked',
     ]);
     // The address is now out of budget, even with the right password.
     await expect(
@@ -533,6 +535,45 @@ describe('PasswordCredentialService', () => {
       ipAddress: '192.0.2.10',
     });
     expect(result.userId).toBe(personId);
+  });
+
+  it('keeps only the per-account budget when the address budget is disabled', async () => {
+    const accountOnly = await make({
+      limiter: {
+        maxAttempts: 3,
+        windowSeconds: 60,
+        source: false,
+        audit: { record: async (entry) => void audit.push(entry) },
+      },
+    });
+    for (let i = 0; i < 6; i++) {
+      await expect(
+        accountOnly.signIn({
+          identifier: `guess-${i}@example.com`,
+          password: PASSWORD,
+          ipAddress: '192.0.2.77',
+        }),
+      ).rejects.toBeInstanceOf(PasswordCredentialError);
+    }
+    // Everyone behind the shared address can still sign in.
+    const result = await accountOnly.signIn({
+      identifier: 'pat@example.com',
+      password: PASSWORD,
+      tenantId,
+      ipAddress: '192.0.2.77',
+    });
+    expect(result.userId).toBe(personId);
+    // An address alone keys nothing: refused like a wrong password.
+    await expect(
+      accountOnly.signIn({
+        identifier: '',
+        password: PASSWORD,
+        ipAddress: '192.0.2.77',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    expect(audit.some((entry) => entry.outcome === 'source-locked')).toBe(
+      false,
+    );
   });
 
   it('rehashes on sign-in when the stored parameters are below policy, keeping the generation', async () => {

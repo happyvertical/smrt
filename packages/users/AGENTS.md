@@ -78,6 +78,9 @@ are not prerequisites for unrelated user-package work.
   them on failure, release on success or abort, never skip the reserve.
   Limiter writes are raw SQL and bypass the change feed; the audit sink is the
   observability seam, and it must never throw into the sign-in path.
+  Subject and source budgets are sized independently (#3531); `source: false`
+  ignores the source key, so a reservation then needs a subject (fail closed).
+  The `source-locked` audit entry never carries a subject or caller metadata.
 - `DeviceCredentialService` accepts a person credential only from a
   first-class session whose `authMethod` is a device-enrollment method
   (`terminal` by default) and that the host's `assertEnrolledDevice` confirms.

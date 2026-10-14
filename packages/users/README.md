@@ -749,6 +749,48 @@ limiter for approvals, keyed on the approving user only under its own subject
 prefix, so that budget never pools with the same person's PIN or password
 budget; pass `loginLimiter` to share one instance and audit sink.
 
+#### Separate account and address budgets (#3531)
+
+By default both budgets use `maxAttempts`, `windowSeconds` and `lockout`.
+Size them independently with `subject` and `source` (each field falls back to
+the top-level option), or turn the address budget off with `source: false`:
+
+```ts
+const limiter = await LoginAttemptLimiter.create({
+  db,
+  subject: { maxFailures: 5, lockout: { baseSeconds: 60, maxSeconds: 3600 } },
+  source: { maxFailures: 100, windowSeconds: 300, lockout: false },
+  // or: source: false,
+});
+```
+
+When a failure starts a **source** lockout the audit sink also receives one
+`source-locked` entry carrying the source hash and `retryAfterSeconds` but no
+subject hash and none of the caller's metadata, so it attributes an outage to
+an address or device without naming the accounts that were tried. It is
+reported at most once per source per `sourceLockoutAuditSeconds` (default 300)
+per limiter instance. Refusals are recorded as `denied` entries with the
+refusing `scope` in their metadata.
+
+**Deployments without a trustworthy client address.** If the app sits behind
+a reverse proxy that does not forward a client address you can trust, every
+browser shares one `source`, and a handful of failures from anyone — including
+for emails that do not exist — locks password sign-in out for everyone.
+Prefer, in order:
+
+1. Make the proxy set a client address you trust (and strip any the client
+   sent), and pass that, not a raw `X-Forwarded-For`, as `ipAddress`.
+2. Otherwise give the source budget a much larger allowance with no lockout
+   (`source: { maxFailures: 200, lockout: false }`), so it only caps bursts.
+3. Or disable it (`source: false`) and rate limit `/signin` at the proxy
+   instead. The per-account budget still applies to every attempt.
+
+`source: false` applies to every credential kind using that limiter. A PIN
+sign-in keys its source on the enrolled device, which is what stops guessing
+across many people's short PINs on one tablet, so if PIN and password share an
+instance, prefer option 2 or give `PasswordCredentialService` its own
+`limiter` options rather than disabling the source budget for both.
+
 ### Per-person PIN on an enrolled device
 
 A shared tablet enrolled through the terminal device-code grant holds a

@@ -441,9 +441,12 @@ export class PasswordCredentialService {
         : '';
     const password = typeof input.password === 'string' ? input.password : '';
     const source = input.ipAddress?.trim() || null;
-    // Nothing to key any budget on: refuse like a wrong password. Every other
-    // request, malformed or not, reserves before anything else.
-    if (!emailKey && !source) throw new PasswordCredentialError();
+    // Nothing to key any budget on (a disabled source budget keys nothing):
+    // refuse like a wrong password. Every other request, malformed or not,
+    // reserves before anything else.
+    if (!emailKey && !(source && this.limiter.limitsSource)) {
+      throw new PasswordCredentialError();
+    }
 
     const tenantId = input.tenantId || null;
     const lease = await this.limiter.reserve({
