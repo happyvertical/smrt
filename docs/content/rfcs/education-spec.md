@@ -69,12 +69,19 @@ new course.
 **Lesson** (STI base). The unit of work a learner completes. `sectionId`,
 `title`, `body` (markdown), `sortOrder`, `estimatedMinutes = 0`,
 `difficulty = 0.0`, `modality`, `completionRule` (`attest`, `submit`, `score`,
-`external`). Subclasses:
+`external`), `externalRef` (the source's own lesson identity, such as an
+Easy Peasy day number) and `externalUrl` (the source page, with anchor, to
+open for the instructions). For linked courses `body` stays empty: the
+instructions live at the source and the row is a pointer plus our progress.
+Subclasses:
 
 - `Reading`: body is the content.
 - `Video`: `videoAssetId` or `videoUrl`.
-- `Worksheet`: printable. `printableAssetId` (PDF), optional
-  `answerKeyAssetId`, `pages = 0`. Completion rule defaults to `submit`.
+- `Worksheet`: printable. Either `printableAssetId` (a PDF we are allowed to
+  hold) or `printableUrl` (a PDF the source hosts and we only point at),
+  optional `answerKeyAssetId` or `answerUrl`, `pages = 0`. Completion rule
+  defaults to `submit`. Exactly one of asset or URL is set; the distinction is
+  the licensing boundary, see "First source: Easy Peasy".
 - `Exercise`: interactive, usually external (`externalUrl`); Khan practice
   sets land here.
 - `Assessment`: has questions and a passing score; see below.
@@ -101,9 +108,69 @@ They are their own model rather than tags because mastery rows hang off them.
 
 **CourseSource**. Where a catalog entry came from and how to refresh it:
 `key`, `name`, `kind` (`manual`, `url`, `adapter`), `adapterKey`, `config`
-JSON. Khan Academy has no public API; the v1 adapter is a URL-plus-metadata
-form and a later one can use the `spider` repo. CrunchLabs boxes are entered
-by hand once per box and shared at the group level.
+JSON, `sharing` (`private`, `group`, `global`): the widest tenant level an
+import from this source may land in, so licensing is enforced by the
+importer rather than by memory. Khan Academy has no public API; the v1
+adapter is a URL-plus-metadata form and a later one can use the `spider`
+repo. CrunchLabs boxes are entered by hand once per box and shared at the
+group level. Easy Peasy is the first adapter, below.
+
+### First source: Easy Peasy All-in-One Homeschool
+
+The learner currently works through Easy Peasy, so it is the Phase 0
+import path rather than Khan.
+
+**What the site says.** The curriculum is free for anyone to use without
+registration. Each course page is 180 bold "Lesson N" headings; a day with a
+printable worksheet is marked with an asterisk and links a per-day PDF under
+`wp-content/uploads/` (for example `LA-4-Lesson-29.pdf`), and most courses
+also publish a free whole-course printables packet on the print page.
+Answers are on password-protected pages linked from the lesson. The footer
+and the print page carry "Copyright Lee Giles, All Rights Reserved" and a
+disclaimer that the assignments, the collection of links, the structure of
+the curriculum, and the files the site created may not be copied and
+published to another site or used for any commercial benefit. Printables
+books are sold in their store and the FAQ asks readers to report anyone
+selling the worksheets.
+
+**What that permits.** A family may print the worksheets and do the work;
+the completed, hand-written pages are the learner's own work and the scans
+belong to the family. What we may not do is mirror the lesson text, copy the
+PDFs into our asset store, republish the day-by-day structure as a shared
+catalog, or sell access to any of it. The co-op is non-commercial but
+"published to another site" is the clause that bites, so group-level sharing
+of an Easy Peasy index needs written permission from Lee Giles. Until then
+the import is per family.
+
+**Design consequences.**
+
+- An Easy Peasy course is an `ExternalCourse` whose lessons are pointers:
+  `externalRef` is the day number, `externalUrl` is the course page anchor,
+  and worksheet days are `Worksheet` lessons with `printableUrl` set and
+  `printableAssetId` empty. Nothing from the site is stored beyond title,
+  day number, and URLs that resolve to the site itself. The links Easy Peasy
+  curates to third-party videos and games are not copied either; the learner
+  follows them from the source page.
+- The `easy-peasy` adapter fetches a course page at import time, under the
+  importing family's tenant, and emits lesson rows from the "Lesson N"
+  headings, the asterisk marker, and the PDF links. Its `CourseSource.sharing`
+  is `private`. Re-import refreshes URLs without touching progress. It lives
+  in the education package as an adapter but is only registered by
+  applications that accept the terms.
+- "Print" on the learner's dashboard opens the source PDF in a new tab. The
+  app never proxies or caches the file. The packet PDF on the print page is
+  offered as a one-time "print the whole course" link.
+- Scans of completed worksheets are ordinary `ScannedSubmission`s. Grading
+  in Phase 0 is guardian attestation with an optional score, since the answer
+  pages are password-protected and theirs. A guardian may type the answers
+  for a day into structured `Question` rows for AI grade proposals; those
+  rows are family-private and never exported.
+- Easy Peasy's My EP tracker only records the current day per course.
+  `LessonProgress` replaces it and is strictly richer, which is the main
+  reason a family would switch to this app for the same material.
+- If written permission arrives, flipping the source's `sharing` to `group`
+  is the only change needed to share one family's imported index with the
+  co-op.
 
 ### Learner: who is learning and what they did
 
@@ -216,10 +283,12 @@ education package adds:
 This is the flow that makes the product real for a homeschool, so it is spelled
 out end to end.
 
-1. Guardian adds a `Worksheet` lesson: uploads a PDF or picks one from the
-   catalog. Optional answer key as a second asset or as structured `Question`
-   rows.
-2. Learner's dashboard shows it as "print and do". Print opens the asset.
+1. Guardian adds a `Worksheet` lesson: imports a course whose days link to
+   source-hosted PDFs, uploads a PDF we are allowed to hold, or picks one
+   from the catalog. Optional answer key as a second asset, a URL, or
+   structured `Question` rows.
+2. Learner's dashboard shows it as "print and do". Print opens the asset or
+   the source URL.
 3. Learner or guardian taps "I'm done, take a picture". The phone camera (or a
    file upload) creates a `ScannedSubmission` with one `SubmissionAsset` per
    page through the asset runtime.
@@ -272,10 +341,12 @@ later".
 **Phase 0, one family can use it.** Package skeleton with Course,
 CourseSection, Lesson (Reading, Video, Worksheet, Exercise), Learner,
 Curriculum, Enrollment, LessonProgress, Submission (Scanned, External,
-Attestation), SubmissionAsset, Grade. Manual catalog entry for Khan and
-CrunchLabs links. App forked from smrt-start: family tenant, guardian login,
-learner PIN, learner dashboard, print-and-scan flow with guardian attestation
-and manual score, cookbook screens for the rest.
+Attestation), SubmissionAsset, Grade, CourseSource with the `easy-peasy`
+adapter importing the learner's current courses as private pointer lessons.
+Manual catalog entry for Khan and CrunchLabs links. App forked from
+smrt-start: family tenant, guardian login, learner PIN, learner dashboard
+showing today's lessons across courses, print-and-scan flow with guardian
+attestation and manual score, cookbook screens for the rest.
 
 **Phase 1, the group can evaluate it.** Skill, LessonSkill, SkillMastery job,
 Assessment and Question, OCR-assisted extraction and AI grade proposal,
@@ -300,6 +371,7 @@ To be filed once the primitives are agreed.
 - Epic: smrt-education and the homeschool learning application
   - Phase 0
     - feat(education): package skeleton, catalog models, recipes
+    - feat(education): course sources and the easy-peasy page adapter
     - feat(education): learner, curriculum, enrollment, progress models
     - feat(education): submissions, submission assets, grades, scan capture service
     - feat(app): fork smrt-start, family tenant, guardian + learner PIN auth
@@ -334,6 +406,9 @@ To be filed once the primitives are agreed.
 
 ## Open questions
 
+- Easy Peasy group sharing: ask Lee Giles in writing whether a non-commercial
+  co-op may share a day-number-and-link index of a course between families.
+  The design works either way; permission only widens `sharing`.
 - Khan Academy content cannot be embedded or imported; lessons link out and
   completion is reported by the learner or guardian. Confirm that is acceptable
   for v1, since Khan's own mastery data stays in Khan.
