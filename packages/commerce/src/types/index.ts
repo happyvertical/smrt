@@ -457,6 +457,7 @@ export interface ContractOptions extends SmrtObjectOptions {
   contractType?: ContractType;
   status?: ContractStatus;
   subtotal?: number;
+  discountTotal?: number;
   taxAmount?: number;
   totalAmount?: number;
   currency?: string;
@@ -467,6 +468,12 @@ export interface ContractOptions extends SmrtObjectOptions {
   notes?: string;
   terms?: string;
   channelId?: string;
+  lineAmountType?: 'exclusive' | 'inclusive' | 'none';
+  taxRoundingScope?: 'line' | 'document';
+  sellerTaxRegistrations?: TaxRegistrationOptions[];
+  sellerTaxRegistrationsJson?: string;
+  partyTaxId?: string;
+  moneySnapshotId?: string;
 }
 
 export interface SalesContractOptions extends ContractOptions {
@@ -517,7 +524,18 @@ export interface ContractLineItemOptions extends SmrtObjectOptions {
   quantity?: number;
   unitPrice?: number;
   discount?: number;
+  discountType?: 'none' | 'percent' | 'amount';
+  discountRate?: string;
   taxRate?: number;
+  taxMode?: 'inherit' | 'override';
+  taxCodeId?: string | null;
+  taxCodeCode?: string | null;
+  taxCodeName?: string | null;
+  taxComponents?: ContractTaxComponentSnapshot[];
+  taxComponentsJson?: string | null;
+  taxAmount?: number;
+  legacyAmount?: number | null;
+  moneySnapshotId?: string;
   amount?: number;
   productId?: string;
   sku?: string;
@@ -525,6 +543,14 @@ export interface ContractLineItemOptions extends SmrtObjectOptions {
   endDate?: Date | null;
   billingPeriod?: string;
   sortOrder?: number;
+}
+
+/** Immutable component tax allocation for one Contract line. */
+export interface ContractTaxComponentSnapshot {
+  taxComponentId: string;
+  name: string;
+  percent: string;
+  taxMinor: number;
 }
 
 /**

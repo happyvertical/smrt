@@ -11,6 +11,10 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  DOCUMENT_MONEY_WRITE,
+  type DocumentMoneyWriteCapability,
+} from '../document-money-internal.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import {
   type ContractOptions,
@@ -20,6 +24,7 @@ import {
   type PurchaseContractOptions,
   type PurchaseOrderOptions,
   type SalesContractOptions,
+  type TaxRegistrationOptions,
 } from '../types/index.js';
 import { Customer } from './Customer.js';
 import { Vendor } from './Vendor.js';
@@ -134,6 +139,9 @@ export class Contract extends SmrtObject {
   @field({ description: 'The amount before tax.' })
   subtotal: number = 0;
 
+  /** Informational sum of resolved line discounts, in integer minor units. */
+  discountTotal: number = 0;
+
   /**
    * Tax amount, in integer minor units (#2401).
    */
@@ -154,6 +162,43 @@ export class Contract extends SmrtObject {
     ui: { widget: 'currency' },
   })
   currency: string = 'USD';
+
+  /** Pricing interpretation fixed before the Contract leaves draft. */
+  lineAmountType: 'exclusive' | 'inclusive' | 'none' = 'exclusive';
+
+  /** Component rounding scope fixed before the Contract leaves draft. */
+  taxRoundingScope: 'line' | 'document' = 'line';
+
+  /** Immutable seller registration snapshot once the Contract leaves draft. */
+  sellerTaxRegistrationsJson = '[]';
+
+  get sellerTaxRegistrations(): TaxRegistrationOptions[] {
+    try {
+      const value: unknown = JSON.parse(this.sellerTaxRegistrationsJson);
+      if (!Array.isArray(value)) return [];
+      return value.filter(
+        (entry): entry is TaxRegistrationOptions =>
+          !!entry &&
+          typeof entry === 'object' &&
+          typeof (entry as TaxRegistrationOptions).taxComponentId ===
+            'string' &&
+          typeof (entry as TaxRegistrationOptions).number === 'string' &&
+          typeof (entry as TaxRegistrationOptions).label === 'string',
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  set sellerTaxRegistrations(value: TaxRegistrationOptions[]) {
+    this.sellerTaxRegistrationsJson = JSON.stringify(value);
+  }
+
+  /** Immutable customer or vendor tax identifier snapshot after issue. */
+  partyTaxId = '';
+
+  /** Stable issue/freeze identity, independent of lifecycle updated_at. */
+  moneySnapshotId = '';
 
   /**
    * Date contract was issued
@@ -226,10 +271,25 @@ export class Contract extends SmrtObject {
       this.contractType = options.contractType;
     if (options.status !== undefined) this.status = options.status;
     if (options.subtotal !== undefined) this.subtotal = options.subtotal;
+    if (options.discountTotal !== undefined)
+      this.discountTotal = options.discountTotal;
     if (options.taxAmount !== undefined) this.taxAmount = options.taxAmount;
     if (options.totalAmount !== undefined)
       this.totalAmount = options.totalAmount;
     if (options.currency !== undefined) this.currency = options.currency;
+    if (options.lineAmountType !== undefined)
+      this.lineAmountType = options.lineAmountType;
+    if (options.taxRoundingScope !== undefined)
+      this.taxRoundingScope = options.taxRoundingScope;
+    if (options.sellerTaxRegistrationsJson !== undefined)
+      this.sellerTaxRegistrationsJson = options.sellerTaxRegistrationsJson;
+    if (options.sellerTaxRegistrations !== undefined)
+      this.sellerTaxRegistrations = structuredClone(
+        options.sellerTaxRegistrations,
+      );
+    if (options.partyTaxId !== undefined) this.partyTaxId = options.partyTaxId;
+    if (options.moneySnapshotId !== undefined)
+      this.moneySnapshotId = options.moneySnapshotId;
     if (options.issueDate !== undefined) this.issueDate = options.issueDate;
     if (options.dueDate !== undefined) this.dueDate = options.dueDate;
     if (options.expiryDate !== undefined) this.expiryDate = options.expiryDate;
@@ -281,9 +341,8 @@ export class Contract extends SmrtObject {
    * Calculate and update totals from line items
    */
   async recalculateTotals(): Promise<void> {
-    // This would typically query ContractLineItems and sum them
-    // For now, just ensure totalAmount = subtotal + taxAmount
-    this.totalAmount = this.subtotal + this.taxAmount;
+    const { recalculateContractTotals } = await import('../contract-money.js');
+    await recalculateContractTotals(this);
   }
 
   /**
@@ -312,8 +371,17 @@ export class Contract extends SmrtObject {
    * write surface (#2401).
    */
   override async save(): Promise<this> {
+    const { saveContract } = await import('../contract-money.js');
+    return (await saveContract(this)) as this;
+  }
+
+  /** @internal Contract aggregate persistence only. */
+  async saveDerived(capability: DocumentMoneyWriteCapability): Promise<this> {
+    if (capability !== DOCUMENT_MONEY_WRITE)
+      throw new Error('Contract money write capability is required');
     assertIntegerMinorUnits('Contract', this.reference || this.id || '<new>', [
       ['subtotal', this.subtotal],
+      ['discountTotal', this.discountTotal],
       ['taxAmount', this.taxAmount],
       ['totalAmount', this.totalAmount],
     ]);

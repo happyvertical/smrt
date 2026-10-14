@@ -37,6 +37,8 @@ See [tax codes](agents/tax-codes.md) for tenant-owned rate components, default c
 and legacy-rate migration.
 See [document money persistence](agents/document-money.md) for the per-tenant
 legacy/v2 gate, atomic aggregate writes, issued snapshots, and frozen fields.
+See [Contract money persistence](agents/contract-money.md) for the Contract
+aggregate, purchase recoverability, and migration-only materialization boundary.
 
 ## Ledger Integration
 

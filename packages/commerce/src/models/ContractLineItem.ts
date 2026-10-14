@@ -11,7 +11,14 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import type { ContractLineItemOptions } from '../types/index.js';
+import {
+  DOCUMENT_MONEY_WRITE,
+  type DocumentMoneyWriteCapability,
+} from '../document-money-internal.js';
+import type {
+  ContractLineItemOptions,
+  ContractTaxComponentSnapshot,
+} from '../types/index.js';
 
 /**
  * ContractLineItem represents a single line item on a contract.
@@ -80,6 +87,11 @@ export class ContractLineItem extends SmrtObject {
    */
   discount: number = 0;
 
+  discountType: 'none' | 'percent' | 'amount' = 'none';
+
+  @field({ type: 'decimal' })
+  discountRate = '0.0';
+
   /**
    * Tax rate as decimal (e.g., 0.08 for 8%). A rate is inherently fractional,
    * so it stays DECIMAL — INTEGER would truncate every meaningful value.
@@ -89,6 +101,53 @@ export class ContractLineItem extends SmrtObject {
       'The stored fractional tax rate for this line (0.05 means 5%).',
   })
   taxRate: number = 0.0;
+
+  taxMode: 'inherit' | 'override' = 'inherit';
+
+  @foreignKey('TaxCode', { nullable: true })
+  taxCodeId: string | null = null;
+
+  taxCodeCode: string | null = null;
+
+  taxCodeName: string | null = null;
+
+  taxComponentsJson: string | null = null;
+
+  get taxComponents(): ContractTaxComponentSnapshot[] {
+    if (this.taxComponentsJson === null) return [];
+    try {
+      const value: unknown = JSON.parse(this.taxComponentsJson);
+      if (!Array.isArray(value)) return [];
+      return value.filter(
+        (entry): entry is ContractTaxComponentSnapshot =>
+          !!entry &&
+          typeof entry === 'object' &&
+          typeof (entry as ContractTaxComponentSnapshot).taxComponentId ===
+            'string' &&
+          typeof (entry as ContractTaxComponentSnapshot).name === 'string' &&
+          typeof (entry as ContractTaxComponentSnapshot).percent === 'string' &&
+          Number.isSafeInteger(
+            (entry as ContractTaxComponentSnapshot).taxMinor,
+          ),
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  set taxComponents(value: ContractTaxComponentSnapshot[]) {
+    this.taxComponentsJson = JSON.stringify(value);
+  }
+
+  /** Exact sum of frozen component taxes, in integer minor units. */
+  taxAmount = 0;
+
+  /** Pre-v2 amount preserved only by the migration path. */
+  @field({ nullable: true })
+  legacyAmount: number | null = null;
+
+  /** Stable issue/freeze identity, independent of lifecycle updated_at. */
+  moneySnapshotId = '';
 
   /**
    * Calculated line amount (qty * price - discount + tax), in integer minor
@@ -141,7 +200,26 @@ export class ContractLineItem extends SmrtObject {
     if (options.quantity !== undefined) this.quantity = options.quantity;
     if (options.unitPrice !== undefined) this.unitPrice = options.unitPrice;
     if (options.discount !== undefined) this.discount = options.discount;
+    if (options.discountType !== undefined)
+      this.discountType = options.discountType;
+    if (options.discountRate !== undefined)
+      this.discountRate = options.discountRate;
     if (options.taxRate !== undefined) this.taxRate = options.taxRate;
+    if (options.taxMode !== undefined) this.taxMode = options.taxMode;
+    if (options.taxCodeId !== undefined) this.taxCodeId = options.taxCodeId;
+    if (options.taxCodeCode !== undefined)
+      this.taxCodeCode = options.taxCodeCode;
+    if (options.taxCodeName !== undefined)
+      this.taxCodeName = options.taxCodeName;
+    if (options.taxComponentsJson !== undefined)
+      this.taxComponentsJson = options.taxComponentsJson;
+    if (options.taxComponents !== undefined)
+      this.taxComponents = structuredClone(options.taxComponents);
+    if (options.taxAmount !== undefined) this.taxAmount = options.taxAmount;
+    if (options.legacyAmount !== undefined)
+      this.legacyAmount = options.legacyAmount;
+    if (options.moneySnapshotId !== undefined)
+      this.moneySnapshotId = options.moneySnapshotId;
     if (options.amount !== undefined) this.amount = options.amount;
     if (options.productId !== undefined) this.productId = options.productId;
     if (options.sku !== undefined) this.sku = options.sku;
@@ -165,6 +243,39 @@ export class ContractLineItem extends SmrtObject {
     const subtotal = this.quantity * this.unitPrice - this.discount;
     const tax = subtotal * this.taxRate;
     return Math.round(subtotal + tax);
+  }
+
+  override async save(): Promise<this> {
+    const { saveContractLineItem } = await import('../contract-money.js');
+    return (await saveContractLineItem(this)) as this;
+  }
+
+  /** @internal Contract aggregate persistence only. */
+  async saveDerived(
+    capability: DocumentMoneyWriteCapability,
+    legacy: boolean,
+  ): Promise<this> {
+    if (capability !== DOCUMENT_MONEY_WRITE)
+      throw new Error('Contract line money write capability is required');
+    if (legacy) this.amount = this.calculateAmount();
+    return (await super.save()) as this;
+  }
+
+  override async delete(
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    const { deleteContractLineItem } = await import('../contract-money.js');
+    await deleteContractLineItem(this, options);
+  }
+
+  /** @internal Contract aggregate persistence only. */
+  async deleteDerived(
+    capability: DocumentMoneyWriteCapability,
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    if (capability !== DOCUMENT_MONEY_WRITE)
+      throw new Error('Contract line money write capability is required');
+    await super.delete(options);
   }
 
   /**
