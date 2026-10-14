@@ -28,7 +28,7 @@ section is what is left after it.
 | Need | Existing package | How it is used |
 |---|---|---|
 | Group → family tenants | `smrt-users` Tenant hierarchy, `smrt-tenancy` | The co-op is a tenant; each family is a child tenant. Catalog rows are global (null tenant), group-shared, or family-private, resolved `findWithGlobals`-style like tags and facts. |
-| Adults sign in, kids do not | `smrt-users` Membership, `DeviceCredentialService` | A guardian has a Membership in the family tenant and the group tenant. A learner is a Person profile with an optional User; a shared family device uses a per-person PIN session. |
+| Adults sign in, kids do not | `smrt-users` Membership, `DeviceCredentialService` | A guardian has a Membership in the family tenant and the group tenant. A learner is a Person profile with its own User (email optional) and family Membership; a shared family device signs the learner in with a per-person PIN on that User. |
 | People and family relationships | `smrt-profiles` Person, `ProfileRelationship` | Learner and guardian are Profiles; guardianship is a relationship, not a field. |
 | Worksheets, scans, photos, videos | `smrt-assets` AssetRuntime, `@happyvertical/ocr`, `@happyvertical/pdf` | Printable lessons own a PDF asset. Scans are assets on a submission. OCR and PDF rendering run as background jobs. |
 | Discussion group, messaging | `smrt-chat` rooms and threads, `smrt-comments`, `smrt-messages` | Group rooms live in the group tenant. Comments attach to courses and lessons (reviews, suggestions). Messages deliver notifications and direct mail. |
@@ -107,11 +107,14 @@ Subclasses:
 
 - `Reading`: body is the content.
 - `Video`: `videoAssetId` or `videoUrl`.
-- `Worksheet`: printable. Either `printableAssetId` (a PDF we are allowed to
-  hold) or `printableUrl` (a PDF the source hosts and we only point at),
-  optional `answerKeyAssetId` or `answerUrl`, `pages = 0`. Completion rule
-  defaults to `submit`. Exactly one of asset or URL is set; the distinction is
-  the licensing boundary, see "First source: Easy Peasy".
+- `Worksheet`: printable. The PDF is either held (a `LessonAsset` row with
+  relationship `printable`, below) or pointed at (`printableUrl`, a PDF the
+  source hosts). Likewise an answer key is a `LessonAsset` with relationship
+  `answer-key` or an `answerUrl`. `pages = 0`. Completion rule defaults to
+  `submit`. A worksheet has exactly one of held asset or URL per
+  relationship; the model carries no `*AssetId` columns, so asset ownership
+  has one home. The held-versus-pointed distinction is the licensing
+  boundary, see "First source: Easy Peasy".
 - `Exercise`: interactive, usually external (`externalUrl`); Khan practice
   sets land here.
 - `Assessment`: has questions and a passing score; see below.
@@ -177,7 +180,7 @@ the import is per family.
 - An Easy Peasy course is an `ExternalCourse` whose lessons are pointers:
   `externalRef` is the day number, `externalUrl` is the course page anchor,
   and worksheet days are `Worksheet` lessons with `printableUrl` set and
-  `printableAssetId` empty. Nothing from the site is stored beyond title,
+  no `printable` LessonAsset. Nothing from the site is stored beyond title,
   day number, and URLs that resolve to the site itself. The links Easy Peasy
   curates to third-party videos and games are not copied either; the learner
   follows them from the source page.
@@ -198,9 +201,14 @@ the import is per family.
 - Easy Peasy's My EP tracker only records the current day per course.
   `LessonProgress` replaces it and is strictly richer, which is the main
   reason a family would switch to this app for the same material.
-- If written permission arrives, flipping the source's `sharing` to `group`
-  is the only change needed to share one family's imported index with the
-  co-op.
+- If written permission arrives, the source's `sharing` is widened to
+  `group` and a guardian runs an explicit promote action on the course.
+  Promotion re-tags the Course, its sections, lessons, and `LessonAsset`
+  rows to the group tenant in one transaction; `Enrollment`,
+  `LessonProgress`, and `Submission` rows stay in the family tenant and
+  keep their foreign keys, since catalog resolution reads ancestors. Widening
+  `sharing` alone changes nothing already imported; it only permits the
+  promote action and future imports at that level.
 
 **Families uploading their own copies.** A parent may upload the free
 per-day PDFs or the whole-course packet into the family tenant as
@@ -357,8 +365,15 @@ with an optional score. That is the v1 path and works on day one.
        └─ Family tenant B
 ```
 
-- Catalog models resolve family → group → global by `tenantId`, the same way
-  tags and facts do. A family can fork a group course into a private copy.
+- Catalog models resolve family → group → global by `tenantId`. The existing
+  `queryWithGlobals` pattern used by tags and facts only sees the current
+  tenant plus null rows, so a group-owned course would be invisible from a
+  family request. Catalog collections therefore get a dedicated
+  `findVisible()` that selects `tenant_id IN (self ∪ ancestors) OR
+  tenant_id IS NULL`, with the ancestor ids from the hierarchy helpers in
+  [#3975](https://github.com/happyvertical/smrt/issues/3975). Writes stay
+  tenant-scoped as usual; only reads widen. A family can fork a group course
+  into a private copy.
 - Learner models are `@TenantScoped({ mode: 'required' })` and never cross
   the family boundary. Group-level views (a leaderboard, a "who finished the
   CrunchLabs box" thread) are explicit `allowCrossTenant` aggregations that
