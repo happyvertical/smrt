@@ -101,6 +101,21 @@ type ToolArgs = Record<string, unknown>;
  */
 type InstanceCallable = (...args: unknown[]) => unknown;
 
+function normalizePublicToolError(
+  error: unknown,
+): { code: string; message: string } | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const candidate = error as { code?: unknown; publicMessage?: unknown };
+  if (
+    typeof candidate.code !== 'string' ||
+    !/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(candidate.code) ||
+    typeof candidate.publicMessage !== 'string' ||
+    candidate.publicMessage.length === 0
+  )
+    return undefined;
+  return { code: candidate.code, message: candidate.publicMessage };
+}
+
 export interface MCPConfig {
   name?: string;
   version?: string;
@@ -1313,7 +1328,10 @@ export class MCPGenerator {
           },
         };
       }
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const publicError = normalizePublicToolError(error);
+      const message =
+        publicError?.message ??
+        (error instanceof Error ? error.message : 'Unknown error');
       return {
         content: [
           {
@@ -1322,7 +1340,7 @@ export class MCPGenerator {
           },
         ],
         isError: true,
-        structuredContent: { error: { message } },
+        structuredContent: { error: publicError ?? { message } },
       };
     }
   }
@@ -2877,6 +2895,17 @@ function errorResult(structuredContent: any, text: string, _meta?: Record<string
   };
 }
 
+function normalizePublicToolError(error: any): { code: string; message: string } | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  if (
+    typeof error.code !== 'string' ||
+    !/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(error.code) ||
+    typeof error.publicMessage !== 'string' ||
+    error.publicMessage.length === 0
+  ) return undefined;
+  return { code: error.code, message: error.publicMessage };
+}
+
 /**
  * Handle tool call request
  */
@@ -2914,10 +2943,11 @@ ${
 
     return result;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const publicError = normalizePublicToolError(error);
+    const errorMessage = publicError?.message ?? (error instanceof Error ? error.message : 'Unknown error');
 
     return errorResult(
-      { error: { message: errorMessage } },
+      { error: publicError ?? { message: errorMessage } },
       \`Error executing tool \${name}: \${errorMessage}\`,
     );
   }

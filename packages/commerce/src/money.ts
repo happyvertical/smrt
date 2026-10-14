@@ -52,12 +52,15 @@ export type MoneyValidationCode =
 /** Stable validation error shared by model, editor, and transport adapters. */
 export class MoneyValidationError extends Error {
   override readonly name = 'MoneyValidationError';
+  /** Explicit marker consumed by public transports that preserve typed errors. */
+  readonly publicMessage: string;
 
   constructor(
     readonly code: MoneyValidationCode,
     message: string,
   ) {
     super(message);
+    this.publicMessage = message;
   }
 }
 

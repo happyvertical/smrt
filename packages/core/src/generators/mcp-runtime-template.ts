@@ -543,6 +543,17 @@ function errorResult(structuredContent: any, text: string, _meta?: Record<string
   };
 }
 
+function normalizePublicToolError(error: any): { code: string; message: string } | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  if (
+    typeof error.code !== 'string' ||
+    !/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(error.code) ||
+    typeof error.publicMessage !== 'string' ||
+    error.publicMessage.length === 0
+  ) return undefined;
+  return { code: error.code, message: error.publicMessage };
+}
+
 ${
   hasTaskActions
     ? `
@@ -876,11 +887,12 @@ ${
 
         return result;
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const publicError = normalizePublicToolError(error);
+        const errorMessage = publicError?.message ?? (error instanceof Error ? error.message : 'Unknown error');
         console.error(\`[MCP] Tool execution failed: \${toolName}\`, error);
 
         return errorResult(
-          { error: { message: errorMessage } },
+          { error: publicError ?? { message: errorMessage } },
           \`Error executing tool \${toolName}: \${errorMessage}\`,
         );
       }

@@ -118,6 +118,12 @@ export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
     writeFile(
       join(packages.serializer, 'index.js'),
       `export async function serializePickedThing(item, options) {
+  if (process.env.MCP_SERIALIZER_FAIL === '1') {
+    const error = new Error('Tenant money migration is in progress');
+    error.code = 'FROZEN_DOCUMENT';
+    error.publicMessage = error.message;
+    throw error;
+  }
   return { ...item.toPublicJSON(options), emittedSerializer: true };
 }\n`,
     ),
@@ -211,17 +217,25 @@ const call = server.handlers.get('tools/call');
 const results = [];
 for (const [name, args] of ${JSON.stringify(calls)}) {
   const result = await call({ params: { name, arguments: args } });
-  results.push([name, result.isError === true, result.content?.[0]?.text]);
+  results.push([name, result.isError === true, result.content?.[0]?.text, result.structuredContent]);
 }
-console.log(JSON.stringify({ resolved, results }));
+process.env.MCP_SERIALIZER_FAIL = '1';
+const serializerFailure = await call({ params: { name: 'pickedthing_get', arguments: { id: 'b-1' } } });
+console.log(JSON.stringify({ resolved, results, serializerFailure }));
 `,
     );
     const { stdout } = await execFileAsync(process.execPath, [probe], {
       cwd: outputDir,
     });
-    const { resolved, results } = JSON.parse(stdout.trim()) as {
+    const { resolved, results, serializerFailure } = JSON.parse(
+      stdout.trim(),
+    ) as {
       resolved: string[];
-      results: Array<[string, boolean, string]>;
+      results: Array<[string, boolean, string, unknown]>;
+      serializerFailure: {
+        isError?: boolean;
+        structuredContent?: unknown;
+      };
     };
 
     expect(results.filter(([, isError]) => isError)).toEqual([]);
@@ -241,6 +255,15 @@ console.log(JSON.stringify({ resolved, results }));
     expect(resolved).toContain(`config:${PICK_B}`);
     expect(resolved).toContain(`audit-updated:${PICK_B}`);
     expect(resolved).toContain(`delete:${PICK_B}`);
+    expect(serializerFailure).toMatchObject({
+      isError: true,
+      structuredContent: {
+        error: {
+          code: 'FROZEN_DOCUMENT',
+          message: 'Tenant money migration is in progress',
+        },
+      },
+    });
 
     // The emitted tool targets carry the registry identity too.
     const emitted = (

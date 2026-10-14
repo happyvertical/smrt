@@ -45,6 +45,13 @@ describe('MCP get serializers (#3937)', () => {
     });
     await item.initialize();
     await item.save();
+    const rejected = new McpSerializedThing({
+      db,
+      id: '00000000-0000-4000-8000-000000003938',
+      title: 'Reject me',
+    });
+    await rejected.initialize();
+    await rejected.save();
   });
 
   afterAll(async () => {
@@ -124,5 +131,27 @@ describe('MCP get serializers (#3937)', () => {
       permitted: 'permission-scoped',
     });
     expect(response.structuredContent).not.toHaveProperty('secret');
+  });
+
+  it('preserves explicitly public serializer error codes', async () => {
+    const response = await new MCPGenerator(
+      { classNames: ['McpSerializedThing'] },
+      { db, user: { id: 'reader' } },
+    ).handleToolCall({
+      method: 'tools/call',
+      params: {
+        name: 'mcpserializedthing_get',
+        arguments: { id: '00000000-0000-4000-8000-000000003938' },
+      },
+    });
+    expect(response).toMatchObject({
+      isError: true,
+      structuredContent: {
+        error: {
+          code: 'FROZEN_DOCUMENT',
+          message: 'Tenant money migration is in progress',
+        },
+      },
+    });
   });
 });
