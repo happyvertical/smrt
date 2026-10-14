@@ -880,9 +880,8 @@ function resolveDefaultListOrderBy(
  * the `@TenantScoped` interceptors that auto-filter by tenant.
  *
  * `establishTenantContext` reads the canonical `locals.tenantId` set by the
- * smrt-users auth hook (with `user`/`session` fallbacks). It is a no-op when a
- * context is already active (e.g. an upstream tenancy handle) or when the
- * request carries no tenant (anonymous / global principal).
+ * smrt-users auth hook (with `user`/`session` fallbacks). An upstream context
+ * must identify the same tenant/user; conflicting authority fails closed.
  *
  * When no context could be established, an `optional`-mode read would otherwise
  * fall through the interceptor UNFILTERED and return rows from ALL tenants (the
@@ -909,7 +908,7 @@ function generateTenantContextHelper(
     : '{ tenantId }';
   const tenancyImport = includeReadScope
     ? 'enterTenantContext, getCurrentTenant, hasTenantContext, isSuperAdminBypass, isTenancyEnabled'
-    : 'enterTenantContext, hasTenantContext';
+    : 'enterTenantContext, getCurrentTenant';
   const readScopeHelpers = includeReadScope
     ? `
 // Fail-closed read scope (#1782): a public/anonymous read on a @TenantScoped
@@ -942,7 +941,6 @@ function tenantReadOptionsScope(): { tenantId: string | null } | undefined {
 import { ${tenancyImport} } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
-  if (hasTenantContext()) return;
   if (!locals || typeof locals !== 'object') return;
   const l = locals as Record<string, unknown>;
   const user = l.user as Record<string, unknown> | undefined;
@@ -957,6 +955,16 @@ function establishTenantContext(locals: unknown): void {
         ? new Set(rawPermissions)
         : undefined;
 ${principalGuard}
+  const active = getCurrentTenant();
+  if (active) {
+    if (
+      (typeof tenantId === 'string' && tenantId && active.tenantId !== tenantId) ||
+      (typeof userId === 'string' && userId && active.userId && active.userId !== userId)
+    ) {
+      throw error(403, 'Tenant context does not match authenticated principal');
+    }
+${requirePrincipal ? '    enterTenantContext({ tenantId, userId, permissions });\n' : ''}    return;
+  }
   if (typeof tenantId === 'string' && tenantId) {
     enterTenantContext(
       ${contextArgument},
