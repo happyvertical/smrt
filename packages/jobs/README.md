@@ -191,7 +191,11 @@ ownership record before displaying it.
 
 ### Schedule recurring jobs with ScheduleRunner
 
-The `ScheduleRunner` polls the `_smrt_agent_schedules` table for due cron entries and creates `SmrtJob` records for the `TaskRunner` to execute. Each schedule's cron is evaluated in its row's IANA `timezone` (default `UTC`, DST-correct), independent of the host `TZ`. Wire them together via events:
+The `ScheduleRunner` polls the `_smrt_agent_schedules` table for due cron entries and creates `SmrtJob` records for the `TaskRunner` to execute. Each schedule's cron is evaluated in its row's IANA `timezone` (default `UTC`, DST-correct), independent of the host `TZ`. Each comma-separated list term is matched separately, and a step (`*/n`, `a-b/n`, `a/n`) counts from the field minimum or the term's base, as in standard cron.
+
+Upgrade note: rows that relied on the old behaviour shift. A row left at the default `timezone = 'UTC'` on a non-UTC host now fires in UTC, and day-of-month or month `*/n` now matches 1, 1+n, … (for example `0 0 */2 * *` runs on odd days) instead of counting from 0.
+
+Wire them together via events:
 
 ```typescript
 import { ScheduleRunner } from '@happyvertical/smrt-jobs';
