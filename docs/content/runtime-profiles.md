@@ -160,7 +160,11 @@ expires within fifteen minutes, and is consumed in the same serialized database
 transaction that creates the real global `Person`, `User`, default `Tenant`,
 owner `Role` / `Membership`, and server-side `Session`. Repeated setup or startup
 does not duplicate those records. Tenancy can remain hidden in the local UI, but
-the durable default tenant is preserved for later logical migration.
+the durable default tenant is preserved for later logical migration. The
+`ownerTenant` option chooses that tenant's slug (default `default`) and name;
+a claim never writes over an existing tenant with the slug: it fails closed with
+`owner_tenant_conflict` unless `ownerTenant.adoptExisting` is set, and then
+adopts only an active root tenant that has no memberships, keeping its id.
 Authenticated session TTLs are whole seconds with a minimum of one second;
 invalid TTL configuration is rejected before any filesystem mutation.
 

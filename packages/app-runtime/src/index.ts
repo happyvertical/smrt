@@ -41,7 +41,10 @@ import {
   RoleCollection,
   SessionCollection,
   SessionService,
+  type Tenant,
+  TenantCollection,
   TenantService,
+  TenantStatus,
   UserCollection,
   UserStatus,
 } from '@happyvertical/smrt-users';
@@ -79,6 +82,9 @@ const DEFAULT_BIND_HOST = '127.0.0.1';
 const DEFAULT_BOOTSTRAP_TTL_SECONDS = 10 * 60;
 const MAX_BOOTSTRAP_TTL_SECONDS = 15 * 60;
 const DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_OWNER_TENANT_SLUG = 'default';
+const DEFAULT_OWNER_TENANT_NAME = 'My Workspace';
+const OWNER_TENANT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const BOOTSTRAP_TABLE = '_smrt_local_owner_bootstrap';
 const SECRET_FILE_NAME = 'application.secret';
 const DATABASE_FILE_NAME = 'application.sqlite';
@@ -173,8 +179,47 @@ export interface LocalApplicationRuntimeOptions
   backgroundJobs?: boolean;
   /** Explicit opt-in for application-defined paid capabilities. Default false. */
   paidCapabilities?: boolean;
+  /**
+   * The tenant `claimOwner()` creates or adopts for the owner. Defaults to a
+   * new tenant with slug `default`; see {@link LocalOwnerTenantOptions}.
+   */
+  ownerTenant?: LocalOwnerTenantOptions;
   /** Testable clock. */
   now?: () => Date;
+}
+
+/**
+ * Bootstrap tenant selection for `claimOwner()` (#3032).
+ *
+ * The claim never writes over an existing tenant: when a tenant with `slug`
+ * already exists the claim fails closed with `owner_tenant_conflict` unless
+ * `adoptExisting` is set, and adoption itself fails closed unless that tenant
+ * is an active root tenant with no memberships of any status.
+ */
+export interface LocalOwnerTenantOptions {
+  /**
+   * Slug of the owner's tenant: lowercase letters, digits, and inner hyphens,
+   * at most 64 characters. Default `default`.
+   */
+  readonly slug?: string;
+  /**
+   * Name of a newly created tenant when the claim supplies no `tenantName`.
+   * Default `My Workspace`. An adopted tenant keeps its own name.
+   */
+  readonly name?: string;
+  /**
+   * Adopt an application-seeded tenant with `slug` instead of failing: the
+   * owner gets an owner membership in it and its id (and every row that
+   * points at it) is kept. When no tenant has the slug, one is created.
+   * Default false.
+   */
+  readonly adoptExisting?: boolean;
+}
+
+interface ResolvedOwnerTenant {
+  readonly slug: string;
+  readonly name: string;
+  readonly adoptExisting: boolean;
 }
 
 /**
@@ -404,6 +449,7 @@ export type LocalRuntimeErrorCode =
   | 'invalid_configuration'
   | 'invalid_scope'
   | 'migration_failed'
+  | 'owner_tenant_conflict'
   | 'owner_unavailable'
   | 'unsafe_public_exposure';
 
@@ -495,6 +541,7 @@ export async function initializeLocalApplicationRuntime(
   const sessionTtlSeconds = validateSessionTtl(
     options.sessionTtlSeconds ?? DEFAULT_SESSION_TTL_SECONDS,
   );
+  const ownerTenant = resolveOwnerTenant(options.ownerTenant);
   const resolvedRuntime = resolveApplicationRuntime({
     profile: 'local',
     providers: options.providers,
@@ -532,6 +579,7 @@ export async function initializeLocalApplicationRuntime(
       sessionTtlSeconds,
       backgroundJobs: options.backgroundJobs === true,
       paidCapabilities: options.paidCapabilities === true,
+      ownerTenant,
       now: options.now ?? (() => new Date()),
       canonicalSourceRoot,
     });
@@ -585,6 +633,7 @@ interface LocalApplicationRuntimeState {
   sessionTtlSeconds: number;
   backgroundJobs: boolean;
   paidCapabilities: boolean;
+  ownerTenant: ResolvedOwnerTenant;
   now: () => Date;
   canonicalSourceRoot: string;
 }
@@ -624,6 +673,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   readonly mcpTokens: LocalMcpTokenStore;
   private readonly bootstrapTtlSeconds: number;
   private readonly sessionTtlSeconds: number;
+  private readonly ownerTenant: ResolvedOwnerTenant;
   private readonly now: () => Date;
   private readonly canonicalSourceRoot: string;
 
@@ -634,6 +684,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     this.resolvedRuntime = state.resolvedRuntime;
     this.bootstrapTtlSeconds = state.bootstrapTtlSeconds;
     this.sessionTtlSeconds = state.sessionTtlSeconds;
+    this.ownerTenant = state.ownerTenant;
     this.backgroundJobsEnabled = state.backgroundJobs;
     this.paidCapabilitiesEnabled = state.paidCapabilities;
     this.now = state.now;
@@ -760,7 +811,12 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
         );
       }
 
-      return createLocalOwnerRecords(tx, input, this.sessionTtlSeconds);
+      return createLocalOwnerRecords(
+        tx,
+        input,
+        this.sessionTtlSeconds,
+        this.ownerTenant,
+      );
     });
   }
 
@@ -887,7 +943,18 @@ async function createLocalOwnerRecords(
   db: DatabaseInterface,
   input: ClaimLocalOwnerInput,
   sessionTtlSeconds: number,
+  ownerTenant: ResolvedOwnerTenant,
 ): Promise<LocalOwnerClaimResult> {
+  // Resolve the tenant before writing anything: `Tenant` upserts on its slug,
+  // so creating over an existing slug would replace that row with a new id
+  // and orphan every row that points at it (#3032).
+  const tenants = await TenantCollection.create({ db });
+  const existingTenant = await tenants.findBySlug(ownerTenant.slug);
+  const memberships = await MembershipCollection.create({ db });
+  if (existingTenant) {
+    await assertAdoptableOwnerTenant(existingTenant, ownerTenant, memberships);
+  }
+
   const profileTypes = await ProfileTypeCollection.create({ db });
   const personType = await withSystemContext(() =>
     profileTypes.getOrCreateGlobalBySlug('person', {
@@ -913,25 +980,41 @@ async function createLocalOwnerRecords(
     lastLoginAt: new Date(),
   });
   await user.save();
+  const userId = requireId(user.id, 'User');
 
-  const tenantService = new TenantService(
-    { db },
-    {
-      mode: 'required',
-      maxTenants: 1,
-      defaultName: input.tenantName?.trim() || 'My Workspace',
-    },
-  );
-  await tenantService.initialize();
-  const { tenant, membership } = await tenantService.createTenantWithOwnership(
-    requireId(user.id, 'User'),
-    input.tenantName?.trim() || 'My Workspace',
-    { slug: 'default' },
-  );
+  let tenant: Tenant;
+  let membership: { id?: string | null };
+  if (existingTenant) {
+    const roles = await RoleCollection.create({ db });
+    const ownerRole = await roles.findSystemRoleBySlug(
+      DEFAULT_ROLE_SLUGS.OWNER,
+    );
+    const created = await memberships.create({
+      userId,
+      tenantId: requireId(existingTenant.id, 'Tenant'),
+      roleId: requireId(ownerRole?.id, 'Owner role'),
+      status: MembershipStatus.ACTIVE,
+    });
+    await created.save();
+    tenant = existingTenant;
+    membership = created;
+  } else {
+    const tenantName = input.tenantName?.trim() || ownerTenant.name;
+    const tenantService = new TenantService(
+      { db },
+      { mode: 'required', maxTenants: 1, defaultName: tenantName },
+    );
+    await tenantService.initialize();
+    ({ tenant, membership } = await tenantService.createTenantWithOwnership(
+      userId,
+      tenantName,
+      { slug: ownerTenant.slug },
+    ));
+  }
 
   const sessions = await SessionCollection.create({ db });
   const session = await sessions.createSession({
-    userId: requireId(user.id, 'User'),
+    userId,
     tenantId: requireId(tenant.id, 'Tenant'),
     ttl: sessionTtlSeconds,
     userAgent: input.userAgent,
@@ -941,10 +1024,58 @@ async function createLocalOwnerRecords(
 
   return Object.freeze({
     profileId: requireId(person.id, 'Person'),
-    userId: requireId(user.id, 'User'),
+    userId,
     tenantId: requireId(tenant.id, 'Tenant'),
     membershipId: requireId(membership.id, 'Membership'),
     sessionId: requireId(session.id, 'Session'),
+  });
+}
+
+async function assertAdoptableOwnerTenant(
+  tenant: Tenant,
+  ownerTenant: ResolvedOwnerTenant,
+  memberships: MembershipCollection,
+): Promise<void> {
+  if (!ownerTenant.adoptExisting) {
+    throw new LocalRuntimeError(
+      'owner_tenant_conflict',
+      'A tenant with the owner tenant slug already exists; set ownerTenant.adoptExisting to adopt it or choose another slug.',
+    );
+  }
+  // Only an untouched, application-seeded tenant may be adopted. A child
+  // tenant can grant inherited access through its parent, and any membership
+  // (active, invited, or suspended) means someone else already has a claim.
+  const tenantId = requireId(tenant.id, 'Tenant');
+  if (
+    tenant.status !== TenantStatus.ACTIVE ||
+    tenant.parentTenantId ||
+    (await memberships.findByTenant(tenantId)).length > 0
+  ) {
+    throw new LocalRuntimeError(
+      'owner_tenant_conflict',
+      'The existing owner tenant cannot be adopted: it must be an active root tenant with no memberships.',
+    );
+  }
+}
+
+function resolveOwnerTenant(
+  options: LocalOwnerTenantOptions | undefined,
+): ResolvedOwnerTenant {
+  const slug = options?.slug ?? DEFAULT_OWNER_TENANT_SLUG;
+  if (typeof slug !== 'string' || !OWNER_TENANT_SLUG_PATTERN.test(slug)) {
+    throw new LocalRuntimeError(
+      'invalid_configuration',
+      'ownerTenant.slug must be 1-64 lowercase letters, digits, or inner hyphens.',
+    );
+  }
+  const name =
+    typeof options?.name === 'string' && options.name.trim()
+      ? options.name.trim()
+      : DEFAULT_OWNER_TENANT_NAME;
+  return Object.freeze({
+    slug,
+    name,
+    adoptExisting: options?.adoptExisting === true,
   });
 }
 

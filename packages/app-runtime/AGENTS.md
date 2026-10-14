@@ -34,7 +34,11 @@ Application infrastructure composition for the validated runtime profiles in
   app-bound marker, source separation, real path chain, ownership, and mode
   without creating or repairing storage.
 - Owner bootstrap creates normal `Person`, `User`, `Tenant`, owner `Role` /
-  `Membership`, and `Session` records in one transaction.
+  `Membership`, and `Session` records in one transaction. `ownerTenant`
+  selects the tenant slug (default `default`); because `Tenant` upserts on
+  slug, the claim must look the slug up first and fail closed
+  (`owner_tenant_conflict`) rather than save over it. `adoptExisting` adopts
+  only an active root tenant with zero memberships (#3032).
 - Bootstrap is loopback-only. Only an HMAC of the short-lived token is stored.
   A token that cannot claim fails a read-only preflight before role/catalog
   seeding (#3323); the claim transaction's conditional UPDATE stays the

@@ -106,6 +106,14 @@ literals (`127.0.0.0/8` or `::1`), avoiding hostname-resolution ambiguity.
 The first valid claim creates a real global `Person`, `User`, default `Tenant`,
 owner `Role` / `Membership`, and server-side `Session` atomically. Startup and
 setup are idempotent; replayed, expired, or concurrent claims fail closed.
+`ownerTenant: { slug, name, adoptExisting }` (also accepted by the SvelteKit
+runtime) selects the bootstrap tenant; the default is a new tenant with slug
+`default`. Because `Tenant` upserts on its slug, the claim checks first and
+never replaces an existing tenant: it fails with `owner_tenant_conflict`, or,
+with `adoptExisting: true`, adds the owner membership to an application-seeded
+tenant only when that tenant is active, has no parent, and has no memberships of
+any status. An adopted tenant keeps its id and name. A failed claim rolls back
+and leaves the invitation claimable.
 Authenticated session TTLs are configured in whole seconds with a minimum of
 one second, and invalid values are rejected before filesystem mutation.
 

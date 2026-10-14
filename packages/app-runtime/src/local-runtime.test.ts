@@ -17,6 +17,14 @@ import { platform, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { JobHandle, SmrtJobCollection } from '@happyvertical/smrt-jobs';
+import {
+  MembershipCollection,
+  MembershipStatus,
+  RoleCollection,
+  TenantCollection,
+  UserCollection,
+  UserStatus,
+} from '@happyvertical/smrt-users';
 import * as sql from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as localRuntimeApi from './index.js';
@@ -371,6 +379,180 @@ describe('local application runtime', () => {
     expect((await initialized.runtime.diagnostics()).bootstrap.status).toBe(
       'claimed',
     );
+  });
+
+  describe('owner tenant (#3032)', () => {
+    async function seedTenant(
+      db: Parameters<typeof TenantCollection.create>[0]['db'],
+      values: { name: string; slug: string; parentTenantId?: string },
+    ) {
+      const tenants = await TenantCollection.create({ db });
+      const tenant = await tenants.create(values);
+      await tenant.save();
+      return tenant.id as string;
+    }
+
+    it('fails closed instead of replacing an existing default tenant, and stays claimable', async () => {
+      const directories = await localDirectories('tenant-conflict');
+      const initialized = await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+      });
+      const db = initialized.runtime.db;
+      const seededId = await seedTenant(db, {
+        name: 'Seeded',
+        slug: 'default',
+      });
+      const input = {
+        token: initialized.bootstrap?.token as string,
+        name: 'Owner',
+        email: 'owner@example.com',
+      };
+
+      await expect(initialized.runtime.claimOwner(input)).rejects.toMatchObject(
+        { code: 'owner_tenant_conflict' },
+      );
+      const tenants = await db.query('SELECT id, slug, name FROM tenants');
+      expect(tenants.rows).toEqual([
+        { id: seededId, slug: 'default', name: 'Seeded' },
+      ]);
+      expect(await countRows(db, 'users')).toBe(0);
+      expect(await countRows(db, 'memberships')).toBe(0);
+      expect((await initialized.runtime.diagnostics()).bootstrap.status).toBe(
+        'available',
+      );
+      await initialized.runtime.db.close?.();
+
+      const reopened = await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        ownerTenant: { slug: 'workspace', name: 'Workspace' },
+      });
+      const claim = await reopened.runtime.claimOwner(input);
+      expect(claim.tenantId).not.toBe(seededId);
+      const created = await reopened.runtime.db.query(
+        'SELECT slug, name FROM tenants WHERE id = ?',
+        claim.tenantId,
+      );
+      expect(created.rows[0]).toEqual({ slug: 'workspace', name: 'Workspace' });
+      expect(await countRows(reopened.runtime.db, 'tenants')).toBe(2);
+    });
+
+    it('adopts an application-seeded member-less tenant and keeps its id', async () => {
+      const directories = await localDirectories('tenant-adopt');
+      const initialized = await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        ownerTenant: { slug: 'shop', adoptExisting: true },
+      });
+      const db = initialized.runtime.db;
+      const seededId = await seedTenant(db, { name: 'Shop', slug: 'shop' });
+
+      const claim = await initialized.runtime.claimOwner({
+        token: initialized.bootstrap?.token as string,
+        name: 'Owner',
+        email: 'owner@example.com',
+        tenantName: 'Ignored For Adoption',
+      });
+
+      expect(claim.tenantId).toBe(seededId);
+      const tenants = await db.query('SELECT id, slug, name FROM tenants');
+      expect(tenants.rows).toEqual([
+        { id: seededId, slug: 'shop', name: 'Shop' },
+      ]);
+      const membership = await db.query(
+        `SELECT memberships.tenant_id, memberships.status, roles.slug
+         FROM memberships JOIN roles ON roles.id = memberships.role_id
+         WHERE memberships.id = ?`,
+        claim.membershipId,
+      );
+      expect(membership.rows[0]).toMatchObject({
+        tenant_id: seededId,
+        status: MembershipStatus.ACTIVE,
+        slug: 'owner',
+      });
+      const restored = await initialized.runtime.restoreSession(
+        claim.sessionId,
+      );
+      expect(restored?.tenantId).toBe(seededId);
+    });
+
+    it('refuses to adopt a tenant that already has a membership', async () => {
+      const directories = await localDirectories('tenant-adopt-members');
+      const initialized = await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        ownerTenant: { adoptExisting: true },
+      });
+      const db = initialized.runtime.db;
+      const seededId = await seedTenant(db, {
+        name: 'Seeded',
+        slug: 'default',
+      });
+      const roles = await RoleCollection.create({ db });
+      await roles.seedSystemRoles();
+      const viewer = await roles.findSystemRoleBySlug('viewer');
+      const users = await UserCollection.create({ db });
+      const member = await users.create({
+        email: 'member@example.com',
+        status: UserStatus.ACTIVE,
+      });
+      await member.save();
+      const memberships = await MembershipCollection.create({ db });
+      const invited = await memberships.create({
+        userId: member.id as string,
+        tenantId: seededId,
+        roleId: viewer?.id as string,
+        status: MembershipStatus.INVITED,
+      });
+      await invited.save();
+
+      await expect(
+        initialized.runtime.claimOwner({
+          token: initialized.bootstrap?.token as string,
+          name: 'Owner',
+          email: 'owner@example.com',
+        }),
+      ).rejects.toMatchObject({ code: 'owner_tenant_conflict' });
+      expect(await countRows(db, 'memberships')).toBe(1);
+      expect(await countRows(db, 'users')).toBe(1);
+    });
+
+    it('refuses to adopt a child tenant that can inherit access', async () => {
+      const directories = await localDirectories('tenant-adopt-child');
+      const initialized = await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        ownerTenant: { slug: 'branch', adoptExisting: true },
+      });
+      const db = initialized.runtime.db;
+      const parentId = await seedTenant(db, { name: 'Head', slug: 'head' });
+      await seedTenant(db, {
+        name: 'Branch',
+        slug: 'branch',
+        parentTenantId: parentId,
+      });
+
+      await expect(
+        initialized.runtime.claimOwner({
+          token: initialized.bootstrap?.token as string,
+          name: 'Owner',
+          email: 'owner@example.com',
+        }),
+      ).rejects.toMatchObject({ code: 'owner_tenant_conflict' });
+      expect(await countRows(db, 'memberships')).toBe(0);
+    });
+
+    it('rejects an invalid owner tenant slug at initialization', async () => {
+      const directories = await localDirectories('tenant-slug');
+      await expect(
+        initializeLocalApplicationRuntime({
+          appId: 'lolaus',
+          ...directories,
+          ownerTenant: { slug: 'Not A Slug' },
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    });
   });
 
   it('is restart-idempotent and never duplicates an active invitation or owner records', async () => {
