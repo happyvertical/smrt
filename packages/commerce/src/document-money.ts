@@ -123,11 +123,15 @@ function requireId(value: string | null | undefined, label: string): string {
   return value;
 }
 
-async function settingsForTenant(
+/** @internal Shared by capability-bound posting and migration coordinators. */
+export async function settingsForTenant(
   db: DatabaseInterface,
   tenantId: string | null,
 ): Promise<TaxSettings | null> {
   if (!tenantId) return null;
+  // Older hosts and focused legacy manifests legitimately omit the money-v2
+  // tables. Absence selects the legacy path; runtime code never creates schema.
+  if (db.tableExists && !(await db.tableExists('tax_settings'))) return null;
   const collection = await TaxSettingsCollection.create({ db });
   return collection.getForTenant(tenantId);
 }
@@ -176,7 +180,8 @@ async function findInvoice(
   return collection.get({ id }, { cache: false });
 }
 
-async function lockAndReloadInvoice(
+/** @internal Acquire the invoice money lock and reload persisted authority. */
+export async function lockAndReloadInvoice(
   db: DatabaseInterface,
   invoiceId: string,
   tenantId: string,
@@ -475,6 +480,11 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
       const existingId = requireId(existing.id, 'Invoice');
       const locked = await lockAndReloadInvoice(tx, existingId, tenantId);
       if (isFrozen(locked.invoice)) {
+        if (invoice.arReversalJournalId !== locked.invoice.arReversalJournalId)
+          throw new MoneyValidationError(
+            'FROZEN_DOCUMENT',
+            'Invoice reversal journal identity is server-managed',
+          );
         if (
           locked.invoice.arJournalId &&
           invoice.arJournalId !== locked.invoice.arJournalId
@@ -482,6 +492,16 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
           throw new MoneyValidationError(
             'FROZEN_DOCUMENT',
             'Invoice revenue journal identity is frozen once assigned',
+          );
+        if (
+          invoice.status === InvoiceStatus.CANCELLED &&
+          locked.invoice.status !== InvoiceStatus.CANCELLED &&
+          locked.invoice.arJournalId &&
+          !locked.invoice.arReversalJournalId
+        )
+          throw new MoneyValidationError(
+            'FROZEN_DOCUMENT',
+            'A posted money-v2 invoice requires an atomic reversal before cancellation',
           );
         assertFieldsUnchanged(
           invoice,

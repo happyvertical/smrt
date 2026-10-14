@@ -295,6 +295,14 @@ export interface RecognizeRevenueOptions {
   revenueAccountId: string;
   /** Account ID for tax payable (credit side, optional) */
   taxAccountId?: string;
+  /** Explicit ledger book currency. Required when the tenant uses money v2. */
+  bookCurrency?: string;
+}
+
+/** Options for atomically cancelling a posted money-v2 invoice. */
+export interface CancelRevenueOptions {
+  /** Explicit ledger book currency; required for money-v2 cancellation. */
+  bookCurrency?: string;
 }
 
 // ============================================================================
@@ -531,6 +539,7 @@ export interface InvoiceOptions extends SmrtObjectOptions {
   currency?: string;
   status?: InvoiceStatus;
   arJournalId?: string;
+  arReversalJournalId?: string | null;
   revenueJournalId?: string;
   externalId?: string;
   customerExternalId?: string;

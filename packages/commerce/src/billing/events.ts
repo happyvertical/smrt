@@ -346,8 +346,14 @@ async function applyInvoiceEvent(
       invoice.status !== InvoiceStatus.CANCELLED &&
       invoice.status !== InvoiceStatus.WRITTEN_OFF
     ) {
-      invoice.cancel();
-      await invoice.save();
+      if (invoice.arJournalId) {
+        await invoice.cancelWithRevenueReversal({
+          bookCurrency: runtime.ledger.bookCurrency,
+        });
+      } else {
+        invoice.cancel();
+        await invoice.save();
+      }
     }
   } else if (state.status === 'uncollectible') {
     // Written off at the provider (#3139): written off here too, so it no

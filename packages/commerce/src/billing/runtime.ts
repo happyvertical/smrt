@@ -83,6 +83,8 @@ import { canonicalTenantId, deterministicId, tenantKey } from './units.js';
 
 /** Ledger accounts billing posts to, in the seller's books. */
 export interface BillingLedgerAccounts {
+  /** Explicit currency of this ledger book; required for money-v2 posting. */
+  bookCurrency?: string;
   /** Accounts receivable (debited when an invoice is issued). */
   arAccountId: string;
   /** Revenue (credited with the invoice subtotal). */
