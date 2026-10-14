@@ -51,6 +51,7 @@ function writeManifests(dir: string): void {
       WholesaleOrder: ['currency', 'terms'],
       Estimate: ['currency', 'terms'],
       Agreement: ['currency', 'terms'],
+      Contract: ['currency', 'terms'],
       InvoiceLineItem: ['taxRate'],
       ContractLineItem: ['taxRate'],
       ProductionOrder: ['quantity'],

@@ -184,12 +184,19 @@ export {
   WholesaleRecipe,
 } from './recipes.js';
 export {
+  applyCommerceCookbookSettings,
+  applyCookbookTaxSettings,
+  applyTaxCodeExamplePack,
+  COMMON_TAX_CODE_EXAMPLE_PACK,
+  type CookbookTaxSettingsInput,
+  cookbookTaxSettings,
   ensureTenantTaxCodes,
   type LegacyTaxMapReport,
   type LegacyTaxRateRow,
   type MapLegacyTaxRatesOptions,
   mapLegacyTaxRates,
   mapLegacyTaxRatesInTransaction,
+  type TaxCodeExamplePack,
 } from './tax/index.js';
 
 // Types

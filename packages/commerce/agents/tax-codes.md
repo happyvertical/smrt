@@ -15,11 +15,27 @@ and rounding scope. Cookbook policies adapt the portable settings document;
 they do not replace persisted tax settings. The per-tenant migration marker is
 owned by the money-snapshot migration.
 
-`applyCookbookTaxSettings(db, tenantId, input)` is the commerce-owned adapter
-for core's portable `taxRate`, inclusion, and rounding settings. It creates or
-reuses a component and default tax code, then updates tenant `TaxSettings`.
+`applyCommerceCookbookSettings(db, tenantId, cookbook)` is the explicit
+server-side activation boundary for core's portable `taxRate`, inclusion, and
+rounding policies. A host calls it after schema setup, once it has the
+authoritative tenant from its authenticated bootstrap flow:
 
-Example import data is intentionally jurisdiction-neutral: create components
-such as `GST 5`, `PST BC 7`, `HST ON 13`, `VAT 20`, `AU GST 10`, or `NZ GST 15`,
-then build one-component or combined codes from their IDs. Assign liability
-accounts before posting a document that uses a component.
+```ts
+import { applyCommerceCookbookSettings } from '@happyvertical/smrt-commerce';
+import cookbook from './smrt.cookbook.json' with { type: 'json' };
+
+await applyCommerceCookbookSettings(db, session.tenantId, cookbook);
+```
+
+`smrt cookbook apply` writes project files and does not have a database or
+tenant, so it deliberately performs no storage writes. Activation creates or
+reuses a component and default tax code, then updates tenant `TaxSettings` in
+one transaction. A zero default rate selects `out-of-scope`; inclusion remains
+the cookbook's explicit inclusive/exclusive choice because individual lines can
+still override the default code.
+
+`COMMON_TAX_CODE_EXAMPLE_PACK` demonstrates Canada GST, BC GST+PST, Ontario
+HST, UK VAT, Australian GST and New Zealand GST. Import it idempotently with
+`applyTaxCodeExamplePack(db, tenantId)`, then review local applicability and
+assign liability accounts before selecting a code for production documents.
+The pack supplies examples, not jurisdiction determination.

@@ -3,6 +3,7 @@ import { withTenant } from '@happyvertical/smrt-tenancy';
 import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import type { TaxCode } from '../models/TaxCode.js';
+import { createOrLoadTaxSeed, deterministicTaxId } from './identity.js';
 
 export interface LegacyTaxMapReport {
   tenantId: string;
@@ -82,31 +83,61 @@ export async function ensureTenantTaxCodes(
     ] as const) {
       const existing = await codes.findByCode(code);
       if (existing) result.push(existing);
-      else result.push(await codes.create({ tenantId, code, name, kind }));
+      else {
+        const id = await deterministicTaxId(tenantId, 'code', code);
+        result.push(
+          await createOrLoadTaxSeed(
+            () => codes.create({ id, tenantId, code, name, kind }),
+            () => codes.findByCode(code),
+          ),
+        );
+      }
     }
     const components = await TaxComponentCollection.create({ db });
     const componentName = 'Legacy unreconciled residual';
     let component = (
       await components.list({ where: { name: componentName }, limit: 1 })
     )[0];
-    if (!component)
-      component = await components.create({
+    if (!component) {
+      const id = await deterministicTaxId(
         tenantId,
-        name: componentName,
-        percent: '0',
-        active: false,
-      });
+        'component',
+        'legacy-unreconciled',
+      );
+      component = await createOrLoadTaxSeed(
+        () =>
+          components.create({
+            id,
+            tenantId,
+            name: componentName,
+            percent: '0',
+            active: false,
+          }),
+        () => components.get({ id }, { cache: false }),
+      );
+    }
     let unreconciled = await codes.findByCode('legacy-unreconciled');
     if (!unreconciled) {
       if (!component.id) throw new Error('Saved residual component has no ID.');
-      unreconciled = await codes.create({
+      const componentId = component.id;
+      const id = await deterministicTaxId(
         tenantId,
-        code: 'legacy-unreconciled',
-        name: 'Legacy rate requires reconciliation',
-        kind: 'taxable',
-        active: false,
-        components: [{ taxComponentId: component.id, compound: false }],
-      });
+        'code',
+        'legacy-unreconciled',
+      );
+      unreconciled = await createOrLoadTaxSeed(
+        () =>
+          codes.create({
+            id,
+            tenantId,
+            code: 'legacy-unreconciled',
+            name: 'Legacy rate requires reconciliation',
+            kind: 'taxable',
+            active: false,
+            components: [{ taxComponentId: componentId, compound: false }],
+          }),
+        () => codes.findByCode('legacy-unreconciled'),
+      );
     }
     result.push(unreconciled);
     return result;
@@ -228,6 +259,11 @@ export async function mapLegacyTaxRatesInTransaction(
       )[0];
       if (!component) {
         component = await components.create({
+          id: await deterministicTaxId(
+            tenantId,
+            'component',
+            `legacy-${suffix}`,
+          ),
           tenantId,
           name: componentName,
           percent,
@@ -242,6 +278,7 @@ export async function mapLegacyTaxRatesInTransaction(
       if (!code) {
         if (!component.id) throw new Error('Saved tax component has no ID.');
         code = await codes.create({
+          id: await deterministicTaxId(tenantId, 'code', codeName),
           tenantId,
           code: codeName,
           name: `Legacy ${percent}%`,

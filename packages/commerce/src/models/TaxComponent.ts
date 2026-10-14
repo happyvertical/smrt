@@ -88,6 +88,12 @@ export class TaxComponent extends SmrtObject {
     if (options.active !== undefined) this.active = options.active;
   }
 
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    this.percent = canonicalPercent(String(this.percent));
+    return this;
+  }
+
   override async save(): Promise<this> {
     if (!this.name.trim())
       throw new Error('Tax component requires a nonempty name');

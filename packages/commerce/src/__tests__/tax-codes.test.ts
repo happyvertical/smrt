@@ -7,13 +7,22 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CustomerCollection } from '../collections/CustomerCollection';
+import { DocumentTaxCollection } from '../collections/DocumentTaxCollection';
 import { InvoiceCollection } from '../collections/InvoiceCollection';
 import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection';
 import { TaxCodeCollection } from '../collections/TaxCodeCollection';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection';
+import { DOCUMENT_MONEY_WRITE } from '../document-money-internal';
 import type { MoneyValidationError } from '../money';
-import { applyCookbookTaxSettings } from '../tax/cookbook';
+import {
+  applyCommerceCookbookSettings,
+  applyCookbookTaxSettings,
+} from '../tax/cookbook';
+import {
+  applyTaxCodeExamplePack,
+  COMMON_TAX_CODE_EXAMPLE_PACK,
+} from '../tax/example-pack';
 import { ensureTenantTaxCodes, mapLegacyTaxRates } from '../tax/legacy';
 
 describe('tax codes (#3934)', () => {
@@ -59,6 +68,63 @@ describe('tax codes (#3934)', () => {
         percent: '7',
       });
       expect(replacement.id).not.toBe(component.id);
+    });
+  });
+
+  it('keeps a component immutable when only historical DocumentTax references it', async () => {
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const components = await TaxComponentCollection.create({ db });
+      const component = await components.create({
+        name: 'Historical GST',
+        percent: '5',
+      });
+      const rows = await DocumentTaxCollection.create({ db });
+      const [stored] = await rows.replaceDerivedForDocument(
+        DOCUMENT_MONEY_WRITE,
+        {
+          tenantId: 'tenant-a',
+          documentType: 'invoice',
+          documentId: 'issued-invoice',
+          rows: [
+            {
+              tenantId: 'tenant-a',
+              documentType: 'invoice',
+              documentId: 'issued-invoice',
+              currency: 'CAD',
+              taxCodeId: 'historical-code',
+              taxCodeCode: 'GST',
+              kind: 'taxable',
+              taxComponentId: component.id,
+              taxComponentName: component.name,
+              percent: component.percent,
+              liabilityAccountId: null,
+              taxableMinor: 100,
+              taxMinor: 5,
+              recoverableMinor: 0,
+            },
+          ],
+        },
+      );
+      const before = await db.query(
+        'SELECT tax_minor, percent, updated_at FROM document_taxes WHERE id = ?',
+        stored.id,
+      );
+      stored.taxMinor = 6;
+      await expect(stored.save()).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+      await expect(stored.delete()).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+      const persisted = await db.query(
+        'SELECT tax_minor, percent, updated_at FROM document_taxes WHERE id = ?',
+        stored.id,
+      );
+      expect(persisted.rows).toEqual(before.rows);
+      component.percent = '6';
+      await expect(component.save()).rejects.toMatchObject({
+        code: 'PERCENT_OUT_OF_RANGE',
+      });
     });
   });
 
@@ -171,6 +237,107 @@ describe('tax codes (#3934)', () => {
       expect(current.taxRoundingScope).toBe('document');
       const codes = await TaxCodeCollection.create({ db });
       expect((await codes.findByCode('default-5'))?.components).toHaveLength(1);
+    });
+  });
+
+  it('activates validated cookbook policies at the explicit tenant boundary', async () => {
+    await applyCommerceCookbookSettings(db, 'tenant-a', {
+      policies: [
+        {
+          objectRef: '@happyvertical/smrt-commerce:InvoiceLineItem',
+          fieldName: 'taxRate',
+          scopeType: 'app',
+          defaultValue: '0.0825',
+        },
+        {
+          objectRef: '@happyvertical/smrt-commerce:Invoice',
+          fieldName: 'lineAmountType',
+          scopeType: 'app',
+          defaultValue: '"inclusive"',
+        },
+        {
+          objectRef: '@happyvertical/smrt-commerce:Invoice',
+          fieldName: 'taxRoundingScope',
+          scopeType: 'app',
+          defaultValue: '"document"',
+        },
+      ],
+    });
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const settings = await TaxSettingsCollection.create({ db });
+      const current = await settings.getOrCreateForTenant('tenant-a');
+      expect(current).toMatchObject({
+        defaultLineAmountType: 'inclusive',
+        taxRoundingScope: 'document',
+      });
+      const codes = await TaxCodeCollection.create({ db });
+      const code = await codes.findByCode('default-8_25');
+      expect(code?.components).toHaveLength(1);
+      if (!code) throw new Error('Expected cookbook tax code');
+      const components = await TaxComponentCollection.create({ db });
+      expect(
+        (await components.get({ id: code.components[0].taxComponentId }))
+          ?.percent,
+      ).toBe('8.25');
+    });
+  });
+
+  it('keeps zero-rate inclusion explicit and rolls failed application back', async () => {
+    await applyCookbookTaxSettings(db, 'tenant-a', {
+      taxRate: 0,
+      pricesIncludeTax: true,
+      taxRounding: 'document',
+    });
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const settings = await TaxSettingsCollection.create({ db });
+      const current = await settings.getOrCreateForTenant('tenant-a');
+      expect(current.defaultLineAmountType).toBe('inclusive');
+      const codes = await TaxCodeCollection.create({ db });
+      expect(current.defaultSalesTaxCodeId).toBe(
+        (await codes.findByCode('out-of-scope'))?.id,
+      );
+    });
+    await expect(
+      applyCookbookTaxSettings(db, 'tenant-rollback', {
+        taxRate: 5,
+        pricesIncludeTax: false,
+        taxRounding: 'invalid' as 'line',
+      }),
+    ).rejects.toThrow(/taxRoundingScope is invalid/);
+    await withTenant({ tenantId: 'tenant-rollback' }, async () => {
+      const components = await TaxComponentCollection.create({ db });
+      const codes = await TaxCodeCollection.create({ db });
+      const settings = await TaxSettingsCollection.create({ db });
+      expect(
+        await components.list({ where: { tenantId: 'tenant-rollback' } }),
+      ).toEqual([]);
+      expect(
+        await codes.list({ where: { tenantId: 'tenant-rollback' } }),
+      ).toEqual([]);
+      expect(
+        await settings.list({ where: { tenantId: 'tenant-rollback' } }),
+      ).toEqual([]);
+    });
+  });
+
+  it('imports the documented jurisdiction example pack idempotently', async () => {
+    const first = await applyTaxCodeExamplePack(db, 'tenant-a');
+    const second = await applyTaxCodeExamplePack(db, 'tenant-a');
+    expect(second).toEqual(first);
+    expect(Object.keys(first.componentIds)).toHaveLength(
+      COMMON_TAX_CODE_EXAMPLE_PACK.components.length,
+    );
+    expect(Object.keys(first.codeIds)).toHaveLength(
+      COMMON_TAX_CODE_EXAMPLE_PACK.codes.length,
+    );
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const codes = await TaxCodeCollection.create({ db });
+      expect(
+        (await codes.findByCode('ca-gst-pst-bc'))?.components,
+      ).toHaveLength(2);
+      expect(
+        await codes.list({ where: { tenantId: 'tenant-a' } }),
+      ).toHaveLength(COMMON_TAX_CODE_EXAMPLE_PACK.codes.length);
     });
   });
 
