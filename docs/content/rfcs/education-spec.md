@@ -1,7 +1,8 @@
 # RFC: `@happyvertical/smrt-education`
 
 Tracking issue: [#3964](https://github.com/happyvertical/smrt/issues/3964).
-Status: draft for discussion.
+Status: accepted; primitives and the decisions below are settled, phases
+are filed as issues under the epic.
 
 ## Problem
 
@@ -192,10 +193,14 @@ store is not supported; the free PDFs cover the same worksheets.
 
 ### Learner: who is learning and what they did
 
-**Learner**. `profileId` (Person), optional `userId`, `displayName`,
-`birthDate`, `level = 0` (current level in the same scale as course bands),
-`settings` JSON (guarded get/set helpers; tutor preferences, UI mode).
-Guardianship is a `ProfileRelationship`, so the package has no `parentId`.
+**Learner**. `profileId` (Person), `userId` (every learner has a User with a
+Membership in the family tenant; email is optional on User, so a child
+needs none), `displayName`, `birthDate`, `level = 0` (current level in the
+same scale as course bands), `settings` JSON (guarded get/set helpers; tutor
+preferences, UI mode). A shared family device still signs the learner in by
+per-person PIN through `DeviceCredentialService`; the PIN is a credential on
+the learner's own User, not a substitute for one. Guardianship is a
+`ProfileRelationship`, so the package has no `parentId`.
 
 **Curriculum**. A learner's plan for a period: `learnerId`, `title`,
 `startsOn`, `endsOn`, `status`. One active curriculum at a time; a new school
@@ -382,19 +387,19 @@ difficulty fit.
 certificate issue through `HeldQualification`, instructor role, catalog
 import through smrt-ingestion with a Khan adapter via the spider repo.
 
-## Proposed issue tree
+## Issue tree
 
-To be filed once the primitives are agreed.
+Epic: [#3965](https://github.com/happyvertical/smrt/issues/3965). Phase 0
+is filed; later phases are filed when Phase 0 is usable.
 
-- Epic: smrt-education and the homeschool learning application
-  - Phase 0
-    - feat(education): package skeleton, catalog models, recipes
-    - feat(education): course sources and the easy-peasy page adapter
-    - feat(education): learner, curriculum, enrollment, progress models
-    - feat(education): submissions, submission assets, grades, scan capture service
-    - feat(app): fork smrt-start, family tenant, guardian + learner PIN auth
-    - feat(app): learner dashboard and print-and-scan flow
-  - Phase 1
+- Phase 0
+  - [#3966](https://github.com/happyvertical/smrt/issues/3966) feat(education): package skeleton, catalog models, recipes
+  - [#3967](https://github.com/happyvertical/smrt/issues/3967) feat(education): course sources and the easy-peasy page adapter
+  - [#3968](https://github.com/happyvertical/smrt/issues/3968) feat(education): learner, curriculum, enrollment, progress models
+  - [#3969](https://github.com/happyvertical/smrt/issues/3969) feat(education): submissions, submission assets, grades, scan capture service
+  - [#3970](https://github.com/happyvertical/smrt/issues/3970) feat(app): fork smrt-start, family tenant, learner auth
+  - [#3971](https://github.com/happyvertical/smrt/issues/3971) feat(app): learner dashboard and print-and-scan flow
+- Phase 1
     - feat(education): skills, lesson skills, mastery job
     - feat(education): assessments and questions, printable rendering
     - feat(education): OCR extraction and AI grade proposal jobs
@@ -409,18 +414,18 @@ To be filed once the primitives are agreed.
     - feat(education): authored course tooling and certificates
     - feat(education): ingestion adapters for external catalogs
 
-## Decisions needed
+## Decisions (2026-10-14)
 
-1. Package name: `smrt-education` with `Course` as the model (recommended)
-   versus `smrt-courses`. "Education" leaves room for skills, rewards, and
-   tutor tooling without a second package.
-2. Rewards inside the education package for now (recommended) versus a
-   separate `smrt-rewards` from the start.
-3. Application as a separate forked repository (recommended) versus an app
-   inside the monorepo.
-4. Whether learners get their own User rows at all in v1, or only PIN sessions
-   under a guardian's device. Recommended: PIN only in v1; Users when a learner
-   needs their own device or the group allows learner posting.
+1. Package name: `@happyvertical/smrt-education`, directory
+   `packages/education`, with `Course` as the catalog model and `Curriculum`
+   as the learner's plan.
+2. Rewards live in `src/rewards/` of the education package. Extraction
+   trigger: a second consumer.
+3. The application is a separate repository forked from `smrt-start`.
+4. Every learner has a User row and a family-tenant Membership from v1.
+   Shared-device sign-in is a per-person PIN on that User. This keeps the
+   path open for a learner's own device and for group-room posting without
+   a migration.
 
 ## Open questions
 
