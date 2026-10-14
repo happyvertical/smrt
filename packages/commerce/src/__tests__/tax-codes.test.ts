@@ -34,7 +34,7 @@ describe('tax codes (#3934)', () => {
         name: 'GST',
         percent: '5.000000',
       });
-      expect(component.percent).toBe('5.000000');
+      expect(component.percent).toBe('5');
       component.percent = '6';
       await expect(component.save()).rejects.toMatchObject({
         code: 'PERCENT_OUT_OF_RANGE',

@@ -8,6 +8,25 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { MoneyValidationError } from '../money.js';
 import type { TaxComponentOptions } from '../types/index.js';
 
+const PERCENT = /^(\d+)(?:\.(\d{1,6}))?$/;
+
+function isPercent(value: string): boolean {
+  const match = PERCENT.exec(value);
+  if (!match) return false;
+  const scaled =
+    BigInt(match[1]) * 1_000_000n + BigInt((match[2] ?? '').padEnd(6, '0'));
+  return scaled <= 100_000_000n;
+}
+
+function canonicalPercent(value: string): string {
+  const [whole, fraction = ''] = String(value).split('.');
+  const normalizedWhole = whole.replace(/^0+(?=\d)/, '') || '0';
+  const normalizedFraction = fraction.replace(/0+$/, '');
+  return normalizedFraction
+    ? `${normalizedWhole}.${normalizedFraction}`
+    : normalizedWhole;
+}
+
 /**
  * One reusable tax rate component. Codes may combine components, but the
  * component's percent is immutable after it has been saved: archive it and
@@ -63,20 +82,19 @@ export class TaxComponent extends SmrtObject {
 
   override async initialize(): Promise<this> {
     await super.initialize();
+    if (isPercent(this.percent)) this.percent = canonicalPercent(this.percent);
     this.persistedPercent = this.percent;
     return this;
   }
 
   override async save(): Promise<this> {
-    if (
-      !/^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(this.percent) ||
-      (this.percent.length > 3 && Number(this.percent) > 100)
-    ) {
+    if (!isPercent(this.percent)) {
       throw new MoneyValidationError(
         'PERCENT_OUT_OF_RANGE',
         'Tax component percent must be between 0 and 100 with at most six decimal places.',
       );
     }
+    this.percent = canonicalPercent(this.percent);
     if (
       this.persistedPercent !== null &&
       this.persistedPercent !== this.percent
