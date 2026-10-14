@@ -462,7 +462,9 @@ row (`attendance_corrections`: `kind`, `subjectProfileId`, `actorProfileId`,
 `reason`, `acknowledgementRequired`, `acknowledgedAt`/`acknowledgedByProfileId`).
 Rows are append-only: the only later change is the subject's single
 `acknowledge()`, and `listForPunch(punchId)` / `pendingAcknowledgements()` read
-the ledger. The ledger has no generated operations. Notes:
+the ledger. The ledger has no generated operations, and every ledger,
+closed-break and closed-segment write (insert, acknowledge, delete) is
+service-only: a generic `save()`, `delete()` or collection `create()` is refused. Notes:
 
 - Only **closed** punches are corrected; an open one is `AttendanceService`'s.
   Moving a punch edge past a break or segment is refused: correct those first.

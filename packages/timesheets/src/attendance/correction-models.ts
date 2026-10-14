@@ -9,6 +9,7 @@ import {
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { parseTimesheetJson } from '../models/json.js';
 import { AttendancePunch } from './models.js';
+import { isCorrectionWrite } from './write.js';
 
 /** What a correction did. Punch kinds target the punch itself. */
 export const ATTENDANCE_CORRECTION_KINDS = [
@@ -91,6 +92,12 @@ export class AttendanceCorrection extends SmrtObject {
   }
 
   override async save(): Promise<this> {
+    // Insert and acknowledgement are both service-only: a generic save() or
+    // collection create() must not fabricate or countersign ledger history.
+    if (!isCorrectionWrite(this))
+      throw new Error(
+        'Attendance corrections are writable only through AttendanceCorrectionService.',
+      );
     if (
       !this.tenantId ||
       !this.subjectProfileId ||

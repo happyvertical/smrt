@@ -9,13 +9,13 @@ import {
   validateAttendanceWork,
 } from './context.js';
 import {
-  type AttendanceCorrection,
+  AttendanceCorrection,
   AttendanceCorrectionCollection,
   type AttendanceCorrectionKind,
 } from './correction-models.js';
-import type {
+import {
   AttendanceBreak,
-  AttendancePunch,
+  type AttendancePunch,
   AttendanceSegment,
 } from './models.js';
 import { AttendanceService } from './service.js';
@@ -331,12 +331,17 @@ export class AttendanceCorrectionService {
         await persistCorrection(existing);
         target = existing;
       } else {
-        target = await tx.breaks.create({
+        target = await new AttendanceBreak({
+          db: tx.db,
+          id: crypto.randomUUID(),
+          _skipLoad: true,
+        }).initialize();
+        Object.assign(target, {
           tenantId: subject.tenantId,
           punchId: punch.id ?? undefined,
           ...next,
-          _insertOnly: true,
         });
+        await persistCorrection(target);
       }
       await this.settle(tx, punch, [...rest, target], entry);
       return record(
@@ -421,7 +426,12 @@ export class AttendanceCorrectionService {
         await persistCorrection(existing);
         target = existing;
       } else {
-        target = await tx.segments.create({
+        target = await new AttendanceSegment({
+          db: tx.db,
+          id: crypto.randomUUID(),
+          _skipLoad: true,
+        }).initialize();
+        Object.assign(target, {
           tenantId: subject.tenantId,
           punchId: punch.id ?? undefined,
           workRefType: input.work!.workRefType,
@@ -432,8 +442,8 @@ export class AttendanceCorrectionService {
           description: input.work!.description,
           ...next,
           closedReason: 'stop',
-          _insertOnly: true,
         });
+        await persistCorrection(target);
       }
       return record(
         existing ? 'segment.changed' : 'segment.added',
@@ -496,7 +506,7 @@ export class AttendanceCorrectionService {
           throw new AttendanceConflict('Correction already acknowledged.');
         row.acknowledgedAt = at;
         row.acknowledgedByProfileId = this.actor.profileId;
-        await row.save();
+        await persistCorrection(row);
         return row.id!;
       },
     );
@@ -580,14 +590,18 @@ export class AttendanceCorrectionService {
     };
     const id = await this.attendance(subject.profileId).withTransaction(
       async (tx) => {
-        const ledger = await AttendanceCorrectionCollection.create({
-          db: tx.db,
-        });
+        // Initialise the ledger table binding on this executor before writing.
+        await AttendanceCorrectionCollection.create({ db: tx.db });
         return operation(
           tx,
           subject,
           async (kind, punch, targetId, before, after) => {
-            const row = await ledger.create({
+            const row = await new AttendanceCorrection({
+              db: tx.db,
+              id: crypto.randomUUID(),
+              _skipLoad: true,
+            }).initialize();
+            Object.assign(row, {
               tenantId: subject.tenantId,
               subjectProfileId: subject.profileId,
               actorProfileId: this.actor.profileId,
@@ -598,8 +612,8 @@ export class AttendanceCorrectionService {
               afterState: JSON.stringify(after),
               reason,
               acknowledgementRequired: request.acknowledgementRequired ?? false,
-              _insertOnly: true,
             });
+            await persistCorrection(row);
             return row.id!;
           },
         );

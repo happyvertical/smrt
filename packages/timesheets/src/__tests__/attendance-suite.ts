@@ -814,7 +814,15 @@ export function attendanceSuite(
         expect(changed.getBefore()).toMatchObject({ paid: false });
         state = await run();
         expect(state.punch.durationSeconds).toBe(7 * 3600);
-        await expect(state.breaks[0].delete()).rejects.toThrow('immutable');
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          const rows = await AttendanceBreakCollection.create({ db });
+          const stored = await rows.get(state.breaks[0].id!);
+          await expect(stored!.delete()).rejects.toThrow('immutable');
+          // clearing the in-memory end must not make a closed break deletable
+          stored!.endedAt = null;
+          await expect(stored!.delete()).rejects.toThrow('immutable');
+        });
+        expect(await run().then((r) => r.breaks)).toHaveLength(2);
         await fix.removeBreak({ ...base(), breakId: added.targetId });
         state = await run();
         expect(state.breaks).toHaveLength(1);
@@ -840,7 +848,14 @@ export function attendanceSuite(
         state = await run();
         expect(state.segments.map((g) => g.workRefId)).toEqual(['work-2']);
         expect(state.segments[0].durationSeconds).toBe(2 * 3600);
-        await expect(state.segments[0].delete()).rejects.toThrow('immutable');
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          const rows = await AttendanceSegmentCollection.create({ db });
+          const stored = await rows.get(state.segments[0].id!);
+          await expect(stored!.delete()).rejects.toThrow('immutable');
+          stored!.endedAt = null;
+          await expect(stored!.delete()).rejects.toThrow('immutable');
+        });
+        expect(await run().then((r) => r.segments)).toHaveLength(1);
         expect((await ledger(id)).map((r) => r.kind)).toEqual([
           'break.added',
           'break.changed',
@@ -902,9 +917,50 @@ export function attendanceSuite(
           const rows = await AttendanceCorrectionCollection.create({ db });
           const stored = await rows.get(row.id!);
           stored!.reason = 'edited';
-          await expect(stored!.save()).rejects.toThrow('append-only');
+          await expect(stored!.save()).rejects.toThrow('only through');
+          const unacked = await rows.get(plain.id!);
+          // the subject cannot be countersigned for through the ORM either
+          unacked!.acknowledgedAt = at(18);
+          unacked!.acknowledgedByProfileId = actor.profileId;
+          await expect(unacked!.save()).rejects.toThrow('only through');
+          // and history cannot be fabricated through collection create
+          await expect(
+            rows.create({
+              tenantId: actor.tenantId,
+              subjectProfileId: actor.profileId,
+              actorProfileId: foreman,
+              kind: 'punch.corrected',
+              punchId: punch.id!,
+              targetId: punch.id!,
+              reason: 'invented',
+            }),
+          ).rejects.toThrow('only through');
           await expect(stored!.delete()).rejects.toThrow('cannot be deleted');
         });
+      });
+      it('refuses a generic insert of a break or segment into a closed punch', async () => {
+        const punch = await day();
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          await expect(
+            (await AttendanceBreakCollection.create({ db })).create({
+              tenantId: actor.tenantId,
+              punchId: punch.id!,
+              startedAt: at(15),
+              endedAt: half(15),
+            }),
+          ).rejects.toThrow('closed punch');
+          await expect(
+            (await AttendanceSegmentCollection.create({ db })).create({
+              tenantId: actor.tenantId,
+              punchId: punch.id!,
+              ...work,
+              startedAt: at(15),
+              endedAt: at(16),
+              closedReason: 'stop',
+            }),
+          ).rejects.toThrow('closed punch');
+        });
+        expect(await ledger(punch.id!)).toHaveLength(0);
       });
       it('refuses a correction a guard locks, before any write', async () => {
         const punch = await day();

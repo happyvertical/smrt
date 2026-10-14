@@ -209,6 +209,10 @@ export class AttendanceBreak extends SmrtObject {
       ? await this.db.get(this.tableName, { id: this.id })
       : null;
     const corrected = isCorrectionWrite(this);
+    if (!prior && parent.ended_at && !corrected)
+      throw new Error(
+        'A closed punch changes only through AttendanceCorrectionService.',
+      );
     if (
       prior &&
       (prior.tenant_id !== this.tenantId ||
@@ -231,7 +235,12 @@ export class AttendanceBreak extends SmrtObject {
   }
 
   override async delete(): Promise<void> {
-    if (this.endedAt && !isCorrectionWrite(this))
+    // Judge the persisted row, not the mutable instance: clearing `endedAt`
+    // in memory must not turn a closed break into a deletable open one.
+    const prior = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if ((this.endedAt || prior?.ended_at) && !isCorrectionWrite(this))
       throw new Error(
         'Closed breaks are immutable; remove one through AttendanceCorrectionService.',
       );
@@ -342,6 +351,10 @@ export class AttendanceSegment extends SmrtObject {
       ? await this.db.get(this.tableName, { id: this.id })
       : null;
     const corrected = isCorrectionWrite(this);
+    if (!prior && parent.ended_at && !corrected)
+      throw new Error(
+        'A closed punch changes only through AttendanceCorrectionService.',
+      );
     if (
       prior &&
       (prior.tenant_id !== this.tenantId ||
@@ -389,7 +402,12 @@ export class AttendanceSegment extends SmrtObject {
   }
 
   override async delete(): Promise<void> {
-    if (this.endedAt && !isCorrectionWrite(this))
+    // Judge the persisted row, not the mutable instance: clearing `endedAt`
+    // in memory must not turn a closed segment into a deletable open one.
+    const prior = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if ((this.endedAt || prior?.ended_at) && !isCorrectionWrite(this))
       throw new Error(
         'Closed segments are immutable; remove one through AttendanceCorrectionService.',
       );
