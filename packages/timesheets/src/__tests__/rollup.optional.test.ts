@@ -20,6 +20,7 @@ if (isPostgresAvailable()) {
           'AttendanceBreak',
           'AttendanceSegment',
           'AttendanceReplay',
+          'AttendanceCorrection',
         ],
       });
       if (isolated.config.type !== 'postgres')

@@ -11,6 +11,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { parseTimesheetJson } from '../models/json.js';
+import { isCorrectionWrite } from './write.js';
 
 // Punch closes and break writes share one atomic parent boundary, including direct ORM saves.
 async function saveWithPunchLock<T extends SmrtObject>(
@@ -94,15 +95,18 @@ export class AttendancePunch extends SmrtObject {
     const prior = this.id
       ? await this.db.get(this.tableName, { id: this.id })
       : null;
+    const corrected = isCorrectionWrite(this);
     if (
       prior &&
       (prior.tenant_id !== this.tenantId ||
         prior.profile_id !== this.profileId ||
-        new Date(prior.started_at as string).getTime() !==
-          this.startedAt.getTime())
+        (!corrected &&
+          new Date(prior.started_at as string).getTime() !==
+            this.startedAt.getTime()))
     )
       throw new Error('Attendance ownership and start are immutable.');
     if (
+      !corrected &&
       prior?.ended_at &&
       (new Date(prior.ended_at as string).getTime() !==
         this.endedAt?.getTime() ||
@@ -204,16 +208,19 @@ export class AttendanceBreak extends SmrtObject {
     const prior = this.id
       ? await this.db.get(this.tableName, { id: this.id })
       : null;
+    const corrected = isCorrectionWrite(this);
     if (
       prior &&
       (prior.tenant_id !== this.tenantId ||
         prior.punch_id !== this.punchId ||
-        new Date(prior.started_at as string).getTime() !==
-          this.startedAt.getTime() ||
-        Boolean(prior.paid) !== this.paid)
+        (!corrected &&
+          (new Date(prior.started_at as string).getTime() !==
+            this.startedAt.getTime() ||
+            Boolean(prior.paid) !== this.paid)))
     )
       throw new Error('Break ownership, start and pay policy are immutable.');
     if (
+      !corrected &&
       prior?.ended_at &&
       new Date(prior.ended_at as string).getTime() !== this.endedAt?.getTime()
     )
@@ -221,6 +228,14 @@ export class AttendanceBreak extends SmrtObject {
     this.id ??= crypto.randomUUID();
     this.openSlot = this.endedAt ? JSON.stringify(['closed', this.id]) : 'open';
     return super.save();
+  }
+
+  override async delete(): Promise<void> {
+    if (this.endedAt && !isCorrectionWrite(this))
+      throw new Error(
+        'Closed breaks are immutable; remove one through AttendanceCorrectionService.',
+      );
+    return super.delete();
   }
 }
 
@@ -326,21 +341,24 @@ export class AttendanceSegment extends SmrtObject {
     const prior = this.id
       ? await this.db.get(this.tableName, { id: this.id })
       : null;
+    const corrected = isCorrectionWrite(this);
     if (
       prior &&
       (prior.tenant_id !== this.tenantId ||
         prior.punch_id !== this.punchId ||
-        prior.work_ref_type !== this.workRefType ||
-        prior.work_ref_id !== this.workRefId ||
-        prior.task_ref_type !== this.taskRefType ||
-        prior.task_ref_id !== this.taskRefId ||
-        prior.kind !== this.kind ||
-        prior.description !== this.description ||
-        new Date(prior.started_at as string).getTime() !==
-          this.startedAt.getTime())
+        (!corrected &&
+          (prior.work_ref_type !== this.workRefType ||
+            prior.work_ref_id !== this.workRefId ||
+            prior.task_ref_type !== this.taskRefType ||
+            prior.task_ref_id !== this.taskRefId ||
+            prior.kind !== this.kind ||
+            prior.description !== this.description ||
+            new Date(prior.started_at as string).getTime() !==
+              this.startedAt.getTime())))
     )
       throw new Error('Segment ownership, references and start are immutable.');
     if (
+      !corrected &&
       prior?.ended_at &&
       (new Date(prior.ended_at as string).getTime() !==
         this.endedAt?.getTime() ||
@@ -368,6 +386,14 @@ export class AttendanceSegment extends SmrtObject {
     this.id ??= crypto.randomUUID();
     this.openSlot = this.endedAt ? JSON.stringify(['closed', this.id]) : 'open';
     return super.save();
+  }
+
+  override async delete(): Promise<void> {
+    if (this.endedAt && !isCorrectionWrite(this))
+      throw new Error(
+        'Closed segments are immutable; remove one through AttendanceCorrectionService.',
+      );
+    return super.delete();
   }
 }
 

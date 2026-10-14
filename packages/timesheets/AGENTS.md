@@ -19,6 +19,15 @@ rollups must deduplicate `AttendancePunch.serviceTimeEntryId`.
 punch: queryable `workRef*`/`taskRef*`/`kind` columns, one open per punch
 (`openSlot`), closed by `startBreak`/`punchOut`/`autoClose`, never overlapping
 breaks or each other, immutable once closed. It creates no `ServiceTimeEntry`.
+Closed punches, breaks and segments change only through
+`AttendanceCorrectionService` (`attendance/correction-service.ts`), which sets a
+per-instance capability (`attendance/write.ts`, not exported) that lifts the
+models' closed-interval checks for one save, validates the whole punch layout,
+recomputes durations and appends an `AttendanceCorrection` (append-only ledger,
+no generated operations; only a first acknowledgement by the subject may update
+a row). Never export `write.ts`. A confirmed `PeriodTimecard` is honoured by the
+opt-in `confirmedTimecardGuard` (`rollup/correction-guard.ts`), which refuses
+rather than reopens (#3950).
 Segment transitions live in `attendance/segments.ts`; compose them with other
 attendance writes via `AttendanceService.withTransaction`. Any new attendance
 table must be added to the `includeObjects` lists in the `*.optional.test.ts`

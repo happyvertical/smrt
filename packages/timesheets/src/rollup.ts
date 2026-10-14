@@ -1,5 +1,6 @@
 import './__smrt-register__.js';
 
+export { confirmedTimecardGuard } from './rollup/correction-guard.js';
 export {
   PeriodTimecard,
   PeriodTimecardCollection,
