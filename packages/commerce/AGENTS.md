@@ -4,7 +4,7 @@ E-commerce with Contract STI hierarchy, invoice lifecycle, payment tracking, pay
 
 ## Models
 
-- **Customer** / **Vendor**: linked to Profile via string ID (not FK). Customer has creditLimit, paymentTerms, customerType (DTC / WHOLESALE / RETAIL). Vendor has leadTimeDays, minimumOrder, and `payoutAddresses: Record<string, string>` — a flat map from payout-rail-qualified currency code (`USDC-base`, `BTC`, `USD-stripe`, ...) to destination string (EVM address, BTC address, Stripe Connect account id, IBAN). Use `getPayoutAddress(currency)` for a `Map.get`-style lookup; missing entries return `undefined` (caller decides skip-vs-error).
+- **Customer** / **Vendor**: linked to Profile via string ID (not FK). `contacts` (JSON) is written via [`savePartyContacts()`](agents/customer-vendor-ui.md#contact-rows-3501). Customer has creditLimit, paymentTerms, customerType (DTC / WHOLESALE / RETAIL). Vendor has leadTimeDays, minimumOrder, and `payoutAddresses: Record<string, string>` — a flat map from payout-rail-qualified currency code (`USDC-base`, `BTC`, `USD-stripe`, ...) to destination string (EVM address, BTC address, Stripe Connect account id, IBAN). Use `getPayoutAddress(currency)` for a `Map.get`-style lookup; missing entries return `undefined` (caller decides skip-vs-error).
 - **Contract** (STI base → Estimate, Order, Lease, Agreement, PurchaseOrder, WholesaleOrder, ProductionOrder, Cart, LicenseSale): 9 contract types sharing one table. Carries `channelId` (open-ended string — `dtc-web`, `wholesale-b2b`, `pos-store-N`, etc.) so the same model serves DTC checkout, B2B portals, and POS.
 - **WholesaleOrder**: B2B order. Conventional pairing — customer has `customerType: 'wholesale'`, NET-30/60 terms, delivered via wholesale-portal channel.
 - **ProductionOrder**: manufacturing equivalent of a PurchaseOrder — commission your factory to make finished goods. Consumes raw materials per BOM (`@happyvertical/smrt-manufacturing`) and produces SKU stock (`@happyvertical/smrt-inventory`).
@@ -36,7 +36,7 @@ retry identity, parent corrections and supported dialects.
 
 ## Ledger Integration
 
-`@happyvertical/smrt-ledgers` is a regular dependency, loaded lazily via dynamic `import()` so the coupling stays runtime-only (no hard static import; the package graph stays a DAG — see #1582). Invoice stores `arJournalId` and `revenueJournalId` as string references. `recognizeRevenue()` creates a balanced AR journal entry; `getArJournal()` returns null when no journal has been recognized yet.
+`@happyvertical/smrt-ledgers` is a regular dependency, loaded lazily via dynamic `import()` (never a static import) so the package graph stays a DAG (#1582). Invoice stores `arJournalId` and `revenueJournalId` as string references. `recognizeRevenue()` creates a balanced AR journal entry; `getArJournal()` returns null when no journal has been recognized yet.
 
 ## Billing-period close (#3060)
 

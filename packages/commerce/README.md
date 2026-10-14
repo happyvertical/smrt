@@ -84,8 +84,8 @@ await payment.recordPayment({
 
 | Export | Description |
 |--------|------------|
-| `Customer` | Customer record with creditLimit, paymentTerms, tax exemption, addresses |
-| `Vendor` | Vendor/supplier with leadTimeDays, minimumOrderAmount, currency |
+| `Customer` | Customer record with creditLimit, paymentTerms, tax exemption, addresses, contacts |
+| `Vendor` | Vendor/supplier with leadTimeDays, minimumOrderAmount, currency, contacts |
 | `Contract` | STI base class for all commercial agreements |
 | `Estimate` | Quote or proposal sent to a customer |
 | `Order` | Customer purchase order |
@@ -549,6 +549,38 @@ selectors while preserving native field names and rejected raw drafts. See
 native forms, recovery, amount units and consumer adoption, plus the focused
 [customer/vendor](agents/customer-vendor-ui.md) and
 [quotation](agents/quote-ui.md) contracts for selector restrictions.
+
+## Customer and vendor contacts
+
+`Customer.contacts` and `Vendor.contacts` hold the people to reach at a party
+(`PartyContact`: `id`, `name`, `label`, `email`, `phone`, `address`) as a JSON
+column; existing databases need `smrt db:migrate` for the new `contacts`
+columns. The form's contact rows are written with `savePartyContacts()`:
+
+```typescript
+import {
+  applyPartyContactIntent,
+  PartyContactValidationError,
+  readPartyContactRows,
+  savePartyContacts,
+} from '@happyvertical/smrt-commerce';
+
+const form = await request.formData();
+const rows = readPartyContactRows(form); // pass the form's fieldNames if overridden
+const { contacts, handled } = applyPartyContactIntent(rows, String(form.get('intent')));
+if (handled) return { values: { ...values, contacts } }; // add/remove round trip, no save
+try {
+  await savePartyContacts(vendors, vendorId, rows, { expectedTenantId });
+} catch (error) {
+  if (error instanceof PartyContactValidationError)
+    return fail(400, { values: { ...values, contacts: rows }, errors: { contacts: toMessages(error.errors) } });
+  throw error;
+}
+```
+
+The rows replace the party's contacts: posted ids are kept, new rows get an
+id, unposted rows are removed, blank rows are dropped. See
+[customer/vendor UI](agents/customer-vendor-ui.md#contact-rows-3501).
 
 ## Customer and vendor selectors
 

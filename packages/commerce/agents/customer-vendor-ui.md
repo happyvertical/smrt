@@ -34,7 +34,7 @@ Import the provider-free surfaces from `@happyvertical/smrt-commerce/svelte`:
 />
 ```
 
-The caller owns action URLs, server authorization, tenancy checks, request tokens, persistence, and retry behavior. Capability props only decide whether an affordance is rendered. The components never create a Profile, Customer, Vendor, or contact relationship and never generate request tokens.
+The caller owns action URLs, server authorization, tenancy checks, request tokens, persistence, and retry behavior. Capability props only decide whether an affordance is rendered. The components never create a Profile, Customer, Vendor, or contact relationship and never generate request tokens; the server writes posted contact rows with `savePartyContacts()` ([contact rows](#contact-rows-3501)).
 
 `CustomerDisplayData.creditLimitMinor` and `VendorDisplayData.minimumOrderMinor` are integer currency minor units. Detail components convert them only for display and accept an explicit `minorUnitExponent`. Form values deliberately use retained strings such as `1250.00`; the server validates and converts those major-unit strings to the model's integer minor units.
 
@@ -115,6 +115,27 @@ hidden/visible duplicate name from changing native form serialization.
 The registry keys are `customer-directory`, `customer-detail`, `customer-form`, `vendor-directory`, `vendor-detail`, `vendor-form`, and `party-contact-fields`. Interactive examples are published by `@happyvertical/smrt-commerce/playground` and ship in the next generated Commerce package release. DomaCraft can replace its local routes incrementally by adapting its existing server DTOs and payload names; no identity or database migration is required.
 
 The form playground previews handle save, add-contact, and remove-contact intents in memory. They deliberately return a simulated validation error on save so retained values and retry behavior can be inspected without a backend.
+
+## Contact rows (#3501)
+
+`Customer.contacts` / `Vendor.contacts` store `PartyContact` rows (JSON
+column; additive schema, run `smrt db:migrate`). The root package exports the
+server half of the form's contact payload:
+
+| Export | Contract |
+| --- | --- |
+| `readPartyContactRows(form, fieldNames?)` | Zips the repeated `contactId`, `contactName`, `contactLabel`, `contactEmail`, `contactPhone`, `contactAddress` values (or the form's `fieldNames` overrides) in DOM order into raw `PartyContactInput` rows. Unequal value counts throw a `TypeError`. |
+| `applyPartyContactIntent(rows, intent, intents?)` | `addContact` appends a blank row; `removeContact:<n>` (or a caller `parseRemoveIntent`) drops row `n`. `handled: true` means render the returned rows and do not save, including for a stale index. |
+| `validatePartyContactRows(rows)` | Trims, drops blank rows, and returns `errors` aligned with the submitted rows using codes `too_long` (limits in `PARTY_CONTACT_MAX_LENGTHS`, matching the inputs) and `invalid_email`. |
+| `savePartyContacts(collection, partyId, rows, { expectedTenantId? })` | Loads the party with `collection.get()` (so the active tenant context scopes it) and replaces its contacts: posted ids are kept, new rows get a random id, unposted rows are removed. A posted id the party does not have is `unknown_contact` on `id`. Invalid input throws `PartyContactValidationError` (`errors`, nothing written); a missing or other-tenant party throws `PartyContactPartyNotFoundError`. |
+
+Error codes are not messages: map `PartyContactValidationError.errors` to
+localized strings for `PartyFormErrors.contacts`, and return the submitted
+rows as retained `values.contacts`. A form with custom contact `fieldNames`
+must pass the same names to `readPartyContactRows`, or the read sees no rows
+and the save removes every contact. Saves are a read-modify-write of the party
+row (last writer wins). Map saved contacts to `CustomerDisplayData.contacts` /
+`VendorDisplayData.contacts` for the detail screens.
 
 ## Selectors (#3602)
 
