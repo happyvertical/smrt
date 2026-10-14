@@ -70,6 +70,7 @@ test('v2 money A–E frozen snapshots render exact stored values across scopes, 
     }
     if (kind === 'D') await expect(page.getByText('Subtotal (excl. tax)', { exact: false })).toHaveCount(0);
     await expect(page.getByLabel('Amounts are')).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Create credit note' })).toBeDisabled();
     if (theme.name === 'dark') expect(await foregroundContrast(page)).toBeGreaterThanOrEqual(4.5);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     if (evidence) await page.screenshot({ path: join(evidence, `money-${kind}-${scope}-${theme.name}-${width}.png`), fullPage: true });
