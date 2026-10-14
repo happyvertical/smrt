@@ -2913,6 +2913,48 @@ describe('SvelteKit Route Generator', () => {
   });
 
   describe('Collection Class Filtering', () => {
+    it('withholds collection methods attached to an abstract item', () => {
+      const abstractItem = {
+        className: 'AbstractInvitation',
+        name: 'abstractinvitation',
+        collection: 'invitations',
+        fields: {},
+        methods: {},
+        decoratorConfig: { abstract: true, api: { include: ['list', 'get'] } },
+        filePath: '/test/project/AbstractInvitation.ts',
+      };
+      const collection = {
+        className: 'AbstractInvitationCollection',
+        name: 'abstractinvitationcollection',
+        collection: 'invitations',
+        fields: {},
+        methods: {
+          browse: {
+            name: 'browse',
+            isPublic: true,
+            isStatic: false,
+            async: true,
+            returnType: 'void',
+            parameters: [],
+          },
+        },
+        decoratorConfig: { api: { include: ['browse'] } },
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'AbstractInvitation',
+        filePath: '/test/project/AbstractInvitationCollection.ts',
+      };
+      const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
+        objects: {
+          AbstractInvitation: abstractItem,
+          AbstractInvitationCollection: collection,
+        },
+      };
+
+      expect(resolveApiActionSet(collection, manifest)).toEqual(new Set());
+    });
+
     it('should generate collection class methods as collection-scoped routes', async () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
