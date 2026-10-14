@@ -10,9 +10,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../collections/ContractCollection.js';
 import { DocumentTaxCollection } from '../collections/DocumentTaxCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
-import { TaxSummaryReportCollection } from '../collections/TaxSummaryReportCollection.js';
+import {
+  materializeTaxSummaryRows,
+  TaxSummaryReportCollection,
+} from '../collections/TaxSummaryReportCollection.js';
 import { DOCUMENT_MONEY_WRITE } from '../document-money-internal.js';
 import { TaxSummaryReport } from '../models/TaxSummaryReport.js';
+import { aggregateTaxSummary } from '../tax-summary.js';
 import {
   buildTaxSummaryReportAdapterDescriptor,
   drilldownTaxSummaryInvoiceFacts,
@@ -257,6 +261,93 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
         }),
       ]),
     );
+  });
+
+  it('persists null recoverable and net tax for an ambiguous linked purchase and expense', async () => {
+    const tenantId = 'tenant-a';
+    const result = aggregateTaxSummary({
+      tenantId,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      facts: [
+        {
+          tenantId,
+          documentType: 'contract',
+          documentId: 'purchase-order-1',
+          documentKind: 'contract',
+          issueDate: '2026-09-10T00:00:00.000Z',
+          status: 'sent',
+          direction: 'purchase',
+          currency: 'CAD',
+          taxCodeId: 'gst',
+          taxCodeKind: 'taxable',
+          taxableMinor: 1_000,
+          taxMinor: 50,
+          recoverableMinor: 50,
+          taxComponentId: 'gst',
+          componentName: 'GST',
+          liabilityAccountId: 'gst-payable',
+          commitmentId: 'purchase-order-1',
+          commitmentLineId: null,
+        },
+      ],
+      expenses: [
+        {
+          tenantId,
+          expenseId: 'expense-1',
+          incurredOn: '2026-09-11T00:00:00.000Z',
+          currency: 'CAD',
+          commitmentId: 'purchase-order-1',
+          commitmentLineId: 'purchase-line-1',
+          financialBreakdown: {
+            taxes: [{ code: 'GST', amount: 50, recoverableAmount: 50 }],
+          },
+        },
+      ],
+      expenseComponentMappings: [
+        {
+          tenantId,
+          expenseCode: 'GST',
+          taxComponentId: 'gst',
+          componentName: 'GST',
+          liabilityAccountId: 'gst-payable',
+        },
+      ],
+      ledgerMovements: [],
+    });
+    expect(result.complete).toBe(false);
+    expect(result.componentRows).toEqual([
+      expect.objectContaining({
+        taxComponentId: 'gst',
+        inputTaxCreditMinor: null,
+        netTaxMinor: null,
+      }),
+    ]);
+    const rows = await materializeTaxSummaryRows(
+      { tenantId, from, to },
+      result,
+    );
+    const component = rows.find(
+      (row) => row.rowKind === 'component' && row.taxComponentId === 'gst',
+    );
+    expect(component).toMatchObject({
+      recoverableMinor: null,
+      netTaxMinor: null,
+      complete: false,
+    });
+    if (!component) throw new Error('Expected incomplete GST component row.');
+
+    await withTenant({ tenantId }, () => activateV2(tenantId));
+    const reports = await TaxSummaryReportCollection.create({ db });
+    await withTenant({ tenantId }, () => reports.create(component));
+    const persisted = await withTenant({ tenantId }, () =>
+      reports.get({ id: component.id as string }, { cache: false }),
+    );
+    expect(persisted).toMatchObject({
+      recoverableMinor: null,
+      netTaxMinor: null,
+      complete: false,
+    });
   });
 
   it('refuses a legacy tenant or missing owner adapters instead of presenting an incomplete total', async () => {

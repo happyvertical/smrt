@@ -268,7 +268,7 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
           expenseComponentMappings: options.expenseComponentMappings,
           ledgerMovements,
         });
-        const rows = await reportRows(options, result);
+        const rows = await materializeTaxSummaryRows(options, result);
         const reports = await TaxSummaryReportCollection.create({ db: tx });
         const existing = await reports.list({
           where: {
@@ -317,7 +317,8 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
   }
 }
 
-async function reportRows(
+/** @internal Maps aggregate nullability onto persisted report rows. */
+export async function materializeTaxSummaryRows(
   options: Pick<RefreshTaxSummaryReportOptions, 'tenantId' | 'from' | 'to'>,
   result: ReturnType<typeof aggregateTaxSummary>,
 ): Promise<Array<Record<string, unknown>>> {
@@ -339,7 +340,7 @@ async function reportRows(
       liabilityAccountId: row.liabilityAccountId,
       taxableMinor: row.taxableMinor,
       taxMinor: row.collectedMinor,
-      recoverableMinor: row.inputTaxCreditMinor ?? 0,
+      recoverableMinor: row.inputTaxCreditMinor,
       ledgerMovementMinor: null,
       netTaxMinor: row.netTaxMinor,
       differenceMinor: null,
