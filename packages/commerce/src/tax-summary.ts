@@ -10,6 +10,7 @@ export type TaxSummaryDirection = 'sales' | 'purchase';
 
 export interface TaxSummaryStoredFact {
   tenantId: string;
+  documentType: 'invoice' | 'contract';
   documentId: string;
   /** Invoice credits store positive facts and are negated here exactly once. */
   documentKind: 'invoice' | 'credit_note' | 'contract';
@@ -78,6 +79,8 @@ export interface TaxSummaryComponentRow {
   taxComponentId: string;
   componentName: string;
   liabilityAccountId: string | null;
+  /** Sum of stored component taxable bases; components intentionally overlap. */
+  taxableMinor: number;
   collectedMinor: number;
   purchaseRecoverableMinor: number;
   expenseRecoverableMinor: number;
@@ -105,7 +108,7 @@ export interface TaxSummaryReconciliationRow {
   collectedMinor: number;
   ledgerMovementMinor: number | null;
   differenceMinor: number | null;
-  status: 'reconciled' | 'difference' | 'unassigned';
+  status: 'reconciled' | 'difference' | 'unassigned' | 'ambiguous';
 }
 
 export interface TaxSummaryWarning {
@@ -113,7 +116,8 @@ export interface TaxSummaryWarning {
     | 'unknown-expense-tax'
     | 'unmapped-expense-component'
     | 'linked-purchase-expense'
-    | 'unassigned-liability-account';
+    | 'unassigned-liability-account'
+    | 'shared-liability-account';
   currency: string;
   sourceId: string;
   message: string;
@@ -131,6 +135,13 @@ export interface TaxSummaryResult {
 function assertMinor(value: number, label: string) {
   if (!Number.isSafeInteger(value))
     throw new RangeError(`${label} must be a safe integer minor-unit value.`);
+}
+
+function addMinor(left: number, right: number, label: string) {
+  const sum = left + right;
+  if (!Number.isSafeInteger(sum))
+    throw new RangeError(`${label} exceeds the safe integer minor-unit range.`);
+  return sum;
 }
 
 function inPeriod(date: string, from: string, to: string) {
@@ -162,8 +173,14 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
   let complete = true;
   const components = new Map<string, TaxSummaryComponentRow>();
   const kinds = new Map<string, TaxSummaryKindRow>();
-  const salesBaseSeen = new Set<string>();
-  const linkedPurchaseKeys = new Set<string>();
+  const baseSeen = new Set<string>();
+  const componentDocuments = new Map<string, Set<string>>();
+  const kindDocuments = new Map<string, Set<string>>();
+  const purchaseLinks: Array<{
+    currency: string;
+    commitmentId: string;
+    lineId: string | null;
+  }> = [];
 
   const component = (
     currency: string,
@@ -180,6 +197,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         taxComponentId,
         componentName,
         liabilityAccountId,
+        taxableMinor: 0,
         collectedMinor: 0,
         purchaseRecoverableMinor: 0,
         expenseRecoverableMinor: 0,
@@ -199,13 +217,16 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
     if (!usableFact(fact, input)) continue;
     const sign = sourceSign(fact.documentKind);
     const kindKey = `${fact.currency}\u0000${fact.direction}\u0000${fact.taxCodeKind}`;
-    const baseKey = `${fact.documentId}\u0000${fact.taxCodeId}\u0000${kindKey}`;
+    const documentIdentity = `${fact.documentType}\u0000${fact.documentId}`;
+    const baseKey = `${documentIdentity}\u0000${fact.taxCodeId}\u0000${kindKey}`;
     if (fact.direction === 'purchase' && fact.commitmentId)
-      linkedPurchaseKeys.add(
-        `${fact.commitmentId}\u0000${fact.commitmentLineId ?? ''}`,
-      );
-    if (!salesBaseSeen.has(baseKey)) {
-      salesBaseSeen.add(baseKey);
+      purchaseLinks.push({
+        currency: fact.currency,
+        commitmentId: fact.commitmentId,
+        lineId: fact.commitmentLineId ?? null,
+      });
+    if (!baseSeen.has(baseKey)) {
+      baseSeen.add(baseKey);
       const row = kinds.get(kindKey) ?? {
         rowKind: 'kind' as const,
         currency: fact.currency,
@@ -214,8 +235,15 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         taxableMinor: 0,
         documentCount: 0,
       };
-      row.taxableMinor += sign * fact.taxableMinor;
-      row.documentCount += 1;
+      row.taxableMinor = addMinor(
+        row.taxableMinor,
+        sign * fact.taxableMinor,
+        'kind taxable total',
+      );
+      const documents = kindDocuments.get(kindKey) ?? new Set<string>();
+      documents.add(documentIdentity);
+      kindDocuments.set(kindKey, documents);
+      row.documentCount = documents.size;
       kinds.set(kindKey, row);
     }
     if (fact.taxComponentId) {
@@ -225,10 +253,33 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         fact.componentName ?? fact.taxComponentId,
         fact.liabilityAccountId,
       );
-      row.documentCount += 1;
+      row.taxableMinor = addMinor(
+        row.taxableMinor,
+        sign * fact.taxableMinor,
+        'component taxable total',
+      );
+      const documents =
+        componentDocuments.get(
+          componentKey(fact.currency, fact.taxComponentId),
+        ) ?? new Set<string>();
+      documents.add(documentIdentity);
+      componentDocuments.set(
+        componentKey(fact.currency, fact.taxComponentId),
+        documents,
+      );
+      row.documentCount = documents.size;
       if (fact.direction === 'sales')
-        row.collectedMinor += sign * fact.taxMinor;
-      else row.purchaseRecoverableMinor += sign * fact.recoverableMinor;
+        row.collectedMinor = addMinor(
+          row.collectedMinor,
+          sign * fact.taxMinor,
+          'collected tax total',
+        );
+      else
+        row.purchaseRecoverableMinor = addMinor(
+          row.purchaseRecoverableMinor,
+          sign * fact.recoverableMinor,
+          'purchase ITC total',
+        );
     }
   }
 
@@ -254,10 +305,16 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
       });
       continue;
     }
-    const link = expense.commitmentId
-      ? `${expense.commitmentId}\u0000${expense.commitmentLineId ?? ''}`
-      : null;
-    const linked = link !== null && linkedPurchaseKeys.has(link);
+    const linked =
+      expense.commitmentId !== null &&
+      purchaseLinks.some(
+        (purchase) =>
+          purchase.currency === expense.currency &&
+          purchase.commitmentId === expense.commitmentId &&
+          (purchase.lineId === null ||
+            expense.commitmentLineId === null ||
+            purchase.lineId === expense.commitmentLineId),
+      );
     if (linked) {
       complete = false;
       warnings.push({
@@ -288,8 +345,21 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         mapping.componentName,
         mapping.liabilityAccountId,
       );
-      row.expenseRecoverableMinor += tax.recoverableAmount;
-      row.documentCount += 1;
+      row.expenseRecoverableMinor = addMinor(
+        row.expenseRecoverableMinor,
+        tax.recoverableAmount,
+        'expense ITC total',
+      );
+      const documents =
+        componentDocuments.get(
+          componentKey(expense.currency, mapping.taxComponentId),
+        ) ?? new Set<string>();
+      documents.add(`expense\u0000${expense.expenseId}`);
+      componentDocuments.set(
+        componentKey(expense.currency, mapping.taxComponentId),
+        documents,
+      );
+      row.documentCount = documents.size;
       if (linked)
         ambiguousComponents.add(
           componentKey(expense.currency, mapping.taxComponentId),
@@ -304,7 +374,11 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
     const key = `${movement.currency}\u0000${movement.accountId}`;
     ledgerByAccount.set(
       key,
-      (ledgerByAccount.get(key) ?? 0) + movement.creditMinusDebit,
+      addMinor(
+        ledgerByAccount.get(key) ?? 0,
+        movement.creditMinusDebit,
+        'ledger movement total',
+      ),
     );
   }
 
@@ -320,10 +394,23 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
       row.inputTaxCreditMinor = null;
       row.netTaxMinor = null;
     } else {
-      row.inputTaxCreditMinor =
-        row.purchaseRecoverableMinor + row.expenseRecoverableMinor;
-      row.netTaxMinor = row.collectedMinor - row.inputTaxCreditMinor;
+      row.inputTaxCreditMinor = addMinor(
+        row.purchaseRecoverableMinor,
+        row.expenseRecoverableMinor,
+        'input tax credit total',
+      );
+      row.netTaxMinor = addMinor(
+        row.collectedMinor,
+        -row.inputTaxCreditMinor,
+        'net tax total',
+      );
     }
+  }
+  const sharedAccounts = new Map<string, TaxSummaryComponentRow[]>();
+  for (const row of componentRows) {
+    if (!row.liabilityAccountId) continue;
+    const key = `${row.currency}\u0000${row.liabilityAccountId}`;
+    sharedAccounts.set(key, [...(sharedAccounts.get(key) ?? []), row]);
   }
   const reconciliationRows = componentRows.map((row) => {
     if (!row.liabilityAccountId) {
@@ -344,10 +431,37 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
         status: 'unassigned' as const,
       };
     }
+    if (
+      (sharedAccounts.get(`${row.currency}\u0000${row.liabilityAccountId}`)
+        ?.length ?? 0) > 1
+    ) {
+      complete = false;
+      warnings.push({
+        code: 'shared-liability-account',
+        currency: row.currency,
+        sourceId: row.liabilityAccountId,
+        message:
+          'Multiple tax components share one liability account, so per-component reconciliation is ambiguous.',
+      });
+      return {
+        rowKind: 'reconciliation' as const,
+        currency: row.currency,
+        taxComponentId: row.taxComponentId,
+        liabilityAccountId: row.liabilityAccountId,
+        collectedMinor: row.collectedMinor,
+        ledgerMovementMinor: null,
+        differenceMinor: null,
+        status: 'ambiguous' as const,
+      };
+    }
     const ledgerMovementMinor =
       ledgerByAccount.get(`${row.currency}\u0000${row.liabilityAccountId}`) ??
       0;
-    const differenceMinor = ledgerMovementMinor - row.collectedMinor;
+    const differenceMinor = addMinor(
+      ledgerMovementMinor,
+      -row.collectedMinor,
+      'reconciliation difference',
+    );
     return {
       rowKind: 'reconciliation' as const,
       currency: row.currency,
