@@ -74,11 +74,14 @@ export {
   ContractLineItemCollection,
   type CreatePayoutFromPaymentArgs,
   CustomerCollection,
+  DocumentTaxCollection,
   FulfillmentCollection,
   FulfillmentLineItemCollection,
   InvoiceCollection,
   InvoiceLineItemCollection,
   type InvoiceNumberOptions,
+  type InvoiceTaxReportFact,
+  type InvoiceTaxReportFactsOptions,
   PaymentAllocationCollection,
   PaymentCollection,
   PaymentInstrumentCollection,
@@ -86,9 +89,15 @@ export {
   type PaymentIntentIdempotencyArgs,
   type PaymentIntentSeed,
   PayoutCollection,
+  type RefreshTaxSummaryReportOptions,
   TaxCodeCollection,
   TaxComponentCollection,
   TaxSettingsCollection,
+  type TaxSummaryExpenseSource,
+  type TaxSummaryInvoiceDrilldownOptions,
+  type TaxSummaryLedgerSource,
+  TaxSummaryReportCollection,
+  type TaxSummaryReportRefreshResult,
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
@@ -133,9 +142,12 @@ export {
   type BillingPeriodCloseStatus,
   type BillingStanding,
   Cart,
+  type CommerceDocumentType,
   Contract,
   ContractLineItem,
   Customer,
+  DocumentTax,
+  type DocumentTaxOptions,
   Estimate,
   Fulfillment,
   FulfillmentLineItem,
@@ -155,6 +167,8 @@ export {
   TaxCode,
   TaxComponent,
   TaxSettings,
+  TaxSummaryReport,
+  type TaxSummaryReportRowKind,
   Vendor,
   WholesaleOrder,
 } from './models/index.js';
@@ -219,6 +233,25 @@ export {
   mapLegacyTaxRatesInTransaction,
   type TaxCodeExamplePack,
 } from './tax/index.js';
+export {
+  aggregateTaxSummary,
+  type TaxSummaryComponentMapping,
+  type TaxSummaryComponentRow,
+  type TaxSummaryDirection,
+  type TaxSummaryExpenseFact,
+  type TaxSummaryInput,
+  type TaxSummaryKindRow,
+  type TaxSummaryLedgerMovement,
+  type TaxSummaryReconciliationRow,
+  type TaxSummaryResult,
+  type TaxSummaryStoredFact,
+  type TaxSummaryWarning,
+} from './tax-summary.js';
+export {
+  buildTaxSummaryReportAdapterDescriptor,
+  drilldownTaxSummaryInvoiceFacts,
+  TAX_SUMMARY_REPORT_ADAPTER,
+} from './tax-summary-report-adapter.js';
 
 // Types
 export {

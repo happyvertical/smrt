@@ -18,8 +18,10 @@ export interface TaxSummaryStoredFact {
   status: string;
   direction: TaxSummaryDirection;
   currency: string;
-  taxCodeId: string;
-  taxCodeKind: TaxCodeKind;
+  /** Null means the stored snapshot cannot be assigned to a tax code. */
+  taxCodeId: string | null;
+  /** Null is an incomplete/unassigned stored snapshot, never out-of-scope. */
+  taxCodeKind: TaxCodeKind | null;
   taxableMinor: number;
   taxMinor: number;
   recoverableMinor: number;
@@ -117,7 +119,8 @@ export interface TaxSummaryWarning {
     | 'unmapped-expense-component'
     | 'linked-purchase-expense'
     | 'unassigned-liability-account'
-    | 'shared-liability-account';
+    | 'shared-liability-account'
+    | 'unassigned-tax-code';
   currency: string;
   sourceId: string;
   message: string;
@@ -216,8 +219,19 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
     assertMinor(fact.recoverableMinor, 'recoverableMinor');
     if (!usableFact(fact, input)) continue;
     const sign = sourceSign(fact.documentKind);
-    const kindKey = `${fact.currency}\u0000${fact.direction}\u0000${fact.taxCodeKind}`;
     const documentIdentity = `${fact.documentType}\u0000${fact.documentId}`;
+    if (!fact.taxCodeId || !fact.taxCodeKind) {
+      complete = false;
+      warnings.push({
+        code: 'unassigned-tax-code',
+        currency: fact.currency,
+        sourceId: documentIdentity,
+        message:
+          'Document tax snapshot has no tax-code kind and cannot be classified.',
+      });
+      continue;
+    }
+    const kindKey = `${fact.currency}\u0000${fact.direction}\u0000${fact.taxCodeKind}`;
     const baseKey = `${documentIdentity}\u0000${fact.taxCodeId}\u0000${kindKey}`;
     if (fact.direction === 'purchase' && fact.commitmentId)
       purchaseLinks.push({

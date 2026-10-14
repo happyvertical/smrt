@@ -91,7 +91,8 @@
     "@happyvertical/smrt-subscriptions": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/smrt-ui": "workspace:*"
+    "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/smrt-reports": "workspace:*"
   },
   "peerDependencies": {
     "svelte": "^5.57.0"

@@ -10,7 +10,7 @@ import {
   DocumentTax,
   type DocumentTaxOptions,
 } from '../models/DocumentTax.js';
-import { MoneyValidationError } from '../money.js';
+import { MoneyValidationError, type TaxCodeKind } from '../money.js';
 
 export type DocumentTaxWriteInput = Required<
   Pick<
@@ -31,6 +31,92 @@ export type DocumentTaxWriteInput = Required<
     | 'recoverableMinor'
   >
 >;
+
+/** Normalized immutable invoice tax snapshots for tax-summary materialization. */
+export interface InvoiceTaxReportFact {
+  tenantId: string;
+  documentType: 'invoice';
+  documentId: string;
+  /** Invoice credits have no persisted kind column yet, so every current row is an invoice. */
+  documentKind: 'invoice';
+  issueDate: string;
+  status: string;
+  direction: 'sales';
+  currency: string;
+  taxCodeId: string | null;
+  /** Null is an unassigned/unknown snapshot and must remain visible as a warning. */
+  taxCodeKind: TaxCodeKind | null;
+  taxableMinor: number;
+  taxMinor: number;
+  recoverableMinor: number;
+  taxComponentId: string | null;
+  componentName: string | null;
+  liabilityAccountId: string | null;
+}
+
+export interface InvoiceTaxReportFactsOptions {
+  tenantId: string;
+  from: Date;
+  to: Date;
+  currency?: string;
+}
+
+const TAX_CODE_KINDS = new Set<TaxCodeKind>([
+  'taxable',
+  'zero-rated',
+  'exempt',
+  'out-of-scope',
+]);
+
+function requiredText(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !value.trim())
+    throw new Error(`Invoice tax report ${label} must be a nonempty string.`);
+  return value;
+}
+
+function storedMinor(value: unknown, label: string): number {
+  const parsed =
+    typeof value === 'bigint'
+      ? Number(value)
+      : typeof value === 'number'
+        ? value
+        : typeof value === 'string' && /^-?\d+$/.test(value)
+          ? Number(value)
+          : Number.NaN;
+  if (!Number.isSafeInteger(parsed))
+    throw new RangeError(
+      `Invoice tax report ${label} must be a safe integer minor-unit value.`,
+    );
+  return parsed;
+}
+
+function reportDate(value: unknown, label: string): string {
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime()))
+    throw new Error(`Invoice tax report ${label} must be a valid date.`);
+  return date.toISOString();
+}
+
+function taxCodeKind(value: unknown): TaxCodeKind | null {
+  return typeof value === 'string' && TAX_CODE_KINDS.has(value as TaxCodeKind)
+    ? (value as TaxCodeKind)
+    : null;
+}
+
+function assertReportFactOptions(options: InvoiceTaxReportFactsOptions): void {
+  if (!options.tenantId?.trim())
+    throw new Error('Invoice tax report facts require a tenant.');
+  if (!(options.from instanceof Date) || Number.isNaN(options.from.getTime()))
+    throw new Error('Invoice tax report facts require a valid start date.');
+  if (!(options.to instanceof Date) || Number.isNaN(options.to.getTime()))
+    throw new Error('Invoice tax report facts require a valid end date.');
+  if (options.from > options.to)
+    throw new Error('Invoice tax report facts require an ordered date range.');
+  if (options.currency !== undefined && !options.currency.trim())
+    throw new Error(
+      'Invoice tax report currency must be nonempty when supplied.',
+    );
+}
 
 function compareCodeUnits(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -74,6 +160,65 @@ function unchanged(row: DocumentTax, input: DocumentTaxWriteInput): boolean {
 
 export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
   static readonly _itemClass = DocumentTax;
+
+  /**
+   * Read immutable Invoice-backed `DocumentTax` snapshots for one tenant.
+   *
+   * This deliberately uses no Contract or future credit-note path. Invoice has
+   * no persisted kind discriminator yet, so credits must be added as an
+   * explicit source extension when that schema arrives rather than inferred.
+   */
+  async listReportFacts(
+    options: InvoiceTaxReportFactsOptions,
+  ): Promise<InvoiceTaxReportFact[]> {
+    assertReportFactOptions(options);
+    const currencyClause = options.currency ? ' AND d.currency = ?' : '';
+    const result = await this.db.query(
+      `SELECT d.tenant_id, d.document_id, d.currency, d.tax_code_id, d.kind,
+              d.tax_component_id, d.tax_component_name, d.liability_account_id,
+              d.taxable_minor, d.tax_minor, d.recoverable_minor,
+              i.issue_date, i.status
+         FROM document_taxes d
+         JOIN invoices i
+           ON CAST(i.id AS TEXT) = CAST(d.document_id AS TEXT)
+          AND i.tenant_id = d.tenant_id
+        WHERE CAST(d.tenant_id AS TEXT) = ?
+          AND CAST(i.tenant_id AS TEXT) = ?
+          AND d.document_type = 'invoice'
+          AND i.status NOT IN ('draft', 'cancelled')
+          AND i.issue_date >= ?
+          AND i.issue_date <= ?${currencyClause}
+        ORDER BY i.issue_date ASC, i.id ASC, d.tax_code_id ASC, d.tax_component_id ASC`,
+      options.tenantId,
+      options.tenantId,
+      options.from.toISOString(),
+      options.to.toISOString(),
+      ...(options.currency ? [options.currency] : []),
+    );
+    return result.rows.map((row) => ({
+      tenantId: requiredText(row.tenant_id, 'tenant id'),
+      documentType: 'invoice' as const,
+      documentId: requiredText(row.document_id, 'document id'),
+      documentKind: 'invoice' as const,
+      issueDate: reportDate(row.issue_date, 'issue date'),
+      status: requiredText(row.status, 'invoice status'),
+      direction: 'sales' as const,
+      currency: requiredText(row.currency, 'currency'),
+      taxCodeId: row.tax_code_id == null ? null : String(row.tax_code_id),
+      taxCodeKind: taxCodeKind(row.kind),
+      taxableMinor: storedMinor(row.taxable_minor, 'taxable minor'),
+      taxMinor: storedMinor(row.tax_minor, 'tax minor'),
+      recoverableMinor: storedMinor(row.recoverable_minor, 'recoverable minor'),
+      taxComponentId:
+        row.tax_component_id == null ? null : String(row.tax_component_id),
+      componentName:
+        row.tax_component_name == null ? null : String(row.tax_component_name),
+      liabilityAccountId:
+        row.liability_account_id == null
+          ? null
+          : String(row.liability_account_id),
+    }));
+  }
 
   async findByDocument(
     tenantId: string,

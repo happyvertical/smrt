@@ -207,6 +207,30 @@ describe('aggregateTaxSummary', () => {
     );
   });
 
+  it('warns for a nullable stored kind instead of classifying it as out-of-scope', () => {
+    const result = aggregateTaxSummary(
+      input({
+        facts: [
+          fact({
+            taxCodeId: null,
+            taxCodeKind: null,
+            taxComponentId: null,
+            componentName: null,
+            liabilityAccountId: null,
+            taxMinor: 0,
+          }),
+        ],
+      }),
+    );
+    expect(result.complete).toBe(false);
+    expect(result.kindRows).toEqual([]);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'unassigned-tax-code' }),
+      ]),
+    );
+  });
+
   it('keeps zero-rated and out-of-scope stored bases distinct', () => {
     const result = aggregateTaxSummary(
       input({
