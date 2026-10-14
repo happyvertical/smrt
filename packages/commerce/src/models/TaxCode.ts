@@ -39,7 +39,10 @@ export class TaxCode extends SmrtObject {
   /** Stored JSON is guarded through the typed accessor below. */
   componentsJson = '[]';
 
-  @field({ description: 'The ordered tax components in this code.' })
+  @field({
+    description: 'The ordered tax components in this code.',
+    transient: true,
+  })
   get components(): TaxCodePart[] {
     try {
       const value: unknown = JSON.parse(this.componentsJson);

@@ -425,6 +425,8 @@ export interface TaxSettingsOptions extends SmrtObjectOptions {
   defaultLineAmountType?: 'exclusive' | 'inclusive' | 'none';
   taxRoundingScope?: 'line' | 'document';
   taxRegistrations?: TaxRegistrationOptions[];
+  moneyModel?: 'legacy' | 'migrating' | 'v2';
+  moneyMigrationId?: string;
 }
 
 /**
@@ -542,6 +544,20 @@ export interface InvoiceOptions extends SmrtObjectOptions {
   notes?: string;
   customerNotes?: string;
   terms?: string;
+  lineAmountType?: 'exclusive' | 'inclusive' | 'none';
+  taxRoundingScope?: 'line' | 'document';
+  discountTotal?: number;
+  sellerTaxRegistrations?: TaxRegistrationOptions[];
+  sellerTaxRegistrationsJson?: string;
+  partyTaxId?: string;
+  moneySnapshotId?: string;
+}
+
+export interface InvoiceTaxComponentSnapshot {
+  taxComponentId: string;
+  name: string;
+  percent: string;
+  taxMinor: number;
 }
 
 /** Retained editing modes, validated against resolved model fields before reuse. */
@@ -562,16 +578,28 @@ export interface InvoiceLineItemOptions extends SmrtObjectOptions {
   invoiceId?: string;
   description?: string;
   sku?: string;
+  productId?: string | null;
   quantity?: number;
   unitPrice?: number;
   discount?: number;
+  discountType?: 'none' | 'percent' | 'amount';
+  discountRate?: string;
   taxRate?: number;
+  taxMode?: 'inherit' | 'override';
+  taxCodeId?: string | null;
+  taxCodeCode?: string | null;
+  taxCodeName?: string | null;
+  taxComponents?: InvoiceTaxComponentSnapshot[];
+  taxComponentsJson?: string | null;
+  taxAmount?: number;
+  legacyAmount?: number | null;
+  moneySnapshotId?: string;
   amount?: number;
   sourceType?: string;
   sourceId?: string;
   periodStart?: Date | null;
   periodEnd?: Date | null;
-  revenueAccountId?: string;
+  revenueAccountId?: string | null;
   sortOrder?: number;
 }
 

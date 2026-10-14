@@ -1,5 +1,10 @@
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  MONEY_MIGRATION_WRITE,
+  type MoneyMigrationWriteCapability,
+} from '../document-money-internal.js';
+import { MoneyValidationError } from '../money.js';
 import type { TaxSettingsOptions } from '../types/index.js';
 
 export interface TaxRegistration {
@@ -51,8 +56,15 @@ export class TaxSettings extends SmrtObject {
   /** Stored JSON is guarded through the typed accessor below. */
   taxRegistrationsJson = '[]';
 
+  /** Server-owned runtime semantics gate. Never exposed as a generated write. */
+  moneyModel: 'legacy' | 'migrating' | 'v2' = 'legacy';
+
+  /** Opaque owner token while a tenant migration is in progress. */
+  moneyMigrationId = '';
+
   @field({
     sensitive: true,
+    transient: true,
     description:
       'Registration numbers by tax component, for issued-document snapshots.',
   })
@@ -91,15 +103,41 @@ export class TaxSettings extends SmrtObject {
       this.taxRoundingScope = options.taxRoundingScope;
     if (options.taxRegistrations !== undefined)
       this.taxRegistrations = structuredClone(options.taxRegistrations);
+    if (options.moneyModel !== undefined) this.moneyModel = options.moneyModel;
+    if (options.moneyMigrationId !== undefined)
+      this.moneyMigrationId = options.moneyMigrationId;
   }
 
   override async save(): Promise<this> {
+    return this.saveValidated(false);
+  }
+
+  /** @internal Money migration owns marker transitions. */
+  async saveMoneyModel(
+    capability: MoneyMigrationWriteCapability,
+  ): Promise<this> {
+    if (capability !== MONEY_MIGRATION_WRITE) {
+      throw new MoneyValidationError(
+        'FROZEN_DOCUMENT',
+        'Tenant money model requires the migration capability',
+      );
+    }
+    return this.saveValidated(true);
+  }
+
+  private async saveValidated(allowMoneyModelWrite: boolean): Promise<this> {
     if (
       !['exclusive', 'inclusive', 'none'].includes(this.defaultLineAmountType)
     )
       throw new Error('Tax settings defaultLineAmountType is invalid');
     if (!['line', 'document'].includes(this.taxRoundingScope))
       throw new Error('Tax settings taxRoundingScope is invalid');
+    if (!['legacy', 'migrating', 'v2'].includes(this.moneyModel))
+      throw new Error('Tax settings moneyModel is invalid');
+    if ((this.moneyModel === 'migrating') !== !!this.moneyMigrationId)
+      throw new Error(
+        'Tax settings migrating state requires exactly one migration owner',
+      );
     const registrations = this.parsedRegistrations();
     if (!registrations)
       throw new Error('Tax registrations must be a valid JSON array');
@@ -119,6 +157,19 @@ export class TaxSettings extends SmrtObject {
       );
       const codes = await TaxCodeCollection.create({ db: this.db });
       const components = await TaxComponentCollection.create({ db: this.db });
+      if (!allowMoneyModelWrite && this.id) {
+        const persisted = await this.db.get(this.tableName, { id: this.id });
+        if (
+          persisted &&
+          (persisted.money_model !== this.moneyModel ||
+            (persisted.money_migration_id ?? '') !== this.moneyMigrationId)
+        ) {
+          throw new MoneyValidationError(
+            'FROZEN_DOCUMENT',
+            'Tenant money model is server-managed',
+          );
+        }
+      }
       for (const id of [
         this.defaultSalesTaxCodeId,
         this.defaultPurchaseTaxCodeId,
