@@ -206,6 +206,8 @@ describe('ScheduleRunner triggerSchedule re-arm time zone (#3859)', () => {
 
   async function rearm(
     timezone: string | null,
+    cron = '5 3 * * *',
+    now = '2025-06-01T00:00:00Z',
   ): Promise<{ next_run: string; status: string; last_error: string | null }> {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     await SmrtJobCollection.create({ db });
@@ -217,7 +219,7 @@ describe('ScheduleRunner triggerSchedule re-arm time zone (#3859)', () => {
        VALUES (?, ?, ?, ?, ?, ?, TRUE, 'active', 0, 1)`,
       'sched-tz',
       'SomeAgent',
-      '5 3 * * *',
+      cron,
       timezone,
       'run',
       '2025-06-01T00:00:00.000Z',
@@ -228,7 +230,7 @@ describe('ScheduleRunner triggerSchedule re-arm time zone (#3859)', () => {
 
     // Fake only the clock so the in-memory database keeps real timers.
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2025-06-01T00:00:00Z'));
+    vi.setSystemTime(new Date(now));
 
     const scheduleRow = {
       id: 'sched-tz',
@@ -236,7 +238,7 @@ describe('ScheduleRunner triggerSchedule re-arm time zone (#3859)', () => {
       agent_id: null,
       tenant_id: null,
       agent_config: null,
-      cron: '5 3 * * *',
+      cron,
       timezone,
       method: 'run',
       method_args: null,
@@ -277,5 +279,12 @@ describe('ScheduleRunner triggerSchedule re-arm time zone (#3859)', () => {
     expect(row.last_error).toContain('Invalid cron timezone');
     // The due slot is left as-is; the row simply leaves the active poll.
     expect(row.next_run).toBe('2025-06-01T00:00:00.000Z');
+  });
+
+  it('keeps a valid schedule active when its next run is beyond the search horizon', async () => {
+    // Feb 29 after 2025-03-01 is 2028, past the one-year scan: transient, not invalid.
+    const row = await rearm('UTC', '0 0 29 2 *', '2025-03-01T00:00:00Z');
+    expect(row.status).toBe('active');
+    expect(row.last_error).toContain('Could not find next run date');
   });
 });

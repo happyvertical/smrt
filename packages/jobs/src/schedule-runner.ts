@@ -502,18 +502,18 @@ export class ScheduleRunner extends EventEmitter {
       // Compute next run time from cron before creating the job, evaluated
       // in the row's zone; a missing/blank zone falls back to the column
       // default (UTC) rather than the host's process zone (#3859).
-      // An invalid cron or zone is a deterministic configuration failure, not
-      // a transient one: retrying it every poll can never succeed, so move the
-      // row to status='error' (as AgentSchedule.calculateNextRun does) instead
-      // of leaving it due and active.
-      let nextRun: Date;
+      // An invalid cron or zone is a deterministic configuration failure:
+      // retrying it every poll can never succeed, so move the row to
+      // status='error' (as AgentSchedule.calculateNextRun does). Only these
+      // validation errors are terminal; a valid cron whose next run lies past
+      // the search horizon (a leap-day schedule) stays active.
+      const timezone =
+        typeof schedule.timezone === 'string' && schedule.timezone.trim()
+          ? schedule.timezone.trim()
+          : 'UTC';
       try {
-        nextRun = getNextCronDate(
-          schedule.cron as string,
-          typeof schedule.timezone === 'string' && schedule.timezone.trim()
-            ? schedule.timezone.trim()
-            : 'UTC',
-        );
+        validateCronExpression(schedule.cron as string);
+        validateCronTimezone(timezone);
       } catch (error) {
         await this.db.query(
           `UPDATE _smrt_agent_schedules
@@ -529,6 +529,7 @@ export class ScheduleRunner extends EventEmitter {
         });
         return;
       }
+      const nextRun = getNextCronDate(schedule.cron as string, timezone);
 
       // Create a job for this schedule
       // Nest agent_config under _agentConfig so TaskRunner can pass it
@@ -826,6 +827,15 @@ function wallTimeInstants(
   }
   instants.sort((a, b) => a - b);
   return { instants, offsetBefore, offsetAfter };
+}
+
+/**
+ * Validate a cron time zone without computing a run date.
+ *
+ * @throws `Invalid cron timezone` when the name is not an IANA zone.
+ */
+function validateCronTimezone(timezone: string): void {
+  resolveZoneOffset(timezone);
 }
 
 /**
