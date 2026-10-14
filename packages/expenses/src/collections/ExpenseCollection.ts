@@ -14,9 +14,37 @@ import {
   type CommitmentPosition,
   type CurrencyTotals,
   ExpenseError,
+  type ExpenseFinancialBreakdown,
   type ExpenseReviewStatus,
   type ExpenseTotalsOptions,
 } from '../types.js';
+
+/** A reviewed, non-duplicate expense and its optional stored supplier facts. */
+export interface ReviewedExpenseTaxFact {
+  id: string;
+  tenantId: string;
+  incurredOn: string;
+  currency: string;
+  commitmentId: string | null;
+  commitmentLineId: string | null;
+  /** `null` is unknown legacy supplier tax, never an implied zero. */
+  financialBreakdown: ExpenseFinancialBreakdown | null;
+}
+
+export interface ReviewedExpenseTaxFactsOptions {
+  tenantId: string;
+  from: string;
+  to: string;
+  currency?: string;
+}
+
+function isCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}
 
 /** Plain projection read for sums: never hydrates objects. */
 interface AmountRow {
@@ -122,6 +150,55 @@ export class ExpenseCollection extends SmrtCollection<Expense> {
       addTo(totals, row.currency, toMinorUnits(row.amount));
     }
     return totals;
+  }
+
+  /**
+   * Stored supplier-tax facts for reporting. Only reviewed non-duplicate
+   * expenses are returned; callers must retain a null breakdown as unknown.
+   */
+  async listReviewedTaxFacts(
+    options: ReviewedExpenseTaxFactsOptions,
+  ): Promise<ReviewedExpenseTaxFact[]> {
+    if (
+      !options.tenantId?.trim() ||
+      !isCalendarDate(options.from) ||
+      !isCalendarDate(options.to) ||
+      options.from > options.to ||
+      (options.currency !== undefined && !options.currency.trim())
+    ) {
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Tax facts require a tenant, an ordered calendar-date range, and a nonempty currency when supplied.',
+      );
+    }
+    const expenses = await this.list({
+      where: {
+        tenantId: options.tenantId,
+        reviewStatus: 'reviewed',
+        duplicateOfId: null,
+        'incurredOn >=': options.from,
+        'incurredOn <=': options.to,
+        ...(options.currency ? { currency: options.currency } : {}),
+      },
+      orderBy: ['incurred_on ASC', 'id ASC'],
+    });
+    return expenses.map((expense) => {
+      if (!expense.id || expense.tenantId !== options.tenantId) {
+        throw new ExpenseError(
+          'EXPENSE_INVALID',
+          'Tenant tax-fact query returned a row without its requested tenant identity.',
+        );
+      }
+      return {
+        id: expense.id,
+        tenantId: expense.tenantId,
+        incurredOn: expense.incurredOn,
+        currency: expense.currency,
+        commitmentId: expense.commitmentId,
+        commitmentLineId: expense.commitmentLineId,
+        financialBreakdown: expense.getFinancialBreakdown(),
+      };
+    });
   }
 
   /**
