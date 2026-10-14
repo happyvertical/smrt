@@ -88,6 +88,36 @@ export async function withDocumentMoneyTransaction<T>(
   });
 }
 
+interface DocumentMoneyTransactionalObject {
+  readonly db: DatabaseInterface;
+  withTransaction<T>(operation: (bound: this) => Promise<T>): Promise<T>;
+}
+
+/**
+ * Run aggregate work through the model's root transaction so rejected writes
+ * restore the instance's persistence revision before callers retry it.
+ */
+export async function withDocumentMoneyObjectTransaction<
+  TObject extends DocumentMoneyTransactionalObject,
+  TResult,
+>(
+  input: TObject,
+  operation: (bound: TObject, tx: DatabaseInterface) => Promise<TResult>,
+): Promise<TResult> {
+  if (activeMoneyTransactions.has(input.db as object)) {
+    return operation(input, input.db);
+  }
+  return input.withTransaction(async (bound) => {
+    const tx = bound.db;
+    activeMoneyTransactions.add(tx as object);
+    try {
+      return await operation(bound as TObject, tx);
+    } finally {
+      activeMoneyTransactions.delete(tx as object);
+    }
+  });
+}
+
 /**
  * Serialize aggregate writers by touching each tenant-owned parent first.
  * Parents are locked sequentially in stable code-unit ID order. Callers must
