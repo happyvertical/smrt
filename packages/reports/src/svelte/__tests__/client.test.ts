@@ -124,6 +124,32 @@ describe('runtime reports HTTP client', () => {
     ).rejects.toMatchObject({ code: 'invalid_result' });
   });
 
+  it('fails closed when generated pages repeat a report', async () => {
+    const firstPage = Array.from({ length: 1_000 }, (_, index) => ({
+      ...wire(),
+      id: `report-${index}`,
+      title: `Report ${index}`,
+    }));
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      const url = new URL(String(input), 'https://example.test');
+      const offset = Number(url.searchParams.get('offset'));
+      return offset === 0
+        ? json({ items: firstPage, count: 1_001, limit: 1_000, offset })
+        : json({
+            items: [firstPage.at(-1)],
+            count: 1_001,
+            limit: 1_000,
+            offset,
+          });
+    });
+    const client = createRuntimeReportsHttpClient({ fetch });
+
+    await expect(
+      client.list({ onlyMine: false, includeArchived: false }),
+    ).rejects.toMatchObject({ code: 'invalid_result' });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('fails closed on malformed envelopes and cross-origin confirmation paths', async () => {
     const client = createRuntimeReportsHttpClient({
       fetch: vi.fn(async () => json({ action: 'run', result: {} })),

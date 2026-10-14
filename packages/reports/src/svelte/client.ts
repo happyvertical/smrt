@@ -131,6 +131,7 @@ export function createRuntimeReportsHttpClient(
       }
 
       const reports: SavedRuntimeReport[] = [];
+      const seenReportIds = new Set<string>();
       let offset = 0;
       for (let page = 0; page < MAX_REPORT_LIST_PAGES; page++) {
         const query = new URLSearchParams(filters);
@@ -160,7 +161,13 @@ export function createRuntimeReportsHttpClient(
         ) {
           throw new RuntimeReportsHttpError(502, 'invalid_result');
         }
-        reports.push(...body.items.map(project));
+        const pageReports = body.items.map(project);
+        for (const report of pageReports) {
+          if (seenReportIds.has(report.id))
+            throw new RuntimeReportsHttpError(502, 'invalid_result');
+          seenReportIds.add(report.id);
+        }
+        reports.push(...pageReports);
         offset += body.items.length;
         if (offset >= body.count) return reports;
         if (body.items.length === 0)
