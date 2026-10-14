@@ -15,6 +15,37 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use(async (request, response, next) => {
           const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+          if (url.pathname === '/tax-summary-report.json') {
+            if (url.searchParams.get('state') === 'error') {
+              response.statusCode = 503;
+              response.setHeader('Content-Type', 'application/json');
+              response.end(JSON.stringify({ error: 'Tax summary source unavailable' }));
+              return;
+            }
+            const state = url.searchParams.get('state') === 'empty' || url.searchParams.get('state') === 'unknown'
+              ? url.searchParams.get('state')
+              : 'data';
+            const { readTaxSummaryBrowserFixture } = await server.ssrLoadModule('/e2e/invoices/tax-summary-browser-server.ts');
+            response.setHeader('Content-Type', 'application/json');
+            response.end(JSON.stringify(await readTaxSummaryBrowserFixture(state)));
+            return;
+          }
+          if (url.pathname === '/tax-summary-drilldown.json') {
+            const { drilldownTaxSummaryBrowserFixture } = await server.ssrLoadModule('/e2e/invoices/tax-summary-browser-server.ts');
+            try {
+              const facts = await drilldownTaxSummaryBrowserFixture(
+                url.searchParams.get('reportId') ?? '',
+                url.searchParams.get('tenant') ?? '',
+              );
+              response.setHeader('Content-Type', 'application/json');
+              response.end(JSON.stringify(facts));
+            } catch (error) {
+              response.statusCode = 403;
+              response.setHeader('Content-Type', 'application/json');
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Tax summary drilldown failed.' }));
+            }
+            return;
+          }
           if (!['/native', '/save', '/native-invoice-rounding', '/save-invoice-rounding', '/native-money', '/save-money'].includes(url.pathname)) return next();
           const money = url.pathname.endsWith('-money');
           const moneyCase = (url.searchParams.get('case') ?? 'A') as 'A' | 'B' | 'C' | 'D' | 'E';
