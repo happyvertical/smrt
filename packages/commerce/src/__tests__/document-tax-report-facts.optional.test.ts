@@ -26,6 +26,7 @@ describePostgres(
       isolated = await createIsolatedTestDbFromManifest({
         includeObjects: [
           'Contract',
+          'Customer',
           'DocumentTax',
           'Invoice',
           'InvoiceLineItem',
@@ -63,6 +64,13 @@ describePostgres(
       );
       expect(facts).toEqual(
         expect.arrayContaining([
+          expect.objectContaining({
+            documentId: fixture.invoiceAId,
+            taxCodeId: 'gst-pst',
+            taxComponentId: 'gst',
+            taxableMinor: 33_498,
+            taxMinor: 1_675,
+          }),
           expect.objectContaining({
             documentId: fixture.invoiceAId,
             taxCodeId: 'gst-pst',

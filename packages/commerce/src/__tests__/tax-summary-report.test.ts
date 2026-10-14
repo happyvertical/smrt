@@ -78,11 +78,14 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
     });
 
     expect(result).toEqual({ rowCount: 5, complete: true });
-    expect(expenses.listReviewedTaxFacts).toHaveBeenCalledWith({
-      tenantId: fixture.tenantId,
-      from: '2026-09-01',
-      to: '2026-09-30',
-    });
+    expect(expenses.listReviewedTaxFacts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: fixture.tenantId,
+        from: '2026-09-01',
+        to: '2026-09-30',
+        db: expect.anything(),
+      }),
+    );
     const rows = await withTenant({ tenantId: fixture.tenantId }, () =>
       reports.list({ where: { tenantId: fixture.tenantId } }),
     );
@@ -127,6 +130,19 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
       reportId: gstRow.id,
     });
     expect(drilldown).toHaveLength(4);
+    expect(drilldown).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          documentId: fixture.invoiceAId,
+          documentNumber: 'REPORT-A',
+          partyId: fixture.partyAId,
+          issueDate: from.toISOString(),
+          taxableMinor: 81_000,
+          taxMinor: 4_050,
+        }),
+      ]),
+    );
+    await withTenant({ tenantId: 'tenant-b' }, () => activateV2('tenant-b'));
     await expect(
       drilldownTaxSummaryInvoiceFacts(db, {
         tenantId: 'tenant-b',
@@ -260,5 +276,44 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
         }),
       ]),
     );
+  });
+
+  it('refuses materialized rows and drilldowns while the tenant is migrating', async () => {
+    const fixture = await withTenant({ tenantId: 'tenant-a' }, () =>
+      seedInvoiceTaxReportFacts(db),
+    );
+    await withTenant({ tenantId: fixture.tenantId }, () =>
+      activateV2(fixture.tenantId),
+    );
+    const reports = await TaxSummaryReportCollection.create({ db });
+    await reports.refreshTaxSummary({
+      tenantId: fixture.tenantId,
+      from,
+      to,
+      expenseSource: { listReviewedTaxFacts: async () => [] },
+      ledgerSource: { listPostedMovements: async () => [] },
+      expenseComponentMappings: [],
+    });
+    const row = await withTenant({ tenantId: fixture.tenantId }, () =>
+      reports.get({
+        tenantId: fixture.tenantId,
+        rowKind: 'component',
+        taxComponentId: 'gst',
+      }),
+    );
+    if (!row?.id) throw new Error('Expected persisted report row.');
+    await db.query(
+      "UPDATE tax_settings SET money_model = 'migrating', money_migration_id = 'maintenance' WHERE tenant_id = ?",
+      fixture.tenantId,
+    );
+    await expect(
+      withTenant({ tenantId: fixture.tenantId }, () => reports.list()),
+    ).rejects.toThrow('activated v2 money model');
+    await expect(
+      drilldownTaxSummaryInvoiceFacts(db, {
+        tenantId: fixture.tenantId,
+        reportId: row.id,
+      }),
+    ).rejects.toThrow('activated v2 money model');
   });
 });

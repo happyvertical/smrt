@@ -1,7 +1,7 @@
 /** Stable UUID identities make tenant tax bootstrap retry and race safe. */
 export async function deterministicTaxId(
   tenantId: string,
-  kind: 'code' | 'component' | 'settings',
+  kind: 'code' | 'component' | 'settings' | 'report',
   key: string,
 ): Promise<string> {
   if (!tenantId.trim() || !key.trim())
