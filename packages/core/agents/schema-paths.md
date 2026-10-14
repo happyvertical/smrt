@@ -525,6 +525,16 @@ rather than collapsing them, so there is no silent-collision hazard there.
 
 ### The `_smrt_` prefix does not mean "system table" (#2376)
 
+`SmrtClass` coalesces concurrent system-table initialization through completion
+of bootstrap, deferred compatibility, and vector setup (#3944). In-flight work
+is shared only by the same database handle. Distinct handles at the same URL
+retain database-level coordination: a caller-owned transaction may finish its
+initialization statements before its tables become visible to another handle.
+All same-handle waiters observe failure; the pending entry is removed so a fresh
+instance can retry. Existing completed-success cache identities are unchanged.
+Provision system tables on a base connection before caller-owned transactions;
+constructor initialization still preserves PostgreSQL's transaction lock lifetime.
+
 `bootstrapSystemTables()` owns nine hand-written tables; ~25 more `_smrt_*`
 tables belong to `@smrt()` models and are created by `db:migrate` (feature
 flags, prompt overrides, subscription plans, report schedules, field policies,
