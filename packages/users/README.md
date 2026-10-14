@@ -1356,6 +1356,41 @@ run `smrt doctor --db` / `db:status --parity`, deploy the new version to every
 writer, then resume traffic. Do not roll back application writers without also
 restoring the pre-upgrade schema/database backup.
 
+### Upgrade duplicate overrides and group members (#3375)
+
+`MembershipOverride` is unique on `(membership_id, permission_id)`,
+`TenantPermissionOverride` on `(tenant_id, permission_id)` and `GroupMember` on
+`(group_id, user_id)`. `setOverride()` (and the grant/deny/inherit helpers) is
+an upsert on that key: concurrent calls leave one row, the last effect written
+wins, and an existing override keeps its id. `addMember()` is idempotent.
+`removeOverride()` / `removeMember()` delete every row for the pair. Their
+`(slug, context)` index is no longer unique, and the single-column
+`membership_id` / `group_id` indexes are replaced by the composite ones.
+
+Existing deployments upgrade exactly like the role-grant upgrade above, in the
+same maintenance window and **before ordinary schema migration**:
+
+```typescript
+import { deduplicateAuthorityPairs } from '@happyvertical/smrt-users';
+
+console.log(await deduplicateAuthorityPairs(db, { dryRun: true }));
+console.log(await deduplicateAuthorityPairs(db, {
+  maintenanceConfirmed: true,
+}));
+```
+
+For an override pair it keeps the row whose effect the resolver already
+applies — DENY, then GRANT, then INHERIT — so no pair's effective authority
+changes; ties, and group members, keep the earliest `created_at` (lowest `id`
+breaks ties; null timestamps sort last). It creates
+`membership_overrides_membership_id_permission_id_idx`,
+`tenant_permission_overrides_tenant_id_permission_id_idx` and
+`group_members_group_id_user_id_idx` in the same transaction as the deletes,
+locks the three tables on PostgreSQL, and is safe to rerun. Until it has run,
+new-version override and group-member writes fail (there is no unique index for
+their upsert to target), so writers stay stopped until it and the schema
+migration complete.
+
 ## Hosted OAuth authorization
 
 Use `SmrtOAuthAuthorizationStorage` with the SDK authorization server, and

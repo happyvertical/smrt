@@ -144,6 +144,11 @@ export {
   type UserEmailKeyBackfillErrorCode,
 } from './migrations/backfillUserEmailKeys.js';
 export {
+  type DeduplicateAuthorityPairsOptions,
+  type DeduplicateAuthorityPairsResult,
+  deduplicateAuthorityPairs,
+} from './migrations/deduplicateAuthorityPairs.js';
+export {
   type DeduplicateRolePermissionsOptions,
   type DeduplicateRolePermissionsResult,
   deduplicateRolePermissions,
