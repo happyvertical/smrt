@@ -12,6 +12,7 @@ import { AssetCollection } from '@happyvertical/smrt-assets';
 import {
   ContractCollection,
   ContractLineItemCollection,
+  CustomerCollection,
   VendorCollection,
 } from '@happyvertical/smrt-commerce';
 import { GlobalInterceptors, SmrtObject } from '@happyvertical/smrt-core';
@@ -109,8 +110,11 @@ export async function createWorld(
       return saved(asset);
     },
     async commitment(totalAmount, currency = 'USD') {
+      const vendors = await VendorCollection.create({ db });
+      const vendor = await vendors.create({ profileId: randomUUID() });
       const po = await contracts.create({
         _meta_type: 'PurchaseOrder',
+        vendorId: vendor.id,
         totalAmount,
         subtotal: totalAmount,
         currency,
@@ -637,6 +641,22 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
   });
 
   describe('commitment matching', () => {
+    it('rejects a sales order as an expense commitment', async () => {
+      await world.inTenant(async () => {
+        const customer = await (
+          await CustomerCollection.create({ db: world.db })
+        ).create({ profileId: randomUUID() });
+        const salesOrder = await world.contracts.create({
+          _meta_type: 'Order',
+          customerId: customer.id,
+        } as never);
+        await salesOrder.save();
+        await expect(
+          world.expense({ commitmentId: salesOrder.id }),
+        ).rejects.toMatchObject({ code: 'EXPENSE_COMMITMENT_MISMATCH' });
+      });
+    });
+
     it('leaves 3,600 open on a 4,600 award with 1,000 reviewed', async () => {
       await world.inTenant(async () => {
         const reviewer = randomUUID();

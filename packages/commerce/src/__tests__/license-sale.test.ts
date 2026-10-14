@@ -61,15 +61,18 @@ describe('LicenseSale STI subtype', () => {
     expect(ContractType.LICENSE_SALE).toBe('license_sale');
   });
 
-  it('persists omitted optional contract relationships as null', async () => {
-    const contract = await contracts.create({ reference: 'nullable-fks' });
+  it('persists an omitted optional customer on LicenseSale', async () => {
+    const contract = await contracts.create({
+      _meta_type: 'LicenseSale',
+      reference: 'nullable-fks',
+    });
     await contract.save();
 
     expect(contract.customerId).toBeNull();
-    expect(contract.vendorId).toBeNull();
+    expect('vendorId' in contract).toBe(false);
     const loaded = await contracts.get({ id: contract.id });
     expect(loaded?.customerId).toBeNull();
-    expect(loaded?.vendorId).toBeNull();
+    expect('vendorId' in (loaded ?? {})).toBe(false);
   });
 
   it('stamps the right _meta_type and contractType', async () => {

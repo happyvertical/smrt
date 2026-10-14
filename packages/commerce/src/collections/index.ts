@@ -26,4 +26,6 @@ export {
   type CreatePayoutFromPaymentArgs,
   PayoutCollection,
 } from './PayoutCollection.js';
+export { PurchaseContractCollection } from './PurchaseContractCollection.js';
+export { SalesContractCollection } from './SalesContractCollection.js';
 export { VendorCollection } from './VendorCollection.js';

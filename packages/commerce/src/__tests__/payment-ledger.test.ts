@@ -90,6 +90,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         totalAmount: 1000,
       });
@@ -116,6 +117,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -147,6 +149,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -178,6 +181,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -199,6 +203,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -220,6 +225,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -245,11 +251,13 @@ describe('Payment', () => {
       await customer.save();
 
       const contract1 = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract1.save();
 
       const contract2 = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract2.save();
@@ -288,6 +296,7 @@ describe('Payment', () => {
       await customer2.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer1.id,
       });
       await contract.save();
@@ -316,6 +325,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         totalAmount: 1000,
       });
@@ -355,6 +365,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -428,6 +439,7 @@ describe('Payment Ledger Integration', () => {
     await customer.save();
 
     const contract = await contracts.create({
+      _meta_type: 'Order',
       customerId: customer.id,
       totalAmount: 1000,
     });
@@ -491,6 +503,7 @@ describe('Payment Ledger Integration', () => {
     await customer.save();
 
     const contract = await contracts.create({
+      _meta_type: 'Order',
       customerId: customer.id,
     });
     await contract.save();
@@ -538,6 +551,7 @@ describe('Payment Ledger Integration', () => {
     await customer.save();
 
     const contract = await contracts.create({
+      _meta_type: 'Order',
       customerId: customer.id,
     });
     await contract.save();
@@ -579,6 +593,7 @@ describe('Payment Ledger Integration', () => {
     await customer.save();
 
     const contract = await contracts.create({
+      _meta_type: 'Order',
       customerId: customer.id,
     });
     await contract.save();

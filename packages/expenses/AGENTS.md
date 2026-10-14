@@ -128,7 +128,7 @@ not advance the source revision.
 ## Cross-package references
 
 - `vendorId` → `@crossPackageRef('@happyvertical/smrt-commerce:Vendor')`
-- `commitmentId` → `…smrt-commerce:Contract` (usually a `PurchaseOrder`)
+- `commitmentId` → `…smrt-commerce:PurchaseContract` (`PurchaseOrder` or `ProductionOrder`)
 - `commitmentLineId` → `…smrt-commerce:ContractLineItem`
 - `assetId` → `…smrt-assets:Asset`
 - profile ids → `…smrt-profiles:Profile` (no dependency; references only)

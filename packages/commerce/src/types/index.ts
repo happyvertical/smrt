@@ -409,8 +409,6 @@ export interface ContractOptions extends SmrtObjectOptions {
   tenantId?: string | null;
   contractType?: ContractType;
   status?: ContractStatus;
-  customerId?: string | null;
-  vendorId?: string | null;
   subtotal?: number;
   taxAmount?: number;
   totalAmount?: number;
@@ -424,8 +422,16 @@ export interface ContractOptions extends SmrtObjectOptions {
   channelId?: string;
 }
 
+export interface SalesContractOptions extends ContractOptions {
+  customerId?: string | null;
+}
+
+export interface PurchaseContractOptions extends ContractOptions {
+  vendorId?: string | null;
+}
+
 /** Purchase-order header options stored in the existing STI metadata. */
-export interface PurchaseOrderOptions extends ContractOptions {
+export interface PurchaseOrderOptions extends PurchaseContractOptions {
   /** Expected delivery calendar date (YYYY-MM-DD); empty means unspecified. */
   expectedDate?: string;
   /** Delivery address/instructions snapshot. */
@@ -436,7 +442,7 @@ export interface PurchaseOrderOptions extends ContractOptions {
  * Constructor options for {@link LicenseSale} (Contract STI subtype). Extends
  * {@link ContractOptions} with the licensing-specific meta fields.
  */
-export interface LicenseSaleOptions extends ContractOptions {
+export interface LicenseSaleOptions extends SalesContractOptions {
   skuId?: string;
   paymentId?: string;
   licenseeEmail?: string;
