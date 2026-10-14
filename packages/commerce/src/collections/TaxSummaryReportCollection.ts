@@ -1,6 +1,20 @@
+import type {
+  SmrtCollection,
+  SmrtListOptions,
+  SmrtObject,
+  SmrtSelectedRow,
+  SmrtSelectField,
+  SmrtStiReadScope,
+} from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { SmrtReportCollection } from '@happyvertical/smrt-reports';
-import { withTenant } from '@happyvertical/smrt-tenancy';
+import { getTenantId, withTenant } from '@happyvertical/smrt-tenancy';
+import {
+  lockDocumentMoneyParents,
+  withDocumentMoneyTransaction,
+} from '../document-money-internal.js';
 import { TaxSummaryReport } from '../models/TaxSummaryReport.js';
+import { deterministicTaxId } from '../tax/identity.js';
 import {
   aggregateTaxSummary,
   type TaxSummaryComponentMapping,
@@ -18,6 +32,8 @@ export interface TaxSummaryExpenseSource {
     tenantId: string;
     from: string;
     to: string;
+    /** Refresh supplies its transaction-bound executor. */
+    db: DatabaseInterface;
   }): Promise<readonly TaxSummaryExpenseFact[]>;
 }
 
@@ -28,6 +44,8 @@ export interface TaxSummaryLedgerSource {
     from: Date;
     to: Date;
     currency: string;
+    /** Refresh supplies its transaction-bound executor. */
+    db: DatabaseInterface;
   }): Promise<readonly TaxSummaryLedgerMovement[]>;
 }
 
@@ -81,6 +99,81 @@ function stableDimension(parts: readonly (string | null)[]): string {
 export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryReport> {
   static readonly _itemClass = TaxSummaryReport;
 
+  private async assertReadableMoneyModel(): Promise<void> {
+    const tenantId = getTenantId();
+    if (!tenantId)
+      throw new Error('Tax summary report reads require a tenant context.');
+    const settings = await TaxSettingsCollection.create({ db: this.db });
+    const current = await settings.getForTenant(tenantId);
+    if (current?.moneyModel !== 'v2')
+      throw new Error(
+        'Tax summary requires an activated v2 money model; legacy and migrating tenants are incomplete.',
+      );
+  }
+
+  override async get(
+    filter: Parameters<SmrtCollection<TaxSummaryReport>['get']>[0],
+    options: Parameters<SmrtCollection<TaxSummaryReport>['get']>[1] = {},
+  ): Promise<TaxSummaryReport | null> {
+    await this.assertReadableMoneyModel();
+    return super.get(filter, options);
+  }
+
+  override async count(
+    options: Parameters<SmrtCollection<TaxSummaryReport>['count']>[0] = {},
+  ): Promise<number> {
+    await this.assertReadableMoneyModel();
+    return super.count(options);
+  }
+
+  override async list<
+    const Select extends readonly SmrtSelectField<TaxSummaryReport>[],
+  >(
+    options: Omit<SmrtListOptions<TaxSummaryReport>, 'select' | 'stiScope'> & {
+      select: Select;
+      include?: never;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<Record<string, unknown>[]>;
+  override async list<
+    const Select extends readonly SmrtSelectField<TaxSummaryReport>[],
+  >(
+    options: Omit<SmrtListOptions<TaxSummaryReport>, 'select' | 'stiScope'> & {
+      select: Select;
+      include?: never;
+      stiScope?: undefined;
+    },
+  ): Promise<SmrtSelectedRow<TaxSummaryReport, Select>[]>;
+  override async list(
+    options: Omit<SmrtListOptions<TaxSummaryReport>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<SmrtObject[]>;
+  override async list(options?: undefined): Promise<TaxSummaryReport[]>;
+  override async list(
+    options: Omit<SmrtListOptions<TaxSummaryReport>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope?: undefined;
+    },
+  ): Promise<TaxSummaryReport[]>;
+  override async list(
+    options:
+      | (Omit<SmrtListOptions<TaxSummaryReport>, 'select'> & {
+          select?: undefined;
+        })
+      | undefined,
+  ): Promise<SmrtObject[]>;
+  override async list(
+    options: SmrtListOptions<TaxSummaryReport> | undefined,
+  ): Promise<SmrtObject[] | Record<string, unknown>[]>;
+  override async list(
+    options: SmrtListOptions<TaxSummaryReport> = {},
+  ): Promise<SmrtObject[] | Record<string, unknown>[]> {
+    await this.assertReadableMoneyModel();
+    return super.list(options);
+  }
+
   /**
    * Rebuild the Invoice path from immutable snapshots. Legacy or migrating
    * tenants are refused because their rows are not a complete v2 tax source.
@@ -95,75 +188,87 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
         'Tax summary refresh requires explicit expense and ledger source adapters.',
       );
 
-    return withTenant({ tenantId: options.tenantId }, async () => {
-      const settings = await TaxSettingsCollection.create({ db: this.db });
-      const taxSettings = await settings.getForTenant(options.tenantId);
-      if (taxSettings?.moneyModel !== 'v2')
-        throw new Error(
-          'Tax summary requires an activated v2 money model; legacy and migrating tenants are incomplete.',
-        );
+    return withTenant({ tenantId: options.tenantId }, () =>
+      withDocumentMoneyTransaction(this.db, async (tx) => {
+        const settings = await TaxSettingsCollection.create({ db: tx });
+        const existingSettings = await settings.getForTenant(options.tenantId);
+        if (!existingSettings?.id)
+          throw new Error(
+            'Tax summary requires an activated v2 money model; legacy and migrating tenants are incomplete.',
+          );
+        await lockDocumentMoneyParents([
+          {
+            id: existingSettings.id,
+            tenantId: options.tenantId,
+            collection: settings,
+          },
+        ]);
+        const taxSettings = await settings.getForTenant(options.tenantId);
+        if (taxSettings?.moneyModel !== 'v2')
+          throw new Error(
+            'Tax summary requires an activated v2 money model; legacy and migrating tenants are incomplete.',
+          );
 
-      const documentTaxes = await DocumentTaxCollection.create({ db: this.db });
-      const facts = await documentTaxes.listReportFacts({
-        tenantId: options.tenantId,
-        from: options.from,
-        to: options.to,
-      });
-      const expenses = await options.expenseSource.listReviewedTaxFacts({
-        tenantId: options.tenantId,
-        from: calendarDate(options.from),
-        to: calendarDate(options.to),
-      });
-      const accountIdsByCurrency = new Map<string, Set<string>>();
-      for (const fact of facts) {
-        if (!fact.liabilityAccountId) continue;
-        const accounts = accountIdsByCurrency.get(fact.currency) ?? new Set();
-        accounts.add(fact.liabilityAccountId);
-        accountIdsByCurrency.set(fact.currency, accounts);
-      }
-      for (const mapping of options.expenseComponentMappings) {
-        if (
-          mapping.tenantId !== options.tenantId ||
-          !mapping.liabilityAccountId
-        )
-          continue;
-        for (const currency of new Set(
-          expenses.map((expense) => expense.currency),
-        )) {
-          const accounts = accountIdsByCurrency.get(currency) ?? new Set();
-          accounts.add(mapping.liabilityAccountId);
-          accountIdsByCurrency.set(currency, accounts);
+        const documentTaxes = await DocumentTaxCollection.create({ db: tx });
+        const facts = await documentTaxes.listReportFacts({
+          tenantId: options.tenantId,
+          from: options.from,
+          to: options.to,
+        });
+        const expenses = await options.expenseSource.listReviewedTaxFacts({
+          tenantId: options.tenantId,
+          from: calendarDate(options.from),
+          to: calendarDate(options.to),
+          db: tx,
+        });
+        const accountIdsByCurrency = new Map<string, Set<string>>();
+        for (const fact of facts) {
+          if (!fact.liabilityAccountId) continue;
+          const accounts =
+            accountIdsByCurrency.get(fact.currency) ?? new Set<string>();
+          accounts.add(fact.liabilityAccountId);
+          accountIdsByCurrency.set(fact.currency, accounts);
         }
-      }
-      const ledgerMovements = (
-        await Promise.all(
-          [...accountIdsByCurrency.entries()].map(
-            async ([currency, accountIds]) =>
-              options.ledgerSource.listPostedMovements({
-                tenantId: options.tenantId,
-                accountIds: [...accountIds].sort(),
-                from: options.from,
-                to: options.to,
-                currency,
-              }),
-          ),
-        )
-      ).flat();
-      const result = aggregateTaxSummary({
-        tenantId: options.tenantId,
-        from: options.from.toISOString(),
-        to: options.to.toISOString(),
-        facts,
-        expenses,
-        expenseComponentMappings: options.expenseComponentMappings,
-        ledgerMovements,
-      });
-      const rows = reportRows(options, result);
-
-      const transaction = this.db.transaction?.bind(this.db);
-      if (!transaction)
-        throw new Error('Tax summary refresh requires transaction support.');
-      await transaction(async (tx) => {
+        for (const mapping of options.expenseComponentMappings) {
+          if (
+            mapping.tenantId !== options.tenantId ||
+            !mapping.liabilityAccountId
+          )
+            continue;
+          for (const currency of new Set(
+            expenses.map((expense) => expense.currency),
+          )) {
+            const accounts =
+              accountIdsByCurrency.get(currency) ?? new Set<string>();
+            accounts.add(mapping.liabilityAccountId);
+            accountIdsByCurrency.set(currency, accounts);
+          }
+        }
+        const ledgerMovements = (
+          await Promise.all(
+            [...accountIdsByCurrency.entries()].map(
+              async ([currency, accountIds]) =>
+                options.ledgerSource.listPostedMovements({
+                  tenantId: options.tenantId,
+                  accountIds: [...accountIds].sort(),
+                  from: options.from,
+                  to: options.to,
+                  currency,
+                  db: tx,
+                }),
+            ),
+          )
+        ).flat();
+        const result = aggregateTaxSummary({
+          tenantId: options.tenantId,
+          from: options.from.toISOString(),
+          to: options.to.toISOString(),
+          facts,
+          expenses,
+          expenseComponentMappings: options.expenseComponentMappings,
+          ledgerMovements,
+        });
+        const rows = await reportRows(options, result);
         const reports = await TaxSummaryReportCollection.create({ db: tx });
         const existing = await reports.list({
           where: {
@@ -174,9 +279,9 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
         });
         for (const row of existing) await row.delete();
         for (const row of rows) await reports.create(row);
-      });
-      return { rowCount: rows.length, complete: result.complete };
-    });
+        return { rowCount: rows.length, complete: result.complete };
+      }),
+    );
   }
 
   /**
@@ -212,17 +317,17 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
   }
 }
 
-function reportRows(
+async function reportRows(
   options: Pick<RefreshTaxSummaryReportOptions, 'tenantId' | 'from' | 'to'>,
   result: ReturnType<typeof aggregateTaxSummary>,
-): Array<Record<string, unknown>> {
+): Promise<Array<Record<string, unknown>>> {
   const period = {
     tenantId: options.tenantId,
     periodFrom: options.from,
     periodTo: options.to,
     complete: result.complete,
   };
-  return [
+  const rows = [
     ...result.componentRows.map((row) => ({
       ...period,
       currency: row.currency,
@@ -305,4 +410,20 @@ function reportRows(
       warningMessage: warning.message,
     })),
   ];
+  return Promise.all(
+    rows.map(async (row) => ({
+      ...row,
+      id: await deterministicTaxId(
+        options.tenantId,
+        'report',
+        JSON.stringify([
+          options.from.toISOString(),
+          options.to.toISOString(),
+          row.currency,
+          row.rowKind,
+          row.dimensionKey,
+        ]),
+      ),
+    })),
+  );
 }

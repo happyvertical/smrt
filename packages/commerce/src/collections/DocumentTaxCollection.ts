@@ -37,6 +37,10 @@ export interface InvoiceTaxReportFact {
   tenantId: string;
   documentType: 'invoice';
   documentId: string;
+  /** The invoice number supplied to drilldown consumers. */
+  documentNumber: string;
+  /** Customer identity for a host to resolve as its party display. */
+  partyId: string | null;
   /** Invoice credits have no persisted kind column yet, so every current row is an invoice. */
   documentKind: 'invoice';
   issueDate: string;
@@ -177,7 +181,7 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
       `SELECT d.tenant_id, d.document_id, d.currency, d.tax_code_id, d.kind,
               d.tax_component_id, d.tax_component_name, d.liability_account_id,
               d.taxable_minor, d.tax_minor, d.recoverable_minor,
-              i.issue_date, i.status
+              i.invoice_number, i.customer_id, i.issue_date, i.status
          FROM document_taxes d
          JOIN invoices i
            ON CAST(i.id AS TEXT) = CAST(d.document_id AS TEXT)
@@ -199,6 +203,11 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
       tenantId: requiredText(row.tenant_id, 'tenant id'),
       documentType: 'invoice' as const,
       documentId: requiredText(row.document_id, 'document id'),
+      documentNumber: requiredText(row.invoice_number, 'invoice number'),
+      partyId:
+        typeof row.customer_id === 'string' && row.customer_id.trim()
+          ? row.customer_id
+          : null,
       documentKind: 'invoice' as const,
       issueDate: reportDate(row.issue_date, 'issue date'),
       status: requiredText(row.status, 'invoice status'),

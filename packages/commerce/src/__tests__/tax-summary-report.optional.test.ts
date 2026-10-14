@@ -28,6 +28,7 @@ describePostgres('TaxSummaryReport on PostgreSQL (#3940)', () => {
     isolated = await createIsolatedTestDbFromManifest({
       includeObjects: [
         'Contract',
+        'Customer',
         'DocumentTax',
         'Invoice',
         'InvoiceLineItem',
@@ -92,11 +93,58 @@ describePostgres('TaxSummaryReport on PostgreSQL (#3940)', () => {
       reportId: gst.id,
     });
     expect(facts).toHaveLength(4);
+    const foreignTenantId = randomUUID();
+    await withTenant({ tenantId: foreignTenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db });
+      const migrationId = await settings.beginMoneyMigration(foreignTenantId);
+      await settings.activateMoneyV2(foreignTenantId, migrationId);
+    });
     await expect(
       drilldownTaxSummaryInvoiceFacts(db, {
-        tenantId: randomUUID(),
+        tenantId: foreignTenantId,
         reportId: gst.id,
       }),
     ).rejects.toThrow('not visible to this tenant');
+  });
+
+  it('serializes concurrent same-period refreshes to one deterministic row set', async () => {
+    const tenantId = randomUUID();
+    await withTenant({ tenantId }, () =>
+      seedInvoiceTaxReportFacts(db, tenantId, randomUUID()),
+    );
+    await withTenant({ tenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db });
+      const migrationId = await settings.beginMoneyMigration(tenantId);
+      await settings.activateMoneyV2(tenantId, migrationId);
+    });
+    const options = {
+      tenantId,
+      from,
+      to,
+      expenseSource: { listReviewedTaxFacts: async () => [] },
+      ledgerSource: {
+        listPostedMovements: async ({ accountIds }: { accountIds: string[] }) =>
+          accountIds.map((accountId) => ({
+            tenantId,
+            entryId: `${accountId}-entry`,
+            accountId,
+            currency: 'CAD',
+            creditMinusDebit: accountId === 'gst-payable' ? 11_078 : 4_439,
+          })),
+      },
+      expenseComponentMappings: [],
+    };
+    const first = await TaxSummaryReportCollection.create({ db });
+    const second = await TaxSummaryReportCollection.create({ db });
+    await Promise.all([
+      first.refreshTaxSummary(options),
+      second.refreshTaxSummary(options),
+    ]);
+    const rows = await withTenant({ tenantId }, () =>
+      first.list({ where: { tenantId } }),
+    );
+    expect(rows).toHaveLength(5);
+    expect(new Set(rows.map((row) => row.id))).toHaveLength(5);
+    expect(new Set(rows.map((row) => row.dimensionKey))).toHaveLength(5);
   });
 });

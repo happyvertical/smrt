@@ -48,12 +48,21 @@ describe('DocumentTax invoice report facts (#3940)', () => {
         expect.objectContaining({
           documentId: fixture.invoiceAId,
           documentType: 'invoice',
+          documentNumber: 'REPORT-A',
+          partyId: fixture.partyAId,
           documentKind: 'invoice',
           status: 'sent',
           taxCodeId: 'gst',
           taxComponentId: 'gst',
           taxableMinor: 81_000,
-          taxMinor: 1_875,
+          taxMinor: 4_050,
+        }),
+        expect.objectContaining({
+          documentId: fixture.invoiceAId,
+          taxCodeId: 'gst-pst',
+          taxComponentId: 'gst',
+          taxableMinor: 33_498,
+          taxMinor: 1_675,
         }),
         expect.objectContaining({
           documentId: fixture.invoiceAId,
@@ -64,10 +73,19 @@ describe('DocumentTax invoice report facts (#3940)', () => {
         }),
         expect.objectContaining({
           documentId: fixture.invoiceBId,
+          documentNumber: 'REPORT-B',
+          partyId: fixture.partyBId,
           status: 'written_off',
           taxCodeId: 'gst',
           taxableMinor: 77_143,
           taxMinor: 3_857,
+        }),
+        expect.objectContaining({
+          documentId: fixture.invoiceBId,
+          taxCodeId: 'gst-pst',
+          taxComponentId: 'gst',
+          taxableMinor: 29_908,
+          taxMinor: 1_496,
         }),
         expect.objectContaining({
           documentId: fixture.invoiceBId,

@@ -41,68 +41,96 @@ const fact = (overrides: Partial<TaxSummaryInput['facts'][number]> = {}) => ({
 
 describe('aggregateTaxSummary', () => {
   it('uses exact A, B line/document, C/D exempt and E stored calculator goldens', () => {
+    const aFacts = [
+      fact({ taxCodeId: 'gst', taxableMinor: 81_000, taxMinor: 4_050 }),
+      fact({
+        taxCodeId: 'gst-pst',
+        taxableMinor: 33_498,
+        taxMinor: 1_675,
+      }),
+      fact({
+        taxCodeId: 'gst-pst',
+        taxableMinor: 33_498,
+        taxComponentId: 'pst',
+        componentName: 'PST',
+        liabilityAccountId: 'pst-payable',
+        taxMinor: 2_345,
+      }),
+    ];
+    const bLineFacts = [
+      fact({
+        documentId: 'B-line',
+        taxCodeId: 'gst',
+        taxableMinor: 77_143,
+        taxMinor: 3_857,
+      }),
+      fact({
+        documentId: 'B-line',
+        taxCodeId: 'gst-pst',
+        taxableMinor: 29_909,
+        taxMinor: 1_495,
+      }),
+      fact({
+        documentId: 'B-line',
+        taxCodeId: 'gst-pst',
+        taxableMinor: 29_909,
+        taxComponentId: 'pst',
+        componentName: 'PST',
+        liabilityAccountId: 'pst-payable',
+        taxMinor: 2_094,
+      }),
+    ];
+    const bDocumentFacts = [
+      fact({
+        documentId: 'B-document',
+        taxCodeId: 'gst',
+        taxableMinor: 77_143,
+        taxMinor: 3_857,
+      }),
+      fact({
+        documentId: 'B-document',
+        taxCodeId: 'gst-pst',
+        taxableMinor: 29_908,
+        taxMinor: 1_496,
+      }),
+      fact({
+        documentId: 'B-document',
+        taxCodeId: 'gst-pst',
+        taxableMinor: 29_908,
+        taxComponentId: 'pst',
+        componentName: 'PST',
+        liabilityAccountId: 'pst-payable',
+        taxMinor: 2_094,
+      }),
+    ];
+    expect(
+      [...aFacts, ...bLineFacts, ...bDocumentFacts].map((row) => [
+        row.documentId,
+        row.taxCodeId,
+        row.taxComponentId,
+        row.taxableMinor,
+        row.taxMinor,
+      ]),
+    ).toEqual([
+      ['A', 'gst', 'gst', 81_000, 4_050],
+      ['A', 'gst-pst', 'gst', 33_498, 1_675],
+      ['A', 'gst-pst', 'pst', 33_498, 2_345],
+      ['B-line', 'gst', 'gst', 77_143, 3_857],
+      ['B-line', 'gst-pst', 'gst', 29_909, 1_495],
+      ['B-line', 'gst-pst', 'pst', 29_909, 2_094],
+      ['B-document', 'gst', 'gst', 77_143, 3_857],
+      ['B-document', 'gst-pst', 'gst', 29_908, 1_496],
+      ['B-document', 'gst-pst', 'pst', 29_908, 2_094],
+    ]);
     const result = aggregateTaxSummary(
       input({
         facts: [
           // A: GST is taxable on the full $1,144.98; PST only on $334.98.
-          fact({ taxCodeId: 'gst', taxableMinor: 81_000, taxMinor: 1_875 }),
-          fact({
-            taxCodeId: 'gst-pst',
-            taxableMinor: 33_498,
-            taxMinor: 3_850,
-          }),
-          fact({
-            taxCodeId: 'gst-pst',
-            taxableMinor: 33_498,
-            taxComponentId: 'pst',
-            componentName: 'PST',
-            liabilityAccountId: 'pst-payable',
-            taxMinor: 2_345,
-          }),
+          ...aFacts,
           // B line scope: GST $1,070.52; PST $299.09.
-          fact({
-            documentId: 'B-line',
-            taxCodeId: 'gst',
-            taxableMinor: 77_143,
-            taxMinor: 3_856,
-          }),
-          fact({
-            documentId: 'B-line',
-            taxCodeId: 'gst-pst',
-            taxableMinor: 29_909,
-            taxMinor: 1_496,
-          }),
-          fact({
-            documentId: 'B-line',
-            taxCodeId: 'gst-pst',
-            taxableMinor: 29_909,
-            taxComponentId: 'pst',
-            componentName: 'PST',
-            liabilityAccountId: 'pst-payable',
-            taxMinor: 2_094,
-          }),
+          ...bLineFacts,
           // B document scope: GST $1,070.51; PST $299.08.
-          fact({
-            documentId: 'B-document',
-            taxCodeId: 'gst',
-            taxableMinor: 77_143,
-            taxMinor: 3_857,
-          }),
-          fact({
-            documentId: 'B-document',
-            taxCodeId: 'gst-pst',
-            taxableMinor: 29_908,
-            taxMinor: 1_496,
-          }),
-          fact({
-            documentId: 'B-document',
-            taxCodeId: 'gst-pst',
-            taxableMinor: 29_908,
-            taxComponentId: 'pst',
-            componentName: 'PST',
-            liabilityAccountId: 'pst-payable',
-            taxMinor: 2_094,
-          }),
+          ...bDocumentFacts,
           // C is exempt. The actual stored fact contains no component row.
           fact({
             documentId: 'C',

@@ -57,3 +57,21 @@ This source currently treats every Invoice as an invoice because the Invoice
 Invoice, this source must select that field and pass positive credit snapshots
 through the aggregation's single credit sign step. Contract facts await #3898;
 they are not silently included in this path.
+
+Refresh holds the tenant `TaxSettings` parent lock through the v2 gate, all
+source reads, aggregation, and replacement. Every source-adapter call receives
+the same transaction-bound database executor. Replacement rows use a stable
+UUID derived from tenant, period, currency, row kind, and dimension, so retry
+and concurrent same-period refreshes converge to one row set. Materialized
+`list`, `get`, `count`, and Invoice drilldowns all recheck the tenant's marker;
+`legacy` and `migrating` refuse even existing report rows.
+
+The Invoice drilldown fact carries the printed invoice number, tenant-scoped
+customer/party id, issue date, stored taxable base, and stored tax. A runtime
+host may resolve that party id to an authorized display name; the commerce
+source does not cross-join profile data.
+
+This release has no runtime reports UI consumer. The descriptor/query bridge is
+covered independently, while #3878 (server report contract) and #3895 (the
+reports/Svelte minor-unit formatter and drilldown UI) are the external
+integration gate. This package intentionally does not duplicate that formatter.

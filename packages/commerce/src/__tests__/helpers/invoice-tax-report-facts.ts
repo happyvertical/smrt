@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { withTenant } from '@happyvertical/smrt-tenancy';
+import { CustomerCollection } from '../../collections/CustomerCollection.js';
 import { DocumentTaxCollection } from '../../collections/DocumentTaxCollection.js';
 import { InvoiceCollection } from '../../collections/InvoiceCollection.js';
 import { DOCUMENT_MONEY_WRITE } from '../../document-money-internal.js';
@@ -10,6 +12,8 @@ export interface InvoiceTaxReportFactsFixture {
   invoiceAId: string;
   invoiceBId: string;
   foreignInvoiceId: string;
+  partyAId: string;
+  partyBId: string;
 }
 
 async function issueInvoice(
@@ -19,12 +23,14 @@ async function issueInvoice(
     issueDate: Date;
     status: InvoiceStatus;
     currency?: string;
+    customerId?: string;
   },
 ) {
   const invoice = await invoices.create({
     invoiceNumber: input.invoiceNumber,
     issueDate: input.issueDate,
     currency: input.currency ?? 'CAD',
+    customerId: input.customerId ?? '',
   });
   invoice.status = input.status;
   await invoice.save();
@@ -39,15 +45,22 @@ export async function seedInvoiceTaxReportFacts(
   foreignTenantId = 'tenant-b',
 ): Promise<InvoiceTaxReportFactsFixture> {
   const invoices = await InvoiceCollection.create({ db });
+  const customers = await CustomerCollection.create({ db });
+  const partyA = await customers.create({ profileId: randomUUID() });
+  const partyB = await customers.create({ profileId: randomUUID() });
+  if (!partyA.id || !partyB.id)
+    throw new Error('Expected persisted party ids.');
   const invoiceA = await issueInvoice(invoices, {
     invoiceNumber: 'REPORT-A',
     issueDate: new Date('2026-09-01T00:00:00.000Z'),
     status: InvoiceStatus.SENT,
+    customerId: partyA.id,
   });
   const invoiceB = await issueInvoice(invoices, {
     invoiceNumber: 'REPORT-B',
     issueDate: new Date('2026-09-30T23:59:59.999Z'),
     status: InvoiceStatus.WRITTEN_OFF,
+    customerId: partyB.id,
   });
   const foreignInvoice = await withTenant({ tenantId: foreignTenantId }, () =>
     issueInvoice(invoices, {
@@ -81,7 +94,7 @@ export async function seedInvoiceTaxReportFacts(
         percent: '5',
         liabilityAccountId: 'gst-payable',
         taxableMinor: 81_000,
-        taxMinor: 1_875,
+        taxMinor: 4_050,
         recoverableMinor: 0,
       },
       {
@@ -97,7 +110,7 @@ export async function seedInvoiceTaxReportFacts(
         percent: '5',
         liabilityAccountId: 'gst-payable',
         taxableMinor: 33_498,
-        taxMinor: 3_850,
+        taxMinor: 1_675,
         recoverableMinor: 0,
       },
       {
@@ -202,5 +215,7 @@ export async function seedInvoiceTaxReportFacts(
     invoiceAId,
     invoiceBId,
     foreignInvoiceId,
+    partyAId: partyA.id,
+    partyBId: partyB.id,
   };
 }
