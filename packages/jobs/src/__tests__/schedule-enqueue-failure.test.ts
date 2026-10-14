@@ -204,7 +204,9 @@ describe('ScheduleRunner triggerSchedule re-arm time zone (#3859)', () => {
     vi.useRealTimers();
   });
 
-  async function rearm(timezone: string | null): Promise<string> {
+  async function rearm(
+    timezone: string | null,
+  ): Promise<{ next_run: string; status: string; last_error: string | null }> {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     await SmrtJobCollection.create({ db });
     await createSchedulesTable(db);
@@ -247,19 +249,33 @@ describe('ScheduleRunner triggerSchedule re-arm time zone (#3859)', () => {
     ).triggerSchedule(scheduleRow);
 
     const result = await db.query(
-      'SELECT next_run FROM _smrt_agent_schedules WHERE id = ?',
+      'SELECT next_run, status, last_error FROM _smrt_agent_schedules WHERE id = ?',
       'sched-tz',
     );
-    return (result.rows[0] as { next_run: string }).next_run;
+    return result.rows[0] as {
+      next_run: string;
+      status: string;
+      last_error: string | null;
+    };
   }
 
   it("re-arms next_run in the row's zone, not the process zone", async () => {
     // 03:05 in Edmonton (MDT, UTC-6) is 09:05Z regardless of the host TZ.
-    expect(await rearm('America/Edmonton')).toBe('2025-06-01T09:05:00.000Z');
+    expect((await rearm('America/Edmonton')).next_run).toBe(
+      '2025-06-01T09:05:00.000Z',
+    );
   });
 
   it('falls back to the UTC column default when the row has no zone', async () => {
-    expect(await rearm(null)).toBe('2025-06-01T03:05:00.000Z');
-    expect(await rearm('  ')).toBe('2025-06-01T03:05:00.000Z');
+    expect((await rearm(null)).next_run).toBe('2025-06-01T03:05:00.000Z');
+    expect((await rearm('  ')).next_run).toBe('2025-06-01T03:05:00.000Z');
+  });
+
+  it('moves a row with an unknown zone to error instead of retrying it every poll', async () => {
+    const row = await rearm('Mars/Olympus_Mons');
+    expect(row.status).toBe('error');
+    expect(row.last_error).toContain('Invalid cron timezone');
+    // The due slot is left as-is; the row simply leaves the active poll.
+    expect(row.next_run).toBe('2025-06-01T00:00:00.000Z');
   });
 });

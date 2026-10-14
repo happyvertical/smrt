@@ -502,12 +502,33 @@ export class ScheduleRunner extends EventEmitter {
       // Compute next run time from cron before creating the job, evaluated
       // in the row's zone; a missing/blank zone falls back to the column
       // default (UTC) rather than the host's process zone (#3859).
-      const nextRun = getNextCronDate(
-        schedule.cron as string,
-        typeof schedule.timezone === 'string' && schedule.timezone.trim()
-          ? schedule.timezone.trim()
-          : 'UTC',
-      );
+      // An invalid cron or zone is a deterministic configuration failure, not
+      // a transient one: retrying it every poll can never succeed, so move the
+      // row to status='error' (as AgentSchedule.calculateNextRun does) instead
+      // of leaving it due and active.
+      let nextRun: Date;
+      try {
+        nextRun = getNextCronDate(
+          schedule.cron as string,
+          typeof schedule.timezone === 'string' && schedule.timezone.trim()
+            ? schedule.timezone.trim()
+            : 'UTC',
+        );
+      } catch (error) {
+        await this.db.query(
+          `UPDATE _smrt_agent_schedules
+           SET status = 'error', last_error = ?
+           WHERE id = ?`,
+          redactErrorForPersistence(error),
+          schedule.id,
+        );
+        this.emit('schedule:error', scheduleInfo, error as Error);
+        this.logger.error('Schedule has an invalid cron or time zone', {
+          scheduleId: schedule.id,
+          error,
+        });
+        return;
+      }
 
       // Create a job for this schedule
       // Nest agent_config under _agentConfig so TaskRunner can pass it
