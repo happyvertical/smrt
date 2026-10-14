@@ -2,17 +2,52 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
+import { importConsumerPackage } from '../loaders/consumer-package.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
   redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
-// Commerce is an optional command provider. Keeping the specifier non-literal
-// avoids a CLI -> Commerce workspace edge (Commerce reaches CLI through its UI
-// dependencies); the command reports the normal module-load error when a host
-// invokes it without installing @happyvertical/smrt-commerce.
-const COMMERCE_PACKAGE: string = '@happyvertical/smrt-commerce';
+const COMMERCE_PACKAGE = '@happyvertical/smrt-commerce';
+
+interface CommerceMoneyModule {
+  migrateCommerceLineAmounts(
+    db: DatabaseInterface,
+    options: {
+      acceptDraftChanges: boolean;
+      migrationId: string;
+      tenantId: string;
+    },
+  ): Promise<{
+    activated: boolean;
+    migrated: number;
+    migrationId: string;
+    report: CommerceMoneyReportLike;
+    resumed: number;
+    tenantId: string;
+  }>;
+  preflightCommerceLineAmounts(
+    db: DatabaseInterface,
+    options: {
+      out?: { csvPath: string; jsonPath: string };
+      tenantId?: string;
+    },
+  ): Promise<CommerceMoneyReportLike>;
+  rollbackCommerceLineAmounts(
+    db: DatabaseInterface,
+    options: { migrationId: string; tenantId: string },
+  ): Promise<{
+    alreadyRestored: number;
+    migrationId: string;
+    restored: number;
+    tenantId: string;
+  }>;
+}
+
+function loadCommerceMoneyModule(): Promise<CommerceMoneyModule> {
+  return importConsumerPackage<CommerceMoneyModule>(COMMERCE_PACKAGE);
+}
 
 interface CommerceMoneyReportOptions {
   'csv-path'?: string;
@@ -146,7 +181,7 @@ export const dbPreflightCommerceMoneyCommand: CLICommand = {
         'db:preflight-commerce-money',
       );
       db = configured.db;
-      const { preflightCommerceLineAmounts } = await import(COMMERCE_PACKAGE);
+      const { preflightCommerceLineAmounts } = await loadCommerceMoneyModule();
       console.log('\n💰 Commerce money preflight\n');
       console.log(
         `✓ Connected to ${formatDatabaseDisplayUrl(configured.dbType, configured.dbUrl)}\n`,
@@ -196,7 +231,7 @@ export const dbMigrateCommerceMoneyCommand: CLICommand = {
       const tenantId = requiredOption(options['tenant-id'], 'tenant-id');
       const configured = await configuredDatabase('db:migrate-commerce-money');
       db = configured.db;
-      const { migrateCommerceLineAmounts } = await import(COMMERCE_PACKAGE);
+      const { migrateCommerceLineAmounts } = await loadCommerceMoneyModule();
       console.log('\n💰 Commerce money migration\n');
       console.log(
         `✓ Connected to ${formatDatabaseDisplayUrl(configured.dbType, configured.dbUrl)}\n`,
@@ -248,7 +283,7 @@ export const dbRollbackCommerceMoneyCommand: CLICommand = {
       );
       const configured = await configuredDatabase('db:rollback-commerce-money');
       db = configured.db;
-      const { rollbackCommerceLineAmounts } = await import(COMMERCE_PACKAGE);
+      const { rollbackCommerceLineAmounts } = await loadCommerceMoneyModule();
       console.log('\n💰 Commerce money rollback\n');
       console.log(
         `✓ Connected to ${formatDatabaseDisplayUrl(configured.dbType, configured.dbUrl)}\n`,

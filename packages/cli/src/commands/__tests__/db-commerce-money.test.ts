@@ -18,10 +18,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@happyvertical/sql', () => ({ getDatabase: mocks.getDatabase }));
-vi.mock('@happyvertical/smrt-commerce', () => ({
-  migrateCommerceLineAmounts: mocks.migrate,
-  preflightCommerceLineAmounts: mocks.preflight,
-  rollbackCommerceLineAmounts: mocks.rollback,
+vi.mock('../../loaders/consumer-package.js', () => ({
+  importConsumerPackage: vi.fn().mockImplementation(async () => ({
+    migrateCommerceLineAmounts: mocks.migrate,
+    preflightCommerceLineAmounts: mocks.preflight,
+    rollbackCommerceLineAmounts: mocks.rollback,
+  })),
 }));
 vi.mock('../../discovery/index.js', () => ({
   autoDiscoverAndLoad: mocks.discover,
