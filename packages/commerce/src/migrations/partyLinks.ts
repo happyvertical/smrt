@@ -20,8 +20,10 @@ export interface CommerceContractTypeGroup {
 export interface CommerceInvalidContractReference {
   source_table: string;
   source_id: string;
+  source_tenant_id: string | null;
   contract_id: string;
   contract_meta_type: string | null;
+  contract_tenant_id: string | null;
 }
 
 export interface CommercePartyLinksPreflight {
@@ -157,15 +159,21 @@ export async function preflightCommercePartyLinks(
     if (!(await db.tableExists(table))) return [];
     const result = await db.query(
       `SELECT '${table}' AS source_table, source.id AS source_id,
+              source.tenant_id AS source_tenant_id,
               CAST(source.${column} AS TEXT) AS contract_id,
-              contract._meta_type AS contract_meta_type
+              contract._meta_type AS contract_meta_type,
+              contract.tenant_id AS contract_tenant_id
          FROM ${table} source
          LEFT JOIN contracts contract
            ON CAST(source.${column} AS TEXT) = CAST(contract.id AS TEXT)
         WHERE source.${column} IS NOT NULL
           AND CAST(source.${column} AS TEXT) <> ''
           AND (contract.id IS NULL OR contract._meta_type IS NULL
-               OR NOT (${leafMatches(allowed, 'contract._meta_type')}))`,
+               OR NOT (${leafMatches(allowed, 'contract._meta_type')})
+               OR (source.tenant_id IS NOT NULL
+                   AND CAST(source.tenant_id AS TEXT) <> ''
+                   AND (contract.tenant_id IS NULL
+                        OR CAST(source.tenant_id AS TEXT) <> CAST(contract.tenant_id AS TEXT))))`,
     );
     return result.rows as CommerceInvalidContractReference[];
   };

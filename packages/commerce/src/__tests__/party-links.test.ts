@@ -264,10 +264,10 @@ describe('Contract party branches', () => {
       await document.save();
     }
     await contracts.db.query(
-      'CREATE TABLE expenses (id TEXT PRIMARY KEY, commitment_id TEXT)',
+      'CREATE TABLE expenses (id TEXT PRIMARY KEY, tenant_id TEXT, commitment_id TEXT)',
     );
     await contracts.db.query(
-      'CREATE TABLE ad_groups (id TEXT PRIMARY KEY, contract_id TEXT)',
+      'CREATE TABLE ad_groups (id TEXT PRIMARY KEY, tenant_id TEXT, contract_id TEXT)',
     );
     await contracts.db.query(
       'UPDATE invoices SET contract_id = ? WHERE id = ?',
@@ -309,5 +309,55 @@ describe('Contract party branches', () => {
     expect(
       report.invalidPurchaseReferences.map((row) => row.source_id),
     ).toEqual(['expense-sales']);
+  });
+
+  it('reports tenant-owned documents linked to global or other-tenant contracts', async () => {
+    const globalOrder = await save(
+      new Order({ db: contracts.db, customerId: 'customer-a' }),
+    );
+    const otherOrder = await save(
+      new Order({ db: contracts.db, customerId: 'customer-a' }),
+    );
+    const invoice = new Invoice({
+      db: contracts.db,
+      customerId: 'customer-a',
+      contractId: globalOrder.id,
+      invoiceNumber: 'INV-TENANT-PREFLIGHT',
+    });
+    const payment = new Payment({
+      db: contracts.db,
+      contractId: otherOrder.id,
+    });
+    for (const document of [invoice, payment]) {
+      await document.initialize();
+      await document.save();
+    }
+    await contracts.db.query(
+      "UPDATE invoices SET tenant_id = 'tenant-a' WHERE id = ?",
+      invoice.id,
+    );
+    await contracts.db.query(
+      "UPDATE payments SET tenant_id = 'tenant-a' WHERE id = ?",
+      payment.id,
+    );
+    await contracts.db.query(
+      "UPDATE contracts SET tenant_id = 'tenant-b' WHERE id = ?",
+      otherOrder.id,
+    );
+    const report = await preflightCommercePartyLinks(contracts.db);
+    expect(report.invalidSalesReferences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_id: invoice.id,
+          source_tenant_id: 'tenant-a',
+          contract_tenant_id: null,
+        }),
+        expect.objectContaining({
+          source_id: payment.id,
+          source_tenant_id: 'tenant-a',
+          contract_tenant_id: 'tenant-b',
+        }),
+      ]),
+    );
   });
 });
