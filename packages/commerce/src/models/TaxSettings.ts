@@ -64,6 +64,7 @@ export class TaxSettings extends SmrtObject {
 
   @field({
     sensitive: true,
+    transient: true,
     description:
       'Registration numbers by tax component, for issued-document snapshots.',
   })
