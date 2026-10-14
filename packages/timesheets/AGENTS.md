@@ -15,6 +15,14 @@ Attendance services accept trusted session actors, serialize mutations per
 actor, and bind every write to one executor. The new tables use non-null unique
 open slots, not nullable unique keys. A linked entry is draft evidence, and
 rollups must deduplicate `AttendancePunch.serviceTimeEntryId`.
+`AttendanceSegment` (`attendance_segments`) is a running work interval inside a
+punch: queryable `workRef*`/`taskRef*`/`kind` columns, one open per punch
+(`openSlot`), closed by `startBreak`/`punchOut`/`autoClose`, never overlapping
+breaks or each other, immutable once closed. It creates no `ServiceTimeEntry`.
+Segment transitions live in `attendance/segments.ts`; compose them with other
+attendance writes via `AttendanceService.withTransaction`. Any new attendance
+table must be added to the `includeObjects` lists in the `*.optional.test.ts`
+files.
 
 ## Models
 

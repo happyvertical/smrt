@@ -111,6 +111,21 @@ export class AttendancePunch extends SmrtObject {
     )
       throw new Error('Closed attendance evidence is immutable.');
     if (this.id && this.endedAt) {
+      const segments = await this.db.list('attendance_segments', {
+        tenant_id: this.tenantId,
+        punch_id: this.id,
+      });
+      if (
+        segments.some(
+          (item) =>
+            !item.ended_at ||
+            new Date(item.started_at as string).getTime() <
+              this.startedAt.getTime() ||
+            new Date(item.ended_at as string).getTime() >
+              this.endedAt!.getTime(),
+        )
+      )
+        throw new Error('Work segment must be inside its tenant-owned punch.');
       const breaks = await this.db.list('attendance_breaks', {
         tenant_id: this.tenantId,
         punch_id: this.id,
@@ -209,6 +224,151 @@ export class AttendanceBreak extends SmrtObject {
   }
 }
 
+const SEGMENT_CLOSE_REASONS = ['stop', 'switch', 'break', 'punchOut'] as const;
+/** Why a work segment ended; `''` while it is open. */
+export type AttendanceSegmentCloseReason =
+  | (typeof SEGMENT_CLOSE_REASONS)[number]
+  | '';
+
+/**
+ * A running unit of work inside one attendance punch: a work reference plus an
+ * optional second (task) reference as queryable columns, so job costing can
+ * index and join them. At most one segment is open per punch (`openSlot`). A
+ * segment never spans a break; `startBreak` and `punchOut` close it. Segments
+ * are attendance evidence and are not themselves service time entries.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'attendance_segments',
+  indexes: [
+    {
+      name: 'attendance_segments_open_punch_key',
+      columns: ['tenantId', 'punchId', 'openSlot'],
+      unique: true,
+    },
+    {
+      name: 'attendance_segments_work_idx',
+      columns: ['tenantId', 'workRefType', 'workRefId'],
+    },
+    {
+      name: 'attendance_segments_task_idx',
+      columns: ['tenantId', 'taskRefType', 'taskRefId'],
+    },
+  ],
+  api: { include: ['list', 'get'] },
+  cli: { include: ['list', 'get'] },
+  mcp: { include: ['list', 'get'] },
+})
+export class AttendanceSegment extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey(AttendancePunch) punchId = '';
+  /** Qualified class name of the work context (for example a work order). */
+  workRefType = '';
+  workRefId = '';
+  /** Optional second reference (for example an operation); both or neither. */
+  taskRefType = '';
+  taskRefId = '';
+  /** Optional short consumer lane label. */
+  kind = '';
+  description = '';
+  startedAt: Date = new Date();
+  endedAt: Date | null = null;
+  /** Elapsed whole seconds, set when the segment closes. */
+  durationSeconds = 0;
+  /** `stop`, `switch`, `break` or `punchOut` once closed; `''` while open. */
+  closedReason: AttendanceSegmentCloseReason = '';
+  @field({ required: true }) openSlot = '';
+
+  override async save(): Promise<this> {
+    return saveWithPunchLock(this, this.punchId, this.tenantId, () =>
+      this.saveConsistent(),
+    );
+  }
+
+  private async saveConsistent(): Promise<this> {
+    if (
+      !this.tenantId ||
+      !this.punchId ||
+      !this.workRefType ||
+      !this.workRefId ||
+      !!this.taskRefType !== !!this.taskRefId
+    )
+      throw new Error('Invalid attendance work segment.');
+    if (
+      !Number.isFinite(this.startedAt?.getTime()) ||
+      (this.endedAt &&
+        (!Number.isFinite(this.endedAt.getTime()) ||
+          this.endedAt < this.startedAt))
+    )
+      throw new Error('Invalid attendance segment interval.');
+    if (!this.endedAt !== !this.closedReason)
+      throw new Error(
+        'A segment has a close reason exactly when it is closed.',
+      );
+    if (this.closedReason && !SEGMENT_CLOSE_REASONS.includes(this.closedReason))
+      throw new Error('Invalid segment close reason.');
+    const parent = await this.db.get('attendance_punches', {
+      id: this.punchId,
+      tenant_id: this.tenantId,
+    });
+    if (
+      !parent ||
+      this.startedAt.getTime() <
+        new Date(parent.started_at as string).getTime() ||
+      (parent.ended_at &&
+        (!this.endedAt ||
+          this.endedAt.getTime() >
+            new Date(parent.ended_at as string).getTime()))
+    )
+      throw new Error('Segment must be inside its tenant-owned punch.');
+    const prior = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if (
+      prior &&
+      (prior.tenant_id !== this.tenantId ||
+        prior.punch_id !== this.punchId ||
+        prior.work_ref_type !== this.workRefType ||
+        prior.work_ref_id !== this.workRefId ||
+        prior.task_ref_type !== this.taskRefType ||
+        prior.task_ref_id !== this.taskRefId ||
+        prior.kind !== this.kind ||
+        prior.description !== this.description ||
+        new Date(prior.started_at as string).getTime() !==
+          this.startedAt.getTime())
+    )
+      throw new Error('Segment ownership, references and start are immutable.');
+    if (
+      prior?.ended_at &&
+      (new Date(prior.ended_at as string).getTime() !==
+        this.endedAt?.getTime() ||
+        prior.closed_reason !== this.closedReason)
+    )
+      throw new Error('Closed segments are immutable.');
+    const start = this.startedAt.getTime();
+    const end = this.endedAt?.getTime() ?? Number.POSITIVE_INFINITY;
+    const overlaps = (row: Record<string, unknown>) =>
+      start <
+        (row.ended_at
+          ? new Date(row.ended_at as string).getTime()
+          : Number.POSITIVE_INFINITY) &&
+      end > new Date(row.started_at as string).getTime();
+    const where = { tenant_id: this.tenantId, punch_id: this.punchId };
+    if ((await this.db.list('attendance_breaks', where)).some(overlaps))
+      throw new Error('Segment must not overlap a break.');
+    if (
+      (await this.db.list(this.tableName, where)).some(
+        (row) => row.id !== this.id && overlaps(row),
+      )
+    )
+      throw new Error('Segments must not overlap.');
+    this.durationSeconds = this.endedAt ? Math.round((end - start) / 1000) : 0;
+    this.id ??= crypto.randomUUID();
+    this.openSlot = this.endedAt ? JSON.stringify(['closed', this.id]) : 'open';
+    return super.save();
+  }
+}
+
 /** Durable success or conflict; conflicts do not mutate attendance. */
 export interface AttendanceReplayOutcome {
   clientId: string;
@@ -274,6 +434,10 @@ export class AttendancePunchCollection extends SmrtCollection<AttendancePunch> {
 /** Break intervals for net duration and period clipping. */
 export class AttendanceBreakCollection extends SmrtCollection<AttendanceBreak> {
   static readonly _itemClass = AttendanceBreak;
+}
+/** Work segments for job costing and attendance review. */
+export class AttendanceSegmentCollection extends SmrtCollection<AttendanceSegment> {
+  static readonly _itemClass = AttendanceSegment;
 }
 /** Internal durable replay ledger. */
 export class AttendanceReplayCollection extends SmrtCollection<AttendanceReplay> {

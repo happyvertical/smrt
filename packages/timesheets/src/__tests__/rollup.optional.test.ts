@@ -18,6 +18,7 @@ if (isPostgresAvailable()) {
           'ServiceTimeEntry',
           'AttendancePunch',
           'AttendanceBreak',
+          'AttendanceSegment',
           'AttendanceReplay',
         ],
       });
