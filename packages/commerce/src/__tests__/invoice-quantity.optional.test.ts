@@ -44,7 +44,7 @@ describe('invoice quantity arithmetic and validation', () => {
       amount: 11250,
     });
   });
-  it('rounds fractional gross and credit tax ties toward positive infinity', () => {
+  it('preserves legacy model rounding until the tenant money-v2 gate', () => {
     const item = new InvoiceLineItem({
       quantity: 0.5,
       unitPrice: 3,

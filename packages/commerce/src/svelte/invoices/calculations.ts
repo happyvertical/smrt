@@ -1,5 +1,10 @@
 /** Exact, transport-neutral invoice draft validation shared by browser and server. */
-import { calculateCostBillingTax } from '../../cost-billing.js';
+import {
+  calculateMoneyDocument,
+  type MoneyLineResult,
+  type MoneyTaxCodeInput,
+  MoneyValidationError,
+} from '../../money.js';
 import { currencyMinorUnitExponent } from './currency.js';
 
 /** Unparsed editable invoice line; invalid values remain caller-owned. */
@@ -168,6 +173,12 @@ export interface InvoiceMinorLineInput {
   taxRate: number;
 }
 
+/** Explicit migration boundary for persisted legacy invoice-line arithmetic. */
+export interface InvoiceMinorLineCalculationOptions {
+  /** Existing callers remain legacy until #3933's per-tenant marker selects v2. */
+  moneyModel?: 'legacy' | 'v2';
+}
+
 function numberDecimal(value: number, precision: number): Decimal {
   if (!Number.isFinite(value) || value < 0 || value > Number.MAX_SAFE_INTEGER)
     throw new RangeError(
@@ -188,11 +199,41 @@ function numberDecimal(value: number, precision: number): Decimal {
     : { coefficient, scale: 10n ** BigInt(places) };
 }
 
-function roundSigned(numerator: bigint, denominator: bigint): bigint {
-  // Preserve Math.round's existing credit-line ties toward positive infinity.
+function roundSignedLegacy(numerator: bigint, denominator: bigint): bigint {
   return numerator >= 0n
     ? roundHalfUp(numerator, denominator)
     : -((-numerator * 2n + denominator - 1n) / (denominator * 2n));
+}
+
+function decimalText(value: Decimal): string {
+  if (value.scale === 1n) return value.coefficient.toString();
+  const places = value.scale.toString().length - 1;
+  const digits = value.coefficient.toString().padStart(places + 1, '0');
+  const split = digits.length - places;
+  return `${digits.slice(0, split)}.${digits.slice(split)}`
+    .replace(/0+$/, '')
+    .replace(/\.$/, '');
+}
+
+function legacyTaxCode(percent: string): MoneyTaxCodeInput {
+  const normalized =
+    percent
+      .replace(/^0+(?=\d)/, '')
+      .replace(/(\.\d*?)0+$/, '$1')
+      .replace(/\.$/, '') || '0';
+  return normalized === '0'
+    ? { id: 'legacy-zero', kind: 'zero-rated', components: [] }
+    : {
+        id: `legacy-${normalized}`,
+        kind: 'taxable',
+        components: [
+          {
+            taxComponentId: `legacy-${normalized}`,
+            percent: normalized,
+            compound: false,
+          },
+        ],
+      };
 }
 
 /**
@@ -201,6 +242,7 @@ function roundSigned(numerator: bigint, denominator: bigint): bigint {
  */
 export function calculateInvoiceMinorLine(
   input: InvoiceMinorLineInput,
+  options: InvoiceMinorLineCalculationOptions = {},
 ): InvoiceCalculatedAmounts {
   for (const amount of [input.unitPrice, input.discount])
     if (!Number.isSafeInteger(amount))
@@ -211,25 +253,67 @@ export function calculateInvoiceMinorLine(
     );
   const quantity = numberDecimal(input.quantity, 6);
   const tax = numberDecimal(input.taxRate, 8);
-  const gross = roundSigned(
-    quantity.coefficient * BigInt(input.unitPrice),
-    quantity.scale,
-  );
-  const discount = BigInt(input.discount);
-  const subtotal = gross - discount;
-  const taxMinor = roundSigned(subtotal * tax.coefficient, tax.scale);
-  const total = subtotal + taxMinor;
-  for (const amount of [gross, subtotal, taxMinor, total])
-    if (amount > MAX_MINOR || amount < -MAX_MINOR)
-      throw new RangeError(
-        'Invoice line amount exceeds safe integer minor units.',
-      );
+  if ((options.moneyModel ?? 'legacy') === 'legacy') {
+    const gross = roundSignedLegacy(
+      quantity.coefficient * BigInt(input.unitPrice),
+      quantity.scale,
+    );
+    const discount = BigInt(input.discount);
+    const subtotal = gross - discount;
+    const taxMinor = roundSignedLegacy(subtotal * tax.coefficient, tax.scale);
+    const total = subtotal + taxMinor;
+    for (const amount of [gross, subtotal, taxMinor, total])
+      if (amount > MAX_MINOR || amount < -MAX_MINOR)
+        throw new RangeError(
+          'Invoice line amount exceeds safe integer minor units.',
+        );
+    return {
+      grossMinor: Number(gross),
+      discountMinor: input.discount,
+      subtotalMinor: Number(subtotal),
+      taxMinor: Number(taxMinor),
+      totalMinor: Number(total),
+    };
+  }
+  if (options.moneyModel !== 'v2')
+    throw new TypeError('Unknown invoice money model');
+  const percent = decimalText({
+    coefficient: tax.coefficient * 100n,
+    scale: tax.scale,
+  });
+  let result: MoneyLineResult;
+  try {
+    result = calculateMoneyDocument({
+      currency: 'USD',
+      lineAmountType: 'exclusive',
+      roundingScope: 'line',
+      lines: [
+        {
+          id: 'legacy-line',
+          quantity: input.quantity,
+          unitPrice: input.unitPrice,
+          discount:
+            input.discount === 0
+              ? { kind: 'none' }
+              : {
+                  kind: 'amount',
+                  minor: input.unitPrice < 0 ? -input.discount : input.discount,
+                },
+          taxCode: legacyTaxCode(percent),
+        },
+      ],
+    }).lines[0];
+  } catch (cause) {
+    if (cause instanceof MoneyValidationError)
+      throw new RangeError(cause.message, { cause });
+    throw cause;
+  }
   return {
-    grossMinor: Number(gross),
-    discountMinor: input.discount,
-    subtotalMinor: Number(subtotal),
-    taxMinor: Number(taxMinor),
-    totalMinor: Number(total),
+    grossMinor: result.grossMinor,
+    discountMinor: result.discountMinor,
+    subtotalMinor: result.netMinor,
+    taxMinor: result.taxMinor,
+    totalMinor: result.netMinor + result.taxMinor,
   };
 }
 
@@ -355,29 +439,47 @@ export function calculateInvoiceLine(
     typeof tax === 'string'
   )
     return { valid: false, errors };
-  const gross = roundHalfUp(quantity.coefficient * price, quantity.scale);
-  const reduction =
-    typeof discount === 'bigint'
-      ? discount
-      : roundHalfUp(gross * discount.coefficient, discount.scale * 100n);
-  if (gross > MAX_MINOR) return { valid: false, errors: { quantity: 'range' } };
-  if (reduction > gross)
-    return {
-      valid: false,
-      errors: { discountValue: 'discount-exceeds-gross' },
-    };
-  const subtotal = gross - reduction;
-  const taxMinor = roundHalfUp(subtotal * tax.coefficient, tax.scale * 100n);
-  const total = subtotal + taxMinor;
-  if (total > MAX_MINOR) return { valid: false, errors: { taxRate: 'range' } };
+  let calculated: MoneyLineResult;
+  try {
+    calculated = calculateMoneyDocument({
+      currency: context.currency,
+      lineAmountType: 'exclusive',
+      roundingScope: 'line',
+      lines: [
+        {
+          id: line.key,
+          quantity: Number(line.quantity),
+          unitPrice: Number(price),
+          discount:
+            line.discountType === 'percent'
+              ? { kind: 'percent', rate: line.discountValue }
+              : discount === 0n
+                ? { kind: 'none' }
+                : { kind: 'amount', minor: Number(discount) },
+          taxCode: legacyTaxCode(effectiveTaxRate),
+        },
+      ],
+    }).lines[0];
+  } catch (cause) {
+    if (
+      cause instanceof Error &&
+      'code' in cause &&
+      cause.code === 'DISCOUNT_EXCEEDS_GROSS'
+    )
+      return {
+        valid: false,
+        errors: { discountValue: 'discount-exceeds-gross' },
+      };
+    return { valid: false, errors: { taxRate: 'range' } };
+  }
   return {
     valid: true,
     effectiveTaxRate,
-    grossMinor: Number(gross),
-    discountMinor: Number(reduction),
-    subtotalMinor: Number(subtotal),
-    taxMinor: Number(taxMinor),
-    totalMinor: Number(total),
+    grossMinor: calculated.grossMinor,
+    discountMinor: calculated.discountMinor,
+    subtotalMinor: calculated.netMinor,
+    taxMinor: calculated.taxMinor,
+    totalMinor: calculated.netMinor + calculated.taxMinor,
   };
 }
 
@@ -450,20 +552,32 @@ export function calculateInvoiceDraft(
       };
     });
     try {
-      const tax = calculateCostBillingTax({
-        lines: taxable,
-        rules: [...new Set(taxable.map((row) => row.category))].map(
-          (percent) => ({
-            category: percent,
-            components: [{ id: percent, percent }],
-          }),
-        ),
-        roundingScope: 'invoice',
+      const calculated = calculateMoneyDocument({
+        currency: values.currency,
+        lineAmountType: 'exclusive',
+        roundingScope: 'document',
+        lines: taxable.map((row, index) => {
+          const result = lineResults[index];
+          if (!result.valid) throw new Error('Validated invoice line expected');
+          return {
+            id: row.id,
+            quantity: 1,
+            unitPrice: result.grossMinor,
+            discount:
+              result.discountMinor === 0
+                ? ({ kind: 'none' } as const)
+                : ({ kind: 'amount', minor: result.discountMinor } as const),
+            taxCode: legacyTaxCode(row.category),
+          };
+        }),
       });
-      sums.taxMinor = BigInt(tax.taxMinor);
+      sums.taxMinor = BigInt(calculated.taxMinor);
       sums.totalMinor = sums.subtotalMinor + sums.taxMinor;
     } catch (cause) {
-      if (!(cause instanceof RangeError)) throw cause;
+      if (
+        !(cause instanceof RangeError || cause instanceof MoneyValidationError)
+      )
+        throw cause;
       errors.total = 'range';
     }
   }
