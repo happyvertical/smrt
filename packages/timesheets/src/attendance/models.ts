@@ -235,16 +235,20 @@ export class AttendanceBreak extends SmrtObject {
   }
 
   override async delete(): Promise<void> {
-    // Judge the persisted row, not the mutable instance: clearing `endedAt`
-    // in memory must not turn a closed break into a deletable open one.
-    const prior = this.id
-      ? await this.db.get(this.tableName, { id: this.id })
-      : null;
-    if ((this.endedAt || prior?.ended_at) && !isCorrectionWrite(this))
-      throw new Error(
-        'Closed breaks are immutable; remove one through AttendanceCorrectionService.',
-      );
-    return super.delete();
+    // Judge the persisted row, not the mutable instance, and do it under the
+    // parent punch lock so a concurrent punchOut cannot close the row between
+    // the check and the delete.
+    await saveWithPunchLock(this, this.punchId, this.tenantId, async () => {
+      const prior = this.id
+        ? await this.db.get(this.tableName, { id: this.id })
+        : null;
+      if ((this.endedAt || prior?.ended_at) && !isCorrectionWrite(this))
+        throw new Error(
+          'Closed breaks are immutable; remove one through AttendanceCorrectionService.',
+        );
+      await super.delete();
+      return this;
+    });
   }
 }
 
@@ -402,16 +406,20 @@ export class AttendanceSegment extends SmrtObject {
   }
 
   override async delete(): Promise<void> {
-    // Judge the persisted row, not the mutable instance: clearing `endedAt`
-    // in memory must not turn a closed segment into a deletable open one.
-    const prior = this.id
-      ? await this.db.get(this.tableName, { id: this.id })
-      : null;
-    if ((this.endedAt || prior?.ended_at) && !isCorrectionWrite(this))
-      throw new Error(
-        'Closed segments are immutable; remove one through AttendanceCorrectionService.',
-      );
-    return super.delete();
+    // Judge the persisted row, not the mutable instance, and do it under the
+    // parent punch lock so a concurrent punchOut cannot close the row between
+    // the check and the delete.
+    await saveWithPunchLock(this, this.punchId, this.tenantId, async () => {
+      const prior = this.id
+        ? await this.db.get(this.tableName, { id: this.id })
+        : null;
+      if ((this.endedAt || prior?.ended_at) && !isCorrectionWrite(this))
+        throw new Error(
+          'Closed segments are immutable; remove one through AttendanceCorrectionService.',
+        );
+      await super.delete();
+      return this;
+    });
   }
 }
 
