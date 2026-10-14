@@ -118,6 +118,27 @@ describe('RecordScreen (view)', () => {
     expect(document.querySelector('[data-testid="phone-sheet"]')).toBeNull();
   });
 
+  it('does not sum a partial page of a related table in its panel', async () => {
+    const { container } = mount({
+      overview: recordOverview(taskDefinition, relations, {
+        metrics: false,
+        related: 'panels',
+      }),
+      loaders: {
+        records: () => ({
+          rows: [{ id: 'c1', title: 'Comment', cells: { amount: 500 } }],
+          columns: [{ key: 'amount', label: 'Amount', role: 'money' }],
+          total: 3,
+        }),
+      },
+    });
+    expect(
+      await screen.findByRole('columnheader', { name: 'Amount' }),
+    ).toBeInTheDocument();
+    const foot = container.querySelector('tfoot');
+    expect(foot).not.toHaveTextContent('$5.00');
+  });
+
   it("falls back to the loader's href for View all, and keeps a paired metric without one", async () => {
     mount({
       viewAllHref: undefined,

@@ -180,7 +180,8 @@ let summaries = $state<Record<string, PanelSummary>>({});
 /**
  * A related-records panel's data, with its count and "View all" moved into
  * the heading: the widget body gets the rows only (no `total` / `href`
- * footer), so each panel carries exactly one View all.
+ * footer), so each panel carries exactly one View all. A partial page of a
+ * table keeps its `total`, so the table knows not to sum just the page.
  */
 function headPanel(widget: OverviewWidget, data: unknown): unknown {
   if (widget.type !== 'records') return data;
@@ -188,6 +189,11 @@ function headPanel(widget: OverviewWidget, data: unknown): unknown {
   if (!relation || !isRecord(data)) return data;
   const { total, href, ...rest } = data;
   const rows = Array.isArray(rest.rows) ? rest.rows.length : null;
+  const partialTable =
+    typeof total === 'number' &&
+    total > (rows ?? 0) &&
+    Array.isArray(rest.columns) &&
+    rest.columns.length > 0;
   summaries = {
     ...summaries,
     [widget.id]: {
@@ -197,7 +203,7 @@ function headPanel(widget: OverviewWidget, data: unknown): unknown {
         (typeof href === 'string' ? safeHref(href) : null),
     },
   };
-  return rest;
+  return partialTable ? { ...rest, total } : rest;
 }
 
 const controller = createOverview({
