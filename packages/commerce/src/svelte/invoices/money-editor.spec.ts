@@ -92,6 +92,10 @@ describe('v2 money editor adapter', () => {
         action: '/invoices',
         money: {
           ...money,
+          draft: {
+            ...money.draft,
+            lines: [{ ...money.draft.lines[0], unitPrice: 'not-a-decimal' }],
+          },
           frozen: true,
           status: 'SENT',
           stored: {
@@ -130,6 +134,7 @@ describe('v2 money editor adapter', () => {
     expect(body).toContain('Rounded per document');
     expect(body).toContain('name="lineAmountType"');
     expect(body).toContain('disabled');
+    expect(body).not.toContain('Amounts must be non-negative decimal text');
   });
   it('does not produce an inclusive tax row for exempt stored values', () => {
     const body = render(InvoiceEditor, {
@@ -152,6 +157,8 @@ describe('v2 money editor adapter', () => {
       },
     }).body;
     expect(body).not.toContain('Includes GST');
+    expect(body).toContain('Subtotal');
+    expect(body).not.toContain('Subtotal (excl. tax)');
     expect(body).toContain('Total');
   });
 });

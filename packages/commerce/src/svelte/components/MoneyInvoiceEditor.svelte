@@ -44,13 +44,16 @@ let lines = $state([...money.draft.lines]);
 let modeConfirmed = $state(false);
 const frozen = $derived(money.frozen === true);
 const editable = $derived(canEdit && !frozen);
+// Issued documents display only their server-authoritative snapshot; never recalculate it.
 const calculation = $derived(
-  calculateMoneyEditorDraft(
-    { ...money.draft, lineAmountType, lines },
-    money.taxCodes,
-  ),
+  frozen
+    ? null
+    : calculateMoneyEditorDraft(
+        { ...money.draft, lineAmountType, lines },
+        money.taxCodes,
+      ),
 );
-const result = $derived(calculation.valid ? calculation.result : null);
+const result = $derived(calculation?.valid ? calculation.result : null);
 const stored = $derived(money.stored);
 const totals = $derived(
   frozen && stored
@@ -224,10 +227,10 @@ function changeMode(event: Event) {
     {#if editable}<Button type="submit" name={intentField} value={saveIntent} disabled={pending}>{saveLabel}</Button>{/if}
   </form>
   {#if !totals}
-    <p role="alert">{calculation.valid ? 'Stored totals are required for a frozen document.' : calculation.message}</p>
+    <p role="alert">{calculation?.valid || frozen ? 'Stored totals are required for a frozen document.' : calculation?.message}</p>
   {:else}
     <dl class="summary" aria-live="polite">
-      {#if totals.lineAmountType !== 'inclusive'}
+      {#if totals.lineAmountType !== 'inclusive' || totals.taxMinor === 0}
         <div><dt>Subtotal</dt><dd><CurrencyDisplay amount={totals.subtotalMinor} currency={money.draft.currency} unit="cents" /></dd></div>
       {/if}
       {#if totals.discountTotalMinor !== 0}<div class="muted"><dt>Includes discounts of <CurrencyDisplay amount={Math.abs(totals.discountTotalMinor)} currency={money.draft.currency} unit="cents" /></dt></div>{/if}
@@ -239,7 +242,7 @@ function changeMode(event: Event) {
       {/each}
       {#if totals.roundingScope === 'document'}<div class="muted"><dt>Rounded per document</dt></div>{/if}
       <div class="total"><dt>Total</dt><dd><CurrencyDisplay amount={totals.totalMinor} currency={money.draft.currency} unit="cents" /></dd></div>
-      {#if totals.lineAmountType === 'inclusive' && money.showNetSubtotal}<div><dt>Subtotal (excl. tax)</dt><dd><CurrencyDisplay amount={totals.subtotalMinor} currency={money.draft.currency} unit="cents" /></dd></div>{/if}
+      {#if totals.lineAmountType === 'inclusive' && totals.taxMinor !== 0 && money.showNetSubtotal}<div><dt>Subtotal (excl. tax)</dt><dd><CurrencyDisplay amount={totals.subtotalMinor} currency={money.draft.currency} unit="cents" /></dd></div>{/if}
     </dl>
   {/if}
 </section>
