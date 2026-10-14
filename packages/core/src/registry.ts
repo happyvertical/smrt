@@ -1223,6 +1223,21 @@ export class ObjectRegistry {
       collectionConstructor as unknown as Function,
     );
     _registerCollection(objectName, collectionConstructor);
+
+    // A `getCollection()` before this registration cached a generic default
+    // collection; drop it so later lookups get the package's own class
+    // instead of one missing its methods (#3723).
+    const { canonicalName } =
+      ObjectRegistry.resolveCollectionRegistration(objectName);
+    const cache = ObjectRegistry.collectionCache;
+    for (const key of cache.keys()) {
+      if (
+        key.startsWith(`${canonicalName}:`) &&
+        cache.get(key)?.constructor !== collectionConstructor
+      ) {
+        cache.delete(key);
+      }
+    }
   }
   /**
    * Register one manifest entry as a metadata-only stub.
