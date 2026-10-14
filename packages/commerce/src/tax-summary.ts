@@ -10,7 +10,7 @@ export type TaxSummaryDirection = 'sales' | 'purchase';
 
 export interface TaxSummaryStoredFact {
   tenantId: string;
-  documentType: 'invoice' | 'contract';
+  documentType: 'invoice' | 'credit_note' | 'contract';
   documentId: string;
   /** Invoice credits store positive facts and are negated here exactly once. */
   documentKind: 'invoice' | 'credit_note' | 'contract';

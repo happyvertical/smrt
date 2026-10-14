@@ -35,14 +35,14 @@ export type DocumentTaxWriteInput = Required<
 /** Normalized immutable invoice tax snapshots for tax-summary materialization. */
 export interface InvoiceTaxReportFact {
   tenantId: string;
-  documentType: 'invoice';
+  documentType: 'invoice' | 'credit_note';
   documentId: string;
   /** The invoice number supplied to drilldown consumers. */
   documentNumber: string;
   /** Customer identity for a host to resolve as its party display. */
   partyId: string | null;
-  /** Invoice credits have no persisted kind column yet, so every current row is an invoice. */
-  documentKind: 'invoice';
+  /** Positive credit snapshots are negated once by the pure report aggregation. */
+  documentKind: 'invoice' | 'credit_note';
   issueDate: string;
   status: string;
   direction: 'sales';
@@ -99,6 +99,18 @@ function reportDate(value: unknown, label: string): string {
   if (Number.isNaN(date.getTime()))
     throw new Error(`Invoice tax report ${label} must be a valid date.`);
   return date.toISOString();
+}
+
+function invoiceDocumentType(value: unknown): 'invoice' | 'credit_note' {
+  if (value === 'invoice' || value === 'credit_note') return value;
+  throw new Error(
+    'Invoice tax report document type must be invoice or credit_note.',
+  );
+}
+
+function invoiceKind(value: unknown): 'invoice' | 'credit_note' {
+  if (value === 'invoice' || value === 'credit_note') return value;
+  throw new Error('Invoice tax report kind must be invoice or credit_note.');
 }
 
 function taxCodeKind(value: unknown): TaxCodeKind | null {
@@ -168,9 +180,10 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
   /**
    * Read immutable Invoice-backed `DocumentTax` snapshots for one tenant.
    *
-   * This deliberately uses no Contract or future credit-note path. Invoice has
-   * no persisted kind discriminator yet, so credits must be added as an
-   * explicit source extension when that schema arrives rather than inferred.
+   * This deliberately uses no Contract path. Invoice and credit-note snapshots
+   * are joined to their shared Invoice storage by both identity and tenant; their
+   * positive values remain stored values, and the pure report applies the credit
+   * sign exactly once from Invoice.kind.
    */
   async listReportFacts(
     options: InvoiceTaxReportFactsOptions,
@@ -178,17 +191,20 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
     assertReportFactOptions(options);
     const currencyClause = options.currency ? ' AND d.currency = ?' : '';
     const result = await this.db.query(
-      `SELECT d.tenant_id, d.document_id, d.currency, d.tax_code_id, d.kind,
+      `SELECT d.tenant_id, d.document_type, d.document_id, d.currency, d.tax_code_id, d.kind,
               d.tax_component_id, d.tax_component_name, d.liability_account_id,
               d.taxable_minor, d.tax_minor, d.recoverable_minor,
-              i.invoice_number, i.customer_id, i.issue_date, i.status
+              i.kind AS invoice_kind, i.invoice_number, i.customer_id, i.issue_date, i.status
          FROM document_taxes d
          JOIN invoices i
            ON CAST(i.id AS TEXT) = CAST(d.document_id AS TEXT)
           AND i.tenant_id = d.tenant_id
         WHERE CAST(d.tenant_id AS TEXT) = ?
           AND CAST(i.tenant_id AS TEXT) = ?
-          AND d.document_type = 'invoice'
+          AND (
+            (d.document_type = 'invoice' AND i.kind = 'invoice')
+            OR (d.document_type = 'credit_note' AND i.kind = 'credit_note')
+          )
           AND i.status NOT IN ('draft', 'cancelled')
           AND i.issue_date >= ?
           AND i.issue_date <= ?${currencyClause}
@@ -201,14 +217,14 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
     );
     return result.rows.map((row) => ({
       tenantId: requiredText(row.tenant_id, 'tenant id'),
-      documentType: 'invoice' as const,
+      documentType: invoiceDocumentType(row.document_type),
       documentId: requiredText(row.document_id, 'document id'),
       documentNumber: requiredText(row.invoice_number, 'invoice number'),
       partyId:
         typeof row.customer_id === 'string' && row.customer_id.trim()
           ? row.customer_id
           : null,
-      documentKind: 'invoice' as const,
+      documentKind: invoiceKind(row.invoice_kind),
       issueDate: reportDate(row.issue_date, 'issue date'),
       status: requiredText(row.status, 'invoice status'),
       direction: 'sales' as const,
