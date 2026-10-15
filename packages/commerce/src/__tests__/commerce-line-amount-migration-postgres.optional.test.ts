@@ -8,6 +8,7 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
@@ -144,5 +145,87 @@ describePostgres('commerce line amount migration on PostgreSQL (#3933)', () => {
         (await InvoiceCollection.create({ db })).get({ id: invoice.id }),
       ).resolves.toBeTruthy();
     });
+  });
+
+  it('keeps exempt and ordinary zero-rate documents distinct', async () => {
+    const tenantId = randomUUID();
+    const { draftLine, issued, issuedLine } = await withTenant(
+      { tenantId },
+      async () => {
+        const customers = await CustomerCollection.create({ db });
+        const invoices = await InvoiceCollection.create({ db });
+        const lines = await InvoiceLineItemCollection.create({ db });
+        const ordinary = await customers.create({
+          profileId: 'pg-ordinary-zero',
+        });
+        const exempt = await customers.create({
+          profileId: 'pg-exempt-zero',
+          taxExempt: true,
+        });
+        const draft = await invoices.create({
+          tenantId,
+          invoiceNumber: 'PG-ZERO-DRAFT',
+          customerId: ordinary.id,
+          status: InvoiceStatus.DRAFT,
+          currency: 'CAD',
+        });
+        const draftLine = await lines.create({
+          tenantId,
+          invoiceId: draft.id,
+          description: 'Ordinary zero-rate draft',
+          quantity: 1,
+          unitPrice: 2_000,
+          taxRate: 0,
+        });
+        const issued = await invoices.create({
+          tenantId,
+          invoiceNumber: 'PG-ZERO-ISSUED',
+          customerId: exempt.id,
+          status: InvoiceStatus.SENT,
+          subtotal: 1_000,
+          taxAmount: 0,
+          totalAmount: 1_000,
+          currency: 'CAD',
+        });
+        const issuedLine = await lines.create({
+          tenantId,
+          invoiceId: issued.id,
+          description: 'Exempt zero-rate issued invoice',
+          quantity: 1,
+          unitPrice: 1_000,
+          taxRate: 0,
+          amount: 1_000,
+        });
+        return { draftLine, issued, issuedLine };
+      },
+    );
+
+    await migrateCommerceLineAmounts(db, {
+      tenantId,
+      acceptDraftChanges: true,
+    });
+    const codeFor = async (lineId: string) =>
+      (
+        await db.query(
+          `SELECT tax_codes.code
+             FROM invoice_line_items
+             JOIN tax_codes ON tax_codes.id = invoice_line_items.tax_code_id
+            WHERE invoice_line_items.id = ?`,
+          lineId,
+        )
+      ).rows[0]?.code;
+    if (!draftLine.id || !issuedLine.id)
+      throw new Error('Expected saved zero-rate migration lines');
+    await expect(codeFor(draftLine.id)).resolves.toBe('out-of-scope');
+    await expect(codeFor(issuedLine.id)).resolves.toBe('exempt');
+    expect(
+      (
+        await db.query(
+          'SELECT kind FROM document_taxes WHERE document_type = ? AND document_id = ?',
+          'invoice',
+          issued.id,
+        )
+      ).rows,
+    ).toEqual([{ kind: 'exempt' }]);
   });
 });

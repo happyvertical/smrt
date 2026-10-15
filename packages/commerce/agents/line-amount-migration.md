@@ -30,7 +30,10 @@ Issued legacy snapshots always record `line_amount_type=exclusive` and
 `tax_rounding_scope=line`, which describe the historical storage contract;
 current tenant defaults apply only when calculating new v2 drafts.
 Drafts are recomputed through the owning aggregate after their legacy rate is
-promoted to an explicit code override.
+promoted to an explicit code override. When a tenant has both exempt and
+ordinary zero-rate history, migration selects the durable code from each
+document's linked customer: exempt customers remain `exempt`; other zero-rate
+documents remain `out-of-scope`.
 
 `rollbackCommerceLineAmounts(db, { tenantId, migrationId })` claims the tenant
 barrier and validates journal existence plus every current post-image in one

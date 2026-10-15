@@ -755,17 +755,85 @@ async function prepareDocumentJournal(
   );
 }
 
-function rateMapping(report: LegacyTaxMapReport, value: unknown) {
+function isLegacyZeroRate(source: string): boolean {
+  return /^0(?:\.0+)?$/.test(source.trim());
+}
+
+/**
+ * Recover the customer identity from the document being migrated. The mapping
+ * report may contain both zero-rate classifications, so tenant-wide rate alone
+ * cannot choose the durable code for this document.
+ */
+async function customerExemptForDocument(
+  db: DatabaseInterface,
+  input: {
+    tenantId: string;
+    documentType: 'invoice' | 'contract';
+    documentId: string;
+  },
+): Promise<boolean> {
+  const headerTable =
+    input.documentType === 'invoice' ? 'invoices' : 'contracts';
+  const row = rows(
+    await db.query(
+      `SELECT CASE WHEN customer.tax_exempt THEN TRUE ELSE FALSE END AS customer_tax_exempt
+         FROM ${headerTable} header
+         LEFT JOIN customers customer
+           ON customer.id = header.customer_id
+          AND customer.tenant_id = header.tenant_id
+        WHERE CAST(header.id AS TEXT) = ?
+          AND CAST(header.tenant_id AS TEXT) = ?`,
+      input.documentId,
+      input.tenantId,
+    ),
+  )[0];
+  if (!row)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      `${input.documentType} ${input.documentId} was not found in tenant ${input.tenantId}`,
+    );
+  return Boolean(row.customer_tax_exempt);
+}
+
+async function rateMapping(
+  db: DatabaseInterface,
+  report: LegacyTaxMapReport,
+  value: unknown,
+  customerExempt: boolean,
+) {
   const source = String(value ?? '');
-  const mapping = report.mappings.find(
+  const candidates = report.mappings.filter(
     (candidate) => candidate.sourceRate === source,
   );
-  if (!mapping)
+  if (candidates.length === 0)
     throw new MoneyValidationError(
       'TAX_CODE_NOT_FOUND',
       `Legacy tax rate ${source} has no durable mapping`,
     );
-  return mapping;
+  const codeIds = [
+    ...new Set(candidates.map((candidate) => candidate.taxCodeId)),
+  ];
+  if (codeIds.length === 1 || !isLegacyZeroRate(source)) return candidates[0];
+
+  const expectedKind = customerExempt ? 'exempt' : 'out-of-scope';
+  const matched = [] as typeof candidates;
+  for (const candidate of candidates) {
+    const code = rows(
+      await db.query(
+        'SELECT kind FROM tax_codes WHERE CAST(id AS TEXT) = ?',
+        candidate.taxCodeId,
+      ),
+    )[0];
+    if (code && String(code.kind) === expectedKind) matched.push(candidate);
+  }
+  const matchingCodeIds = new Set(
+    matched.map((candidate) => candidate.taxCodeId),
+  );
+  if (matchingCodeIds.size === 1) return matched[0];
+  throw new MoneyValidationError(
+    'TAX_CODE_NOT_FOUND',
+    `Legacy zero tax rate ${source} has no durable ${expectedKind} mapping`,
+  );
 }
 
 async function taxMetadata(
@@ -891,6 +959,7 @@ async function migrateIssuedDocument(
     input.documentType === 'invoice'
       ? 'invoice_line_items'
       : 'contract_line_items';
+  const customerExempt = await customerExemptForDocument(db, input);
   for (const line of image.lines) {
     const prior = storedMinor(line.amount, 'legacy line amount');
     const net = lineNet(line);
@@ -900,7 +969,12 @@ async function migrateIssuedDocument(
         'INVALID_MONEY_INPUT',
         'Issued line has negative derived legacy tax',
       );
-    const mapping = rateMapping(input.taxMap, line.tax_rate);
+    const mapping = await rateMapping(
+      db,
+      input.taxMap,
+      line.tax_rate,
+      customerExempt,
+    );
     const metadata = await taxMetadata(
       db,
       mapping.taxCodeId,
@@ -997,6 +1071,7 @@ async function migrateIssuedDocument(
 async function promoteDraftTaxOverrides(
   db: DatabaseInterface,
   input: {
+    tenantId: string;
     documentType: 'invoice' | 'contract';
     documentId: string;
     taxMap: LegacyTaxMapReport;
@@ -1012,6 +1087,7 @@ async function promoteDraftTaxOverrides(
     input.documentType === 'invoice'
       ? await InvoiceLineItemCollection.create({ db })
       : await ContractCollection.create({ db });
+  const customerExempt = await customerExemptForDocument(db, input);
   const draftLines = rows(
     await db.query(
       `SELECT id, tax_rate FROM ${lineTable} WHERE CAST(${parentColumn} AS TEXT) = ? ORDER BY id ASC`,
@@ -1019,7 +1095,12 @@ async function promoteDraftTaxOverrides(
     ),
   );
   for (const line of draftLines) {
-    const mapping = rateMapping(input.taxMap, line.tax_rate);
+    const mapping = await rateMapping(
+      db,
+      input.taxMap,
+      line.tax_rate,
+      customerExempt,
+    );
     await updateRowsExact(collection, lineTable, String(line.id), {
       tax_mode: 'override',
       tax_code_id: mapping.taxCodeId,
@@ -1069,6 +1150,7 @@ async function applyDocument(
           !input.document.arJournalIdSet
         ) {
           await promoteDraftTaxOverrides(scope.db, {
+            tenantId: input.tenantId,
             documentType: input.document.documentType,
             documentId: input.document.documentId,
             taxMap: input.taxMap,
