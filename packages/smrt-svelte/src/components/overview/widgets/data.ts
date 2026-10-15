@@ -144,6 +144,23 @@ export interface LineItemsWidgetData {
     tax?: number | null;
     total?: number | null;
   };
+  /** Frozen document-money snapshot supplied by a domain host. */
+  storedTotals?: {
+    subtotal: number;
+    discount: number;
+    tax: number;
+    total: number;
+    lineAmountType: 'exclusive' | 'inclusive' | 'none';
+    roundingScope: 'line' | 'document';
+    showNetSubtotal?: boolean;
+    taxes: readonly {
+      taxComponentId: string;
+      name: string;
+      percent: string;
+      taxable: number;
+      tax: number;
+    }[];
+  };
   currency?: string;
   /** Footer values over every line (money in minor units). */
   summaries?: Record<string, number>;

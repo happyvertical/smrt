@@ -8,13 +8,12 @@ pure mapper. `Invoice.toAccountingInput()` keeps its legacy behavior for legacy
 tenants; a money-v2 tenant must supply explicit QuickBooks realm mapping and is
 routed through the frozen boundary.
 
-The released `@happyvertical/accounting` 0.103.5 path supports only invoices
-whose amounts exclude tax (or have no applicable tax) and whose lines have no
-discount. The commerce adapter sends stored net `amountMinor` as QBO `Amount`,
-never sends numeric `taxRate` or `discount`, and supplies explicit Item and
-TaxCode references for every line. Inclusive documents, credit notes, signed
-adjustment lines, and discounts fail before any local sync-state or provider
-write until their reviewed public SDK APIs ship. No dependency override or
+The released `@happyvertical/accounting` 0.103.7 path accepts frozen invoices
+and positive credit memos. Commerce sends persisted pre-discount unit price,
+line discount, net amount, allocated tax, and inclusive gross amount through
+the SDK's public input types. It never sends a numeric `taxRate`; every taxable
+line has explicit Item, TaxCode, and component TaxRate references. Exempt and
+out-of-scope lines carry no fabricated components. No dependency override or
 private SDK import is used.
 
 The caller supplies persisted document and line facts: document mode and
@@ -39,10 +38,12 @@ rounding is repeated. Currency exponents come from the shared ISO map, so JPY
 and KWD retain their exact stored values.
 
 Credit memos use positive input values and require `creditedInvoiceExternalId`.
-Their provider direction is the SDK's `CreditMemo` operation. A future host
-must call `requireCreditMemoCapability()` (or the SDK's equivalent) before a
-write and must persist the SDK create descriptor and returned external ID. The
-adapter never auto-applies a credit memo to its invoice.
+Their provider direction is the SDK's `CreditMemo` operation. The owning sync
+boundary calls the public `requireCreditMemoOperations()` capability guard
+before persisting an in-flight owner, prepares and persists the SDK's
+`quickbooksCreditMemoRequest`, then records the returned external ID. The
+source invoice must have a reconciled QuickBooks identity in the same realm and
+environment. The adapter never auto-applies a credit memo to its invoice.
 
 ## Sync identity and recovery
 
@@ -87,7 +88,7 @@ is an explicit operational assertion, not a lease inferred from time or from a
 provider lookup. `unknown` records already have no live local owner and do not
 require it.
 
-## Deployment and current SDK boundary
+## Deployment and capability boundary
 
 `Invoice.accountingSyncStateJson` is a sensitive, server-owned persistence
 field. It is excluded from public serialization and from the shared generated
@@ -95,17 +96,16 @@ REST, MCP/Chat, and CLI writable allowlist. Deployments must apply the normal
 generated schema migration that adds `accounting_sync_state_json` before using
 this sync API. Runtime code never creates or alters schema.
 
-Signed adjustment lines remain a known acceptance gap in the released SDK
-integration. The commerce snapshot and pure mapper preserve them, but SDK
-0.103.5 cannot emit their supported provider representation. The owning sync
-boundary therefore rejects them before state or provider mutation. Inclusive
-documents, credit notes, and discounted lines have the same release dependency;
-support must use reviewed public SDK capabilities rather than a private import
-or dependency override.
+Signed adjustment lines remain a known acceptance gap. The commerce money model
+can persist signed adjustments inside a positive document, but the accounting
+SDK has no reviewed signed-line representation. The owning sync boundary
+therefore rejects them before state or provider mutation. Header-only provider
+tax is also refused because it has no persisted component identity or realm tax
+rate mapping. Inclusive documents, discounted lines, exempt lines, and positive
+credit memos use the released public SDK contract.
 
 The mapper's A/B fixtures are the commerce calculator's actual CAD goldens:
 example A is tax-exclusive and example B is tax-inclusive. Both cover line and
 document allocation; example B's document scope preserves line 3's allocated
-GST cent. The external evidence probe runs the mapped example B request through
-the reviewed SDK mapper without making the unreleased SDK a production
-dependency.
+GST cent. Focused sync tests inspect the exact public SDK request inputs and
+persisted create descriptors without performing a provider network write.

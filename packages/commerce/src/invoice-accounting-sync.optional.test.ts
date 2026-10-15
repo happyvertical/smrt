@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
   AccountingProvider,
+  CreditMemoInput,
   InvoiceInput,
   SyncResult,
 } from '@happyvertical/accounting';
@@ -188,6 +189,63 @@ describe('frozen invoice accounting sync on PostgreSQL (#3937)', () => {
       );
       expect(push).toHaveBeenCalledTimes(2);
       expect(requests[1]).toBe(requests[0]);
+
+      const credit = await invoices.create({
+        kind: 'credit_note',
+        creditedInvoiceId: issued.id,
+        customerId: customer.id,
+        invoiceNumber: `CN-PG-${randomUUID()}`,
+        currency: 'CAD',
+      });
+      const creditLine = await (
+        await InvoiceLineItemCollection.create({ db })
+      ).create({
+        invoiceId: credit.id,
+        creditedLineId: line.id,
+        description: 'PostgreSQL consulting credit',
+        quantity: 2,
+        unitPrice: 0,
+      });
+      const issuedCredit = await invoices.get(
+        { id: credit.id },
+        { cache: false },
+      );
+      if (!issuedCredit) throw new Error('Expected PostgreSQL credit note');
+      issuedCredit.status = InvoiceStatus.SENT;
+      await issuedCredit.save();
+      const creditPush = vi.fn(
+        async (memo: CreditMemoInput): Promise<SyncResult> => ({
+          action: 'created',
+          externalId: `qbo-pg-credit-${memo.id}`,
+          syncedAt: new Date('2026-10-15T13:30:00.000Z'),
+        }),
+      );
+      const creditMapping: QuickBooksFrozenInvoiceMapping = {
+        ...mapping,
+        lines: {
+          [creditLine.id]: { itemRef: 'item-pg', taxCodeRef: 'tax-pg' },
+        },
+      };
+      await expect(
+        syncFrozenInvoiceToAccounting({
+          db,
+          tenantId,
+          invoiceId: issuedCredit.id,
+          mapping: creditMapping,
+          provider: {
+            ...provider,
+            creditMemos: { push: creditPush, sync: creditPush },
+          },
+        }),
+      ).resolves.toMatchObject({ status: 'synced' });
+      expect(creditPush).toHaveBeenCalledTimes(1);
+      expect(creditPush.mock.calls[0]?.[0]).toMatchObject({
+        creditedInvoiceExternalId: 'qbo-pg-invoice',
+        quickbooksCreditMemoRequest: {
+          creditedInvoiceExternalId: 'qbo-pg-invoice',
+          payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      });
     });
   }, 120_000);
 });

@@ -108,8 +108,16 @@ export interface MoneyEditorProps {
   taxCodes: readonly MoneyEditorTaxCode[];
   /** Issued and posted documents must supply stored values and are read-only. */
   frozen?: boolean;
+  /** A credit note cannot itself be credited. Defaults to an invoice for compatibility. */
+  kind?: 'invoice' | 'credit_note';
   status?: string;
   stored?: MoneyStoredDocument;
+  /**
+   * Host-authorized creation seam for an issued source invoice. The component
+   * never persists a credit note or chooses its route; the host supplies the
+   * action after its own authorization check.
+   */
+  onCreateCreditNote?: () => void;
   customerTaxExempt?: boolean;
   sellerTaxRegistrations?: readonly string[];
   partyTaxId?: string | null;

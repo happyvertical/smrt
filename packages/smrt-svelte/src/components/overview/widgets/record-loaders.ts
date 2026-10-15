@@ -29,7 +29,7 @@ import {
   type RelatedWidgetData,
   type RelatedWidgetTab,
 } from './data.js';
-import type { LineItemsTotals } from './line-totals.js';
+import type { LineItemsTotals, StoredLineItemsTotals } from './line-totals.js';
 import {
   formatColumnsOption,
   parseColumnsOption,
@@ -54,6 +54,8 @@ export interface RecordWidgetsOptions {
    * (read when the widget loads; `RecordScreen` reads them by role).
    */
   totals?: () => LineItemsTotals | undefined;
+  /** Frozen document-money snapshot. It is rendered without recalculation. */
+  storedTotals?: () => StoredLineItemsTotals | undefined;
   /** `line-items`: the currency of the parent's amounts. */
   currency?: () => string | undefined;
 }
@@ -217,9 +219,15 @@ export function createLineItemsLoader(
       widgetOptions.relation,
     );
     const totals = options.totals?.();
+    const storedTotals = options.storedTotals?.();
     const currency = options.currency?.();
     if (!relation) {
-      return { rows: [], columns: [], ...(totals ? { totals } : {}) };
+      return {
+        rows: [],
+        columns: [],
+        ...(totals ? { totals } : {}),
+        ...(storedTotals ? { storedTotals } : {}),
+      };
     }
     const limit =
       typeof widgetOptions.limit === 'number'
@@ -232,6 +240,7 @@ export function createLineItemsLoader(
       columns: tab.columns,
       ...(tab.total !== undefined ? { total: tab.total } : {}),
       ...(totals ? { totals } : {}),
+      ...(storedTotals ? { storedTotals } : {}),
       ...((tab.currency ?? currency)
         ? { currency: tab.currency ?? currency }
         : {}),

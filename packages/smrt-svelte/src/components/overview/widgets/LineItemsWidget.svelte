@@ -12,7 +12,12 @@ import { M } from '../../../i18n/strings.overview.js';
 import { safeHref } from '../markdown.js';
 import type { WidgetComponentProps } from '../types.js';
 import { isRecord, type LineItemsWidgetData } from './data.js';
-import { lineItemTotals, sumLineAmounts } from './line-totals.js';
+import {
+  groupStoredTaxComponents,
+  isStoredLineItemsTotals,
+  lineItemTotals,
+  sumLineAmounts,
+} from './line-totals.js';
 import RecordTable from './RecordTable.svelte';
 import {
   formatRecordCell,
@@ -70,6 +75,19 @@ const result = $derived(
     lineSum,
   ),
 );
+const storedTotals = $derived(
+  isRecord(data) && isStoredLineItemsTotals(data.storedTotals)
+    ? data.storedTotals
+    : undefined,
+);
+const storedTaxes = $derived(
+  storedTotals
+    ? groupStoredTaxComponents(storedTotals.taxes).filter(
+        (tax) => tax.tax !== 0,
+      )
+    : [],
+);
+const hasStoredTax = $derived(storedTaxes.length > 0);
 const viewAll = $derived(
   isRecord(data) && typeof data.href === 'string' ? safeHref(data.href) : null,
 );
@@ -101,7 +119,29 @@ const LABELS = {
   {:else}
     <p class="smrt-line-items__empty">{t(M['ui.overview.line_items.empty'])}</p>
   {/if}
-  {#if result.lines.length > 0}
+  {#if storedTotals}
+    <dl class="smrt-line-items__totals" data-money-snapshot="stored">
+      {#if storedTotals.lineAmountType !== 'inclusive' || !hasStoredTax}
+        <div class="smrt-line-items__total"><dt>{t(M['ui.overview.line_items.subtotal'])}</dt><dd>{money(storedTotals.subtotal)}</dd></div>
+      {/if}
+      {#if storedTotals.discount !== 0}
+        <div class="smrt-line-items__total smrt-line-items__total--muted"><dt>{t(M['ui.overview.line_items.discount_included'])} {money(Math.abs(storedTotals.discount))}</dt></div>
+      {/if}
+      {#each storedTaxes as tax (`${tax.taxComponentId}-${tax.name}-${tax.percent}`)}
+        <div class="smrt-line-items__total smrt-line-items__total--muted">
+          <dt>{t(M[storedTotals.lineAmountType === 'inclusive' ? 'ui.overview.line_items.tax_included' : 'ui.overview.line_items.tax_on'], { name: tax.name, percent: tax.percent })} {money(storedTotals.lineAmountType === 'inclusive' ? tax.tax : tax.taxable)}</dt>
+          {#if storedTotals.lineAmountType !== 'inclusive'}<dd>{money(tax.tax)}</dd>{/if}
+        </div>
+      {/each}
+      {#if storedTotals.roundingScope === 'document'}
+        <div class="smrt-line-items__total smrt-line-items__total--muted"><dt>{t(M['ui.overview.line_items.rounded_document'])}</dt></div>
+      {/if}
+      <div class="smrt-line-items__total smrt-line-items__total--grand"><dt>{t(M['ui.overview.line_items.total'])}</dt><dd>{money(storedTotals.total)}</dd></div>
+      {#if storedTotals.lineAmountType === 'inclusive' && hasStoredTax && storedTotals.showNetSubtotal}
+        <div class="smrt-line-items__total"><dt>{t(M['ui.overview.line_items.subtotal_excluding_tax'])}</dt><dd>{money(storedTotals.subtotal)}</dd></div>
+      {/if}
+    </dl>
+  {:else if result.lines.length > 0}
     <dl class="smrt-line-items__totals">
       {#each result.lines as line (line.key)}
         <div class="smrt-line-items__total" class:smrt-line-items__total--grand={line.key === 'total'}>
@@ -114,7 +154,7 @@ const LABELS = {
       {/each}
     </dl>
   {/if}
-  {#if result.mismatch}
+  {#if !storedTotals && result.mismatch}
     <p class="smrt-line-items__flag">
       <strong>{t(M['ui.overview.line_items.mismatch'], { amount: money(result.mismatch.lines) })}</strong>
       {t(M[result.mismatch.field === 'subtotal' ? 'ui.overview.line_items.mismatch_subtotal' : 'ui.overview.line_items.mismatch_total'], { amount: money(result.mismatch.recorded) })}
@@ -133,6 +173,7 @@ const LABELS = {
   .smrt-line-items__totals { display: grid; justify-self: end; gap: var(--smrt-spacing-1); min-inline-size: min(100%, 18rem); margin: 0; font-variant-numeric: tabular-nums; }
   .smrt-line-items__total { display: flex; justify-content: space-between; gap: var(--smrt-spacing-4); }
   .smrt-line-items__total dt { color: var(--smrt-color-on-surface-variant); }
+  .smrt-line-items__total--muted { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-font-size); }
   .smrt-line-items__total dd { margin: 0; text-align: end; }
   .smrt-line-items__total--grand { padding-block-start: var(--smrt-spacing-2); border-block-start: var(--smrt-hairline); font-weight: var(--smrt-typography-weight-semibold); }
   .smrt-line-items__total--grand dt { color: var(--smrt-color-on-surface); }

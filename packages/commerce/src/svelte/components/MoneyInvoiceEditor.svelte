@@ -180,7 +180,14 @@ function changeMode(event: Event) {
 <section class="invoice-editor money-editor" aria-label="Invoice money" data-smrt-component="InvoiceEditor" data-money-model="v2">
   {#if frozen}
     <p role="status">Frozen{money.status ? ` · ${money.status}` : ''}</p>
-    <Button type="button" disabled title="Credit notes are not available yet">Create credit note</Button>
+    {#if money.kind !== 'credit_note'}
+      <Button
+        type="button"
+        disabled={!money.onCreateCreditNote}
+        title={money.onCreateCreditNote ? undefined : 'Credit notes are not available yet'}
+        onclick={money.onCreateCreditNote}
+      >Create credit note</Button>
+    {/if}
   {/if}
   {#if money.sellerTaxRegistrations?.length || money.partyTaxId}
     <p class="tax-registrations">
