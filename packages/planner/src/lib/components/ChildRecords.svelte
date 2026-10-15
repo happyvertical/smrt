@@ -69,6 +69,7 @@ const derivedPreview = (name: string): unknown =>
   name === 'amount' ? lineAmount(draft) : draft[name];
 let errors = $state<Record<string, string>>({});
 let saveError = $state('');
+let removeError = $state('');
 const summary = $derived(errorSummary(fields, errors) || saveError);
 
 let rows = $state<ModelRecord[]>([]);
@@ -166,7 +167,14 @@ async function save(event: SubmitEvent) {
 }
 
 async function remove(row: ModelRecord) {
-  await source.delete(model, row.id);
+  removeError = '';
+  try {
+    await source.delete(model, row.id);
+  } catch (failure) {
+    // An issued document keeps its lines: the delete was undone.
+    removeError = failure instanceof Error ? failure.message : String(failure);
+    return;
+  }
   await load();
   onchanged?.();
 }
@@ -175,6 +183,9 @@ async function remove(row: ModelRecord) {
 <section class="children" data-child-model={model.name}>
   <header>
     <h3>{title} <small>{rows.length}</small></h3>
+    {#if removeError}
+      <p class="error" role="alert" data-remove-error>{removeError}</p>
+    {/if}
     <button type="button" class="secondary" onclick={startCreate}>
       Add {title.toLowerCase().replace(/s$/, '')}
     </button>

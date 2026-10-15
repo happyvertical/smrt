@@ -518,12 +518,16 @@ export function createMemoryDataSource(
     });
     const byId = new Map(fromRows.map((c) => [c.id, c]));
     // A table seeded with the tenant's codes is the whole truth: a code the
-    // visitor deleted stays deleted. A table that never held them (a source
-    // without tax samples) only adds to the seeded set.
+    // visitor deleted stays deleted, except the default for the app's current
+    // rate, which smrt's activation creates (or reuses) whenever the rate is
+    // set, so a rate changed after the table was seeded still has its code.
+    // A table that never held them (a source without tax samples) only adds
+    // to the seeded set.
     if (base.some((c) => byId.has(c.id))) {
+      const fallback = defaultTaxCode(rate);
       const seeded = base
-        .filter((c) => byId.has(c.id))
-        .map((c) => byId.get(c.id) as SampleTaxCode);
+        .filter((c) => byId.has(c.id) || c.id === fallback.id)
+        .map((c) => byId.get(c.id) ?? c);
       return [
         ...seeded,
         ...fromRows.filter((c) => !base.some((b) => b.id === c.id)),
@@ -781,11 +785,19 @@ export function createMemoryDataSource(
       const index = list.findIndex((r) => r.id === id);
       if (index < 0) return undefined;
       const snapshot = snapshotFamily(model);
-      const next: ModelRecord = { ...list[index], ...values, id };
+      const previous = list[index] as ModelRecord;
+      const next: ModelRecord = { ...previous, ...values, id };
       list[index] = next;
       let settled: ModelRecord;
       try {
         settled = settle(model, next);
+        // A line moved to another document leaves its old one: that one
+        // settles without it (refused when it has been issued).
+        if (isLineModel(model)) {
+          for (const { parent, fk } of ownersOf(model.id)) {
+            if (previous[fk] !== next[fk]) resync(parent, previous[fk], true);
+          }
+        }
       } catch (error) {
         restore(snapshot);
         throw error;

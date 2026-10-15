@@ -170,7 +170,11 @@ let draft = $state<Record<string, unknown>>({});
 let formKey = $state(0);
 /** Required fields the last save found empty, by field name. */
 let errors = $state<Record<string, string>>({});
+/** Why the data source refused the last save or delete (an issued document's lines). */
+let failure = $state('');
 const summary = $derived(errorSummary(fields, errors));
+const reason = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
 /** What names a row to a person: its customer or reference, else a short id. */
 const nameOf = (row: ModelRecord) =>
   recordTitle(model, fields, row, labels) || shortId(row.id);
@@ -252,18 +256,25 @@ async function save(event: SubmitEvent) {
   for (const field of fields) {
     if (!calculated.has(field.name)) values[field.name] = draft[field.name];
   }
-  if (editing === 'new') {
-    const created = await source.create(model, values);
-    // A record with line items stays open after its first save, so they can
-    // be added to it right away.
-    editing = childTables.length ? created.id : null;
-    if (editing) {
-      draft = { ...created };
-      formKey++;
+  failure = '';
+  try {
+    if (editing === 'new') {
+      const created = await source.create(model, values);
+      // A record with line items stays open after its first save, so they
+      // can be added to it right away.
+      editing = childTables.length ? created.id : null;
+      if (editing) {
+        draft = { ...created };
+        formKey++;
+      }
+    } else if (editing) {
+      await source.update(model, editing, values);
+      editing = null;
     }
-  } else if (editing) {
-    await source.update(model, editing, values);
-    editing = null;
+  } catch (error) {
+    // The write was undone; the form stays open with the reason.
+    failure = reason(error);
+    return;
   }
   await load();
 }
@@ -281,7 +292,13 @@ async function refreshDerived() {
 }
 
 async function remove(row: ModelRecord) {
-  await source.delete(model, row.id);
+  failure = '';
+  try {
+    await source.delete(model, row.id);
+  } catch (error) {
+    failure = reason(error);
+    return;
+  }
   await load();
 }
 </script>
@@ -289,6 +306,9 @@ async function remove(row: ModelRecord) {
 <section>
   <header>
     <h2>{heading} {#if loaded}<small>{recordCount(rows.length)}</small>{/if}</h2>
+    {#if failure}
+      <p class="error" role="alert" data-write-error>{failure}</p>
+    {/if}
     {#if filterField}
       <p class="filter" data-list-filter>
         {filterField.label}: {filterLabel || shortId(scope?.equals)}

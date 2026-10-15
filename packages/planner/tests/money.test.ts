@@ -22,6 +22,7 @@ import {
   storedTaxRows,
   TAX_CODE_EXAMPLE_PACK,
 } from '../src/lib/data/money.ts';
+import { setSampleTaxRate } from '../src/lib/data/packs.ts';
 import { createPlannerDataSource } from '../src/lib/data/planner-source.ts';
 import { plumbingReason } from '../src/lib/recipes/plumbing.ts';
 
@@ -335,5 +336,58 @@ describe("the planner tenant's tax table", () => {
     await expect(
       source.create(find('ContractLineItem'), line),
     ).rejects.toThrow();
+  });
+
+  it('still has the default code after the rate changes over a seeded table', async () => {
+    const source = createPlannerDataSource();
+    const C = '@happyvertical/smrt-commerce:';
+    const find = (name: string) => {
+      const found = getModelByQualifiedName(`${C}${name}`)?.model;
+      if (!found) throw new Error(name);
+      return found;
+    };
+    await source.list(find('ContractLineItem'));
+    setSampleTaxRate(0.08);
+    try {
+      const order = await source.create(find('Agreement'), { status: 'draft' });
+      const line = await source.create(find('ContractLineItem'), {
+        contractId: order.id,
+        quantity: 1,
+        unitPrice: 1000,
+      });
+      expect(line).toMatchObject({ taxCodeCode: 'default-8', taxAmount: 80 });
+      // A line table first built after the change generates too.
+      expect(
+        (await source.list(find('InvoiceLineItem'))).length,
+      ).toBeGreaterThan(0);
+    } finally {
+      setSampleTaxRate(undefined);
+    }
+  });
+
+  it('refuses to move a line out of an issued document', async () => {
+    const source = createPlannerDataSource();
+    const C = '@happyvertical/smrt-commerce:';
+    const find = (name: string) => {
+      const found = getModelByQualifiedName(`${C}${name}`)?.model;
+      if (!found) throw new Error(name);
+      return found;
+    };
+    const draft = await source.create(find('Agreement'), { status: 'draft' });
+    const line = await source.create(find('ContractLineItem'), {
+      contractId: draft.id,
+      quantity: 1,
+      unitPrice: 1000,
+    });
+    await source.update(find('Agreement'), draft.id, { status: 'sent' });
+    const other = await source.create(find('Agreement'), { status: 'draft' });
+    await expect(
+      source.update(find('ContractLineItem'), line.id, {
+        contractId: other.id,
+      }),
+    ).rejects.toThrow(/issued/);
+    expect(
+      (await source.get(find('ContractLineItem'), line.id))?.contractId,
+    ).toBe(draft.id);
   });
 });
