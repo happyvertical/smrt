@@ -12,6 +12,7 @@ import {
   unregisterTenantScopedClass,
 } from '../registry';
 import { withTenantGlobalRead } from '../tenant-global-queries';
+import { runTenantHierarchyReadScope } from '../tenant-hierarchy-read-scope';
 
 const name = 'TenantGlobalCapabilityProbe';
 const context = createInterceptorContext(name, 'list');
@@ -97,5 +98,69 @@ describe('tenant/global list capability', () => {
         expect(await read()).toBeUndefined();
       });
     });
+  });
+
+  it('limits trusted hierarchy scope to one allowlisted list read and restores on failure', async () => {
+    await withTenant(
+      {
+        tenantId: 'family',
+        userId: 'guardian',
+        permissions: new Set(['read']),
+      },
+      async () => {
+        await runTenantHierarchyReadScope(
+          {
+            actorTenantId: 'family',
+            actorUserId: 'guardian',
+            collections: [name],
+            includeGlobal: true,
+            tenantIds: ['family', 'group'],
+          },
+          async () => {
+            expect(await read({ category: 'keep' })).toMatchObject({
+              where: [
+                [{ category: 'keep' }, { tenantId: ['family', 'group', null] }],
+              ],
+            });
+            expect(() => read({ tenantId: 'sibling' })).toThrow('out-of-scope');
+            expect(() =>
+              interceptor.beforeGet?.(name, { tenantId: 'group' }, context),
+            ).toThrow();
+            expect(() =>
+              interceptor.beforeQuery?.(
+                name,
+                { sql: 'SELECT 1', params: [], allowRawOnTenantScoped: true },
+                context,
+              ),
+            ).toThrow('does not permit query');
+            expect(() =>
+              interceptor.beforeSave?.(
+                { tenantId: 'family' } as never,
+                context,
+              ),
+            ).toThrow('does not permit save');
+            expect(() =>
+              interceptor.beforeDelete?.(
+                { tenantId: 'family' } as never,
+                context,
+              ),
+            ).toThrow('does not permit delete');
+            await expect(
+              runTenantHierarchyReadScope(
+                {
+                  actorTenantId: 'family',
+                  actorUserId: 'guardian',
+                  collections: [name],
+                  includeGlobal: false,
+                  tenantIds: ['sibling'],
+                },
+                async () => undefined,
+              ),
+            ).rejects.toThrow('nested');
+          },
+        );
+        expect(await read()).toMatchObject({ where: { tenantId: 'family' } });
+      },
+    );
   });
 });

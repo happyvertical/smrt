@@ -13,6 +13,10 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  getTenantHierarchyReadScope,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
 import {
@@ -244,6 +248,98 @@ describe('Tenant Hierarchy', () => {
       );
       expect(await tenants.isDescendantOf(grandchild1.id!, child2.id!)).toBe(
         false,
+      );
+    });
+
+    it('returns ID convenience helpers and fails closed for unrelated children', async () => {
+      await expect(tenants.getAncestorIds(grandchild1.id!)).resolves.toEqual([
+        root.id,
+        child1.id,
+      ]);
+      await expect(tenants.getDescendantIds(child1.id!)).resolves.toEqual(
+        expect.arrayContaining([grandchild1.id, grandchild2.id]),
+      );
+      await expect(tenants.getDescendantIds(grandchild1.id!)).resolves.toEqual(
+        [],
+      );
+      await expect(
+        tenants.requireChildOf(root.id!, grandchild1.id!),
+      ).resolves.toBeUndefined();
+      await expect(
+        tenants.requireChildOf(child2.id!, grandchild1.id!),
+      ).rejects.toThrow(TenantHierarchyError);
+    });
+
+    it('creates only authorized catalog and subtree list scopes', async () => {
+      await withTenant(
+        { tenantId: grandchild1.id!, userId: 'guardian' },
+        async () => {
+          await tenants.withTenantCatalogReadScope(
+            {
+              collections: ['@happyvertical/smrt-education:Course'],
+              authorize: async (context) => {
+                expect(context).toMatchObject({
+                  actorTenantId: grandchild1.id,
+                  actorUserId: 'guardian',
+                  rootTenantId: grandchild1.id,
+                  mode: 'catalog',
+                });
+                return true;
+              },
+            },
+            async () => {
+              expect(getTenantHierarchyReadScope()).toMatchObject({
+                includeGlobal: true,
+                tenantIds: expect.arrayContaining([
+                  root.id,
+                  child1.id,
+                  grandchild1.id,
+                ]),
+              });
+            },
+          );
+          expect(getTenantHierarchyReadScope()).toBeUndefined();
+          await tenants.withTenantHierarchyContext(
+            child1.id!,
+            {
+              collections: ['@happyvertical/smrt-education:Course'],
+              authorize: () => true,
+            },
+            async () => {
+              expect(getTenantHierarchyReadScope()).toMatchObject({
+                includeGlobal: false,
+                tenantIds: expect.arrayContaining([
+                  child1.id,
+                  grandchild1.id,
+                  grandchild2.id,
+                ]),
+              });
+              expect(getTenantHierarchyReadScope()?.tenantIds).not.toContain(
+                child2.id,
+              );
+            },
+          );
+        },
+      );
+      await expect(
+        tenants.withTenantCatalogReadScope(
+          {
+            collections: ['@happyvertical/smrt-education:Course'],
+            authorize: () => true,
+          },
+          async () => undefined,
+        ),
+      ).rejects.toThrow('requires an active tenant and user');
+      await withTenant({ tenantId: grandchild1.id!, userId: 'guardian' }, () =>
+        expect(
+          tenants.withTenantCatalogReadScope(
+            {
+              collections: ['@happyvertical/smrt-education:Course'],
+              authorize: () => false,
+            },
+            async () => undefined,
+          ),
+        ).rejects.toThrow('authorization was denied'),
       );
     });
   });
