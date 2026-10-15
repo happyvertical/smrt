@@ -52,7 +52,8 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/smrt-ui": "workspace:*"
+    "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*"
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",

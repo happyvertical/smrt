@@ -2,11 +2,16 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  method,
   SmrtCollection,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import type {
+  RecordServiceTimeActionInput,
+  ServiceTimeEntryActionTarget,
+} from '../services/time-entry-actions.js';
 import {
   SERVICE_TIME_ENTRY_STATUS_TRANSITIONS,
   type ServiceEvidence,
@@ -58,6 +63,18 @@ function frozenView(
   return JSON.stringify(result);
 }
 
+/**
+ * The service-backed write actions (#4001). Each is a `POST
+ * /<collection>/<action>` route guarded by the `<collection>.<action>`
+ * permission inside the action itself, so every transport that reaches it
+ * enforces the same rule.
+ */
+export const SERVICE_TIME_ENTRY_ACTIONS = [
+  'record',
+  'submit',
+  'approve',
+] as const;
+
 const loadedStatus = new WeakMap<ServiceTimeEntry, ServiceTimeEntryStatus>();
 
 /**
@@ -78,7 +95,14 @@ const loadedStatus = new WeakMap<ServiceTimeEntry, ServiceTimeEntryStatus>();
   tableName: 'service_time_entries',
   // Moved from smrt-projects in #3288; stored references keep resolving.
   previousQualifiedNames: ['@happyvertical/smrt-projects:ServiceTimeEntry'],
-  api: { include: ['list', 'get'] },
+  // Generated CRUD writes stay closed: status, the approval trail and the
+  // snapshots change only through ServiceEvidenceService. `record`, `submit`
+  // and `approve` are the service-backed actions hosted on
+  // ServiceTimeEntryCollection (#4001); the runtime REST transport gates a
+  // collection-hosted action on this item allowlist. MCP and CLI stay
+  // read-only until per-operation MCP authorization lands (#4004).
+  // Literal lists: the scanner reads decorator config statically.
+  api: { include: ['list', 'get', 'record', 'submit', 'approve'] },
   cli: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
 })
@@ -249,9 +273,93 @@ export class ServiceTimeEntry extends SmrtObject {
   }
 }
 
-/** Collection over `service_time_entries`. */
+/**
+ * Collection over `service_time_entries`.
+ *
+ * Collection classes are registered too, so this one carries its own surface:
+ * undecorated, it published generated `create`/`update`/`delete` MCP tools and
+ * CLI commands that wrote status and the approval trail directly. It keeps the
+ * reads it published and hosts the service-backed actions on REST only.
+ */
+@smrt({
+  api: {
+    include: ['forWork', 'pendingApproval', 'record', 'submit', 'approve'],
+  },
+  mcp: { include: ['list', 'get', 'forWork', 'pendingApproval'] },
+  cli: false,
+})
 export class ServiceTimeEntryCollection extends SmrtCollection<ServiceTimeEntry> {
   static readonly _itemClass = ServiceTimeEntry;
+
+  /**
+   * Record a draft time entry for the signed-in person through
+   * `ServiceEvidenceService.record()`. Needs `<collection>.record`; recording
+   * for another participant also needs `<collection>.approve`. The tenant and
+   * actor come from the session, never from the body.
+   */
+  @method({
+    httpMethod: 'POST',
+    path: 'record',
+    effect: 'write',
+    idempotent: false,
+    openWorld: false,
+    description:
+      'Record a draft time entry for the signed-in person (service-backed).',
+  })
+  async record(
+    options: RecordServiceTimeActionInput,
+  ): Promise<ServiceTimeEntry> {
+    const { recordServiceTimeAction } = await import(
+      '../services/time-entry-actions.js'
+    );
+    return recordServiceTimeAction(this, options);
+  }
+
+  /**
+   * Submit a draft or rejected entry for approval through
+   * `ServiceEvidenceService.submit()`. Needs `<collection>.submit`; only the
+   * entry's participant may submit it unless the caller can also approve.
+   */
+  @method({
+    httpMethod: 'POST',
+    path: 'submit',
+    effect: 'write',
+    idempotent: false,
+    openWorld: false,
+    description: 'Submit a time entry for approval (service-backed).',
+  })
+  async submit(
+    options: ServiceTimeEntryActionTarget,
+  ): Promise<ServiceTimeEntry> {
+    const { submitServiceTimeAction } = await import(
+      '../services/time-entry-actions.js'
+    );
+    return submitServiceTimeAction(this, options);
+  }
+
+  /**
+   * Approve a submitted entry through `ServiceEvidenceService.approve()`,
+   * writing its charge and compensation snapshots with the host's installed
+   * `ServiceCommercialResolver`. Needs an explicit `<collection>.approve`
+   * grant (no super-admin bypass). Retrying an incomplete approval is safe.
+   */
+  @method({
+    httpMethod: 'POST',
+    path: 'approve',
+    effect: 'write',
+    idempotent: true,
+    openWorld: false,
+    description:
+      'Approve a submitted time entry and snapshot its charge and compensation (service-backed).',
+  })
+  async approve(
+    options: ServiceTimeEntryActionTarget,
+  ): Promise<ServiceTimeEntry> {
+    const { approveServiceTimeAction } = await import(
+      '../services/time-entry-actions.js'
+    );
+    return approveServiceTimeAction(this, options);
+  }
   async forWork(
     workRefType: string,
     workRefId: string,
