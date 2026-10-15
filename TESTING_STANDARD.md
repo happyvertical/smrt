@@ -64,6 +64,27 @@ Run the package browser commands sequentially to avoid shared fixture ports and
 artifact directories. These mock submission fixtures establish UI/native-form
 behavior, not application authorization or financial transaction correctness.
 
+### Resource cleanup acceptance
+
+Use `pnpm test:resource-cleanup -- <command>` as an audit and release-acceptance
+command once the relevant suite is expected to leave no resources. It creates a
+fresh `smrt-run-*` child directory and passes it as `TMPDIR`, `TMP`, `TEMP`, and
+`CI_TEST_TMPDIR` through its owned `tmp` fixture directory. It gives
+`NODE_COMPILE_CACHE` a separate owned cache directory. Jiti's enabled default writes
+to the exact `tmp/jiti` directory and tsx has no cache-directory setting, so the
+guard pre-creates and manages only those exact paths plus `tmp/tsx-<uid>`. It reports
+every other remaining fixture file, including hidden paths and similarly named
+`jiti-*` or `tsx-*` directories, before deleting all owned directories. Compiler
+cache output is managed by ownership, not exempted by a prefix or name.
+On SIGINT or SIGTERM it terminates the owned POSIX process group before cleanup,
+escalating to SIGKILL after a short grace period. A SIGKILL of the guard itself
+cannot run cleanup; inspect the fresh prefixed directory after a machine or
+CI-worker crash.
+
+```bash
+pnpm test:resource-cleanup -- pnpm --filter @happyvertical/smrt-commerce test
+```
+
 ## Testing Pyramid For SMRT Packages
 
 Every actively developed SMRT package should aim for a balanced test pyramid.
@@ -247,19 +268,27 @@ Recommended conventions for browser suites:
 ### Standard Test Template
 
 ```typescript
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createIsolatedTestDb } from '@happyvertical/smrt-vitest';
 import { MyObject, MyCollection } from './my-object.js';
 
 describe('MyObject', () => {
   let collection: MyCollection;
+  let cleanup: (() => Promise<void>) | undefined;
 
   beforeEach(async () => {
-    // Creates isolated in-memory SQLite database
-    const { db } = await createIsolatedTestDb();
+    // Creates an isolated temporary SQLite database by default.
+    const isolated = await createIsolatedTestDb();
+    const { db } = isolated;
+    cleanup = isolated.cleanup;
     collection = await MyCollection.create({
       persistence: { type: 'sql', db }
     });
+  });
+
+  afterEach(async () => {
+    await cleanup?.();
+    cleanup = undefined;
   });
 
   describe('basic CRUD operations', () => {
@@ -334,23 +363,35 @@ describe('MyObject', () => {
 
 ### Using `createIsolatedTestDb()`
 
-The `@happyvertical/smrt-vitest` package provides `createIsolatedTestDb()` for creating isolated in-memory SQLite databases:
+The `@happyvertical/smrt-vitest` package provides `createIsolatedTestDb()` for an
+isolated temporary SQLite database by default, or a PostgreSQL database when the
+test environment selects PostgreSQL:
 
 ```typescript
 import { createIsolatedTestDb } from '@happyvertical/smrt-vitest';
 
+let cleanup: (() => Promise<void>) | undefined;
+
 beforeEach(async () => {
-  const { db } = await createIsolatedTestDb();
+  const isolated = await createIsolatedTestDb();
+  const { db } = isolated;
+  cleanup = isolated.cleanup;
   collection = await MyCollection.create({
     persistence: { type: 'sql', db }
   });
+});
+
+afterEach(async () => {
+  await cleanup?.();
+  cleanup = undefined;
 });
 ```
 
 **Benefits**:
 - **Isolation**: Each test suite gets its own database
-- **Speed**: In-memory databases are fast
-- **Cleanup**: Automatically cleaned up after tests
+- **Speed**: Temporary SQLite is fast for local tests
+- **Cleanup**: The helper returns a cleanup handle. Call it from `afterEach` or
+  `afterAll`; creating an isolated database does not arrange automatic teardown.
 - **No mocking**: Use real database operations
 
 ### Alternative: Temp Files
@@ -363,22 +404,28 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync } from 'node:fs';
+import { getDatabase } from '@happyvertical/sql';
 
 describe('File-based tests', () => {
   let tempDir: string;
+  let database: Awaited<ReturnType<typeof getDatabase>>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'smrt-test-'));
+    database = await getDatabase({
+      type: 'sqlite',
+      url: join(tempDir, 'test.db'),
+    });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await database.close();
     rmSync(tempDir, { recursive: true, force: true });
   });
 
   it('should work with temp files', async () => {
-    const dbPath = join(tempDir, 'test.db');
     const collection = await MyCollection.create({
-      persistence: { type: 'sql', url: dbPath }
+      persistence: { type: 'sql', db: database }
     });
     // Test operations...
   });
@@ -393,15 +440,23 @@ describe('File-based tests', () => {
 describe('relationships', () => {
   let authorCollection: AuthorCollection;
   let bookCollection: BookCollection;
+  let cleanup: (() => Promise<void>) | undefined;
 
   beforeEach(async () => {
-    const { db } = await createIsolatedTestDb();
+    const isolated = await createIsolatedTestDb();
+    const { db } = isolated;
+    cleanup = isolated.cleanup;
     authorCollection = await AuthorCollection.create({
       persistence: { type: 'sql', db }
     });
     bookCollection = await BookCollection.create({
       persistence: { type: 'sql', db }
     });
+  });
+
+  afterEach(async () => {
+    await cleanup?.();
+    cleanup = undefined;
   });
 
   it('should load related objects', async () => {
@@ -445,12 +500,20 @@ describe('relationships', () => {
 ```typescript
 describe('STI polymorphism', () => {
   let eventCollection: EventCollection;
+  let cleanup: (() => Promise<void>) | undefined;
 
   beforeEach(async () => {
-    const { db } = await createIsolatedTestDb();
+    const isolated = await createIsolatedTestDb();
+    const { db } = isolated;
+    cleanup = isolated.cleanup;
     eventCollection = await EventCollection.create({
       persistence: { type: 'sql', db }
     });
+  });
+
+  afterEach(async () => {
+    await cleanup?.();
+    cleanup = undefined;
   });
 
   it('should save and load correct subclass', async () => {
@@ -569,22 +632,27 @@ import { MyObject, MyCollection } from './my-object.js';
 
 describe('API generation', () => {
   it('should require authentication for a non-public object', async () => {
-    const { db } = await createIsolatedTestDb();
-    const collection = await MyCollection.create({
-      persistence: { type: 'sql', db },
-    });
+    const isolated = await createIsolatedTestDb();
+    const { db } = isolated;
+    try {
+      const collection = await MyCollection.create({
+        persistence: { type: 'sql', db },
+      });
 
-    const generator = new APIGenerator({ basePath: '/api/v1' });
-    generator.registerCollection('my-objects', collection);
-    const handler = generator.generateHandler();
+      const generator = new APIGenerator({ basePath: '/api/v1' });
+      generator.registerCollection('my-objects', collection);
+      const handler = generator.generateHandler();
 
-    // No authMiddleware is configured and MyObject isn't marked
-    // `api: { public }`, so generated routes fail closed (#1540) instead
-    // of serving open.
-    const response = await handler(
-      new Request('http://localhost/api/v1/my-objects'),
-    );
-    expect(response.status).toBe(401);
+      // No authMiddleware is configured and MyObject isn't marked
+      // `api: { public }`, so generated routes fail closed (#1540) instead
+      // of serving open.
+      const response = await handler(
+        new Request('http://localhost/api/v1/my-objects'),
+      );
+      expect(response.status).toBe(401);
+    } finally {
+      await isolated.cleanup();
+    }
   });
 });
 ```
