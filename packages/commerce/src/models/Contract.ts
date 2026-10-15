@@ -76,9 +76,10 @@ export function classifyContractPurchase(contract: Contract): boolean {
   return 'vendorId' in contract;
 }
 
-/** A frozen Contract snapshot is reportable except when cancelled. */
+/** Frozen snapshots are reportable except cancelled contracts and supplier quotes. */
 export function isContractSnapshotReportEligible(contract: Contract): boolean {
   return (
+    !(contract instanceof SupplierQuote) &&
     contract.status !== ContractStatus.DRAFT &&
     contract.status !== ContractStatus.CANCELLED
   );
@@ -87,10 +88,10 @@ export function isContractSnapshotReportEligible(contract: Contract): boolean {
 /**
  * Contract is the base class for all commercial agreements.
  *
- * Uses Single Table Inheritance (STI) for nine leaf types. SalesContract owns
+ * Uses Single Table Inheritance (STI) for ten leaf types. SalesContract owns
  * the customer link for Estimate, Order, WholesaleOrder, Cart, Lease,
  * Agreement, and LicenseSale. PurchaseContract owns the vendor link for
- * PurchaseOrder and ProductionOrder. Both branches share `contracts`.
+ * SupplierQuote, PurchaseOrder and ProductionOrder. Both branches share `contracts`.
  *
  * @example
  * ```typescript
@@ -497,12 +498,12 @@ export abstract class SalesContract extends Contract {
   }
 }
 
-/** Supplier-side contracts, including purchase and production orders. */
+/** Supplier-side contracts, including supplier quotes, purchase and production orders. */
 @TenantScoped({ mode: 'optional' })
 @smrt({ abstract: true })
 export abstract class PurchaseContract extends Contract {
   @foreignKey(Vendor, {
-    description: 'The vendor a purchase order is placed with.',
+    description: 'The vendor supplying this quote or purchase contract.',
   })
   vendorId: string | null = null;
 
@@ -573,6 +574,20 @@ export class Agreement extends SalesContract {
   constructor(options: SalesContractOptions = {}) {
     super(options);
     if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
+}
+
+/** Supplier quotation received from a vendor; acceptance does not create an order. */
+@TenantScoped({ mode: 'optional' })
+@smrt()
+export class SupplierQuote extends PurchaseContract {
+  @foreignKey(Vendor, { required: true })
+  override vendorId: string | null = null;
+  override contractType = ContractType.SUPPLIER_QUOTE;
+
+  constructor(options: PurchaseContractOptions = {}) {
+    super(options);
+    if (options.vendorId !== undefined) this.vendorId = options.vendorId;
   }
 }
 

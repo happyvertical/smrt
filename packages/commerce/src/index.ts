@@ -248,6 +248,7 @@ export {
   PurchaseContract,
   PurchaseOrder,
   SalesContract,
+  SupplierQuote,
   TaxCode,
   TaxComponent,
   TaxSettings,

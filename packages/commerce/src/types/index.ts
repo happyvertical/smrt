@@ -47,6 +47,7 @@ export enum ContractType {
   ORDER = 'order',
   LEASE = 'lease',
   AGREEMENT = 'agreement',
+  SUPPLIER_QUOTE = 'supplier_quote',
   PURCHASE_ORDER = 'purchase_order',
   WHOLESALE_ORDER = 'wholesale_order',
   PRODUCTION_ORDER = 'production_order',

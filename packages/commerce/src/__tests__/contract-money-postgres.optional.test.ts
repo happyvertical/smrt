@@ -18,8 +18,9 @@ import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { VendorCollection } from '../collections/VendorCollection.js';
-import { PurchaseOrder } from '../models/Contract.js';
+import { PurchaseOrder, SupplierQuote } from '../models/Contract.js';
 import { MoneyValidationError } from '../money.js';
+import { ContractStatus, ContractType } from '../types/index.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -31,6 +32,8 @@ describePostgres('contract money aggregate on PostgreSQL (#3933)', () => {
     isolated = await createIsolatedTestDbFromManifest({
       includeObjects: [
         'Contract',
+        'Customer',
+        'Invoice',
         'ContractLineItem',
         'DocumentTax',
         'TaxCode',
@@ -118,21 +121,27 @@ describePostgres('contract money aggregate on PostgreSQL (#3933)', () => {
     });
   });
 
-  it('persists a purchase tax recovery snapshot through the STI branch', async () => {
+  it.each([
+    PurchaseOrder,
+    SupplierQuote,
+  ])('persists and freezes %s purchase tax snapshots with report eligibility', async (Purchase) => {
     const tenantId = randomUUID();
     await withTenant({ tenantId }, async () => {
       const codeId = await activateV2(tenantId);
       const vendor = await (await VendorCollection.create({ db })).create({
         defaultTaxCodeId: codeId,
       });
-      const purchase = new PurchaseOrder({
+      const purchase = new Purchase({
         db,
         vendorId: vendor.id,
         currency: 'CAD',
+        issueDate: new Date('2026-09-12T00:00:00.000Z'),
       });
       await purchase.initialize();
       await purchase.save();
-      await (await ContractLineItemCollection.create({ db })).create({
+      const line = await (
+        await ContractLineItemCollection.create({ db })
+      ).create({
         contractId: purchase.id,
         description: 'Recoverable parts',
         quantity: 2,
@@ -154,6 +163,53 @@ describePostgres('contract money aggregate on PostgreSQL (#3933)', () => {
       ).toMatchObject([
         { taxableMinor: 200, taxMinor: 10, recoverableMinor: 10 },
       ]);
+      const contracts = await ContractCollection.create({ db });
+      const issued = await contracts.get({ id: purchase.id }, { cache: false });
+      if (!issued) throw new Error('Expected persisted purchase contract');
+      issued.status = ContractStatus.ACCEPTED;
+      await issued.save();
+      expect(issued.moneySnapshotId).toBeTruthy();
+      // The mutable display scalar does not change the persisted STI identity.
+      issued.contractType =
+        purchase instanceof SupplierQuote
+          ? ContractType.PURCHASE_ORDER
+          : ContractType.SUPPLIER_QUOTE;
+      await issued.save();
+      const reloaded = await contracts.get(
+        { id: purchase.id },
+        { cache: false },
+      );
+      expect(reloaded).toBeInstanceOf(Purchase);
+      expect(reloaded?.contractType).toBe(issued.contractType);
+
+      line.unitPrice = 101;
+      await expect(line.save()).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+      const options = {
+        tenantId,
+        from: new Date('2026-09-01T00:00:00.000Z'),
+        to: new Date('2026-09-30T23:59:59.999Z'),
+      };
+      const taxes = await DocumentTaxCollection.create({ db });
+      expect(
+        await taxes.findByDocument(tenantId, 'contract', purchase.id),
+      ).toMatchObject([
+        { taxableMinor: 200, taxMinor: 10, recoverableMinor: 10 },
+      ]);
+      const reportIds = (
+        await contracts.listSnapshotReportContracts(options)
+      ).map((row) => row.id);
+      const facts = await taxes.listReportFacts(options);
+      if (purchase instanceof SupplierQuote) {
+        expect(reportIds).toEqual([]);
+        expect(facts).toEqual([]);
+      } else {
+        expect(reportIds).toEqual([purchase.id]);
+        expect(facts).toMatchObject([
+          { documentId: purchase.id, recoverableMinor: 10 },
+        ]);
+      }
     });
   });
 });
