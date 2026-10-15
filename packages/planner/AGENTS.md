@@ -20,7 +20,9 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
 - `src/lib/catalog/generate/`: the generator (`registry.ts` discovery and
   tarball reads, `extract.ts` manifest -> catalog (a `Meta<T>` field is kept
   as its `_meta.underlyingType`), `exclusions.ts` the
-  documented infrastructure exclusion list; `recipe-metadata.ts` validates the
+  documented infrastructure exclusion list, plus `EXCLUDED_MODELS` (smrt-commerce's
+  `MoneyMigrationDocument`) and the money-model internals marked `system` (`isInternalMoneyField`:
+  commerce `*Json`, `moneySnapshotId`, `legacyAmount`, `moneyModel`, `moneyMigrationId`); `recipe-metadata.ts` validates the
   recipes' surfaces, providers, runtime, demo seed and `demo` and the package's
   `browser`, carried as authored). `scripts/generate-catalog.ts` is
   the entry point; Node runs the TypeScript directly.
@@ -44,7 +46,8 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   menu as laid out (`useShellLayout().applied`), the Planner tabs, and "Add <feature>" for each
   recipe not on, labelled with its demo mode.
 - `src/lib/recipes/plumbing.ts`: the feature-vs-plumbing rules the Features tab
-  uses to hide link tables, child records and tiny lookups by default.
+  uses to hide link tables, child records and tiny lookups by default, plus `PLUMBING_MODELS` by name
+  (`TaxComponent`, `TaxSettings`, `DocumentTax`, `TaxSummaryReport`; `TaxCode` stays a feature).
 - `src/lib/recipes/`: recipes are the unit people add. `types.ts` is the
   `SmrtRecipe` shape (happyvertical/smrt#3590) and `recipes.json` the local
   stand-in for the `recipes` the packages' `smrt-knowledge.json` will carry;
@@ -101,14 +104,16 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   than a literal `data:` URL, and `?styles=off` turns
   it off, drafts included. The assistant's token-based theme changes have an Undo. A library cookbook with
   no theme keeps the visitor's current look.
-- `src/lib/settings/app-settings.ts`: app settings (currency, default tax rate, default payment terms)
-  belong to the visitor's app, never to a cookbook. They are the same app-scope `defaultValue`
+- `src/lib/settings/app-settings.ts`: app settings (currency, default tax rate, default payment terms,
+  `pricesIncludeTax` and `taxRounding`, the last two Invoice/Contract `lineAmountType` /
+  `taxRoundingScope` as in smrt-core's `COMMERCE_SETTING_TARGETS`) belong to the visitor's app, never to a cookbook. They are the same app-scope `defaultValue`
   policy rows a cookbook writes (no cookbook field); `SETTING_TARGETS` is the one list of which
   model fields each setting covers, `readSettings`/`writeSettings` read and upsert/remove the rows
   (a row only where the value differs from the model's own default). The cookbook preview and the
   Settings tab (`AppSettings.svelte`, `SettingsPanel.svelte`) both edit them; a cookbook only
-  supplies starting values, and settings apply to new records only. Sample tax follows the setting
-  on the next reseed (`setSampleTaxRate`).
+  supplies starting values, and settings apply to new records only. Sample money follows the settings
+  on the next reseed (`setSampleTaxRate`, `setSamplePricing`). The Settings tab also lists the sample
+  tenant's tax codes (`data/money.ts`): the default from the rate, the seeded ones and smrt's example pack.
 - `src/lib/library/`: the curated library of ready-made cookbooks (`LibraryCookbook`; not to be
   confused with the `Cookbook` document). `library.json` holds each entry
   (`{ id, name, icon, summary, keywords, settings, document }`); `document` is the
@@ -124,8 +129,11 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   suggested-section moves keep saved layouts and cookbooks valid; `migrateNavItemIds`
   (`cookbook/migrate.ts`, run by `parseCookbook`) rewrites the old `section:...` item
   ids; `tests/nav-ids.test.ts` fails on duplicate ids. Defaults are app-scope `defaultValue` policy rows
-  (`terms`, `paymentTerms`, `currency`, line-item `taxRate`), written only where the
-  catalog default differs, plus `terms` and `paymentTerms` always. `menu.ts` previews
+  (`terms`, `paymentTerms`, `currency`, line-item `taxRate`, Invoice/Contract `lineAmountType` and
+  `taxRoundingScope`), written only where the catalog default differs, plus `terms` and `paymentTerms`
+  always. Salon prices include tax; mechanic and equipment rental round tax per document; the rest
+  are exclusive, per line. `pending.json` holds cookbooks waiting on unreleased recipes (empty since
+  Agency moved in with smrt 0.56.1). `menu.ts` previews
   a library cookbook's menu (same `applyShellLayout`), `apply.ts` replaces the document
   (confirm when non-empty), `state.svelte.ts` remembers the last applied id in
   localStorage (not in the document). Applying regenerates the sample records from the cookbook's pack (the panel says so). Add a
@@ -328,8 +336,8 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   `children`; each with the framework's role-chosen `columns`; children confined to the models in the
   app, references to every catalog target so `data/labels.ts` names them, e.g. a customer's Profile,
   while `RecordView`'s `hrefFor` links only targets in the app); derived here rather than through
-  `deriveScreenRelations` because the catalog knows STI parents. `totals.ts` is the record's own
-  subtotal / tax / total by role (plus its lines' discounts) for the line-items totals block. The
+  `deriveScreenRelations` because the catalog knows STI parents. `totals.ts` is the line-items totals block's
+  data: an issued document's stored totals, else a draft's own subtotal / tax / total by role. The
   overview is `detail:<pkg>.<Model>` (`overviews/definitions.ts` `detailOverview`: the framework's
   `recordOverview` over the whole catalog's relations, every relation's metric tiles, so widget ids
   are stable whichever recipes are on; `detailOverviewFor` narrows the defaults to the app: the first
@@ -348,24 +356,27 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   Sample foreign keys spread over every row of their target (`fakes.ts` `relatedIndex`), so each
   record has related rows; a customer-linked model (a FK to Customer) gets 3-6 rows per customer
   (`customerSlots`, seeded by the customer's index), so related lists hold several records. Sample
-  lines (`data/derived.ts`): INTERIM line-amount rule until the money-model release: line amount =
-  qty x unitPrice - discount + tax (tax-inclusive), subtotal = the sum of the lines' pre-discount
-  prices. It matches the smrt <=0.56.0 `line-items` widget and smrt-commerce's
-  `ContractLineItem.calculateAmount` (smrt#3954: lines adding up to the recorded total agree).
-  smrt main's money model (smrt#3988, merged, not yet released) changes it: `amount` becomes the net
-  after discount, tax is stored apart (`taxAmount`), and the model adds `lineAmountType`
-  (exclusive / inclusive / none), tax codes and components, `discountType` / `discountRate` and
-  `taxRoundingScope`. The planner moves to that model when the release lands. Upstream gap: a fresh
-  tenant defaults to the legacy model, not the new one (being filed upstream). Until then, if the
-  widget changes, re-check `tests/record-page.test.ts` (only the seeded documents flag) before
-  changing the sample data.
-  The document's subtotal is the lines' prices (quantity x unit price), total = subtotal - discount
-  + tax = the lines' amounts, taxed at the app's setting, else the pack's, else 5%;
-  about a third of documents discount a line (only where the app shows the line's discount: generated
-  lines take the hidden fields' background values first); the third Order and Invoice keep a stale subtotal and
-  total (`children.ts` `MISMATCH_*`) so the line-items mismatch flag shows (the widget compares
-  the recorded subtotal with the lines' tax-inclusive sum, so the note names the subtotal).
-  Stored sample rows live under `smrt-planner:data:v5:`; bump it when line amounts change meaning.
+  lines are on smrt-commerce's money model (released in 0.56.1), v2 only: `data/money.ts` maps rows to
+  `@happyvertical/smrt-commerce/money`'s own `calculateMoneyDocument` / `resolveLineTaxCode` (pure and
+  browser-safe; never copy its arithmetic). A line's `amount` is quantity x unit price less its discount
+  (`discountType` none / percent with `discountRate` as percent text / amount in `discount`): the net
+  when prices exclude tax, the gross when they include it (net = amount - `taxAmount`). Tax is stored
+  apart (`taxAmount`, `taxComponentsJson` per component, `taxRate` their sum), from the line's code:
+  override, exempt customer, product, customer, app default. The document: subtotal = the lines' net,
+  total = subtotal + tax, `discountTotal` informational (never subtracted again). Sample documents are
+  priced the app's way (`lineAmountType`, `taxRoundingScope` from `getSamplePricing`); the app default
+  code mirrors smrt's cookbook activation (`Default <rate>%`, out-of-scope at 0) unless an example-pack
+  code fits the currency and rate (CAD 12% is BC GST + PST). About a third of documents discount their
+  first line (percent or amount by document), about one line in seven carries an exempt or zero-rated
+  code, and one customer in eight is tax exempt. `TaxCode` / `TaxComponent` / `TaxSettings` sample rows
+  come from the same set (`planner-source.ts`). The record page's `line-items` widget gets an issued
+  document's frozen money as `storedTotals` (`screens/totals.ts`: header figures plus the lines'
+  snapshots summed per component, e.g. GST and PST apart); a draft passes its live subtotal / tax /
+  total (no discount: smrt#4010) and the widget checks them against the lines. The third Order and
+  Invoice are drafts with a stale subtotal and total (`children.ts` `MISMATCH_*`) so the mismatch flag
+  shows. A write the model refuses (a discount above the price) throws and is undone. Fresh tenants
+  still start on the legacy model upstream until smrt#4009 ships (the export prompt has a TODO).
+  Stored sample rows live under `smrt-planner:data:v6:`; bump it (never migrate) when line amounts change meaning.
 - `src/routes/`: `/` Planner with `?tab=cookbooks|recipes|features|layout|export` tabs (`planner/tab.svelte.ts`; a visitor with nothing built lands on Cookbooks; smrt-ui `Tabs`: Cookbooks cards + preview, Recipes cards with switches only, Features the browsable catalogue of every recipe with its demo label, providers and what it adds, Layout `ShellLayoutEditor`, Export in `ExportPanel`: the cookbook summary, Copy prompt for a coding agent / Send to kitchen / Download with the file's name, size, apply command and JSON preview, then Import and Reset apart under "Replace or start over"), `/ai/` the AI models page (Set up your assistant), `/cookbook/` a client-side redirect to `/?tab=export`, `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),
   `/packages/` and `/packages/[id]/` the package browser, `/m/[package]/[model]/` (and `/[view]/`:
   a keyed nav entry, else a record's view page; `/[view]/edit/` its edit page).
