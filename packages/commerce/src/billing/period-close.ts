@@ -1570,12 +1570,21 @@ async function sendAndReconcile(
         `local subtotal ${invoice.subtotal} ${close.currency}.`,
     );
   }
-  await withTenant({ tenantId: runtime.sellerTenantId }, async () => {
-    invoice.providerTaxAmount = state.taxAmount;
-    if (invoice.status === InvoiceStatus.DRAFT) invoice.markSent();
-    await invoice.save();
-  });
-  if (invoice.totalAmount !== state.total) {
+  // Provider tax is written while the invoice is a draft, in the same save
+  // that issues (freezes) it. An invoice written off or cancelled while this
+  // close was parked is already frozen: it keeps its stored facts, and the
+  // close only records that the provider sent it.
+  const settledWhileParked =
+    invoice.status === InvoiceStatus.WRITTEN_OFF ||
+    invoice.status === InvoiceStatus.CANCELLED;
+  if (invoice.status === InvoiceStatus.DRAFT) {
+    await withTenant({ tenantId: runtime.sellerTenantId }, async () => {
+      invoice.providerTaxAmount = state.taxAmount;
+      invoice.markSent();
+      await invoice.save();
+    });
+  }
+  if (!settledWhileParked && invoice.totalAmount !== state.total) {
     throw new Error(
       `Invoice ${invoice.invoiceNumber} total ${invoice.totalAmount} does not match provider total ${state.total}.`,
     );

@@ -23,7 +23,6 @@ import {
 } from '../document-money.js';
 import { ensureTenantTaxCodes } from '../tax/standard-codes.js';
 import { InvoiceStatus } from '../types/index.js';
-import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant.js';
 
 describe('credit note money persistence (#3939)', () => {
   let db: DatabaseInterface;
@@ -58,9 +57,6 @@ describe('credit note money persistence (#3939)', () => {
       row.defaultLineAmountType = 'exclusive';
       row.taxRoundingScope = 'document';
       await row.save();
-      // A clean tenant starts on money v2 (#4009); no migration needed.
-      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
-        throw new Error('Expected a clean tenant on money v2');
       return code.id;
     });
   }
@@ -94,9 +90,6 @@ describe('credit note money persistence (#3939)', () => {
       row.defaultLineAmountType = 'exclusive';
       row.taxRoundingScope = 'line';
       await row.save();
-      // A clean tenant starts on money v2 (#4009); no migration needed.
-      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
-        throw new Error('Expected a clean tenant on money v2');
       return { gstCodeId: gstCode.id, gstPstCodeId: gstPstCode.id };
     });
   }
@@ -755,30 +748,6 @@ describe('credit note money persistence (#3939)', () => {
       expect(proposed.lines).toHaveLength(1);
       expect(proposed.lines[0]?.id).toBeTruthy();
     });
-  });
-
-  it('refuses stored facts for legacy and migrating tenants', async () => {
-    for (const state of ['legacy', 'migrating'] as const) {
-      const tenantId = `facts-${state}`;
-      await seedLegacyMoneyTenant(db, tenantId);
-      await ensureTenantTaxCodes(db, tenantId);
-      await withTenant({ tenantId }, async () => {
-        const invoice = await (await InvoiceCollection.create({ db })).create({
-          invoiceNumber: `FACTS-${state}`,
-          currency: 'CAD',
-        });
-        if (state === 'migrating')
-          await (
-            await TaxSettingsCollection.create({ db })
-          ).beginMoneyMigration(tenantId);
-        await expect(
-          getInvoiceMoneyFacts({ db, tenantId, invoiceId: invoice.id }),
-        ).rejects.toMatchObject({
-          code:
-            state === 'migrating' ? 'FROZEN_DOCUMENT' : 'INVALID_MONEY_INPUT',
-        });
-      });
-    }
   });
 
   it('uses frozen component rates for a partial quantity after a live rate change', async () => {

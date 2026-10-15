@@ -242,7 +242,7 @@ class RateCodes {
     const codes = await TaxCodeCollection.create({ db: this.db });
     let mapped: MappedCode;
     if (percent === '0') {
-      const code = await codes.findByCode(key);
+      const code = await codes.findByCode(key, this.tenantId);
       if (!code?.id) throw new Error(`standard tax code ${key} is missing`);
       mapped = {
         taxCodeId: code.id,
@@ -275,7 +275,7 @@ class RateCodes {
         this.componentsWithoutLiabilityAccount.push(componentId);
       }
       const codeName = `rate-${suffix}`;
-      let code = await codes.findByCode(codeName);
+      let code = await codes.findByCode(codeName, this.tenantId);
       if (!code)
         code = await codes.create({
           id: await deterministicTaxId(this.tenantId, 'code', codeName),
@@ -646,7 +646,7 @@ async function dropOldSchema(
       dropped.push(table);
     }
   });
-  return dropped;
+  return dropped.sort();
 }
 
 /**

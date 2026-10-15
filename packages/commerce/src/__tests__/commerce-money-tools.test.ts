@@ -31,7 +31,6 @@ import {
   TaxSettingsCollection,
 } from '../index.js';
 import { withTenantMoneyMigration } from '../tenant-money-barrier.js';
-import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant.js';
 
 const TENANT_A = '11111111-1111-4111-8111-111111111111';
 const TENANT_B = '22222222-2222-4222-8222-222222222222';
@@ -122,9 +121,6 @@ async function activateV2(tenantId: string): Promise<void> {
     current.defaultLineAmountType = 'exclusive';
     current.taxRoundingScope = 'document';
     await current.save();
-    // A clean tenant starts on money v2 (#4009); no migration needed.
-    if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
-      throw new Error('Expected a clean tenant on money v2');
   });
 }
 
@@ -489,97 +485,5 @@ describe('commerce money principal tools (#3937)', () => {
         denied,
       ),
     ).rejects.toThrow('denied:commerce.invoice.line.add');
-  });
-
-  it('refuses code-based money mutations before legacy or migrating state can change', async () => {
-    await seedLegacyMoneyTenant(db, TENANT_B);
-    const map = tools();
-    const invoice = await createInvoice(TENANT_B);
-    const add = map.get(COMMERCE_INVOICE_LINE_ADD_TOOL_SLUG);
-    const update = map.get(COMMERCE_INVOICE_LINE_UPDATE_TOOL_SLUG);
-    const legacyBefore = await withTenant({ tenantId: TENANT_B }, async () =>
-      (await InvoiceCollection.create({ db })).get(
-        { id: invoice.id },
-        { cache: false },
-      ),
-    );
-
-    await expect(
-      call(
-        add,
-        {
-          invoiceId: invoice.id,
-          description: 'Legacy refusal',
-          quantity: 1,
-          unitPrice: 100,
-          taxCode: 'HST',
-        },
-        run(TENANT_B),
-      ),
-    ).rejects.toMatchObject({ code: 'INVALID_MONEY_INPUT' });
-    const noLegacyLines = await withTenant({ tenantId: TENANT_B }, async () =>
-      (await InvoiceLineItemCollection.create({ db })).findByInvoice(
-        invoice.id,
-      ),
-    );
-    expect(noLegacyLines).toHaveLength(0);
-    const legacyAfterAdd = await withTenant({ tenantId: TENANT_B }, async () =>
-      (await InvoiceCollection.create({ db })).get(
-        { id: invoice.id },
-        { cache: false },
-      ),
-    );
-    expect(legacyAfterAdd).toMatchObject({
-      subtotal: legacyBefore?.subtotal,
-      taxAmount: legacyBefore?.taxAmount,
-      totalAmount: legacyBefore?.totalAmount,
-    });
-
-    const legacyLine = await withTenant({ tenantId: TENANT_B }, async () =>
-      (await InvoiceLineItemCollection.create({ db })).create({
-        invoiceId: invoice.id,
-        description: 'Existing legacy line',
-        quantity: 1,
-        unitPrice: 100,
-      }),
-    );
-    await expect(
-      call(
-        update,
-        { id: legacyLine.id, description: 'Changed' },
-        run(TENANT_B),
-      ),
-    ).rejects.toMatchObject({ code: 'INVALID_MONEY_INPUT' });
-    const persistedLegacyLine = await withTenant(
-      { tenantId: TENANT_B },
-      async () =>
-        (await InvoiceLineItemCollection.create({ db })).get(
-          { id: legacyLine.id },
-          { cache: false },
-        ),
-    );
-    expect(persistedLegacyLine?.description).toBe('Existing legacy line');
-
-    const migrationId = await withTenant({ tenantId: TENANT_B }, async () =>
-      (await TaxSettingsCollection.create({ db })).beginMoneyMigration(
-        TENANT_B,
-      ),
-    );
-    await expect(
-      call(
-        update,
-        { id: legacyLine.id, description: 'Still blocked' },
-        run(TENANT_B),
-      ),
-    ).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
-    const migratingLine = await withTenant({ tenantId: TENANT_B }, () =>
-      withTenantMoneyMigration(db, TENANT_B, migrationId, async (scope) =>
-        (await InvoiceLineItemCollection.create({ db: scope.db })).get(
-          { id: legacyLine.id },
-          { cache: false },
-        ),
-      ),
-    );
-    expect(migratingLine?.description).toBe('Existing legacy line');
   });
 });

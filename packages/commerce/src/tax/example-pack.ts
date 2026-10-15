@@ -141,7 +141,7 @@ export async function applyTaxCodeExamplePack(
             throw new Error(`Unknown tax example component key: ${key}`);
           return { taxComponentId, compound: false };
         });
-        const existing = await codes.findByCode(seed.code);
+        const existing = await codes.findByCode(seed.code, tenantId);
         const code =
           existing ??
           (await codes.create({

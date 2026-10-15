@@ -618,8 +618,8 @@ async function recomputeInvoiceAggregate(
       };
     }
   }
-  const exempt = await codesCollection.findByCode('exempt');
-  const outOfScope = await codesCollection.findByCode('out-of-scope');
+  const exempt = await codesCollection.findByCode('exempt', tenantId);
+  const outOfScope = await codesCollection.findByCode('out-of-scope', tenantId);
   const customers = await CustomerCollection.create({ db });
   const customer = invoice.customerId
     ? await customers.get({ id: invoice.customerId }, { cache: false })

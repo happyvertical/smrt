@@ -88,9 +88,6 @@ describePostgres('money-v2 invoice posting on PostgreSQL (#3935)', () => {
       const setting = await settings.getOrCreateForTenant(tenantId);
       setting.defaultSalesTaxCodeId = code.id;
       await setting.save();
-      // A clean tenant starts on money v2 (#4009); no migration needed.
-      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
-        throw new Error('Expected a clean tenant on money v2');
       const customer = await (await CustomerCollection.create({ db })).create({
         defaultTaxCodeId: code.id,
       });

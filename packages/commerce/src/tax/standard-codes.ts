@@ -24,14 +24,14 @@ export async function ensureTenantTaxCodes(
     const codes = await TaxCodeCollection.create({ db });
     const result: TaxCode[] = [];
     for (const [code, name, kind] of STANDARD_TAX_CODES) {
-      const existing = await codes.findByCode(code);
+      const existing = await codes.findByCode(code, tenantId);
       if (existing) result.push(existing);
       else {
         const id = await deterministicTaxId(tenantId, 'code', code);
         result.push(
           await createOrLoadTaxSeed(
             () => codes.create({ id, tenantId, code, name, kind }),
-            () => codes.findByCode(code),
+            () => codes.findByCode(code, tenantId),
           ),
         );
       }

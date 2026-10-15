@@ -19,14 +19,8 @@ import {
   type DocumentMoneyWriteCapability,
 } from '../document-money-internal.js';
 import { MoneyValidationError } from '../money.js';
-import {
-  type InvoiceCalculationContext,
-  type InvoiceLineDraft,
-  resolveInvoiceLineDraft,
-} from '../svelte/invoices/calculations.js';
 import type {
   InvoiceCreditCalculationBasis,
-  InvoiceLineEditorState,
   InvoiceLineItemOptions,
   InvoiceTaxComponentSnapshot,
 } from '../types/index.js';
@@ -166,35 +160,6 @@ export class InvoiceLineItem extends SmrtObject {
   @field({ description: 'How many.' })
   quantity: number = 1.0;
 
-  /** Raw editor modes retained only while they resolve to the authoritative model fields. */
-  invoiceEditorStateJson: string = '';
-
-  /** Guarded editor metadata view; malformed stored JSON is treated as absent. */
-  get invoiceEditorState(): InvoiceLineEditorState | null {
-    try {
-      const value: unknown = JSON.parse(this.invoiceEditorStateJson);
-      if (
-        !value ||
-        typeof value !== 'object' ||
-        !('draft' in value) ||
-        !('context' in value) ||
-        !value.draft ||
-        typeof value.draft !== 'object' ||
-        !value.context ||
-        typeof value.context !== 'object'
-      )
-        return null;
-      return value as InvoiceLineEditorState;
-    } catch {
-      return null;
-    }
-  }
-
-  /** Store only this model's editor state, preserving unrelated metadata. */
-  set invoiceEditorState(value: InvoiceLineEditorState | null) {
-    this.invoiceEditorStateJson = value ? JSON.stringify(value) : '';
-  }
-
   /**
    * Unit price before discount, in **integer minor units** (cents, satoshis).
    *
@@ -320,10 +285,6 @@ export class InvoiceLineItem extends SmrtObject {
 
   constructor(options: InvoiceLineItemOptions = {}) {
     super(options);
-    if (options.invoiceEditorStateJson !== undefined)
-      this.invoiceEditorStateJson = options.invoiceEditorStateJson;
-    if (options.invoiceEditorState !== undefined)
-      this.invoiceEditorState = structuredClone(options.invoiceEditorState);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.invoiceId !== undefined) this.invoiceId = options.invoiceId;
     if (options.creditedLineId !== undefined)
@@ -370,46 +331,7 @@ export class InvoiceLineItem extends SmrtObject {
     if (options.sortOrder !== undefined) this.sortOrder = options.sortOrder;
   }
 
-  /** Apply a server-validated draft without saving; authorization and transaction stay caller-owned. */
-  applyEditorDraft(
-    draft: InvoiceLineDraft,
-    context: InvoiceCalculationContext,
-  ): void {
-    const resolved = resolveInvoiceLineDraft(draft, context);
-    Object.assign(this, resolved);
-    this.invoiceEditorState = structuredClone({ draft, context });
-  }
-
-  /** Recover original editing modes only when current authority and resolved model fields agree. */
-  getEditorDraft(
-    authorizedContext: InvoiceCalculationContext,
-  ): InvoiceLineDraft | null {
-    const state = this.invoiceEditorState;
-    if (
-      !state ||
-      !authorizedContext ||
-      state.context?.currency !== authorizedContext.currency ||
-      state.context?.inheritedTaxRate !== authorizedContext.inheritedTaxRate
-    )
-      return null;
-    try {
-      const resolved = resolveInvoiceLineDraft(state.draft, authorizedContext);
-      if (
-        resolved.description !== this.description ||
-        resolved.sku !== this.sku ||
-        resolved.quantity !== this.quantity ||
-        resolved.unitPrice !== this.unitPrice ||
-        resolved.discount !== this.discount ||
-        resolved.taxRate !== this.taxRate
-      )
-        return null;
-      return structuredClone(state.draft);
-    } catch {
-      return null;
-    }
-  }
-
-  /** Persist through the invoice money aggregate; editor metadata never determines money. */
+  /** Persist through the invoice money aggregate. */
   override async save(): Promise<this> {
     const { saveInvoiceLineItem } = await import('../document-money.js');
     return (await saveInvoiceLineItem(this)) as this;
@@ -419,12 +341,6 @@ export class InvoiceLineItem extends SmrtObject {
   async saveDerived(capability: DocumentMoneyWriteCapability): Promise<this> {
     if (capability !== DOCUMENT_MONEY_WRITE)
       throw new Error('Invoice line money write capability is required');
-    const state = this.invoiceEditorState;
-    if (
-      this.invoiceEditorStateJson &&
-      (!state || !this.getEditorDraft(state.context))
-    )
-      this.invoiceEditorState = null;
     return (await super.save()) as this;
   }
 

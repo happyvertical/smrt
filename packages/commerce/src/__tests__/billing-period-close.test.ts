@@ -1080,26 +1080,6 @@ describe('smrt#3060 billing-period close', () => {
     });
   });
 
-  describe('accounting-provider input', () => {
-    it('converts invoice money to the major units the SDK expects', async () => {
-      await world.usage(SOLO);
-      await world.provider.closePeriod(period);
-      const [solo] = await invoiceFor(world, PROVIDER, SOLO);
-      const input = await withTenant({ tenantId: PROVIDER }, async () =>
-        solo?.toAccountingInput(),
-      );
-      expect(input).toMatchObject({
-        subtotal: 25.7,
-        taxAmount: 1.29,
-        totalAmount: 26.99,
-        currency: 'USD',
-      });
-      expect(
-        input?.lineItems.map((line) => line.unitPrice).sort((a, b) => a - b),
-      ).toEqual([0.7, 25]);
-    });
-  });
-
   describe('minor-unit conversion', () => {
     it('converts with the ISO exponent and rejects fractional provider amounts', () => {
       expect(currencyMinorUnitExponent('usd')).toBe(2);
@@ -1115,26 +1095,45 @@ describe('smrt#3060 billing-period close', () => {
     });
   });
 
-  it('refuses a money-v2 seller up front and closes once the seller is provisioned legacy (#4009)', async () => {
-    await expect(
-      commerceRoot.ensureCommerceTenant(world.db, PROVIDER),
-    ).resolves.toMatchObject({ moneyModel: 'v2' });
+  it('bills a seller with a taxing default code without taxing billing lines twice (#4013)', async () => {
+    // The seller's default sales code taxes at 8.25%; billing lines are
+    // provider-taxed, so they must stay out of scope.
+    await commerceRoot.ensureCommerceTenant(world.db, PROVIDER, {
+      cookbook: {
+        policies: [
+          {
+            objectRef: '@happyvertical/smrt-commerce:InvoiceLineItem',
+            fieldName: 'taxRate',
+            scopeType: 'app',
+            defaultValue: '0.0825',
+          },
+        ] as never,
+      },
+    });
     await world.usage(SITE);
-    await expect(world.provider.closePeriod(period)).rejects.toThrow(
-      /money-v2 seller tenant/,
-    );
-    expect(await invoiceFor(world, PROVIDER, NETWORK)).toEqual([]);
-
-    // The supported billing provisioning path returns the empty seller to
-    // legacy, and a retried close then bills normally.
-    await expect(
-      commerceRoot.ensureCommerceTenant(world.db, PROVIDER, {
-        moneyModel: 'legacy',
-      }),
-    ).resolves.toMatchObject({ moneyModel: 'legacy' });
+    await world.usage(SITE);
     const result = await world.provider.closePeriod(period);
     expect(
       result.groups.find((group) => group.payerTenantId === NETWORK)?.outcome,
     ).toBe('completed');
+    const [network] = await invoiceFor(world, PROVIDER, NETWORK);
+    expect(network).toMatchObject({
+      status: InvoiceStatus.SENT,
+      subtotal: 2540,
+      providerTaxAmount: 330,
+      taxAmount: 330,
+      totalAmount: 2870,
+    });
+    expect(network?.moneySnapshotId).toBeTruthy();
+    expect(network?.arJournalId).toBeTruthy();
+    const lines = await withTenant({ tenantId: PROVIDER }, async () =>
+      (await InvoiceLineItemCollection.create({ db: world.db })).findByInvoice(
+        String(network?.id),
+      ),
+    );
+    expect(lines.map((line) => [line.taxCodeCode, line.taxAmount])).toEqual([
+      ['out-of-scope', 0],
+      ['out-of-scope', 0],
+    ]);
   });
 });

@@ -104,7 +104,7 @@ const totals = calculateMoneyDocument({
 ```
 
 `resolveLineTaxCode()` resolves caller-loaded codes without I/O, and the
-Svelte `InvoiceEditor` opts into the v2 money controls through its `money`
+Svelte `InvoiceEditor` renders the v2 money controls from its required `money`
 prop. Frozen editor documents render a supplied stored snapshot without
 recalculation. See the [commerce money calculator guide](../../docs/content/commerce-money.md)
 for pricing modes, rounding, input and result types, the native-form editor
@@ -738,14 +738,17 @@ The same models carry `@field({ ui: { widget } })` hints in the manifest:
 
 ## Invoice preparation UI
 
-`InvoiceLineEditor` and `InvoiceEditor` from `@happyvertical/smrt-commerce/svelte`
-provide editable descriptions/SKUs, fractional quantities, unit prices, flat or
-percentage discounts, explicit or inherited tax, customer, dates, currency and
-terms. Calculated previews use the same exact minor-unit arithmetic exported
-for server handlers from `@happyvertical/smrt-commerce/invoices`.
-`InvoiceAllocationFields` and `InvoiceReview` extend this foundation with
-caller-owned sources and approvals. See [the editor contract](agents/invoice-preparation.md),
-[calculation rules](agents/invoice-calculations.md), and the required
+`InvoiceEditor` from `@happyvertical/smrt-commerce/svelte` is the invoice form,
+built on the commercial money model, v2, which is the only invoice money model.
+It requires a `money` prop (`MoneyEditorProps`): a lossless draft with
+descriptions, fractional quantities, unit prices, percentage or amount
+discounts and a tax code per line (inherited or overridden), plus the
+authorized tax codes. Its previews run the same exact calculator the server
+uses, and the server re-resolves tax codes and recomputes every stored amount.
+An issued document renders only its frozen stored snapshot.
+`InvoiceAllocationFields` and `InvoiceReview` add caller-owned sources and
+approvals. See [the editor contract](agents/invoice-preparation.md), the
+[line calculation helper](agents/invoice-calculations.md), and the
 [existing-database storage migration](agents/invoice-quantity.md).
 
 ## Exact cost billing

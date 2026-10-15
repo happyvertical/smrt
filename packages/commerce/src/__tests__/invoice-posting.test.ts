@@ -92,9 +92,6 @@ describe('money-v2 invoice posting integration (#3935)', () => {
       const current = await settings.getOrCreateForTenant(tenantId);
       current.defaultSalesTaxCodeId = gstCode.id;
       await current.save();
-      // A clean tenant starts on money v2 (#4009); no migration needed.
-      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
-        throw new Error('Expected a clean tenant on money v2');
       const customer = await (await CustomerCollection.create({ db })).create({
         defaultTaxCodeId: gstCode.id,
       });

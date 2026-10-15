@@ -33,10 +33,10 @@ interface TaxSummaryBrowserFixture {
 
 const fixtures = new Map<TaxSummaryBrowserState, Promise<TaxSummaryBrowserFixture>>();
 
+/** Money v2 is the only model: a tenant needs only its tax settings row. */
 async function activateV2(db: DatabaseInterface, tenantId: string): Promise<void> {
   const settings = await TaxSettingsCollection.create({ db });
-  const migrationId = await settings.beginMoneyMigration(tenantId);
-  await settings.activateMoneyV2(tenantId, migrationId);
+  await settings.getOrCreateForTenant(tenantId);
 }
 
 async function createFixture(state: TaxSummaryBrowserState): Promise<TaxSummaryBrowserFixture> {

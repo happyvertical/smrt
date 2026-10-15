@@ -101,7 +101,6 @@ describePostgres('tax codes on PostgreSQL', () => {
           'exempt',
           'zero-rated',
           'out-of-scope',
-          'legacy-unreconciled',
           'default-7_125',
         ]) {
           expect(await codes.list({ where: { code } }), code).toHaveLength(1);

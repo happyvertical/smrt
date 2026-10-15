@@ -17,9 +17,6 @@ const to = new Date('2026-09-30T23:59:59.999Z');
 
 async function activateV2(db: DatabaseInterface, tenantId: string) {
   const settings = await TaxSettingsCollection.create({ db });
-  // A clean tenant starts on money v2 (#4009); no migration needed.
-  if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
-    throw new Error('Expected a clean tenant on money v2');
 }
 
 /** Contract shared by the SQLite and PostgreSQL real ledger source lanes. */

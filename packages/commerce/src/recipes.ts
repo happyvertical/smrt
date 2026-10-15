@@ -336,7 +336,6 @@ export class InvoicingRecipe extends SmrtRecipe {
     },
     InvoiceLineItem: {
       fields: {
-        invoiceEditorStateJson: { visibility: 'hidden' },
         sourceType: { visibility: 'hidden' },
         sourceId: { visibility: 'hidden' },
         periodStart: { visibility: 'hidden' },

@@ -21,7 +21,6 @@ import {
 } from '../contract-money.js';
 import { Order, PurchaseOrder } from '../models/Contract.js';
 import { ContractStatus } from '../types/index.js';
-import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant.js';
 
 describe('Contract money persistence (#3933)', () => {
   let db: DatabaseInterface;
@@ -55,9 +54,6 @@ describe('Contract money persistence (#3933)', () => {
       current.defaultLineAmountType = 'exclusive';
       current.taxRoundingScope = 'document';
       await current.save();
-      // A clean tenant starts on money v2 (#4009); no migration needed.
-      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
-        throw new Error('Expected a clean tenant on money v2');
       return code.id;
     });
   }
@@ -102,9 +98,6 @@ describe('Contract money persistence (#3933)', () => {
       current.defaultLineAmountType = lineAmountType;
       current.taxRoundingScope = taxRoundingScope;
       await current.save();
-      // A clean tenant starts on money v2 (#4009); no migration needed.
-      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
-        throw new Error('Expected a clean tenant on money v2');
       return { gst: gstCode.id, gstPst: gstPstCode.id, exempt: exemptCode.id };
     });
   }
@@ -347,42 +340,6 @@ describe('Contract money persistence (#3933)', () => {
       line.unitPrice = 101;
       await expect(line.save()).rejects.toMatchObject({
         code: 'FROZEN_DOCUMENT',
-      });
-    });
-  });
-
-  it('blocks Contract and line reads while its tenant is migrating', async () => {
-    const tenantId = 'contract-read-migration';
-    await seedLegacyMoneyTenant(db, tenantId);
-    await withTenant({ tenantId }, async () => {
-      const contracts = await ContractCollection.create({ db });
-      const contract = await contracts.create({ currency: 'CAD' });
-      const lines = await ContractLineItemCollection.create({ db });
-      const line = await lines.create({
-        contractId: contract.id,
-        description: 'Read barrier',
-        quantity: 1,
-        unitPrice: 100,
-      });
-      const settings = await TaxSettingsCollection.create({ db });
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-
-      await expect(contracts.get({ id: contract.id })).rejects.toMatchObject({
-        code: 'FROZEN_DOCUMENT',
-      });
-      await expect(contracts.list()).rejects.toMatchObject({
-        code: 'FROZEN_DOCUMENT',
-      });
-      await expect(lines.get({ id: line.id })).rejects.toMatchObject({
-        code: 'FROZEN_DOCUMENT',
-      });
-      await expect(lines.list()).rejects.toMatchObject({
-        code: 'FROZEN_DOCUMENT',
-      });
-
-      await settings.restoreLegacyMoneyModel(tenantId, migrationId);
-      await expect(contracts.get({ id: contract.id })).resolves.toMatchObject({
-        id: contract.id,
       });
     });
   });

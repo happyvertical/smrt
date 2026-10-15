@@ -69,9 +69,6 @@ describePostgres('contract money aggregate on PostgreSQL (#3933)', () => {
     setting.defaultLineAmountType = 'exclusive';
     setting.taxRoundingScope = 'document';
     await setting.save();
-    // A clean tenant starts on money v2 (#4009); no migration needed.
-    if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
-      throw new Error('Expected a clean tenant on money v2');
     return code.id;
   }
 

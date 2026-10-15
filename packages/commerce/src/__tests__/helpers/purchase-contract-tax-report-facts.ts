@@ -49,11 +49,6 @@ export async function seedReviewedPurchaseContract(
   current.defaultLineAmountType = 'exclusive';
   current.taxRoundingScope = 'document';
   await current.save();
-  if (current.moneyModel !== 'v2') {
-    // A clean tenant starts on money v2 (#4009); no migration needed.
-    if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
-      throw new Error('Expected a clean tenant on money v2');
-  }
 
   const vendors = await VendorCollection.create({ db });
   const vendor = await vendors.create({ id: randomUUID() });

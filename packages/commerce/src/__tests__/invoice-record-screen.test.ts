@@ -39,9 +39,6 @@ async function activateV2(
     current.defaultSalesTaxCodeId = code.id;
     current.defaultLineAmountType = 'exclusive';
     current.taxRoundingScope = 'document';
-    // A clean tenant starts on money v2 (#4009); no migration needed.
-    if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
-      throw new Error('Expected a clean tenant on money v2');
     return code.id;
   });
 }

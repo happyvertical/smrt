@@ -183,7 +183,7 @@ export const COMMERCE_UI_SLOTS: Record<string, ModuleUISlot> = {
     id: 'invoice-editor',
     label: 'Invoice Preparation',
     description:
-      'General invoice lines, exact totals and optional allocation fields',
+      'Invoice lines with tax codes and v2 money totals; frozen documents show stored facts',
     icon: 'file-text',
     category: 'form',
     order: 8,

@@ -159,7 +159,7 @@ async function resolveTaxCode(
   code: string,
 ) {
   const collection = await TaxCodeCollection.create({ db });
-  const taxCode = await collection.findByCode(code);
+  const taxCode = await collection.findByCode(code, tenantId);
   if (!taxCode || taxCode.tenantId !== tenantId || !taxCode.active) {
     throw new MoneyValidationError(
       'TAX_CODE_NOT_FOUND',

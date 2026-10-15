@@ -12,7 +12,6 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { seedLegacyMoneyTenant } from './__tests__/helpers/legacy-money-tenant.js';
 import { CustomerCollection } from './collections/CustomerCollection.js';
 import { InvoiceCollection } from './collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from './collections/InvoiceLineItemCollection.js';
@@ -71,9 +70,6 @@ describe('frozen invoice accounting sync (#3937)', () => {
       current.defaultLineAmountType = options.lineAmountType ?? 'exclusive';
       current.taxRoundingScope = 'document';
       await current.save();
-      // A clean tenant starts on money v2 (#4009); no migration needed.
-      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
-        throw new Error('Expected a clean tenant on money v2');
 
       const customer = await (await CustomerCollection.create({ db })).create({
         defaultTaxCodeId: code.id,
@@ -725,38 +721,6 @@ describe('frozen invoice accounting sync (#3937)', () => {
         request: {
           creditedInvoiceExternalId: 'qbo-source-invoice',
         },
-      });
-    });
-  });
-
-  it('preserves the legacy Invoice.toAccountingInput path without realm options', async () => {
-    await seedLegacyMoneyTenant(db, 'tenant-legacy');
-    await withTenant({ tenantId: 'tenant-legacy' }, async () => {
-      const customer = await (await CustomerCollection.create({ db })).create(
-        {},
-      );
-      const invoices = await InvoiceCollection.create({ db });
-      const invoice = await invoices.create({
-        customerId: customer.id,
-        invoiceNumber: 'LEGACY-1',
-        currency: 'CAD',
-      });
-      await (await InvoiceLineItemCollection.create({ db })).create({
-        invoiceId: invoice.id,
-        description: 'Legacy line',
-        quantity: 2,
-        unitPrice: 100,
-        taxRate: 0.05,
-      });
-      const stored = await invoices.get({ id: invoice.id }, { cache: false });
-      if (!stored) throw new Error('Expected legacy invoice');
-      // Lock the pre-v2 contract: legacy lines carry tax-inclusive amount and
-      // the caller's persisted header values are passed through unchanged.
-      await expect(stored.toAccountingInput()).resolves.toMatchObject({
-        subtotal: 0,
-        taxAmount: 0,
-        totalAmount: 0,
-        lineItems: [{ amount: 2.1, taxRate: 0.05 }],
       });
     });
   });
