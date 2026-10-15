@@ -106,28 +106,39 @@ async function main() {
   let child;
   let interruptedBy;
   let safeToCleanup = true;
-  let forceKillCompleted;
+  let groupStopCompleted;
   const signals = ['SIGINT', 'SIGTERM'];
   const signalGroup = (signal) => {
     try {
       process.kill(-child.pid, signal);
+      return true;
     } catch (error) {
+      if (error.code === 'ESRCH') return false;
       if (error.code !== 'ESRCH') {
         safeToCleanup = false;
         console.error(`::error::Could not stop the owned test process group: ${error.message}`);
       }
+      return false;
     }
+  };
+  const stopOwnedGroup = (initialSignal = 'SIGTERM') => {
+    if (!child?.pid) return Promise.resolve(false);
+    groupStopCompleted ??= (async () => {
+      // The child is the session leader created by spawn({ detached: true }). A
+      // process group cannot disappear and then be reused while it still has a
+      // member, so this signals only the group that started as our command.
+      if (!signalGroup(initialSignal)) return false;
+      await new Promise((resolve) => setTimeout(resolve, SIGNAL_GRACE_MILLISECONDS));
+      signalGroup('SIGKILL');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return true;
+    })();
+    return groupStopCompleted;
   };
   const forwardSignal = (signal) => {
     interruptedBy ??= signal;
     if (child?.pid) {
-      signalGroup(signal);
-      forceKillCompleted ??= new Promise((resolveForceKill) => {
-        setTimeout(() => {
-          signalGroup('SIGKILL');
-          resolveForceKill();
-        }, SIGNAL_GRACE_MILLISECONDS);
-      });
+      stopOwnedGroup(signal);
     }
   };
   const handlers = new Map(signals.map((signal) => [signal, () => forwardSignal(signal)]));
@@ -150,13 +161,11 @@ async function main() {
     // spawning the command. Apply the recorded signal once the group exists.
     if (interruptedBy) forwardSignal(interruptedBy);
     outcome = await execution.completed;
-    // `close` only confirms the direct child. A test runner may exit on SIGTERM
-    // while one of its workers ignores it, so do not inspect or remove the root
-    // until the bounded process-group SIGKILL has been delivered.
-    if (interruptedBy) {
-      await forceKillCompleted;
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
+    // `close` only confirms the direct child. Its worker group may still own
+    // ports or files even after a normal exit, so end the detached command
+    // group before inspecting or removing its root.
+    const stoppedSurvivingGroup = await stopOwnedGroup();
+    if (stoppedSurvivingGroup) console.error('::notice::Stopped surviving test worker process group');
     if (outcome.startupError) console.error(`::error::Test command could not start: ${outcome.startupError.message}`);
     console.error(`::notice::Managed tool cache directories: ${compileCache}, ${jitiCache}, ${tsxCache}`);
     leftovers = await listLeftovers(root, managedFixtureDirectories);

@@ -76,8 +76,9 @@ guard pre-creates and manages only those exact paths plus `tmp/tsx-<uid>`. It re
 every other remaining fixture file, including hidden paths and similarly named
 `jiti-*` or `tsx-*` directories, before deleting all owned directories. Compiler
 cache output is managed by ownership, not exempted by a prefix or name.
-On SIGINT or SIGTERM it terminates the owned POSIX process group before cleanup,
-escalating to SIGKILL after a short grace period. A SIGKILL of the guard itself
+Before inspection and cleanup it terminates any surviving members of its owned
+POSIX process group, including workers left after a normal runner exit, and
+escalates to SIGKILL after a short grace period. A SIGKILL of the guard itself
 cannot run cleanup; inspect the fresh prefixed directory after a machine or
 CI-worker crash.
 

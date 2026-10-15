@@ -41,6 +41,23 @@ async function waitFor(predicate) {
   }
 }
 
+async function isProcessLive(pid) {
+  try {
+    process.kill(pid, 0);
+  } catch (error) {
+    if (error.code === 'ESRCH') return false;
+    throw error;
+  }
+  if (process.platform !== 'linux') return true;
+  try {
+    const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
+    return !/^\d+ \(.*\) Z /.test(stat);
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
 test.before(async () => {
   callerTmpdir = await mkdtemp(join(process.cwd(), '.test-resource-cleanup-'));
 });
@@ -125,9 +142,27 @@ test('does not delete caller-owned siblings', async () => {
   assert.equal(await readFile(sibling, 'utf8'), 'keep');
 });
 
+test('stops a surviving worker after its parent exits normally', async () => {
+  const descendantProgram = "process.on('SIGTERM', () => {}); process.send?.('ready'); setInterval(() => {}, 1_000);";
+  const source = `import { spawn } from 'node:child_process'; const descendant = spawn(process.execPath, ['--eval', ${JSON.stringify(descendantProgram)}], { env: process.env, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }); descendant.once('message', () => { descendant.disconnect(); descendant.unref(); console.log(\`root:\${process.env.TMPDIR}|descendant:\${descendant.pid}\`); });`;
+  const execution = startGuard(source);
+  await waitFor(() => /root:.+\|descendant:\d+/.test(execution.output()));
+  const root = execution.output().match(/root:(.+)\|descendant:/)[1];
+  const pid = Number(execution.output().match(/descendant:(\d+)/)[1]);
+  try {
+    const result = await execution.completed;
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stderr, /Stopped surviving test worker process group/);
+    await assert.rejects(readFile(root));
+    assert.equal(await isProcessLive(pid), false);
+  } finally {
+    if (await isProcessLive(pid)) process.kill(pid, 'SIGKILL');
+  }
+});
+
 test('waits for group escalation when a parent exits on SIGTERM and its worker survives', async () => {
-  const descendantProgram = "const { writeFileSync } = require('node:fs'); const { join } = require('node:path'); process.on('SIGTERM', () => {}); setInterval(() => { try { writeFileSync(join(process.env.TMPDIR, 'worker-heartbeat'), 'alive'); } catch {} }, 10);";
-  const source = `import { spawn } from 'node:child_process'; const descendant = spawn(process.execPath, ['--eval', ${JSON.stringify(descendantProgram)}], { env: process.env, stdio: 'ignore' }); console.log(\`root:\${process.env.TMPDIR}|descendant:\${descendant.pid}\`); process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1_000);`;
+  const descendantProgram = "process.on('SIGTERM', () => {}); process.send?.('ready'); setInterval(() => {}, 1_000);";
+  const source = `import { spawn } from 'node:child_process'; const descendant = spawn(process.execPath, ['--eval', ${JSON.stringify(descendantProgram)}], { env: process.env, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }); descendant.once('message', () => { descendant.disconnect(); console.log(\`root:\${process.env.TMPDIR}|descendant:\${descendant.pid}\`); }); process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1_000);`;
   const execution = startGuard(source);
   await waitFor(() => /root:.+\|descendant:\d+/.test(execution.output()));
   const root = execution.output().match(/root:(.+)\|descendant:/)[1];
@@ -137,12 +172,8 @@ test('waits for group escalation when a parent exits on SIGTERM and its worker s
     const result = await execution.completed;
     assert.equal(result.code, 143, result.stderr);
     await assert.rejects(readFile(root));
-    assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+    assert.equal(await isProcessLive(pid), false);
   } finally {
-    try {
-      process.kill(pid, 'SIGKILL');
-    } catch (error) {
-      if (error.code !== 'ESRCH') throw error;
-    }
+    if (await isProcessLive(pid)) process.kill(pid, 'SIGKILL');
   }
 });
