@@ -306,6 +306,7 @@ const dockToggles = $derived(
     path={CHEF_HAT_ICON}
     current={configuring && !exporting}
     transitionName="planner-customize"
+    onclick={() => plannerTab.leaveExport()}
   />
 {/snippet}
 

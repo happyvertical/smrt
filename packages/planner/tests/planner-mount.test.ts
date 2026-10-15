@@ -114,6 +114,20 @@ describe('Planner component', () => {
     }
   });
 
+  it("leaves Export for the default tab through the chef's hat, keeping any other tab", () => {
+    // `#/configure/` names no tab, so the route alone would stay on Export.
+    try {
+      plannerTab.active = 'export';
+      plannerTab.leaveExport();
+      expect(plannerTab.active).toBe('cookbooks');
+      plannerTab.active = 'theme';
+      plannerTab.leaveExport();
+      expect(plannerTab.active).toBe('theme');
+    } finally {
+      plannerTab.active = 'cookbooks';
+    }
+  });
+
   it('has an assistant toggle and dock only when the host gives it a model', () => {
     const plain = render(Planner, { props: { basePath: '/planner' } }).body;
     expect(plain).not.toContain('data-dock-tool="assistant"');

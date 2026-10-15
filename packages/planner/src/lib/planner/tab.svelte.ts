@@ -27,6 +27,12 @@ class PlannerTabState {
   fromSearch(search: string, fallback: PlannerTab = 'cookbooks') {
     this.active = parseTab(search, fallback);
   }
+
+  /** The chef's hat from Export: `#/configure/` names no tab, so leave Export
+   *  for the default rather than stay on it; any other tab is kept. */
+  leaveExport(fallback: PlannerTab = 'cookbooks') {
+    if (this.active === 'export') this.active = fallback;
+  }
 }
 
 export const plannerTab = new PlannerTabState();
