@@ -3027,6 +3027,10 @@ export class SmrtObject extends SmrtClass {
         this.db,
         serializeEmbeddedWrite,
         async () => {
+          const writeGuard = GlobalInterceptors.executeWriteGuard(
+            this,
+            interceptorContext,
+          );
           if (naturalKeyUpsert) {
             naturalKeyWrite = await this.writeNaturalKeyRow(
               data,
@@ -3061,7 +3065,12 @@ export class SmrtObject extends SmrtClass {
                         })) as Record<string, unknown> | null);
                     if (
                       !current ||
-                      !this.revisionsEqual(current.updated_at, revisionGuard)
+                      !this.revisionsEqual(current.updated_at, revisionGuard) ||
+                      (writeGuard &&
+                        !(await this.db.get(
+                          this.tableName,
+                          this.guardedWriteFilter({ id: data.id }, writeGuard),
+                        )))
                     ) {
                       revisionMatched = false;
                       return;
@@ -3071,16 +3080,19 @@ export class SmrtObject extends SmrtClass {
                     ? await this.writeEmbeddedRevisionRow(data, current)
                     : await this.db.update(
                         this.tableName,
-                        {
-                          id: data.id,
-                          ...(revisionGuard !== undefined
-                            ? this.revisionPredicate(revisionGuard)
-                            : {}),
-                        },
+                        this.guardedWriteFilter(
+                          {
+                            id: data.id,
+                            ...(revisionGuard !== undefined
+                              ? this.revisionPredicate(revisionGuard)
+                              : {}),
+                          },
+                          writeGuard,
+                        ),
                         updateData,
                       );
                   if (
-                    revisionGuard !== undefined &&
+                    (revisionGuard !== undefined || writeGuard !== undefined) &&
                     updateResult.affected !== 1
                   ) {
                     revisionMatched = false;
@@ -3109,6 +3121,7 @@ export class SmrtObject extends SmrtClass {
                     data,
                     naturalKeyConflictColumns,
                     adopted.existing ?? null,
+                    writeGuard,
                   );
                 }
               } catch (error) {
@@ -3203,16 +3216,14 @@ export class SmrtObject extends SmrtClass {
     // A revision claim is still a write for tenant isolation purposes. Run the
     // same pre-save security interceptors as save(), while intentionally
     // omitting domain mutation and after-save hooks.
-    await GlobalInterceptors.executeBeforeSave(
-      this,
-      createInterceptorContext(
-        className,
-        'save',
-        undefined,
-        undefined,
-        this.getResolvedQualifiedName(),
-      ),
+    const interceptorContext = createInterceptorContext(
+      className,
+      'save',
+      undefined,
+      undefined,
+      this.getResolvedQualifiedName(),
     );
+    await GlobalInterceptors.executeBeforeSave(this, interceptorContext);
 
     const updatedAt = this.nextRevisionTimestamp(expectedUpdatedAt);
     let result: Awaited<ReturnType<typeof this.db.update>> | undefined;
@@ -3222,6 +3233,10 @@ export class SmrtObject extends SmrtClass {
       this.db,
       useEmbeddedRevisionFallback,
       async () => {
+        const writeGuard = GlobalInterceptors.executeWriteGuard(
+          this,
+          interceptorContext,
+        );
         let current: Record<string, unknown> | null = null;
         if (useEmbeddedRevisionFallback) {
           const persisted = await this.getCanonicalPersistedRow({
@@ -3230,7 +3245,12 @@ export class SmrtObject extends SmrtClass {
           current = persisted;
           if (
             !current ||
-            !this.revisionsEqual(current.updated_at, expectedUpdatedAt)
+            !this.revisionsEqual(current.updated_at, expectedUpdatedAt) ||
+            (writeGuard &&
+              !(await this.db.get(
+                this.tableName,
+                this.guardedWriteFilter({ id: this.id }, writeGuard),
+              )))
           ) {
             revisionMatched = false;
             return;
@@ -3239,10 +3259,10 @@ export class SmrtObject extends SmrtClass {
         if (!useEmbeddedRevisionFallback) {
           result = await this.db.update(
             this.tableName,
-            {
-              id: this.id,
-              ...this.revisionPredicate(expectedUpdatedAt),
-            },
+            this.guardedWriteFilter(
+              { id: this.id, ...this.revisionPredicate(expectedUpdatedAt) },
+              writeGuard,
+            ),
             { updated_at: updatedAt.toISOString() },
           );
         } else if (this.isPositivelyNativeDuckDb()) {
@@ -3406,11 +3426,59 @@ export class SmrtObject extends SmrtClass {
    * its owner checked, under the same embedded write queue; the conflict
    * columns it matched are never assigned, exactly as in the upsert.
    */
+  private guardedWriteFilter(
+    filter: Record<string, unknown>,
+    guard?: Record<string, unknown>,
+  ): Record<string, unknown> {
+    for (const [key, value] of Object.entries(guard ?? {})) {
+      if (
+        Object.hasOwn(filter, key) &&
+        JSON.stringify(filter[key]) !== JSON.stringify(value)
+      )
+        throw new Error(
+          'Mandatory write predicate conflicts with write identity',
+        );
+    }
+    return { ...filter, ...guard };
+  }
+
   private async writeNaturalKeyUpsert(
     data: Record<string, unknown>,
     conflictColumns: string[],
     existing: Record<string, unknown> | null,
+    writeGuard?: Record<string, unknown>,
   ) {
+    if (writeGuard) {
+      // A late collision must never enter an unconditional SDK UPSERT. A fresh
+      // insert either succeeds or reports a collision; existing rows are changed
+      // only by an UPDATE whose mandatory predicate is checked by the database.
+      const stored =
+        existing ?? (await this.getCanonicalPersistedRow({ id: data.id }));
+      if (!stored) return this.db.insert(this.tableName, data);
+      const unchanged = await this.unchangedIndexedColumnsOf(data, stored);
+      const assignments = Object.fromEntries(
+        Object.entries(data).filter(
+          ([column]) =>
+            column !== 'id' &&
+            !unchanged.has(column) &&
+            !conflictColumns.includes(column),
+        ),
+      );
+      const filter = this.guardedWriteFilter({ id: stored.id }, writeGuard);
+      let result: { affected: number };
+      if (this.isPositivelyNativeDuckDb()) {
+        // Native DuckDB is serialized by the same embedded write queue. Its
+        // adapter does not reliably report UPDATE counts; use the owned helper.
+        if (!(await this.db.get(this.tableName, filter)))
+          throw new Error('Mandatory write predicate denied mutation');
+        result = await this.updateDuckDbRowById(stored.id, assignments);
+      } else {
+        result = await this.db.update(this.tableName, filter, assignments);
+      }
+      if (result.affected !== 1)
+        throw new Error('Mandatory write predicate denied mutation');
+      return result;
+    }
     const unchanged = await this.unchangedIndexedColumnsOf(data, existing);
     if (!existing || unchanged.size === 0 || existing.id == null) {
       return this.db.upsert(this.tableName, conflictColumns, data);
@@ -4899,6 +4967,10 @@ export class SmrtObject extends SmrtClass {
         this.db,
         isEmbeddedDatabase(this.db),
         async () => {
+          const writeGuard = GlobalInterceptors.executeWriteGuard(
+            this,
+            interceptorContext,
+          );
           // Embedded adapters serialize framework writes through this queue, so
           // a preflight comparison is atomic with the cascade/delete that follows.
           // PostgreSQL instead binds the revision into the final DELETE predicate;
@@ -4934,13 +5006,38 @@ export class SmrtObject extends SmrtClass {
               id: this.id,
             },
             async (db) => {
-              const result = await db.delete(this.tableName, {
-                id: this.id,
-                ...(expectedUpdatedAt !== undefined && !embeddedRevisionGuard
-                  ? this.revisionPredicate(expectedUpdatedAt)
-                  : {}),
-              });
-              if (expectedUpdatedAt !== undefined && result.affected !== 1) {
+              const filter = this.guardedWriteFilter(
+                {
+                  id: this.id,
+                  ...(expectedUpdatedAt !== undefined && !embeddedRevisionGuard
+                    ? this.revisionPredicate(expectedUpdatedAt)
+                    : {}),
+                },
+                writeGuard,
+              );
+              // Some adapters report a constant one from delete(), even when
+              // no row matched. Guarded mutations require a reliable outcome.
+              let affected: number;
+              if (writeGuard) {
+                const dialect = isPostgresDatabase(this.db)
+                  ? 'postgres'
+                  : this.isNativeDuckDb()
+                    ? 'duckdb'
+                    : 'sqlite';
+                const { sql, values } = buildWhere(filter, 1, dialect);
+                const table = `"${this.tableName.replaceAll('"', '""')}"`;
+                const result = await db.query(
+                  `DELETE FROM ${table} ${sql} RETURNING id`,
+                  ...values,
+                );
+                affected = result.rows.length;
+              } else {
+                affected = (await db.delete(this.tableName, filter)).affected;
+              }
+              if (
+                (expectedUpdatedAt !== undefined || writeGuard !== undefined) &&
+                affected !== 1
+              ) {
                 throw new RuntimeError(
                   `Revision conflict while deleting ${className}`,
                   'RUNTIME_REVISION_CONFLICT',

@@ -1,9 +1,10 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   type Asset,
   type AssetRuntime,
   type AssetRuntimeOptions,
   createAssetRuntime,
+  withPrivateAssetAccess,
 } from '@happyvertical/smrt-assets';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { PDFDocument } from 'pdf-lib';
@@ -139,36 +140,49 @@ export class SubmissionService extends LearnerService {
     page: SubmissionPage,
   ): Promise<Asset> {
     const runtime = await this.assets();
-    const asset = await runtime.collection.create({
-      name: page.name,
-      tenantId: request.tenantId,
-      ownerProfileId: profileId,
-      mimeType: page.mimeType,
-      typeSlug: 'education-page',
-      statusSlug: 'active',
-    });
-    const options = { mimeType: page.mimeType, typeSlug: 'education-page' };
-    asset.sourceUri = await runtime.store.planFile(asset, options);
-    const extension = {
-      'image/jpeg': 'jpg',
-      'image/png': 'png',
-      'image/webp': 'webp',
-      'application/pdf': 'pdf',
-    }[page.mimeType];
-    // A configured resolver may select a provider/directory, but cannot adopt a
-    // shared locator into this fresh-file compensation ledger.
-    if (
-      new URL(asset.sourceUri).pathname.split('/').at(-1) !==
-      `${asset.id}.${extension}`
-    )
-      throw new Error(
-        'Storage resolver must preserve the fresh asset filename',
-      );
-    await asset.save();
-    // Ledger before write: a provider may write bytes and then reject.
-    this.resources.push({ runtime, asset });
-    await runtime.store.preserveFile(asset, page.data, options);
-    return asset;
+    const id = randomUUID();
+    return withPrivateAssetAccess(
+      {
+        tenantId: request.tenantId,
+        actorUserId: request.actorUserId,
+        ownerProfileId: profileId,
+        assetIds: [id],
+      },
+      async () => {
+        const asset = await runtime.collection.create({
+          id,
+          accessMode: 'private',
+          name: page.name,
+          tenantId: request.tenantId,
+          ownerProfileId: profileId,
+          mimeType: page.mimeType,
+          typeSlug: 'education-page',
+          statusSlug: 'active',
+        });
+        const options = { mimeType: page.mimeType, typeSlug: 'education-page' };
+        asset.sourceUri = await runtime.store.planFile(asset, options);
+        const extension = {
+          'image/jpeg': 'jpg',
+          'image/png': 'png',
+          'image/webp': 'webp',
+          'application/pdf': 'pdf',
+        }[page.mimeType];
+        // A configured resolver may select a provider/directory, but cannot adopt a
+        // shared locator into this fresh-file compensation ledger.
+        if (
+          new URL(asset.sourceUri).pathname.split('/').at(-1) !==
+          `${asset.id}.${extension}`
+        )
+          throw new Error(
+            'Storage resolver must preserve the fresh asset filename',
+          );
+        await asset.save();
+        // Ledger before write: a provider may write bytes and then reject.
+        this.resources.push({ runtime, asset });
+        await runtime.store.preserveFile(asset, page.data, options);
+        return asset;
+      },
+    );
   }
   private validatePages(pages: readonly SubmissionPage[]): void {
     if (!Array.isArray(pages) || !pages.length || pages.length > 100)
@@ -519,15 +533,24 @@ export class SubmissionService extends LearnerService {
     const learner = await this.getLearner(request);
     const asset =
       link &&
-      (await (
-        await this.assets()
-      ).collection.get(
+      (await withPrivateAssetAccess(
         {
-          id: request.assetId,
           tenantId: request.tenantId,
+          actorUserId: request.actorUserId,
           ownerProfileId: learner.profileId,
+          assetIds: [request.assetId],
         },
-        { cache: false },
+        async () =>
+          (
+            await this.assets()
+          ).collection.get(
+            {
+              id: request.assetId,
+              tenantId: request.tenantId,
+              ownerProfileId: learner.profileId,
+            },
+            { cache: false },
+          ),
       ));
     if (!asset) throw new LearnerAuthorizationError();
     if (!this.options.signAsset)

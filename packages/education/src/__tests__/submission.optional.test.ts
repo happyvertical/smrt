@@ -5,6 +5,7 @@ import {
 } from '@happyvertical/smrt-vitest';
 import { afterAll, beforeAll, describe, it } from 'vitest';
 import { learnerFixture } from './learner-workflows.js';
+import { assertPrivateAssetWriteGuard } from './private-asset-write-workflows.js';
 import { assertSubmissionModels } from './submission-model-workflows.js';
 import {
   assertCapture,
@@ -25,6 +26,8 @@ afterAll(() => disableTenancy());
   'SubmissionService postgres',
   () => {
     for (const [name, assertion] of Object.entries({
+      privateWriteGuard: (f: Awaited<ReturnType<typeof learnerFixture>>) =>
+        assertPrivateAssetWriteGuard(f, 'postgres'),
       models: assertSubmissionModels,
       capture: assertCapture,
       sharedStorageDenial: assertSharedStorageDenial,

@@ -1,7 +1,10 @@
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAssetRuntime } from '@happyvertical/smrt-assets';
+import {
+  AssetCollection,
+  createAssetRuntime,
+} from '@happyvertical/smrt-assets';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import { PDFDocument } from 'pdf-lib';
 import { expect } from 'vitest';
@@ -109,6 +112,16 @@ export async function assertCapture(f: Fixture) {
     );
     const asset = await f.db.get('assets', { id: submitted.pages[0].assetId });
     if (!asset) throw new Error('Missing asset');
+    expect(asset.access_mode).toBe('private');
+    const ordinaryAssets = await AssetCollection.create({ db: f.db });
+    expect(
+      await f.as(f.own, () => ordinaryAssets.get(submitted.pages[0].assetId)),
+    ).toBeNull();
+    expect(
+      await f.as(f.own, () =>
+        ordinaryAssets.count({ where: { id: submitted.pages[0].assetId } }),
+      ),
+    ).toBe(0);
     expect(asset.tenant_id).toBe(f.own.tenantId);
     expect(asset.owner_profile_id).toBe(f.alice.profile.id);
     expect(await readFile(new URL(String(asset.source_uri)))).toEqual(
@@ -571,6 +584,16 @@ export async function assertPackets(f: Fixture) {
     for (const [index, row] of result.entries()) {
       const asset = await f.db.get('assets', { id: row.assetId });
       if (!asset) throw new Error('Missing asset');
+      expect(asset.access_mode).toBe('private');
+      const ordinaryAssets = await AssetCollection.create({ db: f.db });
+      expect(
+        await f.as(f.own, () => ordinaryAssets.get(row.assetId)),
+      ).toBeNull();
+      expect(
+        await f.as(f.own, () =>
+          ordinaryAssets.count({ where: { id: row.assetId } }),
+        ),
+      ).toBe(0);
       expect(asset.tenant_id).toBe(f.own.tenantId);
       expect(asset.owner_profile_id).toBe(f.alice.profile.id);
       const extracted = await PDFDocument.load(

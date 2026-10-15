@@ -6,7 +6,10 @@
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { type Tag, TagCollection } from '@happyvertical/smrt-tags';
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import {
+  getCurrentTenant,
+  withTenantGlobalRead,
+} from '@happyvertical/smrt-tenancy';
 import { Asset } from './asset';
 import type { AssetTag } from './asset-tag';
 import type { AssetTagCollection } from './asset-tags';
@@ -63,7 +66,9 @@ export class AssetCollection extends SmrtCollection<Asset> {
    * @returns Array of global assets
    */
   async findGlobal(): Promise<Asset[]> {
-    return queryGlobal<Asset>(this);
+    const tenantId = getCurrentTenant()?.tenantId;
+    const read = async () => this.list({ where: { tenantId: null } });
+    return tenantId ? withTenantGlobalRead(tenantId, read) : read();
   }
 
   /**
@@ -76,7 +81,9 @@ export class AssetCollection extends SmrtCollection<Asset> {
    * @returns Array of tenant-specific and global assets
    */
   async findWithGlobals(tenantId: string): Promise<Asset[]> {
-    return queryWithGlobals<Asset>(this, tenantId, 'Asset.findWithGlobals');
+    return withTenantGlobalRead(tenantId, async () =>
+      this.list({ where: [[{ tenantId }], [{ tenantId: null }]] }),
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

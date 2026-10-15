@@ -126,7 +126,10 @@ export {
   removeOwnedAssetFromCollection,
   resolveOwnedAssetsById,
 } from './owned-asset-helpers';
-
+export {
+  type PrivateAssetAccess,
+  withPrivateAssetAccess,
+} from './private-asset-access';
 // Export types
 export type {
   AssetAssociationOptions,

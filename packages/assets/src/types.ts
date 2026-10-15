@@ -38,6 +38,7 @@ export interface AssetMetafieldOptions extends SmrtObjectOptions {
  * Options for creating an Asset instance
  */
 export interface AssetOptions extends SmrtObjectOptions {
+  accessMode?: 'public' | 'private';
   name?: string;
   slug?: string;
   sourceUri?: string;

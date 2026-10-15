@@ -88,3 +88,18 @@ adds another printable version; a failed upload can be retried safely.
 
 Shared integration workflows run on SQLite and real PostgreSQL. Full DuckDB
 workflow support remains outside the existing supported schema boundary.
+
+## Private asset boundary
+
+Captured pages and split packet pages use `Asset.accessMode: 'private'` from their
+initial insert. Ordinary generated Asset REST/MCP operations cannot list, hydrate,
+update or delete them, including through the parent STI model. The service opens
+an exact tenant/actor/learner-owner/asset-ID capability only after its normal learner
+relationship checks. A host's signed serving route must repeat authorization and
+open that exact capability before loading the asset. See the owning
+[private asset contract](../../assets/agents/private-assets.md).
+
+Storage must be private (including provider ACLs). Public HTTP(S) source locators
+are rejected; a hidden URL alone cannot protect publicly accessible bytes. Apply
+the manifest migration adding `assets.access_mode` before deploying this runtime;
+legacy ordinary assets retain the public default. Runtime creates no schema.

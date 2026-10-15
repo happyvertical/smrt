@@ -122,6 +122,15 @@ export interface QueryInterceptResult {
  * or return modified data to transform the operation.
  */
 export interface CollectionInterceptor {
+  /** Mandatory column predicates on persisted mutations. Owning policies only;
+   * callers cannot supply or override these through model patches/save options.
+   * Returning a predicate opts the model out of unguarded upsert fast paths.
+   */
+  writeGuard?(
+    instance: SmrtObject,
+    context: InterceptorContext,
+  ): Record<string, unknown> | undefined;
+
   /** Opt in only when grouping before/persist/after phases is safe. */
   bulkMutation?: BulkMutationCapability;
 
@@ -540,11 +549,34 @@ export class GlobalInterceptors {
     return result;
   }
 
+  /** Resolve mandatory predicates immediately before a database write. */
+  static executeWriteGuard(
+    instance: SmrtObject,
+    context: InterceptorContext,
+  ): Record<string, unknown> | undefined {
+    let result: Record<string, unknown> | undefined;
+    for (const interceptor of this.interceptors) {
+      const guard = interceptor.writeGuard?.(instance, context);
+      if (!guard) continue;
+      result ??= {};
+      for (const [key, value] of Object.entries(guard)) {
+        if (
+          Object.hasOwn(result, key) &&
+          JSON.stringify(result[key]) !== JSON.stringify(value)
+        )
+          throw new Error('Conflicting mandatory write predicates');
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+
   /** Whether every registered mutation interceptor consents to batching. */
   static supportsBulkMutation(className: string): boolean {
     return this.interceptors.every(
       (interceptor) =>
         !(
+          interceptor.writeGuard ||
           interceptor.beforeSave ||
           interceptor.afterSave ||
           interceptor.beforeDelete ||

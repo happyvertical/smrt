@@ -2,6 +2,7 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { afterAll, beforeAll, describe, it } from 'vitest';
 import { learnerFixture } from './learner-workflows.js';
+import { assertPrivateAssetWriteGuard } from './private-asset-write-workflows.js';
 import { assertSubmissionModels } from './submission-model-workflows.js';
 import {
   assertCapture,
@@ -20,6 +21,8 @@ beforeAll(() => enableTenancy());
 afterAll(() => disableTenancy());
 describe('SubmissionService sqlite', () => {
   for (const [name, assertion] of Object.entries({
+    privateWriteGuard: (f: Awaited<ReturnType<typeof learnerFixture>>) =>
+      assertPrivateAssetWriteGuard(f, 'sqlite'),
     models: assertSubmissionModels,
     capture: assertCapture,
     sharedStorageDenial: assertSharedStorageDenial,
