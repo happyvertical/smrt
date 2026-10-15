@@ -1,10 +1,25 @@
 import { spawn } from 'node:child_process';
-import { lstat, mkdir, mkdtemp, readdir, realpath, rm } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { userInfo } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 
 const ROOT_PREFIX = 'smrt-run-';
 const SIGNAL_GRACE_MILLISECONDS = 500;
+
+export async function hasLiveGroupMember(processGroupId, procRoot = '/proc') {
+  let entries;
+  try { entries = await readdir(procRoot, { withFileTypes: true }); } catch { return true; }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+    try {
+      const stat = await readFile(join(procRoot, entry.name, 'stat'), 'utf8');
+      const [state, , group] = stat.slice(stat.lastIndexOf(') ') + 2).trim().split(/\s+/);
+      if (Number(group) === processGroupId && state !== 'Z' && state !== 'X') return true;
+    } catch (error) { if (error.code !== 'ENOENT') return true; }
+  }
+  return false;
+}
 
 function usage(message) {
   console.error(`::error::${message}`);
@@ -121,13 +136,17 @@ async function main() {
       return false;
     }
   };
-  const stopOwnedGroup = (initialSignal = 'SIGTERM') => {
+  const stopOwnedGroup = (initialSignal = 'SIGTERM', inspectLiveness = false) => {
     if (!child?.pid) return Promise.resolve(false);
     groupStopCompleted ??= (async () => {
       // The child is the session leader created by spawn({ detached: true }). A
       // process group cannot disappear and then be reused while it still has a
       // member, so this signals only the group that started as our command.
+      const hadLiveMember = inspectLiveness && process.platform === 'linux'
+        ? await hasLiveGroupMember(child.pid)
+        : true;
       if (!signalGroup(initialSignal)) return false;
+      if (!hadLiveMember) return false;
       await new Promise((resolve) => setTimeout(resolve, SIGNAL_GRACE_MILLISECONDS));
       signalGroup('SIGKILL');
       await new Promise((resolve) => setTimeout(resolve, 25));
@@ -165,7 +184,7 @@ async function main() {
     // `close` only confirms the direct child. Its worker group may still own
     // ports or files even after a normal exit, so end the detached command
     // group before inspecting or removing its root.
-    stoppedSurvivingGroup = await stopOwnedGroup();
+    stoppedSurvivingGroup = await stopOwnedGroup('SIGTERM', !interruptedBy);
     if (stoppedSurvivingGroup) {
       const level = interruptedBy ? 'notice' : 'error';
       console.error(`::${level}::Test command left a surviving worker process group; it was stopped`);
@@ -206,4 +225,4 @@ async function main() {
   else process.exitCode = outcome?.code ?? 1;
 }
 
-await main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main();

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
+import { hasLiveGroupMember } from './check-test-resource-cleanup.mjs';
 
 const guard = new URL('./check-test-resource-cleanup.mjs', import.meta.url);
 let callerTmpdir;
@@ -63,6 +64,28 @@ test.before(async () => {
 });
 test.after(async () => {
   await rm(callerTmpdir, { recursive: true, force: true });
+});
+
+test('identifies live group members while ignoring zombie-only groups', async () => {
+  const proc = await mkdtemp(join(callerTmpdir, 'proc-'));
+  const writeStat = async (pid, state, group, name = 'worker') => { await mkdir(join(proc, String(pid))); await writeFile(join(proc, String(pid), 'stat'), `${pid} (${name}) ${state} 1 ${group} 1`); };
+  await writeStat(11, 'Z', 99); await writeStat(12, 'S', 99, 'worker) with ) space'); await writeStat(13, 'S', 100);
+  assert.equal(await hasLiveGroupMember(99, proc), true);
+  await writeFile(join(proc, '12', 'stat'), '12 (worker) Z 1 99 1');
+  assert.equal(await hasLiveGroupMember(99, proc), false);
+  await writeFile(join(proc, '11', 'stat'), '11 (worker) X 1 99 1');
+  assert.equal(await hasLiveGroupMember(99, proc), false);
+  assert.equal(await hasLiveGroupMember(100, proc), true);
+  await rm(join(proc, '13', 'stat'));
+  assert.equal(await hasLiveGroupMember(100, proc), false);
+});
+
+test('treats unreadable proc state conservatively', async () => {
+  const proc = await mkdtemp(join(callerTmpdir, 'proc-'));
+  assert.equal(await hasLiveGroupMember(99, join(proc, 'missing')), true);
+  await mkdir(join(proc, '11'));
+  await mkdir(join(proc, '11', 'stat'));
+  assert.equal(await hasLiveGroupMember(99, proc), true);
 });
 
 test('passes a clean command and removes its owned root', async () => {
