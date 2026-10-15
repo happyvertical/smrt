@@ -47,6 +47,14 @@ export class CatalogAuthorizationError extends Error {
   }
 }
 
+/** Copy a lesson for a learner-facing projection without mutating the stored row. */
+function projectLesson(lesson: Lesson, includeAnswerKeys: boolean): Lesson {
+  if (includeAnswerKeys || !('answerUrl' in lesson)) return lesson;
+  return Object.assign(Object.create(Object.getPrototypeOf(lesson)), lesson, {
+    answerUrl: '',
+  }) as Lesson;
+}
+
 /**
  * The only package-level family → group → global catalog read boundary.
  * Generated surfaces are closed; callers must supply both an application
@@ -152,19 +160,19 @@ export class CatalogService {
       async () => {
         const sections = await this.sections.list({
           where: { courseId: course.id },
-          orderBy: 'sortOrder ASC',
+          orderBy: 'sortOrder ASC, id ASC',
         });
         const result = [];
         for (const section of sections) {
           const lessons = await this.lessons.list({
             where: { sectionId: section.id },
-            orderBy: 'sortOrder ASC',
+            orderBy: 'sortOrder ASC, id ASC',
           });
           result.push({
             section,
             lessons: await Promise.all(
               lessons.map(async (lesson) => ({
-                lesson,
+                lesson: projectLesson(lesson, includeAnswerKeys),
                 assets: (await this.assets.byLeft(String(lesson.id))).filter(
                   (asset) =>
                     includeAnswerKeys || asset.relationship !== 'answer-key',

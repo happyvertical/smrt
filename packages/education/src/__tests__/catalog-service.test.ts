@@ -105,3 +105,96 @@ describe('family copy persistence guard', () => {
     );
   });
 });
+
+describe('CatalogService projections', () => {
+  it('redacts worksheet answer URLs and answer-key assets for a learner', async () => {
+    const lesson = {
+      id: 'lesson-1',
+      title: 'Worksheet',
+      answerUrl: 'https://private.example/answer.pdf',
+    };
+    const service = new CatalogService(
+      {
+        list: async () => [{ id: 'course-1', licenseKind: 'open-license' }],
+      } as never,
+      {
+        list: async () => [{ id: 'section-1', courseId: 'course-1' }],
+      } as never,
+      { list: async () => [lesson] } as never,
+      {
+        byLeft: async () => [
+          { relationship: 'answer-key', assetId: 'answer-asset' },
+          { relationship: 'printable', assetId: 'worksheet-asset' },
+        ],
+      } as never,
+      { withTenantCatalogReadScope: async (_request, callback) => callback() },
+      ({ action }) => action === 'education.catalog.read',
+    );
+    const projection = await service.projectCourse({
+      tenantId: 'family-a',
+      actorUserId: 'learner-a',
+      courseId: 'course-1',
+    });
+    expect(projection?.sections[0]?.lessons[0]?.lesson).toMatchObject({
+      answerUrl: '',
+    });
+    expect(projection?.sections[0]?.lessons[0]?.assets).toEqual([
+      { relationship: 'printable', assetId: 'worksheet-asset' },
+    ]);
+  });
+
+  it('returns worksheet answers only to a separately authorized guardian', async () => {
+    const lesson = { id: 'lesson-1', answerUrl: 'private-answer' };
+    const service = new CatalogService(
+      {
+        list: async () => [{ id: 'course-1', licenseKind: 'open-license' }],
+      } as never,
+      {
+        list: async () => [{ id: 'section-1', courseId: 'course-1' }],
+      } as never,
+      { list: async () => [lesson] } as never,
+      { byLeft: async () => [{ relationship: 'answer-key' }] } as never,
+      { withTenantCatalogReadScope: async (_request, callback) => callback() },
+      () => true,
+    );
+    const projection = await service.projectCourse({
+      tenantId: 'family-a',
+      actorUserId: 'guardian-a',
+      courseId: 'course-1',
+      includeAnswerKeys: true,
+    });
+    expect(projection?.sections[0]?.lessons[0]?.lesson).toMatchObject({
+      answerUrl: 'private-answer',
+    });
+    expect(projection?.sections[0]?.lessons[0]?.assets).toEqual([
+      { relationship: 'answer-key' },
+    ]);
+  });
+
+  it('uses deterministic sort and identifier ordering for catalog structure', async () => {
+    const calls: unknown[] = [];
+    const service = new CatalogService(
+      {
+        list: async () => [{ id: 'course-1', licenseKind: 'open-license' }],
+      } as never,
+      {
+        list: async (options: unknown) => (
+          calls.push(options), [{ id: 'section-1' }]
+        ),
+      } as never,
+      { list: async (options: unknown) => (calls.push(options), []) } as never,
+      { byLeft: async () => [] } as never,
+      { withTenantCatalogReadScope: async (_request, callback) => callback() },
+      () => true,
+    );
+    await service.projectCourse({
+      tenantId: 'family-a',
+      actorUserId: 'guardian-a',
+      courseId: 'course-1',
+    });
+    expect(calls).toEqual([
+      { where: { courseId: 'course-1' }, orderBy: 'sortOrder ASC, id ASC' },
+      { where: { sectionId: 'section-1' }, orderBy: 'sortOrder ASC, id ASC' },
+    ]);
+  });
+});
