@@ -74,6 +74,31 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
       tenantId: fixture.tenantId,
       permissions: ['taxsummaryreports.read'],
     };
+    const denied = { ...principal, permissions: [] };
+    const oneRow = {
+      version: 1,
+      requestId: 'denied',
+      mode: 'rows' as const,
+      projection: ['id'],
+      page: { kind: 'offset' as const, offset: 0, limit: 1 },
+    };
+    await expect(host.descriptor(denied)).rejects.toThrow(/access denied/i);
+    expect(() => host.query(denied, oneRow)).toThrow(/access denied/i);
+    await expect(
+      host.drilldown(denied, { id: 'missing', columnId: 'tax_minor' }),
+    ).rejects.toThrow(/access denied/i);
+    await expect(host.descriptor({ ...principal, userId: '' })).rejects.toThrow(
+      /access denied/i,
+    );
+    expect(() => host.query({ ...principal, tenantId: '' }, oneRow)).toThrow(
+      /access denied/i,
+    );
+    await expect(
+      host.drilldown(
+        { ...principal, tenantId: '' },
+        { id: 'missing', columnId: 'tax_minor' },
+      ),
+    ).rejects.toThrow(/access denied/i);
     const page = await host.query(principal, {
       version: 1,
       requestId: 'host-page',

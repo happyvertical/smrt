@@ -48,8 +48,13 @@ export function assertMaterializedReportRead(
   host: MaterializedReportHost,
   context: MaterializedReportHostContext,
 ): void {
-  if (!context.permissions.includes(host.readPermission))
+  if (
+    !context.userId?.trim() ||
+    !context.tenantId?.trim() ||
+    !context.permissions?.includes(host.readPermission)
+  ) {
     throw new Error('Materialized report access denied.');
+  }
 }
 
 export function findMaterializedReportHost(
