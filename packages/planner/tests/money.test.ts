@@ -12,6 +12,7 @@ import { isMoneyField } from '../src/lib/data/fakes.ts';
 import {
   defaultTaxCode,
   EXAMPLE_TAX_CODES,
+  examplePackCodeFor,
   lineAmount,
   type MoneyContext,
   percentText,
@@ -24,19 +25,20 @@ import {
 import { plumbingReason } from '../src/lib/recipes/plumbing.ts';
 
 const code = (value: string) => {
-  const found = sampleTaxCodes(0.12, 'CAD').find((c) => c.code === value);
+  const found = sampleTaxCodes(0.12).find((c) => c.code === value);
   if (!found) throw new Error(value);
   return found;
 };
 
 const context = (patch: Partial<MoneyContext> = {}): MoneyContext => {
-  const codes = sampleTaxCodes(0.12, 'CAD');
+  const codes = sampleTaxCodes(0.12);
   return {
     lineAmountType: 'exclusive',
     roundingScope: 'line',
     currency: 'CAD',
     codes,
-    appDefaultCodeId: defaultTaxCode(0.12, 'CAD').id,
+    // Chosen explicitly here, so its two components show.
+    appDefaultCodeId: code('ca-gst-pst-bc').id,
     ...patch,
   };
 };
@@ -72,16 +74,19 @@ describe('sample tax codes', () => {
 
   it("maps the tax rate to the app default as smrt's cookbook activation does", () => {
     expect(defaultTaxCode(0).code).toBe('out-of-scope');
-    const usd = defaultTaxCode(0.0825, 'USD');
+    const usd = defaultTaxCode(0.0825);
     expect(usd).toMatchObject({ code: 'default-8_25', name: 'Default 8.25%' });
     expect(usd.components).toMatchObject([
       { name: 'Cookbook 8.25%', percent: '8.25' },
     ]);
-    // A pack code for the app's currency at the same rate is used as it is.
-    expect(defaultTaxCode(0.12, 'CAD').code).toBe('ca-gst-pst-bc');
-    expect(defaultTaxCode(0.13, 'CAD').code).toBe('ca-hst-on');
-    expect(defaultTaxCode(0.2, 'GBP').code).toBe('uk-vat-standard');
-    expect(defaultTaxCode(0.12, 'USD').code).toBe('default-12');
+    // Never an example-pack code, whatever the currency: an exported
+    // cookbook's 12% is one component, so the planner's is too.
+    expect(defaultTaxCode(0.12).code).toBe('default-12');
+    expect(defaultTaxCode(0.12).components).toHaveLength(1);
+    // A line may choose the pack's code for the app's country.
+    expect(examplePackCodeFor('CAD')?.code).toBe('ca-gst-pst-bc');
+    expect(examplePackCodeFor('gbp')?.code).toBe('uk-vat-standard');
+    expect(examplePackCodeFor('USD')).toBeUndefined();
     expect(percentText(0.0825)).toBe('8.25');
     // Ids are stable: a saved line's override keeps pointing at its code.
     expect(defaultTaxCode(0.0825).id).toBe(defaultTaxCode(0.0825).id);

@@ -365,11 +365,15 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   override, exempt customer, product, customer, app default. The document: subtotal = the lines' net,
   total = subtotal + tax, `discountTotal` informational (never subtracted again). Sample documents are
   priced the app's way (`lineAmountType`, `taxRoundingScope` from `getSamplePricing`); the app default
-  code mirrors smrt's cookbook activation (`Default <rate>%`, out-of-scope at 0) unless an example-pack
-  code fits the currency and rate (CAD 12% is BC GST + PST). About a third of documents discount their
-  first line (percent or amount by document), about one line in seven carries an exempt or zero-rated
-  code, and one customer in eight is tax exempt. `TaxCode` / `TaxComponent` / `TaxSettings` sample rows
-  come from the same set (`planner-source.ts`). The record page's `line-items` widget gets an issued
+  code is exactly smrt's cookbook activation (`Default <rate>%`, out-of-scope at 0), so the planner
+  prices what an exported cookbook will. About a third of documents discount their first line
+  (percent or amount by document; percent where the app hides `discount`), about one line in seven
+  chooses its own code (the example pack's code for the app's country, such as BC GST + PST for CAD,
+  else exempt or zero-rated), and one customer in eight is tax exempt. `TaxCode` / `TaxComponent` /
+  `TaxSettings` sample rows come from the same set (`planner-source.ts`), and lines resolve against
+  those tables, so a code the visitor adds or edits applies. Only a document's own key makes it the
+  document its lines settle in (a Product or TaxCode is not). Once the app states any setting, samples
+  use its tax rate, 0 included; a fresh app keeps the pack's. The record page's `line-items` widget gets an issued
   document's frozen money as `storedTotals` (`screens/totals.ts`: header figures plus the lines'
   snapshots summed per component, e.g. GST and PST apart); a draft passes its live subtotal / tax /
   total (no discount: smrt#4010) and the widget checks them against the lines. The third Order and

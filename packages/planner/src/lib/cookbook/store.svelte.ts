@@ -8,6 +8,7 @@ import { recipeState } from '../recipes/state.svelte.ts';
 import {
   type AppSettings,
   hasTaxRateRow,
+  isSettingRow,
   readSettings,
   writeSettings,
 } from '../settings/app-settings.ts';
@@ -40,7 +41,15 @@ export type PersistState = 'unknown' | 'ok' | 'memory';
  */
 export function followSettings(cookbook: Pick<Cookbook, 'policies'>): void {
   const settings = readSettings(cookbook);
-  setSampleTaxRate(hasTaxRateRow(cookbook) ? settings.taxRate : undefined);
+  // Once the app states any setting (a cookbook or the Settings tab did), its
+  // tax rate is what it says, 0 included, as an exported cookbook means; a
+  // fresh app keeps the sample pack's rate.
+  const stated = cookbook.policies.some(
+    (row) => row.defaultValue !== undefined && isSettingRow(row),
+  );
+  setSampleTaxRate(
+    hasTaxRateRow(cookbook) || stated ? settings.taxRate : undefined,
+  );
   setSamplePricing({
     pricesIncludeTax: settings.pricesIncludeTax,
     taxRounding: settings.taxRounding,

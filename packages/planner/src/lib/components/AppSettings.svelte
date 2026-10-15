@@ -37,7 +37,7 @@ const TERMS = [
 const set = (patch: Partial<AppSettings>) => onchange({ ...value, ...patch });
 
 /** The code new documents default to, from the tax rate (smrt's activation). */
-const fallback = $derived(defaultTaxCode(value.taxRate, value.currency));
+const fallback = $derived(defaultTaxCode(value.taxRate));
 /** The other codes a line can choose: the seeded ones and the example pack. */
 const others = $derived(
   [...SEEDED_TAX_CODES, ...EXAMPLE_TAX_CODES].filter(

@@ -226,27 +226,18 @@ export function percentText(rate: number): string {
   return String(Number((rate * 100).toFixed(6)));
 }
 
-const totalPercent = (taxCode: SampleTaxCode): number =>
-  taxCode.components.reduce((sum, c) => sum + Number(c.percent), 0);
-
 /**
- * The app's default sales tax code for its tax-rate setting. No rate (0) is
- * `out-of-scope`, as smrt-commerce's cookbook activation
- * (`applyCommerceCookbookSettings`) chooses. An example-pack code that names
- * the app's currency and adds up to the rate is used as it is (a CAD app at
- * 12% charges BC GST + PST, two components); any other rate is the
- * activation's own `default-<rate>` code, one `Cookbook <rate>%` component.
+ * The app's default sales tax code for its tax-rate setting, exactly as
+ * smrt-commerce's cookbook activation (`applyCommerceCookbookSettings`)
+ * creates it, so the planner prices what an exported cookbook will: no rate
+ * (0) is `out-of-scope`, any other rate the `default-<rate>` code with one
+ * `Cookbook <rate>%` component. The example pack's codes are only ever chosen
+ * explicitly, on a line (`examplePackCodeFor`).
  */
-export function defaultTaxCode(rate: number, currency = 'USD'): SampleTaxCode {
+export function defaultTaxCode(rate: number): SampleTaxCode {
   const outOfScope = SEEDED_TAX_CODES.find((c) => c.kind === 'out-of-scope');
   if (!(rate > 0) && outOfScope) return outOfScope;
   const percent = percentText(rate);
-  const fromPack = EXAMPLE_TAX_CODES.find(
-    (c) =>
-      PACK_CURRENCY[c.code] === currency.toUpperCase() &&
-      percentText(totalPercent(c) / 100) === percent,
-  );
-  if (fromPack) return fromPack;
   return code(
     `default-${percent.replace('.', '_')}`,
     `Default ${percent}%`,
@@ -255,12 +246,22 @@ export function defaultTaxCode(rate: number, currency = 'USD'): SampleTaxCode {
   );
 }
 
+/**
+ * The example-pack code a sample line in an app of this currency may choose
+ * for itself: the pack's code with the most components for that country
+ * (BC GST + PST for CAD), else none.
+ */
+export function examplePackCodeFor(
+  currency: string,
+): SampleTaxCode | undefined {
+  return EXAMPLE_TAX_CODES.filter(
+    (c) => PACK_CURRENCY[c.code] === currency.toUpperCase(),
+  ).sort((a, b) => b.components.length - a.components.length)[0];
+}
+
 /** Every tax code of the sample tenant: the seeded ones, the default, the pack. */
-export function sampleTaxCodes(
-  rate: number,
-  currency = 'USD',
-): SampleTaxCode[] {
-  const fallback = defaultTaxCode(rate, currency);
+export function sampleTaxCodes(rate: number): SampleTaxCode[] {
+  const fallback = defaultTaxCode(rate);
   const all = [...SEEDED_TAX_CODES, fallback, ...EXAMPLE_TAX_CODES];
   return all.filter((c, i) => all.findIndex((o) => o.id === c.id) === i);
 }

@@ -124,6 +124,32 @@ describe('line and parent amounts (smrt money model)', () => {
     expect((await data.get(agreement, parent.id))?.totalAmount).toBe(1050);
   });
 
+  it("resolves a line against the tax codes the tenant's table holds", async () => {
+    const data = source();
+    const taxCode = model('TaxCode');
+    const mine = await data.create(taxCode, {
+      code: 'my-zero',
+      name: 'My zero rate',
+      kind: 'zero-rated',
+      appliesTo: 'both',
+      active: true,
+    });
+    const parent = await data.create(agreement, {});
+    const line = await data.create(lineItem, {
+      contractId: parent.id,
+      quantity: 1,
+      unitPrice: 1000,
+      taxMode: 'override',
+      taxCodeId: mine.id,
+    });
+    expect(line).toMatchObject({ taxCodeCode: 'my-zero', taxAmount: 0 });
+    // Switched off, it can no longer be chosen: the save is refused.
+    await data.update(taxCode, mine.id, { active: false });
+    await expect(
+      data.update(lineItem, line.id, { quantity: 2 }),
+    ).rejects.toThrow();
+  });
+
   it('refuses money the model refuses and leaves the rows as they were', async () => {
     const data = source();
     const parent = await data.create(agreement, {});

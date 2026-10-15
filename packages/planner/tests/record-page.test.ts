@@ -308,28 +308,40 @@ describe('the record page widgets', () => {
     }
   });
 
-  it('keeps GST and PST apart on an issued invoice of a CAD app at 12%', async () => {
+  it('keeps GST and PST apart beside the app default on an issued CAD invoice', async () => {
     setSamplePricing({ currency: 'CAD' });
     setSampleTaxRate(0.12);
+    const source = sampleSource();
+    const lines = await source.list(model(`${C}InvoiceLineItem`));
+    const bc = lines.filter((l) => l.taxCodeCode === 'ca-gst-pst-bc');
+    expect(bc.length).toBeGreaterThan(0);
     const page = await documentPage(
       INVOICE,
-      (row) => issued(row) && Number(row.taxAmount) > 0,
+      (row) =>
+        issued(row) &&
+        bc.some((l) => l.invoiceId === row.id) &&
+        lines.some(
+          (l) => l.invoiceId === row.id && l.taxCodeCode === 'default-12',
+        ),
     );
     const stored = must(page.data.storedTotals, 'storedTotals');
     expect(stored.taxes.map((t) => `${t.name} ${t.percent}`).sort()).toEqual([
       'BC PST 7% 7',
       'Canada GST 5% 5',
+      'Cookbook 12% 12',
     ]);
     const gst = must(stored.taxes.find((t) => t.percent === '5'));
     const pst = must(stored.taxes.find((t) => t.percent === '7'));
-    // Both components tax the same lines: the same base, each its own rate.
+    // GST and PST tax the same lines: the same base, each its own rate.
     expect(gst.taxable).toBe(pst.taxable);
-    expect(gst.tax + pst.tax).toBe(page.order.taxAmount);
-    const taxed = page.lines.filter((l) => Number(l.taxAmount) > 0);
-    expect(gst.taxable).toBe(sum(taxed, 'amount'));
-    expect(
-      page.lines.every((l) => l.currency === undefined || l.currency === 'CAD'),
-    ).toBe(true);
+    expect(gst.taxable).toBe(
+      sum(
+        page.lines.filter((l) => l.taxCodeCode === 'ca-gst-pst-bc'),
+        'amount',
+      ),
+    );
+    expect(sum(stored.taxes, 'tax')).toBe(page.order.taxAmount);
+    expect(page.order.currency).toBe('CAD');
   });
 
   it('prices tax-inclusive documents when the app does', async () => {

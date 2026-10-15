@@ -240,13 +240,12 @@ describe('sample records come with their line items', () => {
     );
   });
 
-  it('leaves out a discount the app hides, and its totals agree', async () => {
+  it('takes a hidden amount discount as a percentage, and its totals agree', async () => {
     const lineModel = model(`${C}ContractLineItem`);
     const data = createMemoryDataSource({
-      defaults: (m) =>
-        m.id === lineModel.id
-          ? { discount: 0, discountType: 'none', discountRate: null }
-          : {},
+      // What the commerce recipes carry: `discount` hidden at 0, the
+      // discount kind and rate shown.
+      defaults: (m) => (m.id === lineModel.id ? { discount: 0 } : {}),
       children: {
         models: catalog.packages.flatMap((p) => p.models),
         links: (id) => childLinks(catalog, recipes, id),
@@ -254,12 +253,19 @@ describe('sample records come with their line items', () => {
     });
     const orders = await data.list(model(`${C}Order`));
     const lines = await data.list(lineModel);
-    expect(lines.every((l) => l.discount === 0)).toBe(true);
+    // No amount discount the form could not show; the tenth off is a
+    // percentage instead, and the totals still agree.
+    expect(lines.some((l) => l.discountType === 'amount')).toBe(false);
     orders.forEach((order, index) => {
-      if (index === MISMATCH_ROW) return;
       const mine = rowsOf(lines, 'contractId', order.id);
+      expect(mine[0]?.discountType).toBe(
+        discounted(order) ? 'percent' : 'none',
+      );
+      if (index === MISMATCH_ROW) return;
       expect(order.totalAmount).toBe(totalsOf(mine).totalAmount);
-      expect(order.discountTotal).toBe(0);
+      // Reads show the hidden `discount` at the app's 0; the percentage's
+      // tenth is in the order's informational total.
+      expect(Number(order.discountTotal) > 0).toBe(discounted(order));
     });
   });
 

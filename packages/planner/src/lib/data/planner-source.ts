@@ -27,11 +27,7 @@ const MONEY_MIGRATION = `${C}MoneyMigrationDocument`;
 /** The sample tenant's tax codes for the app's current settings. */
 function currentTaxCodes() {
   const rate = getSampleTaxRate() ?? DEFAULT_SAMPLE_TAX_RATE;
-  const { currency } = getSamplePricing();
-  return {
-    codes: sampleTaxCodes(rate, currency),
-    fallback: defaultTaxCode(rate, currency),
-  };
+  return { codes: sampleTaxCodes(rate), fallback: defaultTaxCode(rate) };
 }
 
 /**

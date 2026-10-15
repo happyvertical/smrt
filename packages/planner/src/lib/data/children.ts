@@ -9,8 +9,12 @@ import {
   packLine,
   relatedIndex,
 } from './fakes.ts';
-import { type MoneyContext, SEEDED_TAX_CODES } from './money.ts';
-import { getSamplePack } from './packs.ts';
+import {
+  examplePackCodeFor,
+  type MoneyContext,
+  SEEDED_TAX_CODES,
+} from './money.ts';
+import { getSamplePack, getSamplePricing } from './packs.ts';
 
 /** A child model and the field holding its parent's id (see `childLinks`). */
 export interface ChildOf {
@@ -127,12 +131,20 @@ export function overridesTax(parent: { id: string }, index: number): boolean {
   );
 }
 
-/** The code an overriding sample line uses: exempt or zero-rated, by line. */
-export function overrideTaxCode(parent: { id: string }, index: number) {
-  const kind =
-    hashString(`tax-override-kind:${parent.id}:${index}`) % 2 === 0
-      ? 'exempt'
-      : 'zero-rated';
+/**
+ * The code an overriding sample line chooses, by line: in an app whose
+ * currency an example-pack code names, that code half the time (BC GST + PST
+ * for CAD, so its components show apart); otherwise exempt or zero-rated.
+ */
+export function overrideTaxCode(
+  parent: { id: string },
+  index: number,
+  currency = getSamplePricing().currency,
+) {
+  const draw = hashString(`tax-override-kind:${parent.id}:${index}`) % 4;
+  const pack = examplePackCodeFor(currency);
+  if (pack && draw < 2) return pack;
+  const kind = draw % 2 === 0 ? 'exempt' : 'zero-rated';
   return SEEDED_TAX_CODES.find((c) => c.kind === kind);
 }
 
@@ -141,7 +153,7 @@ export function overrideTaxCode(parent: { id: string }, index: number) {
  * discounted document's first line takes a tenth off, as a percentage
  * (`discountType: 'percent'`, `discountRate: '10'`) or a whole-unit amount
  * (`'amount'`, `discount` in minor units), alternating by document; a few
- * lines carry an exempt or zero-rated tax code of their own; every other line
+ * lines carry a tax code of their own (`overrideTaxCode`); every other line
  * inherits its code. What the line then comes to is the document's to settle.
  */
 function sampleLineMoney(
@@ -179,6 +191,35 @@ function sampleLineMoney(
   }
   if (hasField(child, 'taxCodeId')) money.taxCodeId = override?.id ?? null;
   return money;
+}
+
+/**
+ * A sample line once the app's hidden fields' values are applied (`carried`):
+ * where the app hides the line's `discount`, an amount discount could not be
+ * seen or entered, so the line takes its tenth off as a percentage instead,
+ * and where it hides `discountRate` too, the line has no discount.
+ */
+export function withCarried(
+  item: ModelRecord,
+  carried: Readonly<Record<string, unknown>>,
+): ModelRecord {
+  const next = { ...item, ...carried };
+  if (
+    'discount' in carried &&
+    !('discountType' in carried) &&
+    next.discountType === 'amount'
+  ) {
+    next.discountType = 'percent';
+    next.discountRate = '10';
+    next.discount = 0;
+  }
+  // Neither kind can be seen: no discount at all.
+  if ('discountRate' in carried && next.discountType === 'percent') {
+    next.discountType = 'none';
+    next.discountRate = null;
+    next.discount = 0;
+  }
+  return next;
 }
 
 /**

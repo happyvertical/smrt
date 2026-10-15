@@ -4,6 +4,7 @@ import {
   fakeChildrenOf,
   seedMismatch,
   settleSample,
+  withCarried,
 } from './children.ts';
 import {
   allocationInvoiceField,
@@ -30,6 +31,8 @@ import {
   defaultTaxCode,
   type MoneyContext,
   moneyCurrency,
+  type SampleTaxCode,
+  type SampleTaxComponent,
   sampleTaxCodes,
   settleDocument,
 } from './money.ts';
@@ -142,6 +145,10 @@ export interface DataSource {
  * fresh samples, never migrated.
  */
 export const DATA_STORAGE_PREFIX = 'smrt-planner:data:v6:';
+
+const TAX_CODE_MODEL = '@happyvertical/smrt-commerce:TaxCode';
+const TAX_COMPONENT_MODEL = '@happyvertical/smrt-commerce:TaxComponent';
+const TAX_CODE_KINDS = ['taxable', 'zero-rated', 'exempt', 'out-of-scope'];
 const CREATED_KEY = `${DATA_STORAGE_PREFIX}_created`;
 
 /** Remove every stored row. Never throws. */
@@ -414,8 +421,8 @@ export function createMemoryDataSource(
         // through the form would, before its parent's totals are summed.
         const carried = options.defaults?.(model) ?? {};
         table(parent).forEach((row, index) => {
-          const items = fakeChildrenOf(model, fk, row, seed, rows).map(
-            (item) => ({ ...item, ...carried }),
+          const items = fakeChildrenOf(model, fk, row, seed, rows).map((item) =>
+            withCarried(item, carried),
           );
           if (!isLineModel(model)) {
             made.push(...items);
@@ -436,6 +443,71 @@ export function createMemoryDataSource(
   );
 
   /**
+   * The sample tenant's tax codes as its tables hold them: the seeded set for
+   * the app's rate, with any `TaxCode` row (and the `TaxComponent` rows it
+   * names) replacing or adding to it, so a code the visitor added or edited
+   * is the one a line resolves.
+   */
+  const tenantTaxCodes = (rate: number): SampleTaxCode[] => {
+    const base = sampleTaxCodes(rate);
+    const rows = tables.get(TAX_CODE_MODEL);
+    if (!rows?.length) return base;
+    const parts = new Map<string, SampleTaxComponent>(
+      base.flatMap((c) => c.components.map((p) => [p.id, p] as const)),
+    );
+    for (const row of tables.get(TAX_COMPONENT_MODEL) ?? []) {
+      parts.set(row.id, {
+        id: row.id,
+        key: row.id,
+        name: String(row.name ?? ''),
+        percent: String(row.percent ?? '0'),
+        recoverable: row.recoverable === true,
+      });
+    }
+    const fromRows = rows.map((row): SampleTaxCode => {
+      let listed: unknown = [];
+      try {
+        listed = JSON.parse(String(row.componentsJson ?? '[]'));
+      } catch {
+        listed = [];
+      }
+      const components = (Array.isArray(listed) ? listed : []).flatMap(
+        (entry) => {
+          const found =
+            entry && typeof entry === 'object'
+              ? parts.get(
+                  String((entry as Record<string, unknown>).taxComponentId),
+                )
+              : undefined;
+          return found ? [found] : [];
+        },
+      );
+      const kind = TAX_CODE_KINDS.includes(String(row.kind))
+        ? (row.kind as SampleTaxCode['kind'])
+        : 'taxable';
+      const appliesTo = ['sales', 'purchases', 'both'].includes(
+        String(row.appliesTo),
+      )
+        ? (row.appliesTo as SampleTaxCode['appliesTo'])
+        : 'both';
+      return {
+        id: row.id,
+        code: String(row.code ?? ''),
+        name: String(row.name ?? ''),
+        kind,
+        appliesTo,
+        active: row.active !== false,
+        components,
+      };
+    });
+    const byId = new Map(fromRows.map((c) => [c.id, c]));
+    return [
+      ...base.map((c) => byId.get(c.id) ?? c),
+      ...fromRows.filter((c) => !base.some((b) => b.id === c.id)),
+    ];
+  };
+
+  /**
    * How a document's money is settled: its own pricing mode and rounding,
    * else the app's; the sample tenant's tax codes, the app default for its
    * tax rate; and what its customer and products say about tax.
@@ -446,7 +518,7 @@ export function createMemoryDataSource(
   ): MoneyContext => {
     const pricing = getSamplePricing();
     const rate = getSampleTaxRate() ?? DEFAULT_SAMPLE_TAX_RATE;
-    const codes = sampleTaxCodes(rate, pricing.currency);
+    const codes = tenantTaxCodes(rate);
     const customerField = parent.fields.find(
       (f) => f.name === 'customerId' && f.related,
     );
@@ -474,7 +546,7 @@ export function createMemoryDataSource(
       roundingScope: documentRoundingScope(row, pricing.taxRounding),
       currency: moneyCurrency(row.currency, moneyCurrency(pricing.currency)),
       codes,
-      appDefaultCodeId: defaultTaxCode(rate, pricing.currency).id,
+      appDefaultCodeId: defaultTaxCode(rate).id,
       customerTaxExempt: customer?.taxExempt === true,
       partyCodeId: codeOf(customer?.defaultTaxCodeId),
       productCodeOf: (productId) =>
@@ -509,9 +581,19 @@ export function createMemoryDataSource(
     }
   };
 
-  /** A parent's line items, by its id. */
+  /**
+   * A document's line items: a line model that belongs to it through its own
+   * key (an Invoice's lines by `invoiceId`), never a model the lines merely
+   * point at (a Product or a TaxCode is not the document they are settled in).
+   */
   const lineLink = (parent: CatalogModel) =>
-    linksOf(parent.id).find((l) => isLineModel(l.model));
+    linksOf(parent.id).find(
+      (l) =>
+        isLineModel(l.model) &&
+        ownersOf(l.model.id).some(
+          (o) => o.parent.id === parent.id && o.fk === l.fk,
+        ),
+    );
 
   /**
    * Settle a parent with its lines (they are never typed in): the lines'
@@ -565,8 +647,8 @@ export function createMemoryDataSource(
           lineAmountType: pricing.pricesIncludeTax ? 'inclusive' : 'exclusive',
           roundingScope: pricing.taxRounding,
           currency: moneyCurrency(pricing.currency),
-          codes: sampleTaxCodes(rate, pricing.currency),
-          appDefaultCodeId: defaultTaxCode(rate, pricing.currency).id,
+          codes: tenantTaxCodes(rate),
+          appDefaultCodeId: defaultTaxCode(rate).id,
         }).lines[0] as ModelRecord;
         list[index] = alone;
       }
