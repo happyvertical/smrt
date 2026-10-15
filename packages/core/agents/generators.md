@@ -61,12 +61,15 @@ tool. Configure a module specifier and named export under `mcp.serializers.get`:
 ```
 
 The named export receives `(item, options: PublicJsonOptions)` and returns the
-get result (or a promise for it). The MCP runtime imports and caches the named
-module, then calls the serializer after normal authentication, tenant-scoped
-lookup, and read access have admitted and loaded the item. A missing or
-non-function export makes that `get` call fail. The hook replaces only the
-standard `get` result; generated `list`, writes, deletes, and custom actions
-keep their existing contracts.
+get result (or a promise for it). Bare package specifiers resolve with ESM
+conditions from the consuming application's module graph, so the serializer's
+owning package is an application dependency rather than a dependency of core
+or a generic dispatcher. Relative references retain ordinary dynamic-import
+behavior. The MCP runtime imports and caches the named module, then calls the
+serializer after normal authentication, tenant-scoped lookup, and read access
+have admitted and loaded the item. A missing or non-function export makes that
+`get` call fail. The hook replaces only the standard `get` result; generated
+`list`, writes, deletes, and custom actions keep their existing contracts.
 
 The serializer owns its public projection. Start with
 `item.toPublicJSON(options)`, and project each related model with that model's

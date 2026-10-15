@@ -635,6 +635,22 @@ type McpGetSerializer = (
   options: PublicJsonOptions,
 ) => unknown | Promise<unknown>;
 
+async function resolveToolLoopMcpGetSerializer(
+  reference: McpGetSerializerReference,
+): Promise<McpGetSerializer> {
+  const resolver = (await import(
+    /* @vite-ignore */ '@happyvertical/smrt-core/mcp-serializer'
+  )) as {
+    resolveMcpGetSerializer: (
+      reference: McpGetSerializerReference,
+      options: { parentUrl: string },
+    ) => Promise<McpGetSerializer>;
+  };
+  return resolver.resolveMcpGetSerializer(reference, {
+    parentUrl: import.meta.url,
+  });
+}
+
 function mcpGetSerializerReference(
   tool: ManifestTool,
 ): McpGetSerializerReference | undefined {
@@ -660,17 +676,9 @@ async function itemToObservation(
 ): Promise<unknown> {
   const publicOptions: PublicJsonOptions = { permissions: run.permissions };
   if (serializerReference) {
-    const module = (await import(serializerReference.importPath)) as Record<
-      string,
-      unknown
-    >;
-    const serializer = module[serializerReference.exportName];
-    if (typeof serializer !== 'function') {
-      throw new Error(
-        `MCP get serializer '${serializerReference.exportName}' was not exported by '${serializerReference.importPath}'.`,
-      );
-    }
-    return (serializer as McpGetSerializer)(item as SmrtObject, publicOptions);
+    const serializer =
+      await resolveToolLoopMcpGetSerializer(serializerReference);
+    return serializer(item as SmrtObject, publicOptions);
   }
   const candidate = item as {
     toPublicJSON?: (options?: PublicJsonOptions) => unknown;
