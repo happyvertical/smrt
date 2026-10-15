@@ -18,9 +18,11 @@
  * Every assertion here runs as a NON-super-admin principal.
  */
 
+import { SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import {
   disableTenancy,
   enableTenancy,
+  getTenantHierarchyReadScope,
   registerTenantScopedClass,
   unregisterTenantScopedClass,
   withTenant,
@@ -42,6 +44,20 @@ import type { Tenant } from '../models/Tenant.js';
 import type { AncestorReadPolicy } from '../services/AncestorReadPolicy.js';
 import { PermissionResolver } from '../services/PermissionResolver.js';
 import { MembershipStatus, TenantPermissionEffect } from '../types/index.js';
+
+@smrt({
+  api: false,
+  cli: false,
+  mcp: false,
+  tenantScoped: { mode: 'optional', field: 'tenantId' },
+})
+class HierarchyCatalogRecord extends SmrtObject {
+  tenantId: string | null = null;
+  title = '';
+}
+class HierarchyCatalogCollection extends SmrtCollection<HierarchyCatalogRecord> {
+  static readonly _itemClass = HierarchyCatalogRecord;
+}
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -573,6 +589,109 @@ describePostgres(
           memberships.list({ where: { tenantId: sibling.id as string } }),
         ),
       ).rejects.toThrow(/Tenant isolation violation/);
+    });
+
+    it('limits authorized catalog and subtree reads on real nullable rows', async () => {
+      const userId = await memberOf(desk, 'member', 'scope@example.com');
+      const catalog = await HierarchyCatalogCollection.create(options);
+      const foreign = await tenants.create({ name: 'Foreign family' });
+      const fixtures = [];
+      for (const tenantId of [
+        null,
+        network.id,
+        publication.id,
+        desk.id,
+        sibling.id,
+        foreign.id,
+      ]) {
+        fixtures.push(
+          await catalog.create({ tenantId, title: tenantId ?? 'global' }),
+        );
+      }
+      const scopeOptions = {
+        collections: ['@happyvertical/smrt-users:HierarchyCatalogRecord'],
+        authorize: () => true,
+      };
+      turnTenancyOn();
+      await withTenant({ tenantId: desk.id as string, userId }, async () => {
+        await tenants.withTenantCatalogReadScope(scopeOptions, async () => {
+          expect(getTenantHierarchyReadScope()).toBeDefined();
+          const rows = await catalog.list({});
+          expect(rows.map((row) => row.tenantId).sort()).toEqual(
+            [null, network.id, publication.id, desk.id].sort(),
+          );
+          expect(
+            (await catalog.list({ where: { title: 'global' } })).map(
+              (row) => row.tenantId,
+            ),
+          ).toEqual([null]);
+          await expect(
+            catalog.list({ where: { tenantId: sibling.id as string } }),
+          ).rejects.toThrow(/out-of-scope/);
+          await expect(
+            catalog.get({ id: fixtures[1].id as string }),
+          ).resolves.toBeNull();
+          await expect(catalog.create({ title: 'forbidden' })).rejects.toThrow(
+            /does not permit save/,
+          );
+          await expect(fixtures[3].delete()).rejects.toThrow(
+            /does not permit delete/,
+          );
+          await expect(catalog.query('SELECT 1')).rejects.toThrow(
+            /does not permit query/,
+          );
+        });
+        expect((await catalog.list({})).map((row) => row.tenantId)).toEqual([
+          desk.id,
+        ]);
+        await tenants.withTenantHierarchyContext(
+          publication.id as string,
+          scopeOptions,
+          async () => {
+            expect(
+              (await catalog.list({})).map((row) => row.tenantId).sort(),
+            ).toEqual([publication.id, desk.id].sort());
+          },
+        );
+        await expect(
+          tenants.withTenantCatalogReadScope(
+            { ...scopeOptions, authorize: () => false },
+            async () => catalog.list({}),
+          ),
+        ).rejects.toThrow(/denied/);
+      });
+      await expect(
+        tenants.withTenantCatalogReadScope(scopeOptions, async () =>
+          catalog.list({}),
+        ),
+      ).rejects.toThrow(/active tenant and user/);
+
+      // A stricter database policy remains authoritative even for an approved
+      // app scope. FORCE applies it to this non-superuser table owner too.
+      const db = isolated!.db;
+      const role = await db.query(
+        'SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user',
+      );
+      expect(role.rows[0]).toMatchObject({
+        rolsuper: false,
+        rolbypassrls: false,
+      });
+      await db.query(
+        'ALTER TABLE hierarchy_catalog_records ENABLE ROW LEVEL SECURITY',
+      );
+      await db.query(
+        'ALTER TABLE hierarchy_catalog_records FORCE ROW LEVEL SECURITY',
+      );
+      await db.query(
+        `CREATE POLICY own_catalog_only ON hierarchy_catalog_records FOR SELECT USING (tenant_id = '${desk.id}')`,
+      );
+      await withTenant({ tenantId: desk.id as string, userId }, () =>
+        tenants.withTenantCatalogReadScope(scopeOptions, async () => {
+          expect((await catalog.list({})).map((row) => row.tenantId)).toEqual([
+            desk.id,
+          ]);
+        }),
+      );
     });
   },
 );

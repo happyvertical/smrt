@@ -1149,9 +1149,14 @@ descendants. Both require an active tenant **and user**, a non-empty qualified
 collection allowlist, and an authorizer that returns exactly `true`; every
 other result fails closed. The callback can widen only `list()` for those
 collections. `get()`, raw queries, saves, and deletes retain normal tenancy
-guards (writes are rejected while the scope is active). Catalog scopes never
+guards (tenant-scoped collection writes and raw queries are rejected while the
+scope is active). This is a trusted server API, not a sandbox: direct database
+executors and models without tenancy remain the host's responsibility. Catalog scopes never
 include descendants or siblings; subtree scopes never include ancestors or
-global rows.
+global rows. The actor and database session authority are unchanged. PostgreSQL
+RLS remains an additional restriction: effective visibility is the intersection
+of the approved scope and the database policies, so a stricter RLS policy may
+exclude ancestor or global rows even after application authorization.
 
 Tenants support parent-child trees (max depth 10). Two flags control inheritance: `cascadePermissions` (parent pushes down) and `inheritPermissions` (child accepts). Both must be true for permissions to flow.
 

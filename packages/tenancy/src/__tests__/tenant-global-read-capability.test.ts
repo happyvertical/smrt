@@ -119,10 +119,44 @@ describe('tenant/global list capability', () => {
           async () => {
             expect(await read({ category: 'keep' })).toMatchObject({
               where: [
-                [{ category: 'keep' }, { tenantId: ['family', 'group', null] }],
+                [{ category: 'keep' }, { tenantId: ['family', 'group'] }],
+                [{ category: 'keep' }, { tenantId: null }],
               ],
             });
             expect(() => read({ tenantId: 'sibling' })).toThrow('out-of-scope');
+            registerTenantScopedClass('UnlistedHierarchyModel', {
+              mode: 'required',
+            });
+            try {
+              expect(() =>
+                interceptor.beforeList?.(
+                  'UnlistedHierarchyModel',
+                  {},
+                  createInterceptorContext('UnlistedHierarchyModel', 'list'),
+                ),
+              ).toThrow('does not allow');
+            } finally {
+              unregisterTenantScopedClass('UnlistedHierarchyModel');
+            }
+            await expect(
+              withSystemContext(async () =>
+                interceptor.beforeGet?.(name, {}, context),
+              ),
+            ).rejects.toThrow('actor changed');
+            await expect(
+              withTenant(
+                { tenantId: 'sibling', userId: 'guardian' },
+                async () => read(),
+              ),
+            ).rejects.toThrow('actor changed');
+            await expect(
+              withTenant({ tenantId: 'family', userId: 'other' }, async () =>
+                read(),
+              ),
+            ).rejects.toThrow('actor changed');
+            await expect(withSystemContext(async () => read())).rejects.toThrow(
+              'actor changed',
+            );
             expect(() =>
               interceptor.beforeGet?.(name, { tenantId: 'group' }, context),
             ).toThrow();

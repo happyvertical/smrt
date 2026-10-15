@@ -252,6 +252,7 @@ describe('Tenant Hierarchy', () => {
     });
 
     it('returns ID convenience helpers and fails closed for unrelated children', async () => {
+      await expect(tenants.getAncestorIds(root.id!)).resolves.toEqual([]);
       await expect(tenants.getAncestorIds(grandchild1.id!)).resolves.toEqual([
         root.id,
         child1.id,
@@ -341,6 +342,50 @@ describe('Tenant Hierarchy', () => {
           ),
         ).rejects.toThrow('authorization was denied'),
       );
+    });
+
+    it('rejects missing actor/root and non-affirmative authorizers', async () => {
+      const options = {
+        collections: ['@happyvertical/smrt-education:Course'],
+        authorize: () => true,
+      };
+      await expect(
+        withTenant({ tenantId: root.id! }, () =>
+          tenants.withTenantCatalogReadScope(options, async () => undefined),
+        ),
+      ).rejects.toThrow('requires an active tenant and user');
+      await withTenant({ tenantId: root.id!, userId: 'guardian' }, async () => {
+        await expect(
+          tenants.withTenantHierarchyContext(
+            randomUUID(),
+            options,
+            async () => undefined,
+          ),
+        ).rejects.toThrow('Tenant root not found');
+        await expect(
+          tenants.withTenantCatalogReadScope(
+            { ...options, authorize: (() => undefined) as never },
+            async () => undefined,
+          ),
+        ).rejects.toThrow('authorization was denied');
+        await expect(
+          tenants.withTenantCatalogReadScope(
+            {
+              ...options,
+              authorize: () => {
+                throw new Error('authorization unavailable');
+              },
+            },
+            async () => undefined,
+          ),
+        ).rejects.toThrow('authorization unavailable');
+        await expect(
+          tenants.withTenantCatalogReadScope(options, async () => {
+            throw new Error('callback failure');
+          }),
+        ).rejects.toThrow('callback failure');
+        expect(getTenantHierarchyReadScope()).toBeUndefined();
+      });
     });
   });
 

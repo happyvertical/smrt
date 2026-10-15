@@ -42,7 +42,7 @@ import { getTenantHierarchyReadScope } from './tenant-hierarchy-read-scope.js';
 
 function assertHierarchyReadScope(
   tenancyIdentity: string,
-  operation: 'list' | 'query' | 'save' | 'delete',
+  operation: 'list' | 'get' | 'query' | 'save' | 'delete',
 ): ReturnType<typeof getTenantHierarchyReadScope> {
   const scope = getTenantHierarchyReadScope();
   if (!scope) return undefined;
@@ -56,6 +56,8 @@ function assertHierarchyReadScope(
       'Tenant hierarchy read scope actor changed or is unavailable',
     );
   }
+  // Point reads retain their ordinary predicate, but cannot switch actors.
+  if (operation === 'get') return scope;
   if (operation !== 'list') {
     throw new TenantIsolationError(
       `Tenant hierarchy read scope does not permit ${operation}`,
@@ -277,8 +279,13 @@ export function createTenantInterceptor(
         return; // Not tenant-scoped, pass through
       }
 
-      // Super-admin bypass applies only to classes that opt in (#2973)
-      if (isSuperAdminBypassAllowed(tenancyIdentity)) {
+      const hierarchyReadScope = assertHierarchyReadScope(
+        tenancyIdentity,
+        'list',
+      );
+      // A hierarchy capability remains bounded even inside an opted-in bypass.
+      // Super-admin bypass applies only to classes that opt in (#2973).
+      if (!hierarchyReadScope && isSuperAdminBypassAllowed(tenancyIdentity)) {
         return; // Bypass enabled and allowed for this class, pass through
       }
 
@@ -289,10 +296,6 @@ export function createTenantInterceptor(
 
       const config = getTenantScopedConfig(tenancyIdentity);
       const tenantContext = getCurrentTenant();
-      const hierarchyReadScope = assertHierarchyReadScope(
-        tenancyIdentity,
-        'list',
-      );
       if (hierarchyReadScope) {
         const tenantField = config?.field || 'tenantId';
         const where = listOptions.where || {};
@@ -317,14 +320,17 @@ export function createTenantInterceptor(
         }
         return {
           ...listOptions,
-          where: groups.map((group) => [
-            ...group,
-            {
-              [tenantField]: hierarchyReadScope.includeGlobal
-                ? [...hierarchyReadScope.tenantIds, null]
-                : hierarchyReadScope.tenantIds,
-            },
-          ]),
+          // SQL IN does not match NULL. Preserve each caller conjunction in
+          // both branches so global rows cannot bypass the caller's filters.
+          where: groups.flatMap((group) => {
+            const scoped = [
+              ...group,
+              { [tenantField]: hierarchyReadScope.tenantIds },
+            ];
+            return hierarchyReadScope.includeGlobal
+              ? [scoped, [...group, { [tenantField]: null }]]
+              : [scoped];
+          }),
         };
       }
       const globalReadTenant = getTenantGlobalReadScope();
@@ -466,6 +472,8 @@ export function createTenantInterceptor(
       if (!isTenantScopedClass(tenancyIdentity)) {
         return;
       }
+
+      assertHierarchyReadScope(tenancyIdentity, 'get');
 
       if (isSuperAdminBypassAllowed(tenancyIdentity)) {
         return;
