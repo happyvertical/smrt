@@ -112,14 +112,18 @@ export class CatalogService {
         scope.actorUserId === actorUserId &&
         scope.rootTenantId === tenantId,
     };
-    const visible = await this.tenants.withTenantCatalogReadScope(
-      scope,
-      async () => this.courses.list(options),
-    );
-    return visible.filter(
-      (course) =>
-        course.licenseKind !== 'personal-use-copy' ||
-        (includePrivate && course.tenantId === tenantId),
+    return this.tenants.withTenantCatalogReadScope(scope, async () =>
+      this.courses.list({
+        ...options,
+        // Apply visibility in SQL before limit/offset consume page slots.
+        where: [
+          [{ 'licenseKind !=': 'personal-use-copy' }],
+          [{ licenseKind: null }],
+          ...(includePrivate
+            ? [[{ licenseKind: 'personal-use-copy', tenantId }]]
+            : []),
+        ],
+      }),
     );
   }
 

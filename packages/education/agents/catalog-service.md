@@ -35,3 +35,11 @@ cannot reject an unchanged owner. Course-only persistence is exercised on DuckDB
 full catalog child/asset schemas inherit core's current DuckDB rejection of
 ON UPDATE CASCADE and self-referential foreign keys. Use SQLite or PostgreSQL for
 those schemas; no schema gate is relaxed by this package.
+
+Private-course visibility is a mandatory collection SQL predicate applied before
+`limit` and `offset`, including selected-column reads. Caller options cannot
+replace that predicate. Video constructor options are reapplied after subtype
+field initialization, matching Worksheet. LessonAsset's explicit natural key is
+`(tenant_id, lesson_id, asset_id, relationship)`; same-owner and null-owner retries
+retain one join identity. Core's cross-owner guard remains in place. A hostile
+stored join cannot reserve the legitimate owner's key or be overwritten by it.

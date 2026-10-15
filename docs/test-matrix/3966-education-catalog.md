@@ -28,3 +28,18 @@ CASCADE, Tenant self-references, and `assets.primary_version_id` self-references
 Full child/asset and hierarchy fixtures cannot initialize on that engine without
 changing the existing contract. Those gates remain intact; SQLite/PostgreSQL
 exercise child and asset owner guards, and SQLite exercises the real hierarchy.
+
+## External review regressions (cycle 6185011513, round 4)
+
+| Behavior / invariant | Reachable trigger; positive / negative case | Actor / context | Executor / transaction | Runtime / dialect | Contract edge / test level | Validation |
+| --- | --- | --- | --- | --- | --- | --- |
+| Video retains its URL | Construct/create/reload Video with nonempty URL; default remains empty | Owning author and persisted lesson | Real collection/database; one-row save, no multiwrite transaction | Node / SQLite, PostgreSQL; DuckDB child DDL unavailable | Derived field initialization must not lose input; integration | education `test`, `test:postgres` |
+| Authorization filtering precedes pagination | Hidden ancestor/global personal rows sort before visible rows; limit/offset yield full authorized pages including own private only with grant | Family guardian/learner, real ancestor scope | Read-only real database; transaction N/A | Node / SQLite, PostgreSQL; DuckDB Tenant DDL unavailable | Collection SQL filtering before bounds, no foreign visibility; integration | education `test`, `test:postgres` |
+| LessonAsset natural identity includes owner | Same-owner and global/null-owner repeated link adopts same id; hostile other-owner collision preserves foreign row and allows legitimate owner link | Owning tenant, foreign stored row, global context | Real generated unique index and natural-key save; existing core refuses foreign overwrite | Node / SQLite, PostgreSQL; DuckDB Asset DDL unavailable | Explicit conflict target is not automatically scoped; schema/integration | education `test`, `test:postgres`, build |
+
+Video's failing-before assertion is the immediate constructor value; initialized
+saves and collection hydration already restored the option and remain covered.
+Pagination includes selected-column JavaScript options and an attempted runtime
+`where` override; the service predicate wins. PostgreSQL fixtures use the supplied
+transaction executor and roll back between tests. The asset-key regression proves
+an existing cross-owner denial, not an overwrite: core already refused that write.

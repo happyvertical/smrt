@@ -151,6 +151,10 @@ export class Reading extends Lesson {}
 @smrt({ tableName: 'lessons', ...closed })
 export class Video extends Lesson {
   videoUrl = '';
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    applyModelOptions(this as unknown as Record<string, unknown>, options);
+  }
 }
 @smrt({ tableName: 'lessons', ...closed })
 export class Worksheet extends Lesson {

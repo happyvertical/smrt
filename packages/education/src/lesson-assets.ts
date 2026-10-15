@@ -16,7 +16,7 @@ export type LessonAssetRelationship =
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'lesson_assets',
-  conflictColumns: ['lesson_id', 'asset_id', 'relationship'],
+  conflictColumns: ['tenant_id', 'lesson_id', 'asset_id', 'relationship'],
   api: false,
   mcp: false,
   cli: false,

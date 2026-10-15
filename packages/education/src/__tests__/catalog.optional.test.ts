@@ -1,9 +1,15 @@
+import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import {
   createIsolatedTestDbFromManifest,
   isPostgresAvailable,
 } from '@happyvertical/smrt-vitest';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CourseCollection, CourseSectionCollection } from '../collections.js';
+import {
+  assertAuthorizedPagination,
+  assertLessonAssetTenantKey,
+  assertVideoUrlPersistence,
+} from './external-review-regression.js';
 
 import {
   assertCatalogOwnerGuards,
@@ -14,6 +20,39 @@ import {
 (isPostgresAvailable() ? describe : describe.skip)(
   'education catalog (postgres)',
   () => {
+    beforeAll(() => enableTenancy());
+    afterAll(() => disableTenancy());
+    for (const [name, check] of [
+      [
+        'retains Video URL through create and hydration',
+        assertVideoUrlPersistence,
+      ],
+      ['paginates only authorized courses', assertAuthorizedPagination],
+      [
+        'scopes asset key and retries by tenant including null',
+        assertLessonAssetTenantKey,
+      ],
+    ] as const) {
+      it(name, async () => {
+        const isolated = await createIsolatedTestDbFromManifest({
+          includeObjects: [
+            'Course',
+            'CourseSection',
+            'Lesson',
+            'Video',
+            'LessonAsset',
+            'Asset',
+            'Tenant',
+          ],
+        });
+        try {
+          await check(isolated.db);
+        } finally {
+          await isolated.cleanup();
+        }
+      });
+    }
+
     it('rejects personal-copy publication without mutating persisted state', async () => {
       const isolated = await createIsolatedTestDbFromManifest({
         includeObjects: ['Course'],

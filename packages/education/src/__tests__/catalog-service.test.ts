@@ -42,10 +42,16 @@ beforeAll(() => enableTenancy());
 afterAll(() => disableTenancy());
 
 describe('CatalogService', () => {
-  it('uses an allowlisted scope and hides family copies from ordinary catalog reads', async () => {
+  it('passes private exclusion into the allowlisted catalog query', async () => {
     let scopeRequest: unknown;
+    let queryOptions: unknown;
     const service = new CatalogService(
-      courses as never,
+      {
+        list: async (options: unknown) => {
+          queryOptions = options;
+          return [{ title: 'Open course', licenseKind: 'open-license' }];
+        },
+      } as never,
       sections as never,
       lessons as never,
       assets as never,
@@ -60,6 +66,12 @@ describe('CatalogService', () => {
     await expect(
       service.findVisible({ tenantId: 'family-a', actorUserId: 'guardian-a' }),
     ).resolves.toEqual([{ title: 'Open course', licenseKind: 'open-license' }]);
+    expect(queryOptions).toEqual({
+      where: [
+        [{ 'licenseKind !=': 'personal-use-copy' }],
+        [{ licenseKind: null }],
+      ],
+    });
     expect(scopeRequest).toMatchObject({
       collections: expect.arrayContaining([
         '@happyvertical/smrt-education:Course',
