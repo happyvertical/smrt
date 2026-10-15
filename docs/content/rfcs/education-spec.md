@@ -412,10 +412,12 @@ generated definitions, with bespoke Svelte only for the learner dashboard, the
 scan capture, and the grading screen.
 
 The application consumes a released `@happyvertical/smrt-education`; it does
-not use a workspace, file, or Git dependency as a release workaround. Its
-terminal/device learner grant requires a valid host enrollment, supports
-revocation, and requires explicit learner switching; a guardian password
-session cannot create or impersonate a learner grant.
+not use a workspace, file, or Git dependency as a release workaround. Explicit
+guardian terminal approval creates an enrolled-device parent session; only then
+does the learner PIN create the selected learner's child session. Each learner
+authentication rechecks terminal enrollment, revocation invalidates child
+sessions, and learner switching clears prior learner authority. A plain guardian
+password session cannot enroll a terminal or impersonate a learner.
 
 ## Delivery plan
 
