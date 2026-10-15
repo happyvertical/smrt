@@ -195,6 +195,48 @@ $effect(() => {
     view-transition-name: planner-tabs;
   }
 
+  /* Phones: smrt-ui's Tabs strip scrolls sideways but shows no sign of it,
+     so the last tab (Export) is easy to miss. Tabs snap into place, and where
+     scroll-driven animations exist a fade at the trailing edge says more
+     follow, lifting as the strip reaches its end (an inactive timeline, a
+     strip that fits, leaves the fade at its initial 0). The real home for
+     this is smrt-ui's Tabs. */
+  .planner :global(.smrt-tabs__nav) {
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+  }
+
+  .planner :global(.smrt-tabs__tab-button) {
+    scroll-snap-align: start;
+  }
+
+  @property --planner-tabs-fade {
+    syntax: '<length>';
+    inherits: false;
+    initial-value: 0rem;
+  }
+
+  @supports (animation-timeline: scroll()) {
+    .planner :global(.smrt-tabs__nav) {
+      mask-image: linear-gradient(
+        to right,
+        black calc(100% - var(--planner-tabs-fade)),
+        transparent
+      );
+      animation: planner-tabs-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+
+    @keyframes planner-tabs-fade {
+      from {
+        --planner-tabs-fade: 3rem;
+      }
+      to {
+        --planner-tabs-fade: 0rem;
+      }
+    }
+  }
+
   .pane {
     display: grid;
     gap: var(--smrt-spacing-3);
