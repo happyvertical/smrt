@@ -2,6 +2,7 @@ import {
   field,
   foreignKey,
   GlobalInterceptors,
+  ObjectRegistry,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
@@ -220,15 +221,24 @@ export class Exercise extends Lesson {}
 // natural-key adoption and races after pre-save validation. Content remains mutable.
 GlobalInterceptors.register({
   name: 'education-catalog-identity',
-  writeGuard(instance) {
-    if (instance instanceof Course)
-      return {
-        tenant_id: instance.tenantId,
-        license_kind: instance.licenseKind,
-      };
-    if (instance instanceof CourseSection)
-      return { tenant_id: instance.tenantId, course_id: instance.courseId };
-    if (instance instanceof Lesson)
-      return { tenant_id: instance.tenantId, section_id: instance.sectionId };
+  writeGuard(instance, context) {
+    // Module reloads may replace this interceptor while older instances remain
+    // live. Registry identity, not constructor identity, owns the invariant.
+    const identity = context.qualifiedClassName ?? context.className;
+    const base =
+      ObjectRegistry.getSTIBase(identity) ??
+      ObjectRegistry.getClass(identity)?.qualifiedName;
+    if (base === '@happyvertical/smrt-education:Course') {
+      const course = instance as Course;
+      return { tenant_id: course.tenantId, license_kind: course.licenseKind };
+    }
+    if (base === '@happyvertical/smrt-education:CourseSection') {
+      const section = instance as CourseSection;
+      return { tenant_id: section.tenantId, course_id: section.courseId };
+    }
+    if (base === '@happyvertical/smrt-education:Lesson') {
+      const lesson = instance as Lesson;
+      return { tenant_id: lesson.tenantId, section_id: lesson.sectionId };
+    }
   },
 });
