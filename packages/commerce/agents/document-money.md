@@ -15,7 +15,9 @@ runtime barrier ahead of a tenant's first document. A tenant with no stored
 Invoice or Contract row (header or line) starts on `v2`; a tenant whose rows
 predate its marker stays `legacy` until `smrt db:migrate-commerce-money`
 converts it. The document check reads raw tables, never the guarded
-collections. Creation runs in one transaction under a tenant advisory lock on
+collections, and does not depend on the caller's table permissions: on
+PostgreSQL it raises the transaction-local `smrt.system_context` for its own
+scan and restores it, returning only a boolean for the explicit tenant. Creation runs in one transaction under a tenant advisory lock on
 PostgreSQL (the embedded write queue elsewhere), re-reads before inserting, and
 inserts the deterministic settings id, so racing first writers converge on one
 row and one model. An existing marker is never changed by this rule. A caller
@@ -51,9 +53,10 @@ accounting-sync phase acquires the same tenant settings row before document
 rows. The barrier is held through the owning transaction, so migration cannot
 start between the marker check and a money read/write. Nested coordinators
 reuse an explicitly registered transaction executor; adapter shape is never
-used as transaction proof. When the settings table exists, the first legacy
-runtime boundary materializes the deterministic legacy row solely as this
-durable serialization point. Older schemas without the table remain legacy
+used as transaction proof. When the settings table exists, the first runtime
+boundary materializes the deterministic marker row as this durable
+serialization point; its initial model follows
+[initial model](#initial-model-4009). Older schemas without the table remain legacy
 and runtime never creates schema.
 
 In `v2`, saving an invoice line locks and reloads its parent on the caller's
