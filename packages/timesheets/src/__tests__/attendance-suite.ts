@@ -447,6 +447,64 @@ export function attendanceSuite(
       });
       expect(await service.autoClose(at(12), 7200)).toBeNull();
     });
+    it('auto closes at a per-punch deadline with a reason, closing segment and break', async () => {
+      await service.punchIn(at(8));
+      await service.startWork(at(8), work);
+      await service.startBreak(at(9));
+      const seen: string[] = [];
+      const resolver = (punch: { id?: string | null }) => {
+        seen.push(punch.id ?? '');
+        return { deadline: at(10), reason: 'shiftEnd' };
+      };
+      expect(await service.autoClose(at(9), () => null)).toBeNull();
+      expect(
+        await service.autoClose(at(9), () => ({ deadline: at(10) })),
+      ).toBeNull();
+      const punch = await service.autoClose(at(12), resolver);
+      expect(seen).toHaveLength(1);
+      expect(punch).toMatchObject({
+        reviewRequired: true,
+        autoCloseReason: 'shiftEnd',
+        endedAt: at(10),
+      });
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const segments = await AttendanceSegmentCollection.create({ db });
+        const rows = await segments.list({
+          where: { tenantId: actor.tenantId, punchId: punch!.id! },
+        });
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+          endedAt: at(9),
+          closedReason: 'break',
+        });
+        const breaks = await AttendanceBreakCollection.create({ db });
+        const [b] = await breaks.list({
+          where: { tenantId: actor.tenantId, punchId: punch!.id! },
+        });
+        expect(b.endedAt).toEqual(at(10));
+      });
+      expect(await service.autoClose(at(12), resolver)).toBeNull();
+      expect(seen).toHaveLength(1);
+    });
+    it('records maxDuration for the fixed form and rejects bad deadlines', async () => {
+      await service.punchIn(at(8));
+      await expect(
+        service.autoClose(at(12), () => ({ deadline: at(7) })),
+      ).rejects.toThrow('predates');
+      await expect(
+        service.autoClose(at(12), () => new Date('x')),
+      ).rejects.toThrow('invalid');
+      await expect(
+        service.autoClose(at(12), () => ({ deadline: at(9), reason: ' ' })),
+      ).rejects.toThrow('reason');
+      const punch = await service.autoClose(at(12), 3600);
+      expect(punch).toMatchObject({
+        autoCloseReason: 'maxDuration',
+        endedAt: at(9),
+      });
+      punch!.autoCloseReason = 'edited';
+      await expect(punch!.save()).rejects.toThrow('autoCloseReason');
+    });
     it('orders offline taps, persists identical outcomes, and rejects key changes', async () => {
       const taps = [
         {

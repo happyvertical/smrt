@@ -11,7 +11,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { parseTimesheetJson } from '../models/json.js';
-import { isCorrectionWrite } from './write.js';
+import { isAutoCloseWrite, isCorrectionWrite } from './write.js';
 
 // Punch closes and break writes share one atomic parent boundary, including direct ORM saves.
 async function saveWithPunchLock<T extends SmrtObject>(
@@ -60,6 +60,8 @@ export class AttendancePunch extends SmrtObject {
   durationSeconds = 0;
   unpaidBreakSeconds = 0;
   reviewRequired = false;
+  /** Why the scheduler closed this punch; empty unless `autoClose` did. Write-once. */
+  autoCloseReason = '';
   recordedOffline = false;
   // Resolve the active table family, including smrt-support's same-named subtype.
   @foreignKey('ServiceTimeEntry', { nullable: true }) serviceTimeEntryId:
@@ -96,6 +98,18 @@ export class AttendancePunch extends SmrtObject {
       ? await this.db.get(this.tableName, { id: this.id })
       : null;
     const corrected = isCorrectionWrite(this);
+    if (
+      typeof this.autoCloseReason !== 'string' ||
+      this.autoCloseReason.length > 200
+    )
+      throw new Error(
+        'autoCloseReason must be a string of at most 200 characters.',
+      );
+    if (
+      this.autoCloseReason !== ((prior?.auto_close_reason as string) ?? '') &&
+      (!isAutoCloseWrite(this) || (prior && prior.auto_close_reason))
+    )
+      throw new Error('autoCloseReason is written only by autoClose, once.');
     if (
       prior &&
       (prior.tenant_id !== this.tenantId ||
