@@ -18,6 +18,89 @@ export interface LineItemsTotals {
   total?: number | null;
 }
 
+/** A frozen per-component tax row supplied by a domain host. */
+export interface StoredTaxComponent {
+  taxComponentId: string;
+  name: string;
+  percent: string;
+  taxable: number;
+  tax: number;
+}
+
+/**
+ * Authoritative document-money snapshot supplied by a domain host. The widget
+ * displays these persisted values only: it never derives tax or totals from
+ * the visible line page.
+ */
+export interface StoredLineItemsTotals extends LineItemsTotals {
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  lineAmountType: 'exclusive' | 'inclusive' | 'none';
+  roundingScope: 'line' | 'document';
+  /** Whether an inclusive taxed document should expose its net subtotal. */
+  showNetSubtotal?: boolean;
+  taxes: readonly StoredTaxComponent[];
+}
+
+/** A persisted component can occur through more than one tax code. */
+export interface StoredTaxComponentGroup extends StoredTaxComponent {}
+
+/** Whether untrusted widget data is a complete persisted money snapshot. */
+export function isStoredLineItemsTotals(
+  value: unknown,
+): value is StoredLineItemsTotals {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    (record.lineAmountType === 'exclusive' ||
+      record.lineAmountType === 'inclusive' ||
+      record.lineAmountType === 'none') &&
+    (record.roundingScope === 'line' || record.roundingScope === 'document') &&
+    Number.isSafeInteger(record.subtotal) &&
+    Number.isSafeInteger(record.discount) &&
+    Number.isSafeInteger(record.tax) &&
+    Number.isSafeInteger(record.total) &&
+    Array.isArray(record.taxes)
+  );
+}
+
+/**
+ * Group exact persisted rows only when they identify the same component,
+ * display name, and percent. Components sharing a display label/rate remain
+ * separate; this does not calculate or reallocate tax.
+ */
+export function groupStoredTaxComponents(
+  taxes: readonly StoredTaxComponent[],
+): StoredTaxComponentGroup[] {
+  const groups = new Map<string, StoredTaxComponentGroup>();
+  for (const tax of taxes) {
+    if (
+      !tax ||
+      typeof tax.taxComponentId !== 'string' ||
+      typeof tax.name !== 'string' ||
+      typeof tax.percent !== 'string' ||
+      !Number.isSafeInteger(tax.taxable) ||
+      !Number.isSafeInteger(tax.tax)
+    )
+      continue;
+    const key = `${tax.taxComponentId}\u0000${tax.name}\u0000${tax.percent}`;
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, { ...tax });
+      continue;
+    }
+    const taxable = existing.taxable + tax.taxable;
+    const amount = existing.tax + tax.tax;
+    if (!Number.isSafeInteger(taxable) || !Number.isSafeInteger(amount))
+      continue;
+    existing.taxable = taxable;
+    existing.tax = amount;
+  }
+  return [...groups.values()];
+}
+
 export type LineTotalKey = 'subtotal' | 'discount' | 'tax' | 'total';
 
 export interface LineTotalLine {

@@ -112,6 +112,8 @@ export enum PaymentStatus {
   CANCELLED = 'cancelled',
 }
 
+export type PaymentKind = 'payment' | 'refund';
+
 /**
  * Lifecycle status for a saved {@link PaymentInstrument} (card on file).
  * `active` while chargeable, `expired` once the card lapses, `removed` when the
@@ -311,6 +313,14 @@ export interface RecognizeRevenueOptions {
   revenueAccountId: string;
   /** Account ID for tax payable (credit side, optional) */
   taxAccountId?: string;
+  /** Explicit ledger book currency. Required when the tenant uses money v2. */
+  bookCurrency?: string;
+}
+
+/** Options for atomically cancelling a posted money-v2 invoice. */
+export interface CancelRevenueOptions {
+  /** Explicit ledger book currency; required for money-v2 cancellation. */
+  bookCurrency?: string;
 }
 
 // ============================================================================
@@ -355,6 +365,16 @@ export interface AccountingInvoiceInput {
   currency: string;
   reference?: string;
   memo?: string;
+  idempotencyKey?: string;
+  quickbooksRequest?: {
+    readonly requestId: string;
+    readonly realmId: string;
+    readonly environment: 'sandbox' | 'production';
+    readonly payloadHash: string;
+  };
+  quickbooksMapping?: {
+    globalTaxCalculation: 'TaxExcluded' | 'NotApplicable';
+  };
 }
 
 // ============================================================================
@@ -376,6 +396,7 @@ export interface CustomerOptions extends SmrtObjectOptions {
   paymentTerms?: string;
   taxExempt?: boolean;
   taxId?: string;
+  defaultTaxCodeId?: string;
   defaultShippingAddress?: Address;
   defaultBillingAddress?: Address;
   status?: CustomerStatus;
@@ -394,12 +415,56 @@ export interface VendorOptions extends SmrtObjectOptions {
   minimumOrderAmount?: number;
   paymentTerms?: string;
   currency?: string;
+  taxId?: string;
+  defaultTaxCodeId?: string;
   defaultContactEmail?: string;
   defaultContactPhone?: string;
   status?: VendorStatus;
   notes?: string;
   payoutAddresses?: Record<string, string> | string | null;
   contacts?: PartyContact[] | string | null;
+}
+
+/** A component reference stored in a tax code's ordered component list. */
+export interface TaxCodePart {
+  taxComponentId: string;
+  compound: boolean;
+}
+
+export interface TaxComponentOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  name?: string;
+  percent?: string;
+  liabilityAccountId?: string;
+  recoverable?: boolean;
+  active?: boolean;
+}
+
+export interface TaxCodeOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  code?: string;
+  name?: string;
+  kind?: 'taxable' | 'zero-rated' | 'exempt' | 'out-of-scope';
+  appliesTo?: 'sales' | 'purchases' | 'both';
+  components?: TaxCodePart[];
+  active?: boolean;
+}
+
+export interface TaxRegistrationOptions {
+  taxComponentId: string;
+  number: string;
+  label: string;
+}
+
+export interface TaxSettingsOptions extends SmrtObjectOptions {
+  tenantId?: string;
+  defaultSalesTaxCodeId?: string;
+  defaultPurchaseTaxCodeId?: string;
+  defaultLineAmountType?: 'exclusive' | 'inclusive' | 'none';
+  taxRoundingScope?: 'line' | 'document';
+  taxRegistrations?: TaxRegistrationOptions[];
+  moneyModel?: 'legacy' | 'migrating' | 'v2';
+  moneyMigrationId?: string;
 }
 
 /**
@@ -410,6 +475,7 @@ export interface ContractOptions extends SmrtObjectOptions {
   contractType?: ContractType;
   status?: ContractStatus;
   subtotal?: number;
+  discountTotal?: number;
   taxAmount?: number;
   totalAmount?: number;
   currency?: string;
@@ -420,6 +486,12 @@ export interface ContractOptions extends SmrtObjectOptions {
   notes?: string;
   terms?: string;
   channelId?: string;
+  lineAmountType?: 'exclusive' | 'inclusive' | 'none';
+  taxRoundingScope?: 'line' | 'document';
+  sellerTaxRegistrations?: TaxRegistrationOptions[];
+  sellerTaxRegistrationsJson?: string;
+  partyTaxId?: string;
+  moneySnapshotId?: string;
 }
 
 export interface SalesContractOptions extends ContractOptions {
@@ -470,7 +542,18 @@ export interface ContractLineItemOptions extends SmrtObjectOptions {
   quantity?: number;
   unitPrice?: number;
   discount?: number;
+  discountType?: 'none' | 'percent' | 'amount';
+  discountRate?: string;
   taxRate?: number;
+  taxMode?: 'inherit' | 'override';
+  taxCodeId?: string | null;
+  taxCodeCode?: string | null;
+  taxCodeName?: string | null;
+  taxComponents?: ContractTaxComponentSnapshot[];
+  taxComponentsJson?: string | null;
+  taxAmount?: number;
+  legacyAmount?: number | null;
+  moneySnapshotId?: string;
   amount?: number;
   productId?: string;
   sku?: string;
@@ -478,6 +561,14 @@ export interface ContractLineItemOptions extends SmrtObjectOptions {
   endDate?: Date | null;
   billingPeriod?: string;
   sortOrder?: number;
+}
+
+/** Immutable component tax allocation for one Contract line. */
+export interface ContractTaxComponentSnapshot {
+  taxComponentId: string;
+  name: string;
+  percent: string;
+  taxMinor: number;
 }
 
 /**
@@ -490,10 +581,36 @@ export type InvoiceCollectionMethod =
   | 'send_invoice'
   | 'charge_automatically';
 
+export type InvoiceKind = 'invoice' | 'credit_note';
+
+/** Frozen source pricing plus the one authoritative credit calculation basis. */
+export type InvoiceCreditCalculationBasis =
+  | {
+      kind: 'quantity';
+      quantity: string;
+      sourceQuantity: string;
+      sourceUnitPrice: number;
+      sourceDiscountType: 'none' | 'percent' | 'amount';
+      sourceDiscountRate: string;
+      sourceDiscountMinor: number;
+    }
+  | {
+      kind: 'net_amount';
+      netMinor: number;
+      sourceQuantity: string;
+      sourceUnitPrice: number;
+      sourceDiscountType: 'none' | 'percent' | 'amount';
+      sourceDiscountRate: string;
+      sourceDiscountMinor: number;
+    };
+
 /**
  * Constructor options for {@link Invoice}.
  */
 export interface InvoiceOptions extends SmrtObjectOptions {
+  kind?: InvoiceKind;
+  creditedInvoiceId?: string | null;
+  creditedAmount?: number;
   tenantId?: string | null;
   customerId?: string;
   contractId?: string;
@@ -510,6 +627,7 @@ export interface InvoiceOptions extends SmrtObjectOptions {
   currency?: string;
   status?: InvoiceStatus;
   arJournalId?: string;
+  arReversalJournalId?: string | null;
   revenueJournalId?: string;
   externalId?: string;
   customerExternalId?: string;
@@ -523,6 +641,21 @@ export interface InvoiceOptions extends SmrtObjectOptions {
   notes?: string;
   customerNotes?: string;
   terms?: string;
+  lineAmountType?: 'exclusive' | 'inclusive' | 'none';
+  taxRoundingScope?: 'line' | 'document';
+  discountTotal?: number;
+  sellerTaxRegistrations?: TaxRegistrationOptions[];
+  sellerTaxRegistrationsJson?: string;
+  partyTaxId?: string;
+  moneySnapshotId?: string;
+  accountingSyncStateJson?: string;
+}
+
+export interface InvoiceTaxComponentSnapshot {
+  taxComponentId: string;
+  name: string;
+  percent: string;
+  taxMinor: number;
 }
 
 /** Retained editing modes, validated against resolved model fields before reuse. */
@@ -535,6 +668,9 @@ export interface InvoiceLineEditorState {
 
 /** Constructor options for {@link InvoiceLineItem}. */
 export interface InvoiceLineItemOptions extends SmrtObjectOptions {
+  creditedLineId?: string | null;
+  creditCalculationBasis?: InvoiceCreditCalculationBasis | null;
+  creditCalculationBasisJson?: string;
   /** Optional retained editor modes and their original calculation context. */
   invoiceEditorState?: InvoiceLineEditorState | null;
   /** Serialized editor state loaded from persistence; malformed JSON is ignored. */
@@ -543,16 +679,28 @@ export interface InvoiceLineItemOptions extends SmrtObjectOptions {
   invoiceId?: string;
   description?: string;
   sku?: string;
+  productId?: string | null;
   quantity?: number;
   unitPrice?: number;
   discount?: number;
+  discountType?: 'none' | 'percent' | 'amount';
+  discountRate?: string;
   taxRate?: number;
+  taxMode?: 'inherit' | 'override';
+  taxCodeId?: string | null;
+  taxCodeCode?: string | null;
+  taxCodeName?: string | null;
+  taxComponents?: InvoiceTaxComponentSnapshot[];
+  taxComponentsJson?: string | null;
+  taxAmount?: number;
+  legacyAmount?: number | null;
+  moneySnapshotId?: string;
   amount?: number;
   sourceType?: string;
   sourceId?: string;
   periodStart?: Date | null;
   periodEnd?: Date | null;
-  revenueAccountId?: string;
+  revenueAccountId?: string | null;
   sortOrder?: number;
 }
 
@@ -588,6 +736,7 @@ export interface FulfillmentLineItemOptions extends SmrtObjectOptions {
  * Constructor options for {@link Payment}.
  */
 export interface PaymentOptions extends SmrtObjectOptions {
+  kind?: PaymentKind;
   tenantId?: string | null;
   contractId?: string | null;
   customerId?: string | null;

@@ -55,7 +55,7 @@ export interface EngineLibraryCookbook {
 
 /** Which model fields each app setting is the default of. */
 export type SettingTargets = Record<
-  'currency' | 'taxRate' | 'paymentTerms',
+  'currency' | 'taxRate' | 'paymentTerms' | 'pricesIncludeTax' | 'taxRounding',
   readonly { model: string; field: string }[]
 >;
 
@@ -96,7 +96,13 @@ export interface CommandInputs {
   /** Import a cookbook document, replacing the app (needs `replace` if non-empty). */
   import_cookbook: { document: unknown; replace?: boolean };
   /** App settings; tax rate in percent, 0 to 100. */
-  set_settings: { currency?: string; taxRate?: number; paymentTerms?: string };
+  set_settings: {
+    currency?: string;
+    taxRate?: number;
+    paymentTerms?: string;
+    pricesIncludeTax?: boolean;
+    taxRounding?: 'line' | 'document';
+  };
   /** Set (or clear with null) one field's policy row. App scope. */
   set_policy: {
     model: string;
@@ -185,7 +191,13 @@ export interface PlanSnapshot {
   features: string[];
   /** Recipe and feature ids this catalog lacks; kept on export. */
   unavailable: string[];
-  settings: { currency: string; taxRate: number; paymentTerms: string };
+  settings: {
+    currency: string;
+    taxRate: number;
+    paymentTerms: string;
+    pricesIncludeTax: boolean;
+    taxRounding: 'line' | 'document';
+  };
   theme: {
     text: string;
     preset: string | null;

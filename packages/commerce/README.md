@@ -78,6 +78,82 @@ await payment.recordPayment({
 });
 ```
 
+## Commercial money calculator
+
+The public `/money` entry is a pure calculator for line amounts, discounts,
+component tax, document rounding, and totals. It consumes and returns integer
+minor-unit money values; tax and discount percentages are exact text (`'5'`
+means 5%). It does not persist or load documents.
+
+```ts
+import { calculateMoneyDocument } from '@happyvertical/smrt-commerce/money';
+
+const totals = calculateMoneyDocument({
+  currency: 'CAD',
+  lineAmountType: 'exclusive',
+  roundingScope: 'line',
+  lines: [{
+    id: 'consulting', quantity: 1, unitPrice: 10000,
+    discount: { kind: 'none' },
+    taxCode: {
+      id: 'gst', kind: 'taxable',
+      components: [{ taxComponentId: 'gst', percent: '5', compound: false }],
+    },
+  }],
+});
+```
+
+`resolveLineTaxCode()` resolves caller-loaded codes without I/O, and the
+Svelte `InvoiceEditor` opts into the v2 money controls through its `money`
+prop. Frozen editor documents render a supplied stored snapshot without
+recalculation. See the [commerce money calculator guide](../../docs/content/commerce-money.md)
+for pricing modes, rounding, input and result types, the native-form editor
+contract, and the boundaries this package does not define.
+
+### Tenant tax catalogue and defaults
+
+The package root also exports tenant-scoped `TaxComponent`, `TaxCode`, and
+`TaxSettings` models and their collections. Components hold exact percentage
+rates and optional liability accounts; codes combine compatible components; the
+one settings row per tenant supplies sales/purchase defaults, amount mode,
+rounding scope, and labelled registration numbers. A referenced component rate
+is immutable: archive it and create a replacement for a rate change.
+
+`ensureTenantTaxCodes(db, tenantId)` idempotently creates the baseline
+non-taxable codes. `applyTaxCodeExamplePack(db, tenantId)` installs illustrative
+regional examples for review, and `applyCommerceCookbookSettings(db, tenantId,
+cookbook)` explicitly materializes a validated cookbook's defaults after schema
+setup and authentication establish the tenant. See the [commerce money
+calculator guide](../../docs/content/commerce-money.md#tenant-tax-catalogue) for
+the supported kinds, seed behavior, and cookbook rate units.
+
+### Persisted Invoice v2
+
+The public `Invoice` and `InvoiceLineItem` save paths use the server-owned
+`TaxSettings.moneyModel` gate. Missing settings and `legacy` preserve the
+existing behavior; `migrating` rejects Invoice money writes; `v2` atomically
+recalculates the draft Invoice aggregate from its lines and current tax inputs.
+The marker is not writable through generated surfaces or ordinary saves of
+an existing settings row.
+
+Issuing an Invoice (leaving `DRAFT`) or assigning `arJournalId` freezes its
+money snapshot. Header and line money changes then fail with `FROZEN_DOCUMENT`,
+while later lifecycle and payment updates retain the snapshot. Provider tax
+stays separate in `providerTaxAmount` and contributes to the Invoice headers
+without creating an application tax code. In v2,
+`InvoiceLineItemCollection.getTotalForInvoice()` sums line amounts for
+compatibility; use persisted `Invoice.totalAmount` for the amount due. The
+[commerce money calculator guide](../../docs/content/commerce-money.md#persisted-invoice-money)
+and [document-money contract](agents/document-money.md) cover persisted Invoice-v2
+semantics, credits, refunds, and posting. The materialized Invoice tax-report
+descriptor and tenant-safe drilldown are documented in
+[tax-summary contract](agents/tax-summary.md). Tenant migration commands,
+Contract money persistence, PurchaseContract tax contributors, and the
+materialized tax-summary host and drilldown are available. Applications opt in
+by registering `createTaxSummaryMaterializedReportHost()` in their server-only
+report-host registry; the route binds the authenticated tenant and read
+permission. See the tax-summary contract for registration and migration details.
+
 ## API
 
 ### Models

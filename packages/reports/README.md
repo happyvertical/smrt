@@ -32,7 +32,7 @@ import {
 class Invoice extends SmrtObject {
   customerId = '';
   issuedAt = new Date();
-  totalAmount = 0.0;
+  subtotal = 0.0;
   status = '';
 }
 
@@ -45,7 +45,7 @@ class Invoice extends SmrtObject {
 class MonthlyRevenue extends SmrtReport {
   @groupBy('customerId') customerId = '';
   @month('issuedAt') issuedMonth = new Date();
-  @sum('totalAmount') revenue = 0.0;
+  @sum('subtotal') revenue = 0.0;
 }
 
 class MonthlyRevenueCollection extends SmrtReportCollection<MonthlyRevenue> {

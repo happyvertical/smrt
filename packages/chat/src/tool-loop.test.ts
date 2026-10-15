@@ -42,6 +42,7 @@ import {
   buildManifestToolCatalog,
   classifyToolError,
   type ManifestTool,
+  manifestToolToAITool,
   runToolLoop,
   type ToolExecutionContext,
 } from './tool-loop.js';
@@ -50,7 +51,10 @@ import {
 // `.test.ts` so it lands in the locally-generated test manifest (its CRUD +
 // custom-action permission slugs then appear in the catalog).
 @smrt({
-  api: { include: ['list', 'get', 'create', 'update', 'delete', 'archive'] },
+  api: {
+    include: ['list', 'get', 'create', 'update', 'delete', 'archive'],
+    writable: ['title', 'body', 'estimatedHours', 'isPinned', 'state'],
+  },
   // Explicit collection so the permission slug matches the allow-list below.
   collection: 'tool_loop_notes',
   tableName: 'tool_loop_notes',
@@ -65,12 +69,61 @@ class ToolLoopNote extends SmrtObject {
   @field()
   body = '';
 
+  @field({ description: 'Estimated effort in decimal hours.' })
+  estimatedHours = 0.0;
+
+  @field({ description: 'Whether to pin this note for the team.' })
+  isPinned = false;
+
+  @field({
+    description:
+      'Workflow state. Use draft while editing and published when ready.',
+    enum: ['draft', 'published'],
+  })
+  state = 'draft';
+
+  @field({ readonly: true, description: 'Calculated server-side total.' })
+  calculatedTotal = 0.0;
+
+  @field({
+    description: 'Internal score, maintained only by application code.',
+  })
+  internalScore = 0;
+
+  @field({ sensitive: true })
+  internalMemo = '';
+
   /** A public custom action → a `tool_loop_notes.archive` catalog tool. */
   async archive(): Promise<{ archived: boolean }> {
     this.body = `[archived] ${this.body}`;
     await this.save();
     return { archived: true };
   }
+}
+
+// Covers the registry-provided dynamic MCP get serializer without importing a
+// domain package. The fixture is local so Chat never gains a dependency edge to
+// Commerce merely to test generic dispatcher behavior.
+@smrt({
+  api: { include: ['get'] },
+  mcp: {
+    include: ['get'],
+    serializers: {
+      get: {
+        importPath: './tool-loop-mcp-serializer.test-support.js',
+        exportName: 'serializeToolLoopMcpGet',
+      },
+    },
+  },
+  collection: 'tool_loop_serialized_notes',
+  tableName: 'tool_loop_serialized_notes',
+  tenantScoped: { field: 'tenantId', mode: 'optional' },
+})
+class ToolLoopSerializedNote extends SmrtObject {
+  tenantId: string | null = null;
+
+  @field()
+  title = '';
 }
 
 function toolCall(name: string, args: Record<string, unknown>): AIResponse {
@@ -177,6 +230,42 @@ describe('buildManifestToolCatalog (offer gate)', () => {
       allowedTools: ['floating.perm'],
     });
     expect(tools).toEqual([]);
+  });
+
+  it('uses qualified registry metadata for typed writable create parameters', () => {
+    const qualifiedName =
+      ObjectRegistry.getClassByConstructor(ToolLoopNote)?.qualifiedName;
+    expect(qualifiedName).toBeTruthy();
+
+    const tool: ManifestTool = {
+      slug: 'tool_loop_notes.create',
+      collection: 'tool_loop_notes',
+      className: 'ToolLoopNote',
+      qualifiedName,
+      action: 'create',
+    };
+    const parameters = manifestToolToAITool(tool).function.parameters as {
+      properties: Record<string, Record<string, unknown>>;
+    };
+
+    expect(parameters.properties.estimatedHours).toMatchObject({
+      type: 'number',
+      description: 'Estimated effort in decimal hours.',
+    });
+    expect(parameters.properties.isPinned).toMatchObject({
+      type: 'boolean',
+      description: 'Whether to pin this note for the team.',
+    });
+    expect(parameters.properties.state).toMatchObject({
+      type: 'string',
+      enum: ['draft', 'published'],
+      description:
+        'Workflow state. Use draft while editing and published when ready.',
+    });
+    // These fields are absent before the model can call the operation because
+    // they are not writable through the generated CRUD policy.
+    expect(parameters.properties.calculatedTotal).toBeUndefined();
+    expect(parameters.properties.internalScore).toBeUndefined();
   });
 });
 
@@ -387,6 +476,71 @@ describe('runToolLoop', () => {
     expect(toolMessage?.tool_call_id).toBe(callId);
   });
 
+  it('projects ordinary side-door reads through public JSON permissions', async () => {
+    await grant('tool_loop_notes.read');
+    const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
+    const seeded = await notes.create({ title: 'Visible' });
+    (seeded as ToolLoopNote).internalMemo = 'never expose this';
+    await seeded.save();
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', { id: seeded.id })
+        : textResponse('done'),
+    );
+
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'read note' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: {
+        runAsUserId: userId,
+        tenantId,
+        allowedTools: ['tool_loop_notes.read'],
+      },
+      audit: () => {},
+    });
+
+    expect(result.invocations[0]?.observation).toMatchObject({
+      title: 'Visible',
+    });
+    expect(result.invocations[0]?.observation).not.toHaveProperty(
+      'internalMemo',
+    );
+  });
+
+  it('uses the registered MCP get serializer after principal gates', async () => {
+    await grant('tool_loop_serialized_notes.read');
+    const notes = await ObjectRegistry.getCollection('ToolLoopSerializedNote', {
+      db,
+    });
+    const seeded = await notes.create({ title: 'Serialized' });
+    await seeded.save();
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? toolCall('tool_loop_serialized_notes.read', { id: seeded.id })
+        : textResponse('done'),
+    );
+
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'read serialized note' }],
+      tools: tools(['tool_loop_serialized_notes.read']),
+      principal: {
+        runAsUserId: userId,
+        tenantId,
+        allowedTools: ['tool_loop_serialized_notes.read'],
+      },
+      audit: () => {},
+    });
+
+    expect(result.invocations[0]?.observation).toEqual({
+      serializer: 'test',
+      title: 'Serialized',
+    });
+  });
+
   it('rejects a tool the persona was not offered — never executed', async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
     const ai = makeAI((_m, options, call) =>
@@ -432,6 +586,14 @@ describe('runToolLoop', () => {
         new ValidationError('title is required', 'VALIDATION_REQUIRED_FIELD'),
         'title is required',
         'VALIDATION_REQUIRED_FIELD',
+      ],
+      [
+        Object.assign(new Error('Invoice amount is frozen'), {
+          name: 'MoneyValidationError',
+          code: 'FROZEN_DOCUMENT',
+        }),
+        'Invoice amount is frozen',
+        'FROZEN_DOCUMENT',
       ],
       [
         Object.assign(new Error('internal detail'), {
@@ -673,6 +835,50 @@ describe('runToolLoop', () => {
       expect(
         (archive?.observation as { archived?: boolean } | undefined)?.archived,
       ).toBe(true);
+    });
+
+    it('uses the generated writable policy before assigning update fields', async () => {
+      await grant('tool_loop_notes.update');
+      const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
+      const seeded = await notes.create({
+        tenantId,
+        title: 'Before',
+        body: 'unchanged',
+        calculatedTotal: 120,
+        internalScore: 7,
+      });
+      await seeded.save();
+
+      const ai = makeAI((_messages, options, call) =>
+        call === 0 && toolsOffered(options)
+          ? toolCall('tool_loop_notes.update', {
+              id: seeded.id,
+              title: 'Allowed title',
+              calculatedTotal: 0,
+              internalScore: 999,
+            })
+          : textResponse('updated'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'update the note' }],
+        tools: tools(['tool_loop_notes.update']),
+        principal: {
+          runAsUserId: userId,
+          tenantId,
+          allowedTools: ['tool_loop_notes.update'],
+        },
+        audit: () => {},
+      });
+
+      expect(result.invocations[0]).toMatchObject({ ok: true });
+      const updated = await notes.get(seeded.id as string);
+      expect(updated?.title).toBe('Allowed title');
+      // A model cannot mass-assign either a readonly calculated field or an
+      // ordinary field excluded by api.writable.
+      expect(updated?.calculatedTotal).toBe(120);
+      expect(updated?.internalScore).toBe(7);
     });
   });
 });

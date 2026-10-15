@@ -395,7 +395,7 @@ describe('exact general invoice calculations', () => {
         }),
       ).toThrow(RangeError);
   });
-  it('keeps existing negative-price credit rounding toward positive infinity', () => {
+  it('preserves legacy credit ties until callers select money v2', () => {
     expect(
       calculateInvoiceMinorLine({
         quantity: 1.5,
@@ -412,6 +412,44 @@ describe('exact general invoice calculations', () => {
         taxRate: 0.01,
       }),
     ).toMatchObject({ taxMinor: 0, totalMinor: -50 });
+    expect(
+      calculateInvoiceMinorLine(
+        { quantity: 1.5, unitPrice: -1, discount: 0, taxRate: 0 },
+        { moneyModel: 'v2' },
+      ),
+    ).toMatchObject({ grossMinor: -2, totalMinor: -2 });
+    expect(
+      calculateInvoiceMinorLine(
+        { quantity: 1, unitPrice: -50, discount: 0, taxRate: 0.01 },
+        { moneyModel: 'v2' },
+      ),
+    ).toMatchObject({ taxMinor: -1, totalMinor: -51 });
+  });
+  it('passes stored signed amount discounts through the v2 adapter symmetrically', () => {
+    const positive = calculateInvoiceMinorLine(
+      { quantity: 1, unitPrice: 100, discount: 10, taxRate: 0.05 },
+      { moneyModel: 'v2' },
+    );
+    const negative = calculateInvoiceMinorLine(
+      { quantity: 1, unitPrice: -100, discount: -10, taxRate: 0.05 },
+      { moneyModel: 'v2' },
+    );
+    expect(positive).toMatchObject({
+      grossMinor: 100,
+      discountMinor: 10,
+      subtotalMinor: 90,
+      taxMinor: 5,
+      totalMinor: 95,
+    });
+    expect(negative).toMatchObject({
+      grossMinor: -100,
+      discountMinor: -10,
+      subtotalMinor: -90,
+      taxMinor: -5,
+      totalMinor: -95,
+    });
+    for (const key of Object.keys(positive) as Array<keyof typeof positive>)
+      expect(negative[key] + positive[key]).toBe(0);
   });
   it.each([
     { quantity: 0.0000001, unitPrice: 1, discount: 0, taxRate: 0 },

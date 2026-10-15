@@ -1,4 +1,8 @@
 /** Exact, transport-neutral cost pricing. All money is signed integer minor units. */
+import {
+  allocateSignedRationals,
+  roundSignedRational,
+} from './money-rational.js';
 export type CostBillingMode =
   | 'reimbursement-plus-fee'
   | 'fee-only'
@@ -53,9 +57,7 @@ function safe(value: bigint): number {
 }
 
 function rounded(numerator: bigint): bigint {
-  const magnitude = numerator < 0n ? -numerator : numerator;
-  const result = (magnitude + DENOMINATOR / 2n) / DENOMINATOR;
-  return numerator < 0n ? -result : result;
+  return roundSignedRational(numerator, DENOMINATOR);
 }
 
 function identifier(value: string): void {
@@ -331,7 +333,6 @@ export function calculateOrderedCostBillingTax(
           line,
           basisMinor: safe(basis),
           numerator,
-          remainder: numerator % DENOMINATOR,
           tax:
             input.roundingScope === 'line'
               ? rounded(numerator)
@@ -340,25 +341,22 @@ export function calculateOrderedCostBillingTax(
       });
     let tax = allocations.reduce((sum, allocation) => sum + allocation.tax, 0n);
     if (input.roundingScope === 'invoice') {
-      const target = rounded(
-        allocations.reduce((sum, a) => sum + a.numerator, 0n),
+      const distributed = allocateSignedRationals(
+        allocations.map((allocation) => ({
+          id: allocation.id,
+          numerator: allocation.numerator,
+          denominator: DENOMINATOR,
+        })),
       );
-      const residual = target - tax;
-      if (residual !== 0n) {
-        const direction = residual > 0n ? 1n : -1n;
-        const ranked = [...allocations].sort((a, b) => {
-          const difference = (b.remainder - a.remainder) * direction;
-          return difference < 0n
-            ? -1
-            : difference > 0n
-              ? 1
-              : compareTaxLineIds(a, b);
-        });
-        const count = residual * direction;
-        for (let index = 0; BigInt(index) < count; index++)
-          ranked[index].tax += direction;
-      }
-      tax = target;
+      const byId = new Map(
+        distributed.allocations.map((allocation) => [
+          allocation.id,
+          allocation.value,
+        ]),
+      );
+      for (const allocation of allocations)
+        allocation.tax = byId.get(allocation.id) as bigint;
+      tax = distributed.target;
     }
     total += tax;
     return {

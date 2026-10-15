@@ -219,6 +219,7 @@ export class Expense extends SmrtObject {
   incurredOn: string = '';
 
   /** When the expense was recorded; set on first save when empty. */
+  @field({ type: 'datetime' })
   recordedAt: Date | null = null;
 
   /** Profile that recorded the expense. */
@@ -278,6 +279,7 @@ export class Expense extends SmrtObject {
   reimbursable: boolean = false;
 
   /** When the person was paid back; set by {@link Expense.markReimbursed}. */
+  @field({ type: 'datetime' })
   reimbursedAt: Date | null = null;
 
   /** Payroll line, payables reference, or transfer id of the payback. */

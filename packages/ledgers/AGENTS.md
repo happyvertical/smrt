@@ -28,6 +28,15 @@ PII-conscious variable selection: `tenantId`, `sourceRef` (may reference custome
 
 **This package is unit-agnostic** — `debit` / `credit` are plain DECIMAL numbers and the balance check only compares the two sides, so it holds for whatever unit the posting module uses. As of #2401, journals posted from `@happyvertical/smrt-commerce` (`Payment.recordPayment()`, `Invoice.recognizeRevenue()`) carry **integer minor units**, which balance exactly rather than merely within the epsilon. A consumer mixing modules that post in different units will get arithmetically balanced but semantically meaningless journals; pick one unit per ledger.
 
+`JournalEntryCollection.listPostedMovements({ tenantId, accountIds, from, to,
+currency })` is the bounded reporting input. It joins only rows whose entry and
+journal share the requested tenant, includes every posted source (including
+manual journals), and excludes drafts and voids. Its debit, credit, and
+`creditMinusDebit` values are raw ledger units; commerce must verify its
+minor-unit convention before using them in an exact tax report. Each returned
+movement retains the requested `tenantId` so consumers can reject a fact that
+crosses the reporting boundary.
+
 ## Gotchas
 
 - **Float tolerance**: 0.01 epsilon for balance check — not exact equality

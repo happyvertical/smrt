@@ -159,6 +159,34 @@ if (session.isActive()) {
 }
 ```
 
+### Commerce money assistant tools
+
+An authenticated AssistantDock host can register the draft-invoice tools through
+the same `extraTools` seam. Include only the tools the persona may use in its
+server-controlled `allowedTools`; the tools repeat both the allow-list and
+operation checks when invoked.
+
+```typescript
+import { createCommerceMoneyTools } from '@happyvertical/smrt-commerce';
+import { mountAssistantRoutes } from '@happyvertical/smrt-chat/sveltekit';
+
+const routes = mountAssistantRoutes({
+  // The authenticated host resolves allowedTools for each principal.
+  extraTools: () => createCommerceMoneyTools(),
+  allowedTools: () => [
+    'commerce.taxCodes.list',
+    'commerce.invoice.preview',
+    'commerce.invoice.line.add',
+    'commerce.invoice.line.update',
+  ],
+  // ...the host's principal, database, and AI bindings
+});
+```
+
+These tools select tax codes by code and use the commerce calculator and
+document-money coordinator. They do not expose raw amount, tax amount, or
+numeric tax-rate writes.
+
 ### Voice gateway turns
 
 `smrt-chat` can expose a gateway-facing turn target for browser voice input.

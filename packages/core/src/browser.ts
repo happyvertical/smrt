@@ -300,6 +300,13 @@ export {
   type TenantEntryPointRunner,
   type TenantGateOptions,
 } from './generators/tenant-gate';
+// Schema projection is pure metadata normalization shared by browser WebMCP
+// and Chat's manifest dispatcher. Keep this root export aligned with index.ts.
+export {
+  fieldTypeToJsonSchema,
+  type ToolFieldMeta,
+  type ToolJsonSchema,
+} from './generators/tool-schema';
 // Shared 4xx normalization for generated REST and SvelteKit transports.
 export {
   normalizeTypedHttpError,

@@ -152,6 +152,14 @@ export function buildCommandTools(catalog: EngineCatalog): CommandTool[] {
           minLength: 1,
           maxLength: MAX_TERMS_LENGTH,
         },
+        pricesIncludeTax: {
+          type: 'boolean',
+          description: 'Whether new document prices include tax.',
+        },
+        taxRounding: {
+          enum: ['line', 'document'],
+          description: 'Whether tax rounds per line or per document.',
+        },
       }),
     },
     {

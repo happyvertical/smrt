@@ -15,6 +15,7 @@ import {
   DEFAULT_LIST_ORDER_BY,
   MAX_LIST_LIMIT,
 } from '../query-bounds.js';
+import type { ApiSerializerReference } from '../registry/types.js';
 import type { CustomActionScope } from './custom-action.js';
 import type { MCPConfig, MCPContext } from './mcp.js';
 import type { McpToolTarget } from './mcp-tool-name.js';
@@ -68,6 +69,8 @@ export interface RuntimeOptions {
   }>;
   /** Explicit original execution targets for generated protocol aliases. */
   toolTargets?: Record<string, McpToolTarget>;
+  /** Async serializers for standard get tools, keyed by emitted tool name. */
+  getSerializers?: Record<string, ApiSerializerReference>;
   /** Cache hint emitted for deploy-static tools/list results. */
   toolListCacheHint?: {
     ttlMs: number;
@@ -138,6 +141,7 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
     debug = false,
     tools = [],
     toolTargets: explicitToolTargets,
+    getSerializers = {},
     customActions = {},
     taskActions = {},
     tenantScopedObjects = [],
@@ -236,7 +240,7 @@ ${indent}  if (!item) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  return successResult(item.toPublicJSON(PUBLIC_JSON_OPTIONS));
+${indent}  return successResult(await serializeGetResult(${JSON.stringify(tool.name)}, item));
 ${indent}}`;
 
           case 'create':
@@ -416,6 +420,20 @@ const PUBLIC_JSON_OPTIONS = {
     .map((permission) => permission.trim())
     .filter(Boolean),
 };
+const GET_SERIALIZERS: Record<string, { importPath: string; exportName: string }> = ${JSON.stringify(getSerializers)};
+
+async function serializeGetResult(toolName: string, item: any): Promise<any> {
+  const reference = GET_SERIALIZERS[toolName];
+  if (!reference) return item.toPublicJSON(PUBLIC_JSON_OPTIONS);
+  const serializerModule = await import(reference.importPath);
+  const serializer = serializerModule[reference.exportName];
+  if (typeof serializer !== 'function') {
+    throw new Error(
+      \`MCP get serializer '\${reference.exportName}' was not exported by '\${reference.importPath}'\`,
+    );
+  }
+  return toPublicResult(await serializer(item, PUBLIC_JSON_OPTIONS));
+}
 
 /**
  * Page-bound guard (#2367). MCP tool arguments are untyped JSON, so \`limit\`
@@ -523,6 +541,17 @@ function errorResult(structuredContent: any, text: string, _meta?: Record<string
     structuredContent,
     ...(_meta ? { _meta } : {}),
   };
+}
+
+function normalizePublicToolError(error: any): { code: string; message: string } | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  if (
+    typeof error.code !== 'string' ||
+    !/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(error.code) ||
+    typeof error.publicMessage !== 'string' ||
+    error.publicMessage.length === 0
+  ) return undefined;
+  return { code: error.code, message: error.publicMessage };
 }
 
 ${
@@ -858,11 +887,12 @@ ${
 
         return result;
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const publicError = normalizePublicToolError(error);
+        const errorMessage = publicError?.message ?? (error instanceof Error ? error.message : 'Unknown error');
         console.error(\`[MCP] Tool execution failed: \${toolName}\`, error);
 
         return errorResult(
-          { error: { message: errorMessage } },
+          { error: publicError ?? { message: errorMessage } },
           \`Error executing tool \${toolName}: \${errorMessage}\`,
         );
       }
