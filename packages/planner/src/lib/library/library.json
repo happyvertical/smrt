@@ -5,7 +5,20 @@
       "name": "Bakery",
       "icon": "bread",
       "summary": "Retail and cafe wholesale orders, ingredient stock, batches and suppliers.",
-      "keywords": ["bake", "baker", "bakery", "baking", "bread", "pastry", "cake", "cookies", "cafe wholesale", "coffee shop", "patisserie", "sourdough"],
+      "keywords": [
+        "bake",
+        "baker",
+        "bakery",
+        "baking",
+        "bread",
+        "pastry",
+        "cake",
+        "cookies",
+        "cafe wholesale",
+        "coffee shop",
+        "patisserie",
+        "sourdough"
+      ],
       "settings": {
         "currency": "USD",
         "paymentTerms": "Net 15",
@@ -14,7 +27,12 @@
       "document": {
         "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
         "version": 1,
-        "theme": { "custom": { "primary": "#b45309", "fontFamily": "Georgia" } },
+        "theme": {
+          "custom": {
+            "primary": "#b45309",
+            "fontFamily": "Georgia"
+          }
+        },
         "recipes": [
           "commerce.customers",
           "commerce.invoicing",
@@ -205,7 +223,21 @@
       "name": "Mechanic",
       "icon": "car",
       "summary": "Quotes, work orders, parts, appointments and billing for a repair shop.",
-      "keywords": ["mechanic", "garage", "auto repair", "car repair", "fix cars", "car", "vehicle", "brakes", "oil change", "tyres", "tires", "servicing", "repair shop"],
+      "keywords": [
+        "mechanic",
+        "garage",
+        "auto repair",
+        "car repair",
+        "fix cars",
+        "car",
+        "vehicle",
+        "brakes",
+        "oil change",
+        "tyres",
+        "tires",
+        "servicing",
+        "repair shop"
+      ],
       "settings": {
         "currency": "USD",
         "paymentTerms": "Due on receipt",
@@ -214,7 +246,9 @@
       "document": {
         "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
         "version": 1,
-        "theme": { "preset": "smrt" },
+        "theme": {
+          "preset": "smrt"
+        },
         "recipes": [
           "commerce.customers",
           "commerce.estimates",
@@ -412,7 +446,19 @@
       "name": "Welder",
       "icon": "flame",
       "summary": "Quotes, jobs, agreements, material and site visits for a welding business.",
-      "keywords": ["weld", "welder", "welding", "fabrication", "fabricate", "metal", "steel", "gates", "railings", "metalwork", "boilermaker"],
+      "keywords": [
+        "weld",
+        "welder",
+        "welding",
+        "fabrication",
+        "fabricate",
+        "metal",
+        "steel",
+        "gates",
+        "railings",
+        "metalwork",
+        "boilermaker"
+      ],
       "settings": {
         "currency": "USD",
         "paymentTerms": "50% deposit, balance on completion"
@@ -420,7 +466,9 @@
       "document": {
         "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
         "version": 1,
-        "theme": { "preset": "studio" },
+        "theme": {
+          "preset": "studio"
+        },
         "recipes": [
           "commerce.agreements",
           "commerce.customers",
@@ -604,7 +652,18 @@
       "name": "Yoga studio",
       "icon": "yoga",
       "summary": "Classes, class series, members, memberships and a small retail shop.",
-      "keywords": ["yoga", "yoga studio", "pilates", "studio", "classes", "class series", "meditation", "members", "memberships", "instructor"],
+      "keywords": [
+        "yoga",
+        "yoga studio",
+        "pilates",
+        "studio",
+        "classes",
+        "class series",
+        "meditation",
+        "members",
+        "memberships",
+        "instructor"
+      ],
       "settings": {
         "currency": "USD",
         "paymentTerms": "Due on receipt"
@@ -612,7 +671,12 @@
       "document": {
         "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
         "version": 1,
-        "theme": { "custom": { "primary": "#0f766e", "fontFamily": "ui-rounded" } },
+        "theme": {
+          "custom": {
+            "primary": "#0f766e",
+            "fontFamily": "ui-rounded"
+          }
+        },
         "recipes": [
           "commerce.agreements",
           "commerce.customers",
@@ -782,6 +846,250 @@
         "custom:members": "Members and their memberships.",
         "custom:shop": "Sell to customers and keep their details.",
         "custom:billing": "Invoices and the payments against them."
+      }
+    },
+    {
+      "id": "landscaping",
+      "name": "Landscaping",
+      "icon": "leaf",
+      "summary": "Quotes, jobs, maintenance contracts, materials and the crew schedule for a lawn and landscape business.",
+      "keywords": [
+        "landscaping",
+        "landscaper",
+        "lawn care",
+        "lawn",
+        "mowing",
+        "garden",
+        "gardener",
+        "yard work",
+        "hardscape",
+        "irrigation",
+        "tree service",
+        "snow removal",
+        "grounds"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Net 15",
+        "taxRate": 0.06
+      },
+      "sectionDescriptions": {
+        "custom:jobs": "Work orders and the customers they belong to.",
+        "custom:schedule": "Appointments and what is on the calendar.",
+        "custom:yard": "Materials, stock and the suppliers you buy from.",
+        "custom:billing": "Invoices and the payments against them."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#15803d"
+          }
+        },
+        "recipes": [
+          "commerce.agreements",
+          "commerce.customers",
+          "commerce.estimates",
+          "commerce.invoicing",
+          "commerce.purchases",
+          "commerce.sales",
+          "commerce.vendors",
+          "events.calendar",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.simple"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.06"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:InvoiceLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.06"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:jobs",
+            "custom:schedule",
+            "custom:yard",
+            "custom:billing",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:jobs": [
+              "item:commerce:Estimate",
+              "item:commerce:Order",
+              "item:commerce:Customer",
+              "item:commerce:Agreement"
+            ],
+            "custom:schedule": [
+              "item:events:Event",
+              "item:events:EventSeries",
+              "item:events:EventType"
+            ],
+            "custom:yard": [
+              "item:products:Product",
+              "item:inventory:StockLevel",
+              "item:commerce:Vendor",
+              "item:commerce:PurchaseOrder"
+            ],
+            "custom:billing": [
+              "item:commerce:Invoice",
+              "item:commerce:Payment"
+            ]
+          },
+          "hidden": [
+            "item:commerce:Contract",
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:commerce:Estimate": "custom:jobs",
+            "item:commerce:Order": "custom:jobs",
+            "item:commerce:Customer": "custom:jobs",
+            "item:commerce:Agreement": "custom:jobs",
+            "item:events:Event": "custom:schedule",
+            "item:events:EventSeries": "custom:schedule",
+            "item:events:EventType": "custom:schedule",
+            "item:products:Product": "custom:yard",
+            "item:inventory:StockLevel": "custom:yard",
+            "item:commerce:Vendor": "custom:yard",
+            "item:commerce:PurchaseOrder": "custom:yard",
+            "item:commerce:Invoice": "custom:billing",
+            "item:commerce:Payment": "custom:billing"
+          },
+          "customSections": [
+            {
+              "id": "custom:jobs",
+              "label": "Jobs"
+            },
+            {
+              "id": "custom:schedule",
+              "label": "Schedule"
+            },
+            {
+              "id": "custom:yard",
+              "label": "Yard"
+            },
+            {
+              "id": "custom:billing",
+              "label": "Billing"
+            }
+          ],
+          "items": {
+            "item:commerce:Estimate": {
+              "label": "Quotes",
+              "description": "Quotes for new work, ready to become jobs once approved."
+            },
+            "item:commerce:Order": {
+              "label": "Jobs",
+              "description": "Every job you have won, from the first visit to the final invoice."
+            },
+            "item:commerce:Agreement": {
+              "label": "Maintenance contracts",
+              "description": "Weekly mowing and seasonal programs, with who holds them and when they renew."
+            },
+            "item:events:Event": {
+              "label": "Crew schedule",
+              "description": "Visits on the calendar, by day and crew."
+            },
+            "item:events:EventSeries": {
+              "label": "Recurring visits",
+              "description": "Routes that repeat, like a Tuesday mowing round, set up once."
+            },
+            "item:events:EventType": {
+              "label": "Visit types",
+              "description": "The kinds of visit you make, like a mow, a clean-up or an install."
+            },
+            "item:products:Product": {
+              "label": "Materials",
+              "description": "Mulch, soil, sod, plants and the other things you sell and install."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Materials on hand",
+              "description": "What is in the yard and on the trucks."
+            },
+            "item:commerce:Vendor": {
+              "label": "Suppliers",
+              "description": "The nurseries and stone yards you buy from."
+            },
+            "item:commerce:PurchaseOrder": {
+              "label": "Material orders",
+              "description": "Material you have ordered and when it lands."
+            }
+          },
+          "sections": {
+            "custom:jobs": {
+              "icon": "wrench"
+            },
+            "custom:schedule": {
+              "icon": "calendar"
+            },
+            "custom:yard": {
+              "icon": "package"
+            },
+            "custom:billing": {
+              "icon": "receipt"
+            }
+          }
+        }
       }
     }
   ]
