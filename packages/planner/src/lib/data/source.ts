@@ -450,12 +450,16 @@ export function createMemoryDataSource(
    */
   const tenantTaxCodes = (rate: number): SampleTaxCode[] => {
     const base = sampleTaxCodes(rate);
-    const rows = tables.get(TAX_CODE_MODEL);
-    if (!rows?.length) return base;
+    // Through `table`, so rows saved in an earlier visit count even when
+    // nothing has opened the tax tables yet.
+    const codeModel = modelById.get(TAX_CODE_MODEL);
+    const componentModel = modelById.get(TAX_COMPONENT_MODEL);
+    const rows = codeModel ? table(codeModel) : [];
+    if (!rows.length) return base;
     const parts = new Map<string, SampleTaxComponent>(
       base.flatMap((c) => c.components.map((p) => [p.id, p] as const)),
     );
-    for (const row of tables.get(TAX_COMPONENT_MODEL) ?? []) {
+    for (const row of componentModel ? table(componentModel) : []) {
       parts.set(row.id, {
         id: row.id,
         key: row.id,

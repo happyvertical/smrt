@@ -150,6 +150,53 @@ describe('line and parent amounts (smrt money model)', () => {
     ).rejects.toThrow();
   });
 
+  it('resolves a saved tax code after a reload, before anything opens the tax tables', async () => {
+    const saved = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => void saved.set(key, value),
+      removeItem: (key: string) => void saved.delete(key),
+      key: (i: number) => [...saved.keys()][i] ?? null,
+      get length() {
+        return saved.size;
+      },
+      clear: () => saved.clear(),
+    } as Storage;
+    const withStorage = () =>
+      createMemoryDataSource({
+        storage,
+        empty: [`${C}Agreement`],
+        children: {
+          models: catalog.packages.flatMap((p) => p.models),
+          links: (id) => childLinks(catalog, recipes, id),
+        },
+      });
+    const first = withStorage();
+    const mine = await first.create(model('TaxCode'), {
+      code: 'my-exempt',
+      name: 'My exemption',
+      kind: 'exempt',
+      appliesTo: 'both',
+      active: true,
+    });
+    const parent = await first.create(agreement, {});
+    const line = await first.create(lineItem, {
+      contractId: parent.id,
+      quantity: 1,
+      unitPrice: 1000,
+      taxMode: 'override',
+      taxCodeId: mine.id,
+    });
+    // A fresh source over the same storage: the line is edited first.
+    const again = withStorage();
+    const edited = await again.update(lineItem, line.id, { quantity: 3 });
+    expect(edited).toMatchObject({
+      amount: 3000,
+      taxAmount: 0,
+      taxCodeCode: 'my-exempt',
+    });
+  });
+
   it('refuses money the model refuses and leaves the rows as they were', async () => {
     const data = source();
     const parent = await data.create(agreement, {});
