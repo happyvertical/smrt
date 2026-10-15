@@ -1,5 +1,6 @@
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
+import InvoiceActions from '../components/InvoiceActions.svelte';
 import InvoiceEditor from '../components/InvoiceEditor.svelte';
 import {
   calculateMoneyEditorDraft,
@@ -137,6 +138,62 @@ describe('v2 money editor adapter', () => {
     expect(body).toContain('title="Credit notes are not available yet"');
     expect(body).not.toContain('Amounts must be non-negative decimal text');
   });
+  it('enables the host-authorized credit action only for a frozen source invoice', () => {
+    const enabled = render(InvoiceEditor, {
+      props: {
+        action: '/invoices',
+        money: {
+          ...money,
+          frozen: true,
+          status: 'SENT',
+          onCreateCreditNote: () => {},
+          stored: {
+            lineAmountType: 'exclusive',
+            roundingScope: 'line',
+            subtotalMinor: 100,
+            discountTotalMinor: 0,
+            taxMinor: 0,
+            totalMinor: 100,
+            taxes: [],
+          },
+        },
+      },
+    }).body;
+    expect(enabled).toContain('Create credit note');
+    expect(enabled).not.toContain('Credit notes are not available yet');
+
+    const credit = render(InvoiceEditor, {
+      props: {
+        action: '/invoices',
+        money: {
+          ...money,
+          frozen: true,
+          kind: 'credit_note',
+          stored: {
+            lineAmountType: 'exclusive',
+            roundingScope: 'line',
+            subtotalMinor: 100,
+            discountTotalMinor: 0,
+            taxMinor: 0,
+            totalMinor: 100,
+            taxes: [],
+          },
+        },
+      },
+    }).body;
+    expect(credit).not.toContain('Create credit note');
+
+    const action = render(InvoiceActions, {
+      props: { status: 'sent', oncreatecreditnote: () => {} },
+    }).body;
+    expect(action).toContain('Create credit note');
+    expect(
+      render(InvoiceActions, {
+        props: { status: 'draft', oncreatecreditnote: () => {} },
+      }).body,
+    ).not.toContain('Create credit note');
+  });
+
   it('does not produce an inclusive tax row for exempt stored values', () => {
     const body = render(InvoiceEditor, {
       props: {
