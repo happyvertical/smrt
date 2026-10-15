@@ -236,4 +236,91 @@ describePostgres('tenant money runtime barrier on PostgreSQL (#3933)', () => {
       await settings.restoreLegacyMoneyModel(tenantId, migrationId);
     });
   });
+
+  it('refuses a stale first settings save after migration creates the marker', async () => {
+    const tenantId = randomUUID();
+    const originalTransaction = db.transaction?.bind(db);
+    if (!originalTransaction) throw new Error('transaction support required');
+    let releaseCreate!: () => void;
+    const release = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+    let markerChecked!: () => void;
+    const checked = new Promise<void>((resolve) => {
+      markerChecked = resolve;
+    });
+    let paused = false;
+    Object.assign(db, {
+      transaction: async (
+        operation: (transaction: DatabaseInterface) => Promise<unknown>,
+      ) =>
+        originalTransaction(async (transaction) => {
+          const originalQuery = transaction.query.bind(transaction);
+          Object.assign(transaction, {
+            query: async (...args: Parameters<typeof transaction.query>) => {
+              const result = await originalQuery(...args);
+              const sql = args[0];
+              if (
+                !paused &&
+                typeof sql === 'string' &&
+                sql.trimStart().toUpperCase().startsWith('SELECT') &&
+                sql.includes('tax_settings')
+              ) {
+                paused = true;
+                markerChecked();
+                await release;
+              }
+              return result;
+            },
+          });
+          return operation(transaction);
+        }),
+    });
+
+    const create = withTenant({ tenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db });
+      return settings.create({ tenantId, taxRoundingScope: 'document' });
+    });
+    await checked;
+    const migrationId = await withTenant({ tenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db: peer });
+      return settings.beginMoneyMigration(tenantId);
+    });
+    releaseCreate();
+
+    await expect(create).rejects.toMatchObject({
+      code: 'VALIDATION_UNIQUE_CONSTRAINT',
+    });
+    await withTenant({ tenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db: peer });
+      await expect(settings.getForTenant(tenantId)).resolves.toMatchObject({
+        moneyModel: 'migrating',
+        moneyMigrationId: migrationId,
+      });
+      await settings.restoreLegacyMoneyModel(tenantId, migrationId);
+    });
+  });
+
+  it('lets migration claim a marker created first by an ordinary save', async () => {
+    const tenantId = randomUUID();
+    await withTenant({ tenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db });
+      await expect(settings.create({ tenantId })).resolves.toMatchObject({
+        moneyModel: 'legacy',
+      });
+    });
+
+    const migrationId = await withTenant({ tenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db: peer });
+      return settings.beginMoneyMigration(tenantId);
+    });
+    await withTenant({ tenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db });
+      await expect(settings.getForTenant(tenantId)).resolves.toMatchObject({
+        moneyModel: 'migrating',
+        moneyMigrationId: migrationId,
+      });
+      await settings.restoreLegacyMoneyModel(tenantId, migrationId);
+    });
+  });
 });
