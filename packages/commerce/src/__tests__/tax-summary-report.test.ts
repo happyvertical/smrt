@@ -22,6 +22,7 @@ import {
   createTaxSummaryMaterializedReportHost,
   drilldownTaxSummaryContributors,
   drilldownTaxSummaryInvoiceFacts,
+  presentTaxSummaryDrilldown,
   TAX_SUMMARY_REPORT_ADAPTER,
 } from '../tax-summary-report-adapter.js';
 import {
@@ -90,9 +91,21 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
     await expect(host.descriptor({ ...principal, userId: '' })).rejects.toThrow(
       /access denied/i,
     );
+    await expect(
+      host.descriptor({ ...principal, tenantId: '' }),
+    ).rejects.toThrow(/access denied/i);
+    expect(() => host.query({ ...principal, userId: '' }, oneRow)).toThrow(
+      /access denied/i,
+    );
     expect(() => host.query({ ...principal, tenantId: '' }, oneRow)).toThrow(
       /access denied/i,
     );
+    await expect(
+      host.drilldown(
+        { ...principal, userId: '' },
+        { id: 'missing', columnId: 'tax_minor' },
+      ),
+    ).rejects.toThrow(/access denied/i);
     await expect(
       host.drilldown(
         { ...principal, tenantId: '' },
@@ -121,7 +134,73 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
     ).rejects.toThrow(/unavailable/i);
     await expect(
       host.drilldown(principal, { id, columnId: 'tax_minor' }),
-    ).resolves.toMatchObject({ measure: 'tax' });
+    ).resolves.toMatchObject({
+      version: 1,
+      selectedMeasure: { id: 'tax', label: 'Tax' },
+      currency: 'CAD',
+      contributors: expect.arrayContaining([
+        expect.objectContaining({
+          source: 'invoice',
+          identity: expect.any(String),
+          date: expect.any(String),
+          values: expect.objectContaining({
+            valueMinor: expect.any(Number),
+            taxableMinor: expect.any(Number),
+            taxMinor: expect.any(Number),
+          }),
+        }),
+      ]),
+    });
+  });
+
+  it('normalizes incomplete and diverged contributor evidence for the generic report host', () => {
+    const presentation = presentTaxSummaryDrilldown({
+      measure: 'tax',
+      row: { currency: 'CAD' },
+      contributors: [
+        {
+          source: 'invoice',
+          valueMinor: 125,
+          fact: {
+            documentType: 'invoice',
+            documentId: 'invoice-a',
+            documentNumber: 'INV-001',
+            partyId: 'customer-a',
+            taxCodeId: 'gst',
+            taxComponentId: 'gst',
+            issueDate: '2026-09-01',
+            taxableMinor: 2_500,
+            taxMinor: 125,
+          },
+        },
+      ],
+      complete: false,
+      pending: ['source-state-diverged', 'expense-source'],
+    } as never);
+
+    expect(presentation).toEqual({
+      version: 1,
+      selectedMeasure: { id: 'tax', label: 'Tax' },
+      currency: 'CAD',
+      contributors: [
+        {
+          id: 'invoice:invoice:invoice-a:gst:gst',
+          source: 'invoice',
+          identity: 'INV-001',
+          date: '2026-09-01',
+          party: 'customer-a',
+          values: { valueMinor: 125, taxableMinor: 2_500, taxMinor: 125 },
+        },
+      ],
+      complete: false,
+      warnings: [
+        expect.objectContaining({
+          code: 'source-state-diverged',
+          kind: 'drift',
+        }),
+        expect.objectContaining({ code: 'expense-source', kind: 'incomplete' }),
+      ],
+    });
   });
 
   it('materializes exact persisted A/B sales rows, DataTable descriptor, and a tenant-bound drilldown', async () => {

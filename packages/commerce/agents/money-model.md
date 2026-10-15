@@ -85,9 +85,13 @@ serializers](../../core/agents/generators.md#mcp-get-serializers).
 
 The materialized `TaxSummaryReport` and its public descriptor/drilldown bridge
 read stored Invoice `DocumentTax` facts under the tenant v2 gate. See
-[tax summary aggregation](tax-summary.md). A runtime reports UI, report-server
-contract, and a shared Svelte money formatter are pending their owning releases;
-commerce does not supply a duplicate host.
+[tax summary aggregation](tax-summary.md). Commerce exports
+`createTaxSummaryMaterializedReportHost()` for an application-owned,
+server-only host; register that host in the app's fixed report-host registry to
+opt into the generic `MaterializedReportTable` and its tenant-scoped drilldown
+route. The host binds the authenticated tenant, principal, and
+`taxsummaryreports.read` permission; browser input supplies only a row id
+and visible column id.
 
 The accounting snapshot mapper consumes frozen facts and never re-calculates a
 rate or allocation. It maps an inclusive line to the accounting SDK's
@@ -103,6 +107,7 @@ mapper](accounting-snapshot-mapper.md).
 The tenant migration and rollback contract is documented in
 [tenant line-amount migration](line-amount-migration.md).
 The marker is a maintenance gate, not a customer-controlled setting. Contract
-money persistence and the production reports UI are separate work. The model
-also does not provide currency conversion, cash-basis/deposit accounting,
+money persistence remains a separate aggregate contract; production report
+hosting is an application opt-in over the public host described above. The
+model also does not provide currency conversion, cash-basis/deposit accounting,
 partial recoverability, period locking, or compound tax.
