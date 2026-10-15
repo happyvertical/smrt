@@ -133,27 +133,33 @@ export async function learnerFixture(db: DatabaseInterface) {
   const courses = await CourseCollection.create({ db });
   const sections = await CourseSectionCollection.create({ db });
   const lessons = await LessonCollection.create({ db });
-  const course = await courses.create({ title: `Course ${randomUUID()}` });
+  const course = await courses.create({ tenantId, title: 'Course' });
   const section = await sections.create({
+    tenantId,
     courseId: String(course.id),
     title: 'Section',
   });
   const lesson = await lessons.create({
+    tenantId,
     sectionId: String(section.id),
     title: 'Lesson',
   });
   const secondLesson = await lessons.create({
+    tenantId,
     sectionId: String(section.id),
     title: 'Second lesson',
   });
   const otherCourse = await courses.create({
+    tenantId,
     title: `Other course ${randomUUID()}`,
   });
   const otherSection = await sections.create({
+    tenantId,
     courseId: String(otherCourse.id),
     title: 'Other section',
   });
   const wrongLesson = await lessons.create({
+    tenantId,
     sectionId: String(otherSection.id),
     title: 'Wrong lesson',
   });
