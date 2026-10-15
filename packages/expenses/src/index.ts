@@ -52,6 +52,7 @@ export {
 export { ExpenseReceiptCollection } from './collections/ExpenseReceiptCollection.js';
 export { Expense } from './models/Expense.js';
 export { ExpenseReceipt } from './models/ExpenseReceipt.js';
+export { ExpensesRecipe } from './recipes.js';
 export {
   type AttachReceiptInput,
   type CommitmentPosition,
