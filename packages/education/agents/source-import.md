@@ -13,8 +13,8 @@ boolean from an HTTP request. `fetchPage(url, { redirect: 'error' })` must rejec
 redirects, bound time/size and return `{ html, url }`. It fetches the page only,
 never a PDF. The service checks the approved HTTPS URL before fetching, checks
 the response URL, limits HTML to 2 million characters, then parses the complete
-page before any write. There is no automatic registration or network access. Only validated lesson
-headings delimit day content; ordinary bold instructions do not. Supported
+page before any write. There is no automatic registration or network access. Structural h1–h6 headings delimit day content, including trailing Resources
+sections; ordinary non-lesson bold instructions do not. Supported
 heading blocks are h1–h6 or a lesson marker as the first bold run in a
 paragraph/list item.
 Recognizable markers outside that layout, including multiple markers in one

@@ -92,7 +92,6 @@ function lessonHeadings(html: string): HeadingMatch[] {
   const headings = /<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]\s*>/gi;
   for (const match of html.matchAll(headings)) {
     const text = textContent(match[1]);
-    if (!/^lesson\b/i.test(text)) continue;
     matches.push({
       index: match.index ?? 0,
       end: (match.index ?? 0) + match[0].length,
@@ -122,8 +121,9 @@ function lessonHeadings(html: string): HeadingMatch[] {
     const end = index + marker[0].length;
     const accountedFor = sorted.some(
       (heading) =>
-        heading.index === index ||
-        (heading.index <= index && end <= heading.end),
+        /^lesson\b/i.test(heading.text) &&
+        (heading.index === index ||
+          (heading.index <= index && end <= heading.end)),
     );
     if (!accountedFor)
       throw new Error('Easy Peasy lesson marker layout is unsupported.');

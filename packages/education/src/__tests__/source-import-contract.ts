@@ -476,3 +476,24 @@ export async function assertAmbiguousMarkersAtomicity(
     }
   });
 }
+
+/** Regression: trailing resource PDFs must not overwrite a lesson on refresh. */
+export async function assertStructuralHeadingRefresh(
+  f: Fixture,
+): Promise<void> {
+  f.setPage(
+    '<h1>Course</h1><p><strong>Lesson 1 *</strong></p><a href="/wp-content/uploads/day1.pdf">Worksheet</a>',
+  );
+  const first = await f.run(() => f.service.importCourse(f.request));
+  f.setPage(
+    '<h1>Course</h1><p><strong>Lesson 1 *</strong></p><h2>Resources</h2><a href="/wp-content/uploads/supply-list.pdf">Supply list</a>',
+  );
+  const refreshed = await f.run(() => f.service.importCourse(f.request));
+  expect(refreshed).toEqual(first);
+  await f.run(async () => {
+    const lessons = await LessonCollection.create({ db: f.db });
+    expect(await lessons.get(first.lessonIds[0])).toMatchObject({
+      printableUrl: '',
+    });
+  });
+}

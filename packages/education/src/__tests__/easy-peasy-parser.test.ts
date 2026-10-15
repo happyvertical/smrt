@@ -126,6 +126,17 @@ describe('parseEasyPeasyPage', () => {
     ]);
   });
 
+  it('ends the last lesson at a structural Resources heading', () => {
+    const html =
+      '<h1>Course</h1><p><strong>Lesson 3 *</strong></p><h2>Resources</h2><a href="/wp-content/uploads/supply-list.pdf">Supply list</a>';
+    expect(parseEasyPeasyPage(html, pageUrl).lessons).toEqual([
+      expect.objectContaining({ day: 3, worksheet: true }),
+    ]);
+    expect(parseEasyPeasyPage(html, pageUrl).lessons[0]).not.toHaveProperty(
+      'printableUrl',
+    );
+  });
+
   it('rejects ambiguous compact and generic-container lesson marker layouts', () => {
     const compact = `
       <h1>Course</h1>

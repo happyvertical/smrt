@@ -9,6 +9,7 @@ import {
   assertInputAndIdentityGuards,
   assertRefreshAndPrivacy,
   assertRollbackAndRetry,
+  assertStructuralHeadingRefresh,
   sourceFixture,
 } from './source-import-contract.js';
 
@@ -33,6 +34,10 @@ describe('source import (SQLite)', () => {
     [
       'refreshes worksheet URLs after ordinary bold instructions',
       assertBoldInstructionRefresh,
+    ],
+    [
+      'excludes trailing resource PDFs on refresh',
+      assertStructuralHeadingRefresh,
     ],
     [
       'rejects unaccounted lesson markers without partial mutation',

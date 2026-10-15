@@ -51,3 +51,14 @@ baseline behavior, then against the correction. This is a bounded parser
 correction: the full root suite already passed on the covered head; round 2
 reruns the affected package, PostgreSQL, build/typecheck, browser boundary,
 static and knowledge gates rather than an unrelated full-root test rerun.
+
+## Accepted round-2 structural heading regression
+
+**Accepted — Opus (medium):** ignoring non-lesson h1–h6 headings allowed
+trailing Resources PDFs to become the last lesson's printable pointer. Structural
+headings again delimit segments; ordinary bold instructions remain ignored and
+unaccounted lesson markers still fail closed. A parser case and real SQLite/PG
+refresh case verify the Resources URL never replaces a lesson pointer. Both new
+cases fail against round-2 head `122af228052078da82d474db66f00ad3b099291f`.
+The bounded round-3 gates and inherited full-root coverage are recorded in the
+review packet; only the accepted regression is changed.
