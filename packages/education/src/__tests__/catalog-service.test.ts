@@ -10,12 +10,18 @@ const courses = {
     { title: 'Family copy', licenseKind: 'personal-use-copy' },
   ],
 };
+const sections = { list: async () => [] };
+const lessons = { list: async () => [] };
+const assets = { byLeft: async () => [] };
 
 describe('CatalogService', () => {
   it('uses an allowlisted scope and hides family copies from ordinary catalog reads', async () => {
     let scopeRequest: unknown;
     const service = new CatalogService(
       courses as never,
+      sections as never,
+      lessons as never,
+      assets as never,
       {
         withTenantCatalogReadScope: async (request, callback) => {
           scopeRequest = request;
@@ -28,13 +34,18 @@ describe('CatalogService', () => {
       service.findVisible({ tenantId: 'family-a', actorUserId: 'guardian-a' }),
     ).resolves.toEqual([{ title: 'Open course', licenseKind: 'open-license' }]);
     expect(scopeRequest).toMatchObject({
-      collections: ['@happyvertical/smrt-education:Course'],
+      collections: expect.arrayContaining([
+        '@happyvertical/smrt-education:Course',
+      ]),
     });
   });
 
   it('requires a separate host authorization before revealing a family copy', async () => {
     const service = new CatalogService(
       courses as never,
+      sections as never,
+      lessons as never,
+      assets as never,
       { withTenantCatalogReadScope: async (_request, callback) => callback() },
       ({ action }) => action === 'education.catalog.read',
     );
@@ -51,6 +62,9 @@ describe('CatalogService', () => {
     let scoped = false;
     const service = new CatalogService(
       courses as never,
+      sections as never,
+      lessons as never,
+      assets as never,
       {
         withTenantCatalogReadScope: async (_request, callback) => {
           scoped = true;

@@ -1,6 +1,12 @@
 import type { TenantCollection } from '@happyvertical/smrt-users';
-import type { Course } from './catalog.js';
-import type { CourseCollection } from './collections.js';
+import type { Course, CourseSection, Lesson } from './catalog.js';
+import type {
+  CourseCollection,
+  CourseSectionCollection,
+  LessonAssetCollection,
+  LessonCollection,
+} from './collections.js';
+import type { LessonAsset } from './lesson-assets.js';
 
 /** The application-owned decision that permits a catalog view for one tenant. */
 export type TenantCatalogReadScope =
@@ -11,7 +17,11 @@ export type CatalogActorContext = Parameters<
 
 export type CatalogAuthorizer = (
   request: Omit<CatalogActorContext, 'mode'> & {
-    action: 'education.catalog.read' | 'education.catalog.read-private';
+    action:
+      | 'education.catalog.read'
+      | 'education.catalog.read-private'
+      | 'education.catalog.answer-key.read'
+      | 'education.catalog.manage';
   },
 ) => boolean | Promise<boolean>;
 
@@ -20,6 +30,14 @@ export interface CatalogReadRequest {
   actorUserId: string;
   includePrivate?: boolean;
   options?: Omit<Parameters<CourseCollection['list']>[0], 'where'>;
+}
+
+export interface CatalogProjection {
+  course: Course;
+  sections: Array<{
+    section: CourseSection;
+    lessons: Array<{ lesson: Lesson; assets: LessonAsset[] }>;
+  }>;
 }
 
 export class CatalogAuthorizationError extends Error {
@@ -37,6 +55,9 @@ export class CatalogAuthorizationError extends Error {
 export class CatalogService {
   constructor(
     private readonly courses: CourseCollection,
+    private readonly sections: CourseSectionCollection,
+    private readonly lessons: LessonCollection,
+    private readonly assets: LessonAssetCollection,
     private readonly tenants: Pick<
       TenantCollection,
       'withTenantCatalogReadScope'
@@ -71,7 +92,12 @@ export class CatalogService {
     )
       throw new CatalogAuthorizationError();
     const scope: Parameters<TenantCatalogReadScope>[0] = {
-      collections: ['@happyvertical/smrt-education:Course'],
+      collections: [
+        '@happyvertical/smrt-education:Course',
+        '@happyvertical/smrt-education:CourseSection',
+        '@happyvertical/smrt-education:Lesson',
+        '@happyvertical/smrt-education:LessonAsset',
+      ],
       authorize: async (scope) =>
         scope.mode === 'catalog' &&
         scope.actorTenantId === tenantId &&
@@ -85,5 +111,70 @@ export class CatalogService {
     return includePrivate
       ? visible
       : visible.filter((course) => course.licenseKind !== 'personal-use-copy');
+  }
+
+  /** Project one already-visible course without exposing answer-key assets by default. */
+  async projectCourse(
+    request: CatalogReadRequest & {
+      courseId: string;
+      includeAnswerKeys?: boolean;
+    },
+  ): Promise<CatalogProjection | null> {
+    const courses = await this.findVisible(request);
+    const course = courses.find((item) => item.id === request.courseId);
+    if (!course?.id) return null;
+    const includeAnswerKeys = request.includeAnswerKeys === true;
+    const actor = {
+      actorTenantId: request.tenantId,
+      actorUserId: request.actorUserId,
+      rootTenantId: request.tenantId,
+    };
+    if (
+      includeAnswerKeys &&
+      (await this.authorize({
+        ...actor,
+        action: 'education.catalog.answer-key.read',
+      })) !== true
+    )
+      throw new CatalogAuthorizationError();
+    return this.tenants.withTenantCatalogReadScope(
+      {
+        collections: [
+          '@happyvertical/smrt-education:CourseSection',
+          '@happyvertical/smrt-education:Lesson',
+          '@happyvertical/smrt-education:LessonAsset',
+        ],
+        authorize: async (scope) =>
+          scope.mode === 'catalog' &&
+          scope.actorTenantId === request.tenantId &&
+          scope.actorUserId === request.actorUserId,
+      },
+      async () => {
+        const sections = await this.sections.list({
+          where: { courseId: course.id },
+          orderBy: 'sortOrder ASC',
+        });
+        const result = [];
+        for (const section of sections) {
+          const lessons = await this.lessons.list({
+            where: { sectionId: section.id },
+            orderBy: 'sortOrder ASC',
+          });
+          result.push({
+            section,
+            lessons: await Promise.all(
+              lessons.map(async (lesson) => ({
+                lesson,
+                assets: (await this.assets.byLeft(String(lesson.id))).filter(
+                  (asset) =>
+                    includeAnswerKeys || asset.relationship !== 'answer-key',
+                ),
+              })),
+            ),
+          });
+        }
+        return { course, sections: result };
+      },
+    );
   }
 }
