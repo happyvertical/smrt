@@ -33,26 +33,48 @@ function resolvesFromConsumer(importPath: string): boolean {
   );
 }
 
+function isUnresolvedPackage(error: unknown, importPath: string): boolean {
+  if (
+    !(error instanceof Error) ||
+    (error as Error & { code?: string }).code !== 'ERR_MODULE_NOT_FOUND'
+  )
+    return false;
+  const packageName = importPath.startsWith('@')
+    ? importPath.split('/').slice(0, 2).join('/')
+    : importPath.split('/')[0];
+  return error.message.includes(`'${packageName}'`);
+}
+
 /**
  * Resolve a serializer package from the running application's module graph.
  *
  * Model packages own serializer implementations but do not become dependencies
- * of core or generic consumers such as Chat. Bare specifiers therefore resolve
- * from the application's current package location with ESM export conditions,
- * which supports import-only package exports. Relative and URL references keep
- * their declaring module's ordinary dynamic-import behavior.
+ * of core or generic consumers such as Chat. Bare specifiers first use the
+ * active runtime module graph so workspace aliases keep one constructor
+ * identity. When the package is absent from Core's dependency graph, resolution
+ * falls back to the application's current package location with ESM export
+ * conditions. Relative and URL references keep their declaring module's
+ * ordinary dynamic-import behavior.
  */
 export async function resolveMcpGetSerializer(
   reference: McpGetSerializerReference,
   options: McpGetSerializerResolveOptions = {},
 ): Promise<McpGetSerializer> {
-  const importPath = resolvesFromConsumer(reference.importPath)
+  let module: Record<string, unknown> | undefined;
+  if (resolvesFromConsumer(reference.importPath)) {
+    try {
+      module = (await import(reference.importPath)) as Record<string, unknown>;
+    } catch (error) {
+      if (!isUnresolvedPackage(error, reference.importPath)) throw error;
+    }
+  }
+  const resolvedImportPath = resolvesFromConsumer(reference.importPath)
     ? resolveImport(
         reference.importPath,
         pathToFileURL(resolve(process.cwd(), 'package.json')).href,
       )
     : resolveImport(reference.importPath, options.parentUrl ?? import.meta.url);
-  const module = (await import(/* @vite-ignore */ importPath)) as Record<
+  module ??= (await import(/* @vite-ignore */ resolvedImportPath)) as Record<
     string,
     unknown
   >;
