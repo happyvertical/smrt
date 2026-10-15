@@ -13,14 +13,18 @@ import {
   PeriodTimecardCollection,
   TimecardAdjustment,
   TimecardAdjustmentCollection,
+  TimecardReopening,
+  TimecardReopeningCollection,
 } from './models.js';
 import type {
+  PeriodRollupOptions,
   PeriodRulesResolver,
   TimecardActor,
   TimecardAdjustmentInput,
+  TimecardReopenInput,
   TimecardSource,
 } from './types.js';
-import { persistRollup } from './write.js';
+import { persistReopen, persistRollup } from './write.js';
 
 function identity(parts: string[]): string {
   const bytes = createHash('sha256').update(JSON.stringify(parts)).digest();
@@ -52,10 +56,7 @@ export class PeriodRollupService {
     private readonly db: DatabaseInterface,
     private readonly actor: TimecardActor,
     private readonly resolver: PeriodRulesResolver,
-    private readonly options: {
-      attendance?: boolean;
-      actorProfileId?: string;
-    } = {},
+    private readonly options: PeriodRollupOptions = {},
   ) {
     if (!actor.tenantId?.trim() || !actor.profileId?.trim())
       throw new Error('Timecards require a trusted tenant/profile actor.');
@@ -67,6 +68,7 @@ export class PeriodRollupService {
       throw new Error('Actor attribution must be a nonempty profile id.');
     this.options = {
       attendance: options.attendance,
+      requireSubmission: options.requireSubmission === true,
       actorProfileId: this.identity(
         options.actorProfileId ?? this.actor.profileId,
       ),
@@ -164,6 +166,8 @@ export class PeriodRollupService {
         )
           throw new Error('Resolver period overlaps an existing timecard.');
       }
+      if (prior?.status === 'submitted')
+        throw new Error('Submitted timecards are frozen; reopen first.');
       let sources: TimecardSource[] = [];
       let linkedEntryIds = new Set<string>();
       if (this.options.attendance) {
@@ -275,17 +279,154 @@ export class PeriodRollupService {
     });
     return this.get(id);
   }
-  /** Confirm the current snapshot; repeated confirmation is idempotent. */
+  /**
+   * Optional step: freeze an open card for review (open -> submitted). The
+   * actor is the submitter; repeating it on a submitted card is idempotent.
+   */
+  async submit(id: string): Promise<PeriodTimecard> {
+    id = this.identity(id);
+    await this.transact(async (db) => {
+      const card = await this.card(db, id);
+      if (card.status === 'submitted') return;
+      if (card.status !== 'open')
+        throw new Error('Only an open timecard can be submitted.');
+      card.status = 'submitted';
+      card.submittedAt = new Date();
+      card.submittedByProfileId = this.options.actorProfileId!;
+      await persistRollup(card);
+    });
+    return this.get(id);
+  }
+  /**
+   * Confirm the current snapshot; repeated confirmation is idempotent. With
+   * `requireSubmission` the card must be submitted first.
+   */
   async confirm(id: string): Promise<PeriodTimecard> {
     await this.transact(async (db) => {
       const card = await this.card(db, id);
       if (card.status === 'confirmed') return;
+      if (card.status === 'open' && this.options.requireSubmission)
+        throw new Error('Timecards must be submitted before confirmation.');
       card.status = 'confirmed';
       card.confirmedAt = new Date();
       card.confirmedByProfileId = this.options.actorProfileId!;
       await persistRollup(card);
     });
     return this.get(id);
+  }
+  /**
+   * Return a submitted or confirmed card to `open` so its sources can be
+   * corrected and `rollup()` run again, then confirmed anew. Needs a reason and
+   * an operation key; appends a `TimecardReopening` with the totals the card had
+   * (base, adjustments, effective). Adjustments stay on the ledger and keep
+   * counting in `totals()`: after a re-roll, offset them with a new adjustment
+   * if the correction made them redundant. The consumer authorizes the actor
+   * (give reopening its own permission); a retry with the same key and reason
+   * is a no-op.
+   */
+  async reopen(
+    id: string,
+    input: TimecardReopenInput,
+  ): Promise<PeriodTimecard> {
+    id = this.identity(id);
+    input = { operationId: input.operationId, reason: input.reason };
+    if (!input.operationId?.trim() || !input.reason?.trim())
+      throw new Error('Reopening requires an operationId and reason.');
+    const reopeningId = identity([
+      'smrt.reopening',
+      this.actor.tenantId,
+      this.actor.profileId,
+      id,
+      input.operationId,
+    ]);
+    await this.transact(async (db) => {
+      const ledger = await TimecardReopeningCollection.create({ db });
+      const [done] = await ledger.list({
+        where: { ...this.actor, timecardId: id, id: reopeningId },
+        limit: 1,
+      });
+      if (done) {
+        if (
+          done.reason !== input.reason ||
+          done.actorProfileId !== this.options.actorProfileId
+        )
+          throw new Error(
+            'Reopening operationId reused with a different payload.',
+          );
+        return;
+      }
+      const card = await this.card(db, id);
+      if (card.status === 'open')
+        throw new Error(
+          'Only a submitted or confirmed timecard can be reopened.',
+        );
+      const adjustments = await (
+        await TimecardAdjustmentCollection.create({ db })
+      ).list({ where: { ...this.actor, timecardId: id } });
+      const regular = adjustedSeconds(
+        card.regularSeconds,
+        adjustments,
+        'regularSeconds',
+      );
+      const overtime = adjustedSeconds(
+        card.overtimeSeconds,
+        adjustments,
+        'overtimeSeconds',
+      );
+      const row = await new TimecardReopening({
+        db,
+        id: reopeningId,
+        _skipLoad: true,
+      }).initialize();
+      Object.assign(row, this.actor, {
+        timecardId: id,
+        actorProfileId: this.options.actorProfileId!,
+        operationId: input.operationId,
+        fromStatus: card.status,
+        reason: input.reason,
+        previousState: JSON.stringify({
+          rulesVersion: card.rulesVersion,
+          base: {
+            regularSeconds: card.regularSeconds,
+            overtimeSeconds: card.overtimeSeconds,
+            totalSeconds: card.totalSeconds,
+          },
+          adjustments: {
+            count: adjustments.length,
+            regularSeconds: integer(regular - card.regularSeconds, true),
+            overtimeSeconds: integer(overtime - card.overtimeSeconds, true),
+          },
+          effective: {
+            regularSeconds: regular,
+            overtimeSeconds: overtime,
+            totalSeconds: integer(regular + overtime),
+          },
+          submittedAt: card.submittedAt?.toISOString() ?? null,
+          submittedByProfileId: card.submittedByProfileId,
+          confirmedAt: card.confirmedAt?.toISOString() ?? null,
+          confirmedByProfileId: card.confirmedByProfileId,
+        }),
+      });
+      await persistRollup(row);
+      card.status = 'open';
+      card.submittedAt = null;
+      card.submittedByProfileId = null;
+      card.confirmedAt = null;
+      card.confirmedByProfileId = null;
+      await persistReopen(card);
+    });
+    return this.get(id);
+  }
+  /** The append-only reopening history of one card, oldest first. */
+  async reopenings(id: string): Promise<TimecardReopening[]> {
+    id = this.identity(id);
+    return this.scope(async () => {
+      await this.card(this.db, id);
+      return (await TimecardReopeningCollection.create({ db: this.db })).list({
+        where: { ...this.actor, timecardId: id },
+        orderBy: 'created_at ASC',
+      });
+    });
   }
   /** Append a correction. An operation key retry must have exactly the same payload. */
   async adjust(

@@ -133,3 +133,23 @@ embedded writer serialization or a PostgreSQL tenant/person advisory lock.
 Outputs are reloaded on the root executor after commit. Rollup reads are an
 application snapshot: subsequent source approvals/corrections appear on the
 next open rollup, and confirmed cards require explicit adjustments.
+
+## Lifecycle: submit, confirm, reopen (#3950)
+
+`open` (draft) -> `submitted` (optional) -> `confirmed`. `submit(id)` freezes an
+open card for review; `confirm(id)` accepts an open card too unless the service
+is built with `{ requireSubmission: true }`. Submitted and confirmed cards are
+not re-rolled.
+
+`reopen(id, { operationId, reason })` returns a submitted or confirmed card to
+`open` (clearing its submission/confirmation attribution) and appends a
+`TimecardReopening`: actor, reason, prior status and a JSON snapshot of the
+previous base, adjustment and effective seconds (`getPrevious()`). It is
+idempotent per `operationId` and refuses a blank reason. `reopenings(id)` lists
+the history. The consumer authorizes the actor; give reopening its own
+permission. Existing adjustments stay and keep counting in `totals()`: after a
+re-roll, offset ones the correction made redundant with a new adjustment.
+`confirmedTimecardGuard` refuses corrections while a card is submitted or
+confirmed and allows them once it is reopened. The new `timecard_reopenings`
+table, and nullable `submitted_at`/`submitted_by_profile_id` columns on
+`period_timecards`, need a migration.
