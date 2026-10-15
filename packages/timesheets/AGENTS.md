@@ -25,7 +25,7 @@ per-instance capability (`attendance/write.ts`, not exported) that lifts the
 models' closed-interval checks for one save, validates the whole punch layout,
 recomputes durations and appends an `AttendanceCorrection` (append-only ledger,
 no generated operations; only a first acknowledgement by the subject may update
-a row). Never export `write.ts`. Punch `source`/`deviceRef*` and break `kind` are immutable except through corrections; `autoCloseReason` is write-once via `persistAutoClose`. A confirmed `PeriodTimecard` is honoured by the
+a row). An open punch accepts only a `startedAt` correction, closed breaks/segments inside it, and `addPunch({ open: true })`; the open break/segment and closing stay `AttendanceService`'s. Never export `write.ts`. Punch `source`/`deviceRef*` and break `kind` are immutable except through corrections; `autoCloseReason` is write-once via `persistAutoClose`. A confirmed `PeriodTimecard` is honoured by the
 opt-in `confirmedTimecardGuard` (`rollup/correction-guard.ts`), which refuses
 while a card is submitted or confirmed. `PeriodRollupService.reopen()` returns
 such a card to `open` and appends a `TimecardReopening` (`timecard_reopenings`,
