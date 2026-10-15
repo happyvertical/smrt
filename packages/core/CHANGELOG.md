@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.56.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - split contract parties; run preflightCommercePartyLinks before upgrade (#3951) (commerce)
+  
+  ### Features
+  
+  - autoClose deadlines, punch provenance and timecard reopening (#3993) (timesheets)
+  - attendance segments, replay time policy and correction ledger (#3983) (timesheets)
+  - add runtime report browser UI (#3982) (reports)
+  - add confirmed runtime report server actions (#3978) (reports)
+  - support abstract intermediate STI contract branches (#3943) (core)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.56.0
+  - @happyvertical/smrt-scanner@0.56.0
+  - @happyvertical/smrt-types@0.56.0
+
 ## 0.55.24
 
 ### Patch Changes
