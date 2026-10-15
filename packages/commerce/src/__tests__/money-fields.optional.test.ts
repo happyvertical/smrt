@@ -283,6 +283,7 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
     });
 
     const allocation = await allocations.create({
+      tenantId: TENANT,
       paymentId: payment.id,
       invoiceId: invoice.id,
       amount: 2159,
@@ -300,6 +301,7 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
     // One minor unit over the payment is over-application, not rounding.
     await expect(
       allocations.create({
+        tenantId: TENANT,
         paymentId: payment.id,
         invoiceId: invoice.id,
         amount: 1,
