@@ -13,9 +13,14 @@ what they did and when, and moves from draft to submitted to approved.
 4. Enter when it **{field:startedAt}** and **{field:endedAt}**, or type the
    **{field:durationSeconds}** directly (3600 is one hour).
 
-### Approve it
+### Send it for approval
 
-1. Set **{field:status}** to submitted when the entry is ready to check.
-2. Set it to approved to lock it, or to rejected and give a
-   **{field:rejectionReason}**. An approved entry never changes; correct it
-   with a new entry.
+Approval is not something you change on this form. It runs through your
+app's approval screen, which records who did each step and when.
+
+1. When an entry is ready to check, the person who did the work submits it.
+2. An approver, someone your app allows to approve time, approves it or sends
+   it back with a reason. Approving fixes what the hours are charged and paid
+   at, so an approved entry never changes; correct it with a new entry.
+3. If your app has no approval screen yet, entries stay as drafts until one is
+   added.

@@ -10,12 +10,12 @@
 import { SmrtRecipe } from '@happyvertical/smrt-core';
 import { ServiceTimeEntry } from './models/service-time-entry.js';
 
-/** Time entries: Record who worked how long on what, and approve it. */
+/** Time entries: Record who worked how long on what, for approval. */
 export class TimeEntriesRecipe extends SmrtRecipe {
   static id = 'timesheets.time-entries';
   static help = './time-entries.recipe.md';
   static label = 'Time entries';
-  static summary = 'Record who worked how long on what, and approve it.';
+  static summary = 'Record who worked how long on what, for approval.';
   static synonyms = [
     'timesheets',
     'time tracking',
@@ -54,25 +54,30 @@ export class TimeEntriesRecipe extends SmrtRecipe {
           order: 5,
           help: 'Whole seconds: 3600 is one hour.',
         },
-        status: { order: 6 },
         workRefId: {
           label: 'Work reference',
-          order: 7,
+          order: 6,
           help: 'The job, project or case this time belongs to.',
         },
-        rejectionReason: { order: 8 },
         workRefType: { visibility: 'hidden' },
         participantKind: { default: 'human', visibility: 'hidden' },
         agentRef: { visibility: 'hidden' },
         source: { default: 'manual', visibility: 'hidden' },
         evidence: { visibility: 'hidden' },
-        approvalPath: { visibility: 'hidden' },
-        submittedAt: { visibility: 'hidden' },
-        submittedByProfileId: { visibility: 'hidden' },
-        approvedByProfileId: { visibility: 'hidden' },
-        rejectedAt: { visibility: 'hidden' },
-        rejectedByProfileId: { visibility: 'hidden' },
-        correctionOfId: { visibility: 'hidden' },
+        // Submit, approve and correct are ServiceEvidenceService actions: they
+        // stamp who and when, and approval writes the charge and pay
+        // snapshots. ServiceTimeEntry.save() accepts a bare status change, so
+        // a form must never edit the status or its trail.
+        status: { visibility: 'hidden', locked: true },
+        submittedAt: { visibility: 'hidden', locked: true },
+        submittedByProfileId: { visibility: 'hidden', locked: true },
+        approvedAt: { visibility: 'hidden', locked: true },
+        approvedByProfileId: { visibility: 'hidden', locked: true },
+        approvalPath: { visibility: 'hidden', locked: true },
+        rejectedAt: { visibility: 'hidden', locked: true },
+        rejectedByProfileId: { visibility: 'hidden', locked: true },
+        rejectionReason: { visibility: 'hidden', locked: true },
+        correctionOfId: { visibility: 'hidden', locked: true },
         metadata: { visibility: 'hidden' },
       },
     },

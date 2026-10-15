@@ -33,6 +33,29 @@ describe('timesheets recipes (#3590)', () => {
     }
   });
 
+  it('keeps status and its approval trail off the form', () => {
+    // Submit and approve are ServiceEvidenceService actions; save() accepts a
+    // bare status change, which would skip the snapshots and audit fields.
+    const fields = TimeEntriesRecipe.options.ServiceTimeEntry.fields;
+    for (const name of [
+      'status',
+      'submittedAt',
+      'submittedByProfileId',
+      'approvedAt',
+      'approvedByProfileId',
+      'approvalPath',
+      'rejectedAt',
+      'rejectedByProfileId',
+      'rejectionReason',
+      'correctionOfId',
+    ] as const) {
+      expect(fields[name], name).toEqual({
+        visibility: 'hidden',
+        locked: true,
+      });
+    }
+  });
+
   describe('user-facing help (#3591)', () => {
     const markdown = () =>
       readFileSync(
@@ -53,6 +76,14 @@ describe('timesheets recipes (#3590)', () => {
         expect.arrayContaining(['participantProfileId', 'durationSeconds']),
       );
       for (const ref of refs) expect(ref in instance, ref).toBe(true);
+    });
+
+    it('never tells anyone to set the status by hand', () => {
+      const refs = extractFieldRefs(markdown());
+      for (const name of ['status', 'rejectionReason', 'approvedAt']) {
+        expect(refs, name).not.toContain(name);
+      }
+      expect(markdown()).not.toMatch(/\bset\b[^.]*\b(status|approved)\b/i);
     });
   });
 });

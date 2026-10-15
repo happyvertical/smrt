@@ -52,7 +52,9 @@ through a `ServiceCommercialResolver`), and corrects. `smrt-projects` supplies
 `manifest.json` and `smrt-knowledge.json` `recipes`. It shows
 `ServiceTimeEntry` alone, with the generic work reference, evidence, agent
 and approval-trail fields hidden; attendance and rollup models stay out of
-it. Help lives in `src/time-entries.recipe.md` (#3591); keep it and the recipe
+it. `status` and its trail are hidden and locked, and the help never says to
+set them: `save()` accepts a bare transition, so submit and approve must go
+through `ServiceEvidenceService` (the recipe declares no surface for that). Help lives in `src/time-entries.recipe.md` (#3591); keep it and the recipe
 in plain language. See [core recipes](../core/agents/recipes.md).
 
 ## Invariants
