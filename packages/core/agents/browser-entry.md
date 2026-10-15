@@ -14,6 +14,11 @@ it:
   `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to use another Chromium. CI runs it in
   the workbench browser job.
 
+`@noble/hashes`, `import-meta-resolve` and `minimatch` remain external runtime dependencies in the preserve-modules
+package build. Bundling it under `dist/node_modules` leaves dangling imports
+when npm excludes that directory from tarballs. The packed MCP consumer tests
+the installed relative-import closure and real SHA-256 execution with normal and CI prepack paths (#4008).
+
 ## How a Node-only dependency stays out
 
 Never import it statically from a module the browser graph reaches. Pick one:

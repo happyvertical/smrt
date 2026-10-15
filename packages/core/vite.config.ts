@@ -117,6 +117,9 @@ export default defineConfig({
         'inspector',
 
         // External dependencies
+        /^@noble\/hashes(?:\/|$)/,
+        'import-meta-resolve',
+        'minimatch',
         'cheerio',
         'crawlee',
         'puppeteer',
