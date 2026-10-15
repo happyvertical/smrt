@@ -2,6 +2,7 @@
 
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import {
+  assertMaterializedReportRead,
   buildReportAdapterDescriptor,
   type MaterializedReportHost,
   type MaterializedReportHostContext,
@@ -55,27 +56,32 @@ export function createTaxSummaryMaterializedReportHost(
 ): MaterializedReportHost {
   const db = async () =>
     typeof database === 'function' ? database() : database;
-  const descriptor = () => buildTaxSummaryReportAdapterDescriptor();
   const scoped = <T>(
     context: MaterializedReportHostContext,
     task: () => Promise<T>,
   ) => withTenant({ tenantId: context.tenantId }, task);
-  return {
+  const host: MaterializedReportHost = {
     id: 'tax-summary',
     collection: 'taxsummaryreports',
     className: 'TaxSummaryReport',
     readPermission: 'taxsummaryreports.read',
     drilldownColumnIds: Object.keys(CELL_MEASURES),
-    descriptor,
-    query: (context, request) =>
-      scoped(context, async () =>
+    async descriptor(context) {
+      assertMaterializedReportRead(host, context);
+      return buildTaxSummaryReportAdapterDescriptor();
+    },
+    query: (context, request) => {
+      assertMaterializedReportRead(host, context);
+      return scoped(context, async () =>
         queryReportMaterializedRows(TaxSummaryReport, request, {
           db: await db(),
           adapter: TAX_SUMMARY_REPORT_ADAPTER,
           execution: 'visible',
         }),
-      ),
+      );
+    },
     async drilldown(context, request) {
+      assertMaterializedReportRead(host, context);
       const measure =
         CELL_MEASURES[request.columnId as keyof typeof CELL_MEASURES];
       if (!measure)
@@ -112,6 +118,7 @@ export function createTaxSummaryMaterializedReportHost(
       });
     },
   };
+  return host;
 }
 
 /** Descriptor consumed by the registered report runtime and DataTable host. */
