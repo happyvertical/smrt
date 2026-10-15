@@ -143,7 +143,7 @@ confirmation, attributed adjustments, isolation, and transaction contracts.
 Timecards and adjustments have closed generated surfaces and service-only
 model writes; never bypass the instance capability with generic persistence.
 
-Replay hashes the tap AS SENT (action, device `at`, paid, work) so retries match;
+Replay hashes the tap AS SENT (action, device `at`, paid, work, and `source`/`device`/`kind` only when present, so older receipts still match) so retries match;
 `replay(taps, { resolveAt, now, refusal })` only changes the stored time and
 reason. Never hash the resolved time. Work actions (`startWork`, `switchWork`,
 `stopWork`, `resumeWork`) run in the tap's transaction via `apply()`. Refusals store

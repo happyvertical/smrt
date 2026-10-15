@@ -27,6 +27,66 @@ export interface AttendanceWork {
   kind?: string;
 }
 
+/**
+ * Where a punch was captured: a consumer-owned type (for example a class name
+ * such as a station or tablet) and that device's id. Both or neither.
+ */
+export interface AttendanceDeviceRef {
+  type: string;
+  id: string;
+}
+
+/** Optional provenance recorded when a punch opens. */
+export interface AttendancePunchOptions {
+  /** Short consumer-owned label such as `device`, `web`, `import`, `correction`. */
+  source?: string;
+  /** The device that captured the punch. */
+  device?: AttendanceDeviceRef;
+}
+
+/** Optional detail recorded when a break starts. */
+export interface AttendanceBreakOptions {
+  /** Short consumer-owned label such as `meal` or `rest`. */
+  kind?: string;
+}
+
+const MAX_LABEL = 64;
+
+/** Validate an optional short label (`source`, `kind`, device type); returns the stored form. */
+export function attendanceLabel(value: unknown, name: string): string {
+  if (value === undefined || value === null) return '';
+  if (
+    typeof value !== 'string' ||
+    value !== value.trim() ||
+    value.length > MAX_LABEL
+  )
+    throw new AttendanceConflict(
+      `${name} must be a trimmed string of at most ${MAX_LABEL} characters.`,
+      'invalid',
+    );
+  return value;
+}
+
+/** Validate punch provenance; returns the stored column values. */
+export function attendanceProvenance(options?: AttendancePunchOptions): {
+  source: string;
+  deviceRefType: string;
+  deviceRefId: string;
+} {
+  const source = attendanceLabel(options?.source, 'source');
+  const device = options?.device;
+  if (device !== undefined && (!device || typeof device !== 'object'))
+    throw new AttendanceConflict('device must be { type, id }.', 'invalid');
+  const deviceRefType = attendanceLabel(device?.type, 'device.type');
+  const deviceRefId = device?.id ?? '';
+  if (typeof deviceRefId !== 'string' || !!deviceRefType !== !!deviceRefId)
+    throw new AttendanceConflict(
+      'device.type and device.id must be provided together.',
+      'invalid',
+    );
+  return { source, deviceRefType, deviceRefId };
+}
+
 /** Expected state conflict, distinct from retryable database failures. */
 export class AttendanceConflict extends Error {
   /**

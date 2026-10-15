@@ -47,6 +47,11 @@ async function saveWithPunchLock<T extends SmrtObject>(
       columns: ['tenantId', 'profileId', 'openSlot'],
       unique: true,
     },
+    { name: 'attendance_punches_source_idx', columns: ['tenantId', 'source'] },
+    {
+      name: 'attendance_punches_device_idx',
+      columns: ['tenantId', 'deviceRefType', 'deviceRefId'],
+    },
   ],
   api: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
@@ -61,6 +66,11 @@ export class AttendancePunch extends SmrtObject {
   unpaidBreakSeconds = 0;
   reviewRequired = false;
   recordedOffline = false;
+  /** Optional short consumer-owned capture label (`device`, `web`, `import`, ...); `''` when unknown. */
+  source = '';
+  /** Qualified type of the device that captured the punch; both device columns or neither. */
+  deviceRefType = '';
+  deviceRefId = '';
   // Resolve the active table family, including smrt-support's same-named subtype.
   @foreignKey('ServiceTimeEntry', { nullable: true }) serviceTimeEntryId:
     | string
@@ -92,6 +102,14 @@ export class AttendancePunch extends SmrtObject {
       throw new Error(
         'Attendance durations must be nonnegative safe integer seconds.',
       );
+    if (
+      typeof this.source !== 'string' ||
+      this.source.length > 64 ||
+      typeof this.deviceRefType !== 'string' ||
+      typeof this.deviceRefId !== 'string' ||
+      !!this.deviceRefType !== !!this.deviceRefId
+    )
+      throw new Error('Invalid attendance punch source or device.');
     const prior = this.id
       ? await this.db.get(this.tableName, { id: this.id })
       : null;
@@ -101,8 +119,11 @@ export class AttendancePunch extends SmrtObject {
       (prior.tenant_id !== this.tenantId ||
         prior.profile_id !== this.profileId ||
         (!corrected &&
-          new Date(prior.started_at as string).getTime() !==
-            this.startedAt.getTime()))
+          (new Date(prior.started_at as string).getTime() !==
+            this.startedAt.getTime() ||
+            (prior.source ?? '') !== this.source ||
+            (prior.device_ref_type ?? '') !== this.deviceRefType ||
+            (prior.device_ref_id ?? '') !== this.deviceRefId)))
     )
       throw new Error('Attendance ownership and start are immutable.');
     if (
@@ -173,6 +194,8 @@ export class AttendanceBreak extends SmrtObject {
   startedAt: Date = new Date();
   endedAt: Date | null = null;
   paid = false;
+  /** Optional short consumer-owned label (`meal`, `rest`, ...); `''` when unspecified. */
+  kind = '';
   @field({ required: true }) openSlot = '';
 
   override async save(): Promise<this> {
@@ -182,7 +205,13 @@ export class AttendanceBreak extends SmrtObject {
   }
 
   private async saveConsistent(): Promise<this> {
-    if (!this.tenantId || !this.punchId || typeof this.paid !== 'boolean')
+    if (
+      !this.tenantId ||
+      !this.punchId ||
+      typeof this.paid !== 'boolean' ||
+      typeof this.kind !== 'string' ||
+      this.kind.length > 64
+    )
       throw new Error('Invalid attendance break.');
     if (
       !Number.isFinite(this.startedAt?.getTime()) ||
@@ -220,7 +249,8 @@ export class AttendanceBreak extends SmrtObject {
         (!corrected &&
           (new Date(prior.started_at as string).getTime() !==
             this.startedAt.getTime() ||
-            Boolean(prior.paid) !== this.paid)))
+            Boolean(prior.paid) !== this.paid ||
+            (prior.kind ?? '') !== this.kind)))
     )
       throw new Error('Break ownership, start and pay policy are immutable.');
     if (

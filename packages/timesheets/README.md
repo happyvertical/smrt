@@ -379,7 +379,14 @@ or when already closed. If later committed attendance would be truncated it
 refuses the operation for manual review. A scheduler calls this per authorized
 actor; the package does not choose overtime, payroll, or shop-time-zone rules.
 
-`replay(taps, options?)` accepts `{ clientId, action, at, paid?, work? }`, where `action` is
+Provenance is optional and consumer-owned (no enum; at most 64 characters, trimmed):
+`punchIn(at, { source, device: { type, id } })` stores `source`, `deviceRefType` and
+`deviceRefId` on the punch (device type and id together, indexed with the tenant), and
+`startBreak(at, paid, { kind })` stores `kind` on the break. They are immutable once
+saved except through `AttendanceCorrectionService` (`addPunch({ source, device })`,
+`saveBreak({ kind })`). All columns default to `''`, so existing rows and calls are unchanged.
+
+`replay(taps, options?)` accepts `{ clientId, action, at, paid?, work?, source?, device?, kind? }`, where `action` is
 `punchIn`, `punchOut`, `startBreak`, `endBreak`, or a work action (`startWork`,
 `switchWork` (both require `work`), `stopWork`, `resumeWork`). It sorts each batch by device
 time, then client id. Client ids are durable and scoped to tenant/profile.
