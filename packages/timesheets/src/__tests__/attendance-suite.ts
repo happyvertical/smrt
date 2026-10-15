@@ -505,6 +505,31 @@ export function attendanceSuite(
       punch!.autoCloseReason = 'edited';
       await expect(punch!.save()).rejects.toThrow('autoCloseReason');
     });
+    it('refuses a forged autoCloseReason and a deadline before a committed break', async () => {
+      await service.punchIn(at(8), { source: 'device' });
+      await service.startBreak(at(9));
+      await expect(
+        service.autoClose(at(12), () => ({ deadline: at(8) })),
+      ).rejects.toThrow('predates committed');
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const punches = await AttendancePunchCollection.create({ db });
+        const [open] = await punches.list({
+          where: { tenantId: actor.tenantId, profileId: actor.profileId },
+        });
+        expect(open.endedAt).toBeNull();
+        expect(open.autoCloseReason).toBe('');
+        open.autoCloseReason = 'forged';
+        await expect(open.save()).rejects.toThrow('autoCloseReason');
+        await expect(
+          punches.create({
+            tenantId: actor.tenantId,
+            profileId: crypto.randomUUID(),
+            startedAt: at(1),
+            autoCloseReason: 'forged',
+          }),
+        ).rejects.toThrow('autoCloseReason');
+      });
+    });
     it('orders offline taps, persists identical outcomes, and rejects key changes', async () => {
       const taps = [
         {
@@ -1242,6 +1267,34 @@ export function attendanceSuite(
           }),
         ).rejects.toThrow('period is confirmed');
         expect(await ledger(punch.id!)).toHaveLength(0);
+      });
+      it('keeps auto-close reason and provenance when an auto-closed punch is corrected', async () => {
+        await service.punchIn(at(8), {
+          source: 'device',
+          device: { type: '@fixture/shop:Station', id: 'station-1' },
+        });
+        const closed = await service.autoClose(at(20), () => ({
+          deadline: at(16),
+          reason: 'shiftEnd',
+        }));
+        await fix.correctPunch({
+          ...base(),
+          punchId: closed!.id!,
+          endedAt: at(15),
+        });
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          const punches = await AttendancePunchCollection.create({ db });
+          const [row] = await punches.list({
+            where: { tenantId: actor.tenantId, id: closed!.id! },
+          });
+          expect(row).toMatchObject({
+            endedAt: at(15),
+            autoCloseReason: 'shiftEnd',
+            source: 'device',
+            deviceRefId: 'station-1',
+          });
+        });
+        expect(await service.autoClose(at(21), () => at(17))).toBeNull();
       });
       it('sets punch provenance and break kind through corrections', async () => {
         const device = { type: '@fixture/shop:Station', id: 'station-9' };
