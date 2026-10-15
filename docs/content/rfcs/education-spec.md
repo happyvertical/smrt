@@ -27,8 +27,8 @@ section is what is left after it.
 
 | Need | Existing package | How it is used |
 |---|---|---|
-| Group → family tenants | `smrt-users` Tenant hierarchy, `smrt-tenancy` | The co-op is a tenant; each family is a child tenant. Catalog rows are global (null tenant), group-shared, or family-private, resolved `findWithGlobals`-style like tags and facts. |
-| Adults sign in, kids do not | `smrt-users` Membership, `DeviceCredentialService` | A guardian has a Membership in the family tenant and the group tenant. A learner is a Person profile with its own User (email optional) and family Membership; a shared family device signs the learner in with a per-person PIN on that User. |
+| Group → family tenants | `smrt-users` Tenant hierarchy, `smrt-tenancy` | The co-op is a tenant; each family is a child tenant. Existing `Tenant.getAncestorIds()` and `TenantCollection.getAncestors()`, `getDescendants()`, and `isAncestorOf()` remain the traversal source. Catalog rows are global (null tenant), group-shared, or family-private. |
+| Adults sign in, kids do not | `smrt-users` Membership, `DeviceCredentialService` | A guardian has a Membership in the family tenant and the group tenant. A learner is a Person profile with its own User (email optional) and family Membership. Shared-device learner access is a terminal/device grant verified with that User's PIN after host enrollment; a guardian password session alone is not that grant. |
 | People and family relationships | `smrt-profiles` Person, `ProfileRelationship` | Learner and guardian are Profiles; guardianship is a relationship, not a field. |
 | Worksheets, scans, photos, videos | `smrt-assets` AssetRuntime, `@happyvertical/ocr`, `@happyvertical/pdf` | Printable lessons own a PDF asset. Scans are assets on a submission. OCR and PDF rendering run as background jobs. |
 | Discussion group, messaging | `smrt-chat` rooms and threads, `smrt-comments`, `smrt-messages` | Group rooms live in the group tenant. Comments attach to courses and lessons (reviews, suggestions). Messages deliver notifications and direct mail. |
@@ -54,7 +54,7 @@ catalog models:
 |---|---|---|
 | [#3973](https://github.com/happyvertical/smrt/issues/3973) Invitation model and service | anytown dashboard | co-op invites by email or link; smrt has only the modal UI |
 | [#3974](https://github.com/happyvertical/smrt/issues/3974) membership upsert | anytown, rewritten again in ergot | idempotent add and remove used by invites and joins |
-| [#3975](https://github.com/happyvertical/smrt/issues/3975) hierarchy traversal | anytown ancestor walk, ergot child-scope checks | group views over family sub-tenants |
+| [#3975](https://github.com/happyvertical/smrt/issues/3975) trusted hierarchy read scope | anytown ancestor walk, ergot child-scope checks, reusing existing tenancy traversal | catalog ancestor reads and authorized group subtree aggregates |
 | [#3976](https://github.com/happyvertical/smrt/issues/3976) SvelteKit guards | ergot factory dashboard, anytown | `requireTenantContext` / `requirePermission` |
 | [#3977](https://github.com/happyvertical/smrt/issues/3977) approval-based join | anytown reporter onboarding | a family asks to join the co-op |
 
@@ -243,10 +243,15 @@ object.
 `completedAt`, `targetMinutesPerWeek = 0`, `sortOrder`. `conflictColumns`
 on `(curriculum_id, course_id)`.
 
-**LessonProgress**. One row per learner and lesson: `learnerId`, `lessonId`,
+**LessonProgress**. One row per enrollment and lesson: `learnerId`, `lessonId`,
 `enrollmentId`, `status` (`not_started`, `in_progress`, `submitted`,
 `needs_review`, `complete`, `skipped`), `startedAt`, `completedAt`,
-`timeSpentSeconds = 0`, `attempts = 0`, `bestScore = 0.0`.
+`timeSpentSeconds = 0`, `attempts = 0`, `bestScore` (optional decimal).
+It is unique by `(enrollmentId, lessonId)`: the learner is derived from and
+validated against the enrollment, and the lesson must belong to the enrollment
+course. A new enrollment in a new curriculum/year begins a new history; it
+never overwrites the old enrollment's progress or attempts. An absent score
+means unscored and remains distinct from score `0`.
 
 **Submission** (STI). The evidence. `learnerId`, `lessonId`, `progressId`,
 `submittedAt`, `status` (`captured`, `extracting`, `needs_review`, `graded`,
@@ -263,10 +268,22 @@ on `(curriculum_id, course_id)`.
 `relationship` (`page`, `attachment`), `sortOrder`.
 
 **Grade**. The review of a submission: `submissionId`, `graderKind`
-(`auto`, `ai`, `guardian`, `instructor`), `graderProfileId`, `score = 0.0`
-(0–1), `pointsEarned = 0`, `pointsPossible = 0`, `rubricResults` JSON,
+(`auto`, `ai`, `guardian`, `instructor`), `graderProfileId`, `score`
+(optional decimal 0–1), `pointsEarned` (optional integer), `pointsPossible`
+(optional integer), `rubricResults` JSON,
 `feedback`, `gradedAt`. A submission can carry an `ai` grade and a
 `guardian` grade; the guardian's is authoritative when present.
+
+### Authorization boundary
+
+Authorization is enforced at owning services and every generated REST, CLI,
+MCP, and AI surface, not just application routes. A learner may read and submit
+only their own work. An authorized guardian may review work in their family.
+Learners cannot grade, alter completion status, or forge a score. Same-tenant
+sibling access and cross-family access fail closed. Assets retain tenant
+ownership when signed, and learner projections never include answer keys.
+Generic SvelteKit tenant and permission guards from #3976 provide route
+context only; they never replace object-level learner authorization.
 
 **SkillMastery**. `learnerId`, `skillId`, `mastery = 0.0`, `confidence = 0.0`,
 `evidenceCount = 0`, `lastAssessedAt`. Recomputed by a job from grades
@@ -368,17 +385,17 @@ with an optional score. That is the v1 path and works on day one.
 - Catalog models resolve family → group → global by `tenantId`. The existing
   `queryWithGlobals` pattern used by tags and facts only sees the current
   tenant plus null rows, so a group-owned course would be invisible from a
-  family request. Catalog collections therefore get a dedicated
-  `findVisible()` that selects `tenant_id IN (self ∪ ancestors) OR
-  tenant_id IS NULL`, with the ancestor ids from the hierarchy helpers in
-  [#3975](https://github.com/happyvertical/smrt/issues/3975). Writes stay
-  tenant-scoped as usual; only reads widen. A family can fork a group course
-  into a private copy.
+  family request. #3975 adds ID conveniences over existing traversal plus
+  `requireChildOf` and `withTenantHierarchyContext` semantics for a trusted,
+  explicitly authorized read-only scope. Catalog `findVisible()` uses the
+  family and its ancestors plus global rows; it never reads sibling-private
+  catalog records. Writes stay tenant-scoped as usual. A family can fork a
+  group course into a private copy.
 - Learner models are `@TenantScoped({ mode: 'required' })` and never cross
-  the family boundary. Group-level views (a leaderboard, a "who finished the
-  CrunchLabs box" thread) are explicit `allowCrossTenant` aggregations that
-  expose only what the family opted in to share, recorded on
-  `Learner.settings.share`.
+  the family boundary. An authorized group subtree aggregate is explicit and
+  exposes only data each family opted in to share, recorded on
+  `Learner.settings.share`; it is not an ancestor-catalog read or a blanket
+  cross-tenant capability.
 - Guardians hold Memberships in both their family tenant and the group tenant;
   group discussion happens under the group tenant with the guardian's own
   identity. Learners post in group rooms only if the application allows it.
@@ -394,6 +411,12 @@ education package exposes recipes (`education.catalog`, `education.learner`,
 generated definitions, with bespoke Svelte only for the learner dashboard, the
 scan capture, and the grading screen.
 
+The application consumes a released `@happyvertical/smrt-education`; it does
+not use a workspace, file, or Git dependency as a release workaround. Its
+terminal/device learner grant requires a valid host enrollment, supports
+revocation, and requires explicit learner switching; a guardian password
+session cannot create or impersonate a learner grant.
+
 ## Delivery plan
 
 Each phase ends usable. Phase 0 is the one that matters for "sooner than
@@ -405,9 +428,13 @@ Curriculum, Enrollment, LessonProgress, Submission (Scanned, External,
 Attestation), SubmissionAsset, Grade, CourseSource with the `easy-peasy`
 adapter importing the learner's current courses as private pointer lessons.
 Manual catalog entry for Khan and CrunchLabs links. App forked from
-smrt-start: family tenant, guardian login, learner PIN, learner dashboard
-showing today's lessons across courses, print-and-scan flow with guardian
-attestation and manual score, cookbook screens for the rest.
+smrt-start: family tenant, guardian login, terminal/device learner grant, a
+learner dashboard selecting the next unfinished lesson across active
+enrollments by `CourseSection.sortOrder`, then `Lesson.sortOrder`, then a
+deterministic ID tie-break, print-and-scan flow with guardian attestation and
+manual score, cookbook screens for the rest. Complete/skipped work is excluded;
+submitted/needs-review work remains visible as awaiting review without a
+duplicate capture action. Phase 0 has no calendar scheduler.
 
 **Phase 1, the group can evaluate it.** Skill, LessonSkill, SkillMastery job,
 Assessment and Question, OCR-assisted extraction and AI grade proposal,
