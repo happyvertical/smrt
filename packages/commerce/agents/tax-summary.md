@@ -99,7 +99,22 @@ amounts directly; a materialized purchase fact missing from its source returns
 `JournalEntryCollection.listPostedMovements()` and remains raw ledger units;
 the host must retain the commerce minor-unit convention.
 
-This release has no runtime reports UI consumer. The descriptor/query bridge is
-covered independently, while #3878 (server report contract) and #3895 (the
-reports/Svelte minor-unit formatter and drilldown UI) are the external
-integration gate. This package intentionally does not duplicate that formatter.
+## Authenticated materialized-report host
+
+The production template exposes the generic
+`/reports/materialized/[id]` route. Applications register fixed server-only
+hosts in `src/lib/server/materialized-reports.ts`; a commerce application adds
+`createTaxSummaryMaterializedReportHost(async () =>
+(await runtime.getCollection('TaxSummaryReport')).db)`. The browser never
+supplies a tenant, report class, database, or measure. The route binds the
+verified `locals` user, tenant, and permission snapshot, requires
+`taxsummaryreports.read`, and passes only a materialized row id plus a visible
+descriptor column id to the host. The host re-queries that row under the same
+tenant before mapping the column to a closed contributor measure. Unknown rows,
+unsupported columns, and cross-tenant rows do not return contributors.
+
+`MaterializedReportTable` lives in `@happyvertical/smrt-reports/svelte`; it
+formats integer money cells with each row's validated currency and renders the
+host's drilldown response. Commerce supplies the data and authorization
+boundary, and does not duplicate a currency formatter or a runtime-report CRUD
+surface.
