@@ -13,6 +13,7 @@ import {
   pluralize,
   recordCount,
 } from '../src/lib/data/format.ts';
+import { setSampleTaxRate } from '../src/lib/data/packs.ts';
 import { createMemoryDataSource } from '../src/lib/data/source.ts';
 import { recipes } from '../src/lib/recipes/index.ts';
 import { childLinks } from '../src/lib/recipes/plumbing.ts';
@@ -195,6 +196,70 @@ describe('line and parent amounts (smrt money model)', () => {
       taxAmount: 0,
       taxCodeCode: 'my-exempt',
     });
+  });
+
+  it("freezes an issued document's lines; a draft follows the current default", async () => {
+    const data = source();
+    const sent = await data.create(agreement, { status: 'sent' });
+    const draft = await data.create(agreement, { status: 'draft' });
+    const draftLine = await data.create(lineItem, {
+      contractId: draft.id,
+      quantity: 1,
+      unitPrice: 1000,
+    });
+    await expect(
+      data.create(lineItem, {
+        contractId: sent.id,
+        quantity: 1,
+        unitPrice: 1000,
+      }),
+    ).rejects.toThrow(/issued/);
+    setSampleTaxRate(0.1);
+    try {
+      const b = await data.update(lineItem, draftLine.id, { quantity: 2 });
+      expect(b).toMatchObject({ taxCodeCode: 'default-10', taxAmount: 200 });
+    } finally {
+      setSampleTaxRate(undefined);
+    }
+    // Issuing the draft keeps its figures; its lines are then frozen.
+    const issued = await data.update(agreement, draft.id, { status: 'sent' });
+    expect(issued?.totalAmount).toBe(2200);
+    await expect(
+      data.update(lineItem, draftLine.id, { quantity: 5 }),
+    ).rejects.toThrow(/issued/);
+    expect((await data.get(lineItem, draftLine.id))?.quantity).toBe(2);
+    // Its own other edits still save.
+    expect(
+      (await data.update(agreement, draft.id, { notes: 'sent by post' }))
+        ?.notes,
+    ).toBe('sent by post');
+  });
+
+  it('puts a deleted line back when its document refuses to re-settle', async () => {
+    const data = source();
+    const taxCode = model('TaxCode');
+    const mine = await data.create(taxCode, {
+      code: 'my-zero',
+      kind: 'zero-rated',
+      appliesTo: 'both',
+      active: true,
+    });
+    const parent = await data.create(agreement, {});
+    await data.create(lineItem, {
+      contractId: parent.id,
+      quantity: 1,
+      unitPrice: 1000,
+      taxMode: 'override',
+      taxCodeId: mine.id,
+    });
+    const sibling = await data.create(lineItem, {
+      contractId: parent.id,
+      quantity: 1,
+      unitPrice: 500,
+    });
+    await data.update(taxCode, mine.id, { active: false });
+    await expect(data.delete(lineItem, sibling.id)).rejects.toThrow();
+    expect(await data.get(lineItem, sibling.id)).toBeTruthy();
   });
 
   it('refuses money the model refuses and leaves the rows as they were', async () => {

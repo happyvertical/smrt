@@ -22,6 +22,7 @@ import {
   storedTaxRows,
   TAX_CODE_EXAMPLE_PACK,
 } from '../src/lib/data/money.ts';
+import { createPlannerDataSource } from '../src/lib/data/planner-source.ts';
 import { plumbingReason } from '../src/lib/recipes/plumbing.ts';
 
 const code = (value: string) => {
@@ -303,5 +304,36 @@ describe('the money model in the catalog', () => {
     expect(isMoneyField(field('TaxSummaryReport', 'documentCount'))).toBe(
       false,
     );
+  });
+});
+
+describe("the planner tenant's tax table", () => {
+  it('keeps a deleted seeded code deleted', async () => {
+    const source = createPlannerDataSource();
+    const C = '@happyvertical/smrt-commerce:';
+    const find = (name: string) => {
+      const found = getModelByQualifiedName(`${C}${name}`)?.model;
+      if (!found) throw new Error(name);
+      return found;
+    };
+    const zero = SEEDED_TAX_CODES.find((c) => c.kind === 'zero-rated');
+    if (!zero) throw new Error('zero-rated');
+    const rows = await source.list(find('TaxCode'));
+    expect(rows.map((r) => r.code)).toContain('zero-rated');
+    const order = await source.create(find('Agreement'), { status: 'draft' });
+    const line = {
+      contractId: order.id,
+      quantity: 1,
+      unitPrice: 1000,
+      taxMode: 'override',
+      taxCodeId: zero.id,
+    };
+    expect(
+      (await source.create(find('ContractLineItem'), line)).taxCodeCode,
+    ).toBe('zero-rated');
+    await source.delete(find('TaxCode'), zero.id);
+    await expect(
+      source.create(find('ContractLineItem'), line),
+    ).rejects.toThrow();
   });
 });

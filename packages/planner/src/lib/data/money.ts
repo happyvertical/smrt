@@ -37,6 +37,7 @@ import {
 } from '@happyvertical/smrt-commerce/money';
 import { ISO_4217_MINOR_UNITS } from '@happyvertical/smrt-ui/currency';
 
+export { MoneyValidationError } from '@happyvertical/smrt-commerce/money';
 export type { LineAmountType, TaxRoundingScope };
 
 type Row = Readonly<Record<string, unknown>>;

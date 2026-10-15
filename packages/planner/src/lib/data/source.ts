@@ -30,6 +30,7 @@ import {
 import {
   defaultTaxCode,
   type MoneyContext,
+  MoneyValidationError,
   moneyCurrency,
   type SampleTaxCode,
   type SampleTaxComponent,
@@ -149,6 +150,17 @@ export const DATA_STORAGE_PREFIX = 'smrt-planner:data:v6:';
 const TAX_CODE_MODEL = '@happyvertical/smrt-commerce:TaxCode';
 const TAX_COMPONENT_MODEL = '@happyvertical/smrt-commerce:TaxComponent';
 const TAX_CODE_KINDS = ['taxable', 'zero-rated', 'exempt', 'out-of-scope'];
+
+/** Has a document left `draft`, freezing the codes its lines were taxed with? */
+function isIssuedRow(model: CatalogModel, row: ModelRecord): boolean {
+  const status = model.fields.find((f) => f.name === 'status');
+  return (
+    Boolean(status?.enum?.includes('draft')) &&
+    typeof row.status === 'string' &&
+    row.status !== '' &&
+    row.status !== 'draft'
+  );
+}
 const CREATED_KEY = `${DATA_STORAGE_PREFIX}_created`;
 
 /** Remove every stored row. Never throws. */
@@ -505,10 +517,19 @@ export function createMemoryDataSource(
       };
     });
     const byId = new Map(fromRows.map((c) => [c.id, c]));
-    return [
-      ...base.map((c) => byId.get(c.id) ?? c),
-      ...fromRows.filter((c) => !base.some((b) => b.id === c.id)),
-    ];
+    // A table seeded with the tenant's codes is the whole truth: a code the
+    // visitor deleted stays deleted. A table that never held them (a source
+    // without tax samples) only adds to the seeded set.
+    if (base.some((c) => byId.has(c.id))) {
+      const seeded = base
+        .filter((c) => byId.has(c.id))
+        .map((c) => byId.get(c.id) as SampleTaxCode);
+      return [
+        ...seeded,
+        ...fromRows.filter((c) => !base.some((b) => b.id === c.id)),
+      ];
+    }
+    return [...base, ...fromRows];
   };
 
   /**
@@ -604,7 +625,11 @@ export function createMemoryDataSource(
    * money and the parent's totals, written back to both tables. Whether the
    * parent was there to settle.
    */
-  const resync = (parent: CatalogModel, parentId: unknown): boolean => {
+  const resync = (
+    parent: CatalogModel,
+    parentId: unknown,
+    lineWrite = false,
+  ): boolean => {
     const link = lineLink(parent);
     if (!link) return false;
     const list = table(parent);
@@ -613,6 +638,18 @@ export function createMemoryDataSource(
     const lineRows = table(link.model);
     const lines = lineRows.filter((r) => r[link.fk] === parentId);
     const row = list[index] as ModelRecord;
+    // An issued document's money is frozen, as smrt's money model freezes it
+    // when a document leaves draft: its own edits keep the stored figures,
+    // and a change to its lines is refused.
+    if (isIssuedRow(parent, row)) {
+      if (lineWrite) {
+        throw new MoneyValidationError(
+          'FROZEN_DOCUMENT',
+          `This ${parent.name.toLowerCase()} has been issued, so its lines can no longer change.`,
+        );
+      }
+      return true;
+    }
     const settled = settleWithLines(
       parent,
       row,
@@ -639,7 +676,7 @@ export function createMemoryDataSource(
     }
     if (isLineModel(model)) {
       const owned = ownersOf(model.id).some(({ parent, fk }) =>
-        resync(parent, record[fk]),
+        resync(parent, record[fk], true),
       );
       const list = table(model);
       const index = list.findIndex((r) => r.id === record.id);
@@ -760,11 +797,19 @@ export function createMemoryDataSource(
       const list = table(model);
       const index = list.findIndex((r) => r.id === id);
       if (index < 0) return false;
+      const snapshot = snapshotFamily(model);
       const [gone] = list.splice(index, 1);
-      const spec = allocationSpecOf(model);
-      if (spec && gone) resettleInvoice(spec.invoice, gone[spec.invoiceFk]);
-      for (const { parent, fk } of ownersOf(model.id)) {
-        if (isLineModel(model) && gone) resync(parent, gone[fk]);
+      try {
+        const spec = allocationSpecOf(model);
+        if (spec && gone) resettleInvoice(spec.invoice, gone[spec.invoiceFk]);
+        for (const { parent, fk } of ownersOf(model.id)) {
+          if (isLineModel(model) && gone) resync(parent, gone[fk], true);
+        }
+      } catch (error) {
+        // The document refused (issued, or a sibling's code was switched
+        // off): the line stays, as it was.
+        restore(snapshot);
+        throw error;
       }
       persist(model);
       return true;
