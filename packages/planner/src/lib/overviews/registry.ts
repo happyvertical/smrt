@@ -751,9 +751,10 @@ export const CORE_WIDGET_TYPES = [
 
 /**
  * How a recipe widget's `'<specifier>#<Export>'` becomes a module: a static map
- * of dynamic imports, one entry per package that ships widgets. No published
- * recipe declares a `widget` surface yet, so it is empty and every lookup is
- * `undefined` (the widget then renders as unavailable).
+ * of dynamic imports, one entry per package that ships widgets. The only
+ * published widget surface (smrt-reports' `runtime-report-chart`) needs a
+ * server, so the map is empty and every lookup is `undefined` (the widget then
+ * renders as unavailable).
  */
 const RECIPE_WIDGET_MODULES: Record<string, () => Promise<unknown>> = {};
 

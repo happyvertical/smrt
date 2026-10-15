@@ -112,12 +112,12 @@ describe('the records loader as a table', () => {
     );
     expect(all.length).toBeGreaterThan(2);
     expect(data.rows).toHaveLength(2);
-    // Default columns by role, the parent link left out.
+    // Default columns by role, the parent link left out (a sales document has
+    // a customer only, since smrt 0.56).
     expect(data.columns?.map((c) => [c.key, c.role])).toEqual([
       ['reference', 'identifier'],
       ['status', 'status'],
       ['issueDate', 'date'],
-      ['vendorId', 'party'],
       ['totalAmount', 'money'],
     ]);
     expect(data.total).toBe(all.length);
@@ -126,7 +126,15 @@ describe('the records loader as a table', () => {
     expect(row.cells?.reference).toBe(source0.reference);
     expect(row.cells?.status).toBe(source0.status);
     // A reference reads as its record's name, never an id.
-    expect(String(row.cells?.vendorId)).not.toBe(String(source0.vendorId));
+    const named = await records(
+      { ...options, columns: 'reference,customerId' },
+      ctx as never,
+    );
+    const namedRow = must(named.rows[0]);
+    const namedSource = must(all.find((o) => o.id === namedRow.id));
+    expect(String(namedRow.cells?.customerId)).not.toBe(
+      String(namedSource.customerId),
+    );
 
     // Money columns sum over all matching rows, not the page.
     const money = await records(
@@ -358,7 +366,6 @@ describe('the record page widgets', () => {
       'reference',
       'status',
       'issueDate',
-      'vendorId',
       'totalAmount',
     ]);
     expect(tab.summaries?.totalAmount).toBe(

@@ -23,8 +23,13 @@ describe('catalog recipes', () => {
   it('carries the recipes each package declares', () => {
     expect(upstream.length).toBeGreaterThan(0);
     for (const pkg of catalog.packages) {
+      // A recipe lives in the package that owns its models; its id need not
+      // start with that package (smrt 0.56's `integrations.webhooks` is in
+      // `webhooks`).
       for (const recipe of pkg.recipes ?? []) {
-        expect(recipe.id.split('.')[0]).toBe(pkg.id);
+        for (const model of recipe.models) {
+          expect(model.startsWith(`${pkg.packageName}:`), recipe.id).toBe(true);
+        }
       }
     }
   });

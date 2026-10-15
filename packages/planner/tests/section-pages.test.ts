@@ -28,6 +28,7 @@ import {
   sectionPath,
   sectionSlug,
 } from '../src/lib/sections/path.ts';
+import { UPSTREAM_GAPS } from './upstream-gaps.ts';
 
 const get = (id: string) => {
   const recipe = recipesById.get(id);
@@ -41,8 +42,10 @@ describe('section icons and descriptions', () => {
   it('every suggested recipe section has a known icon and a description', () => {
     // A section none of whose recipes has a menu entry is not in the sidebar
     // (the assistant, form customization), so it needs neither.
-    const navSections = buildNavSections(recipes).filter((section) =>
-      section.recipes.some((recipe) => recipe.nav.length > 0),
+    const navSections = buildNavSections(recipes).filter(
+      (section) =>
+        section.recipes.some((recipe) => recipe.nav.length > 0) &&
+        !section.recipes.every((r) => UPSTREAM_GAPS.noSection.has(r.id)),
     );
     expect(navSections.length).toBeGreaterThan(5);
     for (const section of navSections) {
@@ -273,6 +276,7 @@ describe('entry icons are in the picker set; descriptions are friendly', () => {
 
   it('every nav entry has a short description of its own', () => {
     for (const recipe of recipes) {
+      if (UPSTREAM_GAPS.undescribedNavEntry.has(recipe.id)) continue;
       for (const entry of recipe.nav) {
         const text = entry.description ?? '';
         expect(text.length, `${recipe.id} ${entry.label}`).toBeGreaterThan(20);

@@ -102,7 +102,21 @@ const SYSTEM_FIELDS = new Set([
 ]);
 
 /** Field types that hold other rows, not a value a form can edit. */
-const NON_VALUE_TYPES = new Set(['oneToMany', 'meta']);
+const NON_VALUE_TYPES = new Set(['oneToMany']);
+
+/**
+ * A `Meta<T>` field is a value kept in the row's `_meta_data` column: the form
+ * edits it as its underlying type (`_meta.underlyingType`). One without that
+ * type is not a value the planner can show.
+ */
+function valueType(field: RawField): string | undefined {
+  if (NON_VALUE_TYPES.has(field.type)) return undefined;
+  if (field.type !== 'meta') return field.type;
+  const underlying = field._meta?.underlyingType;
+  return typeof underlying === 'string' && underlying && underlying !== 'meta'
+    ? underlying
+    : undefined;
+}
 
 const CRUD_VERBS = ['list', 'get', 'create', 'update', 'delete'] as const;
 
@@ -164,10 +178,11 @@ function extractEnum(value: unknown): string[] | undefined {
 function extractFields(raw: RawObject): CatalogField[] {
   const fields: CatalogField[] = [];
   for (const [name, field] of Object.entries(raw.fields)) {
-    if (NON_VALUE_TYPES.has(field.type)) continue;
+    const type = valueType(field);
+    if (!type) continue;
     const entry: CatalogField = {
       name,
-      type: field.type,
+      type,
       required: field.required === true,
     };
     const fallback = primitiveDefault(field.default);

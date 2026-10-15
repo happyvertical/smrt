@@ -2,4 +2,4 @@
 // @happyvertical/smrt-core; do not edit. `pnpm version:smrt` refreshes it.
 
 /** The released smrt line the planner is built against (the `smrt` CLI version its commands name). */
-export const SMRT_VERSION = '0.55.24';
+export const SMRT_VERSION = '0.56.0';

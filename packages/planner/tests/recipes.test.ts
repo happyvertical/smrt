@@ -107,7 +107,9 @@ describe('recipes.json', () => {
     expect(new Set(recipes.map((r) => r.id)).size).toBe(recipes.length);
     for (const recipe of recipes) {
       expect(recipeModels(recipe)).toHaveLength(recipe.models.length);
-      expect(recipePackage(recipe)?.id).toBe(recipe.id.split('.')[0]);
+      expect(recipePackage(recipe)?.recipes?.map((r) => r.id)).toContain(
+        recipe.id,
+      );
       // Every nav model is one of the recipe's models.
       for (const entry of recipe.nav) {
         expect(recipe.models).toContain(entry.model);
