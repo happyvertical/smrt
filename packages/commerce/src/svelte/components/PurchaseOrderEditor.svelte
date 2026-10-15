@@ -148,6 +148,19 @@ function displayMoney(value: QuoteMoneyMinor): string {
 }
 const money = (amountMinor: number | null) =>
   displayMoney({ currency, minorUnitDigits, amountMinor });
+function lineAmountTypeText(
+  lineAmountType: MoneyHeaderDisplay['lineAmountType'],
+): string {
+  return t(
+    P[
+      lineAmountType === 'inclusive'
+        ? 'commerce.purchase.tax_inclusive'
+        : lineAmountType === 'exclusive'
+          ? 'commerce.purchase.tax_exclusive'
+          : 'commerce.purchase.no_tax'
+    ],
+  );
+}
 function calculatedTaxError(
   enteredTax: string,
   hasLines: boolean,
@@ -181,7 +194,7 @@ const moneyTaxError = $derived.by(() =>
  {#if source.notice}<p role="status">{source.notice}</p>{/if}
  {#if operation==='reduce'}<p>{t(P['commerce.purchase.reduction_hint'])}</p>{/if}
  {#if readonly}<p>{t(P['commerce.purchase.readonly'])}</p>{/if}
- {#if moneyDisplay}<p>Amounts are {moneyDisplay.lineAmountType === 'inclusive' ? 'tax inclusive' : moneyDisplay.lineAmountType === 'exclusive' ? 'tax exclusive' : 'no tax'}.</p>{#if moneyDisplay.lineAmountType === 'inclusive' && moneyDisplay.taxMinor !== 0}<p>Includes tax of {displayMoney({currency, minorUnitDigits: moneyDisplay.minorUnitDigits, amountMinor: moneyDisplay.taxMinor})} {currency}.</p>{/if}{/if}
+ {#if moneyDisplay}<p>{t(P['commerce.purchase.money_amounts_are'], { amountType: lineAmountTypeText(moneyDisplay.lineAmountType) })}</p>{#if moneyDisplay.lineAmountType === 'inclusive' && moneyDisplay.taxMinor !== 0}<p>{t(P['commerce.purchase.money_includes_tax'], { amount: displayMoney({currency, minorUnitDigits: moneyDisplay.minorUnitDigits, amountMinor: moneyDisplay.taxMinor}), currency })}</p>{/if}{/if}
  {#if message}<p role="alert">{message}</p>{/if}
  <Form {...formAttributes} {action} method="post" {onsubmit} preventDefault={false}>
   {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} />{/each}

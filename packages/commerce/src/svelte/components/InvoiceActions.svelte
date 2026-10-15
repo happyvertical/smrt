@@ -101,7 +101,7 @@ const canDelete = $derived(status === 'draft');
 
   {#if oncreatecreditnote && !canEdit}
     <Button variant="secondary" {size} onclick={oncreatecreditnote} disabled={loading}>
-      Create credit note
+      {t(M['commerce.invoice_actions.create_credit_note'])}
     </Button>
   {/if}
 

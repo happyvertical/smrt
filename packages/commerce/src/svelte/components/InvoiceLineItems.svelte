@@ -178,7 +178,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
       </tbody>
       <tfoot>
         <tr class="total-row">
-          <td colspan={showSource ? 4 : 3} class="total-label">Line total</td>
+          <td colspan={showSource ? 4 : 3} class="total-label">{t(M['commerce.invoice_line_items.line_total'])}</td>
           <td class="col-amount">{formatMoney(total)}</td>
           {#if editable}
             <td></td>

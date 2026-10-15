@@ -8,8 +8,10 @@ import {
   RecordScreen,
   type RecordScreenProps,
 } from '@happyvertical/smrt-svelte/screens';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { InvoiceRecordScreenData } from '../../invoice-record-screen.js';
+import { M } from '../i18n.js';
 
 export interface InvoiceRecordScreenProps {
   /** Generic record-screen wiring owned by the host application. */
@@ -31,6 +33,7 @@ let {
   canCreateCreditNote = false,
   onCreateCreditNote,
 }: InvoiceRecordScreenProps = $props();
+const { t } = useI18n();
 
 const showCreditAction = $derived(
   data.kind === 'invoice' &&
@@ -41,8 +44,8 @@ const showCreditAction = $derived(
 
 {#snippet relatedCredits()}
   {#if data.creditNotes.length > 0}
-    <section class="invoice-record-screen__credits" aria-label="Credit notes">
-      <h2>Credit notes</h2>
+    <section class="invoice-record-screen__credits" aria-label={t(M['commerce.invoice_record.credit_notes'])}>
+      <h2>{t(M['commerce.invoice_record.credit_notes'])}</h2>
       <ul>
         {#each data.creditNotes as credit (credit.id)}
           <li>
@@ -60,7 +63,7 @@ const showCreditAction = $derived(
   <RecordScreen {...screen} lineItemStoredTotals={() => data.storedTotals}>
     {#snippet extraActions()}
       <Button variant="secondary" onclick={onCreateCreditNote}>
-        Create credit note
+        {t(M['commerce.invoice_actions.create_credit_note'])}
       </Button>
     {/snippet}
     {#snippet children()}

@@ -31,6 +31,12 @@ export const P = defineMessages({
   'commerce.purchase.unknown': 'Unknown',
   'commerce.purchase.empty_allocations': 'No allocations supplied.',
   'commerce.purchase.tax': 'Included tax',
+  'commerce.purchase.money_amounts_are': 'Amounts are {amountType}.',
+  'commerce.purchase.money_includes_tax':
+    'Includes tax of {amount} {currency}.',
+  'commerce.purchase.tax_inclusive': 'tax inclusive',
+  'commerce.purchase.tax_exclusive': 'tax exclusive',
+  'commerce.purchase.no_tax': 'no tax',
   'commerce.purchase.scope': 'Ordered or awarded scope',
   'commerce.purchase.inclusions': 'Inclusions',
   'commerce.purchase.exclusions': 'Exclusions',
