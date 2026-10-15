@@ -1318,6 +1318,153 @@ export function attendanceSuite(
         ).rejects.toThrow('period is confirmed');
         expect(await ledger(punch.id!)).toHaveLength(0);
       });
+      describe('open punches', () => {
+        const load = (id: string) =>
+          new AttendanceService(db, actor).withTransaction(async (tx) => ({
+            punch: (
+              await tx.punches.list({ where: { ...actor, id }, limit: 1 })
+            )[0],
+            breaks: await tx.breaks.list({
+              where: { tenantId: actor.tenantId, punchId: id },
+              orderBy: 'started_at ASC',
+            }),
+            segments: await tx.segments.list({
+              where: { tenantId: actor.tenantId, punchId: id },
+              orderBy: 'started_at ASC',
+            }),
+          }));
+        it('corrects only the start of an open punch, never past its first interval', async () => {
+          const open = await service.punchIn(at(8));
+          await service.startWork(at(9), work);
+          await service.stopWork(at(10));
+          const row = await fix.correctPunch({
+            ...base(),
+            punchId: open.id!,
+            startedAt: at(7),
+          });
+          expect(row).toMatchObject({
+            kind: 'punch.corrected',
+            actorProfileId: foreman,
+          });
+          expect(row.getBefore()).toMatchObject({
+            startedAt: at(8).toISOString(),
+            endedAt: null,
+          });
+          const { punch } = await load(open.id!);
+          expect(punch.startedAt).toEqual(at(7));
+          expect(punch.endedAt).toBeNull();
+          await expect(
+            fix.correctPunch({ ...base(), punchId: open.id!, endedAt: at(11) }),
+          ).rejects.toThrow('cannot be closed');
+          await expect(
+            fix.correctPunch({
+              ...base(),
+              punchId: open.id!,
+              startedAt: half(9),
+            }),
+          ).rejects.toThrow('inside its punch');
+          expect(await ledger(open.id!)).toHaveLength(1);
+          const closed = await service.punchOut(at(11));
+          expect(closed.durationSeconds).toBe(4 * 3600);
+        });
+        it('saves and removes closed breaks and segments inside an open punch', async () => {
+          const open = await service.punchIn(at(8));
+          const id = open.id!;
+          await fix.saveBreak({
+            ...base(),
+            punchId: id,
+            startedAt: at(10),
+            endedAt: half(10),
+            paid: false,
+          });
+          await fix.saveSegment({
+            ...base(),
+            punchId: id,
+            startedAt: at(8),
+            endedAt: at(10),
+            work,
+          });
+          let state = await load(id);
+          expect(state.breaks).toHaveLength(1);
+          expect(state.segments).toHaveLength(1);
+          await fix.saveBreak({
+            ...base(),
+            punchId: id,
+            breakId: state.breaks[0].id!,
+            endedAt: at(11),
+          });
+          await service.startWork(at(11), work);
+          state = await load(id);
+          // The open segment stays service-owned and bounds closed edits.
+          const openSegment = state.segments.find((x) => !x.endedAt)!;
+          await expect(
+            fix.saveSegment({
+              ...base(),
+              punchId: id,
+              segmentId: openSegment.id!,
+              endedAt: at(12),
+            }),
+          ).rejects.toThrow('AttendanceService');
+          await expect(
+            fix.removeSegment({ ...base(), segmentId: openSegment.id! }),
+          ).rejects.toThrow('AttendanceService');
+          await expect(
+            fix.saveBreak({
+              ...base(),
+              punchId: id,
+              startedAt: half(11),
+              endedAt: at(12),
+            }),
+          ).rejects.toThrow('overlap');
+          await fix.removeBreak({ ...base(), breakId: state.breaks[0].id! });
+          await fix.removeSegment({
+            ...base(),
+            segmentId: state.segments.find((x) => x.endedAt)!.id!,
+          });
+          state = await load(id);
+          expect(state.breaks).toHaveLength(0);
+          expect(state.segments).toHaveLength(1);
+          expect(state.punch.endedAt).toBeNull();
+          expect(await ledger(id)).toHaveLength(5);
+        });
+        it('adds an open punch with closed breaks and segments and a ledger row', async () => {
+          const row = await fix.addPunch({
+            ...base(),
+            open: true,
+            startedAt: at(8),
+            breaks: [{ startedAt: at(12), endedAt: at(13), paid: false }],
+            segments: [{ startedAt: at(8), endedAt: at(12), work }],
+          });
+          expect(row).toMatchObject({
+            kind: 'punch.added',
+            actorProfileId: foreman,
+          });
+          const { punch, breaks, segments } = await load(row.punchId!);
+          expect(punch.endedAt).toBeNull();
+          expect(breaks).toHaveLength(1);
+          expect(segments).toHaveLength(1);
+          await expect(
+            fix.addPunch({ ...base(), open: true, startedAt: at(14) }),
+          ).rejects.toThrow('already open');
+          const closed = await service.punchOut(at(16));
+          expect(closed.id).toBe(punch.id);
+          expect(closed.durationSeconds).toBe(7 * 3600);
+        });
+        it('refuses an added open punch that overlaps or has a bad layout', async () => {
+          await day();
+          await expect(
+            fix.addPunch({ ...base(), open: true, startedAt: at(9) }),
+          ).rejects.toThrow('overlap');
+          await expect(
+            fix.addPunch({
+              ...base(),
+              open: true,
+              startedAt: at(20),
+              breaks: [{ startedAt: at(19), endedAt: at(21) }],
+            }),
+          ).rejects.toThrow('inside its punch');
+        });
+      });
       it('keeps auto-close reason and provenance when an auto-closed punch is corrected', async () => {
         await service.punchIn(at(8), {
           source: 'device',

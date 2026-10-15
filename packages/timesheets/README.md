@@ -514,8 +514,16 @@ the ledger. The ledger has no generated operations, and every ledger,
 closed-break and closed-segment write (insert, acknowledge, delete) is
 service-only: a generic `save()`, `delete()` or collection `create()` is refused. Notes:
 
-- Only **closed** punches are corrected; an open one is `AttendanceService`'s.
-  Moving a punch edge past a break or segment is refused: correct those first.
+- Moving a punch edge past a break or segment is refused: correct those first.
+- **Open punches** accept three corrections, each with a ledger row and the
+  same lock: `correctPunch({ punchId, startedAt })` changes the start only (it
+  cannot close the punch or move past its earliest break or segment);
+  `saveBreak`/`removeBreak`/`saveSegment`/`removeSegment` work on *closed*
+  intervals inside it (the open break or segment stays `AttendanceService`'s:
+  `startBreak`, `startWork`, ...); and `addPunch({ open: true, startedAt,
+  breaks?, segments?, ... })` records a missed clock-in that is still running,
+  with its closed breaks and segments, refused if the subject already has an
+  open punch. An open punch's durations are set when it closes.
 - `correctPunch` clears `reviewRequired` (a person reviewed it). A linked
   *draft* `ServiceTimeEntry` is kept in step; a submitted or approved one
   refuses the correction until it is corrected with `ServiceEvidenceService`.
