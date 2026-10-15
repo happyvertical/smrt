@@ -126,10 +126,24 @@ it is payroll's or payables' job (#3292).
 
 ## Consumer controls
 
-- **Closed generated surface.** Models and collections ship with
-  `api: { include: [] }`, `mcp: { include: [] }`, `cli: false`: no generated
-  REST, SvelteKit, MCP or CLI operation reaches cost data. Expose expenses
-  through your own permission-checked routes.
+- **Closed generated surface.** No generated CRUD, read, MCP or CLI
+  operation reaches cost data (generated reads check no read permission). List
+  expenses through your own permission-checked routes.
+- **Generated write actions (#4001).** `ExpenseCollection` publishes four
+  service-backed REST actions, each guarded inside the action by its
+  `expenses.<action>` permission, with the tenant and acting profile taken
+  from the session:
+
+  | Route | Body |
+  |---|---|
+  | `POST /expenses/record` | expense fields (`amount` minor units, `currency`, `incurredOn`, cost object, payer, …) |
+  | `POST /expenses/attachReceipt` | `{ expenseId, assetId, contentSha256, filename?, mimeType?, byteCount? }` |
+  | `POST /expenses/recordReview` | `{ expenseId, decision: 'approve' \| 'reject', note?, reason? }` |
+  | `POST /expenses/recordReimbursement` | `{ expenseId, reference? }` |
+
+  `recordReview` and `recordReimbursement` refuse super-admin bypass. Acting
+  on another person's expense needs `expenses.recordReview`. A recorded
+  expense is `unreviewed` (awaiting review); there is no separate submit.
 - **Required tenancy.** Tenancy is optional by default, like smrt-commerce.
   To require a tenant context for every read and write:
 

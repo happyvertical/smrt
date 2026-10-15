@@ -567,7 +567,9 @@ jobs:
       always() && !cancelled() &&
       (needs.publish-release.result == 'success' || needs.publish-release.result == 'skipped')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Catching up dozens of versions per package takes far longer than one
+    # release's worth; 30 minutes cancelled every attempt mid-run (#3963).
+    timeout-minutes: 90
     environment: release
     continue-on-error: true
     permissions:
@@ -595,6 +597,8 @@ jobs:
           # workspace still says the previous version; name the one this run
           # released so its checksums are compared across the registries too.
           MIRROR_RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+          # Packages mirror in parallel; each package's versions stay in order.
+          MIRROR_CONCURRENCY: '6'
         run: node scripts/mirror-release-to-npmjs.mjs
 
   # Note: Downstream dependency updates are handled by Renovate CE.

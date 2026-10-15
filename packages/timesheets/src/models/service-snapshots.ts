@@ -215,10 +215,18 @@ export class ServiceCompensationSnapshot extends SmrtObject {
 }
 
 /** Collection over `service_charge_snapshots`. */
+// Registered collection class: without its own surface it published
+// generated create/update/delete MCP tools, and a forged snapshot would make
+// approval skip pricing (#4001). Reads only, like the model.
+@smrt({ mcp: { include: ['list', 'get'] }, cli: false })
 export class ServiceChargeSnapshotCollection extends SmrtCollection<ServiceChargeSnapshot> {
   static readonly _itemClass = ServiceChargeSnapshot;
 }
 /** Collection over `service_compensation_snapshots`. */
+// Registered collection class: without its own surface it published
+// generated create/update/delete MCP tools, and a forged snapshot would make
+// approval skip pricing (#4001). Reads only, like the model.
+@smrt({ mcp: { include: ['list', 'get'] }, cli: false })
 export class ServiceCompensationSnapshotCollection extends SmrtCollection<ServiceCompensationSnapshot> {
   static readonly _itemClass = ServiceCompensationSnapshot;
 }

@@ -8,8 +8,15 @@ import {
   ContractLineItemCollection,
   PurchaseContractCollection,
 } from '@happyvertical/smrt-commerce';
-import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
+import { method, SmrtCollection, smrt } from '@happyvertical/smrt-core';
+import type {
+  AttachExpenseReceiptActionInput,
+  MarkExpenseReimbursedActionInput,
+  RecordExpenseActionInput,
+  ReviewExpenseActionInput,
+} from '../actions/expense-actions.js';
 import { Expense } from '../models/Expense.js';
+import type { ExpenseReceipt } from '../models/ExpenseReceipt.js';
 import {
   type CommitmentPosition,
   type CurrencyTotals,
@@ -94,12 +101,103 @@ function addTo(totals: CurrencyTotals, currency: string, amount: number) {
  * interceptors, so inside `withTenant()` every method here sees only that
  * tenant's expenses.
  *
- * Collection classes are registered too, so this one carries its own closed
- * surface; without it every public method here would become an MCP tool.
+ * Collection classes are registered too, so this one carries its own
+ * surface; without it every public method here would become an MCP tool. It
+ * publishes only the service-backed write actions (#4001), on REST: each
+ * authorizes the signed-in person itself (`expenses.<action>`) and delegates
+ * to the guarded domain flow. Reads, MCP and CLI stay closed.
  */
-@smrt({ api: { include: [] }, mcp: { include: [] }, cli: false })
+@smrt({
+  api: {
+    include: ['record', 'attachReceipt', 'recordReview', 'recordReimbursement'],
+  },
+  mcp: { include: [] },
+  cli: false,
+})
 export class ExpenseCollection extends SmrtCollection<Expense> {
   static readonly _itemClass = Expense;
+
+  /**
+   * Record a new, unreviewed expense for the signed-in person in their
+   * tenant. Needs `expenses.record`; a person-paid expense for someone else
+   * also needs `expenses.recordReview`.
+   */
+  @method({
+    httpMethod: 'POST',
+    path: 'record',
+    effect: 'write',
+    idempotent: false,
+    openWorld: false,
+    description: 'Record a new expense for review (service-backed).',
+  })
+  async record(options: RecordExpenseActionInput): Promise<Expense> {
+    const { recordExpenseAction } = await import(
+      '../actions/expense-actions.js'
+    );
+    return recordExpenseAction(this, options);
+  }
+
+  /**
+   * Attach a stored asset to an expense as its receipt. Needs
+   * `expenses.attachReceipt`; only the recorder or payer may attach unless
+   * the caller holds `expenses.recordReview`.
+   */
+  @method({
+    httpMethod: 'POST',
+    path: 'attachReceipt',
+    effect: 'write',
+    idempotent: false,
+    openWorld: false,
+    description: 'Attach a receipt file to an expense (service-backed).',
+  })
+  async attachReceipt(
+    options: AttachExpenseReceiptActionInput,
+  ): Promise<ExpenseReceipt> {
+    const { attachExpenseReceiptAction } = await import(
+      '../actions/expense-actions.js'
+    );
+    return attachExpenseReceiptAction(this, options);
+  }
+
+  /**
+   * Accept or refuse (with a reason) an expense, attributed to the signed-in
+   * reviewer. Needs an explicit `expenses.recordReview` grant.
+   */
+  @method({
+    httpMethod: 'POST',
+    path: 'recordReview',
+    effect: 'write',
+    idempotent: false,
+    openWorld: false,
+    description: 'Approve or reject an expense with a reason (service-backed).',
+  })
+  async recordReview(options: ReviewExpenseActionInput): Promise<Expense> {
+    const { reviewExpenseAction } = await import(
+      '../actions/expense-actions.js'
+    );
+    return reviewExpenseAction(this, options);
+  }
+
+  /**
+   * Record that the person who paid an expense has been paid back. Needs an
+   * explicit `expenses.recordReimbursement` grant.
+   */
+  @method({
+    httpMethod: 'POST',
+    path: 'recordReimbursement',
+    effect: 'write',
+    idempotent: false,
+    openWorld: false,
+    description: 'Record that an expense was reimbursed (service-backed).',
+  })
+  async recordReimbursement(
+    options: MarkExpenseReimbursedActionInput,
+  ): Promise<Expense> {
+    const { markExpenseReimbursedAction } = await import(
+      '../actions/expense-actions.js'
+    );
+    return markExpenseReimbursedAction(this, options);
+  }
 
   /**
    * Expenses charged to one cost object, oldest incurred first.
