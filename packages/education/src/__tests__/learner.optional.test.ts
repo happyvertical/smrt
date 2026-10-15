@@ -5,11 +5,15 @@ import {
 } from '@happyvertical/smrt-vitest';
 import { afterAll, beforeAll, describe, it } from 'vitest';
 import {
+  assertCatalogRequestWhitelist,
   assertHostileLearnerLinks,
+  assertInflightRollback,
   assertLearnerAuthorization,
   assertLearnerModels,
   assertLearnerRollback,
   assertProgressHistory,
+  assertQueuedRollbackAndClosure,
+  assertTransactionDrain,
   learnerClasses,
   learnerFixture,
 } from './learner-workflows.js';
@@ -25,6 +29,10 @@ afterAll(() => disableTenancy());
       rollback: assertLearnerRollback,
       models: assertLearnerModels,
       assertHostileLearnerLinks,
+      queuedRollback: assertQueuedRollbackAndClosure,
+      transactionDrain: assertTransactionDrain,
+      inflightRollback: assertInflightRollback,
+      catalogRequestWhitelist: assertCatalogRequestWhitelist,
     })) {
       it(name, async () => {
         const isolated = await createIsolatedTestDbFromManifest({

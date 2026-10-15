@@ -120,7 +120,13 @@ function progressView(row: LessonProgress): LessonProgressView {
 
 /** Closed models are exposed only through this actor-bound resource boundary. */
 export class LearnerService {
-  private inTransaction = false;
+  private transactionState:
+    | 'active'
+    | 'draining'
+    | 'aborting'
+    | 'closed'
+    | undefined;
+  private writeFailure: { error: unknown } | undefined;
   private writeTail: Promise<void> = Promise.resolve();
   private postgres: boolean;
   constructor(
@@ -135,7 +141,11 @@ export class LearnerService {
   async withTransaction<T>(
     operation: (service: LearnerService) => Promise<T>,
   ): Promise<T> {
-    if (this.inTransaction) return operation(this);
+    if (this.transactionState) {
+      if (this.transactionState !== 'active')
+        throw new Error('Learner transaction scope is closed');
+      return operation(this);
+    }
     return withEmbeddedWriteTransaction(
       this.db,
       isEmbeddedDatabase(this.db),
@@ -145,9 +155,26 @@ export class LearnerService {
           this.authorize,
           this.authorizeCatalog,
         );
-        service.inTransaction = true;
+        service.transactionState = 'active';
         service.postgres = this.postgres;
-        return operation(service);
+        try {
+          const result = await operation(service);
+          // Stop accepting work, but finish already-enqueued operations before
+          // committing. A swallowed mutation failure still aborts the unit.
+          if (service.transactionState === 'active')
+            service.transactionState = 'draining';
+          await service.writeTail;
+          if (service.writeFailure) throw service.writeFailure.error;
+          return result;
+        } catch (error) {
+          // Queued operations must not begin after failure; an operation already
+          // running must settle before rollback can release its database handle.
+          service.transactionState = 'aborting';
+          await service.writeTail;
+          throw error;
+        } finally {
+          service.transactionState = 'closed';
+        }
       },
     );
   }
@@ -157,8 +184,26 @@ export class LearnerService {
   private mutate<T>(
     operation: (service: LearnerService) => Promise<T>,
   ): Promise<T> {
-    if (!this.inTransaction) return this.withTransaction(operation);
-    const result = this.writeTail.then(() => operation(this));
+    if (!this.transactionState) return this.withTransaction(operation);
+    if (this.transactionState !== 'active')
+      return Promise.reject(new Error('Learner transaction scope is closed'));
+    const result = this.writeTail.then(async () => {
+      if (
+        this.transactionState === 'aborting' ||
+        this.transactionState === 'closed'
+      )
+        throw (
+          this.writeFailure?.error ??
+          new Error('Learner transaction scope is closed')
+        );
+      try {
+        return await operation(this);
+      } catch (error) {
+        this.writeFailure ??= { error };
+        this.transactionState = 'aborting';
+        throw error;
+      }
+    });
     this.writeTail = result.then(
       () => undefined,
       () => undefined,
@@ -170,6 +215,11 @@ export class LearnerService {
     request: LearnerRequest,
     action: Parameters<LearnerAuthorizer>[0]['action'],
   ): Promise<Learner> {
+    if (
+      this.transactionState === 'aborting' ||
+      this.transactionState === 'closed'
+    )
+      throw new Error('Learner transaction scope is closed');
     const context = getCurrentTenant();
     if (
       !context ||
@@ -282,9 +332,11 @@ export class LearnerService {
       this.authorizeCatalog,
     );
     const projection = await service.projectCourse({
-      ...request,
+      tenantId: request.tenantId,
+      actorUserId: request.actorUserId,
       courseId,
       includePrivate: true,
+      includeAnswerKeys: false,
     });
     if (!projection) throw new LearnerAuthorizationError();
     return projection;

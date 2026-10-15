@@ -57,15 +57,21 @@ Catalog visibility and child ownership reuse `CatalogService` on the same
 executor. Learner operations request private-inclusive catalog access, so the
 host catalog authorizer must permit both `education.catalog.read` and
 `education.catalog.read-private` for the supported enrollment workflow.
-Private copies remain restricted to the exact owner. Answer keys are never
-requested or returned. A catalog grant does not grant learner authorization.
+Private copies remain restricted to the exact owner. The service constructs a
+whitelisted catalog request; caller options and answer-key flags are discarded.
+Answer keys are never requested or returned. A catalog grant does not grant learner authorization.
 
 ## Transactions and history
 
 `withTransaction(async transaction => ...)` composes service operations on the
 callback's transaction-bound service. Use that service for every operation in
 the unit. Throwing rolls back its curriculum, enrollment, and progress writes.
-Do not retain the callback's service beyond the callback. The constructor
+The callback's service closes when the transaction ends and rejects later calls.
+A failed mutation poisons the unit even if the callback catches its rejection;
+queued mutations are cancelled. Callback failure stops pending work and waits for
+already-running mutations to settle before rollback releases the executor. On
+success, already-enqueued mutations finish before commit. Do not retain the
+callback's service beyond the callback. The constructor
 accepts a root database; callers composing work use this method instead of
 passing an unmanaged transaction handle.
 

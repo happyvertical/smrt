@@ -2,11 +2,15 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { afterAll, beforeAll, describe, it } from 'vitest';
 import {
+  assertCatalogRequestWhitelist,
   assertHostileLearnerLinks,
+  assertInflightRollback,
   assertLearnerAuthorization,
   assertLearnerModels,
   assertLearnerRollback,
   assertProgressHistory,
+  assertQueuedRollbackAndClosure,
+  assertTransactionDrain,
   learnerClasses,
   learnerFixture,
 } from './learner-workflows.js';
@@ -20,6 +24,10 @@ describe('LearnerService SQLite', () => {
     rollback: assertLearnerRollback,
     models: assertLearnerModels,
     assertHostileLearnerLinks,
+    queuedRollback: assertQueuedRollbackAndClosure,
+    transactionDrain: assertTransactionDrain,
+    inflightRollback: assertInflightRollback,
+    catalogRequestWhitelist: assertCatalogRequestWhitelist,
   })) {
     it(name, async () => {
       const db = await getTestDatabase({

@@ -28,3 +28,11 @@ is unchanged. Duplicate raw inserts are rejected by native database constraints.
 other-tenant progress row cannot reserve the valid owner's logical key; the
 valid start succeeds without altering the hostile row. Same-parent cross-tenant
 model creation is rejected.
+
+## Accepted round1 regressions
+
+| Behavior | Trigger and expected outcome | Actor / context | Executor / runtime | External edge / test level | Commands |
+| --- | --- | --- | --- | --- | --- |
+| Queued rollback owns executor lifetime | Promise.all invalid curriculum then two valid: all reject, no rows survive; fresh transaction succeeds; retained callback service rejects after failure and success; successful callbacks drain unawaited queued writes, caught mutation failure still rolls back | Authorized guardian / exact tenant | Actual SQLite and PostgreSQL root transactions | Callback failure and closed scope / integration | education test, test:postgres; assertQueuedRollbackAndClosure, assertTransactionDrain |
+| In-flight work settles before rollback | Callback throws while mutation authorizer is gated: transaction remains pending until operation settles, rollback removes its write, fresh transaction succeeds | Authorized guardian / exact tenant | Same bound executor on SQLite and PostgreSQL | Async host authorization / integration | education test, test:postgres; assertInflightRollback |
+| Catalog request whitelist | Runtime includeAnswerKeys=true and paging options on enroll/start/listProgress are ignored; operations succeed and host never receives answer-key action | Guardian planning and own learner read/start | Actual SQLite and PostgreSQL service transactions | Extra runtime request fields / integration | education test, test:postgres; assertCatalogRequestWhitelist |

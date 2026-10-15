@@ -639,3 +639,240 @@ export async function assertHostileLearnerLinks(f: Fixture) {
     as(parent, () => service.getLearner(parent)),
   ).rejects.toBeInstanceOf(LearnerAuthorizationError);
 }
+
+export async function assertQueuedRollbackAndClosure(f: Fixture) {
+  const { service, parent, as, db } = f;
+  const curricula = await CurriculumCollection.create({ db });
+  let queued: Promise<unknown>[] = [];
+  let retained: LearnerService | undefined;
+  await expect(
+    as(parent, () =>
+      service.withTransaction(async (transaction) => {
+        retained = transaction;
+        queued = [
+          transaction.createCurriculum({ ...parent, title: '' }),
+          transaction.createCurriculum({
+            ...parent,
+            title: 'Queued valid one',
+          }),
+          transaction.createCurriculum({
+            ...parent,
+            title: 'Queued valid two',
+          }),
+        ];
+        return Promise.all(queued);
+      }),
+    ),
+  ).rejects.toThrow('Curriculum title is required');
+  const settled = await Promise.allSettled(queued);
+  expect(settled.map((result) => result.status)).toEqual([
+    'rejected',
+    'rejected',
+    'rejected',
+  ]);
+  const rows = await as(parent, () =>
+    curricula.list({ where: { learnerId: parent.learnerId } }),
+  );
+  expect(rows.filter((row) => row.title.startsWith('Queued valid'))).toEqual(
+    [],
+  );
+  await expect(
+    as(parent, () =>
+      retained!.createCurriculum({ ...parent, title: 'Escaped failure scope' }),
+    ),
+  ).rejects.toThrow('scope is closed');
+  await expect(as(parent, () => retained!.getLearner(parent))).rejects.toThrow(
+    'scope is closed',
+  );
+  await expect(
+    as(parent, () => retained!.withTransaction(async () => true)),
+  ).rejects.toThrow('scope is closed');
+  const fresh = await as(parent, () =>
+    service.withTransaction(async (transaction) => {
+      retained = transaction;
+      return transaction.createCurriculum({
+        ...parent,
+        title: 'Fresh after queued rollback',
+      });
+    }),
+  );
+  expect(
+    (await as(parent, () => curricula.get(fresh.id, { cache: false })))?.title,
+  ).toBe('Fresh after queued rollback');
+  await expect(
+    as(parent, () =>
+      retained!.createCurriculum({ ...parent, title: 'Escaped success scope' }),
+    ),
+  ).rejects.toThrow('scope is closed');
+  await expect(
+    as(parent, () =>
+      retained!.listProgress({ ...parent, enrollmentId: f.enrollment.id }),
+    ),
+  ).rejects.toThrow('scope is closed');
+}
+
+export async function assertTransactionDrain(f: Fixture) {
+  const { service, parent, as, db } = f;
+  let queued: Promise<unknown>[] = [];
+  await as(parent, () =>
+    service.withTransaction(async (transaction) => {
+      queued = [
+        transaction.createCurriculum({ ...parent, title: 'Drain valid one' }),
+        transaction.createCurriculum({ ...parent, title: 'Drain valid two' }),
+      ];
+    }),
+  );
+  expect(
+    (await Promise.allSettled(queued)).map((result) => result.status),
+  ).toEqual(['fulfilled', 'fulfilled']);
+  const curricula = await CurriculumCollection.create({ db });
+  const rows = await as(parent, () =>
+    curricula.list({ where: { learnerId: parent.learnerId } }),
+  );
+  expect(
+    rows.filter((row) => row.title.startsWith('Drain valid')),
+  ).toHaveLength(2);
+  await expect(
+    as(parent, () =>
+      service.withTransaction(async (transaction) => {
+        await transaction.createCurriculum({
+          ...parent,
+          title: 'Before swallowed failure',
+        });
+        await transaction
+          .createCurriculum({ ...parent, title: '' })
+          .catch(() => undefined);
+      }),
+    ),
+  ).rejects.toThrow('Curriculum title is required');
+  expect(
+    await as(parent, () =>
+      curricula.list({ where: { title: 'Before swallowed failure' } }),
+    ),
+  ).toEqual([]);
+}
+
+export async function assertInflightRollback(f: Fixture) {
+  const { parent, as, db } = f;
+  let entered!: () => void;
+  const operationEntered = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  let release!: () => void;
+  const authorizationGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let callbackFailed!: () => void;
+  const callbackFailure = new Promise<void>((resolve) => {
+    callbackFailed = resolve;
+  });
+  const events: string[] = [];
+  const service = new LearnerService(
+    db,
+    async () => {
+      entered();
+      await authorizationGate;
+      return true;
+    },
+    () => true,
+  );
+  let pending!: Promise<unknown>;
+  const transaction = as(parent, () =>
+    service.withTransaction(async (bound) => {
+      pending = bound.createCurriculum({
+        ...parent,
+        title: 'In flight before rollback',
+      });
+      // Attach a rejection handler immediately; retain completion order for either dialect.
+      void pending.then(
+        () => events.push('operation-settled'),
+        () => events.push('operation-settled'),
+      );
+      await operationEntered;
+      callbackFailed();
+      throw new Error('Abort while authorization is in flight');
+    }),
+  );
+  const result = transaction.then(
+    () => {
+      events.push('transaction-committed');
+      return null;
+    },
+    (error: unknown) => {
+      events.push('transaction-rejected');
+      return error;
+    },
+  );
+  await callbackFailure;
+  // Give the rejection path a turn while the authorized operation is deliberately blocked.
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const settledBeforeRelease = events.includes('transaction-rejected');
+  release();
+  const error = await result;
+  await Promise.allSettled([pending]);
+  expect(settledBeforeRelease).toBe(false);
+  expect(error).toBeInstanceOf(Error);
+  expect((error as Error).message).toBe(
+    'Abort while authorization is in flight',
+  );
+  expect(events).toEqual(['operation-settled', 'transaction-rejected']);
+  const curricula = await CurriculumCollection.create({ db });
+  expect(
+    await as(parent, () =>
+      curricula.list({ where: { title: 'In flight before rollback' } }),
+    ),
+  ).toEqual([]);
+  const fresh = await as(parent, () =>
+    service.createCurriculum({
+      ...parent,
+      title: 'Fresh after in-flight rollback',
+    }),
+  );
+  expect(
+    (await as(parent, () => curricula.get(fresh.id, { cache: false })))?.id,
+  ).toBe(fresh.id);
+}
+
+export async function assertCatalogRequestWhitelist(f: Fixture) {
+  const actions: string[] = [];
+  const service = new LearnerService(
+    f.db,
+    () => true,
+    ({ action }) => {
+      actions.push(action);
+      if (action === 'education.catalog.answer-key.read')
+        throw new Error('Answer keys must never be requested');
+      return true;
+    },
+  );
+  const injected = {
+    includeAnswerKeys: true,
+    options: { limit: 0, offset: 999 },
+  };
+  const enrollment = await f.as(f.parent, () =>
+    service.enroll({
+      ...f.parent,
+      curriculumId: f.curriculum.id,
+      courseId: String(f.course.id),
+      ...injected,
+    }),
+  );
+  expect(enrollment.id).toBe(f.enrollment.id);
+  const request = {
+    ...f.own,
+    enrollmentId: enrollment.id,
+    lessonId: String(f.lesson.id),
+    ...injected,
+  };
+  const progress = await f.as(f.own, () => service.startLesson(request));
+  expect(progress.status).toBe('in_progress');
+  expect(
+    (await f.as(f.own, () => service.listProgress(request))).map(
+      (row) => row.id,
+    ),
+  ).toEqual([progress.id]);
+  expect(actions).not.toContain('education.catalog.answer-key.read');
+  expect(
+    actions.filter((action) => action === 'education.catalog.read'),
+  ).toHaveLength(3);
+}
