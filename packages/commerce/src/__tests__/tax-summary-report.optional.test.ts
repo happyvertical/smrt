@@ -23,6 +23,7 @@ import {
   drilldownTaxSummaryInvoiceFacts,
 } from '../tax-summary-report-adapter.js';
 import { seedInvoiceTaxReportFacts } from './helpers/invoice-tax-report-facts.js';
+import { defineTaxSummaryLedgerHostSuite } from './helpers/tax-summary-ledger-host-suite.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 const from = new Date('2026-09-01T00:00:00.000Z');
@@ -41,8 +42,11 @@ describePostgres('TaxSummaryReport on PostgreSQL (#3940)', () => {
         'Invoice',
         'InvoiceLineItem',
         'PaymentAllocation',
+        'Account',
         'TaxSettings',
         'TaxSummaryReport',
+        'Journal',
+        'JournalEntry',
       ],
     });
     db = isolated.baseDb;
@@ -54,6 +58,8 @@ describePostgres('TaxSummaryReport on PostgreSQL (#3940)', () => {
     await isolated?.cleanup();
     isolated = undefined;
   });
+
+  defineTaxSummaryLedgerHostSuite(() => db);
 
   it('materializes and drills down tenant-scoped persisted A/B Invoice facts', async () => {
     const tenantId = randomUUID();

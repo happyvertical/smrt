@@ -16,6 +16,16 @@ export interface InvoiceTaxReportFactsFixture {
   partyBId: string;
 }
 
+export interface InvoiceTaxReportFactLiabilityAccounts {
+  gst: string;
+  pst: string;
+}
+
+const defaultLiabilityAccounts: InvoiceTaxReportFactLiabilityAccounts = {
+  gst: 'gst-payable',
+  pst: 'pst-payable',
+};
+
 async function issueInvoice(
   invoices: InvoiceCollection,
   input: {
@@ -43,6 +53,7 @@ export async function seedInvoiceTaxReportFacts(
   db: DatabaseInterface,
   tenantId = 'tenant-a',
   foreignTenantId = 'tenant-b',
+  liabilityAccounts: InvoiceTaxReportFactLiabilityAccounts = defaultLiabilityAccounts,
 ): Promise<InvoiceTaxReportFactsFixture> {
   const invoices = await InvoiceCollection.create({ db });
   const customers = await CustomerCollection.create({ db });
@@ -92,7 +103,7 @@ export async function seedInvoiceTaxReportFacts(
         taxComponentId: 'gst',
         taxComponentName: 'GST',
         percent: '5',
-        liabilityAccountId: 'gst-payable',
+        liabilityAccountId: liabilityAccounts.gst,
         taxableMinor: 81_000,
         taxMinor: 4_050,
         recoverableMinor: 0,
@@ -108,7 +119,7 @@ export async function seedInvoiceTaxReportFacts(
         taxComponentId: 'gst',
         taxComponentName: 'GST',
         percent: '5',
-        liabilityAccountId: 'gst-payable',
+        liabilityAccountId: liabilityAccounts.gst,
         taxableMinor: 33_498,
         taxMinor: 1_675,
         recoverableMinor: 0,
@@ -124,7 +135,7 @@ export async function seedInvoiceTaxReportFacts(
         taxComponentId: 'pst',
         taxComponentName: 'PST',
         percent: '7',
-        liabilityAccountId: 'pst-payable',
+        liabilityAccountId: liabilityAccounts.pst,
         taxableMinor: 33_498,
         taxMinor: 2_345,
         recoverableMinor: 0,
@@ -147,7 +158,7 @@ export async function seedInvoiceTaxReportFacts(
         taxComponentId: 'gst',
         taxComponentName: 'GST',
         percent: '5',
-        liabilityAccountId: 'gst-payable',
+        liabilityAccountId: liabilityAccounts.gst,
         taxableMinor: 77_143,
         taxMinor: 3_857,
         recoverableMinor: 0,
@@ -163,7 +174,7 @@ export async function seedInvoiceTaxReportFacts(
         taxComponentId: 'gst',
         taxComponentName: 'GST',
         percent: '5',
-        liabilityAccountId: 'gst-payable',
+        liabilityAccountId: liabilityAccounts.gst,
         taxableMinor: 29_908,
         taxMinor: 1_496,
         recoverableMinor: 0,
@@ -179,7 +190,7 @@ export async function seedInvoiceTaxReportFacts(
         taxComponentId: 'pst',
         taxComponentName: 'PST',
         percent: '7',
-        liabilityAccountId: 'pst-payable',
+        liabilityAccountId: liabilityAccounts.pst,
         taxableMinor: 29_908,
         taxMinor: 2_094,
         recoverableMinor: 0,

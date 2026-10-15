@@ -29,6 +29,7 @@ import {
   seedInvoiceTaxReportCredit,
   seedInvoiceTaxReportFacts,
 } from './helpers/invoice-tax-report-facts.js';
+import { defineTaxSummaryLedgerHostSuite } from './helpers/tax-summary-ledger-host-suite.js';
 
 const from = new Date('2026-09-01T00:00:00.000Z');
 const to = new Date('2026-09-30T23:59:59.999Z');
@@ -51,6 +52,8 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
     const migrationId = await settings.beginMoneyMigration(tenantId);
     await settings.activateMoneyV2(tenantId, migrationId);
   }
+
+  defineTaxSummaryLedgerHostSuite(() => db);
 
   it('binds the production tax-summary host to its principal tenant and closed cells', async () => {
     const fixture = await withTenant({ tenantId: 'tenant-a' }, () =>
