@@ -39,6 +39,7 @@ import {
   openSegment,
   replaceSegment,
 } from './segments.js';
+import { persistAutoClose } from './write.js';
 
 /** Whether stored evidence metadata carries this work's task reference and kind. */
 function sameAttribution(metadata: string, work: AttendanceWork): boolean {
@@ -129,6 +130,28 @@ export interface AttendanceRefusal {
   /** Replaces the default message when given. */
   message?: string;
 }
+
+/** A resolved auto-close deadline and, optionally, why the punch closed then. */
+export interface AttendanceAutoCloseDecision {
+  deadline: Date;
+  /** Recorded as `autoCloseReason` (1 to 200 characters); defaults to `deadline`. */
+  reason?: string;
+}
+
+/**
+ * Fixed maximum open seconds, or a per-punch resolver returning the deadline
+ * (a Date or a decision) or null to leave the punch open.
+ */
+export type AttendanceAutoCloseDeadline =
+  | number
+  | ((
+      punch: AttendancePunch,
+    ) =>
+      | Date
+      | AttendanceAutoCloseDecision
+      | null
+      | undefined
+      | Promise<Date | AttendanceAutoCloseDecision | null | undefined>);
 
 export interface AttendanceReplayOptions {
   /**
@@ -632,13 +655,24 @@ export class AttendanceService {
     });
   }
 
-  /** Close at startedAt + maxOpenSeconds once due, flagging the punch for review. */
+  /**
+   * Close the open punch once its deadline has passed, flagging it for review.
+   * `deadline` is either a fixed maximum open duration in seconds (closing at
+   * `startedAt + seconds`, reason `maxDuration`) or a resolver called with the
+   * open punch that returns its deadline (a `Date`, or `{ deadline, reason }`),
+   * or null to leave it open. The consumer owns time zones and shop-day rules.
+   * The open work segment and break close at the deadline; returns the closed
+   * punch, or null when nothing was due.
+   */
   async autoClose(
     now: Date,
-    maxOpenSeconds: number,
+    deadline: AttendanceAutoCloseDeadline,
   ): Promise<AttendancePunch | null> {
     this.date(now);
-    if (!Number.isSafeInteger(maxOpenSeconds) || maxOpenSeconds <= 0)
+    if (
+      typeof deadline !== 'function' &&
+      (!Number.isSafeInteger(deadline) || deadline <= 0)
+    )
       throw new AttendanceConflict(
         'maxOpenSeconds must be a positive integer.',
       );
@@ -648,14 +682,34 @@ export class AttendanceService {
         limit: 1,
       });
       if (!punch) return null;
-      const deadline = new Date(
-        punch.startedAt.getTime() + maxOpenSeconds * 1000,
-      );
-      if (deadline > now) return null;
+      let at: Date;
+      let reason = 'maxDuration';
+      if (typeof deadline === 'function') {
+        const resolved = await deadline(punch);
+        if (resolved === null || resolved === undefined) return null;
+        const decision =
+          resolved instanceof Date ? { deadline: resolved } : resolved;
+        at = decision.deadline;
+        if (!(at instanceof Date) || !Number.isFinite(at.getTime()))
+          throw new AttendanceConflict('Auto-close deadline is invalid.');
+        if (at < punch.startedAt)
+          throw new AttendanceConflict(
+            'Auto-close deadline predates the punch.',
+          );
+        reason = decision.reason ?? 'deadline';
+        if (typeof reason !== 'string' || !reason.trim() || reason.length > 200)
+          throw new AttendanceConflict(
+            'Auto-close reason must be 1 to 200 characters.',
+          );
+      } else {
+        at = new Date(punch.startedAt.getTime() + deadline * 1000);
+      }
+      if (at > now) return null;
       // Do not truncate a later committed break. The conflict requires manual review.
-      const closed = await this.transition(tx, 'punchOut', deadline);
+      const closed = await this.transition(tx, 'punchOut', at);
       closed.reviewRequired = true;
-      await closed.save();
+      closed.autoCloseReason = reason;
+      await persistAutoClose(closed);
       return closed;
     });
   }

@@ -34,3 +34,25 @@ export async function deleteCorrection<T extends SmrtObject>(
     permitted.delete(object);
   }
 }
+
+// Same pattern for the auto-close note: the reason a punch was closed by the
+// scheduler is evidence, writable only by `AttendanceService.autoClose`.
+const autoClosing = new WeakSet<SmrtObject>();
+
+/** True while `AttendanceService.autoClose` is saving `object`. */
+export function isAutoCloseWrite(object: SmrtObject): boolean {
+  return autoClosing.has(object);
+}
+
+/** Save `object` with its auto-close reason writable for this one write. */
+export async function persistAutoClose<T extends SmrtObject>(
+  object: T,
+): Promise<T> {
+  autoClosing.add(object);
+  try {
+    await object.save();
+    return object;
+  } finally {
+    autoClosing.delete(object);
+  }
+}

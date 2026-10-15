@@ -373,11 +373,17 @@ refused. Approval still uses the entry layer. Rollups must deduplicate this link
 not count both attendance and its entry. Zero-net-duration punches cannot create
 service evidence.
 
-`autoClose(now, maxOpenSeconds)` closes a due open punch at its configured
-maximum duration and sets `reviewRequired`. It returns null before the deadline
-or when already closed. If later committed attendance would be truncated it
-refuses the operation for manual review. A scheduler calls this per authorized
-actor; the package does not choose overtime, payroll, or shop-time-zone rules.
+`autoClose(now, deadline)` closes a due open punch and sets `reviewRequired`.
+`deadline` is either a fixed maximum open duration in seconds (reason
+`maxDuration`) or a per-punch resolver `(punch) => Date | { deadline, reason? }
+| null`, for example the end of the shop day in the shop's time zone or the
+scheduled shift end; `null` leaves the punch open. The open work segment and
+break close at the deadline and the punch records `autoCloseReason` (write-once,
+only through `autoClose`). It returns null before the deadline or when already
+closed, and refuses a resolved deadline before the punch started. If later
+committed attendance would be truncated it refuses the operation for manual
+review. A scheduler calls this per authorized actor; the package does not choose
+overtime, payroll, or shop-time-zone rules.
 
 Provenance is optional and consumer-owned (no enum; at most 64 characters, trimmed):
 `punchIn(at, { source, device: { type, id } })` stores `source`, `deviceRefType` and
