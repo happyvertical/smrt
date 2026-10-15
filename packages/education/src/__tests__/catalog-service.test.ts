@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getTestDatabase } from '@happyvertical/smrt-core';
 import {
   disableTenancy,
   enableTenancy,
@@ -262,6 +263,22 @@ describe('CatalogService tenant integration', () => {
       );
     } finally {
       rmSync(path, { force: true });
+    }
+  });
+  it('initializes catalog records on DuckDB with the focused schema selector', async () => {
+    const db = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: ['Course'],
+    });
+    try {
+      const courses = await CourseCollection.create({ db });
+      await courses.create({ title: 'DuckDB catalog course' });
+      expect((await courses.list()).map((course) => course.title)).toContain(
+        'DuckDB catalog course',
+      );
+    } finally {
+      await db.close?.();
     }
   });
 });
