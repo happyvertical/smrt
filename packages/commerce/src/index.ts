@@ -346,6 +346,7 @@ export {
 } from './tax-summary.js';
 export {
   buildTaxSummaryReportAdapterDescriptor,
+  createTaxSummaryMaterializedReportHost,
   drilldownTaxSummaryContributors,
   drilldownTaxSummaryInvoiceFacts,
   TAX_SUMMARY_REPORT_ADAPTER,
