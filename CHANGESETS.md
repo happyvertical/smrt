@@ -50,7 +50,10 @@ release still reads third-party dependencies from it. Four rules follow.
   refuses (published there before and removed) is recorded as skipped and does
   not hold back later versions. If the release version exists on both
   registries with different checksums it is reported as `DIVERGED`; that
-  cannot be reconciled and needs a new version. `MIRROR_BACKFILL=true` fills
+  cannot be reconciled and needs a new version. Packages mirror through a
+  pool of `MIRROR_CONCURRENCY` workers (default 6), each package's versions
+  still oldest first, and every failure is logged and summarised with its
+  `package@version` and npm error code (#3963). `MIRROR_BACKFILL=true` fills
   older gaps deliberately; `MIRROR_STRICT=true` makes a manual repair run fail
   loudly.
 - The emergency `changesets` publish mode still publishes straight to npmjs
