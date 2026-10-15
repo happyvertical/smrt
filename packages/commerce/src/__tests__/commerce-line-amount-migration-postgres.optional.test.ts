@@ -8,15 +8,18 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ContractLineItemCollection } from '../collections/ContractLineItemCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
+import { VendorCollection } from '../collections/VendorCollection.js';
 import {
   migrateCommerceLineAmounts,
   rollbackCommerceLineAmounts,
 } from '../migrations/commerceLineAmounts.js';
-import { InvoiceStatus } from '../types/index.js';
+import { SupplierQuote } from '../models/Contract.js';
+import { ContractStatus, InvoiceStatus } from '../types/index.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -97,6 +100,86 @@ describePostgres('commerce line amount migration on PostgreSQL (#3933)', () => {
       (await db.query('SELECT * FROM invoice_line_items WHERE id = ?', line.id))
         .rows[0],
     ).toEqual(before);
+  });
+
+  it('migrates an issued supplier quote as purchases and exactly rolls it back', async () => {
+    const tenantId = randomUUID();
+    const { quote, line } = await withTenant({ tenantId }, async () => {
+      const vendor = await (await VendorCollection.create({ db })).create({
+        name: 'Migration supplier',
+      });
+      const quote = new SupplierQuote({
+        db,
+        tenantId,
+        vendorId: vendor.id,
+        status: ContractStatus.SENT,
+        subtotal: 3_000,
+        taxAmount: 150,
+        totalAmount: 3_150,
+        currency: 'CAD',
+      });
+      await quote.initialize();
+      await quote.save();
+      const line = await (
+        await ContractLineItemCollection.create({ db })
+      ).create({
+        contractId: quote.id,
+        description: 'Legacy supplier quote line',
+        quantity: 1,
+        unitPrice: 3_000,
+        taxRate: 0.05,
+      });
+      return { quote, line };
+    });
+    const beforeHeader = (
+      await db.query('SELECT * FROM contracts WHERE id = ?', quote.id)
+    ).rows[0];
+    const beforeLine = (
+      await db.query('SELECT * FROM contract_line_items WHERE id = ?', line.id)
+    ).rows[0];
+    const result = await migrateCommerceLineAmounts(db, { tenantId });
+    expect(result.activated).toBe(true);
+    const migrated = (
+      await db.query('SELECT * FROM contracts WHERE id = ?', quote.id)
+    ).rows[0];
+    expect(migrated).toMatchObject({
+      _meta_type: '@happyvertical/smrt-commerce:SupplierQuote',
+      vendor_id: beforeHeader.vendor_id,
+      customer_id: null,
+      line_amount_type: 'exclusive',
+      tax_rounding_scope: 'line',
+      total_amount: beforeHeader.total_amount,
+      updated_at: beforeHeader.updated_at,
+    });
+    expect(migrated.money_snapshot_id).toBeTruthy();
+    expect(
+      (
+        await db.query(
+          'SELECT * FROM contract_line_items WHERE id = ?',
+          line.id,
+        )
+      ).rows[0],
+    ).toMatchObject({
+      amount: '3000',
+      tax_amount: '150',
+      legacy_amount: '3150',
+    });
+    await rollbackCommerceLineAmounts(db, {
+      tenantId,
+      migrationId: result.migrationId,
+    });
+    expect(
+      (await db.query('SELECT * FROM contracts WHERE id = ?', quote.id))
+        .rows[0],
+    ).toEqual(beforeHeader);
+    expect(
+      (
+        await db.query(
+          'SELECT * FROM contract_line_items WHERE id = ?',
+          line.id,
+        )
+      ).rows[0],
+    ).toEqual(beforeLine);
   });
 
   it('rolls back a refused checksum preflight to the active v2 marker', async () => {
