@@ -39,8 +39,8 @@ See [document money persistence](agents/document-money.md) for the per-tenant
 legacy/v2 gate, atomic aggregate writes, issued snapshots, and frozen fields.
 A tenant's first `TaxSettings` row starts on `v2` unless Invoice/Contract rows
 already exist (#4009); never decide the model anywhere else. Host bootstrap is
-`ensureCommerceTenant(db, tenantId, { cookbook })`; billing seller tenants stay
-`legacy` until #4013. See [initial model](agents/document-money.md#initial-model-4009).
+`ensureCommerceTenant(db, tenantId, { cookbook })`; billing seller tenants use
+`{ moneyModel: 'legacy' }` until #4013. See [initial model](agents/document-money.md#initial-model-4009).
 See [Contract money persistence](agents/contract-money.md) for the Contract
 aggregate, purchase recoverability, and migration-only materialization boundary.
 
