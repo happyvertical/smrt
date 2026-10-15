@@ -228,7 +228,16 @@ describe('private Asset access capability', () => {
           ownerProfileId: OWNER_ID,
           sourceUri: 'file:///invalid.bin',
         }),
-      ).rejects.toThrow(/invalid asset access mode/i);
+      ).rejects.toMatchObject({
+        cause: expect.objectContaining({
+          message: expect.stringMatching(/invalid asset access mode/i),
+        }),
+      });
+      expect(
+        await db.get('assets', {
+          id: '00000000-0000-4000-8000-000000000406',
+        }),
+      ).toBeNull();
     });
   });
 
