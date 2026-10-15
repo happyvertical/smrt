@@ -160,8 +160,7 @@ function confirmReset() {
     <h2 id="prompt-heading">Copy prompt for your coding agent</h2>
     <p class="meta" id="prompt-note">
       Paste it into Claude Code, Codex or another coding agent. The prompt
-      carries the cookbook, points at the HappyVertical registry, creates
-      the app <code>{appName}</code> with the smrt CLI {prompt.version} and
+      carries the cookbook, creates the app <code>{appName}</code> with the smrt CLI {prompt.version} and
       starts it. About {formatSize(prompt.bytes)}.
     </p>
     <Textarea

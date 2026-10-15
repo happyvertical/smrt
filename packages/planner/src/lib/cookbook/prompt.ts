@@ -11,14 +11,11 @@ import type { Cookbook } from './types.ts';
  *
  * Every command here is the released CLI's (`smrt cookbook validate`,
  * `cookbook apply <file> <dir>`, `--into` for a second apply, `smrt app
- * install` / `app doctor`); keep them in step with `smrt --help`.
+ * install` / `app doctor`); keep them in step with `smrt --help`. It needs no
+ * registry override: every @happyvertical package is on npmjs at the released
+ * version, and the app the CLI makes ships its own `.npmrc`.
  */
 
-/** Where the released packages are; the npmjs mirror lags (happyvertical/smrt#3963). */
-export const SMRT_REGISTRY = 'https://npm.happyvertical.com/';
-export const NPMRC_LINE = `@happyvertical:registry=${SMRT_REGISTRY}`;
-/** The newest issue tracking the stale npmjs mirror. */
-export const MIRROR_ISSUE = 'happyvertical/smrt#3963';
 /** What `@happyvertical/smrt-core`, the CLI and the smrt-start template require. */
 export const NODE_REQUIREMENT = 'Node 26 or newer';
 export const PNPM_REQUIREMENT = 'pnpm 11';
@@ -106,20 +103,16 @@ export function buildAgentPrompt(
     '',
     `1. Prerequisites: ${NODE_REQUIREMENT} (\`node --version\`), git, and ${PNPM_REQUIREMENT} or newer (\`npm install -g pnpm\` if missing).`,
     '',
-    `2. The @happyvertical packages are published on the HappyVertical registry; the npmjs mirror is currently stale (${MIRROR_ISSUE}), so write this .npmrc in the directory first:`,
-    '',
-    `cat > .npmrc <<'EOF'\n${NPMRC_LINE}\nEOF`,
-    '',
-    `3. Write the cookbook exactly as given, without reformatting or editing it:`,
+    `2. Write the cookbook exactly as given, without reformatting or editing it:`,
     '',
     `cat > ${COOKBOOK_FILE} <<'${delimiter}'\n${json}\n${delimiter}`,
     '',
-    `4. Validate it, then create the app in ./${appName}:`,
+    `3. Validate it, then create the app in ./${appName}:`,
     '',
     `${cli} cookbook validate ${COOKBOOK_FILE}`,
     `${cli} cookbook apply ${COOKBOOK_FILE} ${appName}`,
     '',
-    `5. Set it up and start it:`,
+    `4. Set it up and start it:`,
     '',
     `cd ${appName} && pnpm exec smrt app install`,
     '',

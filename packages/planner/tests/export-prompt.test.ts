@@ -27,8 +27,6 @@ import {
   heredoc,
   heredocBody,
   heredocDelimiter,
-  MIRROR_ISSUE,
-  NPMRC_LINE,
 } from '../src/lib/cookbook/prompt.ts';
 import { COOKBOOK_SCHEMA, type Cookbook } from '../src/lib/cookbook/types.ts';
 import { getLibraryCookbook } from '../src/lib/library/index.ts';
@@ -86,17 +84,18 @@ describe('the agent prompt', () => {
     );
   });
 
-  it('walks the released CLI: prerequisites, .npmrc, write, validate, apply, install, doctor', () => {
+  it('walks the released CLI: prerequisites, write, validate, apply, install, doctor', () => {
     const order = [
       'Create a new s-m-r-t app from the cookbook below',
       'report what you ran',
-      'Node 26 or newer',
+      '1. Prerequisites: Node 26 or newer',
       'pnpm 11',
-      MIRROR_ISSUE,
-      `cat > .npmrc <<'EOF'\n${NPMRC_LINE}\nEOF`,
+      `2. Write the cookbook`,
       `cat > ${COOKBOOK_FILE} <<'`,
+      `3. Validate it`,
       'cookbook validate',
       'cookbook apply',
+      '4. Set it up',
       `cd ${prompt.appName} && pnpm exec smrt app install`,
       'pnpm exec smrt app doctor',
       'Do not hand-edit',
@@ -108,6 +107,16 @@ describe('the agent prompt', () => {
       at = next;
     }
     expect(prompt.text).toContain('git');
+    expect(prompt.text).not.toMatch(/^5\. /m);
+  });
+
+  it('needs no registry override: no .npmrc, no registry, no mirror caveat', () => {
+    // Every @happyvertical package is on npmjs at the released version, and
+    // the app the CLI makes ships its own .npmrc.
+    expect(prompt.text).not.toContain('.npmrc');
+    expect(prompt.text).not.toMatch(/registry|mirror|npm\.happyvertical/i);
+    // Nor does it ever tell anyone to turn pnpm's release-age check off.
+    expect(prompt.text).not.toMatch(/minimum-?release-?age/i);
   });
 
   it('names the app after the cookbook, then the library cookbook, then my-app', () => {
