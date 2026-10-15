@@ -216,6 +216,85 @@ describe('commerce line amount migration (#3933)', () => {
     ).toMatchObject({ subtotal: 2_000, tax_amount: 100, total_amount: 2_100 });
   });
 
+  it('preserves each document customer classification for mixed zero-rate migration', async () => {
+    const { draftLine, issued, issuedLine } = await withTenant(
+      { tenantId: TENANT },
+      async () => {
+        const customers = await CustomerCollection.create({ db });
+        const invoices = await InvoiceCollection.create({ db });
+        const lines = await InvoiceLineItemCollection.create({ db });
+        const ordinary = await customers.create({ profileId: 'ordinary-zero' });
+        const exempt = await customers.create({
+          profileId: 'exempt-zero',
+          taxExempt: true,
+        });
+        const draft = await invoices.create({
+          tenantId: TENANT,
+          invoiceNumber: 'M-ZERO-DRAFT',
+          customerId: ordinary.id,
+          status: InvoiceStatus.DRAFT,
+          currency: 'CAD',
+        });
+        const draftLine = await lines.create({
+          tenantId: TENANT,
+          invoiceId: draft.id,
+          description: 'Ordinary zero-rated legacy draft',
+          quantity: 1,
+          unitPrice: 2_000,
+          taxRate: 0,
+        });
+        const issued = await invoices.create({
+          tenantId: TENANT,
+          invoiceNumber: 'M-ZERO-ISSUED',
+          customerId: exempt.id,
+          status: InvoiceStatus.SENT,
+          subtotal: 1_000,
+          taxAmount: 0,
+          totalAmount: 1_000,
+          currency: 'CAD',
+        });
+        const issuedLine = await lines.create({
+          tenantId: TENANT,
+          invoiceId: issued.id,
+          description: 'Exempt legacy issued invoice',
+          quantity: 1,
+          unitPrice: 1_000,
+          taxRate: 0,
+          amount: 1_000,
+        });
+        return { draftLine, issued, issuedLine };
+      },
+    );
+
+    await migrateCommerceLineAmounts(db, {
+      tenantId: TENANT,
+      acceptDraftChanges: true,
+    });
+    const codeFor = async (lineId: string) =>
+      (
+        await db.query(
+          `SELECT tax_codes.code
+             FROM invoice_line_items
+             JOIN tax_codes ON tax_codes.id = invoice_line_items.tax_code_id
+            WHERE invoice_line_items.id = ?`,
+          lineId,
+        )
+      ).rows[0]?.code;
+    if (!draftLine.id || !issuedLine.id)
+      throw new Error('Expected saved zero-rate migration lines');
+    await expect(codeFor(draftLine.id)).resolves.toBe('out-of-scope');
+    await expect(codeFor(issuedLine.id)).resolves.toBe('exempt');
+    expect(
+      (
+        await db.query(
+          'SELECT kind FROM document_taxes WHERE document_type = ? AND document_id = ?',
+          'invoice',
+          issued.id,
+        )
+      ).rows,
+    ).toEqual([{ kind: 'exempt' }]);
+  });
+
   it('reports a cross-tenant line and leaves both tenants unchanged', async () => {
     const { line } = await issued();
     await db.query(
