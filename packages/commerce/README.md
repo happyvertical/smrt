@@ -148,10 +148,11 @@ and [document-money contract](agents/document-money.md) cover persisted Invoice-
 semantics, credits, refunds, and posting. The materialized Invoice tax-report
 descriptor and tenant-safe drilldown are documented in
 [tax-summary contract](agents/tax-summary.md). Tenant migration commands,
-Contract money persistence, and the generic production reports server/browser
-surfaces are shipped. The money-v2 release still needs its production
-tax-summary bridge, PurchaseContract contributor integration, and exact-head
-migration/report acceptance evidence.
+Contract money persistence, PurchaseContract tax contributors, and the
+materialized tax-summary host and drilldown are available. Applications opt in
+by registering `createTaxSummaryMaterializedReportHost()` in their server-only
+report-host registry; the route binds the authenticated tenant and read
+permission. See the tax-summary contract for registration and migration details.
 
 ## API
 
