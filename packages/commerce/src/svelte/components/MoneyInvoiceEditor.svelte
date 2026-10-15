@@ -177,7 +177,7 @@ function changeMode(event: Event) {
 }
 </script>
 
-<section class="invoice-editor money-editor" aria-label="Invoice money" data-smrt-component="InvoiceEditor" data-money-model="v2">
+<section class="invoice-editor money-editor" aria-label="Invoice money" data-smrt-component="MoneyInvoiceEditor" data-money-model="v2">
   {#if frozen}
     <p role="status">Frozen{money.status ? ` · ${money.status}` : ''}</p>
     {#if money.kind !== 'credit_note'}
