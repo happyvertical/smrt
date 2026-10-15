@@ -48,7 +48,8 @@
     "test:live-preview-browser": "node scripts/test-live-preview-browser.mjs",
     "test:release-workflow": "node scripts/test-release-workflow.mjs",
     "lint": "biome ci .",
-    "package": "svelte-package -i src/lib -o dist --tsconfig tsconfig.package.json && node scripts/package-app.ts && publint"
+    "package": "node scripts/write-smrt-version.ts && svelte-package -i src/lib -o dist --tsconfig tsconfig.package.json && node scripts/package-app.ts && publint",
+    "version:smrt": "node scripts/write-smrt-version.ts"
   },
   "dependencies": {
     "@happyvertical/ai": "^0.103.1",
