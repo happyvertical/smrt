@@ -38,7 +38,8 @@ with the root database handle, never one that is already inside a transaction
   models, so each of the six carries
   `@smrt({ api: { include: [] }, mcp: { include: [] }, cli: false })` as an
   inline literal (the scanner cannot resolve an imported constant). An
-  undecorated collection publishes its methods as MCP tools. A collection's
+  undecorated collection would inherit the model's closed surface; the explicit
+  literal keeps it closed whatever the model says. A collection's
   config merges over its model's, so a model's effective `cli` reads `false`.
   `src/__tests__/closed-surface.test.ts` asserts no generated tool exists.
 - **The tenant is the employer.** `employerProfileId` is informational and

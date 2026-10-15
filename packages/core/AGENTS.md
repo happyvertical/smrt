@@ -131,6 +131,9 @@ and repository rules.
   collections (including `SmrtReportCollection`) never claim one. Consumer
   gates: `registry/__tests__/issue-3110-*.test.ts`, `issue-3109-*.test.ts`,
   `packages/bundle-gate/src/__tests__/consumer-same-name.spec.ts`.
+- A collection class never publishes more than its model: unset surfaces
+  inherit the model's, and the build rejects a collection that opens a CRUD
+  write its model closes. See `agents/generators.md` (Collection exposure).
 - API custom-action eligibility has ONE resolver, `resolveApiMethodExposure()`
   in `generators/custom-action.ts`: both SvelteKit route emitters,
   `resolveApiActionSet`, and `knowledge.ts` read it, and a new consumer must too

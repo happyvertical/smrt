@@ -17,6 +17,12 @@ import {
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
 import { findField, type HelpModel, validateHelp } from '../recipe-help.js';
+import {
+  findCollectionWriteEscalations,
+  formatCollectionWriteEscalations,
+  inheritCollectionExposure,
+} from '../registry/collection-exposure.js';
+import { isSmrtCollectionExtendsName } from '../registry/collection-resolution.js';
 import { VERBOSE_ENABLED } from '../registry/shared-state.js';
 import {
   defaultConflictColumns,
@@ -445,6 +451,11 @@ export class ManifestGenerator {
     // Second pass: materialize implicit tenant fields before inheritance and schema generation.
     this.injectTenantScopedFields(manifest);
 
+    // Report models default to a read-only surface. Apply that before
+    // inheritance, so a report model's collection inherits it and the
+    // collection-exposure guard sees it.
+    this.applyReportSurfaceDefaults(manifest);
+
     // Third pass: Merge inherited fields for STI classes
     // This ensures STI subclasses have all parent fields inline in the manifest
     this.mergeInheritedFields(manifest);
@@ -510,6 +521,10 @@ export class ManifestGenerator {
         };
       }
     }
+
+    // A collection may not open a generated write its model closes. After
+    // the abstract pass above, which closes writes over abstract models.
+    this.assertCollectionExposure(manifest);
 
     // Recipe options may only name fields the merged model declares (#3590).
     this.assertRecipeOptions(manifest);
@@ -1345,12 +1360,19 @@ export class ManifestGenerator {
     }
   }
 
-  normalizeReportObjects(manifest: SmartObjectManifest): void {
+  /** A report model's generated surface defaults to `list`/`get`. */
+  applyReportSurfaceDefaults(manifest: SmartObjectManifest): void {
     for (const obj of Object.values(manifest.objects)) {
       if (!obj.decoratorConfig?.report) continue;
-
       obj.decoratorConfig.api ??= { include: ['list', 'get'] };
       obj.decoratorConfig.mcp ??= { include: ['list', 'get'] };
+    }
+  }
+
+  normalizeReportObjects(manifest: SmartObjectManifest): void {
+    this.applyReportSurfaceDefaults(manifest);
+    for (const obj of Object.values(manifest.objects)) {
+      if (!obj.decoratorConfig?.report) continue;
 
       if (obj.decoratorConfig.conflictColumns) continue;
 
@@ -2314,69 +2336,126 @@ export class ManifestGenerator {
       const isCollection =
         obj.extends === 'SmrtCollection' ||
         this.extendsCollection(obj, objectsByName);
+      // Junction and report collections inherit their model's exposure too,
+      // but keep their own storage naming (that predates this pass).
+      if (!isCollection && !this.extendsAnyCollectionBase(obj, objectsByName)) {
+        continue;
+      }
+
+      // Find the item class from _itemClass static property
+      const itemClass = this.findItemClass(obj, manifest, objectsByName);
+      if (!itemClass || itemClass === obj) continue;
+
+      logger.debug(
+        `[manifest-generator] ${obj.className} is a collection class for ${itemClass.className}`,
+      );
 
       if (isCollection) {
-        // Find the item class from _itemClass static property
-        const itemClass = this.findItemClass(obj, manifest, objectsByName);
-
-        if (itemClass) {
+        // Inherit tableName from item class (which may have inherited it from STI base)
+        if (itemClass.decoratorConfig?.tableName) {
+          obj.decoratorConfig = obj.decoratorConfig || {};
+          obj.decoratorConfig.tableName = itemClass.decoratorConfig.tableName;
           logger.debug(
-            `[manifest-generator] ${obj.className} is a collection class for ${itemClass.className}`,
+            `[manifest-generator] ${obj.className} inherits tableName: '${itemClass.decoratorConfig.tableName}' from item class ${itemClass.className}`,
           );
+        }
 
-          // Inherit tableName from item class (which may have inherited it from STI base)
-          if (itemClass.decoratorConfig?.tableName) {
-            obj.decoratorConfig = obj.decoratorConfig || {};
-            obj.decoratorConfig.tableName = itemClass.decoratorConfig.tableName;
-            logger.debug(
-              `[manifest-generator] ${obj.className} inherits tableName: '${itemClass.decoratorConfig.tableName}' from item class ${itemClass.className}`,
-            );
-          }
-
-          // Inherit collection name from item class
-          if (itemClass.collection !== obj.collection) {
-            logger.debug(
-              `[manifest-generator] ${obj.className} inherits collection: '${itemClass.collection}' from item class ${itemClass.className} (was '${obj.collection}')`,
-            );
-            obj.collection = itemClass.collection;
-          }
-
-          // Inherit a full route opt-out (api/mcp/cli === false) from the
-          // item class unless the collection class explicitly overrides it
-          // itself. Decorator-only registration never gives an undecorated
-          // collection its own independent route surface, so an item class
-          // that fully opts out of generated routes (e.g. api: false for a
-          // tenant-isolation fail-closed class such as SmrtJob, #2750) must
-          // not leave its collection independently advertised in the
-          // manifest path.
-          //
-          // Deliberately scoped to the boolean `false` opt-out only, never
-          // to an object-form config (e.g. `{ include: [...] }`): those
-          // configs list method names specific to the ITEM class's own
-          // instance methods, which do not correspond 1:1 to the
-          // COLLECTION class's methods of the same name (different
-          // signatures, e.g. a bulk/collection `create` vs. a single-record
-          // `create`) -- copying them verbatim previously broke unrelated
-          // packages whose item class narrows its own api/cli/mcp surface
-          // with an include list (e.g. @happyvertical/smrt-subscriptions's
-          // TenantUsageMetric), producing a spurious "CLI command not
-          // exposed via the api" build error on the collection.
-          for (const key of ['api', 'mcp', 'cli'] as const) {
-            const itemValue = itemClass.decoratorConfig?.[key];
-            if (
-              itemValue === false &&
-              obj.decoratorConfig?.[key] === undefined
-            ) {
-              obj.decoratorConfig = obj.decoratorConfig || {};
-              obj.decoratorConfig[key] = false;
-              logger.debug(
-                `[manifest-generator] ${obj.className} inherits ${key}: false from item class ${itemClass.className}`,
-              );
-            }
-          }
+        // Inherit collection name from item class
+        if (itemClass.collection !== obj.collection) {
+          logger.debug(
+            `[manifest-generator] ${obj.className} inherits collection: '${itemClass.collection}' from item class ${itemClass.className} (was '${obj.collection}')`,
+          );
+          obj.collection = itemClass.collection;
         }
       }
+
+      // A collection class is generated as a resource of its own, so a
+      // surface it leaves unset inherits its model's exposure: `false`,
+      // the CRUD verbs of an `include` list, an `exclude` list, and
+      // read-only MCP over a `sensitive` model. Without this an object-form
+      // model config left the collection open on every transport. From an
+      // `include` list only CRUD verbs and names only the collection declares
+      // carry over: a name the model declares is the model's own method, and
+      // a same-named collection method is a different operation, so it stays
+      // closed until the collection lists it. See `registry/collection-exposure.ts`.
+      const inherited = inheritCollectionExposure(
+        obj.decoratorConfig || {},
+        itemClass.decoratorConfig || {},
+        {
+          collection: new Set(Object.keys(obj.methods || {})),
+          item: new Set(Object.keys(itemClass.methods || {})),
+        },
+      );
+      if (Object.keys(inherited).length > 0) {
+        obj.decoratorConfig = { ...(obj.decoratorConfig || {}), ...inherited };
+        logger.debug(
+          `[manifest-generator] ${obj.className} inherits ${Object.keys(inherited).join(', ')} exposure from item class ${itemClass.className}`,
+        );
+      }
     }
+  }
+
+  /**
+   * Fail the build when a collection class opens a generated CRUD write (MCP
+   * or CLI) that its model keeps closed. Runs after inheritance, so only a
+   * collection's own `@smrt()` surface can trip it.
+   */
+  private assertCollectionExposure(manifest: SmartObjectManifest): void {
+    const objectsByName = new Map(
+      Object.values(manifest.objects).map((objectDef) => [
+        objectDef.className,
+        objectDef,
+      ]),
+    );
+    const findings: Parameters<typeof formatCollectionWriteEscalations>[0] = [];
+    for (const obj of Object.values(manifest.objects)) {
+      if (
+        obj.extends !== 'SmrtCollection' &&
+        !this.extendsCollection(obj, objectsByName) &&
+        !this.extendsAnyCollectionBase(obj, objectsByName)
+      ) {
+        continue;
+      }
+      const itemClass = this.findItemClass(obj, manifest, objectsByName);
+      if (!itemClass || itemClass === obj) continue;
+      const escalations = findCollectionWriteEscalations(
+        obj.decoratorConfig || {},
+        itemClass.decoratorConfig || {},
+      );
+      if (escalations.length > 0) {
+        findings.push({
+          collection: obj.qualifiedName || obj.className,
+          model: itemClass.qualifiedName || itemClass.className,
+          escalations,
+        });
+      }
+    }
+    if (findings.length > 0) {
+      throw new ConfigurationError(
+        formatCollectionWriteEscalations(findings),
+        'CONFIG_COLLECTION_EXPOSURE',
+      );
+    }
+  }
+
+  /**
+   * Whether a class descends from any SMRT collection base (`SmrtCollection`,
+   * `SmrtJunction`, `SmrtJunctionBase`, `SmrtReportCollection`), following
+   * parents declared in this manifest.
+   */
+  private extendsAnyCollectionBase(
+    obj: SmartObjectDefinition,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): boolean {
+    let current: SmartObjectDefinition | undefined = obj;
+    const visited = new Set<string>();
+    while (current?.extends) {
+      if (isSmrtCollectionExtendsName(current.extends)) return true;
+      if (visited.has(current.extends)) return false;
+      visited.add(current.extends);
+      current = objectsByName.get(current.extends);
+    }
+    return false;
   }
 
   /**

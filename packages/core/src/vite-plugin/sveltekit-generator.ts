@@ -3079,6 +3079,21 @@ export function findCliApiCoherenceViolations(
     }
 
     const apiActionSet = resolveApiActionSet(objectDef, manifest);
+    // A collection class has no CRUD routes of its own: its CRUD commands
+    // run the model's operations, so they are reachable exactly where the
+    // model's API routes them. Collections inherit their model's `cli`
+    // include list (`registry/collection-exposure.ts`), so without this
+    // every inherited CRUD verb would read as unreachable.
+    if (isCollectionManifestClass(manifest, objectDef)) {
+      const item = resolveCollectionItemObject(manifest, objectDef);
+      if (item && item !== objectDef) {
+        for (const action of resolveStandardCrudActions(
+          item.decoratorConfig?.api,
+        )) {
+          apiActionSet.add(action);
+        }
+      }
+    }
     const unreachable = [...effectiveCliCommands]
       .filter((action) => !apiActionSet.has(action) && !skipNames.has(action))
       .sort();
