@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -19,7 +19,7 @@ function startGuard(source, options = {}) {
   });
   let stdout = '';
   let stderr = '';
-  const child = spawn(process.execPath, [guard.pathname, '--', command, ...commandArgs], {
+  const child = spawn(process.execPath, [options.guardPath ?? guard.pathname, '--', command, ...commandArgs], {
     env: { ...process.env, TMPDIR: callerTmpdir },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -97,6 +97,14 @@ test('passes a clean command and removes its owned root', async () => {
   assert.deepEqual(roots.slice(0, 4), [root, root, root, root]);
   assert.equal(roots[4], join(dirname(root), 'node-compile-cache'));
   await assert.rejects(readFile(root));
+});
+
+test('runs through a symlinked guard entrypoint', async () => {
+  const linkedGuard = join(callerTmpdir, 'linked-resource-guard.mjs');
+  await symlink(guard.pathname, linkedGuard);
+  const result = await runGuard('process.exit(19)', { guardPath: linkedGuard });
+  assert.equal(result.code, 19, result.stderr);
+  assert.match(result.stderr, /Managed tool cache directories/);
 });
 
 test('reclaims the owned compiler cache while fixture leaks still fail', async () => {
