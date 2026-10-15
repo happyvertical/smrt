@@ -159,10 +159,7 @@ export function serializeInvoiceMcpGet(item, options) {
       consumer.directory,
     );
 
-    const launcherDirectory = join(
-      resolve(consumer.directory, '..'),
-      'launcher',
-    );
+    const launcherDirectory = join(consumer.directory, 'launcher');
     mkdirSync(
       join(launcherDirectory, 'node_modules/@happyvertical/smrt-commerce/dist'),
       {

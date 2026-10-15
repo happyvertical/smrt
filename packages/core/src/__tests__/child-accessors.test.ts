@@ -22,6 +22,7 @@ import {
   smrt,
 } from '../index';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 // --- Basic one-to-many ------------------------------------------------------
 
@@ -219,9 +220,7 @@ describe('R10: generated @oneToMany child accessors', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   it('installs a non-enumerable getX() method on the prototype', () => {

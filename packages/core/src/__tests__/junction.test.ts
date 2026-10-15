@@ -7,7 +7,7 @@
  *    junction key fields (regression test for round-4 codex finding)
  */
 
-import { existsSync, mkdtempSync, rmSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +18,7 @@ import { SmrtJunction, SmrtJunctionBase } from '../junction';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 @smrt({
   tableName: 'junction_test_links',
@@ -86,8 +87,8 @@ describe('SmrtJunction', () => {
     });
   });
 
-  afterEach(() => {
-    if (existsSync(dbPath)) unlinkSync(dbPath);
+  afterEach(async () => {
+    await cleanupFileDatabase(links.db, dbPath);
   });
 
   describe('compatible bulk lifecycle', () => {

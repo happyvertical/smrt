@@ -14,6 +14,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtObject, smrt } from '../index';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 // Shared test classes defined at module level
 @smrt()
@@ -51,9 +52,7 @@ describe('transformJSON() Hook', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   describe('Basic Transformation', () => {

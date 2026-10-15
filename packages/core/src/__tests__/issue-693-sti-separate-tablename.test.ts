@@ -23,6 +23,7 @@ import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 /**
  * STI base class - Event
@@ -82,9 +83,7 @@ describe('Issue #693: STI subclasses with separate tableName', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   describe('Direct getAllSchemas() verification', () => {

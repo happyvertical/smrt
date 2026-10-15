@@ -14,8 +14,26 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface, TransactionHandle } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtObject } from '../object';
+import {
+  cleanupDirectoryDatabase,
+  cleanupFileDatabase,
+} from '../testing/file-cleanup';
+
+const fileDatabases: Array<{ db: DatabaseInterface; path: string }> = [];
+const directoryDatabases: Array<{ db: DatabaseInterface; path: string }> = [];
+
+afterEach(async () => {
+  await Promise.all([
+    ...fileDatabases
+      .splice(0)
+      .map(({ db, path }) => cleanupFileDatabase(db, path)),
+    ...directoryDatabases
+      .splice(0)
+      .map(({ db, path }) => cleanupDirectoryDatabase(db, path)),
+  ]);
+});
 
 // Helper to create unique test database paths
 function getTempDbPath(name: string): string {
@@ -258,6 +276,10 @@ describe('Issue #35: System Tables Initialization', () => {
         url: dataDir2, // SDK now requires url parameter
         writeStrategy: 'immediate',
       });
+      directoryDatabases.push(
+        { db: db1, path: dataDir1 },
+        { db: db2, path: dataDir2 },
+      );
 
       // Initialize with first JSON database
       const doc1 = new Issue35TestDocument({ db: db1, content: 'test1' });
@@ -308,6 +330,7 @@ describe('Issue #35: System Tables Initialization', () => {
 
       // Verify system tables were created
       const db = obj.db;
+      fileDatabases.push({ db, path: dbPath });
       const migrations = await db.query('SELECT * FROM _smrt_migrations');
       expect(migrations.rows.length).toBeGreaterThan(0);
 
@@ -329,6 +352,7 @@ describe('Issue #35: System Tables Initialization', () => {
 
       // Verify system tables were created
       const db = obj.db;
+      fileDatabases.push({ db, path: dbPath });
       const migrations = await db.query('SELECT * FROM _smrt_migrations');
       expect(migrations.rows.length).toBeGreaterThan(0);
     });
