@@ -381,6 +381,15 @@ export {
 } from './recipe-help';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
+// Generated-surface exposure a collection class takes from its model.
+export {
+  type CollectionWriteEscalation,
+  type CrudVerb,
+  exposedCrudVerbs,
+  findCollectionWriteEscalations,
+  inheritCollectionExposure,
+  inheritedCollectionSurface,
+} from './registry/collection-exposure';
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
 // Revision compare-and-swap predicate helpers (#2620)
 export {
