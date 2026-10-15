@@ -24,6 +24,11 @@ export interface MaterializedReportCellRequest {
  */
 export interface MaterializedReportHost<Drilldown = unknown> {
   id: string;
+  /** Registered collection and model used by the route's normal read gate. */
+  collection: string;
+  className: string;
+  /** The report host fails closed unless this published permission is present. */
+  readPermission: string;
   descriptor(
     context: MaterializedReportHostContext,
   ): Promise<ReportAdapterDescriptor>;
@@ -35,6 +40,14 @@ export interface MaterializedReportHost<Drilldown = unknown> {
     context: MaterializedReportHostContext,
     request: MaterializedReportCellRequest,
   ): Promise<Drilldown>;
+}
+
+export function assertMaterializedReportRead(
+  host: MaterializedReportHost,
+  context: MaterializedReportHostContext,
+): void {
+  if (!context.permissions.includes(host.readPermission))
+    throw new Error('Materialized report access denied.');
 }
 
 export function findMaterializedReportHost(

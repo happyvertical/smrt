@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { findMaterializedReportHost } from '@happyvertical/smrt-reports';
+import { assertMaterializedReportRead, findMaterializedReportHost } from '@happyvertical/smrt-reports';
 import { materializedReportHosts } from '$lib/server/materialized-reports';
 import type { PageServerLoad } from './$types';
 
@@ -12,6 +12,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
     tenantId: locals.tenantId,
     permissions: locals.permissions ?? [],
   };
+  try { assertMaterializedReportRead(host, context); } catch { error(403, 'Report unavailable'); }
   return {
     hostId: host.id,
     page: await host.query(context, { limit: 50, offset: 0 }),

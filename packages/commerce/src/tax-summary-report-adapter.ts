@@ -51,8 +51,10 @@ const CELL_MEASURES = {
 
 /** Create a fixed, server-only tax-summary host for an authenticated template route. */
 export function createTaxSummaryMaterializedReportHost(
-  db: DatabaseInterface,
+  database: DatabaseInterface | (() => Promise<DatabaseInterface>),
 ): MaterializedReportHost {
+  const db = async () =>
+    typeof database === 'function' ? database() : database;
   const descriptor = () => buildTaxSummaryReportAdapterDescriptor();
   const scoped = <T>(
     context: MaterializedReportHostContext,
@@ -60,11 +62,14 @@ export function createTaxSummaryMaterializedReportHost(
   ) => withTenant({ tenantId: context.tenantId }, task);
   return {
     id: 'tax-summary',
+    collection: 'taxsummaryreports',
+    className: 'TaxSummaryReport',
+    readPermission: 'taxsummaryreports.read',
     descriptor,
     query: (context, request) =>
-      scoped(context, () =>
+      scoped(context, async () =>
         queryReportMaterializedRows(TaxSummaryReport, request, {
-          db,
+          db: await db(),
           adapter: TAX_SUMMARY_REPORT_ADAPTER,
           execution: 'visible',
         }),
@@ -74,19 +79,23 @@ export function createTaxSummaryMaterializedReportHost(
         CELL_MEASURES[request.columnId as keyof typeof CELL_MEASURES];
       if (!measure)
         throw new Error('Tax summary cell is not drilldown-capable.');
-      const result = await scoped(context, () =>
+      const result = await scoped(context, async () =>
         queryReportMaterializedRows(
           TaxSummaryReport,
           {
             filter: { field: 'id', operator: 'eq', value: request.id },
             limit: 1,
           },
-          { db, adapter: TAX_SUMMARY_REPORT_ADAPTER, execution: 'visible' },
+          {
+            db: await db(),
+            adapter: TAX_SUMMARY_REPORT_ADAPTER,
+            execution: 'visible',
+          },
         ),
       );
       if (result.rows.length !== 1)
         throw new Error('Tax summary row is unavailable.');
-      return drilldownTaxSummaryContributors(db, {
+      return drilldownTaxSummaryContributors(await db(), {
         tenantId: context.tenantId,
         reportId: request.id,
         measure,

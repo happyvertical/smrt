@@ -90,6 +90,7 @@ export {
   reportRefreshOutcome,
 } from './lifecycle.js';
 export {
+  assertMaterializedReportRead,
   findMaterializedReportHost,
   type MaterializedReportCellRequest,
   type MaterializedReportHost,
