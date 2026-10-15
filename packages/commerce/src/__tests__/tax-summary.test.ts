@@ -467,6 +467,37 @@ describe('aggregateTaxSummary', () => {
     ).toThrow(/safe integer minor-unit range/);
   });
 
+  it('includes a calendar-date expense on an ISO report range first day', () => {
+    const result = aggregateTaxSummary(
+      input({
+        from: '2026-09-01T00:00:00.000Z',
+        to: '2026-09-30T23:59:59.999Z',
+        expenses: [
+          {
+            tenantId,
+            expenseId: 'first-day-expense',
+            incurredOn: '2026-09-01',
+            currency: 'CAD',
+            commitmentId: null,
+            commitmentLineId: null,
+            financialBreakdown: {
+              taxes: [{ code: 'gst', amount: 50, recoverableAmount: 50 }],
+            },
+          },
+        ],
+      }),
+    );
+    expect(result.componentRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taxComponentId: 'gst',
+          expenseRecoverableMinor: 50,
+          inputTaxCreditMinor: 50,
+        }),
+      ]),
+    );
+  });
+
   it('does not treat a same-id purchase and expense in different currencies as linked', () => {
     const result = aggregateTaxSummary(
       input({

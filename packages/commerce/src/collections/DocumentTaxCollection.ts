@@ -59,6 +59,10 @@ export interface DocumentTaxReportFact {
   taxComponentId: string | null;
   componentName: string | null;
   liabilityAccountId: string | null;
+  /** Purchase Contracts are the expense commitment identity; other documents are unlinked. */
+  commitmentId: string | null;
+  /** Document-tax snapshots are contract-level, so they retain no line allocation. */
+  commitmentLineId: string | null;
 }
 
 /** @deprecated Use DocumentTaxReportFact. Kept for report-adapter compatibility. */
@@ -274,6 +278,8 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
         row.liability_account_id == null
           ? null
           : String(row.liability_account_id),
+      commitmentId: null,
+      commitmentLineId: null,
     }));
   }
 
@@ -359,6 +365,9 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
             row.liability_account_id == null
               ? null
               : String(row.liability_account_id),
+          // Expenses reference their PurchaseContract id as commitmentId.
+          commitmentId: documentId,
+          commitmentLineId: null,
         },
       ];
     });

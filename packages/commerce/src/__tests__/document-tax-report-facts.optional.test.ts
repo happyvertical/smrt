@@ -163,6 +163,8 @@ describePostgres(
             taxableMinor: 10_000,
             taxMinor: 500,
             recoverableMinor: 500,
+            commitmentId: fixture.contractId,
+            commitmentLineId: null,
           }),
           expect.objectContaining({
             documentId: fixture.contractId,
@@ -170,6 +172,67 @@ describePostgres(
             taxableMinor: 10_000,
             taxMinor: 700,
             recoverableMinor: 0,
+          }),
+        ]),
+      );
+    });
+
+    it('marks PostgreSQL stored purchase and linked expense facts incomplete', async () => {
+      const tenantId = randomUUID();
+      const fixture = await withTenant({ tenantId }, () =>
+        seedReviewedPurchaseContract(db, tenantId, {
+          reference: 'PG-PO-LINKED-EXPENSE',
+        }),
+      );
+      const reports = await TaxSummaryReportCollection.create({ db });
+      const refreshed = await reports.refreshTaxSummary({
+        tenantId,
+        from: new Date('2026-09-01T00:00:00.000Z'),
+        to: new Date('2026-09-30T23:59:59.999Z'),
+        expenseSource: {
+          listReviewedTaxFacts: async () => [
+            {
+              tenantId,
+              expenseId: 'pg-linked-expense',
+              incurredOn: '2026-09-01',
+              currency: 'CAD',
+              commitmentId: fixture.contractId,
+              commitmentLineId: 'unavailable-line',
+              financialBreakdown: {
+                taxes: [{ code: 'GST', amount: 500, recoverableAmount: 500 }],
+              },
+            },
+          ],
+        },
+        ledgerSource: { listPostedMovements: async () => [] },
+        expenseComponentMappings: [
+          {
+            tenantId,
+            expenseCode: 'GST',
+            taxComponentId: fixture.gstId,
+            componentName: 'GST',
+            liabilityAccountId: null,
+          },
+        ],
+      });
+      expect(refreshed.complete).toBe(false);
+      const rows = await withTenant({ tenantId }, () =>
+        reports.list({ where: { tenantId } }),
+      );
+      expect(rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            rowKind: 'component',
+            taxComponentId: fixture.gstId,
+            recoverableMinor: null,
+            netTaxMinor: null,
+            complete: false,
+          }),
+          expect.objectContaining({
+            rowKind: 'warning',
+            warningCode: 'linked-purchase-expense',
+            warningSourceId: 'pg-linked-expense',
+            complete: false,
           }),
         ]),
       );

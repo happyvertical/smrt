@@ -217,6 +217,8 @@ describe('DocumentTax invoice report facts (#3940)', () => {
           taxableMinor: 10_000,
           taxMinor: 500,
           recoverableMinor: 500,
+          commitmentId: fixture.contractId,
+          commitmentLineId: null,
         }),
         expect.objectContaining({
           documentId: fixture.contractId,
@@ -229,6 +231,66 @@ describe('DocumentTax invoice report facts (#3940)', () => {
     );
     expect(facts.map((fact) => fact.documentId)).not.toContain(
       cancelled.contractId,
+    );
+  });
+
+  it('marks a stored purchase contract plus linked expense incomplete instead of double recovering ITC', async () => {
+    const tenantId = 'purchase-linked-expense-tenant';
+    const fixture = await withTenant({ tenantId }, () =>
+      seedReviewedPurchaseContract(db, tenantId, { reference: 'PO-LINKED' }),
+    );
+    const reports = await TaxSummaryReportCollection.create({ db });
+    const refreshed = await reports.refreshTaxSummary({
+      tenantId,
+      from: new Date('2026-09-01T00:00:00.000Z'),
+      to: new Date('2026-09-30T23:59:59.999Z'),
+      expenseSource: {
+        listReviewedTaxFacts: async () => [
+          {
+            tenantId,
+            expenseId: 'expense-linked-to-purchase',
+            incurredOn: '2026-09-12',
+            currency: 'CAD',
+            commitmentId: fixture.contractId,
+            commitmentLineId: 'purchase-line-unavailable',
+            financialBreakdown: {
+              taxes: [{ code: 'GST', amount: 500, recoverableAmount: 500 }],
+            },
+          },
+        ],
+      },
+      ledgerSource: { listPostedMovements: async () => [] },
+      expenseComponentMappings: [
+        {
+          tenantId,
+          expenseCode: 'GST',
+          taxComponentId: fixture.gstId,
+          componentName: 'GST',
+          liabilityAccountId: null,
+        },
+      ],
+    });
+    expect(refreshed.complete).toBe(false);
+    const rows = await withTenant({ tenantId }, () =>
+      reports.list({ where: { tenantId } }),
+    );
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rowKind: 'component',
+          taxComponentId: fixture.gstId,
+          recoverableMinor: null,
+          netTaxMinor: null,
+          complete: false,
+        }),
+        expect.objectContaining({
+          rowKind: 'warning',
+          warningCode: 'linked-purchase-expense',
+          warningSourceType: 'expense',
+          warningSourceId: 'expense-linked-to-purchase',
+          complete: false,
+        }),
+      ]),
     );
   });
 
