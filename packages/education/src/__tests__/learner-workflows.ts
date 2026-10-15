@@ -66,7 +66,11 @@ export async function learnerFixture(db: DatabaseInterface) {
   const memberships = await MembershipCollection.create({ db });
   const learners = await LearnerCollection.create({ db });
   async function identity(name: string, owner: string) {
-    const profile = new Person({ db, name, typeId: String(profileType.id) });
+    const profile = new Person({
+      db,
+      name: `${name} ${randomUUID()}`,
+      typeId: String(profileType.id),
+    });
     await profile.initialize();
     await profile.save();
     const user = await users.create({
@@ -302,6 +306,44 @@ export async function assertProgressHistory(f: Fixture) {
     Promise.all(Array.from({ length: 5 }, () => service.startLesson(request))),
   );
   expect(new Set(results.map((row) => row.id)).size).toBe(1);
+  // A corrupt other-tenant row must not reserve this tenant's logical key.
+  const hostile = await as(own, async () =>
+    (await LessonProgressCollection.create({ db })).create({
+      tenantId: own.tenantId,
+      learnerId: own.learnerId,
+      enrollmentId: enrollment.id,
+      lessonId: String(f.secondLesson.id),
+      attempts: 9,
+    }),
+  );
+  await db.update(
+    'lesson_progress',
+    { id: hostile.id },
+    { tenant_id: f.foreign.tenantId },
+  );
+  const composed = await as(own, () =>
+    service.withTransaction((transaction) =>
+      Promise.all(
+        Array.from({ length: 4 }, () =>
+          transaction.startLesson({
+            ...request,
+            lessonId: String(f.secondLesson.id),
+          }),
+        ),
+      ),
+    ),
+  );
+  expect(new Set(composed.map((row) => row.id)).size).toBe(1);
+  expect(composed[0].id).not.toBe(hostile.id);
+  expect(composed[0].attempts).toBe(0);
+  expect(
+    await db.get('lesson_progress', {
+      id: hostile.id,
+      tenant_id: f.foreign.tenantId,
+      attempts: 9,
+    }),
+  ).toBeTruthy();
+
   const first = await as(
     own,
     async () =>
@@ -347,7 +389,7 @@ export async function assertProgressHistory(f: Fixture) {
   expect(newProgress.attempts).toBe(0);
   expect(newProgress.bestScore).toBeNull();
   expect(newProgress.status).toBe('in_progress');
-  expect(await as(own, () => service.listProgress(request))).toHaveLength(1);
+  expect(await as(own, () => service.listProgress(request))).toHaveLength(2);
   await expect(
     as(own, () =>
       service.startLesson({ ...request, learnerId: String(f.sibling.id) }),
@@ -516,6 +558,18 @@ export async function assertLearnerModels(f: Fixture) {
   await expect(as(own, () => persistedEnrollment.save())).rejects.toThrow(
     'status',
   );
+  await expect(
+    withTenant(
+      { tenantId: f.foreign.tenantId, userId: String(f.stranger.user.id) },
+      () =>
+        enrollments.create({
+          tenantId: f.foreign.tenantId,
+          curriculumId: f.curriculum.id,
+          learnerId: own.learnerId,
+          courseId: String(f.course.id),
+        }),
+    ),
+  ).rejects.toThrow('match');
   f.learner.userId = String(f.bob.user.id);
   await expect(as(own, () => f.learner.save())).rejects.toThrow(
     'identity cannot change',

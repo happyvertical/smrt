@@ -70,7 +70,9 @@ accepts a root database; callers composing work use this method instead of
 passing an unmanaged transaction handle.
 
 PostgreSQL locks the parent curriculum/enrollment row before find-or-create.
-Embedded writes use the core transaction queue. Database natural-key constraints
+Embedded writes use the core transaction queue. Concurrent mutations inside
+one callback transaction are ordered on that connection, so duplicate starts
+within a `Promise.all` also return the same row. Database natural-key constraints
 arbitrate enrollment `(tenant_id, curriculum_id, course_id)` and progress
 `(tenant_id, enrollment_id, lesson_id)` identities. Explicit storage conflict
 keys include the tenant prefix because core does not add it to explicit keys.

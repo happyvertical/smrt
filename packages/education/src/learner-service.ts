@@ -121,6 +121,7 @@ function progressView(row: LessonProgress): LessonProgressView {
 /** Closed models are exposed only through this actor-bound resource boundary. */
 export class LearnerService {
   private inTransaction = false;
+  private writeTail: Promise<void> = Promise.resolve();
   private postgres: boolean;
   constructor(
     private readonly db: DatabaseInterface,
@@ -149,6 +150,20 @@ export class LearnerService {
         return operation(service);
       },
     );
+  }
+
+  // Concurrent calls on one connection must observe earlier writes in that same
+  // transaction. Cross-transaction arbitration still uses database row locks.
+  private mutate<T>(
+    operation: (service: LearnerService) => Promise<T>,
+  ): Promise<T> {
+    if (!this.inTransaction) return this.withTransaction(operation);
+    const result = this.writeTail.then(() => operation(this));
+    this.writeTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 
   private async requireActor(
@@ -240,7 +255,7 @@ export class LearnerService {
   async createCurriculum(
     request: LearnerRequest & { title: string },
   ): Promise<CurriculumView> {
-    return this.withTransaction(async (service) => {
+    return this.mutate(async (service) => {
       const learner = await service.requireActor(
         request,
         'education.learner.plan',
@@ -290,7 +305,7 @@ export class LearnerService {
   async enroll(
     request: LearnerRequest & { curriculumId: string; courseId: string },
   ): Promise<EnrollmentView> {
-    return this.withTransaction(async (service) => {
+    return this.mutate(async (service) => {
       const learner = await service.requireActor(
         request,
         'education.learner.plan',
@@ -393,7 +408,7 @@ export class LearnerService {
   async startLesson(
     request: LearnerRequest & { enrollmentId: string; lessonId: string },
   ): Promise<LessonProgressView> {
-    return this.withTransaction(async (service) => {
+    return this.mutate(async (service) => {
       const enrollment = await service.requireEnrollment(
         request,
         'education.learner.start',
