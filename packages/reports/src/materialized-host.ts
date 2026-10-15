@@ -29,6 +29,8 @@ export interface MaterializedReportHost<Drilldown = unknown> {
   className: string;
   /** The report host fails closed unless this published permission is present. */
   readPermission: string;
+  /** Closed visible columns that may request a source drilldown. */
+  drilldownColumnIds: readonly string[];
   descriptor(
     context: MaterializedReportHostContext,
   ): Promise<ReportAdapterDescriptor>;

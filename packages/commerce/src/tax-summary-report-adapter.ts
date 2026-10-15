@@ -65,6 +65,7 @@ export function createTaxSummaryMaterializedReportHost(
     collection: 'taxsummaryreports',
     className: 'TaxSummaryReport',
     readPermission: 'taxsummaryreports.read',
+    drilldownColumnIds: Object.keys(CELL_MEASURES),
     descriptor,
     query: (context, request) =>
       scoped(context, async () =>
@@ -83,8 +84,17 @@ export function createTaxSummaryMaterializedReportHost(
         queryReportMaterializedRows(
           TaxSummaryReport,
           {
-            filter: { field: 'id', operator: 'eq', value: request.id },
-            limit: 1,
+            version: 1,
+            requestId: `tax-summary-drilldown:${request.id}`,
+            mode: 'rows',
+            projection: ['id'],
+            filter: {
+              kind: 'condition',
+              field: 'id',
+              operator: 'eq',
+              value: request.id,
+            },
+            page: { kind: 'offset', offset: 0, limit: 1 },
           },
           {
             db: await db(),

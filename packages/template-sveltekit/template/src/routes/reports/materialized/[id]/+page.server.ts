@@ -13,9 +13,15 @@ export const load: PageServerLoad = async ({ locals, params }) => {
     permissions: locals.permissions ?? [],
   };
   try { assertMaterializedReportRead(host, context); } catch { error(403, 'Report unavailable'); }
+  const descriptor = await host.descriptor(context);
   return {
     hostId: host.id,
-    page: await host.query(context, { limit: 50, offset: 0 }),
-    descriptor: await host.descriptor(context),
+    drilldownColumnIds: host.drilldownColumnIds,
+    page: await host.query(context, {
+      version: 1, requestId: `materialized:${host.id}`, mode: 'rows',
+      projection: [descriptor.identityField, ...descriptor.dataTable.columns.map((column) => column.id)],
+      page: { kind: 'offset', offset: 0, limit: 50 },
+    }),
+    descriptor,
   };
 };
