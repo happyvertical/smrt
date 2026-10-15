@@ -218,7 +218,7 @@ async function browserContract(site) {
     }
     await page.getByRole('tab', { name: 'Export' }).click();
     const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Export cookbook' }).click();
+    await page.getByRole('button', { name: 'Download cookbook' }).click();
     const download = await downloadPromise;
     const downloadPath = await download.path();
     if (!downloadPath) throw new Error('cookbook export had no file');
