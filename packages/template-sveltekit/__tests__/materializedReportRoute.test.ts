@@ -6,7 +6,8 @@ import { POST } from '../template/src/routes/reports/materialized/[id]/drilldown
 const host = {
   id: 'tax-summary', collection: 'taxsummaryreports', className: 'TaxSummaryReport',
   readPermission: 'taxsummaryreports.read',
-  descriptor: async () => ({ reportClassName: 'Tax summary' }),
+  drilldownColumnIds: ['tax_minor'],
+  descriptor: async () => ({ reportClassName: 'Tax summary', identityField: 'id', dataTable: { columns: [] } }),
   query: async (context: { tenantId: string }) => {
     if (context.tenantId !== 'tenant-a') throw new Error('wrong tenant');
     return { rows: [{ id: 'a-row' }], count: 1 };
@@ -36,6 +37,8 @@ describe('materialized report route', () => {
   it('rejects malformed, cross-tenant, and hidden-cell drilldowns', async () => {
     const request = (body: unknown) => new Request('https://app.test', { method: 'POST', body: JSON.stringify(body) });
     const call = (body: unknown, tenantId = 'tenant-a') => POST({ request: request(body), locals: locals(['taxsummaryreports.read'], tenantId), params: { id: 'tax-summary' } } as never);
+    expect((await POST({ request: request({ id: 'a-row', columnId: 'tax_minor' }), locals: locals([], null), params: { id: 'tax-summary' } } as never)).status).toBe(401);
+    expect((await POST({ request: request({ id: 'a-row', columnId: 'tax_minor' }), locals: locals([]), params: { id: 'tax-summary' } } as never)).status).toBe(403);
     expect((await call({})).status).toBe(400);
     expect((await call({ id: 'a-row', columnId: 'tax_minor' }, 'tenant-b')).status).toBe(404);
     expect((await call({ id: 'a-row', columnId: 'currency' })).status).toBe(404);

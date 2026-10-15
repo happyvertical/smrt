@@ -19,6 +19,7 @@ import { TaxSummaryReport } from '../models/TaxSummaryReport.js';
 import { aggregateTaxSummary } from '../tax-summary.js';
 import {
   buildTaxSummaryReportAdapterDescriptor,
+  createTaxSummaryMaterializedReportHost,
   drilldownTaxSummaryContributors,
   drilldownTaxSummaryInvoiceFacts,
   TAX_SUMMARY_REPORT_ADAPTER,
@@ -49,6 +50,54 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
     const migrationId = await settings.beginMoneyMigration(tenantId);
     await settings.activateMoneyV2(tenantId, migrationId);
   }
+
+  it('binds the production tax-summary host to its principal tenant and closed cells', async () => {
+    const fixture = await withTenant({ tenantId: 'tenant-a' }, () =>
+      seedInvoiceTaxReportFacts(db),
+    );
+    await withTenant({ tenantId: fixture.tenantId }, () =>
+      activateV2(fixture.tenantId),
+    );
+    await withTenant({ tenantId: 'tenant-b' }, () => activateV2('tenant-b'));
+    const reports = await TaxSummaryReportCollection.create({ db });
+    await reports.refreshTaxSummary({
+      tenantId: fixture.tenantId,
+      from,
+      to,
+      expenseSource: { listReviewedTaxFacts: async () => [] },
+      ledgerSource: { listPostedMovements: async () => [] },
+      expenseComponentMappings: [],
+    });
+    const host = createTaxSummaryMaterializedReportHost(db);
+    const principal = {
+      userId: 'user-a',
+      tenantId: fixture.tenantId,
+      permissions: ['taxsummaryreports.read'],
+    };
+    const page = await host.query(principal, {
+      version: 1,
+      requestId: 'host-page',
+      mode: 'rows',
+      projection: ['id', 'tax_minor', 'row_kind'],
+      page: { kind: 'offset', offset: 0, limit: 20 },
+    });
+    expect(page.rows.length).toBeGreaterThan(0);
+    const id = String(
+      page.rows.find((row) => row.row_kind === 'component')?.id,
+    );
+    await expect(
+      host.drilldown(principal, { id, columnId: 'currency' }),
+    ).rejects.toThrow(/not drilldown-capable/i);
+    await expect(
+      host.drilldown(
+        { ...principal, tenantId: 'tenant-b' },
+        { id, columnId: 'tax_minor' },
+      ),
+    ).rejects.toThrow(/unavailable/i);
+    await expect(
+      host.drilldown(principal, { id, columnId: 'tax_minor' }),
+    ).resolves.toMatchObject({ measure: 'tax' });
+  });
 
   it('materializes exact persisted A/B sales rows, DataTable descriptor, and a tenant-bound drilldown', async () => {
     const fixture = await withTenant({ tenantId: 'tenant-a' }, () =>
