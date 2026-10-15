@@ -3,16 +3,19 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 
@@ -41,12 +44,29 @@ export function createPackedConsumer({ root, packageNames, evidence, consumerDep
       if (error.code !== 'ENOENT') throw error;
     }
   }
+  // Producer lifecycle hooks must never empty a live workspace's dist while
+  // sibling suites consume it. Keep producer dependencies outside the consumer.
+  const producer = mkdtempSync(resolve(temporaryRoot, '.smrt-packed-producer-'));
+  const selected = new Map();
+  const select = (name) => {
+    if (selected.has(name)) return;
+    const entry = packages.get(name);
+    assert.ok(entry, `Unknown workspace package ${name}`);
+    selected.set(name, entry);
+    for (const dependency of Object.keys({ ...entry.manifest.dependencies,
+      ...entry.manifest.optionalDependencies, ...entry.manifest.peerDependencies })) {
+      if (packages.has(dependency)) select(dependency);
+    }
+  };
   const packed = new Map();
   const externalVersions = new Map();
 
   function run(command, args, cwd = fixture) {
     const result = spawnSync(command, args, {
-      cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
+      cwd, encoding: 'utf8',
+      // The fixture borrows installed dependencies; pnpm must not relink them.
+      env: cwd.startsWith(`${producer}/`) ? { ...process.env, pnpm_config_verify_deps_before_run: 'false' } : process.env,
+      maxBuffer: 16 * 1024 * 1024,
     });
     if (result.error) throw result.error;
     assert.equal(result.status, 0, `${command} ${args.join(' ')}\n${result.stdout}${result.stderr}`);
@@ -58,7 +78,8 @@ export function createPackedConsumer({ root, packageNames, evidence, consumerDep
     const { dir, manifest } = packages.get(name);
     const destination = resolve(fixture, 'tarballs', name);
     mkdirSync(destination, { recursive: true });
-    run('pnpm', ['pack', '--pack-destination', destination], dir);
+    const output = run('pnpm', ['pack', '--pack-destination', destination], resolve(producer, 'packages', basename(dir)));
+    if (evidence) { mkdirSync(evidence, { recursive: true }); writeFileSync(resolve(evidence, `${basename(dir)}-prepack.log`), output); }
     const tarballs = readdirSync(destination).filter((path) => path.endsWith('.tgz'));
     assert.equal(tarballs.length, 1);
     const tarball = resolve(destination, tarballs[0]);
@@ -93,6 +114,34 @@ export function createPackedConsumer({ root, packageNames, evidence, consumerDep
   }
 
   try {
+    for (const name of packageNames) select(name);
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (entry.isFile() && (entry.name === 'package.json' || entry.name === 'pnpm-workspace.yaml' || entry.name === 'pnpm-lock.yaml' || entry.name === 'AGENTS.md' || /^(tsconfig.*\.json|vite\.config\..+)$/.test(entry.name)))
+        copyFileSync(resolve(root, entry.name), resolve(producer, entry.name));
+    }
+    cpSync(resolve(root, 'scripts'), resolve(producer, 'scripts'), { recursive: true });
+    const linkDependencies = (source, destination) => {
+      mkdirSync(destination, { recursive: true });
+      for (const entry of readdirSync(source, { withFileTypes: true })) {
+        const from = resolve(source, entry.name);
+        const to = resolve(destination, entry.name);
+        if (entry.isDirectory() && entry.name.startsWith('@')) {
+          linkDependencies(from, to);
+        } else if (entry.name === '.bin') {
+          cpSync(from, to, { recursive: true });
+        } else {
+          const resolved = realpathSync(from);
+          const owned = [...selected.values()].find(({ dir }) => realpathSync(dir) === resolved);
+          symlinkSync(owned ? resolve(producer, 'packages', basename(owned.dir)) : resolved, to);
+        }
+      }
+    };
+    linkDependencies(resolve(root, 'node_modules'), resolve(producer, 'node_modules'));
+    for (const { dir } of selected.values()) {
+      const target = resolve(producer, 'packages', basename(dir));
+      cpSync(dir, target, { recursive: true, filter: (path) => !['node_modules', '.turbo'].includes(basename(path)) });
+      linkDependencies(resolve(dir, 'node_modules'), resolve(target, 'node_modules'));
+    }
     for (const name of packageNames) pack(name);
     const dependencies = { ...Object.fromEntries([...packed].map(([name, path]) => [name, `file:${path}`])), ...consumerDependencies };
     const nodeTypes = readJson(resolve(root, 'packages/core/node_modules/@types/node/package.json')).version;
@@ -149,5 +198,7 @@ export function createPackedConsumer({ root, packageNames, evidence, consumerDep
   } catch (error) {
     rmSync(fixture, { recursive: true, force: true });
     throw error;
+  } finally {
+    rmSync(producer, { recursive: true, force: true });
   }
 }

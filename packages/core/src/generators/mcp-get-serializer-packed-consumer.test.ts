@@ -11,6 +11,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -77,10 +78,13 @@ describe('MCP get serializer packed consumer (#3937)', () => {
     const { createPackedConsumer } = (await import(
       packedConsumerModule
     )) as PackedConsumerModule;
+    const liveCoreArtifact = join(packageDir, 'dist/database.js');
+    const liveArtifactMtime = statSync(liveCoreArtifact).mtimeMs;
     consumer = createPackedConsumer({
       root: workspaceRoot,
       packageNames: ['@happyvertical/smrt-core'],
     });
+    expect(statSync(liveCoreArtifact).mtimeMs).toBe(liveArtifactMtime);
 
     const commerceSource = join(consumer.directory, 'commerce-source');
     const tarballs = join(consumer.directory, 'tarballs');

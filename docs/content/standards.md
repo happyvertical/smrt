@@ -838,7 +838,12 @@ After `pnpm build`, run `node scripts/verify-packed-declarations.mjs` to compile
 real core, profiles, inventory, and their workspace dependency tarballs in both
 consumer modes with declaration checking enabled. The fixture installs those
 tarballs without links to producer dependencies or undeclared development types.
-Set `SMRT_PACKED_EVIDENCE_DIR` to retain install metadata and tarball evidence.
+Packing runs normal lifecycle hooks in a separate temporary producer workspace,
+so a prepack rebuild cannot delete live build outputs used by parallel tests.
+Selected workspace dependency links resolve to copied producers; installed external tools
+are reused without permitting pnpm to relink the live installation. The consumer
+remains separate, with no ancestor `node_modules` or producer dependency links.
+Set `SMRT_PACKED_EVIDENCE_DIR` to retain prepack logs, install metadata and tarball evidence.
 
 SDK declaration portability requires the repair released in SDK v0.102.1
 ([SDK #1285](https://github.com/happyvertical/sdk/issues/1285)), which the workspace
