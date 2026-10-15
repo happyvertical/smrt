@@ -89,6 +89,13 @@ export {
   previewReportRefresh,
   reportRefreshOutcome,
 } from './lifecycle.js';
+export {
+  assertMaterializedReportRead,
+  findMaterializedReportHost,
+  type MaterializedReportCellRequest,
+  type MaterializedReportHost,
+  type MaterializedReportHostContext,
+} from './materialized-host.js';
 export { MaterializedReportsRecipe, RuntimeReportsRecipe } from './recipes.js';
 export {
   refreshReport,

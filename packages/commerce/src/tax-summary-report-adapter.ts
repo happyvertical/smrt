@@ -3,9 +3,13 @@
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import {
   buildReportAdapterDescriptor,
+  type MaterializedReportHost,
+  type MaterializedReportHostContext,
+  queryReportMaterializedRows,
   type ReportAdapterDescriptor,
   type ReportAdapterOptions,
 } from '@happyvertical/smrt-reports';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   type TaxSummaryContributorDrilldownOptions,
   type TaxSummaryInvoiceDrilldownOptions,
@@ -34,6 +38,71 @@ export const TAX_SUMMARY_REPORT_ADAPTER: ReportAdapterOptions = {
     },
   },
 };
+
+const CELL_MEASURES = {
+  taxable_minor: 'taxable',
+  tax_minor: 'tax',
+  recoverable_minor: 'recoverable',
+  net_tax_minor: 'net',
+  ledger_movement_minor: 'ledgerMovement',
+  difference_minor: 'difference',
+  document_count: 'documentCount',
+} as const;
+
+/** Create a fixed, server-only tax-summary host for an authenticated template route. */
+export function createTaxSummaryMaterializedReportHost(
+  database: DatabaseInterface | (() => Promise<DatabaseInterface>),
+): MaterializedReportHost {
+  const db = async () =>
+    typeof database === 'function' ? database() : database;
+  const descriptor = () => buildTaxSummaryReportAdapterDescriptor();
+  const scoped = <T>(
+    context: MaterializedReportHostContext,
+    task: () => Promise<T>,
+  ) => withTenant({ tenantId: context.tenantId }, task);
+  return {
+    id: 'tax-summary',
+    collection: 'taxsummaryreports',
+    className: 'TaxSummaryReport',
+    readPermission: 'taxsummaryreports.read',
+    descriptor,
+    query: (context, request) =>
+      scoped(context, async () =>
+        queryReportMaterializedRows(TaxSummaryReport, request, {
+          db: await db(),
+          adapter: TAX_SUMMARY_REPORT_ADAPTER,
+          execution: 'visible',
+        }),
+      ),
+    async drilldown(context, request) {
+      const measure =
+        CELL_MEASURES[request.columnId as keyof typeof CELL_MEASURES];
+      if (!measure)
+        throw new Error('Tax summary cell is not drilldown-capable.');
+      const result = await scoped(context, async () =>
+        queryReportMaterializedRows(
+          TaxSummaryReport,
+          {
+            filter: { field: 'id', operator: 'eq', value: request.id },
+            limit: 1,
+          },
+          {
+            db: await db(),
+            adapter: TAX_SUMMARY_REPORT_ADAPTER,
+            execution: 'visible',
+          },
+        ),
+      );
+      if (result.rows.length !== 1)
+        throw new Error('Tax summary row is unavailable.');
+      return drilldownTaxSummaryContributors(await db(), {
+        tenantId: context.tenantId,
+        reportId: request.id,
+        measure,
+      });
+    },
+  };
+}
 
 /** Descriptor consumed by the registered report runtime and DataTable host. */
 export function buildTaxSummaryReportAdapterDescriptor(): Promise<ReportAdapterDescriptor> {
