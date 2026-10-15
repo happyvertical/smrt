@@ -9,7 +9,7 @@
  * - Tests read like executable examples
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ProfileCollection,
   ProfileMetafieldCollection,
@@ -17,6 +17,11 @@ import {
   type ProfileType,
   ProfileTypeCollection,
 } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
+
+const fixtures = createOwnedSqliteFixtures();
+
+afterEach(() => fixtures.cleanup());
 
 describe('Profiles Package Integration Tests', () => {
   describe('ProfileType CRUD', () => {
@@ -79,13 +84,12 @@ describe('Profiles Package Integration Tests', () => {
 
     beforeEach(async () => {
       // Use a temp file database so ProfileType and Profile can reference each other
-      const { tmpdir } = await import('node:os');
-      const { join } = await import('node:path');
-      const dbUrl = join(tmpdir(), `test-${Date.now()}.db`);
+      const dbUrl = fixtures.file('profile-integration');
 
       collection = await ProfileCollection.create({
         persistence: { type: 'sqlite', url: dbUrl },
       });
+      fixtures.track(collection.db);
 
       const typeCollection = await ProfileTypeCollection.create({
         persistence: { type: 'sqlite', url: dbUrl },

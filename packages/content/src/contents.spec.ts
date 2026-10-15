@@ -6,13 +6,34 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import { syncSchema } from '@happyvertical/sql';
 import { makeSlug } from '@happyvertical/utils';
-import { expect, it, vi } from 'vitest';
+import { afterAll, expect, it, vi } from 'vitest';
 import { ContentAssetCollection } from './content-assets';
 import './content-feed-source';
 import { Contents } from './contents';
 
-const TMP_DIR = path.resolve(`${os.tmpdir()}/.have-sdk-tests/contents`);
-fs.mkdirSync(TMP_DIR, { recursive: true });
+const TMP_DIR = fs.mkdtempSync(
+  path.join(os.tmpdir(), 'smrt-content-contents-'),
+);
+const ownedDatabases = new Set<{ close?: () => void | Promise<void> }>();
+
+afterAll(async () => {
+  const results = await Promise.allSettled(
+    [...ownedDatabases].map((database) => database.close?.()),
+  );
+  ownedDatabases.clear();
+  await fs.promises.rm(TMP_DIR, { recursive: true, force: true });
+  const failures = results
+    .filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    )
+    .map((result) => result.reason);
+  if (failures.length > 0) {
+    throw new AggregateError(
+      failures,
+      'Failed to close owned content SQLite fixtures',
+    );
+  }
+});
 
 /**
  * Creates a unique database URL for testing
@@ -21,7 +42,8 @@ fs.mkdirSync(TMP_DIR, { recursive: true });
 function getTestDbUrl(testName: string): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(7);
-  return `file:${TMP_DIR}/${testName}-${timestamp}-${random}.db`;
+  const file = `${TMP_DIR}/${testName}-${timestamp}-${random}.db`;
+  return `file:${file}`;
 }
 
 const CONTENT_VERSIONS_SCHEMA = `
@@ -115,6 +137,7 @@ it('should persist bodyFormat and restore it from content versions', async () =>
     type: 'sqlite',
     url: getTestDbUrl('body-format'),
   });
+  ownedDatabases.add(db);
   const contents = await Contents.create({
     db,
   });
@@ -737,6 +760,7 @@ it('addReference is idempotent: duplicate calls preserve the existing reference 
 it('should pin and update the cited version on a content reference', async () => {
   const dbUrl = getTestDbUrl('reference-version-pin');
   const db = await getTestDatabase({ type: 'sqlite', url: dbUrl });
+  ownedDatabases.add(db);
   const contents = await Contents.create({ db });
   await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
   await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });
@@ -798,6 +822,7 @@ it('should pin and update the cited version on a content reference', async () =>
 it('should leave unpinned references untracked but reportable', async () => {
   const dbUrl = getTestDbUrl('reference-version-unpinned');
   const db = await getTestDatabase({ type: 'sqlite', url: dbUrl });
+  ownedDatabases.add(db);
   const contents = await Contents.create({ db });
   await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
   await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });
@@ -842,6 +867,7 @@ it('restoring an unpinned snapshot over a currently-pinned edge clears the pin (
   // snapshot edge (null pins included), not just the non-null ones.
   const dbUrl = getTestDbUrl('reference-restore-clears-pin');
   const db = await getTestDatabase({ type: 'sqlite', url: dbUrl });
+  ownedDatabases.add(db);
   const contents = await Contents.create({ db });
   await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
   await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });

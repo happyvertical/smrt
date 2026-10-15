@@ -1,28 +1,32 @@
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   ProfileAssetCollection,
   ProfileCollection,
   ProfileTypeCollection,
 } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
+
+const fixtures = createOwnedSqliteFixtures();
 
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 async function createProfileFixture(dbUrl: string) {
   const profiles = await ProfileCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(profiles.db);
   const profileTypes = await ProfileTypeCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(profileTypes.db);
   const assets = await AssetCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(assets.db);
 
   const type = await profileTypes.create({
     name: 'Person',
@@ -40,6 +44,8 @@ async function createProfileFixture(dbUrl: string) {
 
   return { profiles, assets, profile };
 }
+
+afterEach(() => fixtures.cleanup());
 
 describe('Profile owned assets', () => {
   it('manages owned assets from the model API', async () => {
