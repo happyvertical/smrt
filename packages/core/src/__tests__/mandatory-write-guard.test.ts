@@ -170,6 +170,8 @@ describe.each(dialects)('mandatory write guard (%s)', ({ type }) => {
 
     const cas = await records.create({ slug: 'cas-save', name: 'old' });
     const expectedUpdatedAt = cas.updated_at;
+    if (!expectedUpdatedAt)
+      throw new Error('Persisted CAS fixture needs a revision');
     await makePrivate(cas);
     cas.name = 'cas overwrite';
     await expect(cas.save({ expectedUpdatedAt })).rejects.toMatchObject({
@@ -184,6 +186,8 @@ describe.each(dialects)('mandatory write guard (%s)', ({ type }) => {
   it('atomically denies claimRevision and delete after a late policy change', async () => {
     const claimant = await records.create({ slug: 'claim', name: 'old' });
     const claimedRevision = claimant.updated_at;
+    if (!claimedRevision)
+      throw new Error('Persisted claim fixture needs a revision');
     await makePrivate(claimant);
     await expect(claimant.claimRevision(claimedRevision)).rejects.toMatchObject(
       {
