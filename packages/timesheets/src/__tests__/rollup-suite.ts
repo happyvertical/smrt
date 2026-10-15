@@ -14,6 +14,7 @@ import {
   type PeriodRulesResolver,
   PeriodTimecardCollection,
   TimecardAdjustmentCollection,
+  TimecardReopening,
 } from '../rollup.js';
 
 const at = (hour: number) => new Date(Date.UTC(2026, 9, 1, hour));
@@ -634,6 +635,174 @@ export function rollupSuite(
       await expect(
         fix.correctPunch({ ...input, endedAt: half(8) }),
       ).rejects.toThrow('confirmed timecard');
+    });
+    it('submits then confirms, and keeps open -> confirmed by default', async () => {
+      await entry();
+      const card = await service.rollup(at(12));
+      const submitted = await service.submit(card.id!);
+      expect(submitted.status).toBe('submitted');
+      expect(submitted.submittedByProfileId).toBe(actor.profileId);
+      expect((await service.submit(card.id!)).status).toBe('submitted');
+      await expect(service.rollup(at(12))).rejects.toThrow('frozen');
+      const confirmed = await service.confirm(card.id!);
+      expect(confirmed.status).toBe('confirmed');
+      await expect(service.submit(card.id!)).rejects.toThrow('open');
+      const direct = new PeriodRollupService(db, actor, resolver);
+      expect((await direct.get(card.id!)).status).toBe('confirmed');
+    });
+    it('confirms an open card directly unless submission is required', async () => {
+      await entry();
+      const card = await service.rollup(at(12));
+      const strict = new PeriodRollupService(db, actor, resolver, {
+        requireSubmission: true,
+      });
+      await expect(strict.confirm(card.id!)).rejects.toThrow('submitted');
+      await strict.submit(card.id!);
+      expect((await strict.confirm(card.id!)).status).toBe('confirmed');
+    });
+    it('reopens a confirmed card with a reason, audits it, re-rolls and reconfirms', async () => {
+      await entry();
+      const supervisor = `c${crypto.randomUUID().slice(1)}`;
+      const boss = new PeriodRollupService(db, actor, resolver, {
+        actorProfileId: supervisor,
+      });
+      const card = await service.rollup(at(12));
+      await service.confirm(card.id!);
+      await service.adjust(card.id!, {
+        operationId: 'adj',
+        regularSeconds: 0,
+        overtimeSeconds: 60,
+        reason: 'late',
+      });
+      await expect(
+        boss.reopen(card.id!, { operationId: 'r1', reason: ' ' }),
+      ).rejects.toThrow('reason');
+      await expect(
+        boss.reopen(card.id!, { operationId: ' ', reason: 'x' }),
+      ).rejects.toThrow('operationId');
+      const reopened = await boss.reopen(card.id!, {
+        operationId: 'r1',
+        reason: 'missed punch',
+      });
+      expect(reopened.status).toBe('open');
+      expect(reopened.confirmedAt).toBeNull();
+      const [row] = await boss.reopenings(card.id!);
+      expect(row.fromStatus).toBe('confirmed');
+      expect(row.actorProfileId).toBe(supervisor);
+      expect(row.reason).toBe('missed punch');
+      expect(row.getPrevious()).toMatchObject({
+        confirmedByProfileId: actor.profileId,
+        base: { totalSeconds: 7200 },
+        effective: { totalSeconds: 7260 },
+        adjustments: { count: 1, overtimeSeconds: 60 },
+      });
+      // idempotent retry; different payload refused
+      await boss.reopen(card.id!, {
+        operationId: 'r1',
+        reason: 'missed punch',
+      });
+      await expect(
+        boss.reopen(card.id!, { operationId: 'r1', reason: 'other' }),
+      ).rejects.toThrow('different payload');
+      expect(await boss.reopenings(card.id!)).toHaveLength(1);
+      await expect(
+        boss.reopen(card.id!, { operationId: 'r2', reason: 'again' }),
+      ).rejects.toThrow('submitted or confirmed');
+      await expect(
+        service.adjust(card.id!, {
+          operationId: 'a2',
+          regularSeconds: 1,
+          overtimeSeconds: 0,
+          reason: 'x',
+        }),
+      ).rejects.toThrow('confirmed');
+      // a new source appears; the re-roll reflects it, then confirm again
+      await entry(3600, {
+        startedAt: at(14),
+        endedAt: at(15),
+        approvedAt: at(15),
+      });
+      const rerolled = await boss.rollup(at(12));
+      expect(rerolled.id).toBe(card.id);
+      expect(rerolled.totalSeconds).toBe(10800);
+      expect((await boss.confirm(card.id!)).status).toBe('confirmed');
+      await boss.reopen(card.id!, { operationId: 'r2', reason: 'again' });
+      expect(await boss.reopenings(card.id!)).toHaveLength(2);
+    });
+    it('reopens a submitted card and records its prior status', async () => {
+      await entry();
+      const card = await service.rollup(at(12));
+      await service.submit(card.id!);
+      const reopened = await service.reopen(card.id!, {
+        operationId: 'r',
+        reason: 'wrong job',
+      });
+      expect(reopened.status).toBe('open');
+      expect(reopened.submittedAt).toBeNull();
+      const [row] = await service.reopenings(card.id!);
+      expect(row.fromStatus).toBe('submitted');
+      await expect(
+        service.reopen(card.id!, { operationId: 'x', reason: 'open' }),
+      ).rejects.toThrow('submitted or confirmed');
+    });
+    it('keeps the reopening ledger append-only and service-only', async () => {
+      await entry();
+      const card = await service.rollup(at(12));
+      await service.confirm(card.id!);
+      await service.reopen(card.id!, { operationId: 'r', reason: 'fix' });
+      const [row] = await service.reopenings(card.id!);
+      await expect(row.save()).rejects.toThrow();
+      await expect(row.delete()).rejects.toThrow('cannot be deleted');
+      await expect(
+        new TimecardReopening({ db, tenantId: actor.tenantId }).save(),
+      ).rejects.toThrow();
+      const loaded = await service.get(card.id!);
+      loaded.status = 'confirmed';
+      await expect(loaded.save()).rejects.toThrow();
+    });
+    it('allows attendance corrections in a reopened period only', async () => {
+      const attendance = new AttendanceService(db, actor);
+      await attendance.punchIn(at(8));
+      const punch = await attendance.punchOut(at(10));
+      const fix = new AttendanceCorrectionService(
+        db,
+        { tenantId: actor.tenantId, profileId: actor.profileId },
+        { guard: confirmedTimecardGuard },
+      );
+      const att = new PeriodRollupService(db, actor, resolver, {
+        attendance: true,
+      });
+      const card = await att.rollup(at(12));
+      expect(card.totalSeconds).toBe(7200);
+      await att.submit(card.id!);
+      await expect(
+        fix.correctPunch({
+          subjectProfileId: actor.profileId,
+          punchId: punch.id!,
+          endedAt: at(9),
+          reason: 'submitted',
+        }),
+      ).rejects.toThrow('submitted timecard');
+      await att.confirm(card.id!);
+      await expect(
+        fix.correctPunch({
+          subjectProfileId: actor.profileId,
+          punchId: punch.id!,
+          endedAt: at(9),
+          reason: 'confirmed',
+        }),
+      ).rejects.toThrow('confirmed timecard');
+      await att.reopen(card.id!, { operationId: 'r', reason: 'left early' });
+      await fix.correctPunch({
+        subjectProfileId: actor.profileId,
+        punchId: punch.id!,
+        endedAt: at(9),
+        reason: 'left early',
+      });
+      const rerolled = await att.rollup(at(12));
+      expect(rerolled.totalSeconds).toBe(3600);
+      expect((await att.confirm(card.id!)).status).toBe('confirmed');
+      expect((await att.totals(card.id!)).totalSeconds).toBe(3600);
     });
   });
 }

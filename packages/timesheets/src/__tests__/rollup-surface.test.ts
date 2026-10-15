@@ -5,11 +5,15 @@ import {
 } from '@happyvertical/smrt-core/generators';
 import { getTenantScopedConfig } from '@happyvertical/smrt-tenancy';
 import { expect, it } from 'vitest';
-import { PeriodTimecard, TimecardAdjustment } from '../rollup.js';
+import {
+  PeriodTimecard,
+  TimecardAdjustment,
+  TimecardReopening,
+} from '../rollup.js';
 
 it('keeps timecards and append-only adjustments off all generated surfaces', async () => {
   const tools = await new MCPGenerator().generateTools();
-  for (const model of [PeriodTimecard, TimecardAdjustment]) {
+  for (const model of [PeriodTimecard, TimecardAdjustment, TimecardReopening]) {
     const name = `@happyvertical/smrt-timesheets:${model.name}`;
     for (const action of [
       'list',

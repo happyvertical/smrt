@@ -6,12 +6,17 @@ export {
   PeriodTimecardCollection,
   TimecardAdjustment,
   TimecardAdjustmentCollection,
+  TimecardReopening,
+  TimecardReopeningCollection,
+  type TimecardStatus,
 } from './rollup/models.js';
 export { PeriodRollupService } from './rollup/service.js';
 export type {
+  PeriodRollupOptions,
   PeriodRulesResolver,
   TimecardActor,
   TimecardAdjustmentInput,
   TimecardPeriod,
+  TimecardReopenInput,
   TimecardSource,
 } from './rollup/types.js';

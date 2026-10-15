@@ -9,11 +9,16 @@ import { parseTimesheetJson } from '../models/json.js';
 import { ServiceTimeEntryCollection } from '../models/service-time-entry.js';
 import {
   type AttendanceActor,
+  type AttendanceBreakOptions,
   AttendanceConflict,
   type AttendanceContext,
+  type AttendanceDeviceRef,
+  type AttendancePunchOptions,
   type AttendanceRefusalCode,
   type AttendanceWork,
   attendanceIdentity,
+  attendanceLabel,
+  attendanceProvenance,
   validateAttendanceWork,
 } from './context.js';
 import {
@@ -34,6 +39,7 @@ import {
   openSegment,
   replaceSegment,
 } from './segments.js';
+import { persistAutoClose } from './write.js';
 
 /** Whether stored evidence metadata carries this work's task reference and kind. */
 function sameAttribution(metadata: string, work: AttendanceWork): boolean {
@@ -47,8 +53,11 @@ function sameAttribution(metadata: string, work: AttendanceWork): boolean {
 
 export {
   type AttendanceActor,
+  type AttendanceBreakOptions,
   AttendanceConflict,
   type AttendanceContext,
+  type AttendanceDeviceRef,
+  type AttendancePunchOptions,
   type AttendanceRefusalCode,
   type AttendanceWork,
   validateAttendanceWork,
@@ -64,6 +73,12 @@ export interface AttendanceTap {
   paid?: boolean;
   /** Required by `startWork` and `switchWork`; also links evidence on `punchOut`. */
   work?: AttendanceWork;
+  /** Recorded on the punch by `punchIn`; hashed with the tap. */
+  source?: string;
+  /** Recorded on the punch by `punchIn`; hashed with the tap. */
+  device?: AttendanceDeviceRef;
+  /** Recorded on the break by `startBreak`; hashed with the tap. */
+  kind?: string;
 }
 
 /** Punch and break actions plus the work-segment actions (`stopWork` is "pause"). */
@@ -115,6 +130,28 @@ export interface AttendanceRefusal {
   /** Replaces the default message when given. */
   message?: string;
 }
+
+/** A resolved auto-close deadline and, optionally, why the punch closed then. */
+export interface AttendanceAutoCloseDecision {
+  deadline: Date;
+  /** Recorded as `autoCloseReason` (1 to 200 characters); defaults to `deadline`. */
+  reason?: string;
+}
+
+/**
+ * Fixed maximum open seconds, or a per-punch resolver returning the deadline
+ * (a Date or a decision) or null to leave the punch open.
+ */
+export type AttendanceAutoCloseDeadline =
+  | number
+  | ((
+      punch: AttendancePunch,
+    ) =>
+      | Date
+      | AttendanceAutoCloseDecision
+      | null
+      | undefined
+      | Promise<Date | AttendanceAutoCloseDecision | null | undefined>);
 
 export interface AttendanceReplayOptions {
   /**
@@ -287,8 +324,17 @@ export class AttendanceService {
   }
 
   /** Open one punch; the database unique slot also protects direct model writers. */
-  async punchIn(at = new Date()): Promise<AttendancePunch> {
-    return this.transact((tx) => this.transition(tx, 'punchIn', this.date(at)));
+  async punchIn(
+    at = new Date(),
+    options?: AttendancePunchOptions,
+  ): Promise<AttendancePunch> {
+    const meta = attendanceProvenance(options);
+    return this.transact((tx) =>
+      this.transition(tx, 'punchIn', this.date(at), false, undefined, false, {
+        ...meta,
+        kind: '',
+      }),
+    );
   }
   /** Close the punch and any active break; optionally create linked draft evidence. */
   async punchOut(at: Date, work?: AttendanceWork): Promise<AttendancePunch> {
@@ -297,9 +343,17 @@ export class AttendanceService {
     );
   }
   /** Begin a break; paid defaults false and must be explicitly configured by the caller. */
-  async startBreak(at: Date, paid = false): Promise<AttendancePunch> {
+  async startBreak(
+    at: Date,
+    paid = false,
+    options?: AttendanceBreakOptions,
+  ): Promise<AttendancePunch> {
+    const kind = attendanceLabel(options?.kind, 'kind');
     return this.transact((tx) =>
-      this.transition(tx, 'startBreak', this.date(at), paid),
+      this.transition(tx, 'startBreak', this.date(at), paid, undefined, false, {
+        ...attendanceProvenance(),
+        kind,
+      }),
     );
   }
   /**
@@ -381,6 +435,10 @@ export class AttendanceService {
     paid = false,
     work?: AttendanceWork,
     resumeWork = false,
+    meta: ReturnType<typeof attendanceProvenance> & { kind: string } = {
+      ...attendanceProvenance(),
+      kind: '',
+    },
   ): Promise<AttendancePunch> {
     await this.chronological(tx, at);
     if (action === 'punchIn') {
@@ -396,6 +454,9 @@ export class AttendanceService {
       return tx.punches.create({
         ...this.actor,
         startedAt: at,
+        source: meta.source,
+        deviceRefType: meta.deviceRefType,
+        deviceRefId: meta.deviceRefId,
         _insertOnly: true,
       });
     }
@@ -415,6 +476,7 @@ export class AttendanceService {
         punchId: punch.id ?? undefined,
         startedAt: at,
         paid,
+        kind: meta.kind,
         _insertOnly: true,
       });
       return punch;
@@ -497,7 +559,21 @@ export class AttendanceService {
         break;
       default:
         return {
-          punch: await this.transition(tx, tap.action, at, tap.paid, tap.work),
+          punch: await this.transition(
+            tx,
+            tap.action,
+            at,
+            tap.paid,
+            tap.work,
+            false,
+            {
+              ...attendanceProvenance({
+                source: tap.source,
+                device: tap.device,
+              }),
+              kind: attendanceLabel(tap.kind, 'kind'),
+            },
+          ),
         };
     }
     const [punch] = await tx.punches.list({
@@ -579,13 +655,24 @@ export class AttendanceService {
     });
   }
 
-  /** Close at startedAt + maxOpenSeconds once due, flagging the punch for review. */
+  /**
+   * Close the open punch once its deadline has passed, flagging it for review.
+   * `deadline` is either a fixed maximum open duration in seconds (closing at
+   * `startedAt + seconds`, reason `maxDuration`) or a resolver called with the
+   * open punch that returns its deadline (a `Date`, or `{ deadline, reason }`),
+   * or null to leave it open. The consumer owns time zones and shop-day rules.
+   * The open work segment and break close at the deadline; returns the closed
+   * punch, or null when nothing was due.
+   */
   async autoClose(
     now: Date,
-    maxOpenSeconds: number,
+    deadline: AttendanceAutoCloseDeadline,
   ): Promise<AttendancePunch | null> {
     this.date(now);
-    if (!Number.isSafeInteger(maxOpenSeconds) || maxOpenSeconds <= 0)
+    if (
+      typeof deadline !== 'function' &&
+      (!Number.isSafeInteger(deadline) || deadline <= 0)
+    )
       throw new AttendanceConflict(
         'maxOpenSeconds must be a positive integer.',
       );
@@ -595,14 +682,34 @@ export class AttendanceService {
         limit: 1,
       });
       if (!punch) return null;
-      const deadline = new Date(
-        punch.startedAt.getTime() + maxOpenSeconds * 1000,
-      );
-      if (deadline > now) return null;
+      let at: Date;
+      let reason = 'maxDuration';
+      if (typeof deadline === 'function') {
+        const resolved = await deadline(punch);
+        if (resolved === null || resolved === undefined) return null;
+        const decision =
+          resolved instanceof Date ? { deadline: resolved } : resolved;
+        at = decision.deadline;
+        if (!(at instanceof Date) || !Number.isFinite(at.getTime()))
+          throw new AttendanceConflict('Auto-close deadline is invalid.');
+        if (at < punch.startedAt)
+          throw new AttendanceConflict(
+            'Auto-close deadline predates the punch.',
+          );
+        reason = decision.reason ?? 'deadline';
+        if (typeof reason !== 'string' || !reason.trim() || reason.length > 200)
+          throw new AttendanceConflict(
+            'Auto-close reason must be 1 to 200 characters.',
+          );
+      } else {
+        at = new Date(punch.startedAt.getTime() + deadline * 1000);
+      }
+      if (at > now) return null;
       // Do not truncate a later committed break. The conflict requires manual review.
-      const closed = await this.transition(tx, 'punchOut', deadline);
+      const closed = await this.transition(tx, 'punchOut', at);
       closed.reviewRequired = true;
-      await closed.save();
+      closed.autoCloseReason = reason;
+      await persistAutoClose(closed);
       return closed;
     });
   }
@@ -635,6 +742,8 @@ export class AttendanceService {
         throw new AttendanceConflict('Malformed attendance tap.');
       if (tap.paid !== undefined && typeof tap.paid !== 'boolean')
         throw new AttendanceConflict('paid must be boolean.');
+      attendanceProvenance({ source: tap.source, device: tap.device });
+      attendanceLabel(tap.kind, 'kind');
     }
     const ordered = [...taps].sort(
       (a, b) =>
@@ -662,6 +771,18 @@ export class AttendanceService {
                   tap.work.taskRefType ?? null,
                   tap.work.taskRefId ?? null,
                   tap.work.kind ?? null,
+                ]
+              : []),
+            // Provenance joins the hash only when present, so receipts of taps
+            // that carry none are unchanged.
+            ...(tap.source || tap.device || tap.kind
+              ? [
+                  {
+                    source: tap.source ?? '',
+                    deviceType: tap.device?.type ?? '',
+                    deviceId: tap.device?.id ?? '',
+                    kind: tap.kind ?? '',
+                  },
                 ]
               : []),
           ]);

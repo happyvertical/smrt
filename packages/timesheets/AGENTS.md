@@ -25,9 +25,12 @@ per-instance capability (`attendance/write.ts`, not exported) that lifts the
 models' closed-interval checks for one save, validates the whole punch layout,
 recomputes durations and appends an `AttendanceCorrection` (append-only ledger,
 no generated operations; only a first acknowledgement by the subject may update
-a row). Never export `write.ts`. A confirmed `PeriodTimecard` is honoured by the
+a row). Never export `write.ts`. Punch `source`/`deviceRef*` and break `kind` are immutable except through corrections; `autoCloseReason` is write-once via `persistAutoClose`. A confirmed `PeriodTimecard` is honoured by the
 opt-in `confirmedTimecardGuard` (`rollup/correction-guard.ts`), which refuses
-rather than reopens (#3950).
+while a card is submitted or confirmed. `PeriodRollupService.reopen()` returns
+such a card to `open` and appends a `TimecardReopening` (`timecard_reopenings`,
+append-only, service-only via `rollup/write.ts`); `submit()` is the optional
+open -> submitted step (`requireSubmission` makes it mandatory) (#3950).
 Segment transitions live in `attendance/segments.ts`; compose them with other
 attendance writes via `AttendanceService.withTransaction`. Any new attendance
 table must be added to the `includeObjects` lists in the `*.optional.test.ts`
@@ -140,7 +143,7 @@ confirmation, attributed adjustments, isolation, and transaction contracts.
 Timecards and adjustments have closed generated surfaces and service-only
 model writes; never bypass the instance capability with generic persistence.
 
-Replay hashes the tap AS SENT (action, device `at`, paid, work) so retries match;
+Replay hashes the tap AS SENT (action, device `at`, paid, work, and `source`/`device`/`kind` only when present, so older receipts still match) so retries match;
 `replay(taps, { resolveAt, now, refusal })` only changes the stored time and
 reason. Never hash the resolved time. Work actions (`startWork`, `switchWork`,
 `stopWork`, `resumeWork`) run in the tap's transaction via `apply()`. Refusals store
