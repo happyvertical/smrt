@@ -617,6 +617,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-education':
+        specifier: workspace:*
+        version: link:../education
       '@happyvertical/smrt-events':
         specifier: workspace:*
         version: link:../events

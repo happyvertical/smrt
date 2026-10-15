@@ -54,10 +54,27 @@ export class Course extends SmrtObject {
     applyModelOptions(this as unknown as Record<string, unknown>, options);
   }
 
-  /** A personal copy is family-owned material and can never become global. */
+  /** A personal copy remains pinned to its original family and license. */
   override async save(): Promise<this> {
     if (this.licenseKind === 'personal-use-copy' && !this.tenantId) {
       throw new Error('personal-use-copy courses require a family tenant');
+    }
+    const prior = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if (prior) {
+      const row = prior as Record<string, unknown>;
+      const priorLicense = row.licenseKind ?? row.license_kind;
+      const priorTenant = row.tenantId ?? row.tenant_id;
+      if (
+        priorLicense === 'personal-use-copy' &&
+        (priorTenant !== this.tenantId ||
+          this.licenseKind !== 'personal-use-copy')
+      ) {
+        throw new Error(
+          'personal-use-copy courses cannot change tenant or license kind',
+        );
+      }
     }
     return await super.save();
   }

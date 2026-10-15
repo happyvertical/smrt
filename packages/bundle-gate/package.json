@@ -31,6 +31,7 @@
     "@happyvertical/smrt-commerce": "workspace:*",
     "@happyvertical/smrt-content": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-education": "workspace:*",
     "@happyvertical/smrt-events": "workspace:*",
     "@happyvertical/smrt-expenses": "workspace:*",
     "@happyvertical/smrt-facts": "workspace:*",

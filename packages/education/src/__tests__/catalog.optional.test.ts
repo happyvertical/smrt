@@ -22,6 +22,20 @@ import { CourseCollection } from '../collections.js';
         expect((await courses.get(String(course.id)))?.title).toBe(
           'Global course',
         );
+        const familyCopy = await courses.create({
+          title: 'Family copy',
+          tenantId: '11111111-1111-4111-8111-111111111111',
+          licenseKind: 'personal-use-copy',
+        });
+        familyCopy.tenantId = '22222222-2222-4222-8222-222222222222';
+        await expect(familyCopy.save()).rejects.toThrow(
+          'cannot change tenant or license kind',
+        );
+        familyCopy.tenantId = '11111111-1111-4111-8111-111111111111';
+        familyCopy.licenseKind = 'open-license';
+        await expect(familyCopy.save()).rejects.toThrow(
+          'cannot change tenant or license kind',
+        );
       } finally {
         await isolated.cleanup();
       }
