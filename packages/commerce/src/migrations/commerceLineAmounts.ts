@@ -15,7 +15,11 @@ import { MoneyMigrationDocumentCollection } from '../collections/MoneyMigrationD
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { materializeContractMoneySnapshot } from '../contract-money.js';
 import { materializeInvoiceMoneyDraft } from '../document-money.js';
-import { DOCUMENT_MONEY_WRITE } from '../document-money-internal.js';
+import {
+  DOCUMENT_MONEY_WRITE,
+  MONEY_MIGRATION_WRITE,
+  withDocumentMoneyTransaction,
+} from '../document-money-internal.js';
 import type { MoneyMigrationDocument } from '../models/MoneyMigrationDocument.js';
 import { MoneyValidationError } from '../money.js';
 import { type LegacyTaxMapReport, mapLegacyTaxRates } from '../tax/legacy.js';
@@ -977,11 +981,13 @@ async function migrateIssuedDocument(
   const headerTable =
     input.documentType === 'invoice' ? 'invoices' : 'contracts';
   // These are the only issued-header exceptions: additive v2 snapshot columns.
+  // Legacy issued facts were always tax-exclusive and line-rounded. Tenant
+  // defaults configure new v2 drafts and must not relabel historical amounts.
   // Existing totals, lifecycle fields, revision and timestamps are untouched.
   await updateRowsExact(headerCollection, headerTable, input.documentId, {
     discount_total: discountTotal,
-    line_amount_type: settings.defaultLineAmountType,
-    tax_rounding_scope: settings.taxRoundingScope,
+    line_amount_type: 'exclusive',
+    tax_rounding_scope: 'line',
     seller_tax_registrations_json: settings.taxRegistrationsJson,
     party_tax_id: await partyTaxId(db, image.header),
     money_snapshot_id: snapshotId,
@@ -1327,64 +1333,64 @@ export async function rollbackCommerceLineAmounts(
       'INVALID_MONEY_INPUT',
       'Rollback requires tenant and migration identities',
     );
-  const settings = await withTenant({ tenantId: options.tenantId }, () =>
-    TaxSettingsCollection.create({ db }),
-  );
-  const current = await withTenant({ tenantId: options.tenantId }, () =>
-    settings.getForTenant(options.tenantId),
-  );
-  if (current?.moneyModel === 'v2')
-    await withTenant({ tenantId: options.tenantId }, () =>
-      settings.beginMoneyRollback(options.tenantId, options.migrationId),
-    );
-  else if (
-    current?.moneyModel !== 'migrating' ||
-    current.moneyMigrationId !== options.migrationId
-  )
-    throw new MoneyValidationError(
-      'FROZEN_DOCUMENT',
-      'Rollback does not own the tenant money marker',
-    );
-  const journalCollection = await MoneyMigrationDocumentCollection.create({
-    db,
-  });
   const journals = await withTenant({ tenantId: options.tenantId }, () =>
-    journalCollection.list({
-      where: { tenantId: options.tenantId, migrationId: options.migrationId },
-      orderBy: ['documentType ASC', 'documentId ASC'],
-    }),
-  );
-  if (!journals.length)
-    throw new MoneyValidationError(
-      'INVALID_MONEY_INPUT',
-      'Rollback journal is empty',
-    );
-  // Validate the entire rollback set before restoring any document. A later
-  // mismatch must not leave an earlier document rolled back under the same
-  // still-migrating tenant marker.
-  for (const journal of journals) {
-    if (journal.state === 'rolled_back') continue;
-    await withTenant({ tenantId: options.tenantId }, () =>
-      withTenantMoneyMigration(
-        db,
+    withDocumentMoneyTransaction(db, async (tx) => {
+      const settings = await TaxSettingsCollection.create({ db: tx });
+      const current = await settings.lockForTenant(options.tenantId, false);
+      if (current?.moneyModel === 'v2') {
+        current.moneyModel = 'migrating';
+        current.moneyMigrationId = options.migrationId;
+        await current.saveMoneyModelOnTransaction(MONEY_MIGRATION_WRITE);
+      } else if (
+        current?.moneyModel !== 'migrating' ||
+        current.moneyMigrationId !== options.migrationId
+      ) {
+        throw new MoneyValidationError(
+          'FROZEN_DOCUMENT',
+          'Rollback does not own the tenant money marker',
+        );
+      }
+      return withTenantMoneyMigration(
+        tx,
         options.tenantId,
         options.migrationId,
         async (scope) => {
-          const currentImage = await captureDocument(
-            scope.db,
-            options.tenantId,
-            journal.documentType,
-            journal.documentId,
-          );
-          if (checksum(imageJson(currentImage)) !== journal.postChecksum)
+          const claimedJournals = await (
+            await MoneyMigrationDocumentCollection.create({ db: scope.db })
+          ).list({
+            where: {
+              tenantId: options.tenantId,
+              migrationId: options.migrationId,
+            },
+            orderBy: ['documentType ASC', 'documentId ASC'],
+          });
+          if (!claimedJournals.length)
             throw new MoneyValidationError(
-              'FROZEN_DOCUMENT',
-              `${journal.documentType} ${journal.documentId} changed after migration; rollback refused`,
+              'INVALID_MONEY_INPUT',
+              'Rollback journal is empty',
             );
+          // Claim and validate the complete rollback set on the same locked
+          // transaction. Any refusal before restoration begins rolls a fresh
+          // v2 claim back, keeping ordinary tenant runtime available.
+          for (const journal of claimedJournals) {
+            if (journal.state === 'rolled_back') continue;
+            const currentImage = await captureDocument(
+              scope.db,
+              options.tenantId,
+              journal.documentType,
+              journal.documentId,
+            );
+            if (checksum(imageJson(currentImage)) !== journal.postChecksum)
+              throw new MoneyValidationError(
+                'FROZEN_DOCUMENT',
+                `${journal.documentType} ${journal.documentId} changed after migration; rollback refused`,
+              );
+          }
+          return claimedJournals;
         },
-      ),
-    );
-  }
+      );
+    }),
+  );
   let restored = 0;
   let alreadyRestored = 0;
   for (const journal of journals) {
@@ -1445,8 +1451,11 @@ export async function rollbackCommerceLineAmounts(
     );
     restored++;
   }
-  await withTenant({ tenantId: options.tenantId }, () =>
-    settings.restoreLegacyMoneyModel(options.tenantId, options.migrationId),
+  await withTenant({ tenantId: options.tenantId }, async () =>
+    (await TaxSettingsCollection.create({ db })).restoreLegacyMoneyModel(
+      options.tenantId,
+      options.migrationId,
+    ),
   );
   return {
     tenantId: options.tenantId,

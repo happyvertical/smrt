@@ -17,6 +17,7 @@ import {
   rollbackCommerceLineAmounts,
 } from '../migrations/commerceLineAmounts.js';
 import { Order } from '../models/Contract.js';
+import { MoneyMigrationDocument } from '../models/MoneyMigrationDocument.js';
 import { ContractStatus, InvoiceStatus } from '../types/index.js';
 
 const TENANT = '00000000-0000-4000-8000-000000000393';
@@ -66,8 +67,20 @@ describe('commerce line amount migration (#3933)', () => {
     });
   }
 
+  async function setNonLegacyDefaults(tenantId = TENANT) {
+    await withTenant({ tenantId }, async () => {
+      const settings = await (
+        await TaxSettingsCollection.create({ db })
+      ).getOrCreateForTenant(tenantId);
+      settings.defaultLineAmountType = 'inclusive';
+      settings.taxRoundingScope = 'document';
+      await settings.save();
+    });
+  }
+
   it('journals, migrates, verifies, and exactly rolls back an issued invoice', async () => {
     const { invoice, line } = await issued();
+    await setNonLegacyDefaults();
     const beforeHeader = (
       await db.query('SELECT * FROM invoices WHERE id = ?', invoice.id)
     ).rows[0];
@@ -88,6 +101,10 @@ describe('commerce line amount migration (#3933)', () => {
     const afterHeader = (
       await db.query('SELECT * FROM invoices WHERE id = ?', invoice.id)
     ).rows[0];
+    expect(afterHeader).toMatchObject({
+      line_amount_type: 'exclusive',
+      tax_rounding_scope: 'line',
+    });
     for (const key of Object.keys(beforeHeader).filter(
       (key) =>
         ![
@@ -261,6 +278,7 @@ describe('commerce line amount migration (#3933)', () => {
     const beforeHeader = (
       await db.query('SELECT * FROM contracts WHERE id = ?', contract.id)
     ).rows[0];
+    await setNonLegacyDefaults(tenantId);
     await migrateCommerceLineAmounts(db, { tenantId });
     expect(
       (
@@ -273,6 +291,10 @@ describe('commerce line amount migration (#3933)', () => {
     const afterHeader = (
       await db.query('SELECT * FROM contracts WHERE id = ?', contract.id)
     ).rows[0];
+    expect(afterHeader).toMatchObject({
+      line_amount_type: 'exclusive',
+      tax_rounding_scope: 'line',
+    });
     expect(afterHeader.updated_at).toEqual(beforeHeader.updated_at);
     expect(afterHeader.total_amount).toBe(beforeHeader.total_amount);
   });
@@ -299,6 +321,111 @@ describe('commerce line amount migration (#3933)', () => {
         )
       ).rows[0]?.description,
     ).toBe('Changed later');
+    await withTenant({ tenantId: TENANT }, async () => {
+      const settings = await (
+        await TaxSettingsCollection.create({ db })
+      ).getForTenant(TENANT);
+      expect(settings).toMatchObject({
+        moneyModel: 'v2',
+        moneyMigrationId: '',
+      });
+      await expect(
+        (await InvoiceCollection.create({ db })).get({ id: line.invoiceId }),
+      ).resolves.toBeTruthy();
+    });
+  });
+
+  it('leaves v2 runtime available when a rollback owner has no journal', async () => {
+    const { invoice } = await issued();
+    await migrateCommerceLineAmounts(db, { tenantId: TENANT });
+    await expect(
+      rollbackCommerceLineAmounts(db, {
+        tenantId: TENANT,
+        migrationId: '00000000-0000-4000-8000-000000003934',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_MONEY_INPUT' });
+    await withTenant({ tenantId: TENANT }, async () => {
+      const settings = await (
+        await TaxSettingsCollection.create({ db })
+      ).getForTenant(TENANT);
+      expect(settings).toMatchObject({
+        moneyModel: 'v2',
+        moneyMigrationId: '',
+      });
+      await expect(
+        (await InvoiceCollection.create({ db })).get({ id: invoice.id }),
+      ).resolves.toBeTruthy();
+    });
+  });
+
+  it('resumes a partial rollback with the same owner', async () => {
+    const first = await issued();
+    const second = await withTenant({ tenantId: TENANT }, async () => {
+      const invoice = await (await InvoiceCollection.create({ db })).create({
+        tenantId: TENANT,
+        invoiceNumber: 'M-SECOND',
+        status: InvoiceStatus.SENT,
+        subtotal: 2_000,
+        taxAmount: 100,
+        totalAmount: 2_100,
+        currency: 'CAD',
+      });
+      const line = await (
+        await InvoiceLineItemCollection.create({ db })
+      ).create({
+        tenantId: TENANT,
+        invoiceId: invoice.id,
+        description: 'Second legacy service',
+        quantity: 1,
+        unitPrice: 2_000,
+        taxRate: 0.05,
+      });
+      return { invoice, line };
+    });
+    const result = await migrateCommerceLineAmounts(db, { tenantId: TENANT });
+    const originalSave = MoneyMigrationDocument.prototype.save;
+    let restoredSaves = 0;
+    const save = vi
+      .spyOn(MoneyMigrationDocument.prototype, 'save')
+      .mockImplementation(async function (...args) {
+        if (this.state === 'rolled_back' && restoredSaves++ === 1)
+          throw new Error('interrupted after first restore');
+        return originalSave.apply(this, args);
+      });
+    await expect(
+      rollbackCommerceLineAmounts(db, {
+        tenantId: TENANT,
+        migrationId: result.migrationId,
+      }),
+    ).rejects.toThrow('interrupted after first restore');
+    save.mockRestore();
+    await withTenant({ tenantId: TENANT }, async () => {
+      expect(
+        await (await TaxSettingsCollection.create({ db })).getForTenant(TENANT),
+      ).toMatchObject({
+        moneyModel: 'migrating',
+        moneyMigrationId: result.migrationId,
+      });
+    });
+    await expect(
+      rollbackCommerceLineAmounts(db, {
+        tenantId: TENANT,
+        migrationId: '00000000-0000-4000-8000-000000003935',
+      }),
+    ).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
+    const resumed = await rollbackCommerceLineAmounts(db, {
+      tenantId: TENANT,
+      migrationId: result.migrationId,
+    });
+    expect(resumed).toMatchObject({ restored: 1, alreadyRestored: 1 });
+    expect(
+      (
+        await db.query(
+          'SELECT legacy_amount FROM invoice_line_items WHERE id IN (?, ?) ORDER BY id',
+          [first.line.id, second.line.id],
+        )
+      ).rows,
+    ).toEqual([{ legacy_amount: null }, { legacy_amount: null }]);
   });
 
   it('resumes exact applied journals after activation is interrupted', async () => {

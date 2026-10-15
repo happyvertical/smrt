@@ -26,13 +26,19 @@ Issued migration preserves every previously stored header field, timestamp,
 revision and journal link. The only header writes are the additive v2 snapshot
 columns `discount_total`, `line_amount_type`, `tax_rounding_scope`,
 `seller_tax_registrations_json`, `party_tax_id`, and `money_snapshot_id`.
+Issued legacy snapshots always record `line_amount_type=exclusive` and
+`tax_rounding_scope=line`, which describe the historical storage contract;
+current tenant defaults apply only when calculating new v2 drafts.
 Drafts are recomputed through the owning aggregate after their legacy rate is
 promoted to an explicit code override.
 
-`rollbackCommerceLineAmounts(db, { tenantId, migrationId })` first reclaims
-the same tenant barrier. Every current document must exactly match its recorded
-post-image, including its line set and `DocumentTax`; otherwise rollback stops
-without overwriting later v2 activity. Exact pre-images restore the header,
-lines, taxes, timestamps and revisions, then the marker returns to `legacy`.
+`rollbackCommerceLineAmounts(db, { tenantId, migrationId })` claims the tenant
+barrier and validates journal existence plus every current post-image in one
+transaction. A refusal before restoration begins rolls that claim back, so the
+tenant remains on v2 and ordinary runtime reads stay available. Once restoration
+begins, each document commits separately under the same owner; an interruption
+leaves the marker in `migrating`, and retrying that owner skips durable
+`rolled_back` journal entries. Exact pre-images restore the header, lines, taxes,
+timestamps and revisions, then the marker returns to `legacy`.
 The journal is installed by normal schema migration and retained through the
 rollback window. Runtime code never creates its table.
