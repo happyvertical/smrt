@@ -13,6 +13,7 @@
     }
   },
   "include": [
+    "__tests__/commerceBootstrap.test.ts",
     "__tests__/runtimeEntry.test.ts",
     "__tests__/runtimeOperations.test.ts",
     "__tests__/runtimeProfileReference*.ts",
