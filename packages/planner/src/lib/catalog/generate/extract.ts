@@ -10,7 +10,11 @@ import type {
   CatalogPackage,
   CatalogRoute,
 } from '../types.ts';
-import { PACKAGE_PREFIX } from './exclusions.ts';
+import {
+  EXCLUDED_MODELS,
+  isInternalMoneyField,
+  PACKAGE_PREFIX,
+} from './exclusions.ts';
 import { extractBrowser, extractRecipeMetadata } from './recipe-metadata.ts';
 
 /** The subset of a s-m-r-t `manifest.json` the catalog reads. */
@@ -181,7 +185,7 @@ function extractEnum(value: unknown): string[] | undefined {
     : undefined;
 }
 
-function extractFields(raw: RawObject): CatalogField[] {
+function extractFields(raw: RawObject, packageName: string): CatalogField[] {
   const fields: CatalogField[] = [];
   for (const [name, field] of Object.entries(raw.fields)) {
     const type = valueType(field);
@@ -202,7 +206,9 @@ function extractFields(raw: RawObject): CatalogField[] {
     if (typeof described === 'string' && described.trim()) {
       entry.description = described.trim();
     }
-    if (SYSTEM_FIELDS.has(name)) entry.system = true;
+    if (SYSTEM_FIELDS.has(name) || isInternalMoneyField(packageName, name)) {
+      entry.system = true;
+    }
     fields.push(entry);
   }
   return fields;
@@ -345,7 +351,9 @@ export function extractPackage(raw: RawPackage): CatalogPackage {
   const browser = extractBrowser(knowledge?.browser ?? manifest.browser);
   const objects = Object.values(manifest.objects);
   const objectMap = new Map(objects.map((o) => [o.qualifiedName, o]));
-  const rawModels = objects.filter((o) => isModel(o, objectMap));
+  const rawModels = objects.filter(
+    (o) => isModel(o, objectMap) && !EXCLUDED_MODELS[o.qualifiedName],
+  );
   const modelMap = new Map(rawModels.map((m) => [m.qualifiedName, m]));
   const collections = objects.filter((o) => !modelMap.has(o.qualifiedName));
   const knowledgeSurfaces = knowledge?.surfaces ?? null;
@@ -394,7 +402,7 @@ export function extractPackage(raw: RawPackage): CatalogPackage {
       }))
       .sort(byName);
 
-    const fields = extractFields(model);
+    const fields = extractFields(model, packageName);
     const references = [
       ...new Set(
         fields

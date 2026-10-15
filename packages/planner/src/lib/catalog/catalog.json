@@ -5,7 +5,7 @@
     {
       "id": "ads",
       "packageName": "@happyvertical/smrt-ads",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Advertising delivery and tracking models for SMRT framework",
       "models": [
         {
@@ -1927,7 +1927,7 @@
     {
       "id": "analytics",
       "packageName": "@happyvertical/smrt-analytics",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Analytics integration models for SMRT framework",
       "models": [
         {
@@ -4228,7 +4228,7 @@
     {
       "id": "approvals",
       "packageName": "@happyvertical/smrt-approvals",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Approval decision gate for the SMRT framework: revision-bound, single-use approvals with quorum, expiry, and an append-only event ledger",
       "models": [
         {
@@ -4615,7 +4615,7 @@
     {
       "id": "assets",
       "packageName": "@happyvertical/smrt-assets",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Asset management system with versioning, metadata, and AI-powered operations for SMRT framework",
       "models": [
         {
@@ -6656,7 +6656,7 @@
     {
       "id": "chat",
       "packageName": "@happyvertical/smrt-chat",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Chat rooms, DMs, threads, and agent conversations for the SMRT framework",
       "models": [
         {
@@ -9287,7 +9287,7 @@
     {
       "id": "comments",
       "packageName": "@happyvertical/smrt-comments",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Record comments and mention hooks for SMRT applications",
       "models": [
         {
@@ -9443,7 +9443,7 @@
     {
       "id": "commerce",
       "packageName": "@happyvertical/smrt-commerce",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Commerce models for the SMRT framework - contracts, fulfillments, payments",
       "models": [
         {
@@ -9501,6 +9501,12 @@
               "description": "The amount before tax."
             },
             {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
               "name": "taxAmount",
               "type": "integer",
               "required": false,
@@ -9529,6 +9535,44 @@
                 "widget": "currency"
               },
               "description": "The currency of the amounts."
+            },
+            {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "issueDate",
@@ -9633,6 +9677,10 @@
             {
               "method": "POST",
               "path": "/contracts/[id]/recalculateTotals"
+            },
+            {
+              "method": "POST",
+              "path": "/contracts/[id]/saveDerived"
             }
           ],
           "mcp": [
@@ -9673,8 +9721,16 @@
               "name": "agreement_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "agreement_rebindmoneyread"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "agreement_recalculatetotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "agreement_savederived"
             },
             {
               "operation": "update",
@@ -9719,8 +9775,16 @@
               "name": "agreement_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "agreement_rebindMoneyRead"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "agreement_recalculateTotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "agreement_saveDerived"
             },
             {
               "operation": "update",
@@ -9771,6 +9835,16 @@
               "aiCallable": true
             },
             {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": true
+            },
+            {
               "name": "recalculateTotals",
               "async": true,
               "parameters": [],
@@ -9783,6 +9857,15 @@
               "parameters": [],
               "returnType": "Promise<this>",
               "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": true
             }
           ],
           "references": [
@@ -10441,6 +10524,12 @@
               "description": "The amount before tax."
             },
             {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
               "name": "taxAmount",
               "type": "integer",
               "required": false,
@@ -10469,6 +10558,44 @@
                 "widget": "currency"
               },
               "description": "The currency of the amounts."
+            },
+            {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "issueDate",
@@ -10574,6 +10701,10 @@
             {
               "method": "POST",
               "path": "/contracts/[id]/recalculateTotals"
+            },
+            {
+              "method": "POST",
+              "path": "/contracts/[id]/saveDerived"
             }
           ],
           "mcp": [
@@ -10614,8 +10745,16 @@
               "name": "cart_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "cart_rebindmoneyread"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "cart_recalculatetotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "cart_savederived"
             },
             {
               "operation": "update",
@@ -10660,8 +10799,16 @@
               "name": "cart_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "cart_rebindMoneyRead"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "cart_recalculateTotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "cart_saveDerived"
             },
             {
               "operation": "update",
@@ -10712,6 +10859,16 @@
               "aiCallable": true
             },
             {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": true
+            },
+            {
               "name": "recalculateTotals",
               "async": true,
               "parameters": [],
@@ -10724,6 +10881,15 @@
               "parameters": [],
               "returnType": "Promise<this>",
               "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": true
             }
           ],
           "references": [
@@ -10797,6 +10963,12 @@
               "description": "The amount before tax."
             },
             {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
               "name": "taxAmount",
               "type": "integer",
               "required": false,
@@ -10825,6 +10997,44 @@
                 "widget": "currency"
               },
               "description": "The currency of the amounts."
+            },
+            {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "issueDate",
@@ -11001,6 +11211,10 @@
             {
               "operation": "findWithGlobals",
               "name": "contractcollection_findwithglobals"
+            },
+            {
+              "operation": "listSnapshotReportContracts",
+              "name": "contractcollection_listsnapshotreportcontracts"
             }
           ],
           "cli": [
@@ -11041,8 +11255,16 @@
               "name": "contract_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "contract_rebindMoneyRead"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "contract_recalculateTotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "contract_saveDerived"
             },
             {
               "operation": "update",
@@ -11095,6 +11317,10 @@
             {
               "operation": "findWithGlobals",
               "name": "contractcollection_findWithGlobals"
+            },
+            {
+              "operation": "listSnapshotReportContracts",
+              "name": "contractcollection_listSnapshotReportContracts"
             }
           ],
           "methods": [
@@ -11198,6 +11424,16 @@
               "aiCallable": true
             },
             {
+              "name": "get",
+              "async": true,
+              "parameters": [
+                "filter: string | SmrtWhereClause<Contract>",
+                "options?: any"
+              ],
+              "returnType": "Promise<Contract | null>",
+              "aiCallable": true
+            },
+            {
               "name": "initialize",
               "async": true,
               "parameters": [],
@@ -11240,6 +11476,34 @@
               "aiCallable": false
             },
             {
+              "name": "list",
+              "async": true,
+              "parameters": [
+                "options?: SmrtListOptions<Contract>"
+              ],
+              "returnType": "Promise<SmrtObject[] | Record<string, unknown>[]>",
+              "aiCallable": true
+            },
+            {
+              "name": "listSnapshotReportContracts",
+              "async": true,
+              "parameters": [
+                "options: object"
+              ],
+              "returnType": "Promise<Contract[]>",
+              "aiCallable": true
+            },
+            {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": false
+            },
+            {
               "name": "recalculateTotals",
               "async": true,
               "parameters": [],
@@ -11250,6 +11514,15 @@
               "name": "save",
               "async": true,
               "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
               "returnType": "Promise<this>",
               "aiCallable": false
             }
@@ -11322,11 +11595,77 @@
               }
             },
             {
+              "name": "discountType",
+              "type": "text",
+              "required": false,
+              "default": "none",
+              "enum": [
+                "none",
+                "percent",
+                "amount"
+              ]
+            },
+            {
+              "name": "discountRate",
+              "type": "decimal",
+              "required": false
+            },
+            {
               "name": "taxRate",
               "type": "decimal",
               "required": false,
               "default": 0,
-              "description": "The tax rate for this line, as a percentage (5 means 5%)."
+              "description": "The stored fractional tax rate for this line (0.05 means 5%)."
+            },
+            {
+              "name": "taxMode",
+              "type": "text",
+              "required": false,
+              "default": "inherit",
+              "enum": [
+                "inherit",
+                "override"
+              ]
+            },
+            {
+              "name": "taxCodeId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:TaxCode"
+            },
+            {
+              "name": "taxCodeCode",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "taxCodeName",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "taxComponentsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "taxAmount",
+              "type": "integer",
+              "required": true,
+              "default": 0
+            },
+            {
+              "name": "legacyAmount",
+              "type": "integer",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "amount",
@@ -11452,6 +11791,10 @@
               "name": "contractlineitem_delete"
             },
             {
+              "operation": "deleteDerived",
+              "name": "contractlineitem_deleteDerived"
+            },
+            {
               "operation": "get",
               "name": "contractlineitem_get"
             },
@@ -11466,6 +11809,14 @@
             {
               "operation": "list",
               "name": "contractlineitem_list"
+            },
+            {
+              "operation": "rebindMoneyRead",
+              "name": "contractlineitem_rebindMoneyRead"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "contractlineitem_saveDerived"
             },
             {
               "operation": "update",
@@ -11494,6 +11845,25 @@
               "async": false,
               "parameters": [],
               "returnType": "number",
+              "aiCallable": false
+            },
+            {
+              "name": "delete",
+              "async": true,
+              "parameters": [
+                "options?: object"
+              ],
+              "returnType": "Promise<void>",
+              "aiCallable": false
+            },
+            {
+              "name": "deleteDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability",
+                "options?: object"
+              ],
+              "returnType": "Promise<void>",
               "aiCallable": false
             },
             {
@@ -11531,6 +11901,16 @@
               "aiCallable": true
             },
             {
+              "name": "get",
+              "async": true,
+              "parameters": [
+                "filter: string | SmrtWhereClause<ContractLineItem>",
+                "options?: any"
+              ],
+              "returnType": "Promise<ContractLineItem | null>",
+              "aiCallable": true
+            },
+            {
               "name": "isRecurring",
               "async": false,
               "parameters": [],
@@ -11543,10 +11923,47 @@
               "parameters": [],
               "returnType": "boolean",
               "aiCallable": false
+            },
+            {
+              "name": "list",
+              "async": true,
+              "parameters": [
+                "options?: SmrtListOptions<ContractLineItem>"
+              ],
+              "returnType": "Promise<SmrtObject[] | Record<string, unknown>[]>",
+              "aiCallable": true
+            },
+            {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": false
+            },
+            {
+              "name": "save",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability",
+                "legacy: boolean"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": false
             }
           ],
           "references": [
             "@happyvertical/smrt-commerce:Contract",
+            "@happyvertical/smrt-commerce:TaxCode",
             "@happyvertical/smrt-products:Product"
           ],
           "exposed": true
@@ -11600,6 +12017,13 @@
               "required": false,
               "default": "",
               "description": "The tax or VAT number of the customer, kept on file for tax-exempt sales."
+            },
+            {
+              "name": "defaultTaxCodeId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:TaxCode",
+              "description": "The tax code normally used when selling to this customer."
             },
             {
               "name": "defaultShippingAddress",
@@ -11909,8 +12333,236 @@
             }
           ],
           "references": [
+            "@happyvertical/smrt-commerce:TaxCode",
             "@happyvertical/smrt-profiles:Profile"
           ],
+          "exposed": true
+        },
+        {
+          "id": "@happyvertical/smrt-commerce:DocumentTax",
+          "name": "DocumentTax",
+          "collection": "documenttaxes",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "documentType",
+              "type": "text",
+              "required": true,
+              "default": "invoice",
+              "enum": [
+                "invoice",
+                "contract",
+                "credit_note"
+              ]
+            },
+            {
+              "name": "documentId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "currency",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "taxCodeId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "taxCodeCode",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "kind",
+              "type": "text",
+              "required": false,
+              "enum": [
+                "taxable",
+                "zero-rated",
+                "exempt",
+                "out-of-scope"
+              ]
+            },
+            {
+              "name": "taxComponentId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "taxComponentName",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "percent",
+              "type": "decimal",
+              "required": false
+            },
+            {
+              "name": "liabilityAccountId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "taxableMinor",
+              "type": "integer",
+              "required": true,
+              "default": 0,
+              "description": "Tax-exclusive base in integer minor units."
+            },
+            {
+              "name": "taxMinor",
+              "type": "integer",
+              "required": true,
+              "default": 0,
+              "description": "Tax total in integer minor units."
+            },
+            {
+              "name": "recoverableMinor",
+              "type": "integer",
+              "required": true,
+              "default": 0,
+              "description": "Recoverable purchase tax in integer minor units."
+            }
+          ],
+          "rest": [
+            {
+              "method": "POST",
+              "path": "/documenttaxes/listReportFacts"
+            },
+            {
+              "method": "POST",
+              "path": "/documenttaxes/findByDocument"
+            },
+            {
+              "method": "GET",
+              "path": "/documenttaxes"
+            },
+            {
+              "method": "GET",
+              "path": "/documenttaxes/[id]"
+            }
+          ],
+          "mcp": [
+            {
+              "operation": "get",
+              "name": "documenttax_get"
+            },
+            {
+              "operation": "list",
+              "name": "documenttax_list"
+            },
+            {
+              "operation": "findByDocument",
+              "name": "documenttaxcollection_findbydocument"
+            },
+            {
+              "operation": "listReportFacts",
+              "name": "documenttaxcollection_listreportfacts"
+            },
+            {
+              "operation": "replaceDerivedForDocument",
+              "name": "documenttaxcollection_replacederivedfordocument"
+            }
+          ],
+          "cli": [
+            {
+              "operation": "get",
+              "name": "documenttax_get"
+            },
+            {
+              "operation": "list",
+              "name": "documenttax_list"
+            },
+            {
+              "operation": "findByDocument",
+              "name": "documenttaxcollection_findByDocument"
+            },
+            {
+              "operation": "listReportFacts",
+              "name": "documenttaxcollection_listReportFacts"
+            },
+            {
+              "operation": "replaceDerivedForDocument",
+              "name": "documenttaxcollection_replaceDerivedForDocument"
+            }
+          ],
+          "methods": [
+            {
+              "name": "delete",
+              "async": true,
+              "parameters": [
+                "_options?: object"
+              ],
+              "returnType": "Promise<void>",
+              "aiCallable": false
+            },
+            {
+              "name": "deleteDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability",
+                "options?: object"
+              ],
+              "returnType": "Promise<void>",
+              "aiCallable": false
+            },
+            {
+              "name": "findByDocument",
+              "async": true,
+              "parameters": [
+                "tenantId: string",
+                "documentType: CommerceDocumentType",
+                "documentId: string"
+              ],
+              "returnType": "Promise<DocumentTax[]>",
+              "aiCallable": true
+            },
+            {
+              "name": "listReportFacts",
+              "async": true,
+              "parameters": [
+                "options: DocumentTaxReportFactsOptions"
+              ],
+              "returnType": "Promise<DocumentTaxReportFact[]>",
+              "aiCallable": true
+            },
+            {
+              "name": "replaceDerivedForDocument",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability",
+                "input: object"
+              ],
+              "returnType": "Promise<DocumentTax[]>",
+              "aiCallable": true
+            },
+            {
+              "name": "save",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            }
+          ],
+          "references": [],
           "exposed": true
         },
         {
@@ -11968,6 +12620,12 @@
               "description": "The amount before tax."
             },
             {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
               "name": "taxAmount",
               "type": "integer",
               "required": false,
@@ -11996,6 +12654,44 @@
                 "widget": "currency"
               },
               "description": "The currency of the amounts."
+            },
+            {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "issueDate",
@@ -12100,6 +12796,10 @@
             {
               "method": "POST",
               "path": "/contracts/[id]/recalculateTotals"
+            },
+            {
+              "method": "POST",
+              "path": "/contracts/[id]/saveDerived"
             }
           ],
           "mcp": [
@@ -12140,8 +12840,16 @@
               "name": "estimate_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "estimate_rebindmoneyread"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "estimate_recalculatetotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "estimate_savederived"
             },
             {
               "operation": "update",
@@ -12186,8 +12894,16 @@
               "name": "estimate_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "estimate_rebindMoneyRead"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "estimate_recalculateTotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "estimate_saveDerived"
             },
             {
               "operation": "update",
@@ -12238,6 +12954,16 @@
               "aiCallable": true
             },
             {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": true
+            },
+            {
               "name": "recalculateTotals",
               "async": true,
               "parameters": [],
@@ -12250,6 +12976,15 @@
               "parameters": [],
               "returnType": "Promise<this>",
               "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": true
             }
           ],
           "references": [
@@ -12931,6 +13666,29 @@
           "description": "Invoice represents a bill sent to a customer for goods or services.",
           "fields": [
             {
+              "name": "kind",
+              "type": "text",
+              "required": false,
+              "default": "invoice",
+              "enum": [
+                "invoice",
+                "credit_note"
+              ],
+              "description": "Invoice or customer credit note."
+            },
+            {
+              "name": "creditedInvoiceId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:Invoice"
+            },
+            {
+              "name": "creditedAmount",
+              "type": "integer",
+              "required": true,
+              "default": 0
+            },
+            {
               "name": "tenantId",
               "type": "text",
               "required": false,
@@ -13041,6 +13799,50 @@
               "description": "The currency of the invoice."
             },
             {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": true,
+              "default": 0
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
               "name": "status",
               "type": "text",
               "required": false,
@@ -13058,6 +13860,12 @@
             },
             {
               "name": "arJournalId",
+              "type": "crossPackageRef",
+              "required": false,
+              "related": "@happyvertical/smrt-ledgers:Journal"
+            },
+            {
+              "name": "arReversalJournalId",
               "type": "crossPackageRef",
               "required": false,
               "related": "@happyvertical/smrt-ledgers:Journal"
@@ -13090,6 +13898,12 @@
               "name": "syncedAt",
               "type": "datetime",
               "required": false
+            },
+            {
+              "name": "accountingSyncStateJson",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "collectionMethod",
@@ -13332,12 +14146,20 @@
               "name": "invoice_cancel"
             },
             {
+              "operation": "cancelWithRevenueReversal",
+              "name": "invoice_cancelWithRevenueReversal"
+            },
+            {
               "operation": "create",
               "name": "invoice_create"
             },
             {
               "operation": "delete",
               "name": "invoice_delete"
+            },
+            {
+              "operation": "deleteDerived",
+              "name": "invoice_deleteDerived"
             },
             {
               "operation": "get",
@@ -13350,6 +14172,10 @@
             {
               "operation": "getArJournal",
               "name": "invoice_getArJournal"
+            },
+            {
+              "operation": "getBalance",
+              "name": "invoice_getBalance"
             },
             {
               "operation": "isDraft",
@@ -13384,8 +14210,16 @@
               "name": "invoice_markViewed"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "invoice_rebindMoneyRead"
+            },
+            {
               "operation": "recognizeRevenue",
               "name": "invoice_recognizeRevenue"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "invoice_saveDerived"
             },
             {
               "operation": "toAccountingInput",
@@ -13485,6 +14319,15 @@
               "aiCallable": false
             },
             {
+              "name": "cancelWithRevenueReversal",
+              "async": true,
+              "parameters": [
+                "options: CancelRevenueOptions"
+              ],
+              "returnType": "Promise<Journal | null>",
+              "aiCallable": false
+            },
+            {
               "name": "countForYear",
               "async": true,
               "parameters": [
@@ -13492,6 +14335,25 @@
               ],
               "returnType": "Promise<number>",
               "aiCallable": true
+            },
+            {
+              "name": "delete",
+              "async": true,
+              "parameters": [
+                "options?: object"
+              ],
+              "returnType": "Promise<void>",
+              "aiCallable": false
+            },
+            {
+              "name": "deleteDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability",
+                "options?: object"
+              ],
+              "returnType": "Promise<void>",
+              "aiCallable": false
             },
             {
               "name": "findByContract",
@@ -13625,6 +14487,16 @@
               "aiCallable": true
             },
             {
+              "name": "get",
+              "async": true,
+              "parameters": [
+                "filter: string | SmrtWhereClause<Invoice>",
+                "options?: any"
+              ],
+              "returnType": "Promise<Invoice | null>",
+              "aiCallable": true
+            },
+            {
               "name": "getAmountDue",
               "async": false,
               "parameters": [],
@@ -13636,6 +14508,13 @@
               "async": true,
               "parameters": [],
               "returnType": "Promise<Journal | null>",
+              "aiCallable": false
+            },
+            {
+              "name": "getBalance",
+              "async": false,
+              "parameters": [],
+              "returnType": "number",
               "aiCallable": false
             },
             {
@@ -13690,6 +14569,15 @@
               "aiCallable": false
             },
             {
+              "name": "list",
+              "async": true,
+              "parameters": [
+                "options?: SmrtListOptions<Invoice>"
+              ],
+              "returnType": "Promise<SmrtObject[] | Record<string, unknown>[]>",
+              "aiCallable": true
+            },
+            {
               "name": "markSent",
               "async": false,
               "parameters": [],
@@ -13701,6 +14589,16 @@
               "async": false,
               "parameters": [],
               "returnType": "void",
+              "aiCallable": false
+            },
+            {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
               "aiCallable": false
             },
             {
@@ -13720,9 +14618,21 @@
               "aiCallable": false
             },
             {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability",
+                "options: object"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
               "name": "toAccountingInput",
               "async": true,
-              "parameters": [],
+              "parameters": [
+                "options?: FrozenInvoiceAccountingOptions"
+              ],
               "returnType": "Promise<AccountingInvoiceInput>",
               "aiCallable": false
             },
@@ -13745,6 +14655,7 @@
           ],
           "references": [
             "@happyvertical/smrt-commerce:Customer",
+            "@happyvertical/smrt-commerce:Invoice",
             "@happyvertical/smrt-commerce:SalesContract",
             "@happyvertical/smrt-ledgers:Journal"
           ],
@@ -13770,6 +14681,19 @@
               "description": "The invoice this line belongs to."
             },
             {
+              "name": "creditedLineId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:InvoiceLineItem"
+            },
+            {
+              "name": "creditCalculationBasisJson",
+              "type": "text",
+              "required": false,
+              "description": "Frozen source basis used to cap and reproduce an issued credit line.",
+              "system": true
+            },
+            {
               "name": "description",
               "type": "text",
               "required": false,
@@ -13783,6 +14707,12 @@
               "default": ""
             },
             {
+              "name": "productId",
+              "type": "crossPackageRef",
+              "required": false,
+              "related": "@happyvertical/smrt-products:Product"
+            },
+            {
               "name": "quantity",
               "type": "decimal",
               "required": false,
@@ -13793,7 +14723,8 @@
               "name": "invoiceEditorStateJson",
               "type": "text",
               "required": false,
-              "default": ""
+              "default": "",
+              "system": true
             },
             {
               "name": "unitPrice",
@@ -13815,11 +14746,77 @@
               }
             },
             {
+              "name": "discountType",
+              "type": "text",
+              "required": false,
+              "default": "none",
+              "enum": [
+                "none",
+                "percent",
+                "amount"
+              ]
+            },
+            {
+              "name": "discountRate",
+              "type": "decimal",
+              "required": false
+            },
+            {
               "name": "taxRate",
               "type": "decimal",
               "required": false,
               "default": 0,
-              "description": "The tax rate for this line, as a percentage (5 means 5%)."
+              "description": "The stored fractional tax rate for this line (0.05 means 5%)."
+            },
+            {
+              "name": "taxMode",
+              "type": "text",
+              "required": false,
+              "default": "inherit",
+              "enum": [
+                "inherit",
+                "override"
+              ]
+            },
+            {
+              "name": "taxCodeId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:TaxCode"
+            },
+            {
+              "name": "taxCodeCode",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "taxCodeName",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "taxComponentsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "taxAmount",
+              "type": "integer",
+              "required": true,
+              "default": 0
+            },
+            {
+              "name": "legacyAmount",
+              "type": "integer",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "amount",
@@ -14012,6 +15009,10 @@
               "name": "invoicelineitem_delete"
             },
             {
+              "operation": "deleteDerived",
+              "name": "invoicelineitem_deleteDerived"
+            },
+            {
               "operation": "get",
               "name": "invoicelineitem_get"
             },
@@ -14038,6 +15039,14 @@
             {
               "operation": "list",
               "name": "invoicelineitem_list"
+            },
+            {
+              "operation": "rebindMoneyRead",
+              "name": "invoicelineitem_rebindMoneyRead"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "invoicelineitem_saveDerived"
             },
             {
               "operation": "toAccountingLineItem",
@@ -14115,6 +15124,25 @@
               "aiCallable": false
             },
             {
+              "name": "delete",
+              "async": true,
+              "parameters": [
+                "options?: object"
+              ],
+              "returnType": "Promise<void>",
+              "aiCallable": false
+            },
+            {
+              "name": "deleteDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability",
+                "options?: object"
+              ],
+              "returnType": "Promise<void>",
+              "aiCallable": false
+            },
+            {
               "name": "findByInvoice",
               "async": true,
               "parameters": [
@@ -14165,6 +15193,16 @@
                 "tenantId: string"
               ],
               "returnType": "Promise<InvoiceLineItem[]>",
+              "aiCallable": true
+            },
+            {
+              "name": "get",
+              "async": true,
+              "parameters": [
+                "filter: string | SmrtWhereClause<InvoiceLineItem>",
+                "options?: any"
+              ],
+              "returnType": "Promise<InvoiceLineItem | null>",
               "aiCallable": true
             },
             {
@@ -14241,6 +15279,25 @@
               "aiCallable": false
             },
             {
+              "name": "list",
+              "async": true,
+              "parameters": [
+                "options?: SmrtListOptions<InvoiceLineItem>"
+              ],
+              "returnType": "Promise<SmrtObject[] | Record<string, unknown>[]>",
+              "aiCallable": true
+            },
+            {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": false
+            },
+            {
               "name": "recalculateAmounts",
               "async": true,
               "parameters": [
@@ -14253,6 +15310,16 @@
               "name": "save",
               "async": true,
               "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability",
+                "legacy: boolean"
+              ],
               "returnType": "Promise<this>",
               "aiCallable": false
             },
@@ -14277,7 +15344,10 @@
           ],
           "references": [
             "@happyvertical/smrt-commerce:Invoice",
-            "@happyvertical/smrt-ledgers:Account"
+            "@happyvertical/smrt-commerce:InvoiceLineItem",
+            "@happyvertical/smrt-commerce:TaxCode",
+            "@happyvertical/smrt-ledgers:Account",
+            "@happyvertical/smrt-products:Product"
           ],
           "exposed": true
         },
@@ -14336,6 +15406,12 @@
               "description": "The amount before tax."
             },
             {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
               "name": "taxAmount",
               "type": "integer",
               "required": false,
@@ -14364,6 +15440,44 @@
                 "widget": "currency"
               },
               "description": "The currency of the amounts."
+            },
+            {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "issueDate",
@@ -14468,6 +15582,10 @@
             {
               "method": "POST",
               "path": "/contracts/[id]/recalculateTotals"
+            },
+            {
+              "method": "POST",
+              "path": "/contracts/[id]/saveDerived"
             }
           ],
           "mcp": [
@@ -14508,8 +15626,16 @@
               "name": "lease_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "lease_rebindmoneyread"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "lease_recalculatetotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "lease_savederived"
             },
             {
               "operation": "update",
@@ -14554,8 +15680,16 @@
               "name": "lease_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "lease_rebindMoneyRead"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "lease_recalculateTotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "lease_saveDerived"
             },
             {
               "operation": "update",
@@ -14606,6 +15740,16 @@
               "aiCallable": true
             },
             {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": true
+            },
+            {
               "name": "recalculateTotals",
               "async": true,
               "parameters": [],
@@ -14618,6 +15762,15 @@
               "parameters": [],
               "returnType": "Promise<this>",
               "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": true
             }
           ],
           "references": [
@@ -14680,6 +15833,12 @@
               "description": "The amount before tax."
             },
             {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
               "name": "taxAmount",
               "type": "integer",
               "required": false,
@@ -14708,6 +15867,44 @@
                 "widget": "currency"
               },
               "description": "The currency of the amounts."
+            },
+            {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "issueDate",
@@ -14906,6 +16103,10 @@
             },
             {
               "method": "POST",
+              "path": "/contracts/[id]/saveDerived"
+            },
+            {
+              "method": "POST",
               "path": "/contracts/[id]/getRightsSnapshot"
             },
             {
@@ -14955,12 +16156,20 @@
               "name": "licensesale_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "licensesale_rebindmoneyread"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "licensesale_recalculatetotals"
             },
             {
               "operation": "revoke",
               "name": "licensesale_revoke"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "licensesale_savederived"
             },
             {
               "operation": "update",
@@ -15009,12 +16218,20 @@
               "name": "licensesale_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "licensesale_rebindMoneyRead"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "licensesale_recalculateTotals"
             },
             {
               "operation": "revoke",
               "name": "licensesale_revoke"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "licensesale_saveDerived"
             },
             {
               "operation": "update",
@@ -15072,6 +16289,16 @@
               "aiCallable": true
             },
             {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": true
+            },
+            {
               "name": "recalculateTotals",
               "async": true,
               "parameters": [],
@@ -15091,6 +16318,15 @@
               "parameters": [],
               "returnType": "Promise<this>",
               "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": true
             }
           ],
           "references": [
@@ -15153,6 +16389,12 @@
               "description": "The amount before tax."
             },
             {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
               "name": "taxAmount",
               "type": "integer",
               "required": false,
@@ -15181,6 +16423,44 @@
                 "widget": "currency"
               },
               "description": "The currency of the amounts."
+            },
+            {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "issueDate",
@@ -15285,6 +16565,10 @@
             {
               "method": "POST",
               "path": "/contracts/[id]/recalculateTotals"
+            },
+            {
+              "method": "POST",
+              "path": "/contracts/[id]/saveDerived"
             }
           ],
           "mcp": [
@@ -15325,8 +16609,16 @@
               "name": "order_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "order_rebindmoneyread"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "order_recalculatetotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "order_savederived"
             },
             {
               "operation": "update",
@@ -15371,8 +16663,16 @@
               "name": "order_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "order_rebindMoneyRead"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "order_recalculateTotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "order_saveDerived"
             },
             {
               "operation": "update",
@@ -15423,6 +16723,16 @@
               "aiCallable": true
             },
             {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": true
+            },
+            {
               "name": "recalculateTotals",
               "async": true,
               "parameters": [],
@@ -15435,6 +16745,15 @@
               "parameters": [],
               "returnType": "Promise<this>",
               "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": true
             }
           ],
           "references": [
@@ -15448,6 +16767,16 @@
           "collection": "payments",
           "description": "Payment represents a financial transaction against a contract.",
           "fields": [
+            {
+              "name": "kind",
+              "type": "text",
+              "required": false,
+              "default": "payment",
+              "enum": [
+                "payment",
+                "refund"
+              ]
+            },
             {
               "name": "tenantId",
               "type": "text",
@@ -15782,6 +17111,10 @@
               "name": "payment_recordPayment"
             },
             {
+              "operation": "recordRefund",
+              "name": "payment_recordRefund"
+            },
+            {
               "operation": "update",
               "name": "payment_update"
             },
@@ -16016,6 +17349,15 @@
               "aiCallable": false
             },
             {
+              "name": "recordRefund",
+              "async": true,
+              "parameters": [
+                "options: RecordPaymentOptions"
+              ],
+              "returnType": "Promise<Journal>",
+              "aiCallable": false
+            },
+            {
               "name": "save",
               "async": true,
               "parameters": [],
@@ -16097,6 +17439,10 @@
             {
               "method": "POST",
               "path": "/paymentallocations/allocatePayment"
+            },
+            {
+              "method": "POST",
+              "path": "/paymentallocations/removeAllocation"
             },
             {
               "method": "POST",
@@ -16207,6 +17553,10 @@
             {
               "operation": "getUnallocatedFromPayment",
               "name": "paymentallocationcollection_getunallocatedfrompayment"
+            },
+            {
+              "operation": "removeAllocation",
+              "name": "paymentallocationcollection_removeallocation"
             }
           ],
           "cli": [
@@ -16265,6 +17615,10 @@
             {
               "operation": "getUnallocatedFromPayment",
               "name": "paymentallocationcollection_getUnallocatedFromPayment"
+            },
+            {
+              "operation": "removeAllocation",
+              "name": "paymentallocationcollection_removeAllocation"
             }
           ],
           "methods": [
@@ -16375,6 +17729,15 @@
                 "paymentAmount: number"
               ],
               "returnType": "Promise<number>",
+              "aiCallable": true
+            },
+            {
+              "name": "removeAllocation",
+              "async": true,
+              "parameters": [
+                "id: string"
+              ],
+              "returnType": "Promise<void>",
               "aiCallable": true
             },
             {
@@ -17829,6 +19192,12 @@
               "description": "The amount before tax."
             },
             {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
               "name": "taxAmount",
               "type": "integer",
               "required": false,
@@ -17857,6 +19226,44 @@
                 "widget": "currency"
               },
               "description": "The currency of the amounts."
+            },
+            {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "issueDate",
@@ -17974,6 +19381,10 @@
             {
               "method": "POST",
               "path": "/contracts/[id]/recalculateTotals"
+            },
+            {
+              "method": "POST",
+              "path": "/contracts/[id]/saveDerived"
             }
           ],
           "mcp": [
@@ -18014,8 +19425,16 @@
               "name": "productionorder_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "productionorder_rebindmoneyread"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "productionorder_recalculatetotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "productionorder_savederived"
             },
             {
               "operation": "update",
@@ -18060,8 +19479,16 @@
               "name": "productionorder_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "productionorder_rebindMoneyRead"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "productionorder_recalculateTotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "productionorder_saveDerived"
             },
             {
               "operation": "update",
@@ -18112,6 +19539,16 @@
               "aiCallable": true
             },
             {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": true
+            },
+            {
               "name": "recalculateTotals",
               "async": true,
               "parameters": [],
@@ -18124,6 +19561,15 @@
               "parameters": [],
               "returnType": "Promise<this>",
               "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": true
             }
           ],
           "references": [
@@ -18198,6 +19644,12 @@
               "description": "The amount before tax."
             },
             {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
               "name": "taxAmount",
               "type": "integer",
               "required": false,
@@ -18226,6 +19678,44 @@
                 "widget": "currency"
               },
               "description": "The currency of the amounts."
+            },
+            {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "issueDate",
@@ -18370,6 +19860,16 @@
               "aiCallable": false
             },
             {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": false
+            },
+            {
               "name": "recalculateTotals",
               "async": true,
               "parameters": [],
@@ -18380,6 +19880,15 @@
               "name": "save",
               "async": true,
               "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
               "returnType": "Promise<this>",
               "aiCallable": false
             }
@@ -18444,6 +19953,12 @@
               "description": "The amount before tax."
             },
             {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
               "name": "taxAmount",
               "type": "integer",
               "required": false,
@@ -18472,6 +19987,44 @@
                 "widget": "currency"
               },
               "description": "The currency of the amounts."
+            },
+            {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "issueDate",
@@ -18590,6 +20143,10 @@
             {
               "method": "POST",
               "path": "/contracts/[id]/recalculateTotals"
+            },
+            {
+              "method": "POST",
+              "path": "/contracts/[id]/saveDerived"
             }
           ],
           "mcp": [
@@ -18630,8 +20187,16 @@
               "name": "purchaseorder_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "purchaseorder_rebindmoneyread"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "purchaseorder_recalculatetotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "purchaseorder_savederived"
             },
             {
               "operation": "update",
@@ -18676,8 +20241,16 @@
               "name": "purchaseorder_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "purchaseorder_rebindMoneyRead"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "purchaseorder_recalculateTotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "purchaseorder_saveDerived"
             },
             {
               "operation": "update",
@@ -18728,6 +20301,16 @@
               "aiCallable": true
             },
             {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": true
+            },
+            {
               "name": "recalculateTotals",
               "async": true,
               "parameters": [],
@@ -18740,6 +20323,15 @@
               "parameters": [],
               "returnType": "Promise<this>",
               "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": true
             }
           ],
           "references": [
@@ -18814,6 +20406,12 @@
               "description": "The amount before tax."
             },
             {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
               "name": "taxAmount",
               "type": "integer",
               "required": false,
@@ -18842,6 +20440,44 @@
                 "widget": "currency"
               },
               "description": "The currency of the amounts."
+            },
+            {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "issueDate",
@@ -18986,6 +20622,16 @@
               "aiCallable": false
             },
             {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": false
+            },
+            {
               "name": "recalculateTotals",
               "async": true,
               "parameters": [],
@@ -18998,11 +20644,921 @@
               "parameters": [],
               "returnType": "Promise<this>",
               "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": false
             }
           ],
           "references": [
             "@happyvertical/smrt-commerce:Customer"
           ],
+          "exposed": true
+        },
+        {
+          "id": "@happyvertical/smrt-commerce:TaxCode",
+          "name": "TaxCode",
+          "collection": "taxcodes",
+          "description": "A reusable tax code whose ordered component list is safe to edit.",
+          "display": {
+            "label": "name"
+          },
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "code",
+              "type": "text",
+              "required": false,
+              "description": "A stable short code, for example gst-pst-bc."
+            },
+            {
+              "name": "name",
+              "type": "text",
+              "required": false,
+              "description": "The name people see for this tax code."
+            },
+            {
+              "name": "kind",
+              "type": "text",
+              "required": false,
+              "default": "taxable",
+              "enum": [
+                "taxable",
+                "zero-rated",
+                "exempt",
+                "out-of-scope"
+              ],
+              "description": "How the tax code is reported."
+            },
+            {
+              "name": "appliesTo",
+              "type": "text",
+              "required": false,
+              "default": "both",
+              "enum": [
+                "sales",
+                "purchases",
+                "both"
+              ],
+              "description": "Whether the code applies to sales, purchases or both."
+            },
+            {
+              "name": "componentsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "active",
+              "type": "boolean",
+              "required": true,
+              "default": true,
+              "description": "Whether users may select this code for new documents."
+            }
+          ],
+          "rest": [
+            {
+              "method": "POST",
+              "path": "/taxcodes/findByCode"
+            },
+            {
+              "method": "GET",
+              "path": "/taxcodes"
+            },
+            {
+              "method": "GET",
+              "path": "/taxcodes/[id]"
+            },
+            {
+              "method": "POST",
+              "path": "/taxcodes"
+            },
+            {
+              "method": "PATCH",
+              "path": "/taxcodes/[id]"
+            }
+          ],
+          "mcp": [
+            {
+              "operation": "get",
+              "name": "taxcode_get"
+            },
+            {
+              "operation": "list",
+              "name": "taxcode_list"
+            },
+            {
+              "operation": "findByCode",
+              "name": "taxcodecollection_findbycode"
+            }
+          ],
+          "cli": [
+            {
+              "operation": "create",
+              "name": "taxcode_create"
+            },
+            {
+              "operation": "delete",
+              "name": "taxcode_delete"
+            },
+            {
+              "operation": "get",
+              "name": "taxcode_get"
+            },
+            {
+              "operation": "list",
+              "name": "taxcode_list"
+            },
+            {
+              "operation": "update",
+              "name": "taxcode_update"
+            },
+            {
+              "operation": "findByCode",
+              "name": "taxcodecollection_findByCode"
+            }
+          ],
+          "methods": [
+            {
+              "name": "findByCode",
+              "async": true,
+              "parameters": [
+                "code: string"
+              ],
+              "returnType": "Promise<TaxCode | null>",
+              "aiCallable": true
+            },
+            {
+              "name": "save",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            }
+          ],
+          "references": [],
+          "exposed": true
+        },
+        {
+          "id": "@happyvertical/smrt-commerce:TaxComponent",
+          "name": "TaxComponent",
+          "collection": "taxcomponents",
+          "description": "One reusable tax rate component.",
+          "display": {
+            "label": "name"
+          },
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "name",
+              "type": "text",
+              "required": false,
+              "description": "The name of this tax component, for example GST."
+            },
+            {
+              "name": "percent",
+              "type": "decimal",
+              "required": false,
+              "description": "The tax percentage, for example 7.125 for 7.125 percent."
+            },
+            {
+              "name": "liabilityAccountId",
+              "type": "crossPackageRef",
+              "required": false,
+              "related": "@happyvertical/smrt-ledgers:Account",
+              "description": "The liability account that receives this tax component."
+            },
+            {
+              "name": "recoverable",
+              "type": "boolean",
+              "required": true,
+              "default": false,
+              "description": "Whether purchases using this component may recover the full input tax. Partial recovery is not supported."
+            },
+            {
+              "name": "active",
+              "type": "boolean",
+              "required": true,
+              "default": true,
+              "description": "Whether new tax codes and overrides may select it."
+            }
+          ],
+          "rest": [
+            {
+              "method": "GET",
+              "path": "/taxcomponents"
+            },
+            {
+              "method": "GET",
+              "path": "/taxcomponents/[id]"
+            },
+            {
+              "method": "POST",
+              "path": "/taxcomponents"
+            },
+            {
+              "method": "PATCH",
+              "path": "/taxcomponents/[id]"
+            }
+          ],
+          "mcp": [
+            {
+              "operation": "get",
+              "name": "taxcomponent_get"
+            },
+            {
+              "operation": "list",
+              "name": "taxcomponent_list"
+            }
+          ],
+          "cli": [
+            {
+              "operation": "create",
+              "name": "taxcomponent_create"
+            },
+            {
+              "operation": "delete",
+              "name": "taxcomponent_delete"
+            },
+            {
+              "operation": "get",
+              "name": "taxcomponent_get"
+            },
+            {
+              "operation": "list",
+              "name": "taxcomponent_list"
+            },
+            {
+              "operation": "update",
+              "name": "taxcomponent_update"
+            }
+          ],
+          "methods": [
+            {
+              "name": "initialize",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
+              "name": "save",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-ledgers:Account"
+          ],
+          "exposed": true
+        },
+        {
+          "id": "@happyvertical/smrt-commerce:TaxSettings",
+          "name": "TaxSettings",
+          "collection": "taxsettingses",
+          "description": "Tenant-level defaults and registration numbers for tax determination.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "defaultSalesTaxCodeId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:TaxCode",
+              "description": "The default tax code for sales documents."
+            },
+            {
+              "name": "defaultPurchaseTaxCodeId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:TaxCode",
+              "description": "The default tax code for purchase documents."
+            },
+            {
+              "name": "defaultLineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ],
+              "description": "Whether new document amounts are exclusive, inclusive or out of scope."
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ],
+              "description": "Whether components round per line or per document."
+            },
+            {
+              "name": "taxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "moneyModel",
+              "type": "text",
+              "required": false,
+              "default": "legacy",
+              "enum": [
+                "legacy",
+                "migrating",
+                "v2"
+              ],
+              "system": true
+            },
+            {
+              "name": "moneyMigrationId",
+              "type": "text",
+              "required": false,
+              "system": true
+            }
+          ],
+          "rest": [
+            {
+              "method": "POST",
+              "path": "/taxsettingses/getOrCreateForTenant"
+            },
+            {
+              "method": "POST",
+              "path": "/taxsettingses/getForTenant"
+            },
+            {
+              "method": "POST",
+              "path": "/taxsettingses/lockForTenant"
+            },
+            {
+              "method": "POST",
+              "path": "/taxsettingses/beginMoneyMigration"
+            },
+            {
+              "method": "POST",
+              "path": "/taxsettingses/activateMoneyV2"
+            },
+            {
+              "method": "POST",
+              "path": "/taxsettingses/restoreLegacyMoneyModel"
+            },
+            {
+              "method": "POST",
+              "path": "/taxsettingses/beginMoneyRollback"
+            },
+            {
+              "method": "GET",
+              "path": "/taxsettingses/[id]"
+            },
+            {
+              "method": "POST",
+              "path": "/taxsettingses"
+            },
+            {
+              "method": "PATCH",
+              "path": "/taxsettingses/[id]"
+            }
+          ],
+          "mcp": [
+            {
+              "operation": "get",
+              "name": "taxsettings_get"
+            },
+            {
+              "operation": "activateMoneyV2",
+              "name": "taxsettingscollection_activatemoneyv2"
+            },
+            {
+              "operation": "beginMoneyMigration",
+              "name": "taxsettingscollection_beginmoneymigration"
+            },
+            {
+              "operation": "beginMoneyRollback",
+              "name": "taxsettingscollection_beginmoneyrollback"
+            },
+            {
+              "operation": "getForTenant",
+              "name": "taxsettingscollection_getfortenant"
+            },
+            {
+              "operation": "getOrCreateForTenant",
+              "name": "taxsettingscollection_getorcreatefortenant"
+            },
+            {
+              "operation": "lockForTenant",
+              "name": "taxsettingscollection_lockfortenant"
+            },
+            {
+              "operation": "restoreLegacyMoneyModel",
+              "name": "taxsettingscollection_restorelegacymoneymodel"
+            }
+          ],
+          "cli": [
+            {
+              "operation": "create",
+              "name": "taxsettings_create"
+            },
+            {
+              "operation": "delete",
+              "name": "taxsettings_delete"
+            },
+            {
+              "operation": "get",
+              "name": "taxsettings_get"
+            },
+            {
+              "operation": "list",
+              "name": "taxsettings_list"
+            },
+            {
+              "operation": "saveMoneyModel",
+              "name": "taxsettings_saveMoneyModel"
+            },
+            {
+              "operation": "saveMoneyModelOnTransaction",
+              "name": "taxsettings_saveMoneyModelOnTransaction"
+            },
+            {
+              "operation": "update",
+              "name": "taxsettings_update"
+            },
+            {
+              "operation": "activateMoneyV2",
+              "name": "taxsettingscollection_activateMoneyV2"
+            },
+            {
+              "operation": "beginMoneyMigration",
+              "name": "taxsettingscollection_beginMoneyMigration"
+            },
+            {
+              "operation": "beginMoneyRollback",
+              "name": "taxsettingscollection_beginMoneyRollback"
+            },
+            {
+              "operation": "getForTenant",
+              "name": "taxsettingscollection_getForTenant"
+            },
+            {
+              "operation": "getOrCreateForTenant",
+              "name": "taxsettingscollection_getOrCreateForTenant"
+            },
+            {
+              "operation": "lockForTenant",
+              "name": "taxsettingscollection_lockForTenant"
+            },
+            {
+              "operation": "restoreLegacyMoneyModel",
+              "name": "taxsettingscollection_restoreLegacyMoneyModel"
+            }
+          ],
+          "methods": [
+            {
+              "name": "activateMoneyV2",
+              "async": true,
+              "parameters": [
+                "tenantId: string",
+                "migrationId: string"
+              ],
+              "returnType": "Promise<void>",
+              "aiCallable": true
+            },
+            {
+              "name": "beginMoneyMigration",
+              "async": true,
+              "parameters": [
+                "tenantId: string",
+                "requestedMigrationId?: string"
+              ],
+              "returnType": "Promise<string>",
+              "aiCallable": true
+            },
+            {
+              "name": "beginMoneyRollback",
+              "async": true,
+              "parameters": [
+                "tenantId: string",
+                "migrationId: string"
+              ],
+              "returnType": "Promise<void>",
+              "aiCallable": true
+            },
+            {
+              "name": "getForTenant",
+              "async": true,
+              "parameters": [
+                "tenantId: string"
+              ],
+              "returnType": "Promise<TaxSettings | null>",
+              "aiCallable": true
+            },
+            {
+              "name": "getOrCreateForTenant",
+              "async": true,
+              "parameters": [
+                "tenantId: string"
+              ],
+              "returnType": "Promise<TaxSettings>",
+              "aiCallable": true
+            },
+            {
+              "name": "lockForTenant",
+              "async": true,
+              "parameters": [
+                "tenantId: string",
+                "create?: any"
+              ],
+              "returnType": "Promise<TaxSettings | null>",
+              "aiCallable": true
+            },
+            {
+              "name": "restoreLegacyMoneyModel",
+              "async": true,
+              "parameters": [
+                "tenantId: string",
+                "migrationId: string"
+              ],
+              "returnType": "Promise<void>",
+              "aiCallable": true
+            },
+            {
+              "name": "save",
+              "async": true,
+              "parameters": [],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
+              "name": "saveMoneyModel",
+              "async": true,
+              "parameters": [
+                "capability: MoneyMigrationWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
+              "name": "saveMoneyModelOnTransaction",
+              "async": true,
+              "parameters": [
+                "capability: MoneyMigrationWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-commerce:TaxCode"
+          ],
+          "exposed": true
+        },
+        {
+          "id": "@happyvertical/smrt-commerce:TaxSummaryReport",
+          "name": "TaxSummaryReport",
+          "collection": "taxsummaryreports",
+          "fields": [
+            {
+              "name": "refreshedAt",
+              "type": "datetime",
+              "required": false
+            },
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "periodFrom",
+              "type": "datetime",
+              "required": false,
+              "description": "The inclusive start of this report period."
+            },
+            {
+              "name": "periodTo",
+              "type": "datetime",
+              "required": false,
+              "description": "The inclusive end of this report period."
+            },
+            {
+              "name": "currency",
+              "type": "text",
+              "required": false,
+              "description": "The currency group; report rows never mix currencies."
+            },
+            {
+              "name": "rowKind",
+              "type": "text",
+              "required": false,
+              "default": "component",
+              "enum": [
+                "component",
+                "kind",
+                "reconciliation",
+                "warning"
+              ],
+              "description": "The materialized tax-summary row category."
+            },
+            {
+              "name": "dimensionKey",
+              "type": "text",
+              "required": false,
+              "description": "The stable dimension identity inside this report row."
+            },
+            {
+              "name": "direction",
+              "type": "text",
+              "required": false,
+              "description": "Sales, purchase, expense or reconciliation direction."
+            },
+            {
+              "name": "taxComponentId",
+              "type": "text",
+              "required": false,
+              "description": "Tenant tax component snapshot identity."
+            },
+            {
+              "name": "taxCodeKind",
+              "type": "text",
+              "required": false,
+              "description": "Stored tax-code kind snapshot."
+            },
+            {
+              "name": "liabilityAccountId",
+              "type": "text",
+              "required": false,
+              "description": "Liability account used for reconciliation."
+            },
+            {
+              "name": "taxableMinor",
+              "type": "integer",
+              "required": true,
+              "default": 0,
+              "description": "Stored taxable base in integer minor units."
+            },
+            {
+              "name": "taxMinor",
+              "type": "integer",
+              "required": true,
+              "default": 0,
+              "description": "Collected tax or reconciliation tax amount in integer minor units."
+            },
+            {
+              "name": "recoverableMinor",
+              "type": "integer",
+              "required": false,
+              "description": "Recoverable tax in integer minor units, or null when incomplete."
+            },
+            {
+              "name": "ledgerMovementMinor",
+              "type": "integer",
+              "required": false,
+              "description": "Posted ledger movement in raw commerce minor units."
+            },
+            {
+              "name": "netTaxMinor",
+              "type": "integer",
+              "required": false,
+              "description": "Collected less recoverable tax in integer minor units."
+            },
+            {
+              "name": "differenceMinor",
+              "type": "integer",
+              "required": false,
+              "description": "Ledger movement minus collected tax."
+            },
+            {
+              "name": "documentCount",
+              "type": "integer",
+              "required": true,
+              "default": 0,
+              "description": "Distinct stored document count."
+            },
+            {
+              "name": "sourceScopes",
+              "type": "text",
+              "required": false,
+              "description": "Comma-separated source classes used to reproduce this row drilldown."
+            },
+            {
+              "name": "complete",
+              "type": "boolean",
+              "required": true,
+              "default": true,
+              "description": "Whether this row belongs to a complete tax-summary result."
+            },
+            {
+              "name": "warningCode",
+              "type": "text",
+              "required": false,
+              "description": "Incomplete-source warning code."
+            },
+            {
+              "name": "warningSourceType",
+              "type": "text",
+              "required": false,
+              "description": "Warning source category."
+            },
+            {
+              "name": "warningSourceId",
+              "type": "text",
+              "required": false,
+              "description": "Warning source identity."
+            },
+            {
+              "name": "warningMessage",
+              "type": "text",
+              "required": false,
+              "description": "Operator-facing incomplete-source warning."
+            }
+          ],
+          "rest": [
+            {
+              "method": "POST",
+              "path": "/taxsummaryreports/refresh"
+            },
+            {
+              "method": "POST",
+              "path": "/taxsummaryreports/refreshTaxSummary"
+            },
+            {
+              "method": "POST",
+              "path": "/taxsummaryreports/drilldownInvoiceFacts"
+            },
+            {
+              "method": "POST",
+              "path": "/taxsummaryreports/drilldownContributors"
+            },
+            {
+              "method": "GET",
+              "path": "/taxsummaryreports"
+            },
+            {
+              "method": "GET",
+              "path": "/taxsummaryreports/[id]"
+            }
+          ],
+          "mcp": [
+            {
+              "operation": "get",
+              "name": "taxsummaryreport_get"
+            },
+            {
+              "operation": "list",
+              "name": "taxsummaryreport_list"
+            },
+            {
+              "operation": "count",
+              "name": "taxsummaryreportcollection_count"
+            },
+            {
+              "operation": "drilldownContributors",
+              "name": "taxsummaryreportcollection_drilldowncontributors"
+            },
+            {
+              "operation": "drilldownInvoiceFacts",
+              "name": "taxsummaryreportcollection_drilldowninvoicefacts"
+            },
+            {
+              "operation": "refresh",
+              "name": "taxsummaryreportcollection_refresh"
+            },
+            {
+              "operation": "refreshTaxSummary",
+              "name": "taxsummaryreportcollection_refreshtaxsummary"
+            }
+          ],
+          "cli": [
+            {
+              "operation": "get",
+              "name": "taxsummaryreport_get"
+            },
+            {
+              "operation": "list",
+              "name": "taxsummaryreport_list"
+            },
+            {
+              "operation": "count",
+              "name": "taxsummaryreportcollection_count"
+            },
+            {
+              "operation": "drilldownContributors",
+              "name": "taxsummaryreportcollection_drilldownContributors"
+            },
+            {
+              "operation": "drilldownInvoiceFacts",
+              "name": "taxsummaryreportcollection_drilldownInvoiceFacts"
+            },
+            {
+              "operation": "refresh",
+              "name": "taxsummaryreportcollection_refresh"
+            },
+            {
+              "operation": "refreshTaxSummary",
+              "name": "taxsummaryreportcollection_refreshTaxSummary"
+            }
+          ],
+          "methods": [
+            {
+              "name": "count",
+              "async": true,
+              "parameters": [
+                "options?: any"
+              ],
+              "returnType": "Promise<number>",
+              "aiCallable": true
+            },
+            {
+              "name": "drilldownContributors",
+              "async": true,
+              "parameters": [
+                "options: TaxSummaryContributorDrilldownOptions"
+              ],
+              "returnType": "Promise<TaxSummaryContributorDrilldown>",
+              "aiCallable": true
+            },
+            {
+              "name": "drilldownInvoiceFacts",
+              "async": true,
+              "parameters": [
+                "options: TaxSummaryInvoiceDrilldownOptions"
+              ],
+              "returnType": "Promise<InvoiceTaxReportFact[]>",
+              "aiCallable": true
+            },
+            {
+              "name": "get",
+              "async": true,
+              "parameters": [
+                "filter: any",
+                "options?: any"
+              ],
+              "returnType": "Promise<TaxSummaryReport | null>",
+              "aiCallable": true
+            },
+            {
+              "name": "isStale",
+              "async": false,
+              "parameters": [
+                "ttlMs?: number"
+              ],
+              "returnType": "boolean",
+              "aiCallable": false
+            },
+            {
+              "name": "list",
+              "async": true,
+              "parameters": [
+                "options?: SmrtListOptions<TaxSummaryReport>"
+              ],
+              "returnType": "Promise<SmrtObject[] | Record<string, unknown>[]>",
+              "aiCallable": true
+            },
+            {
+              "name": "refresh",
+              "async": true,
+              "parameters": [
+                "options?: Omit<ReportRefreshOptions, 'db'>"
+              ],
+              "returnType": "Promise<ReportRefreshResult>",
+              "aiCallable": true
+            },
+            {
+              "name": "refreshTaxSummary",
+              "async": true,
+              "parameters": [
+                "options: RefreshTaxSummaryReportOptions"
+              ],
+              "returnType": "Promise<TaxSummaryReportRefreshResult>",
+              "aiCallable": true
+            }
+          ],
+          "references": [],
           "exposed": true
         },
         {
@@ -19057,6 +21613,20 @@
                 "widget": "currency"
               },
               "description": "The currency this vendor bills you in."
+            },
+            {
+              "name": "taxId",
+              "type": "text",
+              "required": false,
+              "default": "",
+              "description": "The vendor tax or VAT registration number kept on file."
+            },
+            {
+              "name": "defaultTaxCodeId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:TaxCode",
+              "description": "The tax code normally used when buying from this vendor."
             },
             {
               "name": "defaultContactEmail",
@@ -19398,6 +21968,7 @@
             }
           ],
           "references": [
+            "@happyvertical/smrt-commerce:TaxCode",
             "@happyvertical/smrt-profiles:Profile"
           ],
           "exposed": true
@@ -19457,6 +22028,12 @@
               "description": "The amount before tax."
             },
             {
+              "name": "discountTotal",
+              "type": "integer",
+              "required": false,
+              "default": 0
+            },
+            {
               "name": "taxAmount",
               "type": "integer",
               "required": false,
@@ -19485,6 +22062,44 @@
                 "widget": "currency"
               },
               "description": "The currency of the amounts."
+            },
+            {
+              "name": "lineAmountType",
+              "type": "text",
+              "required": false,
+              "default": "exclusive",
+              "enum": [
+                "exclusive",
+                "inclusive",
+                "none"
+              ]
+            },
+            {
+              "name": "taxRoundingScope",
+              "type": "text",
+              "required": false,
+              "default": "line",
+              "enum": [
+                "line",
+                "document"
+              ]
+            },
+            {
+              "name": "sellerTaxRegistrationsJson",
+              "type": "text",
+              "required": false,
+              "system": true
+            },
+            {
+              "name": "partyTaxId",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "moneySnapshotId",
+              "type": "text",
+              "required": false,
+              "system": true
             },
             {
               "name": "issueDate",
@@ -19589,6 +22204,10 @@
             {
               "method": "POST",
               "path": "/contracts/[id]/recalculateTotals"
+            },
+            {
+              "method": "POST",
+              "path": "/contracts/[id]/saveDerived"
             }
           ],
           "mcp": [
@@ -19629,8 +22248,16 @@
               "name": "wholesaleorder_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "wholesaleorder_rebindmoneyread"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "wholesaleorder_recalculatetotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "wholesaleorder_savederived"
             },
             {
               "operation": "update",
@@ -19675,8 +22302,16 @@
               "name": "wholesaleorder_list"
             },
             {
+              "operation": "rebindMoneyRead",
+              "name": "wholesaleorder_rebindMoneyRead"
+            },
+            {
               "operation": "recalculateTotals",
               "name": "wholesaleorder_recalculateTotals"
+            },
+            {
+              "operation": "saveDerived",
+              "name": "wholesaleorder_saveDerived"
             },
             {
               "operation": "update",
@@ -19727,6 +22362,16 @@
               "aiCallable": true
             },
             {
+              "name": "rebindMoneyRead",
+              "async": false,
+              "parameters": [
+                "capability: DocumentMoneyReadRebindCapability",
+                "db: DatabaseInterface"
+              ],
+              "returnType": "this",
+              "aiCallable": true
+            },
+            {
               "name": "recalculateTotals",
               "async": true,
               "parameters": [],
@@ -19739,6 +22384,15 @@
               "parameters": [],
               "returnType": "Promise<this>",
               "aiCallable": false
+            },
+            {
+              "name": "saveDerived",
+              "async": true,
+              "parameters": [
+                "capability: DocumentMoneyWriteCapability"
+              ],
+              "returnType": "Promise<this>",
+              "aiCallable": true
             }
           ],
           "references": [
@@ -19751,6 +22405,7 @@
         "ledgers",
         "products",
         "profiles",
+        "reports",
         "subscriptions",
         "users"
       ],
@@ -19759,16 +22414,25 @@
         "status": "server-only",
         "issues": [
           "#3615",
+          "#3616",
+          "#3617",
           "#3624",
+          "#3625",
           "#3626",
           "#3627"
         ],
         "reason": "@happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs",
         "via": [
+          "@happyvertical/smrt-agents",
           "@happyvertical/smrt-jobs",
           "@happyvertical/smrt-ledgers",
+          "@happyvertical/smrt-products",
+          "@happyvertical/smrt-profiles",
+          "@happyvertical/smrt-reports",
+          "@happyvertical/smrt-secrets",
           "@happyvertical/smrt-subscriptions",
-          "@happyvertical/smrt-tenancy"
+          "@happyvertical/smrt-tenancy",
+          "@happyvertical/smrt-users"
         ]
       },
       "recipes": [
@@ -19858,7 +22522,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Type a percentage: 5 means 5%."
+                  "help": "Stored fraction: 0.05 means 5%."
                 }
               }
             },
@@ -19883,13 +22547,13 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627)."
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627)."
             ]
           },
           "effectiveDemo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627).",
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627).",
               "Needs commerce.customers, which is server."
             ]
           }
@@ -19947,7 +22611,7 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627)."
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627)."
             ]
           }
         },
@@ -20020,7 +22684,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Type a percentage: 5 means 5%."
+                  "help": "Stored fraction: 0.05 means 5%."
                 }
               }
             }
@@ -20038,13 +22702,13 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627)."
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627)."
             ]
           },
           "effectiveDemo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627).",
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627).",
               "Needs commerce.customers, which is server."
             ]
           }
@@ -20123,13 +22787,13 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627)."
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627)."
             ]
           },
           "effectiveDemo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627).",
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627).",
               "Needs commerce.sales, which is server."
             ]
           }
@@ -20255,7 +22919,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Type a percentage: 5 means 5%."
+                  "help": "Stored fraction: 0.05 means 5%."
                 }
               }
             },
@@ -20319,13 +22983,13 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627)."
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627)."
             ]
           },
           "effectiveDemo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627).",
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627).",
               "Needs commerce.customers, which is server."
             ]
           }
@@ -20409,7 +23073,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Type a percentage: 5 means 5%."
+                  "help": "Stored fraction: 0.05 means 5%."
                 }
               }
             }
@@ -20426,13 +23090,13 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627)."
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627)."
             ]
           },
           "effectiveDemo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627).",
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627).",
               "Needs commerce.customers, which is server."
             ]
           }
@@ -20516,7 +23180,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Type a percentage: 5 means 5%."
+                  "help": "Stored fraction: 0.05 means 5%."
                 }
               }
             }
@@ -20533,13 +23197,13 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627)."
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627)."
             ]
           },
           "effectiveDemo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627).",
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627).",
               "Needs commerce.customers, which is server."
             ]
           }
@@ -20615,7 +23279,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Type a percentage: 5 means 5%."
+                  "help": "Stored fraction: 0.05 means 5%."
                 }
               }
             }
@@ -20641,13 +23305,13 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627)."
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627)."
             ]
           },
           "effectiveDemo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627).",
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627).",
               "Needs commerce.vendors, which is server."
             ]
           }
@@ -20723,7 +23387,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Type a percentage: 5 means 5%."
+                  "help": "Stored fraction: 0.05 means 5%."
                 }
               }
             }
@@ -20747,13 +23411,13 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627)."
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627)."
             ]
           },
           "effectiveDemo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627).",
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627).",
               "Needs commerce.customers, which is server."
             ]
           }
@@ -20810,7 +23474,7 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627)."
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627)."
             ]
           }
         },
@@ -20885,7 +23549,7 @@
                   "visibility": "hidden"
                 },
                 "taxRate": {
-                  "help": "Type a percentage: 5 means 5%."
+                  "help": "Stored fraction: 0.05 means 5%."
                 }
               }
             }
@@ -20903,13 +23567,13 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627)."
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627)."
             ]
           },
           "effectiveDemo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, which do not build for a browser (#3615, #3624, #3626, #3627).",
+              "Needs a server because its package does not build for a browser: @happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627).",
               "Needs commerce.customers, which is server."
             ]
           }
@@ -20919,7 +23583,7 @@
     {
       "id": "content",
       "packageName": "@happyvertical/smrt-content",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Content processing module for SMRT framework - handles documents, web content, and media",
       "models": [
         {
@@ -28029,7 +30693,7 @@
     {
       "id": "events",
       "packageName": "@happyvertical/smrt-events",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Hierarchical event management with participant tracking and SMRT framework support",
       "models": [
         {
@@ -30393,7 +33057,7 @@
     {
       "id": "expenses",
       "packageName": "@happyvertical/smrt-expenses",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Expense records for the SMRT framework - reviewed costs against a cost object, deduplicated receipts, and commitment drawdown",
       "models": [
         {
@@ -30552,10 +33216,36 @@
               "required": false
             }
           ],
-          "rest": [],
+          "rest": [
+            {
+              "method": "POST",
+              "path": "/expenses/record"
+            },
+            {
+              "method": "POST",
+              "path": "/expenses/attachReceipt"
+            },
+            {
+              "method": "POST",
+              "path": "/expenses/recordReview"
+            },
+            {
+              "method": "POST",
+              "path": "/expenses/recordReimbursement"
+            }
+          ],
           "mcp": [],
           "cli": [],
           "methods": [
+            {
+              "name": "attachReceipt",
+              "async": true,
+              "parameters": [
+                "options: AttachExpenseReceiptActionInput"
+              ],
+              "returnType": "Promise<ExpenseReceipt>",
+              "aiCallable": false
+            },
             {
               "name": "commitmentPosition",
               "async": true,
@@ -30612,6 +33302,15 @@
               "aiCallable": false
             },
             {
+              "name": "listReviewedTaxFacts",
+              "async": true,
+              "parameters": [
+                "options: ReviewedExpenseTaxFactsOptions"
+              ],
+              "returnType": "Promise<ReviewedExpenseTaxFact[]>",
+              "aiCallable": false
+            },
+            {
               "name": "markDuplicate",
               "async": true,
               "parameters": [
@@ -30627,6 +33326,33 @@
                 "input?: MarkReimbursedInput"
               ],
               "returnType": "Promise<this>",
+              "aiCallable": false
+            },
+            {
+              "name": "record",
+              "async": true,
+              "parameters": [
+                "options: RecordExpenseActionInput"
+              ],
+              "returnType": "Promise<Expense>",
+              "aiCallable": false
+            },
+            {
+              "name": "recordReimbursement",
+              "async": true,
+              "parameters": [
+                "options: MarkExpenseReimbursedActionInput"
+              ],
+              "returnType": "Promise<Expense>",
+              "aiCallable": false
+            },
+            {
+              "name": "recordReview",
+              "async": true,
+              "parameters": [
+                "options: ReviewExpenseActionInput"
+              ],
+              "returnType": "Promise<Expense>",
               "aiCallable": false
             },
             {
@@ -30689,7 +33415,7 @@
             "@happyvertical/smrt-expenses:Expense",
             "PROFILE"
           ],
-          "exposed": false
+          "exposed": true
         },
         {
           "id": "@happyvertical/smrt-expenses:ExpenseReceipt",
@@ -30845,31 +33571,178 @@
       "dependencies": [
         "assets",
         "commerce",
-        "profiles"
+        "profiles",
+        "users"
       ],
       "surfaceSource": "knowledge",
       "browser": {
         "status": "server-only",
         "issues": [
           "#3615",
+          "#3616",
+          "#3617",
           "#3624",
+          "#3625",
           "#3626",
           "#3627"
         ],
         "reason": "node:crypto",
         "via": [
+          "@happyvertical/smrt-agents",
           "@happyvertical/smrt-commerce",
           "@happyvertical/smrt-jobs",
           "@happyvertical/smrt-ledgers",
+          "@happyvertical/smrt-products",
+          "@happyvertical/smrt-profiles",
+          "@happyvertical/smrt-reports",
+          "@happyvertical/smrt-secrets",
           "@happyvertical/smrt-subscriptions",
-          "@happyvertical/smrt-tenancy"
+          "@happyvertical/smrt-tenancy",
+          "@happyvertical/smrt-users"
         ]
-      }
+      },
+      "recipes": [
+        {
+          "id": "expenses.tracking",
+          "label": "Expenses",
+          "summary": "Record what the business spends, with receipts, and review it.",
+          "synonyms": [
+            "costs",
+            "receipts",
+            "spending",
+            "reimbursements"
+          ],
+          "models": [
+            "@happyvertical/smrt-expenses:Expense",
+            "@happyvertical/smrt-expenses:ExpenseReceipt"
+          ],
+          "nav": [
+            {
+              "label": "Expenses",
+              "model": "@happyvertical/smrt-expenses:Expense",
+              "icon": "receipt",
+              "description": "Costs you have paid, with the receipt and who paid."
+            }
+          ],
+          "requires": [],
+          "section": {
+            "id": "accounting",
+            "label": "Accounting",
+            "icon": "bank",
+            "description": "Your books: accounts, journals and balances."
+          },
+          "options": {
+            "@happyvertical/smrt-expenses:Expense": {
+              "fields": {
+                "description": {
+                  "order": 1,
+                  "required": true
+                },
+                "amount": {
+                  "order": 2
+                },
+                "currency": {
+                  "order": 3
+                },
+                "incurredOn": {
+                  "label": "Date",
+                  "order": 4,
+                  "help": "The date on the receipt, as YYYY-MM-DD."
+                },
+                "category": {
+                  "order": 5,
+                  "help": "One word, such as material, travel, freight or other."
+                },
+                "vendorId": {
+                  "label": "Vendor",
+                  "order": 6
+                },
+                "paidBy": {
+                  "order": 7
+                },
+                "paidByProfileId": {
+                  "label": "Person who paid",
+                  "order": 8,
+                  "help": "Who paid out of their own pocket, when a person paid."
+                },
+                "paidByName": {
+                  "order": 9
+                },
+                "reimbursable": {
+                  "order": 10
+                },
+                "costObjectId": {
+                  "label": "Charged to",
+                  "order": 11,
+                  "help": "The job, project or client the cost belongs to."
+                },
+                "costObjectType": {
+                  "visibility": "hidden"
+                },
+                "financialBreakdown": {
+                  "visibility": "hidden"
+                },
+                "refundOfId": {
+                  "visibility": "hidden"
+                },
+                "recordedByProfileId": {
+                  "visibility": "hidden"
+                },
+                "commitmentId": {
+                  "visibility": "hidden"
+                },
+                "commitmentLineId": {
+                  "visibility": "hidden"
+                },
+                "reviewedByProfileId": {
+                  "visibility": "hidden"
+                },
+                "duplicateOfId": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-expenses:ExpenseReceipt": {
+              "fields": {
+                "contentSha256": {
+                  "visibility": "hidden"
+                },
+                "byteCount": {
+                  "visibility": "hidden"
+                },
+                "uploadedByProfileId": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nExpenses are the costs the business pays: a receipt, who paid it and what it\nwas for. Each expense is reviewed once, and a reimbursable one is marked when\nthe person is paid back.\n\n## Tasks\n\n### Record an expense\n\n1. Create a new expense and write a short **{field:description}**.\n2. Enter the **{field:amount}** and its **{field:currency}**.\n3. Set the **{field:incurredOn}** date from the receipt and pick a\n   **{field:category}**.\n4. Choose who **{field:paidBy}**: the company, a person or a third party.\n5. When a person paid, pick the **{field:paidByProfileId}** and tick\n   **{field:reimbursable}** when they are owed the money back.\n\n### Review it\n\n1. Open the expense and check the receipt attached to it.\n2. **{field:reviewStatus}** moves from unreviewed to reviewed, or to rejected,\n   when someone reviews it. A rejected expense can be reopened.\n",
+            "fieldRefs": [
+              "amount",
+              "category",
+              "currency",
+              "description",
+              "incurredOn",
+              "paidBy",
+              "paidByProfileId",
+              "reimbursable",
+              "reviewStatus"
+            ]
+          },
+          "demo": {
+            "mode": "server",
+            "reasons": [
+              "Needs a server because its package does not build for a browser: node:crypto; and its package depends on @happyvertical/smrt-agents, @happyvertical/smrt-commerce, @happyvertical/smrt-jobs, @happyvertical/smrt-ledgers, @happyvertical/smrt-products, @happyvertical/smrt-profiles, @happyvertical/smrt-reports, @happyvertical/smrt-secrets, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3615, #3616, #3617, #3624, #3625, #3626, #3627)."
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "facts",
       "packageName": "@happyvertical/smrt-facts",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Distributed memory and knowledge management with provenance tracking for SMRT framework",
       "models": [
         {
@@ -33381,7 +36254,7 @@
     {
       "id": "fields",
       "packageName": "@happyvertical/smrt-fields",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Layered field policy store and resolver (defaults, visibility tiers, help text) for SMRT objects",
       "models": [
         {
@@ -34094,7 +36967,7 @@
     {
       "id": "human-resources",
       "packageName": "@happyvertical/smrt-human-resources",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "HR records for the SMRT framework: who works for an organization, as what, and with what standing — employment with dated terms, and qualifications with expiry",
       "models": [
         {
@@ -34614,7 +37487,7 @@
     {
       "id": "images",
       "packageName": "@happyvertical/smrt-images",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Image asset management with AI-powered categorization, search, editing, and metadata extraction for SMRT framework",
       "models": [
         {
@@ -35301,7 +38174,7 @@
     {
       "id": "ingestion",
       "packageName": "@happyvertical/smrt-ingestion",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Durable tenant-scoped intake and evidence foundations",
       "models": [
         {
@@ -36379,7 +39252,7 @@
     {
       "id": "inventory",
       "packageName": "@happyvertical/smrt-inventory",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Multi-location stock tracking for the SMRT framework — Sku, InventoryLocation, StockLevel, StockMovement, and a stock-mutation service",
       "models": [
         {
@@ -37135,7 +40008,7 @@
     {
       "id": "ledgers",
       "packageName": "@happyvertical/smrt-ledgers",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Double-entry accounting ledger for the SMRT framework",
       "models": [
         {
@@ -38285,6 +41158,10 @@
             },
             {
               "method": "POST",
+              "path": "/journalentries/listPostedMovements"
+            },
+            {
+              "method": "POST",
               "path": "/journalentries/getAccountLedger"
             },
             {
@@ -38356,6 +41233,10 @@
             {
               "operation": "getTrialBalance",
               "name": "journalentrycollection_gettrialbalance"
+            },
+            {
+              "operation": "listPostedMovements",
+              "name": "journalentrycollection_listpostedmovements"
             }
           ],
           "cli": [
@@ -38446,6 +41327,10 @@
             {
               "operation": "getTrialBalance",
               "name": "journalentrycollection_getTrialBalance"
+            },
+            {
+              "operation": "listPostedMovements",
+              "name": "journalentrycollection_listPostedMovements"
             }
           ],
           "methods": [
@@ -38587,6 +41472,15 @@
               "parameters": [],
               "returnType": "boolean",
               "aiCallable": false
+            },
+            {
+              "name": "listPostedMovements",
+              "async": true,
+              "parameters": [
+                "options: PostedJournalMovementOptions"
+              ],
+              "returnType": "Promise<PostedJournalMovement[]>",
+              "aiCallable": true
             }
           ],
           "references": [
@@ -38712,7 +41606,7 @@
     {
       "id": "manufacturing",
       "packageName": "@happyvertical/smrt-manufacturing",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Bills of materials, cost rollup, and production-order operations for the SMRT framework — strictly industry-neutral",
       "models": [
         {
@@ -38779,6 +41673,20 @@
               "required": true,
               "default": 0,
               "description": "The price in minor units (cents), for example 1999 for 19.99."
+            },
+            {
+              "name": "defaultSalesTaxCodeId",
+              "type": "crossPackageRef",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:TaxCode",
+              "description": "The tax code normally used when this product is sold."
+            },
+            {
+              "name": "defaultPurchaseTaxCodeId",
+              "type": "crossPackageRef",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:TaxCode",
+              "description": "The tax code normally used when this product is purchased."
             },
             {
               "name": "inStock",
@@ -38937,6 +41845,7 @@
             }
           ],
           "references": [
+            "@happyvertical/smrt-commerce:TaxCode",
             "@happyvertical/smrt-manufacturing:Operation"
           ],
           "exposed": true
@@ -39743,6 +42652,7 @@
         }
       ],
       "dependencies": [
+        "commerce",
         "human-resources",
         "inventory",
         "products"
@@ -39764,7 +42674,7 @@
     {
       "id": "marketing",
       "packageName": "@happyvertical/smrt-marketing",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Cross-channel campaign coordination, immutable performance evidence, budget pacing, and reusable Svelte marketing surfaces for SMRT",
       "models": [
         {
@@ -40502,7 +43412,7 @@
     {
       "id": "messages",
       "packageName": "@happyvertical/smrt-messages",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Unified multi-channel messaging with STI-based hierarchies",
       "models": [
         {
@@ -48145,7 +51055,7 @@
     {
       "id": "places",
       "packageName": "@happyvertical/smrt-places",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Hierarchical place management with geo integration and SMRT framework support",
       "models": [
         {
@@ -49125,7 +52035,7 @@
     {
       "id": "preferences",
       "packageName": "@happyvertical/smrt-preferences",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Tenant defaults and per-user overrides for user-interface preferences (overview layouts, shell layout), validated per registered kind",
       "models": [
         {
@@ -49289,7 +52199,7 @@
     {
       "id": "products",
       "packageName": "@happyvertical/smrt-products",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "SMRT products module: triple-purpose microservice template for standalone apps, federated modules, and NPM libraries",
       "models": [
         {
@@ -49500,6 +52410,20 @@
               "required": true,
               "default": 0,
               "description": "The price in minor units (cents), for example 1999 for 19.99."
+            },
+            {
+              "name": "defaultSalesTaxCodeId",
+              "type": "crossPackageRef",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:TaxCode",
+              "description": "The tax code normally used when this product is sold."
+            },
+            {
+              "name": "defaultPurchaseTaxCodeId",
+              "type": "crossPackageRef",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:TaxCode",
+              "description": "The tax code normally used when this product is purchased."
             },
             {
               "name": "inStock",
@@ -49754,7 +52678,9 @@
               "aiCallable": false
             }
           ],
-          "references": [],
+          "references": [
+            "@happyvertical/smrt-commerce:TaxCode"
+          ],
           "exposed": true
         },
         {
@@ -49827,6 +52753,20 @@
               "required": true,
               "default": 0,
               "description": "The price in minor units (cents), for example 1999 for 19.99."
+            },
+            {
+              "name": "defaultSalesTaxCodeId",
+              "type": "crossPackageRef",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:TaxCode",
+              "description": "The tax code normally used when this product is sold."
+            },
+            {
+              "name": "defaultPurchaseTaxCodeId",
+              "type": "crossPackageRef",
+              "required": false,
+              "related": "@happyvertical/smrt-commerce:TaxCode",
+              "description": "The tax code normally used when this product is purchased."
             },
             {
               "name": "inStock",
@@ -50042,7 +52982,9 @@
               "aiCallable": false
             }
           ],
-          "references": [],
+          "references": [
+            "@happyvertical/smrt-commerce:TaxCode"
+          ],
           "exposed": true
         },
         {
@@ -50598,7 +53540,8 @@
         }
       ],
       "dependencies": [
-        "assets"
+        "assets",
+        "commerce"
       ],
       "surfaceSource": "knowledge",
       "browser": {
@@ -50891,7 +53834,7 @@
     {
       "id": "profiles",
       "packageName": "@happyvertical/smrt-profiles",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Profile management system with relationships, metadata, and reciprocal associations for SMRT framework",
       "models": [
         {
@@ -56768,7 +59711,7 @@
     {
       "id": "projects",
       "packageName": "@happyvertical/smrt-projects",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Provider-agnostic project management models (Issues, PRs, Repositories, Projects) for SMRT framework",
       "models": [
         {
@@ -60201,15 +63144,18 @@
       "browser": {
         "status": "server-only",
         "issues": [
+          "#3617",
           "#3624",
           "#3626",
           "#3627"
         ],
         "reason": "node:crypto/async_hooks; core migrations; repos and ai SDKs",
         "via": [
+          "@happyvertical/smrt-profiles",
           "@happyvertical/smrt-subscriptions",
           "@happyvertical/smrt-tenancy",
-          "@happyvertical/smrt-timesheets"
+          "@happyvertical/smrt-timesheets",
+          "@happyvertical/smrt-users"
         ]
       },
       "recipes": [
@@ -60345,7 +63291,7 @@
           "demo": {
             "mode": "server",
             "reasons": [
-              "Needs a server because its package does not build for a browser: node:crypto/async_hooks; core migrations; repos and ai SDKs; and its package depends on @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-timesheets, which do not build for a browser (#3624, #3626, #3627)."
+              "Needs a server because its package does not build for a browser: node:crypto/async_hooks; core migrations; repos and ai SDKs; and its package depends on @happyvertical/smrt-profiles, @happyvertical/smrt-subscriptions, @happyvertical/smrt-tenancy, @happyvertical/smrt-timesheets, @happyvertical/smrt-users, which do not build for a browser (#3617, #3624, #3626, #3627)."
             ]
           }
         }
@@ -60354,7 +63300,7 @@
     {
       "id": "properties",
       "packageName": "@happyvertical/smrt-properties",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Digital property and zone management models for SMRT framework",
       "models": [
         {
@@ -61425,7 +64371,7 @@
     {
       "id": "reports",
       "packageName": "@happyvertical/smrt-reports",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Materialized aggregate report models for SMRT",
       "models": [
         {
@@ -62260,7 +65206,7 @@
     {
       "id": "sales",
       "packageName": "@happyvertical/smrt-sales",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Modular sales for the SMRT framework: agreement execution, CRM, referral intake, neutral commissions, and reusable Svelte surfaces",
       "models": [
         {
@@ -69352,7 +72298,7 @@
     {
       "id": "sites",
       "packageName": "@happyvertical/smrt-sites",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Site lifecycle management for multi-tenant SMRT networks",
       "models": [
         {
@@ -69900,7 +72846,7 @@
     {
       "id": "social",
       "packageName": "@happyvertical/smrt-social",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Social media account management for multi-platform publishing in the SMRT ecosystem",
       "models": [
         {
@@ -70987,7 +73933,7 @@
     {
       "id": "subscriptions",
       "packageName": "@happyvertical/smrt-subscriptions",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Tenant subscriptions, entitlement resolution, usage thresholds, and subscription UI for SMRT",
       "models": [
         {
@@ -72928,7 +75874,7 @@
     {
       "id": "support",
       "packageName": "@happyvertical/smrt-support",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "AI-first Support Cases: channel-neutral intake, lifecycle, routing, service targets, and service time for the SMRT framework",
       "models": [
         {
@@ -76445,7 +79391,7 @@
     {
       "id": "tags",
       "packageName": "@happyvertical/smrt-tags",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Reusable tagging system with hierarchies, contexts, and multi-language support for SMRT framework",
       "models": [
         {
@@ -77400,7 +80346,7 @@
     {
       "id": "timesheets",
       "packageName": "@happyvertical/smrt-timesheets",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Shared time entries for the SMRT framework: who worked how long on what, approval and correction, with immutable charge and compensation snapshots",
       "models": [
         {
@@ -78429,6 +81375,18 @@
             },
             {
               "method": "POST",
+              "path": "/servicetimeentries/record"
+            },
+            {
+              "method": "POST",
+              "path": "/servicetimeentries/submit"
+            },
+            {
+              "method": "POST",
+              "path": "/servicetimeentries/approve"
+            },
+            {
+              "method": "POST",
               "path": "/servicetimeentries/forWork"
             },
             {
@@ -78462,17 +81420,18 @@
             {
               "operation": "list",
               "name": "servicetimeentry_list"
-            },
-            {
-              "operation": "forWork",
-              "name": "servicetimeentrycollection_forWork"
-            },
-            {
-              "operation": "pendingApproval",
-              "name": "servicetimeentrycollection_pendingApproval"
             }
           ],
           "methods": [
+            {
+              "name": "approve",
+              "async": true,
+              "parameters": [
+                "options: ServiceTimeEntryActionTarget"
+              ],
+              "returnType": "Promise<ServiceTimeEntry>",
+              "aiCallable": false
+            },
             {
               "name": "durationHours",
               "async": false,
@@ -78526,6 +81485,15 @@
               "aiCallable": true
             },
             {
+              "name": "record",
+              "async": true,
+              "parameters": [
+                "options: RecordServiceTimeActionInput"
+              ],
+              "returnType": "Promise<ServiceTimeEntry>",
+              "aiCallable": false
+            },
+            {
               "name": "requireDurationSeconds",
               "async": false,
               "parameters": [],
@@ -78555,6 +81523,15 @@
                 "value: Record<string, unknown>"
               ],
               "returnType": "void",
+              "aiCallable": false
+            },
+            {
+              "name": "submit",
+              "async": true,
+              "parameters": [
+                "options: ServiceTimeEntryActionTarget"
+              ],
+              "returnType": "Promise<ServiceTimeEntry>",
               "aiCallable": false
             }
           ],
@@ -78732,24 +81709,169 @@
         }
       ],
       "dependencies": [
-        "profiles"
+        "profiles",
+        "users"
       ],
       "surfaceSource": "knowledge",
       "browser": {
         "status": "server-only",
         "issues": [
-          "#3624"
+          "#3617",
+          "#3624",
+          "#3626"
         ],
         "reason": "node:crypto",
         "via": [
-          "@happyvertical/smrt-tenancy"
+          "@happyvertical/smrt-profiles",
+          "@happyvertical/smrt-tenancy",
+          "@happyvertical/smrt-users"
         ]
-      }
+      },
+      "recipes": [
+        {
+          "id": "timesheets.time-entries",
+          "label": "Time entries",
+          "summary": "Record who worked how long on what, for approval.",
+          "synonyms": [
+            "timesheets",
+            "time tracking",
+            "hours",
+            "billable hours",
+            "timecards"
+          ],
+          "models": [
+            "@happyvertical/smrt-timesheets:ServiceTimeEntry"
+          ],
+          "nav": [
+            {
+              "label": "Time entries",
+              "model": "@happyvertical/smrt-timesheets:ServiceTimeEntry",
+              "icon": "fileText",
+              "description": "Hours worked, by person and by job, from draft to approved."
+            }
+          ],
+          "requires": [],
+          "section": {
+            "id": "work",
+            "label": "Work",
+            "icon": "wrench",
+            "description": "Time and costs: the work behind each job."
+          },
+          "options": {
+            "@happyvertical/smrt-timesheets:ServiceTimeEntry": {
+              "fields": {
+                "participantProfileId": {
+                  "label": "Person",
+                  "order": 1
+                },
+                "description": {
+                  "order": 2,
+                  "help": "What the time was spent on, in a few words."
+                },
+                "startedAt": {
+                  "label": "Started",
+                  "order": 3
+                },
+                "endedAt": {
+                  "label": "Ended",
+                  "order": 4
+                },
+                "durationSeconds": {
+                  "label": "Duration (seconds)",
+                  "order": 5,
+                  "help": "Whole seconds: 3600 is one hour."
+                },
+                "workRefId": {
+                  "label": "Work reference",
+                  "order": 6,
+                  "help": "The job, project or case this time belongs to."
+                },
+                "workRefType": {
+                  "visibility": "hidden"
+                },
+                "participantKind": {
+                  "default": "human",
+                  "visibility": "hidden"
+                },
+                "agentRef": {
+                  "visibility": "hidden"
+                },
+                "source": {
+                  "default": "manual",
+                  "visibility": "hidden"
+                },
+                "evidence": {
+                  "visibility": "hidden"
+                },
+                "status": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "submittedAt": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "submittedByProfileId": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "approvedAt": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "approvedByProfileId": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "approvalPath": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "rejectedAt": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "rejectedByProfileId": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "rejectionReason": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "correctionOfId": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "metadata": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nTime entries record who worked how long on what. Each entry names the person,\nwhat they did and when, and moves from draft to submitted to approved.\n\n## Tasks\n\n### Record time\n\n1. Create a new time entry.\n2. Pick the **{field:participantProfileId}** who did the work.\n3. Write a short **{field:description}** of what was done.\n4. Enter when it **{field:startedAt}** and **{field:endedAt}**, or type the\n   **{field:durationSeconds}** directly (3600 is one hour).\n\n### Send it for approval\n\nApproval is not something you change on this form. It runs through your\napp's approval screen, which records who did each step and when.\n\n1. When an entry is ready to check, the person who did the work submits it.\n2. An approver, someone your app allows to approve time, approves it or sends\n   it back with a reason. Approving fixes what the hours are charged and paid\n   at, so an approved entry never changes; correct it with a new entry.\n3. If your app has no approval screen yet, entries stay as drafts until one is\n   added.\n",
+            "fieldRefs": [
+              "description",
+              "durationSeconds",
+              "endedAt",
+              "participantProfileId",
+              "startedAt"
+            ]
+          },
+          "demo": {
+            "mode": "server",
+            "reasons": [
+              "Needs a server because its package does not build for a browser: node:crypto; and its package depends on @happyvertical/smrt-profiles, @happyvertical/smrt-tenancy, @happyvertical/smrt-users, which do not build for a browser (#3617, #3624, #3626)."
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "users",
       "packageName": "@happyvertical/smrt-users",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups",
       "models": [
         {
@@ -84026,7 +87148,7 @@
     {
       "id": "video",
       "packageName": "@happyvertical/smrt-video",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Video content management for AI-powered video production in the SMRT ecosystem",
       "models": [
         {
@@ -91441,7 +94563,7 @@
     {
       "id": "voice",
       "packageName": "@happyvertical/smrt-voice",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Voice profile management for AI-powered voice synthesis and cloning in the SMRT ecosystem",
       "models": [
         {
@@ -92901,7 +96023,7 @@
     {
       "id": "webhooks",
       "packageName": "@happyvertical/smrt-webhooks",
-      "version": "0.56.0",
+      "version": "0.56.1",
       "description": "Outbound webhook subscriptions, signed delivery, and durable retries",
       "models": [
         {
