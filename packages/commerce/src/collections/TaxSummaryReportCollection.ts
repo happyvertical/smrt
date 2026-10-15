@@ -132,6 +132,11 @@ export type TaxSummaryDrilldownContributor =
       fact: InvoiceTaxReportFact;
     }
   | {
+      source: 'contract';
+      valueMinor: number;
+      fact: InvoiceTaxReportFact;
+    }
+  | {
       source: 'expense';
       valueMinor: number;
       expense: TaxSummaryExpenseFact;
@@ -571,7 +576,7 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
         currency: row.currency,
       });
       const contributors: TaxSummaryDrilldownContributor[] = [];
-      const addInvoiceFacts = (
+      const addDocumentFacts = (
         matches: readonly InvoiceTaxReportFact[],
         value: (fact: InvoiceTaxReportFact) => number,
         distinctDocuments = false,
@@ -582,7 +587,7 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
           if (distinctDocuments && seen.has(identity)) continue;
           seen.add(identity);
           contributors.push({
-            source: 'invoice',
+            source: fact.documentType === 'contract' ? 'contract' : 'invoice',
             valueMinor: value(fact),
             fact,
           });
@@ -590,6 +595,12 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
       };
       const componentFacts = facts.filter(
         (fact) => fact.taxComponentId === row.taxComponentId,
+      );
+      const salesComponentFacts = componentFacts.filter(
+        (fact) => fact.direction === 'sales',
+      );
+      const purchaseComponentFacts = componentFacts.filter(
+        (fact) => fact.direction === 'purchase',
       );
 
       const includeExpenses = async (
@@ -697,31 +708,34 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
       if (row.rowKind === 'component') {
         switch (options.measure) {
           case 'taxable':
-            addInvoiceFacts(componentFacts, (fact) =>
+            addDocumentFacts(componentFacts, (fact) =>
               signedFact(fact, fact.taxableMinor),
             );
-            if (scopes.has('purchase')) pending.add('purchase-source');
             break;
           case 'tax':
-            addInvoiceFacts(componentFacts, (fact) =>
+            addDocumentFacts(salesComponentFacts, (fact) =>
               signedFact(fact, fact.taxMinor),
             );
             break;
           case 'recoverable':
+            addDocumentFacts(purchaseComponentFacts, (fact) =>
+              signedFact(fact, fact.recoverableMinor),
+            );
             if (scopes.has('expense')) await includeExpenses(1);
-            if (scopes.has('purchase')) pending.add('purchase-source');
             break;
           case 'net':
-            addInvoiceFacts(componentFacts, (fact) =>
+            addDocumentFacts(salesComponentFacts, (fact) =>
               signedFact(fact, fact.taxMinor),
             );
+            addDocumentFacts(
+              purchaseComponentFacts,
+              (fact) => -signedFact(fact, fact.recoverableMinor),
+            );
             if (scopes.has('expense')) await includeExpenses(-1);
-            if (scopes.has('purchase')) pending.add('purchase-source');
             break;
           case 'documentCount':
-            addInvoiceFacts(componentFacts, () => 1, true);
+            addDocumentFacts(componentFacts, () => 1, true);
             if (scopes.has('expense')) await includeExpenses(1, true);
-            if (scopes.has('purchase')) pending.add('purchase-source');
             break;
         }
       } else if (row.rowKind === 'kind') {
@@ -730,10 +744,9 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
             fact.taxCodeKind === row.taxCodeKind &&
             fact.direction === row.direction,
         );
-        if (row.direction === 'purchase') pending.add('purchase-source');
-        else if (options.measure === 'taxable') {
+        if (options.measure === 'taxable') {
           const seen = new Set<string>();
-          addInvoiceFacts(
+          addDocumentFacts(
             kindFacts.filter((fact) => {
               const key = `${reportFactIdentity(fact)}\u0000${fact.taxCodeId}`;
               if (seen.has(key)) return false;
@@ -742,20 +755,20 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
             }),
             (fact) => signedFact(fact, fact.taxableMinor),
           );
-        } else addInvoiceFacts(kindFacts, () => 1, true);
+        } else addDocumentFacts(kindFacts, () => 1, true);
       } else if (row.rowKind === 'reconciliation') {
-        const reconciliationFacts = componentFacts.filter(
+        const reconciliationFacts = salesComponentFacts.filter(
           (fact) =>
             row.liabilityAccountId === null ||
             fact.liabilityAccountId === row.liabilityAccountId,
         );
         if (options.measure === 'tax')
-          addInvoiceFacts(reconciliationFacts, (fact) =>
+          addDocumentFacts(reconciliationFacts, (fact) =>
             signedFact(fact, fact.taxMinor),
           );
         if (options.measure === 'ledgerMovement') await includeLedger(1);
         if (options.measure === 'difference') {
-          addInvoiceFacts(
+          addDocumentFacts(
             reconciliationFacts,
             (fact) => -signedFact(fact, fact.taxMinor),
           );
@@ -763,7 +776,7 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
         }
       } else {
         if (row.warningSourceType === 'document') {
-          addInvoiceFacts(
+          addDocumentFacts(
             facts.filter(
               (fact) => reportWarningIdentity(fact) === row.warningSourceId,
             ),
@@ -772,7 +785,7 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
         } else if (row.warningSourceType === 'expense') {
           await includeExpenses(1, false, row.warningSourceId ?? undefined);
         } else if (row.warningSourceType === 'component') {
-          addInvoiceFacts(
+          addDocumentFacts(
             facts.filter((fact) => fact.taxComponentId === row.warningSourceId),
             () => 0,
           );

@@ -1,16 +1,19 @@
 /** Owning collection for derived document tax totals. */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   DOCUMENT_MONEY_WRITE,
   type DocumentMoneyWriteCapability,
 } from '../document-money-internal.js';
+import { classifyContractPurchase } from '../models/Contract.js';
 import {
   type CommerceDocumentType,
   DocumentTax,
   type DocumentTaxOptions,
 } from '../models/DocumentTax.js';
 import { MoneyValidationError, type TaxCodeKind } from '../money.js';
+import { ContractCollection } from './ContractCollection.js';
 
 export type DocumentTaxWriteInput = Required<
   Pick<
@@ -32,20 +35,20 @@ export type DocumentTaxWriteInput = Required<
   >
 >;
 
-/** Normalized immutable invoice tax snapshots for tax-summary materialization. */
-export interface InvoiceTaxReportFact {
+/** Normalized immutable document-tax snapshots for tax-summary materialization. */
+export interface DocumentTaxReportFact {
   tenantId: string;
-  documentType: 'invoice' | 'credit_note';
+  documentType: CommerceDocumentType;
   documentId: string;
-  /** The invoice number supplied to drilldown consumers. */
+  /** A document number/reference supplied to drilldown consumers. */
   documentNumber: string;
-  /** Customer identity for a host to resolve as its party display. */
+  /** Tenant-scoped party identity for a host to resolve as its party display. */
   partyId: string | null;
   /** Positive credit snapshots are negated once by the pure report aggregation. */
-  documentKind: 'invoice' | 'credit_note';
+  documentKind: CommerceDocumentType;
   issueDate: string;
   status: string;
-  direction: 'sales';
+  direction: 'sales' | 'purchase';
   currency: string;
   taxCodeId: string | null;
   /** Null is an unassigned/unknown snapshot and must remain visible as a warning. */
@@ -58,12 +61,18 @@ export interface InvoiceTaxReportFact {
   liabilityAccountId: string | null;
 }
 
-export interface InvoiceTaxReportFactsOptions {
+/** @deprecated Use DocumentTaxReportFact. Kept for report-adapter compatibility. */
+export type InvoiceTaxReportFact = DocumentTaxReportFact;
+
+export interface DocumentTaxReportFactsOptions {
   tenantId: string;
   from: Date;
   to: Date;
   currency?: string;
 }
+
+/** @deprecated Use DocumentTaxReportFactsOptions. */
+export type InvoiceTaxReportFactsOptions = DocumentTaxReportFactsOptions;
 
 const TAX_CODE_KINDS = new Set<TaxCodeKind>([
   'taxable',
@@ -113,13 +122,18 @@ function invoiceKind(value: unknown): 'invoice' | 'credit_note' {
   throw new Error('Invoice tax report kind must be invoice or credit_note.');
 }
 
+function contractDocumentType(value: unknown): 'contract' {
+  if (value === 'contract') return value;
+  throw new Error('Contract tax report document type must be contract.');
+}
+
 function taxCodeKind(value: unknown): TaxCodeKind | null {
   return typeof value === 'string' && TAX_CODE_KINDS.has(value as TaxCodeKind)
     ? (value as TaxCodeKind)
     : null;
 }
 
-function assertReportFactOptions(options: InvoiceTaxReportFactsOptions): void {
+function assertReportFactOptions(options: DocumentTaxReportFactsOptions): void {
   if (!options.tenantId?.trim())
     throw new Error('Invoice tax report facts require a tenant.');
   if (!(options.from instanceof Date) || Number.isNaN(options.from.getTime()))
@@ -178,17 +192,35 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
   static readonly _itemClass = DocumentTax;
 
   /**
-   * Read immutable Invoice-backed `DocumentTax` snapshots for one tenant.
+   * Read immutable commerce document-tax snapshots for one tenant.
    *
-   * This deliberately uses no Contract path. Invoice and credit-note snapshots
-   * are joined to their shared Invoice storage by both identity and tenant; their
-   * positive values remain stored values, and the pure report applies the credit
-   * sign exactly once from Invoice.kind.
+   * Invoice/credit rows join their shared storage by identity and tenant.
+   * Purchase Contract rows first use the Contract owner's bounded hydrated
+   * candidate API so custom PurchaseContract descendants retain their STI
+   * classification. The query then joins only those candidate ids by identity
+   * and tenant. Stored snapshots remain authoritative; this never recalculates
+   * money or resolves present-day tax configuration.
    */
   async listReportFacts(
-    options: InvoiceTaxReportFactsOptions,
-  ): Promise<InvoiceTaxReportFact[]> {
+    options: DocumentTaxReportFactsOptions,
+  ): Promise<DocumentTaxReportFact[]> {
     assertReportFactOptions(options);
+    const [invoiceFacts, purchaseFacts] = await Promise.all([
+      this.listInvoiceReportFacts(options),
+      this.listPurchaseContractReportFacts(options),
+    ]);
+    return [...invoiceFacts, ...purchaseFacts].sort(
+      (left, right) =>
+        left.issueDate.localeCompare(right.issueDate) ||
+        left.documentId.localeCompare(right.documentId) ||
+        String(left.taxCodeId).localeCompare(String(right.taxCodeId)) ||
+        String(left.taxComponentId).localeCompare(String(right.taxComponentId)),
+    );
+  }
+
+  private async listInvoiceReportFacts(
+    options: DocumentTaxReportFactsOptions,
+  ): Promise<DocumentTaxReportFact[]> {
     const currencyClause = options.currency ? ' AND d.currency = ?' : '';
     const result = await this.db.query(
       `SELECT d.tenant_id, d.document_type, d.document_id, d.currency, d.tax_code_id, d.kind,
@@ -243,6 +275,93 @@ export class DocumentTaxCollection extends SmrtCollection<DocumentTax> {
           ? null
           : String(row.liability_account_id),
     }));
+  }
+
+  private async listPurchaseContractReportFacts(
+    options: DocumentTaxReportFactsOptions,
+  ): Promise<DocumentTaxReportFact[]> {
+    const contracts = await withTenant({ tenantId: options.tenantId }, () =>
+      ContractCollection.create({ db: this.db }).then((collection) =>
+        collection.listSnapshotReportContracts({
+          tenantId: options.tenantId,
+          from: options.from,
+          to: options.to,
+        }),
+      ),
+    );
+    const purchases = contracts.filter(classifyContractPurchase);
+    const ids = purchases.flatMap((contract) =>
+      contract.id ? [contract.id] : [],
+    );
+    if (ids.length === 0) return [];
+    const byId = new Map(
+      purchases.flatMap((contract) =>
+        contract.id ? ([[contract.id, contract]] as const) : [],
+      ),
+    );
+    const placeholders = ids.map(() => '?').join(', ');
+    const currencyClause = options.currency ? ' AND d.currency = ?' : '';
+    const result = await this.db.query(
+      `SELECT d.tenant_id, d.document_type, d.document_id, d.currency, d.tax_code_id, d.kind,
+              d.tax_component_id, d.tax_component_name, d.liability_account_id,
+              d.taxable_minor, d.tax_minor, d.recoverable_minor
+         FROM document_taxes d
+         JOIN contracts c
+           ON CAST(c.id AS TEXT) = CAST(d.document_id AS TEXT)
+          AND c.tenant_id = d.tenant_id
+        WHERE CAST(d.tenant_id AS TEXT) = ?
+          AND CAST(c.tenant_id AS TEXT) = ?
+          AND d.document_type = 'contract'
+          AND c.status NOT IN ('draft', 'cancelled')
+          AND CAST(d.document_id AS TEXT) IN (${placeholders})${currencyClause}
+        ORDER BY c.issue_date ASC, c.id ASC, d.tax_code_id ASC, d.tax_component_id ASC`,
+      options.tenantId,
+      options.tenantId,
+      ...ids,
+      ...(options.currency ? [options.currency] : []),
+    );
+    return result.rows.flatMap((row): DocumentTaxReportFact[] => {
+      const documentId = requiredText(row.document_id, 'contract id');
+      const contract = byId.get(documentId);
+      if (!contract) return [];
+      return [
+        {
+          tenantId: requiredText(row.tenant_id, 'tenant id'),
+          documentType: contractDocumentType(row.document_type),
+          documentId,
+          documentNumber: contract.reference.trim() || documentId,
+          partyId:
+            'vendorId' in contract &&
+            typeof contract.vendorId === 'string' &&
+            contract.vendorId.trim()
+              ? contract.vendorId
+              : null,
+          documentKind: 'contract',
+          issueDate: reportDate(contract.issueDate, 'contract issue date'),
+          status: requiredText(contract.status, 'contract status'),
+          direction: 'purchase',
+          currency: requiredText(row.currency, 'currency'),
+          taxCodeId: row.tax_code_id == null ? null : String(row.tax_code_id),
+          taxCodeKind: taxCodeKind(row.kind),
+          taxableMinor: storedMinor(row.taxable_minor, 'taxable minor'),
+          taxMinor: storedMinor(row.tax_minor, 'tax minor'),
+          recoverableMinor: storedMinor(
+            row.recoverable_minor,
+            'recoverable minor',
+          ),
+          taxComponentId:
+            row.tax_component_id == null ? null : String(row.tax_component_id),
+          componentName:
+            row.tax_component_name == null
+              ? null
+              : String(row.tax_component_name),
+          liabilityAccountId:
+            row.liability_account_id == null
+              ? null
+              : String(row.liability_account_id),
+        },
+      ];
+    });
   }
 
   async findByDocument(

@@ -29,7 +29,7 @@ liability account, component-level reconciliation is ambiguous: the compiler
 keeps the rows visible, emits a warning, and does not compare the full account
 movement to every component.
 
-## Materialized Invoice report path
+## Materialized document report path
 
 `TaxSummaryReport` is a tenant-scoped, manual materialized report. Its owner,
 `TaxSummaryReportCollection.refreshTaxSummary()`, refuses tenants whose
@@ -38,12 +38,21 @@ complete stored-tax source. The caller injects the public Expense and Journal
 source adapters because commerce cannot depend on expenses; omitting either
 adapter is a refusal, never a zero-ITC fallback.
 
-`DocumentTaxCollection.listReportFacts()` is the Invoice-only source query. It
-joins `document_taxes` to `invoices` on both document id and tenant id, filters
-inclusive `issueDate` bounds, excludes drafts/cancelled invoices, and retains
-written-off invoices. It returns stored `DocumentTax` snapshots without
-recalculating tax. A nullable tax-code kind becomes an unassigned-source
-warning; it never becomes out-of-scope by inference.
+`DocumentTaxCollection.listReportFacts()` reads stored Invoice, credit-note,
+and purchase-Contract snapshots. The Invoice branch joins `document_taxes` to
+`invoices` on both document id and tenant id, filters inclusive `issueDate`
+bounds, excludes drafts/cancelled invoices, and retains written-off invoices.
+The Contract branch gets a bounded, hydrated candidate set from
+`ContractCollection.listSnapshotReportContracts()`, then uses the Contract
+owner's descendant classifier before joining only those purchase ids to
+`document_taxes` on document id and tenant id. This preserves custom
+`PurchaseContract` descendants without hard-coding contract enums or party
+display names. Contract rows include every non-draft, non-cancelled frozen
+snapshot, including `DECLINED`; their `issueDate`, reference (falling back to
+the id), and vendor party id are read from the frozen Contract. The query only
+returns stored snapshots and never recalculates tax. A nullable tax-code kind
+becomes an unassigned-source warning; it never becomes out-of-scope by
+inference.
 
 The existing reports adapter is exposed by
 `buildTaxSummaryReportAdapterDescriptor()`. Its DataTable columns use the
@@ -52,11 +61,10 @@ a tenant id supplied by the authenticated host, rechecks the materialized row
 under that tenant, then applies its currency/component/kind dimensions to the
 same Invoice source query. It cannot widen a row into another tenant.
 
-This source selects the shared Invoice `kind` discriminator and accepts only
+The Invoice branch selects the shared Invoice `kind` discriminator and accepts only
 matching `DocumentTax.documentType` pairs: `invoice`/`invoice` or
 `credit_note`/`credit_note`. Credit rows retain positive stored values and pass
-through the aggregation's single credit sign step. Contract facts await #3898;
-they are not silently included in this path.
+through the aggregation's single credit sign step.
 
 Refresh holds the tenant `TaxSettings` parent lock through the v2 gate, all
 source reads, aggregation, and replacement. Every source-adapter call receives
@@ -66,10 +74,10 @@ and concurrent same-period refreshes converge to one row set. Materialized
 `list`, `get`, `count`, and Invoice drilldowns all recheck the tenant's marker;
 `legacy` and `migrating` refuse even existing report rows.
 
-The Invoice drilldown fact carries the printed invoice number, tenant-scoped
-customer/party id, issue date, stored taxable base, and stored tax. A runtime
-host may resolve that party id to an authorized display name; the commerce
-source does not cross-join profile data.
+Each document drilldown fact carries its printed invoice number or Contract
+reference, tenant-scoped customer/vendor party id, issue date, stored taxable
+base, and stored tax. A runtime host may resolve that party id to an authorized
+display name; the commerce source does not cross-join profile data.
 
 `drilldownTaxSummaryContributors()` is the cell-level backend boundary. The
 host supplies one of the closed measures (`taxable`, `tax`, `recoverable`,
@@ -85,9 +93,9 @@ Rows persist compact source-class provenance plus an exact warning source
 identity, not a duplicate set of source amounts. A missing injected owner,
 missing historical provenance, or a source total that no longer equals the
 materialized cell returns `complete: false` with a machine-readable pending
-reason. The Purchase/Contract source is still #3898: a row with purchase
-contributors returns `purchase-source` incomplete instead of claiming a zero
-or exact ITC. The Ledger detail port is adapted from the public
+reason. Purchase Contract contributors reconcile their stored recoverable
+amounts directly; a materialized purchase fact missing from its source returns
+`source-state-diverged`, never a zero ITC. The Ledger detail port is adapted from the public
 `JournalEntryCollection.listPostedMovements()` and remains raw ledger units;
 the host must retain the commerce minor-unit convention.
 

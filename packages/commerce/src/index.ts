@@ -74,6 +74,8 @@ export {
   type CreatePayoutFromPaymentArgs,
   CustomerCollection,
   DocumentTaxCollection,
+  type DocumentTaxReportFact,
+  type DocumentTaxReportFactsOptions,
   FulfillmentCollection,
   FulfillmentLineItemCollection,
   InvoiceCollection,

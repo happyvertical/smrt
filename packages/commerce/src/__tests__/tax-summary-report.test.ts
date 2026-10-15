@@ -559,7 +559,7 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
     });
   });
 
-  it('returns a structured purchase-source gap instead of treating a purchase ITC as zero', async () => {
+  it('reports a diverged purchase source instead of treating a materialized ITC as zero', async () => {
     const tenantId = 'tenant-a';
     await withTenant({ tenantId }, () => activateV2(tenantId));
     const aggregate = aggregateTaxSummary({
@@ -611,7 +611,7 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
       }),
     ).resolves.toMatchObject({
       complete: false,
-      pending: expect.arrayContaining(['purchase-source']),
+      pending: expect.arrayContaining(['source-state-diverged']),
       contributors: [],
     });
   });
