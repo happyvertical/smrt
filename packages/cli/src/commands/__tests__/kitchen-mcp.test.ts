@@ -45,13 +45,20 @@ function writeManifests(dir: string): void {
   const models: Record<string, Record<string, string[]>> = {
     '@happyvertical/smrt-commerce': {
       Customer: ['name', 'creditLimit', 'paymentTerms'],
-      Invoice: ['number', 'total', 'currency', 'terms'],
+      Invoice: [
+        'number',
+        'total',
+        'currency',
+        'terms',
+        'lineAmountType',
+        'taxRoundingScope',
+      ],
       Order: ['number', 'currency', 'terms'],
       PurchaseOrder: ['currency'],
       WholesaleOrder: ['currency', 'terms'],
       Estimate: ['currency', 'terms'],
       Agreement: ['currency', 'terms'],
-      Contract: ['currency', 'terms'],
+      Contract: ['currency', 'terms', 'lineAmountType', 'taxRoundingScope'],
       InvoiceLineItem: ['taxRate'],
       ContractLineItem: ['taxRate'],
       ProductionOrder: ['quantity'],
