@@ -116,7 +116,11 @@ export function attendanceSuite(
       await withTenant({ tenantId: actor.tenantId }, async () => {
         const collection = await AttendanceSegmentCollection.create({ db });
         const byTask = await collection.list({
-          where: { taskRefType: '@fixture/work:Operation', taskRefId: 'WELD' },
+          where: {
+            tenantId: actor.tenantId,
+            taskRefType: '@fixture/work:Operation',
+            taskRefId: 'WELD',
+          },
         });
         expect(byTask).toHaveLength(2);
         const closed = byTask[0];
@@ -447,6 +451,135 @@ export function attendanceSuite(
       });
       expect(await service.autoClose(at(12), 7200)).toBeNull();
     });
+    it('auto closes at a per-punch deadline with a reason, closing segment and break', async () => {
+      await service.punchIn(at(8));
+      await service.startWork(at(8), work);
+      await service.startBreak(at(9));
+      const seen: string[] = [];
+      const resolver = (punch: { id?: string | null }) => {
+        seen.push(punch.id ?? '');
+        return { deadline: at(10), reason: 'shiftEnd' };
+      };
+      expect(await service.autoClose(at(9), () => null)).toBeNull();
+      expect(
+        await service.autoClose(at(9), () => ({ deadline: at(10) })),
+      ).toBeNull();
+      const punch = await service.autoClose(at(12), resolver);
+      expect(seen).toHaveLength(1);
+      expect(punch).toMatchObject({
+        reviewRequired: true,
+        autoCloseReason: 'shiftEnd',
+        endedAt: at(10),
+      });
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const segments = await AttendanceSegmentCollection.create({ db });
+        const rows = await segments.list({
+          where: { tenantId: actor.tenantId, punchId: punch!.id! },
+        });
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+          endedAt: at(9),
+          closedReason: 'break',
+        });
+        const breaks = await AttendanceBreakCollection.create({ db });
+        const [b] = await breaks.list({
+          where: { tenantId: actor.tenantId, punchId: punch!.id! },
+        });
+        expect(b.endedAt).toEqual(at(10));
+      });
+      expect(await service.autoClose(at(12), resolver)).toBeNull();
+      expect(seen).toHaveLength(1);
+    });
+    it('records maxDuration for the fixed form and rejects bad deadlines', async () => {
+      await service.punchIn(at(8));
+      await expect(
+        service.autoClose(at(12), () => ({ deadline: at(7) })),
+      ).rejects.toThrow('predates');
+      await expect(
+        service.autoClose(at(12), () => new Date('x')),
+      ).rejects.toThrow('invalid');
+      await expect(
+        service.autoClose(at(12), () => ({ deadline: at(9), reason: ' ' })),
+      ).rejects.toThrow('reason');
+      const punch = await service.autoClose(at(12), 3600);
+      expect(punch).toMatchObject({
+        autoCloseReason: 'maxDuration',
+        endedAt: at(9),
+      });
+      punch!.autoCloseReason = 'edited';
+      await expect(punch!.save()).rejects.toThrow('autoCloseReason');
+    });
+    it('bounds the device id like the other provenance labels', async () => {
+      const type = '@fixture/shop:Station';
+      await expect(
+        service.punchIn(at(8), { device: { type, id: 'x'.repeat(65) } }),
+      ).rejects.toThrow('device.id');
+      await expect(
+        service.punchIn(at(8), { device: { type, id: ' padded ' } }),
+      ).rejects.toThrow('device.id');
+      const punch = await service.punchIn(at(8), {
+        device: { type, id: 'x'.repeat(64) },
+      });
+      expect(punch.deviceRefId).toHaveLength(64);
+    });
+    it('closes a punch whose new provenance columns are NULL on an older row', async () => {
+      await service.punchIn(at(8));
+      await db.query(
+        `UPDATE attendance_punches SET source = NULL, device_ref_type = NULL, device_ref_id = NULL, auto_close_reason = NULL WHERE tenant_id = ${isPostgresDatabase(db) ? '$1' : '?'}`,
+        actor.tenantId,
+      );
+      const closed = await service.punchOut(at(9));
+      expect(closed.durationSeconds).toBe(3600);
+    });
+    it('refuses untrimmed provenance written straight through the model', async () => {
+      await service.punchIn(at(8));
+      await service.startBreak(at(9));
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const punches = await AttendancePunchCollection.create({ db });
+        const [open] = await punches.list({
+          where: { tenantId: actor.tenantId, profileId: actor.profileId },
+        });
+        await expect(
+          punches.create({
+            tenantId: actor.tenantId,
+            profileId: crypto.randomUUID(),
+            startedAt: at(1),
+            source: ' device ',
+          }),
+        ).rejects.toThrow('source or device');
+        const breaks = await AttendanceBreakCollection.create({ db });
+        const [pause] = await breaks.list({
+          where: { tenantId: actor.tenantId, punchId: open.id },
+        });
+        pause.kind = ' meal ';
+        await expect(pause.save()).rejects.toThrow('break');
+      });
+    });
+    it('refuses a forged autoCloseReason and a deadline before a committed break', async () => {
+      await service.punchIn(at(8), { source: 'device' });
+      await service.startBreak(at(9));
+      await expect(
+        service.autoClose(at(12), () => ({ deadline: at(8) })),
+      ).rejects.toThrow('predates committed');
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const punches = await AttendancePunchCollection.create({ db });
+        const [open] = await punches.list({
+          where: { tenantId: actor.tenantId, profileId: actor.profileId },
+        });
+        expect(open.endedAt).toBeNull();
+        expect(open.autoCloseReason).toBe('');
+        open.autoCloseReason = 'forged';
+        await expect(open.save()).rejects.toThrow('autoCloseReason');
+        await expect(
+          punches.create({
+            tenantId: actor.tenantId,
+            profileId: crypto.randomUUID(),
+            startedAt: at(1),
+            autoCloseReason: 'forged',
+          }),
+        ).rejects.toThrow('autoCloseReason');
+      });
+    });
     it('orders offline taps, persists identical outcomes, and rejects key changes', async () => {
       const taps = [
         {
@@ -641,6 +774,163 @@ export function attendanceSuite(
       await service.punchOut(at(9));
     });
 
+    it('records punch source and device and break kind, queryable and immutable', async () => {
+      const device = { type: '@fixture/shop:Station', id: 'station-7' };
+      const first = await service.punchIn(at(8), { source: 'device', device });
+      expect(first).toMatchObject({
+        source: 'device',
+        deviceRefType: device.type,
+        deviceRefId: 'station-7',
+      });
+      await service.startBreak(at(10), false, { kind: 'meal' });
+      await service.endBreak(at(11));
+      await service.startBreak(at(12), true);
+      await service.endBreak(half(12));
+      const closed = await service.punchOut(at(16));
+      const plain = await service.punchIn(at(17));
+      expect(plain).toMatchObject({
+        source: '',
+        deviceRefType: '',
+        deviceRefId: '',
+      });
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const punches = await AttendancePunchCollection.create({ db });
+        const byDevice = await punches.list({
+          where: {
+            tenantId: actor.tenantId,
+            deviceRefType: device.type,
+            deviceRefId: 'station-7',
+          },
+        });
+        expect(byDevice.map((p) => p.id)).toEqual([closed.id]);
+        expect(
+          await punches.list({
+            where: { tenantId: actor.tenantId, source: 'device' },
+          }),
+        ).toHaveLength(1);
+        const breaks = await AttendanceBreakCollection.create({ db });
+        const meals = await breaks.list({
+          where: { tenantId: actor.tenantId, punchId: closed.id, kind: 'meal' },
+        });
+        expect(meals).toHaveLength(1);
+        const all = await breaks.list({
+          where: { tenantId: actor.tenantId, punchId: closed.id },
+        });
+        expect(all.map((b) => b.kind).sort()).toEqual(['', 'meal']);
+        closed.source = 'web';
+        await expect(closed.save()).rejects.toThrow('immutable');
+        meals[0].kind = 'rest';
+        await expect(meals[0].save()).rejects.toThrow('immutable');
+      });
+    });
+    it('refuses malformed source, device and kind', async () => {
+      await expect(
+        service.punchIn(at(8), { source: 'x'.repeat(65) }),
+      ).rejects.toThrow('source');
+      await expect(
+        service.punchIn(at(8), { device: { type: 'T', id: '' } }),
+      ).rejects.toThrow('together');
+      await expect(service.punchIn(at(8), { source: ' web' })).rejects.toThrow(
+        'trimmed',
+      );
+      await service.punchIn(at(8));
+      await expect(
+        service.startBreak(at(9), false, { kind: 5 as unknown as string }),
+      ).rejects.toThrow('kind');
+      expect(
+        await service
+          .replay([
+            {
+              clientId: 'bad',
+              action: 'punchIn',
+              at: at(9).toISOString(),
+              device: { type: 'T', id: '' },
+            },
+          ])
+          .catch((e: Error) => e.message),
+      ).toContain('together');
+    });
+    it('replays provenance, hashing it only when present', async () => {
+      const device = { type: '@fixture/shop:Station', id: 'station-7' };
+      const taps = [
+        {
+          clientId: 'in',
+          action: 'punchIn' as const,
+          at: at(8).toISOString(),
+          source: 'device',
+          device,
+        },
+        {
+          clientId: 'br',
+          action: 'startBreak' as const,
+          at: at(10).toISOString(),
+          kind: 'meal',
+        },
+      ];
+      const result = await service.replay(taps);
+      expect(result.every((r) => r.punchId && !r.error)).toBe(true);
+      expect(await service.replay(taps)).toEqual(result);
+      await expect(
+        service.replay([{ ...taps[0], source: 'web' }]),
+      ).rejects.toThrow('different content');
+      const [punch] = await service.withTransaction((tx) =>
+        tx.punches.list({
+          where: { ...actor, id: result[0].punchId },
+          limit: 1,
+        }),
+      );
+      expect(punch).toMatchObject({
+        source: 'device',
+        deviceRefId: 'station-7',
+      });
+      const [stored] = await service.withTransaction((tx) =>
+        tx.replays.list({
+          where: {
+            tenantId: actor.tenantId,
+            replayKey: JSON.stringify([actor.tenantId, actor.profileId, 'in']),
+          },
+          limit: 1,
+        }),
+      );
+      expect(JSON.parse(stored.content)).toEqual([
+        'punchIn',
+        at(8).toISOString(),
+        false,
+        null,
+        null,
+        null,
+        {
+          source: 'device',
+          deviceType: device.type,
+          deviceId: 'station-7',
+          kind: '',
+        },
+      ]);
+      const [legacy] = await service.replay([
+        { clientId: 'legacy', action: 'endBreak', at: at(11).toISOString() },
+      ]);
+      const [row] = await service.withTransaction((tx) =>
+        tx.replays.list({
+          where: {
+            tenantId: actor.tenantId,
+            replayKey: JSON.stringify([
+              actor.tenantId,
+              actor.profileId,
+              legacy.clientId,
+            ]),
+          },
+          limit: 1,
+        }),
+      );
+      expect(JSON.parse(row.content)).toEqual([
+        'endBreak',
+        at(11).toISOString(),
+        false,
+        null,
+        null,
+        null,
+      ]);
+    });
     describe('corrections', () => {
       const foreman = crypto.randomUUID();
       let fix: AttendanceCorrectionService;
@@ -1027,6 +1317,76 @@ export function attendanceSuite(
           }),
         ).rejects.toThrow('period is confirmed');
         expect(await ledger(punch.id!)).toHaveLength(0);
+      });
+      it('keeps auto-close reason and provenance when an auto-closed punch is corrected', async () => {
+        await service.punchIn(at(8), {
+          source: 'device',
+          device: { type: '@fixture/shop:Station', id: 'station-1' },
+        });
+        const closed = await service.autoClose(at(20), () => ({
+          deadline: at(16),
+          reason: 'shiftEnd',
+        }));
+        await fix.correctPunch({
+          ...base(),
+          punchId: closed!.id!,
+          endedAt: at(15),
+        });
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          const punches = await AttendancePunchCollection.create({ db });
+          const [row] = await punches.list({
+            where: { tenantId: actor.tenantId, id: closed!.id! },
+          });
+          expect(row).toMatchObject({
+            endedAt: at(15),
+            autoCloseReason: 'shiftEnd',
+            source: 'device',
+            deviceRefId: 'station-1',
+          });
+        });
+        expect(await service.autoClose(at(21), () => at(17))).toBeNull();
+      });
+      it('sets punch provenance and break kind through corrections', async () => {
+        const device = { type: '@fixture/shop:Station', id: 'station-9' };
+        await fix.addPunch({
+          ...base(),
+          startedAt: at(6),
+          endedAt: at(7),
+          source: 'correction',
+          device,
+        });
+        const punch = await day();
+        const added = await fix.saveBreak({
+          ...base(),
+          punchId: punch.id!,
+          startedAt: at(14),
+          endedAt: half(14),
+          kind: 'rest',
+        });
+        expect(added.getAfter()).toMatchObject({ kind: 'rest' });
+        const changed = await fix.saveBreak({
+          ...base(),
+          punchId: punch.id!,
+          breakId: added.targetId,
+          kind: 'meal',
+        });
+        expect(changed.getBefore()).toMatchObject({ kind: 'rest' });
+        expect(changed.getAfter()).toMatchObject({ kind: 'meal' });
+        const kept = await fix.saveBreak({
+          ...base(),
+          punchId: punch.id!,
+          breakId: added.targetId,
+          endedAt: at(15),
+        });
+        expect(kept.getAfter()).toMatchObject({ kind: 'meal' });
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          const punches = await AttendancePunchCollection.create({ db });
+          const found = await punches.list({
+            where: { tenantId: actor.tenantId, source: 'correction' },
+          });
+          expect(found).toHaveLength(1);
+          expect(found[0]).toMatchObject({ deviceRefId: 'station-9' });
+        });
       });
     });
   });

@@ -373,13 +373,28 @@ refused. Approval still uses the entry layer. Rollups must deduplicate this link
 not count both attendance and its entry. Zero-net-duration punches cannot create
 service evidence.
 
-`autoClose(now, maxOpenSeconds)` closes a due open punch at its configured
-maximum duration and sets `reviewRequired`. It returns null before the deadline
-or when already closed. If later committed attendance would be truncated it
-refuses the operation for manual review. A scheduler calls this per authorized
-actor; the package does not choose overtime, payroll, or shop-time-zone rules.
+`autoClose(now, deadline)` closes a due open punch and sets `reviewRequired`.
+`deadline` is either a fixed maximum open duration in seconds (reason
+`maxDuration`) or a per-punch resolver `(punch) => Date | { deadline, reason? }
+| null`, for example the end of the shop day in the shop's time zone or the
+scheduled shift end; `null` leaves the punch open. The open work segment and
+break close at the deadline and the punch records `autoCloseReason` (write-once,
+only through `autoClose`). It returns null before the deadline or when already
+closed, and refuses a resolved deadline before the punch started. If later
+committed attendance would be truncated it refuses the operation for manual
+review. A scheduler calls this per authorized actor; the package does not choose
+overtime, payroll, or shop-time-zone rules.
 
-`replay(taps, options?)` accepts `{ clientId, action, at, paid?, work? }`, where `action` is
+Provenance is optional and consumer-owned (no enum; at most 64 characters, trimmed):
+`punchIn(at, { source, device: { type, id } })` stores `source`, `deviceRefType` and
+`deviceRefId` on the punch (device type and id together, indexed with the tenant), and
+`startBreak(at, paid, { kind })` stores `kind` on the break. They are immutable once
+saved except through `AttendanceCorrectionService` (`addPunch({ source, device })`,
+`saveBreak({ kind })`). All columns default to `''`, so existing rows and calls are unchanged.
+Provenance, `kind` and `autoCloseReason` are additive columns on `attendance_punches` and `attendance_breaks`:
+migrate them as `TEXT NOT NULL DEFAULT ''` (a NULL left on an older row is read as `''`).
+
+`replay(taps, options?)` accepts `{ clientId, action, at, paid?, work?, source?, device?, kind? }`, where `action` is
 `punchIn`, `punchOut`, `startBreak`, `endBreak`, or a work action (`startWork`,
 `switchWork` (both require `work`), `stopWork`, `resumeWork`). It sorts each batch by device
 time, then client id. Client ids are durable and scoped to tenant/profile.
@@ -474,16 +489,15 @@ service-only: a generic `save()`, `delete()` or collection `create()` is refused
 - **Confirmed timecards.** A confirmed `PeriodTimecard` never changes, so
   correcting its sources would leave card and attendance disagreeing for good.
   Pass `confirmedTimecardGuard` (from `./rollup`) and a correction overlapping a
-  confirmed card is refused before any write; reopen the card first (that
-  lifecycle is happyvertical/smrt#3950, not part of this service), correct, then
-  `rollup()` again. Any other lock can be supplied as `guard`.
+  confirmed (or submitted) card is refused before any write; call
+  `PeriodRollupService.reopen()` first, correct, then `rollup()` again. Any other lock can be supplied as `guard`.
 - Closed `AttendanceBreak`/`AttendanceSegment` rows can no longer be deleted
   directly; `removeBreak`/`removeSegment` are the path.
 
 ## Period timecards
 
 `./rollup` provides per-person integer-second regular/overtime rollups, immutable
-confirmation, and attributed append-only adjustments. Consumer resolvers own
+confirmation (with an optional submitted step), audited reopening, and attributed append-only adjustments. Consumer resolvers own
 calendar/timezone, holiday and overtime rules. See the [contract and example](agents/period-rollup.md).
 
 ## Effective-dated labour pricing

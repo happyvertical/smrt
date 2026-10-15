@@ -11,7 +11,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { parseTimesheetJson } from '../models/json.js';
-import { isCorrectionWrite } from './write.js';
+import { isAutoCloseWrite, isCorrectionWrite } from './write.js';
 
 // Punch closes and break writes share one atomic parent boundary, including direct ORM saves.
 async function saveWithPunchLock<T extends SmrtObject>(
@@ -47,6 +47,11 @@ async function saveWithPunchLock<T extends SmrtObject>(
       columns: ['tenantId', 'profileId', 'openSlot'],
       unique: true,
     },
+    { name: 'attendance_punches_source_idx', columns: ['tenantId', 'source'] },
+    {
+      name: 'attendance_punches_device_idx',
+      columns: ['tenantId', 'deviceRefType', 'deviceRefId'],
+    },
   ],
   api: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
@@ -60,7 +65,14 @@ export class AttendancePunch extends SmrtObject {
   durationSeconds = 0;
   unpaidBreakSeconds = 0;
   reviewRequired = false;
+  /** Why the scheduler closed this punch; empty unless `autoClose` did. Write-once. */
+  autoCloseReason = '';
   recordedOffline = false;
+  /** Optional short consumer-owned capture label (`device`, `web`, `import`, ...); `''` when unknown. */
+  source = '';
+  /** Qualified type of the device that captured the punch; both device columns or neither. */
+  deviceRefType = '';
+  deviceRefId = '';
   // Resolve the active table family, including smrt-support's same-named subtype.
   @foreignKey('ServiceTimeEntry', { nullable: true }) serviceTimeEntryId:
     | string
@@ -92,17 +104,50 @@ export class AttendancePunch extends SmrtObject {
       throw new Error(
         'Attendance durations must be nonnegative safe integer seconds.',
       );
+    // Rows that predate the additive columns may load NULL for them.
+    this.source ??= '';
+    this.deviceRefType ??= '';
+    this.deviceRefId ??= '';
+    this.autoCloseReason ??= '';
+    if (
+      typeof this.source !== 'string' ||
+      this.source.length > 64 ||
+      this.source !== this.source.trim() ||
+      typeof this.deviceRefType !== 'string' ||
+      this.deviceRefType.length > 64 ||
+      this.deviceRefType !== this.deviceRefType.trim() ||
+      typeof this.deviceRefId !== 'string' ||
+      this.deviceRefId.length > 64 ||
+      this.deviceRefId !== this.deviceRefId.trim() ||
+      !!this.deviceRefType !== !!this.deviceRefId
+    )
+      throw new Error('Invalid attendance punch source or device.');
     const prior = this.id
       ? await this.db.get(this.tableName, { id: this.id })
       : null;
     const corrected = isCorrectionWrite(this);
     if (
+      typeof this.autoCloseReason !== 'string' ||
+      this.autoCloseReason.length > 200
+    )
+      throw new Error(
+        'autoCloseReason must be a string of at most 200 characters.',
+      );
+    if (
+      this.autoCloseReason !== ((prior?.auto_close_reason as string) ?? '') &&
+      (!isAutoCloseWrite(this) || (prior && prior.auto_close_reason))
+    )
+      throw new Error('autoCloseReason is written only by autoClose, once.');
+    if (
       prior &&
       (prior.tenant_id !== this.tenantId ||
         prior.profile_id !== this.profileId ||
         (!corrected &&
-          new Date(prior.started_at as string).getTime() !==
-            this.startedAt.getTime()))
+          (new Date(prior.started_at as string).getTime() !==
+            this.startedAt.getTime() ||
+            (prior.source ?? '') !== this.source ||
+            (prior.device_ref_type ?? '') !== this.deviceRefType ||
+            (prior.device_ref_id ?? '') !== this.deviceRefId)))
     )
       throw new Error('Attendance ownership and start are immutable.');
     if (
@@ -173,6 +218,8 @@ export class AttendanceBreak extends SmrtObject {
   startedAt: Date = new Date();
   endedAt: Date | null = null;
   paid = false;
+  /** Optional short consumer-owned label (`meal`, `rest`, ...); `''` when unspecified. */
+  kind = '';
   @field({ required: true }) openSlot = '';
 
   override async save(): Promise<this> {
@@ -182,7 +229,15 @@ export class AttendanceBreak extends SmrtObject {
   }
 
   private async saveConsistent(): Promise<this> {
-    if (!this.tenantId || !this.punchId || typeof this.paid !== 'boolean')
+    this.kind ??= '';
+    if (
+      !this.tenantId ||
+      !this.punchId ||
+      typeof this.paid !== 'boolean' ||
+      typeof this.kind !== 'string' ||
+      this.kind.length > 64 ||
+      this.kind !== this.kind.trim()
+    )
       throw new Error('Invalid attendance break.');
     if (
       !Number.isFinite(this.startedAt?.getTime()) ||
@@ -220,7 +275,8 @@ export class AttendanceBreak extends SmrtObject {
         (!corrected &&
           (new Date(prior.started_at as string).getTime() !==
             this.startedAt.getTime() ||
-            Boolean(prior.paid) !== this.paid)))
+            Boolean(prior.paid) !== this.paid ||
+            (prior.kind ?? '') !== this.kind)))
     )
       throw new Error('Break ownership, start and pay policy are immutable.');
     if (
