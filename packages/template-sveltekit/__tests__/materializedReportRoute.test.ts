@@ -29,10 +29,12 @@ beforeEach(() => {
 
 describe('materialized report route', () => {
   it('gates page loads by authenticated tenant and read permission', async () => {
-    await expect(load({ locals: locals([], null), params: { id: 'tax-summary' } } as never)).rejects.toMatchObject({ status: 401 });
-    await expect(load({ locals: locals([]), params: { id: 'tax-summary' } } as never)).rejects.toMatchObject({ status: 403 });
-    await expect(load({ locals: locals(), params: { id: 'tax-summary' } } as never)).resolves.toMatchObject({ hostId: 'tax-summary' });
-    await expect(load({ locals: locals(), params: { id: 'unknown' } } as never)).rejects.toMatchObject({ status: 404 });
+    const args = (permissions = ['taxsummaryreports.read'], tenantId: string | null = 'tenant-a', id = 'tax-summary', search = '') => ({ locals: locals(permissions, tenantId), params: { id }, url: new URL(`https://app.test/${search}`) });
+    await expect(load(args([], null) as never)).rejects.toMatchObject({ status: 401 });
+    await expect(load(args([]) as never)).rejects.toMatchObject({ status: 403 });
+    await expect(load(args() as never)).resolves.toMatchObject({ hostId: 'tax-summary' });
+    await expect(load(args(undefined, 'tenant-a', 'unknown') as never)).rejects.toMatchObject({ status: 404 });
+    await expect(load(args(undefined, 'tenant-a', 'tax-summary', '?offset=25&limit=10') as never)).resolves.toMatchObject({ hostId: 'tax-summary' });
   });
   it('rejects malformed, cross-tenant, and hidden-cell drilldowns', async () => {
     const request = (body: unknown) => new Request('https://app.test', { method: 'POST', body: JSON.stringify(body) });
