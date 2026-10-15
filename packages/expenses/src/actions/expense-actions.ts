@@ -220,24 +220,37 @@ export async function recordExpenseAction(
     if (body[key] !== undefined) fields[key] = body[key];
   }
   const breakdown = body.financialBreakdown;
+  if (
+    breakdown !== undefined &&
+    breakdown !== null &&
+    (typeof breakdown !== 'object' || Array.isArray(breakdown))
+  ) {
+    throw new ExpenseActionError(
+      400,
+      'invalid_request',
+      'financialBreakdown must be an object or null.',
+    );
+  }
   return withActionPrincipal(principal, () =>
-    domainCall(async () => {
-      const expense = await expenses.create({
+    // One create: `collection.create()` saves, and `Expense.save()` validates
+    // the facts (`validateShape()` parses them) before its first INSERT, so an
+    // invalid breakdown never leaves a half-recorded row behind.
+    domainCall(() =>
+      expenses.create({
         ...fields,
+        ...(breakdown !== undefined
+          ? {
+              financialBreakdown:
+                breakdown === null ? null : JSON.stringify(breakdown),
+            }
+          : {}),
         tenantId: principal.tenantId,
         paidBy,
         paidByProfileId,
         recordedByProfileId: principal.profileId,
         recordedAt: null,
-      });
-      if (breakdown !== undefined) {
-        expense.setFinancialBreakdown(
-          breakdown as ExpenseFinancialBreakdown | null,
-        );
-      }
-      await expense.save();
-      return expense;
-    }),
+      }),
+    ),
   );
 }
 

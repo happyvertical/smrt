@@ -202,6 +202,26 @@ describe('service-backed expense actions (#4001)', () => {
     expect(reimbursed.body.result.reimbursedAt).toBeTruthy();
   });
 
+  it('refuses invalid financial facts before writing any row', async () => {
+    const refused = await call(recorder(), 'POST', '/record', {
+      ...BODY,
+      financialBreakdown: { version: 1, subtotal: 1, currency: 'USD' },
+    });
+    expect(refused.status).toBe(400);
+    expect(
+      (
+        await call(recorder(), 'POST', '/record', {
+          ...BODY,
+          financialBreakdown: 'not-an-object',
+        })
+      ).status,
+    ).toBe(400);
+    await withTenant({ tenantId: TENANT_A }, async () => {
+      const expenses = await ExpenseCollection.create({ db });
+      expect(await expenses.list({})).toEqual([]);
+    });
+  });
+
   it('rejects with a reason, and refuses a reasonless rejection', async () => {
     const expenseId = await recordOne();
     const reasonless = await call(reviewer(), 'POST', '/recordReview', {
