@@ -143,6 +143,8 @@ export interface LineItemsWidgetData {
     discount?: number | null;
     tax?: number | null;
     total?: number | null;
+    /** How the lines treat tax; absent means `exclusive`. */
+    lineAmountType?: 'exclusive' | 'inclusive' | 'none' | null;
   };
   /** Frozen document-money snapshot supplied by a domain host. */
   storedTotals?: {

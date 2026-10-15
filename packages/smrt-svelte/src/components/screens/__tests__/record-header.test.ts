@@ -98,6 +98,20 @@ describe('record totals', () => {
       fields: { number: { visibility: 'basic' } },
     };
     expect(recordTotals(orderRecord, roles, view(orders, policy))).toEqual({});
+    // #4010: a valid lineAmountType rides along; an unknown one does not.
+    expect(
+      recordTotals({ ...orderRecord, lineAmountType: 'inclusive' }, roles)
+        .lineAmountType,
+    ).toBe('inclusive');
+    expect(
+      recordTotals({ ...orderRecord, lineAmountType: 'gross' }, roles),
+    ).not.toHaveProperty('lineAmountType');
+    // ...and is never read when the policy-filtered view omits it.
+    expect(
+      recordTotals({ ...orderRecord, lineAmountType: 'inclusive' }, roles, [
+        { name: 'subtotal' },
+      ]),
+    ).toEqual({ subtotal: 489000 });
     expect(totalsFields(roles)).toEqual([
       'subtotal',
       'discountAmount',

@@ -144,6 +144,9 @@ const LABELS = {
   {:else if result.lines.length > 0}
     <dl class="smrt-line-items__totals">
       {#each result.lines as line (line.key)}
+        {#if line.included}
+        <div class="smrt-line-items__total smrt-line-items__total--muted"><dt>{t(M['ui.overview.line_items.discount_included'])} {money(Math.abs(line.value))}</dt></div>
+        {:else}
         <div class="smrt-line-items__total" class:smrt-line-items__total--grand={line.key === 'total'}>
           <dt>
             {t(LABELS[line.key])}
@@ -151,6 +154,7 @@ const LABELS = {
           </dt>
           <dd>{line.key === 'discount' ? `−${money(line.value)}` : money(line.value)}</dd>
         </div>
+        {/if}
       {/each}
     </dl>
   {/if}

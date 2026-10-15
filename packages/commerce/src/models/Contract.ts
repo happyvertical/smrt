@@ -168,6 +168,7 @@ export class Contract extends SmrtObject {
   subtotal: number = 0;
 
   /** Informational sum of resolved line discounts, in integer minor units. */
+  @field({ ui: { format: 'money' } })
   discountTotal: number = 0;
 
   /**

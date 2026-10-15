@@ -19,9 +19,10 @@ and runtime never creates schema.
 In `v2`, saving an invoice line locks and reloads its parent on the caller's
 transaction, reloads every sibling, resolves current tax defaults, calculates
 the document once, and writes line snapshots, `DocumentTax`, and header totals
-atomically. Tax resolution order is line override, product, customer, then app
-default. Product reads use the products package's collection on that same
-transaction executor; tenant-owned and catalog-global products are accepted.
+atomically. Tax resolution order is line override, customer exemption (unless
+the line overrides), product, customer, then app default. Product reads use
+the products package's collection on that same transaction executor;
+tenant-owned and catalog-global products are accepted.
 
 The first transition away from `DRAFT`, or setting `arJournalId`, freezes the
 money document. The invoice and every line receive the same stable

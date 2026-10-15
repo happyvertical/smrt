@@ -33,16 +33,6 @@ describe('lineItemTotals', () => {
     });
   });
 
-  it('computes what the record lacks: subtotal from the lines, total = subtotal - discount + tax', () => {
-    expect(lineItemTotals({ discount: 1000, tax: 500 }, 10000).lines).toEqual([
-      { key: 'subtotal', value: 10000, computed: true },
-      { key: 'discount', value: 1000, computed: false },
-      { key: 'tax', value: 500, computed: false },
-      { key: 'total', value: 9500, computed: true },
-    ]);
-    expect(lineItemTotals(undefined, null).lines).toEqual([]);
-  });
-
   it('flags a disagreement instead of overriding the record', () => {
     const result = lineItemTotals({ subtotal: 489000, total: 489000 }, 490000);
     expect(result.lines[0]).toEqual({
@@ -64,25 +54,150 @@ describe('lineItemTotals', () => {
     expect(lineItemTotals({ subtotal: 1 }, null).mismatch).toBeNull();
   });
 
-  it('accepts tax-inclusive line amounts that add up to the total', () => {
-    // smrt-commerce lines: amount = qty x price - discount + tax.
-    const taxed = lineItemTotals(
-      { subtotal: 10000, tax: 500, total: 10500 },
-      10500,
-    );
-    expect(taxed.mismatch).toBeNull();
-    expect(taxed.lines.map((l) => [l.key, l.value])).toEqual([
-      ['subtotal', 10000],
-      ['tax', 500],
-      ['total', 10500],
-    ]);
-    // A missing subtotal is backed out of the total, not the line sum.
-    const noSubtotal = lineItemTotals({ tax: 500, total: 10500 }, 10500);
-    expect(noSubtotal.mismatch).toBeNull();
-    expect(noSubtotal.lines[0]).toEqual({
-      key: 'subtotal',
-      value: 10000,
-      computed: true,
+  describe('v2 document money (#4010)', () => {
+    // commerce document-money.test.ts: qty 1 x 100, discount 10, GST 5%,
+    // exclusive. Line amount 90 (net), subtotal 90, discountTotal 10, tax 5,
+    // total 95.
+    const v2 = {
+      subtotal: 90,
+      discount: 10,
+      tax: 5,
+      total: 95,
+      lineAmountType: 'exclusive' as const,
+    };
+
+    it('shows the discount as included and never subtracts it again', () => {
+      expect(lineItemTotals(v2, 90)).toEqual({
+        lines: [
+          { key: 'subtotal', value: 90, computed: false },
+          { key: 'discount', value: 10, computed: false, included: true },
+          { key: 'tax', value: 5, computed: false },
+          { key: 'total', value: 95, computed: false },
+        ],
+        lineSum: 90,
+        mismatch: null,
+      });
+    });
+
+    it('computes a missing subtotal from the net lines without a false flag', () => {
+      const result = lineItemTotals({ ...v2, subtotal: null }, 90);
+      expect(result.mismatch).toBeNull();
+      expect(result.lines[0]).toEqual({
+        key: 'subtotal',
+        value: 90,
+        computed: true,
+      });
+    });
+
+    it('computes a missing total as subtotal + tax', () => {
+      const result = lineItemTotals({ ...v2, total: undefined }, 90);
+      expect(result.mismatch).toBeNull();
+      expect(result.lines.at(-1)).toEqual({
+        key: 'total',
+        value: 95,
+        computed: true,
+      });
+      // Neither subtotal nor total recorded: both from the lines.
+      expect(
+        lineItemTotals({ discount: 10, tax: 5, lineAmountType: 'none' }, 90)
+          .lines,
+      ).toEqual([
+        { key: 'subtotal', value: 90, computed: true },
+        { key: 'discount', value: 10, computed: false, included: true },
+        { key: 'tax', value: 5, computed: false },
+        { key: 'total', value: 95, computed: true },
+      ]);
+    });
+
+    it('backs the net out of gross lines on an inclusive document', () => {
+      // Inclusive: unit price 105 incl. 5% GST, discount 10.5 -> line 95 gross.
+      const inclusive = { tax: 5, discount: 10, lineAmountType: 'inclusive' };
+      const full = lineItemTotals(
+        { ...inclusive, subtotal: 90, total: 95 } as const,
+        95,
+      );
+      expect(full.mismatch).toBeNull();
+      expect(full.lines.map((l) => [l.key, l.value])).toEqual([
+        ['subtotal', 90],
+        ['discount', 10],
+        ['tax', 5],
+        ['total', 95],
+      ]);
+      const noSubtotal = lineItemTotals(
+        { ...inclusive, total: 95 } as const,
+        95,
+      );
+      expect(noSubtotal.mismatch).toBeNull();
+      expect(noSubtotal.lines[0]).toEqual({
+        key: 'subtotal',
+        value: 90,
+        computed: true,
+      });
+      const noTotal = lineItemTotals(
+        { ...inclusive, subtotal: 90 } as const,
+        95,
+      );
+      expect(noTotal.mismatch).toBeNull();
+      expect(noTotal.lines.at(-1)).toEqual({
+        key: 'total',
+        value: 95,
+        computed: true,
+      });
+    });
+
+    it('still flags net lines that disagree with the record', () => {
+      expect(lineItemTotals(v2, 100).mismatch).toEqual({
+        field: 'subtotal',
+        recorded: 90,
+        lines: 100,
+      });
+      expect(lineItemTotals({ ...v2, subtotal: null }, 100).mismatch).toEqual({
+        field: 'total',
+        recorded: 95,
+        lines: 105,
+      });
+    });
+
+    it('reads a record without lineAmountType as exclusive', () => {
+      expect(lineItemTotals({ discount: 1000, tax: 500 }, 10000).lines).toEqual(
+        [
+          { key: 'subtotal', value: 10000, computed: true },
+          { key: 'discount', value: 1000, computed: false, included: true },
+          { key: 'tax', value: 500, computed: false },
+          { key: 'total', value: 10500, computed: true },
+        ],
+      );
+      // Net lines equal to a taxed total are not read as tax-inclusive.
+      expect(
+        lineItemTotals({ tax: 500, total: 10500 }, 10500).mismatch,
+      ).toEqual({ field: 'total', recorded: 10500, lines: 11000 });
+    });
+
+    it('treats an unavailable tax as unknown, not zero', () => {
+      // Inclusive, tax hidden by policy: gross lines give no net, so nothing
+      // is compared against the subtotal.
+      const hidden = lineItemTotals(
+        { subtotal: 100, total: 105, lineAmountType: 'inclusive' },
+        105,
+      );
+      expect(hidden.mismatch).toBeNull();
+      expect(hidden.lines.map((l) => [l.key, l.value])).toEqual([
+        ['subtotal', 100],
+        ['total', 105],
+      ]);
+      // No subtotal either: no subtotal is invented from gross lines.
+      expect(
+        lineItemTotals({ total: 105, lineAmountType: 'inclusive' }, 105).lines,
+      ).toEqual([{ key: 'total', value: 105, computed: false }]);
+      // Exclusive, tax hidden: the net subtotal still comes from the lines,
+      // but no total is computed or compared.
+      const exclusive = lineItemTotals({ lineAmountType: 'exclusive' }, 90);
+      expect(exclusive.lines).toEqual([
+        { key: 'subtotal', value: 90, computed: true },
+      ]);
+      expect(
+        lineItemTotals({ total: 95, lineAmountType: 'exclusive' }, 90).mismatch,
+      ).toBeNull();
     });
   });
 
@@ -324,6 +439,30 @@ describe('LineItemsWidget', () => {
     expect(screen.getByText('Lines add up to $690.00.')).toBeInTheDocument();
     expect(container).toHaveTextContent('The recorded subtotal is $500.00.');
     await expectNoA11yViolations(container);
+  });
+
+  it('shows a document-money discount as included, not subtracted (#4010)', () => {
+    const { container } = render(LineItemsWidget, {
+      props: {
+        ...base,
+        data: {
+          rows,
+          columns,
+          totals: {
+            discount: 1000,
+            tax: 3450,
+            total: 72450,
+            lineAmountType: 'exclusive',
+          },
+        },
+      },
+    });
+    const totals = container.querySelector('dl') as HTMLElement;
+    expect(totals).toHaveTextContent('Subtotal (from the lines) $690.00');
+    expect(totals).toHaveTextContent('Includes discounts of $10.00');
+    expect(totals).not.toHaveTextContent('−$10.00');
+    expect(totals).toHaveTextContent('Total $724.50');
+    expect(container.querySelector('.smrt-line-items__flag')).toBeNull();
   });
 
   it('shows the empty state but keeps the record totals', () => {
