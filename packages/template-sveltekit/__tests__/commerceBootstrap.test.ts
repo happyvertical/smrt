@@ -36,7 +36,6 @@ describe('optional commerce tenant bootstrap', () => {
     const policies = [{ objectRef: 'x', fieldName: 'y' }];
     const ensureCommerceTenant = vi.fn(async (_db, tenantId: string) => ({
       tenantId,
-      moneyModel: 'v2' as const,
     }));
     await expect(
       bootstrapCommerceTenant(db, 'tenant-1', {
@@ -44,7 +43,7 @@ describe('optional commerce tenant bootstrap', () => {
         loadCommerce: async () => ({ ensureCommerceTenant }),
         loadCookbook: async () => ({ policies }),
       }),
-    ).resolves.toEqual({ tenantId: 'tenant-1', moneyModel: 'v2' });
+    ).resolves.toEqual({ tenantId: 'tenant-1' });
     expect(ensureCommerceTenant).toHaveBeenCalledWith(db, 'tenant-1', {
       cookbook: { policies },
     });
@@ -53,7 +52,6 @@ describe('optional commerce tenant bootstrap', () => {
   it('bootstraps without a cookbook when the app has none', async () => {
     const ensureCommerceTenant = vi.fn(async (_db, tenantId: string) => ({
       tenantId,
-      moneyModel: 'v2' as const,
     }));
     await bootstrapCommerceTenant(db, 'tenant-1', {
       root: '/app',

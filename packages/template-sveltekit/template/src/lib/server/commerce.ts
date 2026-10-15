@@ -4,8 +4,8 @@
  * The template does not depend on `@happyvertical/smrt-commerce`. An app that
  * installs it (for example through a cookbook commerce recipe) gets one
  * `ensureCommerceTenant()` call for each tenant it creates: the standard tax
- * codes, the cookbook's tax defaults (`smrt.cookbook.json`), and the money v2
- * model for a tenant with no documents. Without commerce this does nothing.
+ * codes, its tax settings and the cookbook's tax defaults (`smrt.cookbook.json`).
+ * Without commerce this does nothing.
  *
  * `src/routes/setup/+page.server.ts` calls it once the owner claim has
  * created the tenant. Call it from any other place that creates tenants.
@@ -23,7 +23,7 @@ export interface CommerceTenantModule {
     db: DatabaseInterface,
     tenantId: string,
     options?: { cookbook?: { policies: readonly unknown[] } },
-  ): Promise<{ tenantId: string; moneyModel: 'legacy' | 'v2' }>;
+  ): Promise<{ tenantId: string }>;
 }
 
 export interface CommerceTenantBootstrapOptions {
@@ -69,7 +69,7 @@ export async function bootstrapCommerceTenant(
   db: DatabaseInterface,
   tenantId: string,
   options: CommerceTenantBootstrapOptions = {},
-): Promise<{ tenantId: string; moneyModel: 'legacy' | 'v2' } | null> {
+): Promise<{ tenantId: string } | null> {
   const root = options.root ?? process.cwd();
   const commerce = await (options.loadCommerce ?? installedCommerce)(root);
   if (!commerce) return null;

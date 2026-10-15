@@ -19,7 +19,7 @@ smrt db:migrate-uuid         # Convert schema-declared UUID text columns after d
 smrt db:migrate-int8
 smrt db:migrate-null-equal-indexes # ../core/agents/null-equal-indexes.md
 smrt db:migrate-ledger-accounts [--dry-run] # Move pre-#3098 ledger rows out of `accounts` (smrt-ledgers README)
-smrt db:{preflight,migrate,rollback}-commerce-money # agents/commerce-money-migration.md
+smrt db:upgrade-commerce-money [--check] [--tenant-id <id>] # One-shot convert of earlier-version commerce money data (agents/commerce-money-upgrade.md)
 smrt db:migrate-qualified-names [--dry-run] # Opt-in old→current name backfill; doctor --db counts (../core/agents/model-moves.md)
 smrt db:materialize-tenant-hierarchy [--dry-run] # smrt-users tenant hierarchy_path backfill (#3036)
 smrt db:drop-framework-base-tables # One-time drop of the five #2644-orphaned framework-base tables
