@@ -5,7 +5,7 @@ import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { createOrLoadTaxSeed, deterministicTaxId } from './identity.js';
-import { ensureTenantTaxCodes } from './legacy.js';
+import { ensureTenantTaxCodes } from './standard-codes.js';
 
 /** The tax subset emitted by core's cookbook engine, expressed as a percent. */
 export interface CookbookTaxSettingsInput {

@@ -26,7 +26,7 @@ import {
   reconcileFrozenInvoiceAccountingSync,
   syncFrozenInvoiceToAccounting,
 } from './invoice-accounting-sync.js';
-import { ensureTenantTaxCodes } from './tax/legacy.js';
+import { ensureTenantTaxCodes } from './tax/standard-codes.js';
 import { InvoiceStatus } from './types/index.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;

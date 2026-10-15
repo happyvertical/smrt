@@ -163,17 +163,12 @@ export class ContractLineItem extends SmrtObject {
   /** Exact sum of frozen component taxes, in integer minor units. */
   taxAmount = 0;
 
-  /** Pre-v2 amount preserved only by the migration path. */
-  @field({ nullable: true })
-  legacyAmount: number | null = null;
-
   /** Stable issue/freeze identity, independent of lifecycle updated_at. */
   moneySnapshotId = '';
 
   /**
-   * Calculated line amount (qty * price - discount + tax), in integer minor
-   * units. Derived by {@link ContractLineItem.calculateAmount}, which rounds
-   * the fractional tax to a whole minor unit (#2401).
+   * Line amount in integer minor units, in the Contract's line amount type.
+   * Derived by the Contract money aggregate on every save.
    */
   @field({ description: 'The line total.', ui: { format: 'money' } })
   amount: number = 0;
@@ -237,8 +232,6 @@ export class ContractLineItem extends SmrtObject {
     if (options.taxComponents !== undefined)
       this.taxComponents = structuredClone(options.taxComponents);
     if (options.taxAmount !== undefined) this.taxAmount = options.taxAmount;
-    if (options.legacyAmount !== undefined)
-      this.legacyAmount = options.legacyAmount;
     if (options.moneySnapshotId !== undefined)
       this.moneySnapshotId = options.moneySnapshotId;
     if (options.amount !== undefined) this.amount = options.amount;
@@ -251,34 +244,15 @@ export class ContractLineItem extends SmrtObject {
     if (options.sortOrder !== undefined) this.sortOrder = options.sortOrder;
   }
 
-  /**
-   * Calculate the line amount, in integer minor units.
-   *
-   * `quantity` is decimal and `taxRate` is a fraction, so the product is not
-   * generally a whole number of minor units. Rounding happens here — at the
-   * one boundary where a rate meets money — so that every value that reaches a
-   * money column is already exact and every downstream comparison can be a
-   * plain `===` instead of an epsilon tolerance (#2401).
-   */
-  calculateAmount(): number {
-    const subtotal = this.quantity * this.unitPrice - this.discount;
-    const tax = subtotal * this.taxRate;
-    return Math.round(subtotal + tax);
-  }
-
   override async save(): Promise<this> {
     const { saveContractLineItem } = await import('../contract-money.js');
     return (await saveContractLineItem(this)) as this;
   }
 
   /** @internal Contract aggregate persistence only. */
-  async saveDerived(
-    capability: DocumentMoneyWriteCapability,
-    legacy: boolean,
-  ): Promise<this> {
+  async saveDerived(capability: DocumentMoneyWriteCapability): Promise<this> {
     if (capability !== DOCUMENT_MONEY_WRITE)
       throw new Error('Contract line money write capability is required');
-    if (legacy) this.amount = this.calculateAmount();
     return (await super.save()) as this;
   }
 

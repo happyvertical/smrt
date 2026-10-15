@@ -22,15 +22,13 @@ import {
   isContractSnapshotReportEligible,
 } from './models/Contract.js';
 import type { ContractLineItem } from './models/ContractLineItem.js';
+import type { TaxSettings } from './models/TaxSettings.js';
 import {
   calculateMoneyDocument,
   MoneyValidationError,
   resolveLineTaxCode,
 } from './money.js';
-import {
-  lockTenantMoneyMigrationOwner,
-  withTenantMoneyRuntime,
-} from './tenant-money-barrier.js';
+import { withTenantMoneyRuntime } from './tenant-money-barrier.js';
 import {
   ContractStatus,
   type ContractTaxComponentSnapshot,
@@ -162,9 +160,7 @@ async function recompute(
   db: DatabaseInterface,
   contract: Contract,
   lines: ContractLineItem[],
-  settings: NonNullable<
-    Awaited<ReturnType<typeof lockTenantMoneyMigrationOwner>>
-  >,
+  settings: TaxSettings,
   persist: boolean,
   snapshotId = '',
 ): Promise<DocumentTaxWriteInput[]> {
@@ -333,7 +329,7 @@ async function recompute(
       0,
     );
     if (snapshotId) line.moneySnapshotId = snapshotId;
-    if (persist) await line.saveDerived(DOCUMENT_MONEY_WRITE, false);
+    if (persist) await line.saveDerived(DOCUMENT_MONEY_WRITE);
   }
   const taxRows = result.taxes.map((tax): DocumentTaxWriteInput => {
     const code = tax.taxCodeId ? (codeById.get(tax.taxCodeId) ?? null) : null;
@@ -376,86 +372,93 @@ async function recompute(
   return taxRows;
 }
 
-/** Save a Contract through legacy compatibility or the v2 aggregate. */
+/** Every money document belongs to a tenant. */
+function requireContractTenant(tenantId: string | null): string {
+  if (!tenantId)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Commerce money documents require a tenant',
+    );
+  return tenantId;
+}
+
+/** Save a Contract and recompute its money aggregate. */
 export async function saveContract(input: Contract): Promise<Contract> {
-  const tenantId = input.tenantId ?? getTenantId() ?? null;
-  if (!tenantId) return input.saveDerived(DOCUMENT_MONEY_WRITE);
-  return withTenantMoneyRuntime(
-    input.db,
-    tenantId,
-    'legacy-or-v2',
-    async (scope) =>
-      input.withDatabase(scope.db, async (contract) => {
-        if (scope.barrier.moneyModel === 'legacy')
-          return contract.saveDerived(DOCUMENT_MONEY_WRITE);
-        const settings = scope.barrier.settings;
-        const existing = contract.id
-          ? await loadContract(scope.db, contract.id)
-          : null;
-        if (existing && existing.tenantId !== scope.tenantId)
-          throw new MoneyValidationError(
-            'FROZEN_DOCUMENT',
-            'Contract tenant identity cannot change',
+  const tenantId = requireContractTenant(
+    input.tenantId ?? getTenantId() ?? null,
+  );
+  return withTenantMoneyRuntime(input.db, tenantId, async (scope) =>
+    input.withDatabase(scope.db, async (contract) => {
+      const settings = scope.settings;
+      const existing = contract.id
+        ? await loadContract(scope.db, contract.id)
+        : null;
+      if (existing && existing.tenantId !== scope.tenantId)
+        throw new MoneyValidationError(
+          'FROZEN_DOCUMENT',
+          'Contract tenant identity cannot change',
+        );
+      if (!existing) {
+        contract.tenantId = tenantId;
+        contract.lineAmountType = settings.defaultLineAmountType;
+        contract.taxRoundingScope = settings.taxRoundingScope;
+        if (contract.status !== ContractStatus.DRAFT) {
+          contract.moneySnapshotId = crypto.randomUUID();
+          contract.sellerTaxRegistrations = structuredClone(
+            settings.taxRegistrations,
           );
-        if (!existing) {
-          contract.tenantId = tenantId;
-          contract.lineAmountType = settings.defaultLineAmountType;
-          contract.taxRoundingScope = settings.taxRoundingScope;
-          if (contract.status !== ContractStatus.DRAFT) {
-            contract.moneySnapshotId = crypto.randomUUID();
+        }
+        return contract.saveDerived(DOCUMENT_MONEY_WRITE);
+      }
+      return withLockedContract(
+        scope.db,
+        tenantId,
+        required(existing.id, 'Contract'),
+        async (stored, lines) => {
+          if (isFrozen(stored)) {
+            assertUnchanged(
+              contract,
+              stored,
+              FROZEN_CONTRACT_FIELDS,
+              'Contract',
+            );
+            return contract.saveDerived(DOCUMENT_MONEY_WRITE);
+          }
+          const freezing = contract.status !== ContractStatus.DRAFT;
+          const snapshotId = freezing
+            ? stored.moneySnapshotId || crypto.randomUUID()
+            : '';
+          await recompute(
+            scope.db,
+            contract,
+            lines,
+            settings,
+            true,
+            snapshotId,
+          );
+          if (freezing) {
+            const party =
+              'customerId' in contract && contract.customerId
+                ? await (await CustomerCollection.create({ db: scope.db })).get(
+                    { id: contract.customerId },
+                    { cache: false },
+                  )
+                : 'vendorId' in contract && contract.vendorId
+                  ? await (await VendorCollection.create({ db: scope.db })).get(
+                      { id: contract.vendorId },
+                      { cache: false },
+                    )
+                  : null;
             contract.sellerTaxRegistrations = structuredClone(
               settings.taxRegistrations,
             );
+            contract.partyTaxId = party?.taxId ?? '';
+            contract.moneySnapshotId = snapshotId;
           }
           return contract.saveDerived(DOCUMENT_MONEY_WRITE);
-        }
-        return withLockedContract(
-          scope.db,
-          tenantId,
-          required(existing.id, 'Contract'),
-          async (stored, lines) => {
-            if (isFrozen(stored)) {
-              assertUnchanged(
-                contract,
-                stored,
-                FROZEN_CONTRACT_FIELDS,
-                'Contract',
-              );
-              return contract.saveDerived(DOCUMENT_MONEY_WRITE);
-            }
-            const freezing = contract.status !== ContractStatus.DRAFT;
-            const snapshotId = freezing
-              ? stored.moneySnapshotId || crypto.randomUUID()
-              : '';
-            await recompute(
-              scope.db,
-              contract,
-              lines,
-              settings,
-              true,
-              snapshotId,
-            );
-            if (freezing) {
-              const party =
-                'customerId' in contract && contract.customerId
-                  ? await (
-                      await CustomerCollection.create({ db: scope.db })
-                    ).get({ id: contract.customerId }, { cache: false })
-                  : 'vendorId' in contract && contract.vendorId
-                    ? await (
-                        await VendorCollection.create({ db: scope.db })
-                      ).get({ id: contract.vendorId }, { cache: false })
-                    : null;
-              contract.sellerTaxRegistrations = structuredClone(
-                settings.taxRegistrations,
-              );
-              contract.partyTaxId = party?.taxId ?? '';
-              contract.moneySnapshotId = snapshotId;
-            }
-            return contract.saveDerived(DOCUMENT_MONEY_WRITE);
-          },
-        );
-      }),
+        },
+      );
+    }),
   );
 }
 
@@ -463,60 +466,56 @@ export async function saveContract(input: Contract): Promise<Contract> {
 export async function saveContractLineItem(
   input: ContractLineItem,
 ): Promise<ContractLineItem> {
-  const tenantId = input.tenantId ?? getTenantId() ?? null;
-  if (!tenantId) return input.saveDerived(DOCUMENT_MONEY_WRITE, true);
-  return withTenantMoneyRuntime(
-    input.db,
-    tenantId,
-    'legacy-or-v2',
-    async (scope) =>
-      input.withDatabase(scope.db, async (line) => {
-        const persisted = line.id
-          ? await (
-              await ContractLineItemCollection.create({ db: scope.db })
-            ).get({ id: line.id }, { cache: false })
-          : null;
-        const contractId = persisted?.contractId ?? line.contractId;
-        if (scope.barrier.moneyModel === 'legacy')
-          return line.saveDerived(DOCUMENT_MONEY_WRITE, true);
-        const settings = scope.barrier.settings;
-        return withLockedContract(
-          scope.db,
-          scope.tenantId,
-          contractId,
-          async (contract, lines) => {
-            if (persisted && line.contractId !== persisted.contractId)
+  const tenantId = requireContractTenant(
+    input.tenantId ?? getTenantId() ?? null,
+  );
+  return withTenantMoneyRuntime(input.db, tenantId, async (scope) =>
+    input.withDatabase(scope.db, async (line) => {
+      const persisted = line.id
+        ? await (await ContractLineItemCollection.create({ db: scope.db })).get(
+            { id: line.id },
+            { cache: false },
+          )
+        : null;
+      const contractId = persisted?.contractId ?? line.contractId;
+      const settings = scope.settings;
+      return withLockedContract(
+        scope.db,
+        scope.tenantId,
+        contractId,
+        async (contract, lines) => {
+          if (persisted && line.contractId !== persisted.contractId)
+            throw new MoneyValidationError(
+              'FROZEN_DOCUMENT',
+              'Contract line cannot move between parents',
+            );
+          if (isFrozen(contract)) {
+            if (!persisted)
               throw new MoneyValidationError(
                 'FROZEN_DOCUMENT',
-                'Contract line cannot move between parents',
+                'Cannot add a line to a frozen Contract',
               );
-            if (isFrozen(contract)) {
-              if (!persisted)
-                throw new MoneyValidationError(
-                  'FROZEN_DOCUMENT',
-                  'Cannot add a line to a frozen Contract',
-                );
-              assertUnchanged(
-                line,
-                persisted,
-                FROZEN_LINE_FIELDS,
-                'Contract line',
-              );
-              return line.saveDerived(DOCUMENT_MONEY_WRITE, false);
-            }
-            line.contractId = contractId;
-            line.tenantId = scope.tenantId;
-            await line.saveDerived(DOCUMENT_MONEY_WRITE, false);
-            const all = [
-              ...lines.filter((candidate) => candidate.id !== line.id),
+            assertUnchanged(
               line,
-            ];
-            await recompute(scope.db, contract, all, settings, true);
-            await contract.saveDerived(DOCUMENT_MONEY_WRITE);
-            return line;
-          },
-        );
-      }),
+              persisted,
+              FROZEN_LINE_FIELDS,
+              'Contract line',
+            );
+            return line.saveDerived(DOCUMENT_MONEY_WRITE);
+          }
+          line.contractId = contractId;
+          line.tenantId = scope.tenantId;
+          await line.saveDerived(DOCUMENT_MONEY_WRITE);
+          const all = [
+            ...lines.filter((candidate) => candidate.id !== line.id),
+            line,
+          ];
+          await recompute(scope.db, contract, all, settings, true);
+          await contract.saveDerived(DOCUMENT_MONEY_WRITE);
+          return line;
+        },
+      );
+    }),
   );
 }
 
@@ -524,45 +523,41 @@ export async function deleteContractLineItem(
   input: ContractLineItem,
   options: DeleteOptions,
 ): Promise<void> {
-  const tenantId = input.tenantId ?? getTenantId() ?? null;
-  if (!tenantId) return input.deleteDerived(DOCUMENT_MONEY_WRITE, options);
-  await withTenantMoneyRuntime(
-    input.db,
-    tenantId,
-    'legacy-or-v2',
-    async (scope) =>
-      input.withDatabase(scope.db, async (line) => {
-        const persisted = line.id
-          ? await (
-              await ContractLineItemCollection.create({ db: scope.db })
-            ).get({ id: line.id }, { cache: false })
-          : null;
-        if (!persisted) return;
-        if (scope.barrier.moneyModel === 'legacy')
-          return line.deleteDerived(DOCUMENT_MONEY_WRITE, options);
-        const settings = scope.barrier.settings;
-        await withLockedContract(
-          scope.db,
-          scope.tenantId,
-          persisted.contractId,
-          async (contract, lines) => {
-            if (isFrozen(contract))
-              throw new MoneyValidationError(
-                'FROZEN_DOCUMENT',
-                'Cannot delete a line from a frozen Contract',
-              );
-            await line.deleteDerived(DOCUMENT_MONEY_WRITE, options);
-            await recompute(
-              scope.db,
-              contract,
-              lines.filter((candidate) => candidate.id !== persisted.id),
-              settings,
-              true,
+  const tenantId = requireContractTenant(
+    input.tenantId ?? getTenantId() ?? null,
+  );
+  await withTenantMoneyRuntime(input.db, tenantId, async (scope) =>
+    input.withDatabase(scope.db, async (line) => {
+      const persisted = line.id
+        ? await (await ContractLineItemCollection.create({ db: scope.db })).get(
+            { id: line.id },
+            { cache: false },
+          )
+        : null;
+      if (!persisted) return;
+      const settings = scope.settings;
+      await withLockedContract(
+        scope.db,
+        scope.tenantId,
+        persisted.contractId,
+        async (contract, lines) => {
+          if (isFrozen(contract))
+            throw new MoneyValidationError(
+              'FROZEN_DOCUMENT',
+              'Cannot delete a line from a frozen Contract',
             );
-            await contract.saveDerived(DOCUMENT_MONEY_WRITE);
-          },
-        );
-      }),
+          await line.deleteDerived(DOCUMENT_MONEY_WRITE, options);
+          await recompute(
+            scope.db,
+            contract,
+            lines.filter((candidate) => candidate.id !== persisted.id),
+            settings,
+            true,
+          );
+          await contract.saveDerived(DOCUMENT_MONEY_WRITE);
+        },
+      );
+    }),
   );
 }
 
@@ -571,39 +566,4 @@ export async function recalculateContractTotals(
   contract: Contract,
 ): Promise<void> {
   await saveContract(contract);
-}
-
-/** Migration-only materializer; caller already owns the tenant migration transaction. */
-export async function materializeContractMoneySnapshot(input: {
-  db: DatabaseInterface;
-  contractId: string;
-  tenantId: string;
-  migrationId: string;
-}): Promise<{ contractId: string; taxRows: DocumentTaxWriteInput[] }> {
-  const settings = await lockTenantMoneyMigrationOwner(
-    input.db,
-    input.tenantId,
-    input.migrationId,
-  );
-  return withLockedContract(
-    input.db,
-    input.tenantId,
-    input.contractId,
-    async (contract, lines) => {
-      if (contract.status !== ContractStatus.DRAFT)
-        throw new MoneyValidationError(
-          'FROZEN_DOCUMENT',
-          'Only a draft Contract can be migration-recomputed',
-        );
-      const taxRows = await recompute(
-        input.db,
-        contract,
-        lines,
-        settings,
-        true,
-      );
-      await contract.saveDerived(DOCUMENT_MONEY_WRITE);
-      return { contractId: input.contractId, taxRows };
-    },
-  );
 }

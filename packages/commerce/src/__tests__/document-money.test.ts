@@ -27,7 +27,7 @@ import { DocumentTax } from '../models/DocumentTax';
 import { Invoice } from '../models/Invoice';
 import { InvoiceLineItem } from '../models/InvoiceLineItem';
 import { MoneyValidationError } from '../money';
-import { ensureTenantTaxCodes } from '../tax/legacy';
+import { ensureTenantTaxCodes } from '../tax/standard-codes.js';
 import { InvoiceStatus } from '../types';
 import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant';
 

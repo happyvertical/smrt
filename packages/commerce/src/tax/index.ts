@@ -11,12 +11,8 @@ export {
 } from './example-pack.js';
 export {
   ensureTenantTaxCodes,
-  type LegacyTaxMapReport,
-  type LegacyTaxRateRow,
-  type MapLegacyTaxRatesOptions,
-  mapLegacyTaxRates,
-  mapLegacyTaxRatesInTransaction,
-} from './legacy.js';
+  STANDARD_TAX_CODES,
+} from './standard-codes.js';
 export {
   type CommerceTenantBootstrap,
   type EnsureCommerceTenantOptions,

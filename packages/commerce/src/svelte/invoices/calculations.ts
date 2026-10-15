@@ -167,16 +167,10 @@ export interface InvoiceMinorLineInput {
   quantity: number;
   /** Signed integer minor units; negative prices support existing credit lines. */
   unitPrice: number;
-  /** Legacy uses a nonnegative flat discount; v2 stores the gross sign. */
+  /** Flat discount in signed integer minor units; it carries the gross sign. */
   discount: number;
   /** Resolved tax fraction, at most eight fractional digits, in [0, 1]. */
   taxRate: number;
-}
-
-/** Explicit migration boundary for persisted legacy invoice-line arithmetic. */
-export interface InvoiceMinorLineCalculationOptions {
-  /** Existing callers remain legacy until #3933's per-tenant marker selects v2. */
-  moneyModel?: 'legacy' | 'v2';
 }
 
 function numberDecimal(value: number, precision: number): Decimal {
@@ -199,12 +193,6 @@ function numberDecimal(value: number, precision: number): Decimal {
     : { coefficient, scale: 10n ** BigInt(places) };
 }
 
-function roundSignedLegacy(numerator: bigint, denominator: bigint): bigint {
-  return numerator >= 0n
-    ? roundHalfUp(numerator, denominator)
-    : -((-numerator * 2n + denominator - 1n) / (denominator * 2n));
-}
-
 function decimalText(value: Decimal): string {
   if (value.scale === 1n) return value.coefficient.toString();
   const places = value.scale.toString().length - 1;
@@ -215,20 +203,21 @@ function decimalText(value: Decimal): string {
     .replace(/\.$/, '');
 }
 
-function legacyTaxCode(percent: string): MoneyTaxCodeInput {
+/** An in-memory single-rate tax code for editor previews of a percent rate. */
+function rateTaxCode(percent: string): MoneyTaxCodeInput {
   const normalized =
     percent
       .replace(/^0+(?=\d)/, '')
       .replace(/(\.\d*?)0+$/, '$1')
       .replace(/\.$/, '') || '0';
   return normalized === '0'
-    ? { id: 'legacy-zero', kind: 'zero-rated', components: [] }
+    ? { id: 'rate-zero', kind: 'zero-rated', components: [] }
     : {
-        id: `legacy-${normalized}`,
+        id: `rate-${normalized}`,
         kind: 'taxable',
         components: [
           {
-            taxComponentId: `legacy-${normalized}`,
+            taxComponentId: `rate-${normalized}`,
             percent: normalized,
             compound: false,
           },
@@ -242,41 +231,14 @@ function legacyTaxCode(percent: string): MoneyTaxCodeInput {
  */
 export function calculateInvoiceMinorLine(
   input: InvoiceMinorLineInput,
-  options: InvoiceMinorLineCalculationOptions = {},
 ): InvoiceCalculatedAmounts {
   for (const amount of [input.unitPrice, input.discount])
     if (!Number.isSafeInteger(amount))
       throw new RangeError('Invoice money must be safe integer minor units.');
-  const moneyModel = options.moneyModel ?? 'legacy';
-  if ((moneyModel === 'legacy' && input.discount < 0) || input.taxRate > 1)
-    throw new RangeError(
-      'Invoice discount or tax rate is outside the supported range.',
-    );
-  const quantity = numberDecimal(input.quantity, 6);
+  if (input.taxRate > 1)
+    throw new RangeError('Invoice tax rate is outside the supported range.');
+  numberDecimal(input.quantity, 6);
   const tax = numberDecimal(input.taxRate, 8);
-  if (moneyModel === 'legacy') {
-    const gross = roundSignedLegacy(
-      quantity.coefficient * BigInt(input.unitPrice),
-      quantity.scale,
-    );
-    const discount = BigInt(input.discount);
-    const subtotal = gross - discount;
-    const taxMinor = roundSignedLegacy(subtotal * tax.coefficient, tax.scale);
-    const total = subtotal + taxMinor;
-    for (const amount of [gross, subtotal, taxMinor, total])
-      if (amount > MAX_MINOR || amount < -MAX_MINOR)
-        throw new RangeError(
-          'Invoice line amount exceeds safe integer minor units.',
-        );
-    return {
-      grossMinor: Number(gross),
-      discountMinor: input.discount,
-      subtotalMinor: Number(subtotal),
-      taxMinor: Number(taxMinor),
-      totalMinor: Number(total),
-    };
-  }
-  if (moneyModel !== 'v2') throw new TypeError('Unknown invoice money model');
   const percent = decimalText({
     coefficient: tax.coefficient * 100n,
     scale: tax.scale,
@@ -289,14 +251,14 @@ export function calculateInvoiceMinorLine(
       roundingScope: 'line',
       lines: [
         {
-          id: 'legacy-line',
+          id: 'line',
           quantity: input.quantity,
           unitPrice: input.unitPrice,
           discount:
             input.discount === 0
               ? { kind: 'none' }
               : { kind: 'amount', minor: input.discount },
-          taxCode: legacyTaxCode(percent),
+          taxCode: rateTaxCode(percent),
         },
       ],
     }).lines[0];
@@ -453,7 +415,7 @@ export function calculateInvoiceLine(
               : discount === 0n
                 ? { kind: 'none' }
                 : { kind: 'amount', minor: Number(discount) },
-          taxCode: legacyTaxCode(effectiveTaxRate),
+          taxCode: rateTaxCode(effectiveTaxRate),
         },
       ],
     }).lines[0];
@@ -564,7 +526,7 @@ export function calculateInvoiceDraft(
               result.discountMinor === 0
                 ? ({ kind: 'none' } as const)
                 : ({ kind: 'amount', minor: result.discountMinor } as const),
-            taxCode: legacyTaxCode(row.category),
+            taxCode: rateTaxCode(row.category),
           };
         }),
       });

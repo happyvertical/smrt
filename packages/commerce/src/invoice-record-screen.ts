@@ -132,40 +132,35 @@ export async function loadInvoiceRecordScreenData(
       'INVALID_MONEY_INPUT',
       'Invoice record data requires its active principal tenant',
     );
-  return withTenantMoneyRuntime(
-    input.db,
-    input.tenantId,
-    'v2',
-    async (scope) => {
-      const facts = await getInvoiceMoneyFacts({
-        db: scope.db,
+  return withTenantMoneyRuntime(input.db, input.tenantId, async (scope) => {
+    const facts = await getInvoiceMoneyFacts({
+      db: scope.db,
+      tenantId: input.tenantId,
+      invoiceId: input.invoiceId,
+    });
+    const credits = await (
+      await InvoiceCollection.create({ db: scope.db })
+    ).list({
+      where: {
         tenantId: input.tenantId,
-        invoiceId: input.invoiceId,
-      });
-      const credits = await (
-        await InvoiceCollection.create({ db: scope.db })
-      ).list({
-        where: {
-          tenantId: input.tenantId,
-          kind: 'credit_note',
-          creditedInvoiceId: input.invoiceId,
-        },
-        orderBy: 'issueDate DESC',
-      });
-      return {
-        invoiceId: facts.invoiceId,
-        kind: facts.kind,
-        status: facts.status,
-        currency: facts.header.currency,
-        storedTotals: invoiceRecordStoredTotals(facts, input),
-        creditNotes: credits.map((credit) => ({
-          id: requiredText(credit.id, 'credit id'),
-          invoiceNumber: requiredText(credit.invoiceNumber, 'credit number'),
-          status: requiredText(credit.status, 'credit status'),
-          issueDate: isoDate(credit.issueDate, 'credit issue date'),
-          totalMinor: storedMinor(credit.totalAmount, 'credit total'),
-        })),
-      };
-    },
-  );
+        kind: 'credit_note',
+        creditedInvoiceId: input.invoiceId,
+      },
+      orderBy: 'issueDate DESC',
+    });
+    return {
+      invoiceId: facts.invoiceId,
+      kind: facts.kind,
+      status: facts.status,
+      currency: facts.header.currency,
+      storedTotals: invoiceRecordStoredTotals(facts, input),
+      creditNotes: credits.map((credit) => ({
+        id: requiredText(credit.id, 'credit id'),
+        invoiceNumber: requiredText(credit.invoiceNumber, 'credit number'),
+        status: requiredText(credit.status, 'credit status'),
+        issueDate: isoDate(credit.issueDate, 'credit issue date'),
+        totalMinor: storedMinor(credit.totalAmount, 'credit total'),
+      })),
+    };
+  });
 }

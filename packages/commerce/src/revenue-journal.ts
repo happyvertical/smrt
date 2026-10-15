@@ -53,17 +53,8 @@ export interface RevenueJournalEntry {
   memo: string;
 }
 
-export interface RevenueJournalWarning {
-  code: 'LEGACY_TAX_ACCOUNT_FALLBACK';
-  taxCodeId: string;
-  taxCodeCode: string;
-  taxComponentId: string;
-  accountId: string;
-}
-
 export interface RevenueJournalResult {
   entries: RevenueJournalEntry[];
-  warnings: RevenueJournalWarning[];
 }
 
 function fail(
@@ -202,7 +193,6 @@ export function buildRevenueJournalEntries(
     );
 
   const taxGroups = new Map<string, bigint>();
-  const warnings: RevenueJournalWarning[] = [];
   const taxRowIds = new Set<string>();
   let componentTaxTotal = 0n;
   for (const row of taxes) {
@@ -220,7 +210,7 @@ export function buildRevenueJournalEntries(
       );
     const componentId = identifier(row.taxComponentId, 'Tax component ID');
     const taxCodeId = identifier(row.taxCodeId, 'Tax code ID');
-    const taxCodeCode = identifier(row.taxCodeCode, 'Tax code code');
+    identifier(row.taxCodeCode, 'Tax code code');
     const taxRowId = `${taxCodeId}\0${componentId}`;
     if (taxRowIds.has(taxRowId))
       fail(
@@ -238,15 +228,6 @@ export function buildRevenueJournalEntries(
       );
     add(taxGroups, accountId, tax);
     componentTaxTotal += tax;
-    if (row.liabilityAccountId === null && taxCodeCode.startsWith('legacy-')) {
-      warnings.push({
-        code: 'LEGACY_TAX_ACCOUNT_FALLBACK',
-        taxCodeId,
-        taxCodeCode,
-        taxComponentId: componentId,
-        accountId,
-      });
-    }
   }
   if (componentTaxTotal !== lineTaxTotal)
     fail(
@@ -306,5 +287,5 @@ export function buildRevenueJournalEntries(
   if (debits !== credits)
     fail('INVALID_MONEY_INPUT', 'Built journal entries are not balanced');
   safe(debits, 'Journal debit total');
-  return { entries, warnings };
+  return { entries };
 }

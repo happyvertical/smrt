@@ -475,13 +475,7 @@ export async function loadFrozenInvoiceAccountingSnapshot(
 ): Promise<FrozenInvoiceAccountingSnapshot> {
   assertPrincipalTenant(input.tenantId);
   return withDocumentMoneyTransaction(input.db, async (tx) => {
-    const settings = (await lockTenantMoneyRuntime(tx, input.tenantId))
-      .settings;
-    if (settings?.moneyModel !== 'v2')
-      throw new MoneyValidationError(
-        'INVALID_MONEY_INPUT',
-        'Frozen accounting sync requires active money v2 settings',
-      );
+    await lockTenantMoneyRuntime(tx, input.tenantId);
     const { invoice } = await lockAndReloadInvoice(
       tx,
       input.invoiceId,
@@ -569,13 +563,7 @@ async function prepareSync(
       `Frozen accounting sync does not support provider '${input.provider.type}'`,
     );
   return withDocumentMoneyTransaction(input.db, async (tx) => {
-    const settings = (await lockTenantMoneyRuntime(tx, input.tenantId))
-      .settings;
-    if (settings?.moneyModel !== 'v2')
-      throw new MoneyValidationError(
-        'INVALID_MONEY_INPUT',
-        'Frozen accounting sync requires active money v2 settings',
-      );
+    await lockTenantMoneyRuntime(tx, input.tenantId);
     const { invoice } = await lockAndReloadInvoice(
       tx,
       input.invoiceId,
@@ -658,9 +646,7 @@ async function prepareSync(
       attemptId,
       startedAt: new Date().toISOString(),
     } satisfies FrozenSyncState);
-    await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-      recomputeLegacy: false,
-    });
+    await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
     return {
       kind: 'push',
       documentKind: snapshot.document.kind,
@@ -682,7 +668,7 @@ async function recordFailure(
     (error as { code?: unknown }).code === 'QBO_WRITE_ERROR' &&
     (error as { outcome?: unknown }).outcome === 'rejected';
   await withDocumentMoneyTransaction(input.db, async (tx) => {
-    await lockTenantMoneyRuntime(tx, input.tenantId, 'v2');
+    await lockTenantMoneyRuntime(tx, input.tenantId);
     const { invoice } = await lockAndReloadInvoice(
       tx,
       input.invoiceId,
@@ -702,9 +688,7 @@ async function recordFailure(
       ...state,
       status: rejected ? 'rejected' : 'unknown',
     } satisfies FrozenSyncState);
-    await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-      recomputeLegacy: false,
-    });
+    await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
   });
 }
 
@@ -723,7 +707,7 @@ async function recordSuccess(
       'Accounting provider returned an invalid sync timestamp',
     );
   return withDocumentMoneyTransaction(input.db, async (tx) => {
-    await lockTenantMoneyRuntime(tx, input.tenantId, 'v2');
+    await lockTenantMoneyRuntime(tx, input.tenantId);
     const { invoice } = await lockAndReloadInvoice(
       tx,
       input.invoiceId,
@@ -750,9 +734,7 @@ async function recordSuccess(
       externalId: result.externalId,
       syncedAt,
     } satisfies FrozenSyncState);
-    await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-      recomputeLegacy: false,
-    });
+    await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
     return {
       status: 'synced',
       externalId: result.externalId,
@@ -811,13 +793,7 @@ export async function reconcileFrozenInvoiceAccountingSync(
   requiredText(input.requestId, 'Accounting request ID');
   requiredText(input.attemptId, 'Accounting attempt ID');
   return withDocumentMoneyTransaction(input.db, async (tx) => {
-    const settings = (await lockTenantMoneyRuntime(tx, input.tenantId))
-      .settings;
-    if (settings?.moneyModel !== 'v2')
-      throw new MoneyValidationError(
-        'INVALID_MONEY_INPUT',
-        'Frozen accounting reconciliation requires active money v2 settings',
-      );
+    await lockTenantMoneyRuntime(tx, input.tenantId);
     const { invoice } = await lockAndReloadInvoice(
       tx,
       input.invoiceId,
@@ -866,9 +842,7 @@ export async function reconcileFrozenInvoiceAccountingSync(
         ...state,
         status: 'rejected',
       } satisfies FrozenSyncState);
-      await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-        recomputeLegacy: false,
-      });
+      await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
       return {
         status: 'ready',
         moneySnapshotId: identity.moneySnapshotId,
@@ -898,9 +872,7 @@ export async function reconcileFrozenInvoiceAccountingSync(
       externalId,
       syncedAt,
     } satisfies FrozenSyncState);
-    await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-      recomputeLegacy: false,
-    });
+    await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
     return {
       status: 'synced',
       externalId,

@@ -309,18 +309,21 @@ export interface RecordPaymentOptions {
 export interface RecognizeRevenueOptions {
   /** Account ID for accounts receivable (debit side) */
   arAccountId: string;
-  /** Account ID for revenue (credit side) */
+  /** Revenue account for lines that do not name their own (credit side). */
   revenueAccountId: string;
-  /** Account ID for tax payable (credit side, optional) */
+  /**
+   * Tax payable account for tax components without a liability account and
+   * for provider tax (credit side).
+   */
   taxAccountId?: string;
-  /** Explicit ledger book currency. Required when the tenant uses money v2. */
-  bookCurrency?: string;
+  /** ISO 4217 ledger book currency; must equal the invoice currency. */
+  bookCurrency: string;
 }
 
-/** Options for atomically cancelling a posted money-v2 invoice. */
+/** Options for atomically cancelling a posted invoice. */
 export interface CancelRevenueOptions {
-  /** Explicit ledger book currency; required for money-v2 cancellation. */
-  bookCurrency?: string;
+  /** ISO 4217 ledger book currency; must equal the invoice currency. */
+  bookCurrency: string;
 }
 
 // ============================================================================
@@ -463,8 +466,6 @@ export interface TaxSettingsOptions extends SmrtObjectOptions {
   defaultLineAmountType?: 'exclusive' | 'inclusive' | 'none';
   taxRoundingScope?: 'line' | 'document';
   taxRegistrations?: TaxRegistrationOptions[];
-  moneyModel?: 'legacy' | 'migrating' | 'v2';
-  moneyMigrationId?: string;
 }
 
 /**
@@ -552,7 +553,6 @@ export interface ContractLineItemOptions extends SmrtObjectOptions {
   taxComponents?: ContractTaxComponentSnapshot[];
   taxComponentsJson?: string | null;
   taxAmount?: number;
-  legacyAmount?: number | null;
   moneySnapshotId?: string;
   amount?: number;
   productId?: string;
@@ -693,7 +693,6 @@ export interface InvoiceLineItemOptions extends SmrtObjectOptions {
   taxComponents?: InvoiceTaxComponentSnapshot[];
   taxComponentsJson?: string | null;
   taxAmount?: number;
-  legacyAmount?: number | null;
   moneySnapshotId?: string;
   amount?: number;
   sourceType?: string;

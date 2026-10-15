@@ -27,7 +27,7 @@ import {
   toFrozenInvoiceAccountingInput,
 } from './invoice-accounting-sync.js';
 import type { Invoice } from './models/Invoice.js';
-import { ensureTenantTaxCodes } from './tax/legacy.js';
+import { ensureTenantTaxCodes } from './tax/standard-codes.js';
 import { InvoiceStatus } from './types/index.js';
 
 describe('frozen invoice accounting sync (#3937)', () => {

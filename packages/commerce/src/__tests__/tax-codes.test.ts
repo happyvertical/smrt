@@ -23,7 +23,10 @@ import {
   applyTaxCodeExamplePack,
   COMMON_TAX_CODE_EXAMPLE_PACK,
 } from '../tax/example-pack';
-import { ensureTenantTaxCodes, mapLegacyTaxRates } from '../tax/legacy';
+import {
+  ensureTenantTaxCodes,
+  mapLegacyTaxRates,
+} from '../tax/standard-codes.js';
 import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant';
 
 describe('tax codes (#3934)', () => {

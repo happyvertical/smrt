@@ -9,10 +9,7 @@ import type {
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { SmrtReportCollection } from '@happyvertical/smrt-reports';
 import { getTenantId, withTenant } from '@happyvertical/smrt-tenancy';
-import {
-  lockDocumentMoneyParents,
-  withDocumentMoneyTransaction,
-} from '../document-money-internal.js';
+import { withDocumentMoneyTransaction } from '../document-money-internal.js';
 import { TaxSummaryReport } from '../models/TaxSummaryReport.js';
 import { deterministicTaxId } from '../tax/identity.js';
 import {
@@ -22,11 +19,12 @@ import {
   type TaxSummaryLedgerMovement,
   type TaxSummarySourceScope,
 } from '../tax-summary.js';
+import { lockTenantMoneyRuntime } from '../tenant-money-barrier.js';
+import { assertTenantMoneyCurrent } from '../upgrade/detect.js';
 import {
   DocumentTaxCollection,
   type InvoiceTaxReportFact,
 } from './DocumentTaxCollection.js';
-import { TaxSettingsCollection } from './TaxSettingsCollection.js';
 
 export interface TaxSummaryExpenseSource {
   listReviewedTaxFacts(options: {
@@ -311,30 +309,25 @@ function matchingExpenseTaxes(
 export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryReport> {
   static readonly _itemClass = TaxSummaryReport;
 
-  private async assertReadableMoneyModel(): Promise<void> {
+  private async assertTenantMoneyReadable(): Promise<void> {
     const tenantId = getTenantId();
     if (!tenantId)
       throw new Error('Tax summary report reads require a tenant context.');
-    const settings = await TaxSettingsCollection.create({ db: this.db });
-    const current = await settings.getForTenant(tenantId);
-    if (current?.moneyModel !== 'v2')
-      throw new Error(
-        'Tax summary requires an activated v2 money model; legacy and migrating tenants are incomplete.',
-      );
+    await assertTenantMoneyCurrent(this.db, tenantId);
   }
 
   override async get(
     filter: Parameters<SmrtCollection<TaxSummaryReport>['get']>[0],
     options: Parameters<SmrtCollection<TaxSummaryReport>['get']>[1] = {},
   ): Promise<TaxSummaryReport | null> {
-    await this.assertReadableMoneyModel();
+    await this.assertTenantMoneyReadable();
     return super.get(filter, options);
   }
 
   override async count(
     options: Parameters<SmrtCollection<TaxSummaryReport>['count']>[0] = {},
   ): Promise<number> {
-    await this.assertReadableMoneyModel();
+    await this.assertTenantMoneyReadable();
     return super.count(options);
   }
 
@@ -382,13 +375,13 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
   override async list(
     options: SmrtListOptions<TaxSummaryReport> = {},
   ): Promise<SmrtObject[] | Record<string, unknown>[]> {
-    await this.assertReadableMoneyModel();
+    await this.assertTenantMoneyReadable();
     return super.list(options);
   }
 
   /**
-   * Rebuild the Invoice path from immutable snapshots. Legacy or migrating
-   * tenants are refused because their rows are not a complete v2 tax source.
+   * Rebuild the Invoice path from immutable snapshots. A tenant holding
+   * old-format money data is refused with `COMMERCE_DATA_NEEDS_UPGRADE`.
    */
   async refreshTaxSummary(
     options: RefreshTaxSummaryReportOptions,
@@ -402,24 +395,7 @@ export class TaxSummaryReportCollection extends SmrtReportCollection<TaxSummaryR
 
     return withTenant({ tenantId: options.tenantId }, () =>
       withDocumentMoneyTransaction(this.db, async (tx) => {
-        const settings = await TaxSettingsCollection.create({ db: tx });
-        const existingSettings = await settings.getForTenant(options.tenantId);
-        if (!existingSettings?.id)
-          throw new Error(
-            'Tax summary requires an activated v2 money model; legacy and migrating tenants are incomplete.',
-          );
-        await lockDocumentMoneyParents([
-          {
-            id: existingSettings.id,
-            tenantId: options.tenantId,
-            collection: settings,
-          },
-        ]);
-        const taxSettings = await settings.getForTenant(options.tenantId);
-        if (taxSettings?.moneyModel !== 'v2')
-          throw new Error(
-            'Tax summary requires an activated v2 money model; legacy and migrating tenants are incomplete.',
-          );
+        await lockTenantMoneyRuntime(tx, options.tenantId);
 
         const documentTaxes = await DocumentTaxCollection.create({ db: tx });
         const facts = await documentTaxes.listReportFacts({

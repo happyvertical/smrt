@@ -83,8 +83,11 @@ import { canonicalTenantId, deterministicId, tenantKey } from './units.js';
 
 /** Ledger accounts billing posts to, in the seller's books. */
 export interface BillingLedgerAccounts {
-  /** Explicit currency of this ledger book; required for money-v2 posting. */
-  bookCurrency?: string;
+  /**
+   * ISO 4217 currency of this ledger book. Invoices post only in this
+   * currency, so it must equal the seller's billing currency.
+   */
+  bookCurrency: string;
   /** Accounts receivable (debited when an invoice is issued). */
   arAccountId: string;
   /** Revenue (credited with the invoice subtotal). */
@@ -337,6 +340,9 @@ export class BillingRuntime {
       if (!value && !(optionalLedger.has(key) && value === undefined)) {
         throw new Error(`Ledger account ${key} is required.`);
       }
+    }
+    if (!/^[A-Z]{3}$/.test(options.ledger?.bookCurrency ?? '')) {
+      throw new Error('Ledger bookCurrency must be an ISO 4217 currency code.');
     }
   }
 

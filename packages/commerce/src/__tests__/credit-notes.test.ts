@@ -21,7 +21,7 @@ import {
   getInvoiceMoneyFacts,
   previewInvoiceMoney,
 } from '../document-money.js';
-import { ensureTenantTaxCodes } from '../tax/legacy.js';
+import { ensureTenantTaxCodes } from '../tax/standard-codes.js';
 import { InvoiceStatus } from '../types/index.js';
 import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant.js';
 

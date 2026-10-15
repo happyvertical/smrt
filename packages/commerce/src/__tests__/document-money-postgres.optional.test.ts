@@ -20,7 +20,7 @@ import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { MoneyValidationError } from '../money.js';
-import { ensureTenantTaxCodes } from '../tax/legacy.js';
+import { ensureTenantTaxCodes } from '../tax/standard-codes.js';
 import { InvoiceStatus } from '../types/index.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;

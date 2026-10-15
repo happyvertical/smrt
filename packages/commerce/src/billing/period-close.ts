@@ -34,7 +34,7 @@ import type {
   BillingPeriodClose,
 } from '../models/billing.js';
 import type { Invoice } from '../models/Invoice.js';
-import { retainLegacyTenantMoneyModel } from '../tenant-money-barrier.js';
+import { ensureTenantTaxCodes } from '../tax/standard-codes.js';
 import { InvoiceStatus } from '../types/index.js';
 import { defaultCardFor } from './cards.js';
 import {
@@ -1323,21 +1323,14 @@ async function collectAndInvoice(
 
   const invoiceId = await deterministicId(['billing-invoice', closeId]);
   await withTenant({ tenantId: runtime.sellerTenantId }, async () => {
-    // Billing writes its invoice through the legacy line model, and a v2
-    // seller tenant cannot close a period yet (#4013). A seller with no money
-    // marker keeps the legacy model rather than the clean-tenant v2 default
-    // (#4009); remove this once billing writes money-v2 documents.
-    // A v2 seller is refused before any invoice row is written; provision a
-    // billing seller with ensureCommerceTenant(..., { moneyModel: 'legacy' }).
-    if (
-      (await retainLegacyTenantMoneyModel(
-        runtime.db,
-        runtime.sellerTenantId,
-      )) === 'v2'
-    )
-      throw new Error(
-        'Billing period close does not support a money-v2 seller tenant yet (#4013). Provision the seller with ensureCommerceTenant(db, tenantId, { moneyModel: "legacy" }).',
-      );
+    // The payment provider taxes billing invoices (providerTaxAmount), so
+    // every billing line is explicitly out of scope: the seller's default tax
+    // code must not tax a line a second time.
+    const outOfScope = (
+      await ensureTenantTaxCodes(runtime.db, runtime.sellerTenantId)
+    ).find((code) => code.code === 'out-of-scope');
+    if (!outOfScope?.id)
+      throw new Error('The seller tenant has no out-of-scope tax code.');
     let invoice = await runtime.invoices.get(invoiceId);
     if (!invoice) {
       const issueDate = close.issuedAt;
@@ -1367,7 +1360,16 @@ async function collectAndInvoice(
     if (invoice.status !== InvoiceStatus.DRAFT) {
       throw new Error(`Invoice ${invoice.invoiceNumber} is no longer a draft.`);
     }
-    for (const [index, line] of lines.entries()) {
+    // Each line save recomputes the invoice aggregate, whose subtotal may
+    // never go negative. The close's net is not negative (a net credit is
+    // carried forward above), so writing charges before credits keeps every
+    // intermediate subtotal at or above zero. sortOrder keeps display order.
+    const ordered = [...lines.entries()].sort(
+      ([, left], [, right]) =>
+        Number(left.amount - left.discount < 0) -
+        Number(right.amount - right.discount < 0),
+    );
+    for (const [index, line] of ordered) {
       await runtime.lineItems.create({
         id: await deterministicId(['billing-invoice-line', closeId, line.key]),
         tenantId: runtime.sellerTenantId,
@@ -1376,8 +1378,8 @@ async function collectAndInvoice(
         quantity: 1,
         unitPrice: line.amount,
         discount: line.discount,
-        taxRate: 0.0,
-        amount: line.amount - line.discount,
+        taxMode: 'override',
+        taxCodeId: outOfScope.id,
         sourceType: 'billing_period_close',
         sourceId: closeId,
         periodStart: line.periodStart ?? close.periodStart,
@@ -1385,7 +1387,6 @@ async function collectAndInvoice(
         sortOrder: index,
       });
     }
-    await invoice.save();
   });
 
   close.invoiceId = invoiceId;
@@ -1584,33 +1585,20 @@ async function sendAndReconcile(
 }
 
 /**
- * Recognize revenue once. A journal posted by an attempt that died before
- * linking it is adopted instead of posting a second one.
+ * Recognize revenue once. Posting is idempotent: a journal posted by an
+ * attempt that died before linking it is adopted instead of posting another.
  */
 async function postRevenue(
   runtime: BillingRuntime,
   invoice: Invoice,
 ): Promise<void> {
   if (invoice.totalAmount <= 0 || invoice.arJournalId) return;
-  await withTenant({ tenantId: runtime.sellerTenantId }, async () => {
-    const posted = await runtime.journals.list({
-      where: {
-        sourceModule: 'smrt-commerce',
-        sourceRef: String(invoice.id),
-        status: 'posted',
-      },
-      limit: 1,
-    });
-    if (posted[0]?.id) {
-      invoice.arJournalId = String(posted[0].id);
-      await invoice.save();
-      return;
-    }
-    await invoice.recognizeRevenue({
+  await withTenant({ tenantId: runtime.sellerTenantId }, () =>
+    invoice.recognizeRevenue({
       arAccountId: runtime.ledger.arAccountId,
       revenueAccountId: runtime.ledger.revenueAccountId,
       taxAccountId: runtime.ledger.taxAccountId,
       bookCurrency: runtime.ledger.bookCurrency,
-    });
-  });
+    }),
+  );
 }

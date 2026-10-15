@@ -12,7 +12,6 @@ import {
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { minorToMajorUnits } from '../billing/units.js';
 import {
   DOCUMENT_MONEY_READ_REBIND,
   DOCUMENT_MONEY_WRITE,
@@ -21,13 +20,11 @@ import {
 } from '../document-money-internal.js';
 import { MoneyValidationError } from '../money.js';
 import {
-  calculateInvoiceMinorLine,
   type InvoiceCalculationContext,
   type InvoiceLineDraft,
   resolveInvoiceLineDraft,
 } from '../svelte/invoices/calculations.js';
 import type {
-  AccountingLineItemInput,
   InvoiceCreditCalculationBasis,
   InvoiceLineEditorState,
   InvoiceLineItemOptions,
@@ -272,9 +269,6 @@ export class InvoiceLineItem extends SmrtObject {
 
   taxAmount = 0;
 
-  @field({ nullable: true })
-  legacyAmount: number | null = null;
-
   /** Stable document snapshot identity; ordinary lifecycle saves do not change it. */
   moneySnapshotId = '';
 
@@ -363,8 +357,6 @@ export class InvoiceLineItem extends SmrtObject {
     if (options.taxComponents !== undefined)
       this.taxComponents = structuredClone(options.taxComponents);
     if (options.taxAmount !== undefined) this.taxAmount = options.taxAmount;
-    if (options.legacyAmount !== undefined)
-      this.legacyAmount = options.legacyAmount;
     if (options.moneySnapshotId !== undefined)
       this.moneySnapshotId = options.moneySnapshotId;
     if (options.amount !== undefined) this.amount = options.amount;
@@ -376,21 +368,6 @@ export class InvoiceLineItem extends SmrtObject {
     if (options.revenueAccountId !== undefined)
       this.revenueAccountId = options.revenueAccountId;
     if (options.sortOrder !== undefined) this.sortOrder = options.sortOrder;
-  }
-
-  /** Calculate exact safe integer-minor totals, rounding gross and tax ties toward positive infinity. */
-  calculateAmount(): number {
-    return calculateInvoiceMinorLine(this).totalMinor;
-  }
-
-  /** Rounded quantity times price, less the resolved flat minor-unit discount. */
-  getSubtotal(): number {
-    return calculateInvoiceMinorLine(this).subtotalMinor;
-  }
-
-  /** Tax on the rounded discounted subtotal, in safe integer minor units. */
-  getTaxAmount(): number {
-    return calculateInvoiceMinorLine(this).taxMinor;
   }
 
   /** Apply a server-validated draft without saving; authorization and transaction stay caller-owned. */
@@ -432,28 +409,16 @@ export class InvoiceLineItem extends SmrtObject {
     }
   }
 
-  /** Validate resolved fields and recompute amount before persistence; editor metadata never determines money. */
+  /** Persist through the invoice money aggregate; editor metadata never determines money. */
   override async save(): Promise<this> {
-    try {
-      void this.db;
-    } catch (error) {
-      // Preserve the legacy validation contract for detached model instances:
-      // invalid arithmetic is reported before the ordinary initialization error.
-      this.calculateAmount();
-      throw error;
-    }
     const { saveInvoiceLineItem } = await import('../document-money.js');
     return (await saveInvoiceLineItem(this)) as this;
   }
 
   /** @internal Aggregate persistence only. */
-  async saveDerived(
-    capability: DocumentMoneyWriteCapability,
-    legacy: boolean,
-  ): Promise<this> {
+  async saveDerived(capability: DocumentMoneyWriteCapability): Promise<this> {
     if (capability !== DOCUMENT_MONEY_WRITE)
       throw new Error('Invoice line money write capability is required');
-    if (legacy) this.amount = this.calculateAmount();
     const state = this.invoiceEditorState;
     if (
       this.invoiceEditorStateJson &&
@@ -492,29 +457,6 @@ export class InvoiceLineItem extends SmrtObject {
    */
   hasPeriod(): boolean {
     return !!this.periodStart && !!this.periodEnd;
-  }
-
-  /**
-   * Convert to line item format for SDK accounting provider.
-   *
-   * `@happyvertical/accounting` takes currency **major** units. Pass the
-   * invoice currency to convert (as {@link Invoice.toAccountingInput} does);
-   * without it, money stays in this package's integer minor units.
-   */
-  toAccountingLineItem(currency?: string): AccountingLineItemInput {
-    const money = (value: number) =>
-      currency ? minorToMajorUnits(value, currency) : value;
-    return {
-      description: this.description,
-      sku: this.sku || undefined,
-      quantity: this.quantity,
-      unitPrice: money(this.unitPrice),
-      discount: this.discount ? money(this.discount) : undefined,
-      taxRate: this.taxRate,
-      amount: money(this.amount),
-      periodStart: this.periodStart || undefined,
-      periodEnd: this.periodEnd || undefined,
-    };
   }
 }
 

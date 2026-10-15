@@ -34,7 +34,6 @@ import {
   resolveLineTaxCode,
 } from './money.js';
 import {
-  lockTenantMoneyMigrationOwner,
   lockTenantMoneyRuntime,
   withTenantMoneyRuntime,
 } from './tenant-money-barrier.js';
@@ -219,12 +218,17 @@ function requireId(value: string | null | undefined, label: string): string {
   return value;
 }
 
+/** Lock the tenant's settings row; every money document belongs to a tenant. */
 async function lockRuntimeSettings(
   db: DatabaseInterface,
   tenantId: string | null,
-): Promise<TaxSettings | null> {
-  if (!tenantId) return null;
-  return (await lockTenantMoneyRuntime(db, tenantId)).settings;
+): Promise<TaxSettings> {
+  if (!tenantId)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Commerce money documents require a tenant',
+    );
+  return lockTenantMoneyRuntime(db, tenantId);
 }
 
 function isFrozen(invoice: Invoice): boolean {
@@ -393,14 +397,12 @@ async function refreshIssuedCreditBalance(
     if (credit.creditedAmount !== applied) {
       credit.creditedAmount = applied;
       credit.updatePaymentStatus(credit.amountPaid);
-      await credit.saveDerived(DOCUMENT_MONEY_WRITE, {
-        recomputeLegacy: false,
-      });
+      await credit.saveDerived(DOCUMENT_MONEY_WRITE);
     }
   }
   source.creditedAmount = total;
   source.updatePaymentStatus(source.amountPaid);
-  await source.saveDerived(DOCUMENT_MONEY_WRITE, { recomputeLegacy: false });
+  await source.saveDerived(DOCUMENT_MONEY_WRITE);
 }
 
 function lineNet(line: InvoiceLineItem, parent: Invoice): number {
@@ -958,7 +960,7 @@ async function recomputeInvoiceAggregate(
         )
       : 0;
     if (freezeSnapshotId) line.moneySnapshotId = freezeSnapshotId;
-    if (persist) await line.saveDerived(DOCUMENT_MONEY_WRITE, false);
+    if (persist) await line.saveDerived(DOCUMENT_MONEY_WRITE);
   }
 
   const taxRows = calculated.taxes.map((tax): DocumentTaxWriteInput => {
@@ -1138,11 +1140,8 @@ async function previewInvoiceMoneyOnScope(
 export async function previewInvoiceMoney(
   input: PreviewInvoiceMoneyInput,
 ): Promise<PreviewInvoiceMoneyResult> {
-  return withTenantMoneyRuntime(input.db, input.tenantId, 'v2', async (scope) =>
-    previewInvoiceMoneyOnScope(
-      { ...input, db: scope.db },
-      scope.barrier.settings as TaxSettings,
-    ),
+  return withTenantMoneyRuntime(input.db, input.tenantId, async (scope) =>
+    previewInvoiceMoneyOnScope({ ...input, db: scope.db }, scope.settings),
   );
 }
 
@@ -1216,12 +1215,12 @@ async function getInvoiceMoneyFactsOnScope(
 export async function getInvoiceMoneyFacts(
   input: GetInvoiceMoneyFactsInput,
 ): Promise<InvoiceMoneyFacts> {
-  return withTenantMoneyRuntime(input.db, input.tenantId, 'v2', async (scope) =>
+  return withTenantMoneyRuntime(input.db, input.tenantId, async (scope) =>
     getInvoiceMoneyFactsOnScope({ ...input, db: scope.db }),
   );
 }
 
-/** Persist an invoice through either legacy compatibility or the v2 aggregate. */
+/** Persist an invoice and recompute its complete money aggregate. */
 export async function saveInvoice(input: Invoice): Promise<Invoice> {
   const priorRevision = input.updated_at;
   try {
@@ -1255,11 +1254,6 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
             'INVALID_MONEY_INPUT',
             'Invoice tenant does not match its active money barrier',
           );
-        if (settings?.moneyModel !== 'v2') {
-          return invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-            recomputeLegacy: true,
-          });
-        }
         assertTenantId(tenantId);
         if (!existing) {
           invoice.tenantId = tenantId;
@@ -1329,9 +1323,7 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
             );
             invoice.partyTaxId = customer?.taxId ?? '';
           }
-          return invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-            recomputeLegacy: false,
-          });
+          return invoice.saveDerived(DOCUMENT_MONEY_WRITE);
         }
         if (invoice.tenantId !== existing.tenantId)
           throw new MoneyValidationError(
@@ -1406,9 +1398,7 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
             FROZEN_INVOICE_FIELDS,
             'Invoice',
           );
-          const saved = await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-            recomputeLegacy: false,
-          });
+          const saved = await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
           if (locked.source)
             await refreshIssuedCreditBalance(tx, locked.source);
           return saved;
@@ -1430,9 +1420,7 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
           invoice.partyTaxId = customer?.taxId ?? '';
           invoice.moneySnapshotId = snapshotId;
         }
-        const saved = await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-          recomputeLegacy: false,
-        });
+        const saved = await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
         if (locked.source) await refreshIssuedCreditBalance(tx, locked.source);
         return saved;
       }),
@@ -1443,33 +1431,6 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
   }
 }
 
-/** Migration-only draft materializer; caller already owns the tenant migration transaction. */
-export async function materializeInvoiceMoneyDraft(input: {
-  db: DatabaseInterface;
-  invoiceId: string;
-  tenantId: string;
-  migrationId: string;
-}): Promise<{ invoiceId: string; taxRows: DocumentTaxWriteInput[] }> {
-  const settings = await lockTenantMoneyMigrationOwner(
-    input.db,
-    input.tenantId,
-    input.migrationId,
-  );
-  const { invoice } = await lockAndReloadInvoice(
-    input.db,
-    input.invoiceId,
-    input.tenantId,
-  );
-  if (isFrozen(invoice))
-    throw new MoneyValidationError(
-      'FROZEN_DOCUMENT',
-      'Only an unfrozen draft invoice can be migration-recomputed',
-    );
-  const result = await recomputeInvoiceAggregate(input.db, invoice, settings);
-  await invoice.saveDerived(DOCUMENT_MONEY_WRITE, { recomputeLegacy: false });
-  return { invoiceId: input.invoiceId, taxRows: result.taxRows };
-}
-
 /** Persist a line and recompute its complete invoice aggregate. */
 export async function saveInvoiceLineItem(
   input: InvoiceLineItem,
@@ -1477,8 +1438,6 @@ export async function saveInvoiceLineItem(
   return withDocumentMoneyObjectTransaction(input, async (line, tx) => {
     const candidateTenantId = getTenantId() ?? line.tenantId ?? null;
     const settings = await lockRuntimeSettings(tx, candidateTenantId);
-    if (settings?.moneyModel !== 'v2')
-      return line.saveDerived(DOCUMENT_MONEY_WRITE, true);
     const persisted = line.id
       ? await (await InvoiceLineItemCollection.create({ db: tx })).get(
           { id: line.id },
@@ -1532,15 +1491,13 @@ export async function saveInvoiceLineItem(
         FROZEN_LINE_FIELDS,
         'Invoice line',
       );
-      return line.saveDerived(DOCUMENT_MONEY_WRITE, false);
+      return line.saveDerived(DOCUMENT_MONEY_WRITE);
     }
-    await line.saveDerived(DOCUMENT_MONEY_WRITE, false);
+    await line.saveDerived(DOCUMENT_MONEY_WRITE);
     const priorAggregate = aggregateSignature(invoice);
     await recomputeInvoiceAggregate(tx, invoice, settings);
     if (aggregateSignature(invoice) !== priorAggregate) {
-      await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-        recomputeLegacy: false,
-      });
+      await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
     }
     const refreshed = await (
       await InvoiceLineItemCollection.create({ db: tx })
@@ -1586,10 +1543,6 @@ export async function deleteInvoiceLineItem(
           'INVALID_MONEY_INPUT',
           'Invoice line tenant does not match its active money barrier',
         );
-      if (settings?.moneyModel !== 'v2') {
-        await line.deleteDerived(DOCUMENT_MONEY_WRITE, options);
-        return;
-      }
       assertTenantId(first.invoice.tenantId);
       const { invoice } = await lockAndReloadInvoice(
         tx,
@@ -1605,9 +1558,7 @@ export async function deleteInvoiceLineItem(
       const priorAggregate = aggregateSignature(invoice);
       await recomputeInvoiceAggregate(tx, invoice, settings);
       if (aggregateSignature(invoice) !== priorAggregate) {
-        await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
-          recomputeLegacy: false,
-        });
+        await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
       }
     }),
   );
@@ -1628,23 +1579,21 @@ export async function deleteInvoice(
           'INVALID_MONEY_INPUT',
           'Invoice tenant does not match its active money barrier',
         );
-      if (settings?.moneyModel === 'v2' && isFrozen(persisted))
+      if (isFrozen(persisted))
         throw new MoneyValidationError(
           'FROZEN_DOCUMENT',
           'Cannot delete a frozen invoice',
         );
-      if (settings?.moneyModel === 'v2') {
-        assertTenantId(persisted.tenantId);
-        const persistedId = requireId(persisted.id, 'Invoice');
-        await lockAndReloadInvoice(tx, persistedId, persisted.tenantId);
-        const documentTaxes = await DocumentTaxCollection.create({ db: tx });
-        await documentTaxes.replaceDerivedForDocument(DOCUMENT_MONEY_WRITE, {
-          tenantId: persisted.tenantId,
-          documentType: 'invoice',
-          documentId: persistedId,
-          rows: [],
-        });
-      }
+      assertTenantId(persisted.tenantId);
+      const persistedId = requireId(persisted.id, 'Invoice');
+      await lockAndReloadInvoice(tx, persistedId, persisted.tenantId);
+      const documentTaxes = await DocumentTaxCollection.create({ db: tx });
+      await documentTaxes.replaceDerivedForDocument(DOCUMENT_MONEY_WRITE, {
+        tenantId: persisted.tenantId,
+        documentType: 'invoice',
+        documentId: persistedId,
+        rows: [],
+      });
       await invoice.deleteDerived(DOCUMENT_MONEY_WRITE, options);
     }),
   );

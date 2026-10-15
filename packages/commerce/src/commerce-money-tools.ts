@@ -10,7 +10,6 @@ import {
   InvoiceCollection,
   InvoiceLineItemCollection,
   TaxCodeCollection,
-  TaxSettingsCollection,
 } from './collections/index.js';
 import {
   type PreviewInvoiceMoneyInput,
@@ -24,6 +23,7 @@ import {
   TaxCode,
 } from './models/index.js';
 import { MoneyValidationError } from './money.js';
+import { assertTenantMoneyCurrent } from './upgrade/detect.js';
 
 export const COMMERCE_TAX_CODES_LIST_TOOL_SLUG = 'commerce.taxCodes.list';
 export const COMMERCE_INVOICE_PREVIEW_TOOL_SLUG = 'commerce.invoice.preview';
@@ -169,26 +169,12 @@ async function resolveTaxCode(
   return taxCode;
 }
 
-/** Code-based money tools need the frozen-snapshot money model. */
-async function requireActiveMoneyV2(
+/** Code-based money tools refuse a tenant holding old-format money data. */
+async function requireCurrentMoney(
   db: DatabaseInterface,
   tenantId: string,
 ): Promise<void> {
-  const settings = await (
-    await TaxSettingsCollection.create({ db })
-  ).getForTenant(tenantId);
-  if (settings?.moneyModel === 'migrating') {
-    throw new MoneyValidationError(
-      'FROZEN_DOCUMENT',
-      'Commerce money tools are unavailable while tenant money migration is in progress',
-    );
-  }
-  if (settings?.moneyModel !== 'v2') {
-    throw new MoneyValidationError(
-      'INVALID_MONEY_INPUT',
-      'Commerce money tools require active money v2 settings',
-    );
-  }
+  await assertTenantMoneyCurrent(db, tenantId);
 }
 
 async function requireInvoice(
@@ -606,7 +592,7 @@ export function createCommerceMoneyTools(): PrincipalTool[] {
       rejectUnknown(args, ['invoiceId', ...LINE_FIELDS]);
       const tenantId = requireTenant(run);
       const database = requireDatabase(run, db);
-      await requireActiveMoneyV2(database, tenantId);
+      await requireCurrentMoney(database, tenantId);
       const invoiceId = requireText(args, 'invoiceId');
       await requireInvoice(database, tenantId, invoiceId);
       // Validate the complete tool input before any persistence. Collection
@@ -642,7 +628,7 @@ export function createCommerceMoneyTools(): PrincipalTool[] {
       rejectUnknown(args, ['id', ...LINE_FIELDS]);
       const tenantId = requireTenant(run);
       const database = requireDatabase(run, db);
-      await requireActiveMoneyV2(database, tenantId);
+      await requireCurrentMoney(database, tenantId);
       const id = requireText(args, 'id');
       const line = await (
         await InvoiceLineItemCollection.create({ db: database })

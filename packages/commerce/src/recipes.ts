@@ -101,7 +101,7 @@ export class PurchasesRecipe extends SmrtRecipe {
         billingPeriod: { visibility: 'hidden' },
         sortOrder: { visibility: 'hidden' },
         discount: { visibility: 'hidden' },
-        taxRate: { help: 'Stored fraction: 0.05 means 5%.' },
+        taxRate: { visibility: 'hidden' },
       },
     },
   } as const;
@@ -147,7 +147,7 @@ export class SalesRecipe extends SmrtRecipe {
         billingPeriod: { visibility: 'hidden' },
         sortOrder: { visibility: 'hidden' },
         discount: { visibility: 'hidden' },
-        taxRate: { help: 'Stored fraction: 0.05 means 5%.' },
+        taxRate: { visibility: 'hidden' },
       },
     },
   } as const;
@@ -223,7 +223,7 @@ export class EstimatesRecipe extends SmrtRecipe {
         billingPeriod: { visibility: 'hidden' },
         sortOrder: { visibility: 'hidden' },
         discount: { visibility: 'hidden' },
-        taxRate: { help: 'Stored fraction: 0.05 means 5%.' },
+        taxRate: { visibility: 'hidden' },
       },
     },
   } as const;
@@ -273,7 +273,7 @@ export class WholesaleRecipe extends SmrtRecipe {
         billingPeriod: { visibility: 'hidden' },
         sortOrder: { visibility: 'hidden' },
         discount: { visibility: 'hidden' },
-        taxRate: { help: 'Stored fraction: 0.05 means 5%.' },
+        taxRate: { visibility: 'hidden' },
       },
     },
   } as const;
@@ -345,7 +345,7 @@ export class InvoicingRecipe extends SmrtRecipe {
         sortOrder: { visibility: 'hidden' },
         sku: { visibility: 'hidden' },
         discount: { visibility: 'hidden' },
-        taxRate: { help: 'Stored fraction: 0.05 means 5%.' },
+        taxRate: { visibility: 'hidden' },
       },
     },
     Payment: {
@@ -465,7 +465,7 @@ export class AgreementsRecipe extends SmrtRecipe {
         billingPeriod: { visibility: 'hidden' },
         sortOrder: { visibility: 'hidden' },
         discount: { visibility: 'hidden' },
-        taxRate: { help: 'Stored fraction: 0.05 means 5%.' },
+        taxRate: { visibility: 'hidden' },
       },
     },
     Contract: { fields: { channelId: { visibility: 'hidden' } } },
@@ -519,7 +519,7 @@ export class LeasesRecipe extends SmrtRecipe {
         billingPeriod: { visibility: 'hidden' },
         sortOrder: { visibility: 'hidden' },
         discount: { visibility: 'hidden' },
-        taxRate: { help: 'Stored fraction: 0.05 means 5%.' },
+        taxRate: { visibility: 'hidden' },
       },
     },
   } as const;
@@ -576,7 +576,7 @@ export class LicensesRecipe extends SmrtRecipe {
         billingPeriod: { visibility: 'hidden' },
         sortOrder: { visibility: 'hidden' },
         discount: { visibility: 'hidden' },
-        taxRate: { help: 'Stored fraction: 0.05 means 5%.' },
+        taxRate: { visibility: 'hidden' },
       },
     },
   } as const;

@@ -12,7 +12,7 @@ import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { applyCookbookTaxSettings } from '../tax/cookbook.js';
-import { ensureTenantTaxCodes } from '../tax/legacy.js';
+import { ensureTenantTaxCodes } from '../tax/standard-codes.js';
 
 /** PostgreSQL regression coverage, run through scripts/run-with-ci-postgres.mjs. */
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;

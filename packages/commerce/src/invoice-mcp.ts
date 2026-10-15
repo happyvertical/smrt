@@ -111,39 +111,32 @@ export async function serializeInvoiceMcpGet(
   if (!invoice.id || !invoice.tenantId) return invoice.toPublicJSON(options);
   const invoiceId = invoice.id;
   const tenantId = invoice.tenantId;
-  return withTenantMoneyRuntime(
-    invoice.db,
-    tenantId,
-    'legacy-or-v2',
-    async (scope) => {
-      if (scope.barrier.moneyModel !== 'v2')
-        return invoice.toPublicJSON(options);
-      const authoritative = await (
-        await InvoiceCollection.create({ db: scope.db })
-      ).get({ id: invoiceId }, { cache: false });
-      if (!authoritative || authoritative.tenantId !== tenantId)
-        throw new MoneyValidationError(
-          'INVALID_MONEY_INPUT',
-          'Invoice MCP money facts require a persisted tenant invoice',
-        );
-      const base = authoritative.toPublicJSON(options);
-      if (
-        !(await mayExposeMoneyProjection(
-          authoritative,
-          invoiceId,
-          tenantId,
-          options,
-        ))
-      )
-        return base;
-      return {
-        ...base,
-        money: await getInvoiceMoneyFacts({
-          db: scope.db,
-          tenantId,
-          invoiceId,
-        }),
-      };
-    },
-  );
+  return withTenantMoneyRuntime(invoice.db, tenantId, async (scope) => {
+    const authoritative = await (
+      await InvoiceCollection.create({ db: scope.db })
+    ).get({ id: invoiceId }, { cache: false });
+    if (!authoritative || authoritative.tenantId !== tenantId)
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Invoice MCP money facts require a persisted tenant invoice',
+      );
+    const base = authoritative.toPublicJSON(options);
+    if (
+      !(await mayExposeMoneyProjection(
+        authoritative,
+        invoiceId,
+        tenantId,
+        options,
+      ))
+    )
+      return base;
+    return {
+      ...base,
+      money: await getInvoiceMoneyFacts({
+        db: scope.db,
+        tenantId,
+        invoiceId,
+      }),
+    };
+  });
 }
