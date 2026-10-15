@@ -207,6 +207,11 @@ export class TaxSettings extends SmrtObject {
             'FROZEN_DOCUMENT',
             'Tenant money model is server-managed',
           );
+        // With no marker row to lock, a normal natural-key upsert could race
+        // the migration's first marker insert and overwrite its claimed state.
+        // Keep the first ordinary save insert-only so that collision refuses
+        // the stale save instead of updating the newly committed marker.
+        if (!persistedByTenant && !this.isPersisted) this.requireInsertOnSave();
       }
       for (const id of [
         this.defaultSalesTaxCodeId,

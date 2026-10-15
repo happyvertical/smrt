@@ -18,6 +18,9 @@ cannot change it: a new instance whose tenant natural key would upsert over a
 `migrating` or `v2` row is refused rather than resetting that tenant to legacy.
 The ordinary save transaction locks and re-reads the tenant marker before its
 natural-key upsert, serializing that check with migration claim and activation.
+If the tenant has no marker to lock, its first ordinary save is insert-only: a
+concurrent migration that creates the marker wins and the stale save is refused
+instead of adopting and overwriting the migration-owned row.
 
 `applyCommerceCookbookSettings(db, tenantId, cookbook)` is the explicit
 server-side activation boundary for core's portable `taxRate`, inclusion, and
