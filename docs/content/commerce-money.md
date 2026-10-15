@@ -288,8 +288,10 @@ that command is for existing legacy tenants only. In a v2 tenant, a draft
 imported through the model is recalculated as a v2 document (a legacy `taxRate`
 or tax-inclusive `amount` is not an input), while an issued legacy document is
 refused with `FROZEN_DOCUMENT`; import issued history before the tenant's first
-settings row and migrate it. Billing period close still writes legacy invoices,
-so a billing seller tenant without settings stays `legacy`. `migrating` is a maintenance
+settings row and migrate it. Billing period close still writes legacy invoices:
+a billing seller tenant without settings stays `legacy`, a `v2` seller is
+refused, and `ensureCommerceTenant(db, sellerId, { moneyModel: 'legacy' })`
+provisions a seller (or returns an empty `v2` one) on `legacy`. `migrating` is a maintenance
 guard: Invoice money writes fail until its owner restores `legacy` or activates
 `v2`. Generated surfaces and ordinary `TaxSettings.save()` calls cannot change
 the marker or its owner token on an existing settings row.

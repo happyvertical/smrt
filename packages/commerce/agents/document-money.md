@@ -41,8 +41,10 @@ then stays `legacy`) and migrate it. Rows written with raw SQL bypass the model
 and are not converted.
 
 Billing period close still writes legacy invoices (#4013): it materializes a
-`legacy` marker for a seller tenant that has none, and a `v2` seller cannot
-close a period yet.
+`legacy` marker for a seller tenant that has none and refuses a `v2` seller
+before writing any invoice row. Provision a billing seller with
+`ensureCommerceTenant(db, tenantId, { moneyModel: 'legacy' })`; that option
+also returns an empty `v2` tenant to `legacy` and refuses one with documents.
 
 Every Invoice/InvoiceLineItem get, list, preview, mutation, posting, and
 accounting-sync phase acquires the same tenant settings row before document

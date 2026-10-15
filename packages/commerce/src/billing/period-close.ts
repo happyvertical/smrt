@@ -1327,7 +1327,17 @@ async function collectAndInvoice(
     // seller tenant cannot close a period yet (#4013). A seller with no money
     // marker keeps the legacy model rather than the clean-tenant v2 default
     // (#4009); remove this once billing writes money-v2 documents.
-    await retainLegacyTenantMoneyModel(runtime.db, runtime.sellerTenantId);
+    // A v2 seller is refused before any invoice row is written; provision a
+    // billing seller with ensureCommerceTenant(..., { moneyModel: 'legacy' }).
+    if (
+      (await retainLegacyTenantMoneyModel(
+        runtime.db,
+        runtime.sellerTenantId,
+      )) === 'v2'
+    )
+      throw new Error(
+        'Billing period close does not support a money-v2 seller tenant yet (#4013). Provision the seller with ensureCommerceTenant(db, tenantId, { moneyModel: "legacy" }).',
+      );
     let invoice = await runtime.invoices.get(invoiceId);
     if (!invoice) {
       const issueDate = close.issuedAt;

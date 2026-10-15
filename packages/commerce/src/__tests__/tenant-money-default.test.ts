@@ -313,6 +313,31 @@ describe('clean tenants default to money v2 (#4009)', () => {
       ).resolves.toEqual({ tenantId: 'busy', moneyModel: 'legacy' });
     });
 
+    it('provisions or returns an empty tenant to legacy on request', async () => {
+      await expect(
+        ensureCommerceTenant(db, 'seller', { moneyModel: 'legacy' }),
+      ).resolves.toEqual({ tenantId: 'seller', moneyModel: 'legacy' });
+      await ensureCommerceTenant(db, 'seller-later');
+      await expect(
+        ensureCommerceTenant(db, 'seller-later', { moneyModel: 'legacy' }),
+      ).resolves.toEqual({ tenantId: 'seller-later', moneyModel: 'legacy' });
+      expect(await markers('seller-later')).toMatchObject([
+        { moneyModel: 'legacy' },
+      ]);
+
+      // A v2 tenant that already holds v2 documents cannot go back.
+      await ensureCommerceTenant(db, 'v2-busy');
+      await withTenant({ tenantId: 'v2-busy' }, async () => {
+        await (await InvoiceCollection.create({ db })).create({
+          invoiceNumber: 'V2-BUSY',
+        });
+      });
+      await expect(
+        ensureCommerceTenant(db, 'v2-busy', { moneyModel: 'legacy' }),
+      ).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
+      expect(await markers('v2-busy')).toMatchObject([{ moneyModel: 'v2' }]);
+    });
+
     it('requires a tenant', async () => {
       await expect(ensureCommerceTenant(db, '  ')).rejects.toThrow(
         /requires a tenant/,

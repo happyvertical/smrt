@@ -1114,4 +1114,27 @@ describe('smrt#3060 billing-period close', () => {
       expect(() => currencyMinorUnitExponent('usdx')).toThrow();
     });
   });
+
+  it('refuses a money-v2 seller up front and closes once the seller is provisioned legacy (#4009)', async () => {
+    await expect(
+      commerceRoot.ensureCommerceTenant(world.db, PROVIDER),
+    ).resolves.toMatchObject({ moneyModel: 'v2' });
+    await world.usage(SITE);
+    await expect(world.provider.closePeriod(period)).rejects.toThrow(
+      /money-v2 seller tenant/,
+    );
+    expect(await invoiceFor(world, PROVIDER, NETWORK)).toEqual([]);
+
+    // The supported billing provisioning path returns the empty seller to
+    // legacy, and a retried close then bills normally.
+    await expect(
+      commerceRoot.ensureCommerceTenant(world.db, PROVIDER, {
+        moneyModel: 'legacy',
+      }),
+    ).resolves.toMatchObject({ moneyModel: 'legacy' });
+    const result = await world.provider.closePeriod(period);
+    expect(
+      result.groups.find((group) => group.payerTenantId === NETWORK)?.outcome,
+    ).toBe('completed');
+  });
 });
