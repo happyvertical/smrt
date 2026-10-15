@@ -19,8 +19,10 @@ import { TaxSummaryReport } from '../models/TaxSummaryReport.js';
 import { aggregateTaxSummary } from '../tax-summary.js';
 import {
   buildTaxSummaryReportAdapterDescriptor,
+  createTaxSummaryMaterializedReportHost,
   drilldownTaxSummaryContributors,
   drilldownTaxSummaryInvoiceFacts,
+  presentTaxSummaryDrilldown,
   TAX_SUMMARY_REPORT_ADAPTER,
 } from '../tax-summary-report-adapter.js';
 import {
@@ -49,6 +51,157 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
     const migrationId = await settings.beginMoneyMigration(tenantId);
     await settings.activateMoneyV2(tenantId, migrationId);
   }
+
+  it('binds the production tax-summary host to its principal tenant and closed cells', async () => {
+    const fixture = await withTenant({ tenantId: 'tenant-a' }, () =>
+      seedInvoiceTaxReportFacts(db),
+    );
+    await withTenant({ tenantId: fixture.tenantId }, () =>
+      activateV2(fixture.tenantId),
+    );
+    await withTenant({ tenantId: 'tenant-b' }, () => activateV2('tenant-b'));
+    const reports = await TaxSummaryReportCollection.create({ db });
+    await reports.refreshTaxSummary({
+      tenantId: fixture.tenantId,
+      from,
+      to,
+      expenseSource: { listReviewedTaxFacts: async () => [] },
+      ledgerSource: { listPostedMovements: async () => [] },
+      expenseComponentMappings: [],
+    });
+    const host = createTaxSummaryMaterializedReportHost(db);
+    const principal = {
+      userId: 'user-a',
+      tenantId: fixture.tenantId,
+      permissions: ['taxsummaryreports.read'],
+    };
+    const denied = { ...principal, permissions: [] };
+    const oneRow = {
+      version: 1,
+      requestId: 'denied',
+      mode: 'rows' as const,
+      projection: ['id'],
+      page: { kind: 'offset' as const, offset: 0, limit: 1 },
+    };
+    await expect(host.descriptor(denied)).rejects.toThrow(/access denied/i);
+    expect(() => host.query(denied, oneRow)).toThrow(/access denied/i);
+    await expect(
+      host.drilldown(denied, { id: 'missing', columnId: 'tax_minor' }),
+    ).rejects.toThrow(/access denied/i);
+    await expect(host.descriptor({ ...principal, userId: '' })).rejects.toThrow(
+      /access denied/i,
+    );
+    await expect(
+      host.descriptor({ ...principal, tenantId: '' }),
+    ).rejects.toThrow(/access denied/i);
+    expect(() => host.query({ ...principal, userId: '' }, oneRow)).toThrow(
+      /access denied/i,
+    );
+    expect(() => host.query({ ...principal, tenantId: '' }, oneRow)).toThrow(
+      /access denied/i,
+    );
+    await expect(
+      host.drilldown(
+        { ...principal, userId: '' },
+        { id: 'missing', columnId: 'tax_minor' },
+      ),
+    ).rejects.toThrow(/access denied/i);
+    await expect(
+      host.drilldown(
+        { ...principal, tenantId: '' },
+        { id: 'missing', columnId: 'tax_minor' },
+      ),
+    ).rejects.toThrow(/access denied/i);
+    const page = await host.query(principal, {
+      version: 1,
+      requestId: 'host-page',
+      mode: 'rows',
+      projection: ['id', 'tax_minor', 'row_kind'],
+      page: { kind: 'offset', offset: 0, limit: 20 },
+    });
+    expect(page.rows.length).toBeGreaterThan(0);
+    const id = String(
+      page.rows.find((row) => row.row_kind === 'component')?.id,
+    );
+    await expect(
+      host.drilldown(principal, { id, columnId: 'currency' }),
+    ).rejects.toThrow(/not drilldown-capable/i);
+    await expect(
+      host.drilldown(
+        { ...principal, tenantId: 'tenant-b' },
+        { id, columnId: 'tax_minor' },
+      ),
+    ).rejects.toThrow(/unavailable/i);
+    await expect(
+      host.drilldown(principal, { id, columnId: 'tax_minor' }),
+    ).resolves.toMatchObject({
+      version: 1,
+      selectedMeasure: { id: 'tax', label: 'Tax' },
+      currency: 'CAD',
+      contributors: expect.arrayContaining([
+        expect.objectContaining({
+          source: 'invoice',
+          identity: expect.any(String),
+          date: expect.any(String),
+          values: expect.objectContaining({
+            valueMinor: expect.any(Number),
+            taxableMinor: expect.any(Number),
+            taxMinor: expect.any(Number),
+          }),
+        }),
+      ]),
+    });
+  });
+
+  it('normalizes incomplete and diverged contributor evidence for the generic report host', () => {
+    const presentation = presentTaxSummaryDrilldown({
+      measure: 'tax',
+      row: { currency: 'CAD' },
+      contributors: [
+        {
+          source: 'invoice',
+          valueMinor: 125,
+          fact: {
+            documentType: 'invoice',
+            documentId: 'invoice-a',
+            documentNumber: 'INV-001',
+            partyId: 'customer-a',
+            taxCodeId: 'gst',
+            taxComponentId: 'gst',
+            issueDate: '2026-09-01',
+            taxableMinor: 2_500,
+            taxMinor: 125,
+          },
+        },
+      ],
+      complete: false,
+      pending: ['source-state-diverged', 'expense-source'],
+    } as never);
+
+    expect(presentation).toEqual({
+      version: 1,
+      selectedMeasure: { id: 'tax', label: 'Tax' },
+      currency: 'CAD',
+      contributors: [
+        {
+          id: 'invoice:invoice:invoice-a:gst:gst',
+          source: 'invoice',
+          identity: 'INV-001',
+          date: '2026-09-01',
+          party: 'customer-a',
+          values: { valueMinor: 125, taxableMinor: 2_500, taxMinor: 125 },
+        },
+      ],
+      complete: false,
+      warnings: [
+        expect.objectContaining({
+          code: 'source-state-diverged',
+          kind: 'drift',
+        }),
+        expect.objectContaining({ code: 'expense-source', kind: 'incomplete' }),
+      ],
+    });
+  });
 
   it('materializes exact persisted A/B sales rows, DataTable descriptor, and a tenant-bound drilldown', async () => {
     const fixture = await withTenant({ tenantId: 'tenant-a' }, () =>

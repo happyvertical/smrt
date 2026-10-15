@@ -93,6 +93,10 @@ export {
   assertMaterializedReportRead,
   findMaterializedReportHost,
   type MaterializedReportCellRequest,
+  type MaterializedReportDrilldownContributor,
+  type MaterializedReportDrilldownPresentation,
+  type MaterializedReportDrilldownValues,
+  type MaterializedReportDrilldownWarning,
   type MaterializedReportHost,
   type MaterializedReportHostContext,
 } from './materialized-host.js';
