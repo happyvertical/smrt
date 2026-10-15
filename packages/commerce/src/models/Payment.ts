@@ -18,6 +18,7 @@ import {
 } from '../allocation-integrity.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import {
+  type PaymentKind,
   PaymentMethod,
   type PaymentOptions,
   PaymentStatus,
@@ -113,6 +114,7 @@ const recordingInProgress = new WeakSet<Payment>();
   api: {
     include: ['list', 'get', 'create', 'update'],
     writable: [
+      'kind',
       'contractId',
       'customerId',
       'amount',
@@ -142,6 +144,9 @@ const recordingInProgress = new WeakSet<Payment>();
   cli: { skipApiCheck: true },
 })
 export class Payment extends SmrtObject {
+  /** Incoming settlement or outgoing customer refund. Amount stays positive. */
+  kind: PaymentKind = 'payment';
+
   /**
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global payments
@@ -335,6 +340,7 @@ export class Payment extends SmrtObject {
 
   constructor(options: PaymentOptions = {}) {
     super(options);
+    if (options.kind !== undefined) this.kind = options.kind;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.contractId !== undefined) this.contractId = options.contractId;
     if (options.customerId !== undefined) this.customerId = options.customerId;
@@ -405,6 +411,8 @@ export class Payment extends SmrtObject {
    */
   override async save(): Promise<this> {
     return this.withTransaction(async () => {
+      if (this.kind !== 'payment' && this.kind !== 'refund')
+        throw new Error('Payment kind must be payment or refund');
       await claimAllocationParent(this, 'payment');
       // Whole minor units on every surface (#2401). `amount` is what
       // `PaymentAllocation.save()` and `Payout.assertCappedBySourcePayment()` cap
@@ -532,6 +540,7 @@ export class Payment extends SmrtObject {
     priorRow: Record<string, unknown>,
   ): void {
     const frozen: Array<[string, number | string, number | string]> = [
+      ['kind', String(priorRow.kind ?? 'payment'), this.kind],
       ['amount', Number(priorRow.amount ?? 0), Number(this.amount ?? 0)],
       [
         'currency',
@@ -688,6 +697,13 @@ export class Payment extends SmrtObject {
     return journal;
   }
 
+  /** Settle an outgoing refund through the same guarded journal transaction. */
+  async recordRefund(options: RecordPaymentOptions): Promise<Journal> {
+    if (this.kind !== 'refund')
+      throw new Error('recordRefund requires Payment.kind=refund');
+    return this.recordPayment(options);
+  }
+
   /** Post and complete only inside recordPayment's claimed transaction. */
   private async postPaymentInTransaction(
     options: RecordPaymentOptions,
@@ -709,25 +725,29 @@ export class Payment extends SmrtObject {
     // Create a new journal for this payment
     const journal = await journalCollection.create({
       date: new Date(),
-      description: `Payment received for contract ${this.contractId}`,
+      description:
+        this.kind === 'refund'
+          ? `Customer refund for contract ${this.contractId}`
+          : `Payment received for contract ${this.contractId}`,
       sourceModule: 'smrt-commerce',
       sourceRef: this.id,
     });
     await journal.save();
 
-    // Add balanced entries:
-    // Debit Cash/Bank (assets increase)
+    // Incoming payments debit cash/credit AR; refunds reverse that movement.
     await journal.addEntry({
       accountId: options.cashAccountId,
-      debit: this.amount,
-      memo: `Payment ${this.reference || this.id}`,
+      debit: this.kind === 'payment' ? this.amount : 0,
+      credit: this.kind === 'refund' ? this.amount : 0,
+      memo: `${this.kind === 'refund' ? 'Refund' : 'Payment'} ${this.reference || this.id}`,
     });
 
     // Credit Accounts Receivable (receivables decrease)
     await journal.addEntry({
       accountId: options.receivablesAccountId,
-      credit: this.amount,
-      memo: `Payment ${this.reference || this.id}`,
+      debit: this.kind === 'refund' ? this.amount : 0,
+      credit: this.kind === 'payment' ? this.amount : 0,
+      memo: `${this.kind === 'refund' ? 'Refund' : 'Payment'} ${this.reference || this.id}`,
     });
 
     // Post the journal (validates balance and finalizes)

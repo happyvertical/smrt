@@ -53,8 +53,12 @@ import {
   PrincipalToolNotAllowedError,
 } from '@happyvertical/smrt-agents';
 import {
+  applySyncWritablePolicy,
+  fieldTypeToJsonSchema,
   ObjectRegistry,
+  type PublicJsonOptions,
   type SmrtClassOptions,
+  type SmrtObject,
   ValidationError,
 } from '@happyvertical/smrt-core';
 import {
@@ -388,6 +392,48 @@ function actionFromDefinition(def: PermissionDefinition): string | null {
   return action.length > 0 ? action : null;
 }
 
+/** Prefer the catalog's collision-safe registry key whenever it supplies one. */
+function registryKeyFor(tool: ManifestTool): string {
+  return tool.qualifiedName ?? tool.className;
+}
+
+/**
+ * Resolve the generated CRUD write policy for a manifest tool.
+ *
+ * This deliberately delegates filtering to core's public policy helper, which
+ * is also used by generated REST and sync surfaces. Keeping the policy in one
+ * place prevents a chat-only mass-assignment exception from drifting away from
+ * `api.writable`, framework-managed fields, or `@field({ readonly: true })`.
+ */
+function writablePolicyFor(tool: ManifestTool): {
+  readonlyFields: string[];
+  writableAllowlist: string[] | null;
+} {
+  const registryKey = registryKeyFor(tool);
+  const readonlyFields: string[] = [];
+  for (const [name, field] of ObjectRegistry.getFields(registryKey)) {
+    if (field.readonly === true || field._meta?.readonly === true) {
+      readonlyFields.push(name);
+    }
+  }
+
+  const api = ObjectRegistry.getConfig(registryKey).api;
+  const writable =
+    api !== false && typeof api === 'object' ? api.writable : undefined;
+  return {
+    readonlyFields,
+    writableAllowlist: Array.isArray(writable) ? writable : null,
+  };
+}
+
+/** Apply the generated CRUD surface's public write policy to manifest input. */
+function writableToolInput(
+  tool: ManifestTool,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  return applySyncWritablePolicy(input, writablePolicyFor(tool));
+}
+
 /**
  * Build the closed catalog of manifest operations available as tools.
  *
@@ -467,10 +513,30 @@ function toolParameters(tool: ManifestTool): Record<string, unknown> {
   const fieldProps = (): Record<string, unknown> => {
     const props: Record<string, unknown> = {};
     try {
-      for (const [name] of ObjectRegistry.getFields(tool.className)) {
-        if (typeof name === 'string') {
-          props[name] = { type: 'string' };
+      const registryKey = registryKeyFor(tool);
+      const policy = writablePolicyFor(tool);
+      for (const [name, field] of ObjectRegistry.getFields(registryKey)) {
+        // Create/update offer exactly the fields that the execution path can
+        // write. The core helper owns all mass-assignment filtering rules.
+        if (!(name in applySyncWritablePolicy({ [name]: true }, policy))) {
+          continue;
         }
+        props[name] = fieldTypeToJsonSchema({
+          name,
+          type: field.type,
+          description:
+            field.description ??
+            field._meta?.description ??
+            field.options?.description,
+          default: field.default ?? field._meta?.default,
+          maxLength: field.maxLength,
+          minLength: field.minLength,
+          min: field.min,
+          max: field.max,
+          enum: field.enum ?? field._meta?.enum,
+          nullable: field._meta?.nullable === true,
+          related: field.related,
+        });
       }
     } catch {
       // No field metadata available — fall back to a free-form object.
@@ -554,13 +620,80 @@ export function manifestToolToAITool(tool: ManifestTool): AITool {
 
 interface OperableItem {
   toJSON: () => Record<string, unknown>;
+  toPublicJSON?: (options?: PublicJsonOptions) => Record<string, unknown>;
   save: () => Promise<unknown>;
   delete: () => Promise<unknown>;
 }
 
-function itemToObservation(item: unknown): unknown {
-  const candidate = item as { toJSON?: () => unknown } | null;
-  return typeof candidate?.toJSON === 'function' ? candidate.toJSON() : item;
+interface McpGetSerializerReference {
+  importPath: string;
+  exportName: string;
+}
+
+type McpGetSerializer = (
+  item: SmrtObject,
+  options: PublicJsonOptions,
+) => unknown | Promise<unknown>;
+
+async function resolveToolLoopMcpGetSerializer(
+  reference: McpGetSerializerReference,
+  ownerRegistryKey?: string,
+): Promise<McpGetSerializer> {
+  const resolver = (await import(
+    /* @vite-ignore */ '@happyvertical/smrt-core/mcp-serializer'
+  )) as {
+    resolveMcpGetSerializer: (
+      reference: McpGetSerializerReference,
+      options: { parentUrl: string; ownerRegistryKey?: string },
+    ) => Promise<McpGetSerializer>;
+  };
+  return resolver.resolveMcpGetSerializer(reference, {
+    parentUrl: import.meta.url,
+    ownerRegistryKey,
+  });
+}
+
+function mcpGetSerializerReference(
+  tool: ManifestTool,
+): McpGetSerializerReference | undefined {
+  const mcp = ObjectRegistry.getConfig(registryKeyFor(tool)).mcp;
+  if (!mcp || typeof mcp !== 'object') return undefined;
+  const serializers = (mcp as { serializers?: unknown }).serializers;
+  if (!serializers || typeof serializers !== 'object') return undefined;
+  const get = (serializers as { get?: unknown }).get;
+  if (!get || typeof get !== 'object') return undefined;
+  const { importPath, exportName } = get as {
+    importPath?: unknown;
+    exportName?: unknown;
+  };
+  return typeof importPath === 'string' && typeof exportName === 'string'
+    ? { importPath, exportName }
+    : undefined;
+}
+
+async function itemToObservation(
+  item: unknown,
+  run: PrincipalRun,
+  serializerReference?: McpGetSerializerReference,
+  serializerOwnerRegistryKey?: string,
+): Promise<unknown> {
+  const publicOptions: PublicJsonOptions = { permissions: run.permissions };
+  if (serializerReference) {
+    const serializer = await resolveToolLoopMcpGetSerializer(
+      serializerReference,
+      serializerOwnerRegistryKey,
+    );
+    return serializer(item as SmrtObject, publicOptions);
+  }
+  const candidate = item as {
+    toPublicJSON?: (options?: PublicJsonOptions) => unknown;
+    toJSON?: () => unknown;
+  } | null;
+  return typeof candidate?.toPublicJSON === 'function'
+    ? candidate.toPublicJSON(publicOptions)
+    : typeof candidate?.toJSON === 'function'
+      ? candidate.toJSON()
+      : item;
 }
 
 /**
@@ -595,7 +728,7 @@ export async function invokeManifestTool(
   // auto-filtering bound the query; fall back to the supplied handle otherwise.
   const db = (run.context.database ?? options.db) as SmrtClassOptions['db'];
   const collection = await ObjectRegistry.getCollection(
-    tool.className,
+    registryKeyFor(tool),
     db ? { db } : {},
   );
 
@@ -604,19 +737,28 @@ export async function invokeManifestTool(
       const id = typeof args.id === 'string' ? args.id : undefined;
       if (id) {
         const item = await collection.get(id);
-        return item ? itemToObservation(item) : { found: false };
+        return item
+          ? itemToObservation(
+              item,
+              run,
+              mcpGetSerializerReference(tool),
+              registryKeyFor(tool),
+            )
+          : { found: false };
       }
       const items = await collection.list({
         where: asRecord(args.where),
         limit: typeof args.limit === 'number' ? args.limit : 50,
         offset: typeof args.offset === 'number' ? args.offset : 0,
       });
-      return items.map(itemToObservation);
+      return Promise.all(items.map((item) => itemToObservation(item, run)));
     }
     case 'create': {
-      const item = (await collection.create(args)) as unknown as OperableItem;
+      const item = (await collection.create(
+        writableToolInput(tool, args),
+      )) as unknown as OperableItem;
       await item.save();
-      return itemToObservation(item);
+      return itemToObservation(item, run);
     }
     case 'update': {
       const { id, ...rest } = args;
@@ -627,9 +769,9 @@ export async function invokeManifestTool(
       if (!item) {
         return { found: false };
       }
-      Object.assign(item, rest);
+      Object.assign(item, writableToolInput(tool, rest));
       await item.save();
-      return itemToObservation(item);
+      return itemToObservation(item, run);
     }
     case 'delete': {
       const id = typeof args.id === 'string' ? args.id : undefined;
@@ -664,7 +806,7 @@ export async function invokeManifestTool(
       ).call(item, rest);
       return result === undefined
         ? { success: true }
-        : itemToObservation(result);
+        : itemToObservation(result, run);
     }
   }
 }
@@ -1165,6 +1307,22 @@ function errorStatus(error: unknown): number | undefined {
   return undefined;
 }
 
+/**
+ * Structural guard keeps the chat package independent of commerce while
+ * preserving the stable validation code emitted by its public money boundary.
+ */
+function isMoneyValidationError(
+  error: unknown,
+): error is { name: 'MoneyValidationError'; code: string } {
+  if (!error || typeof error !== 'object') return false;
+  const { name, code } = error as { name?: unknown; code?: unknown };
+  return (
+    name === 'MoneyValidationError' &&
+    typeof code === 'string' &&
+    code.length > 0
+  );
+}
+
 /** Statuses meaning the model's arguments were wrong and can be corrected. */
 const INVALID_REQUEST_STATUSES = new Set([400, 404, 409, 422]);
 
@@ -1183,6 +1341,7 @@ const INVALID_REQUEST_STATUSES = new Set([400, 404, 409, 422]);
  */
 export function classifyToolError(error: unknown): ToolErrorKind {
   if (error instanceof ValidationError) return 'invalid_request';
+  if (isMoneyValidationError(error)) return 'invalid_request';
   const status = errorStatus(error);
   if (status === 401 || status === 403) return 'not_permitted';
   if (status !== undefined && INVALID_REQUEST_STATUSES.has(status)) {

@@ -74,6 +74,7 @@ let {
   title,
   fields,
   currency,
+  lineItemStoredTotals,
   locale,
   backLabel,
   deleting = false,
@@ -152,6 +153,7 @@ const widgetRegistry = untrack(() => {
       records,
       viewAllHref: (relation) => viewAllHref?.(relation),
       totals: () => recordTotals(record, roles, viewFields),
+      storedTotals: () => lineItemStoredTotals?.(),
       currency: () => recordCurrency,
     });
     for (const def of recordWidgets.list()) {

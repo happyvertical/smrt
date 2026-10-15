@@ -71,6 +71,11 @@
       "import": "./dist/generators/mcp.js",
       "default": "./dist/generators/mcp.js"
     },
+    "./mcp-serializer": {
+      "types": "./dist/mcp-serializer.d.ts",
+      "import": "./dist/mcp-serializer.js",
+      "default": "./dist/mcp-serializer.js"
+    },
     "./generators/swagger": {
       "types": "./dist/generators/swagger.d.ts",
       "import": "./dist/generators/swagger.js",
@@ -198,6 +203,7 @@
     "@oxc-project/runtime": "^0.150.0",
     "cheerio": "^1.2.0",
     "fast-glob": "3.3.3",
+    "import-meta-resolve": "4.2.0",
     "minimatch": "10.2.6",
     "oxc-transform": "0.150.0",
     "pluralize": "^8.0.0",

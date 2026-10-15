@@ -70,7 +70,11 @@ import './prompts.js';
 
 // Export collections
 export { AccountCollection } from './collections/Accounts';
-export { JournalEntryCollection } from './collections/JournalEntries';
+export {
+  JournalEntryCollection,
+  type PostedJournalMovement,
+  type PostedJournalMovementOptions,
+} from './collections/JournalEntries';
 export { JournalCollection } from './collections/Journals';
 // One-time move of ledger accounts out of the shared `accounts` table (#3098)
 export {

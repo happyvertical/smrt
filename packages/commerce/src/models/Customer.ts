@@ -6,6 +6,7 @@
 import {
   crossPackageRef,
   field,
+  foreignKey,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
@@ -105,6 +106,17 @@ export class Customer extends SmrtObject {
   taxId: string = '';
 
   /**
+   * Tax code normally used for this customer's sales.
+   *
+   * An exempt customer always resolves to the tenant's exempt code before
+   * this preference is considered.
+   */
+  @foreignKey('TaxCode', {
+    description: 'The tax code normally used when selling to this customer.',
+  })
+  defaultTaxCodeId: string = '';
+
+  /**
    * Default shipping address
    */
   @field({
@@ -169,6 +181,8 @@ export class Customer extends SmrtObject {
       this.paymentTerms = options.paymentTerms;
     if (options.taxExempt !== undefined) this.taxExempt = options.taxExempt;
     if (options.taxId !== undefined) this.taxId = options.taxId;
+    if (options.defaultTaxCodeId !== undefined)
+      this.defaultTaxCodeId = options.defaultTaxCodeId;
     if (options.defaultShippingAddress !== undefined)
       this.defaultShippingAddress = options.defaultShippingAddress;
     if (options.defaultBillingAddress !== undefined)

@@ -195,19 +195,35 @@ describe('commands', () => {
     const r = ok(
       e.run({
         name: 'set_settings',
-        input: { currency: 'CAD', taxRate: 8.25, paymentTerms: 'Net 30' },
+        input: {
+          currency: 'CAD',
+          taxRate: 8.25,
+          paymentTerms: 'Net 30',
+          pricesIncludeTax: true,
+          taxRounding: 'document',
+        },
       }),
     );
     expect(r.snapshot.settings).toEqual({
       currency: 'CAD',
       taxRate: 8.25,
       paymentTerms: 'Net 30',
+      pricesIncludeTax: true,
+      taxRounding: 'document',
     });
-    expect(r.receipt.summary).toBe('Currency CAD, tax 8.25%, terms Net 30.');
+    expect(r.receipt.summary).toBe(
+      'Currency CAD, tax 8.25%, terms Net 30, prices include tax, document tax rounding.',
+    );
     const rows = e.cookbook().policies;
     expect(
       rows.find((p) => p.objectRef === `${C}InvoiceLineItem`)?.defaultValue,
     ).toBe('0.0825');
+    expect(
+      rows.find(
+        (p) =>
+          p.objectRef === `${C}Invoice` && p.fieldName === 'lineAmountType',
+      )?.defaultValue,
+    ).toBe('"inclusive"');
     // clearing back to the default leaves no rows
     ok(e.run({ name: 'set_settings', input: { currency: 'USD', taxRate: 0 } }));
     expect(e.cookbook().policies.some((p) => p.fieldName === 'taxRate')).toBe(

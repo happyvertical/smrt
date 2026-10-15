@@ -294,15 +294,27 @@ export interface AppSettings {
   /** A fraction: 0.0825 is 8.25%. */
   taxRate: number;
   paymentTerms: string;
+  /** Whether new document prices are tax-inclusive. */
+  pricesIncludeTax: boolean;
+  /** Whether tax rounds per line or per document component. */
+  taxRounding: 'line' | 'document';
 }
 
 export const DEFAULT_SETTINGS: Readonly<AppSettings> = {
   currency: 'USD',
   taxRate: 0,
   paymentTerms: '',
+  pricesIncludeTax: false,
+  taxRounding: 'line',
 };
 
-const SETTING_KEYS = ['currency', 'taxRate', 'paymentTerms'] as const;
+const SETTING_KEYS = [
+  'currency',
+  'taxRate',
+  'paymentTerms',
+  'pricesIncludeTax',
+  'taxRounding',
+] as const;
 
 function rowValue(row: CookbookPolicyRow | undefined): unknown {
   if (row?.defaultValue === undefined || row.defaultValue === null)
@@ -331,7 +343,10 @@ export function readSettings(
 ): AppSettings {
   const targets = settingTargets(catalog);
   const out: AppSettings = { ...DEFAULT_SETTINGS };
-  const first = (key: keyof AppSettings, type: 'number' | 'string') => {
+  const first = (
+    key: keyof AppSettings,
+    type: 'number' | 'string' | 'boolean',
+  ) => {
     for (const { model, field } of targets[key]) {
       const value = rowValue(findRow(doc.policies, model, field));
       if (typeof value === type) return value;
@@ -341,9 +356,15 @@ export function readSettings(
   const currency = first('currency', 'string');
   const taxRate = first('taxRate', 'number');
   const paymentTerms = first('paymentTerms', 'string');
+  const lineAmountType = first('pricesIncludeTax', 'string');
+  const taxRounding = first('taxRounding', 'string');
   if (typeof currency === 'string') out.currency = currency;
   if (typeof taxRate === 'number') out.taxRate = taxRate;
   if (typeof paymentTerms === 'string') out.paymentTerms = paymentTerms;
+  if (lineAmountType === 'inclusive' || lineAmountType === 'exclusive')
+    out.pricesIncludeTax = lineAmountType === 'inclusive';
+  if (taxRounding === 'line' || taxRounding === 'document')
+    out.taxRounding = taxRounding;
   return out;
 }
 
@@ -384,7 +405,11 @@ export function writeSettings(
         ? String(raw).trim()
         : key === 'currency'
           ? String(raw).trim().toUpperCase()
-          : raw;
+          : key === 'pricesIncludeTax'
+            ? raw
+              ? 'inclusive'
+              : 'exclusive'
+            : raw;
     for (const { model, field } of targets[key]) {
       const seed = seedDefault(catalog, doc, model, field);
       const wanted =

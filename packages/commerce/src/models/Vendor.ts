@@ -6,6 +6,7 @@
 import {
   crossPackageRef,
   field,
+  foreignKey,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
@@ -96,6 +97,24 @@ export class Vendor extends SmrtObject {
   currency: string = 'USD';
 
   /**
+   * Supplier registration number.
+   *
+   * Sensitive for the same reason as a customer's tax ID: it is identifying
+   * business information and must not enter generated list/search surfaces.
+   */
+  @field({
+    sensitive: true,
+    description: 'The vendor tax or VAT registration number kept on file.',
+  })
+  taxId: string = '';
+
+  /** Tax code normally used for purchases from this vendor. */
+  @foreignKey('TaxCode', {
+    description: 'The tax code normally used when buying from this vendor.',
+  })
+  defaultTaxCodeId: string = '';
+
+  /**
    * Default contact email for orders
    */
   @field({
@@ -178,6 +197,9 @@ export class Vendor extends SmrtObject {
     if (options.paymentTerms !== undefined)
       this.paymentTerms = options.paymentTerms;
     if (options.currency !== undefined) this.currency = options.currency;
+    if (options.taxId !== undefined) this.taxId = options.taxId;
+    if (options.defaultTaxCodeId !== undefined)
+      this.defaultTaxCodeId = options.defaultTaxCodeId;
     if (options.defaultContactEmail !== undefined)
       this.defaultContactEmail = options.defaultContactEmail;
     if (options.defaultContactPhone !== undefined)

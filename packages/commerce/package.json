@@ -30,6 +30,10 @@
     "./cost-billing": {
       "types": "./dist/cost-billing.d.ts",
       "import": "./dist/cost-billing.js"
+    },
+    "./money": {
+      "types": "./dist/money.d.ts",
+      "import": "./dist/money.js"
     }
   },
   "files": [
@@ -80,13 +84,17 @@
   "dependencies": {
     "@happyvertical/accounting": "catalog:",
     "@happyvertical/payments": "catalog:",
+    "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/smrt-ledgers": "workspace:*",
+    "@happyvertical/smrt-products": "workspace:*",
     "@happyvertical/smrt-subscriptions": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/smrt-ui": "workspace:*"
+    "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/smrt-reports": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*"
   },
   "peerDependencies": {
     "svelte": "^5.57.0"

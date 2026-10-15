@@ -7,6 +7,7 @@ import type {
 } from '../overview/types.js';
 import type { CoreWidgetLoaders } from '../overview/widgets/core.js';
 import type { RecordStatusTone } from '../overview/widgets/data.js';
+import type { StoredLineItemsTotals } from '../overview/widgets/line-totals.js';
 import type { ScreenRelation } from './relations.js';
 import type { FieldRole } from './roles.js';
 
@@ -386,6 +387,12 @@ export interface RecordScreenProps {
   fields?: readonly string[];
   /** ISO 4217 code used by money fields. */
   currency?: string;
+  /**
+   * Frozen document-money snapshot for the line-items widget. The host reads
+   * its own persisted rows (including per-component tax); this screen never
+   * recalculates them from visible lines.
+   */
+  lineItemStoredTotals?: () => StoredLineItemsTotals | undefined;
   /** BCP-47 locale for number and date formatting. */
   locale?: string;
   /** Label for the back action; defaults to the pluralized class name. */
@@ -470,6 +477,7 @@ export interface RecipeScreensProps {
     | 'hrefFor'
     | 'labels'
     | 'viewAllHref'
+    | 'lineItemStoredTotals'
     | 'statusTones'
   >;
 }

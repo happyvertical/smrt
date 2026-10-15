@@ -27,16 +27,16 @@
 ### Patch Changes
 
 - ### Features
-  
+
   - record screens with related and line-items widgets (#3954) (smrt-svelte)
   - add durable authorized idempotent creation (#3958) (comments)
-  
+
   ### Bug Fixes
-  
+
   - #3906 pass 2 broken/degraded items (jobs, app-runtime, ui, web, users, commerce) (#3960)
-  
+
   ### Other Changes
-  
+
   - chore: sync sdk packages to v0.103.6 (#3962) (deps)
 - @happyvertical/smrt-config@0.55.24
   - @happyvertical/smrt-scanner@0.55.24
@@ -47,7 +47,7 @@
 ### Patch Changes
 
 - ### Bug Fixes
-  
+
   - repair DuckDB retry timestamps and concurrent initialization (#3953) (core)
 - @happyvertical/smrt-config@0.55.23
   - @happyvertical/smrt-scanner@0.55.23

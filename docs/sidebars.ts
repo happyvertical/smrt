@@ -9,6 +9,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         { type: 'doc', id: 'app-cli' },
+        { type: 'doc', id: 'commerce-money' },
         { type: 'doc', id: 'data-compartmentalization' },
         { type: 'doc', id: 'data-surface-conformance' },
         { type: 'doc', id: 'dispatch' },

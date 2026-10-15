@@ -44,7 +44,11 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
-export { ExpenseCollection } from './collections/ExpenseCollection.js';
+export {
+  ExpenseCollection,
+  type ReviewedExpenseTaxFact,
+  type ReviewedExpenseTaxFactsOptions,
+} from './collections/ExpenseCollection.js';
 export { ExpenseReceiptCollection } from './collections/ExpenseReceiptCollection.js';
 export { Expense } from './models/Expense.js';
 export { ExpenseReceipt } from './models/ExpenseReceipt.js';

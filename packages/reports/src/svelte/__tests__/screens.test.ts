@@ -7,6 +7,7 @@ import {
   waitFor,
 } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import MaterializedReportTable from '../MaterializedReportTable.svelte';
 import { client, proposal, result, saved } from '../preview-data.js';
 import ReportConfirmation from '../ReportConfirmation.svelte';
 import ReportDetail from '../ReportDetail.svelte';
@@ -19,6 +20,57 @@ import SavedReports from '../SavedReports.svelte';
 afterEach(cleanup);
 
 describe('saved report screens', () => {
+  it('renders materialized money in each row currency and emits only visible cells', async () => {
+    const onDrilldown = vi.fn(async () => {});
+    render(MaterializedReportTable, {
+      page: {
+        descriptor: {
+          identityField: 'id',
+          dataTable: {
+            columns: [
+              {
+                id: 'currency',
+                label: 'Currency',
+                accessor: 'currency',
+                sortable: true,
+                filterable: true,
+                align: 'left',
+                role: 'data',
+                responsive: {},
+                valueFormat: 'text',
+              },
+              {
+                id: 'tax_minor',
+                label: 'Tax',
+                accessor: 'taxMinor',
+                sortable: true,
+                filterable: false,
+                align: 'right',
+                role: 'data',
+                responsive: {},
+                valueFormat: 'money',
+              },
+            ],
+          },
+        },
+        rows: [{ id: 'cad', currency: 'CAD', taxMinor: 12345 }],
+        drilldownColumnIds: ['tax_minor'],
+        totalRows: 1,
+        offset: 0,
+        limit: 25,
+      } as never,
+      locale: 'en-CA',
+      onDrilldown,
+    });
+    expect(
+      screen.getByRole('button', { name: 'Inspect Tax' }).textContent,
+    ).toContain('$123.45');
+    await fireEvent.click(screen.getByRole('button', { name: 'Inspect Tax' }));
+    expect(onDrilldown).toHaveBeenCalledWith({
+      id: 'cad',
+      columnId: 'tax_minor',
+    });
+  });
   it('shows the unavailable explanation without a client', () => {
     render(RuntimeReportsRoute, { serverAvailable: false });
     expect(screen.getByText(/host has no server/)).toBeTruthy();

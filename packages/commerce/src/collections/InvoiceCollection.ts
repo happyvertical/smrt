@@ -3,9 +3,23 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import {
+  SmrtCollection,
+  type SmrtListOptions,
+  type SmrtObject,
+  type SmrtSelectedRow,
+  type SmrtSelectField,
+  type SmrtStiReadScope,
+  type SmrtWhereClause,
+} from '@happyvertical/smrt-core';
+import {
+  getTenantId,
+  queryGlobal,
+  queryWithGlobals,
+} from '@happyvertical/smrt-tenancy';
+import { DOCUMENT_MONEY_READ_REBIND } from '../document-money-internal.js';
 import { Invoice } from '../models/Invoice.js';
+import { withTenantMoneyCollectionRead } from '../tenant-money-barrier.js';
 import { InvoiceStatus } from '../types/index.js';
 
 /**
@@ -31,6 +45,72 @@ export interface InvoiceNumberOptions {
 
 export class InvoiceCollection extends SmrtCollection<Invoice> {
   static readonly _itemClass = Invoice;
+
+  private async withMoneyRead<T>(operation: () => Promise<T>): Promise<T> {
+    const rootDb = this.db;
+    const tenantId = getTenantId();
+    if (!tenantId) return operation();
+    const result = await withTenantMoneyCollectionRead(
+      rootDb,
+      tenantId,
+      (boundDb) => this.withDatabase(boundDb, operation),
+    );
+    if (result instanceof Invoice)
+      result.rebindMoneyRead(DOCUMENT_MONEY_READ_REBIND, rootDb);
+    else if (Array.isArray(result))
+      for (const item of result)
+        if (item instanceof Invoice)
+          item.rebindMoneyRead(DOCUMENT_MONEY_READ_REBIND, rootDb);
+    return result;
+  }
+
+  override async get(
+    filter: string | SmrtWhereClause<Invoice>,
+    options: Parameters<SmrtCollection<Invoice>['get']>[1] = {},
+  ): Promise<Invoice | null> {
+    return this.withMoneyRead(() => super.get(filter, options));
+  }
+
+  override async list<const Select extends readonly SmrtSelectField<Invoice>[]>(
+    options: Omit<SmrtListOptions<Invoice>, 'select' | 'stiScope'> & {
+      select: Select;
+      include?: never;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<Record<string, unknown>[]>;
+  override async list<const Select extends readonly SmrtSelectField<Invoice>[]>(
+    options: Omit<SmrtListOptions<Invoice>, 'select' | 'stiScope'> & {
+      select: Select;
+      include?: never;
+      stiScope?: undefined;
+    },
+  ): Promise<SmrtSelectedRow<Invoice, Select>[]>;
+  override async list(
+    options: Omit<SmrtListOptions<Invoice>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<SmrtObject[]>;
+  override async list(options?: undefined): Promise<Invoice[]>;
+  override async list(
+    options: Omit<SmrtListOptions<Invoice>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope?: undefined;
+    },
+  ): Promise<Invoice[]>;
+  override async list(
+    options:
+      | (Omit<SmrtListOptions<Invoice>, 'select'> & { select?: undefined })
+      | undefined,
+  ): Promise<SmrtObject[]>;
+  override async list(
+    options: SmrtListOptions<Invoice> | undefined,
+  ): Promise<SmrtObject[] | Record<string, unknown>[]>;
+  override async list(
+    options: SmrtListOptions<Invoice> = {},
+  ): Promise<SmrtObject[] | Record<string, unknown>[]> {
+    return this.withMoneyRead(() => super.list(options));
+  }
 
   /**
    * Find invoices by customer

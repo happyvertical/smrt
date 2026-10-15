@@ -156,6 +156,11 @@ export const M = defineMessages({
   'ui.overview.line_items.discount': 'Discount',
   'ui.overview.line_items.tax': 'Tax',
   'ui.overview.line_items.total': 'Total',
+  'ui.overview.line_items.subtotal_excluding_tax': 'Subtotal (excl. tax)',
+  'ui.overview.line_items.discount_included': 'Includes discounts of',
+  'ui.overview.line_items.tax_on': '{name} {percent}% on',
+  'ui.overview.line_items.tax_included': 'Includes {name} {percent}% of',
+  'ui.overview.line_items.rounded_document': 'Rounded per document',
   'ui.overview.line_items.computed': '(from the lines)',
   'ui.overview.line_items.mismatch': 'Lines add up to {amount}.',
   'ui.overview.line_items.mismatch_subtotal':

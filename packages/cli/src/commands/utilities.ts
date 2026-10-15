@@ -39,6 +39,11 @@ import {
   quoteIdentifier,
   redactDatabaseUrlsInText,
 } from './db-command-utils.js';
+import {
+  dbMigrateCommerceMoneyCommand,
+  dbPreflightCommerceMoneyCommand,
+  dbRollbackCommerceMoneyCommand,
+} from './db-commerce-money.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbDropFrameworkBaseTablesCommand } from './db-drop-framework-base-tables.js';
 import { dbGenerateCommand } from './db-generate.js';
@@ -3933,6 +3938,9 @@ export default testManifest;
   'db:migrate-null-equal-indexes': dbMigrateNullEqualIndexesCommand,
   'db:migrate-agent-schedule-slugs': dbMigrateAgentScheduleSlugsCommand,
   'db:migrate-ledger-accounts': dbMigrateLedgerAccountsCommand,
+  'db:preflight-commerce-money': dbPreflightCommerceMoneyCommand,
+  'db:migrate-commerce-money': dbMigrateCommerceMoneyCommand,
+  'db:rollback-commerce-money': dbRollbackCommerceMoneyCommand,
   'db:migrate-qualified-names': dbMigrateQualifiedNamesCommand,
   'db:materialize-tenant-hierarchy': dbMaterializeTenantHierarchyCommand,
   'db:drop-framework-base-tables': dbDropFrameworkBaseTablesCommand,
