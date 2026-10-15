@@ -136,6 +136,33 @@ describe.each(dialects)('mandatory write guard (%s)', ({ type }) => {
     });
   });
 
+  it('does not adopt an unmatched natural key through a duplicate id', async () => {
+    const original = await records.create({
+      slug: 'original-key',
+      name: 'original',
+    });
+    const hideExisting: CollectionInterceptor = {
+      name: 'hide-id-collision-fixture',
+      beforeGet: () => ({ id: '00000000-0000-4000-8000-000000000000' }),
+    };
+    GlobalInterceptors.register(hideExisting);
+    try {
+      await expect(
+        records.create({
+          id: original.id,
+          slug: 'different-key',
+          name: 'overwrite',
+        }),
+      ).rejects.toThrow();
+      expect(await persisted(original)).toMatchObject({
+        name: 'original',
+        access_mode: 'public',
+      });
+    } finally {
+      GlobalInterceptors.unregister(hideExisting);
+    }
+  });
+
   it('refuses a public natural-key upsert that collides with a now-private row', async () => {
     const privateRow = await records.create({
       slug: 'private-natural-key',

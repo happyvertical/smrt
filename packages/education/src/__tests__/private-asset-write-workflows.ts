@@ -131,6 +131,50 @@ export async function assertPrivateAssetWriteGuard(
     (await f.as(f.own, () => assets.get(String(publicFirst.id))))?.name,
   ).toBe('public second');
 
+  // An unmatched natural key must not turn an explicit-ID collision into an
+  // update of a foreign tenant or global row (including PostgreSQL NULL keys).
+  for (const tenantId of [f.foreign.tenantId, null]) {
+    const victim = await assets.create({
+      tenantId,
+      slug: `victim-${randomUUID()}`,
+      name: 'untouched victim',
+      sourceUri: 'file:///victim.bin',
+    });
+    const before = await f.db.get('assets', { id: victim.id });
+    for (const incomingTenant of [f.own.tenantId, null]) {
+      await expect(
+        f.as(f.own, () =>
+          assets.create({
+            id: victim.id,
+            tenantId: incomingTenant,
+            slug: `unmatched-${randomUUID()}`,
+            name: 'overwrite attempt',
+            sourceUri: 'file:///overwrite.bin',
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(await f.db.get('assets', { id: victim.id })).toEqual(before);
+    }
+  }
+
+  // The NULL-key branch on PostgreSQL is the non-atomic lookup/INSERT path.
+  const globalVictim = await assets.create({
+    slug: `global-victim-${randomUUID()}`,
+    name: 'global untouched',
+  });
+  const globalBefore = await f.db.get('assets', { id: globalVictim.id });
+  await expect(
+    assets.create({
+      id: globalVictim.id,
+      tenantId: null,
+      slug: `global-unmatched-${randomUUID()}`,
+      name: 'global overwrite',
+    }),
+  ).rejects.toThrow();
+  expect(await f.db.get('assets', { id: globalVictim.id })).toEqual(
+    globalBefore,
+  );
+
   const privateId = randomUUID();
   const privateSlug = `private-collision-${randomUUID()}`;
   const privateAsset = await createPrivateAsset(f, assets, {

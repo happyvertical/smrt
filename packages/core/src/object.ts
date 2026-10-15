@@ -3452,8 +3452,9 @@ export class SmrtObject extends SmrtClass {
       // A late collision must never enter an unconditional SDK UPSERT. A fresh
       // insert either succeeds or reports a collision; existing rows are changed
       // only by an UPDATE whose mandatory predicate is checked by the database.
-      const stored =
-        existing ?? (await this.getCanonicalPersistedRow({ id: data.id }));
+      // Only an owner-checked natural-key match may be adopted. An unrelated
+      // primary-key collision must retain plain INSERT failure semantics.
+      const stored = existing;
       if (!stored) return this.db.insert(this.tableName, data);
       const unchanged = await this.unchangedIndexedColumnsOf(data, stored);
       const assignments = Object.fromEntries(
