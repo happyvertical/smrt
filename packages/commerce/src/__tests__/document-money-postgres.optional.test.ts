@@ -209,6 +209,152 @@ describePostgres('invoice money aggregate on PostgreSQL (#3933)', () => {
     });
   });
 
+  it('persists a partial percentage-discount credit from frozen facts', async () => {
+    const tenantId = randomUUID();
+    await ensureTenantTaxCodes(db, tenantId);
+    await withTenant({ tenantId }, async () => {
+      const gst = await (await TaxComponentCollection.create({ db })).create({
+        name: 'GST percentage credit',
+        percent: '5',
+      });
+      const code = await (await TaxCodeCollection.create({ db })).create({
+        code: 'gst-percentage-credit',
+        name: 'GST percentage credit',
+        components: [{ taxComponentId: gst.id, compound: false }],
+      });
+      const settings = await TaxSettingsCollection.create({ db });
+      const setting = await settings.getOrCreateForTenant(tenantId);
+      setting.defaultSalesTaxCodeId = code.id;
+      setting.defaultLineAmountType = 'exclusive';
+      setting.taxRoundingScope = 'line';
+      await setting.save();
+      const migrationId = await settings.beginMoneyMigration(tenantId);
+      await settings.activateMoneyV2(tenantId, migrationId);
+      const customer = await (await CustomerCollection.create({ db })).create({
+        defaultTaxCodeId: code.id,
+      });
+      const invoices = await InvoiceCollection.create({ db });
+      const lines = await InvoiceLineItemCollection.create({ db });
+      const source = await invoices.create({
+        customerId: customer.id,
+        invoiceNumber: 'PG-PERCENT-SOURCE',
+        currency: 'CAD',
+      });
+      const sourceLine = await lines.create({
+        invoiceId: source.id,
+        description: 'Ten discounted units',
+        quantity: 10,
+        unitPrice: 8_500,
+        discountType: 'percent',
+        discountRate: '10',
+        taxMode: 'override',
+        taxCodeId: code.id,
+      });
+      const issuedSource = await invoices.get(
+        { id: source.id },
+        { cache: false },
+      );
+      if (!issuedSource) throw new Error('Expected percentage source');
+      issuedSource.status = InvoiceStatus.SENT;
+      await issuedSource.save();
+
+      const changedDefaults = await settings.getOrCreateForTenant(tenantId);
+      changedDefaults.defaultLineAmountType = 'inclusive';
+      changedDefaults.taxRoundingScope = 'document';
+      await changedDefaults.save();
+
+      const credit = await invoices.create({
+        kind: 'credit_note',
+        creditedInvoiceId: issuedSource.id,
+        customerId: customer.id,
+        invoiceNumber: 'PG-PERCENT-CREDIT',
+        currency: 'CAD',
+      });
+      expect(credit).toMatchObject({
+        lineAmountType: 'exclusive',
+        taxRoundingScope: 'line',
+      });
+      const creditLine = await lines.create({
+        invoiceId: credit.id,
+        creditedLineId: sourceLine.id,
+        description: 'One returned unit',
+        quantity: 1,
+        unitPrice: 0,
+      });
+      const issuedCredit = await invoices.get(
+        { id: credit.id },
+        { cache: false },
+      );
+      if (!issuedCredit) throw new Error('Expected percentage credit');
+      issuedCredit.status = InvoiceStatus.SENT;
+      await issuedCredit.save();
+
+      expect(
+        await lines.get({ id: creditLine.id }, { cache: false }),
+      ).toMatchObject({
+        discount: 850,
+        amount: 7_650,
+        taxAmount: 383,
+      });
+      expect(
+        await invoices.get({ id: credit.id }, { cache: false }),
+      ).toMatchObject({
+        discountTotal: 850,
+        subtotal: 7_650,
+        taxAmount: 383,
+        totalAmount: 8_033,
+      });
+
+      const amountCredit = await invoices.create({
+        kind: 'credit_note',
+        creditedInvoiceId: issuedSource.id,
+        customerId: customer.id,
+        invoiceNumber: 'PG-PERCENT-AMOUNT-CREDIT',
+        currency: 'CAD',
+      });
+      await lines.create({
+        invoiceId: amountCredit.id,
+        creditedLineId: sourceLine.id,
+        description: 'Frozen net amount credit',
+        quantity: 1,
+        unitPrice: 0,
+        creditCalculationBasis: {
+          kind: 'net_amount',
+          netMinor: 68_000,
+          sourceQuantity: '10',
+          sourceUnitPrice: 8_500,
+          sourceDiscountType: 'percent',
+          sourceDiscountRate: '10',
+          sourceDiscountMinor: 8_500,
+        },
+      });
+      const issuedAmountCredit = await invoices.get(
+        { id: amountCredit.id },
+        { cache: false },
+      );
+      if (!issuedAmountCredit) throw new Error('Expected amount credit');
+      issuedAmountCredit.status = InvoiceStatus.SENT;
+      await issuedAmountCredit.save();
+
+      const excess = await invoices.create({
+        kind: 'credit_note',
+        creditedInvoiceId: issuedSource.id,
+        customerId: customer.id,
+        invoiceNumber: 'PG-PERCENT-EXCESS-CREDIT',
+        currency: 'CAD',
+      });
+      await expect(
+        lines.create({
+          invoiceId: excess.id,
+          creditedLineId: sourceLine.id,
+          description: 'Quantity exceeds remaining net',
+          quantity: 1,
+          unitPrice: 0,
+        }),
+      ).rejects.toMatchObject({ code: 'CREDIT_EXCEEDS_LINE' });
+    });
+  });
+
   it('reverses persisted epic A and B snapshots exactly', async () => {
     for (const scenario of [
       { mode: 'exclusive', scope: 'line' },

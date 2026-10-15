@@ -237,6 +237,8 @@ function isFrozen(invoice: Invoice): boolean {
 
 function aggregateSignature(invoice: Invoice): string {
   return JSON.stringify([
+    invoice.lineAmountType,
+    invoice.taxRoundingScope,
     invoice.subtotal,
     invoice.discountTotal,
     invoice.taxAmount,
@@ -439,6 +441,8 @@ async function prepareCreditLines(
       'INVALID_MONEY_INPUT',
       'Credit note customer must match its credited invoice',
     );
+  invoice.lineAmountType = sourceInvoice.lineAmountType;
+  invoice.taxRoundingScope = sourceInvoice.taxRoundingScope;
   const lineCollection = await InvoiceLineItemCollection.create({ db });
   const sourceLines = await lineCollection.findByInvoice(
     requireId(sourceInvoice.id, 'Credited invoice'),
@@ -892,6 +896,28 @@ async function recomputeInvoiceAggregate(
     calculated.totalMinor = calculated.subtotalMinor + calculated.taxMinor;
   }
 
+  if (credit) {
+    const resultById = new Map(calculated.lines.map((row) => [row.id, row]));
+    for (const [lineId, allocation] of credit.allocationByLineId) {
+      if (allocation.basis.kind !== 'quantity') continue;
+      const result = resultById.get(lineId);
+      const hasAmountBasisConsumption = credit.issuedLines.some(
+        (line) =>
+          line.creditedLineId === allocation.creditedLineId &&
+          line.creditCalculationBasis?.kind === 'net_amount',
+      );
+      if (
+        result &&
+        Math.abs(result.netMinor) > Math.abs(allocation.remainingNetMinor) &&
+        (!allocation.exhaustsLine || hasAmountBasisConsumption)
+      )
+        throw new MoneyValidationError(
+          'CREDIT_EXCEEDS_LINE',
+          'Credit quantity exceeds the remaining frozen net amount',
+        );
+    }
+  }
+
   const lineById = new Map(
     lines.map((line) => [requireId(line.id, 'Invoice line'), line]),
   );
@@ -1238,8 +1264,9 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
         if (!existing) {
           invoice.tenantId = tenantId;
           invoice.creditedAmount = 0;
+          let source: Invoice | null = null;
           if (invoice.kind === 'credit_note') {
-            const source = await findInvoice(
+            source = await findInvoice(
               tx,
               requireId(invoice.creditedInvoiceId, 'Credited invoice'),
             );
@@ -1276,8 +1303,14 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
                 'Credit note currency and customer must match its source invoice',
               );
           }
-          invoice.lineAmountType = settings.defaultLineAmountType;
-          invoice.taxRoundingScope = settings.taxRoundingScope;
+          invoice.lineAmountType =
+            invoice.kind === 'credit_note' && source
+              ? source.lineAmountType
+              : settings.defaultLineAmountType;
+          invoice.taxRoundingScope =
+            invoice.kind === 'credit_note' && source
+              ? source.taxRoundingScope
+              : settings.taxRoundingScope;
           invoice.subtotal = 0;
           invoice.discountTotal = 0;
           invoice.taxAmount = invoice.providerTaxAmount;
