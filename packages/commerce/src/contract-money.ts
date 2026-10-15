@@ -16,7 +16,11 @@ import {
   DOCUMENT_MONEY_WRITE,
   lockDocumentMoneyParents,
 } from './document-money-internal.js';
-import type { Contract } from './models/Contract.js';
+import {
+  type Contract,
+  classifyContractPurchase,
+  isContractSnapshotReportEligible,
+} from './models/Contract.js';
 import type { ContractLineItem } from './models/ContractLineItem.js';
 import {
   calculateMoneyDocument,
@@ -33,6 +37,11 @@ import {
 } from './types/index.js';
 
 type DeleteOptions = { expectedUpdatedAt?: Date | string };
+type ProductTaxDefaults = {
+  tenantId: string | null;
+  defaultSalesTaxCodeId: string;
+  defaultPurchaseTaxCodeId: string;
+};
 
 const FROZEN_CONTRACT_FIELDS = [
   'tenantId',
@@ -68,6 +77,9 @@ const FROZEN_LINE_FIELDS = [
   'taxAmount',
   'taxRate',
   'amount',
+  'startDate',
+  'endDate',
+  'billingPeriod',
   'sortOrder',
   'moneySnapshotId',
 ] as const;
@@ -101,12 +113,15 @@ function assertUnchanged<T extends object>(
 function isFrozen(contract: Contract): boolean {
   return contract.status !== ContractStatus.DRAFT || !!contract.moneySnapshotId;
 }
+
+export { classifyContractPurchase, isContractSnapshotReportEligible };
+
 function direction(contract: Contract): 'sales' | 'purchases' {
-  return 'vendorId' in contract ? 'purchases' : 'sales';
+  return classifyContractPurchase(contract) ? 'purchases' : 'sales';
 }
 function discount(line: ContractLineItem) {
   if (line.discountType === 'percent')
-    return { kind: 'percent' as const, rate: line.discountRate };
+    return { kind: 'percent' as const, rate: String(line.discountRate) };
   if (line.discountType === 'amount')
     return { kind: 'amount' as const, minor: line.discount };
   return { kind: 'none' as const };
@@ -187,6 +202,37 @@ async function recompute(
   const codeById = new Map(
     codes.flatMap((code) => (code.id ? ([[code.id, code]] as const) : [])),
   );
+  // Product owns catalog reads. Load defaults on the aggregate transaction so
+  // Contract follows the same line > product > party > tenant precedence as
+  // Invoice without adding a static package edge.
+  const productIds = [
+    ...new Set(
+      lines
+        .map((line) => line.productId)
+        .filter((productId): productId is string => !!productId),
+    ),
+  ];
+  const productById = new Map<string, ProductTaxDefaults>();
+  if (productIds.length > 0) {
+    const { ProductCollection } = await import(
+      '@happyvertical/smrt-products/collections'
+    );
+    const products = await ProductCollection.create({ db });
+    for (const productId of productIds) {
+      const product = await products.get({ id: productId }, { cache: false });
+      if (!product)
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          `Contract product ${productId} was not found`,
+        );
+      if (product.tenantId !== null && product.tenantId !== tenantId)
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          `Contract product ${productId} must be global or belong to its tenant`,
+        );
+      productById.set(productId, product);
+    }
+  }
   const customer =
     'customerId' in contract && contract.customerId
       ? await (await CustomerCollection.create({ db })).get(
@@ -218,7 +264,12 @@ async function recompute(
           customerTaxExempt: customer?.taxExempt ?? false,
           exemptCodeId:
             codes.find((code) => code.kind === 'exempt')?.id ?? null,
-          productCodeId: null,
+          productCodeId: line.productId
+            ? direction(contract) === 'sales'
+              ? productById.get(line.productId)?.defaultSalesTaxCodeId || null
+              : productById.get(line.productId)?.defaultPurchaseTaxCodeId ||
+                null
+            : null,
           partyCodeId:
             customer?.defaultTaxCodeId ?? vendor?.defaultTaxCodeId ?? null,
           appDefaultCodeId:
