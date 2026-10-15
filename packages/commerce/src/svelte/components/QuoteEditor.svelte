@@ -111,6 +111,19 @@ let {
 const i18n = useI18n();
 const { t } = i18n;
 const fields = $derived({ ...quoteFieldNames, ...names });
+function lineAmountTypeText(
+  lineAmountType: MoneyHeaderDisplay['lineAmountType'],
+): string {
+  return t(
+    Q[
+      lineAmountType === 'inclusive'
+        ? 'commerce.quote.tax_inclusive'
+        : lineAmountType === 'exclusive'
+          ? 'commerce.quote.tax_exclusive'
+          : 'commerce.quote.no_tax'
+    ],
+  );
+}
 function normalizedMoneyText(value: string): string | null {
   if (!/^\d+(?:\.\d+)?$/u.test(value)) return null;
   const [whole, fraction = ''] = value.split('.');
@@ -156,7 +169,7 @@ const title = $derived(
 <section class="quote-editor" aria-label={title} data-smrt-component="QuoteEditor">
   <h2>{title}</h2>
   <p>{t(Q[kind === 'vendor-quotation' ? 'commerce.quote.vendor_hint' : 'commerce.quote.estimate_hint'])}</p>
-  {#if money}<p>Amounts are {money.lineAmountType === 'inclusive' ? 'tax inclusive' : money.lineAmountType === 'exclusive' ? 'tax exclusive' : 'no tax'}.</p>{#if money.lineAmountType === 'inclusive' && money.taxMinor !== 0}<p>Includes tax of {quoteMinorText({currency: values.currency, minorUnitDigits: money.minorUnitDigits, amountMinor: money.taxMinor})}.</p>{/if}{/if}
+  {#if money}<p>{t(Q['commerce.quote.money_amounts_are'], { amountType: lineAmountTypeText(money.lineAmountType) })}</p>{#if money.lineAmountType === 'inclusive' && money.taxMinor !== 0}<p>{t(Q['commerce.quote.money_includes_tax'], { amount: quoteMinorText({currency: values.currency, minorUnitDigits: money.minorUnitDigits, amountMinor: money.taxMinor}) })}</p>{/if}{/if}
   {#if readonly}<p>{t(Q['commerce.quote.readonly'])}</p>{/if}
   {#if message}<p role="alert">{message}</p>{/if}
   <Form {...formAttributes} {action} {method} {onsubmit} preventDefault={false}>

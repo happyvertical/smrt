@@ -1,8 +1,10 @@
 <script lang="ts">
 import { CurrencyDisplay } from '@happyvertical/smrt-ui';
 import { Form, Input, Select } from '@happyvertical/smrt-ui/forms';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { HTMLFormAttributes } from 'svelte/elements';
+import { M } from '../i18n.js';
 import {
   calculateMoneyEditorDraft,
   type MoneyEditorProps,
@@ -44,6 +46,7 @@ let {
   saveLabel = 'Save invoice draft',
   onsubmit,
 }: Props = $props();
+const { t } = useI18n();
 
 const names = $derived({ ...moneyEditorFieldNames, ...money.names });
 // The selector owns a local pending choice until the native form submits.
@@ -187,7 +190,7 @@ function changeMode(event: Event) {
 }
 </script>
 
-<section class="invoice-editor money-editor" aria-label="Invoice money" data-smrt-component="MoneyInvoiceEditor" data-money-model="v2">
+<section class="invoice-editor money-editor" aria-label={t(M['commerce.invoice_money.aria_label'])} data-smrt-component="MoneyInvoiceEditor" data-money-model="v2">
   {#if frozen}
     <p role="status">Frozen{money.status ? ` · ${money.status}` : ''}</p>
     {#if money.kind !== 'credit_note'}
@@ -196,7 +199,7 @@ function changeMode(event: Event) {
         disabled={!money.onCreateCreditNote}
         title={money.onCreateCreditNote ? undefined : 'Credit notes are not available yet'}
         onclick={money.onCreateCreditNote}
-      >Create credit note</Button>
+      >{t(M['commerce.invoice_actions.create_credit_note'])}</Button>
     {/if}
   {/if}
   {#if money.sellerTaxRegistrations?.length || money.partyTaxId}
@@ -209,36 +212,36 @@ function changeMode(event: Event) {
     {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} interaction={false} />{/each}
     <fieldset disabled={!editable || pending}>
       <label>
-        Amounts are
+        {t(M['commerce.invoice_money.amounts_are'])}
         <Select name={names.lineAmountType} value={lineAmountType} onchange={changeMode}>
-          <option value="exclusive">Tax exclusive</option>
-          <option value="inclusive">Tax inclusive</option>
-          <option value="none">No tax</option>
+          <option value="exclusive">{t(M['commerce.invoice_money.tax_exclusive'])}</option>
+          <option value="inclusive">{t(M['commerce.invoice_money.tax_inclusive'])}</option>
+          <option value="none">{t(M['commerce.invoice_money.no_tax'])}</option>
         </Select>
       </label>
       <Input type="hidden" name={names.roundingScope} value={money.draft.roundingScope} interaction={false} />
-      {#if money.customerTaxExempt && lineAmountType === 'inclusive'}<p>Customer is exempt: prices unchanged, no tax extracted.</p>{/if}
+      {#if money.customerTaxExempt && lineAmountType === 'inclusive'}<p>{t(M['commerce.invoice_money.exempt_inclusive'])}</p>{/if}
       {#each lines as line, index (line.id)}
         <fieldset class="money-line">
-          <legend>Invoice line {index + 1}</legend>
+          <legend>{t(M['commerce.invoice_money.line'], { number: index + 1 })}</legend>
           <Input type="hidden" name={names.lineId} value={line.id} interaction={false} />
           <label>Description <Input name={names.lineDescription} value={line.description} oninput={(event) => patchLine(index, { description: (event.currentTarget as HTMLInputElement).value })} /></label>
           <label>Quantity <Input name={names.lineQuantity} value={line.quantity} inputmode="decimal" oninput={(event) => patchLine(index, { quantity: (event.currentTarget as HTMLInputElement).value })} /></label>
-          <label>Unit price <Input name={names.lineUnitPrice} value={line.unitPrice} inputmode="decimal" oninput={(event) => patchLine(index, { unitPrice: (event.currentTarget as HTMLInputElement).value })} /></label>
-          <label>Discount type
+          <label>{t(M['commerce.invoice_money.unit_price'])} <Input name={names.lineUnitPrice} value={line.unitPrice} inputmode="decimal" oninput={(event) => patchLine(index, { unitPrice: (event.currentTarget as HTMLInputElement).value })} /></label>
+          <label>{t(M['commerce.invoice_money.discount_type'])}
             <Select name={names.lineDiscountType} value={line.discountType} onchange={(event) => changeDiscount(index, event)}>
               <option value="none">None</option><option value="percent">%</option><option value="amount">$</option>
             </Select>
           </label>
           <label>Discount <Input name={names.lineDiscountValue} value={line.discountValue} inputmode="decimal" oninput={(event) => patchLine(index, { discountValue: (event.currentTarget as HTMLInputElement).value })} /></label>
-          <label>Tax code
+          <label>{t(M['commerce.invoice_money.tax_code'])}
             <Select name={names.lineTaxCodeId} value={line.taxMode === 'override' ? line.taxCodeId ?? '' : ''} onchange={(event) => changeTaxCode(index, event)}>
               <option value="">{inheritedHint(line)}</option>
               {#each money.taxCodes as code}<option value={code.id}>{code.code}</option>{/each}
             </Select>
           </label>
           <Input type="hidden" name={names.lineTaxMode} value={line.taxMode} interaction={false} />
-          {#if money.customerTaxExempt && line.taxMode === 'override'}<p role="status">Customer is exempt; this line is taxed by override.</p>{/if}
+          {#if money.customerTaxExempt && line.taxMode === 'override'}<p role="status">{t(M['commerce.invoice_money.exempt_override'])}</p>{/if}
         </fieldset>
       {/each}
     </fieldset>
@@ -251,14 +254,14 @@ function changeMode(event: Event) {
       {#if totals.lineAmountType !== 'inclusive' || totals.taxMinor === 0}
         <div><dt>Subtotal</dt><dd><CurrencyDisplay amount={totals.subtotalMinor} currency={money.draft.currency} unit="cents" /></dd></div>
       {/if}
-      {#if totals.discountTotalMinor !== 0}<div class="muted"><dt>Includes discounts of <CurrencyDisplay amount={Math.abs(totals.discountTotalMinor)} currency={money.draft.currency} unit="cents" /></dt></div>{/if}
+      {#if totals.discountTotalMinor !== 0}<div class="muted"><dt>{t(M['commerce.invoice_money.includes_discounts'])} <CurrencyDisplay amount={Math.abs(totals.discountTotalMinor)} currency={money.draft.currency} unit="cents" /></dt></div>{/if}
       {#each groupedTaxes(totals.taxes).filter((tax) => tax.taxMinor !== 0) as tax (tax.id)}
         <div class:muted={totals.lineAmountType === 'inclusive'}>
           <dt>{totals.lineAmountType === 'inclusive' ? `Includes ${tax.name} ${tax.percent}% of` : `${tax.name} ${tax.percent}% on`} <CurrencyDisplay amount={totals.lineAmountType === 'inclusive' ? tax.taxMinor : tax.taxableMinor} currency={money.draft.currency} unit="cents" /></dt>
           {#if totals.lineAmountType !== 'inclusive'}<dd><CurrencyDisplay amount={tax.taxMinor} currency={money.draft.currency} unit="cents" /></dd>{/if}
         </div>
       {/each}
-      {#if totals.roundingScope === 'document'}<div class="muted"><dt>Rounded per document</dt></div>{/if}
+      {#if totals.roundingScope === 'document'}<div class="muted"><dt>{t(M['commerce.invoice_money.rounded_document'])}</dt></div>{/if}
       <div class="total"><dt>Total</dt><dd><CurrencyDisplay amount={totals.totalMinor} currency={money.draft.currency} unit="cents" /></dd></div>
       {#if totals.lineAmountType === 'inclusive' && totals.taxMinor !== 0 && money.showNetSubtotal}<div><dt>Subtotal (excl. tax)</dt><dd><CurrencyDisplay amount={totals.subtotalMinor} currency={money.draft.currency} unit="cents" /></dd></div>{/if}
     </dl>
