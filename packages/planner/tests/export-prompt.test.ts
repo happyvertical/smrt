@@ -96,7 +96,7 @@ describe('the agent prompt', () => {
       'cookbook validate',
       'cookbook apply',
       '4. Set it up',
-      `cd ${prompt.appName} && pnpm exec smrt app install`,
+      `(cd ${prompt.appName} && pnpm exec smrt app install)`,
       'pnpm exec smrt app doctor',
       'Do not hand-edit',
     ];
@@ -108,6 +108,15 @@ describe('the agent prompt', () => {
     }
     expect(prompt.text).toContain('git');
     expect(prompt.text).not.toMatch(/^5\. /m);
+  });
+
+  it('installs in a subshell, so the reapply command runs from the cookbook directory', () => {
+    // Followed in one shell, a bare `cd <app>` would leave the reapply
+    // command resolving cookbook.json and --into <app> inside the app.
+    expect(prompt.text).not.toMatch(/^cd /m);
+    expect(prompt.text).toContain(
+      `cookbook apply ${COOKBOOK_FILE} --into ${prompt.appName}`,
+    );
   });
 
   it('needs no registry override: no .npmrc, no registry, no mirror caveat', () => {
