@@ -510,6 +510,86 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
       }),
     ]);
 
+    const drilldownSources = vi.fn(async (context) => {
+      expect(context).toMatchObject({
+        userId: 'user-a',
+        tenantId: fixture.tenantId,
+      });
+      return {
+        expenseSource: { listReviewedTaxFacts: async () => [expense] },
+        ledgerSource: {
+          listPostedMovements: async () => [
+            {
+              tenantId: fixture.tenantId,
+              entryId: 'host-manual-gst',
+              journalId: 'host-journal-manual',
+              accountId: 'gst-payable',
+              journalDate: from,
+              journalNumber: 'JNL-host',
+              sourceModule: 'manual',
+              sourceRef: null,
+              currency: 'CAD',
+              debit: 0,
+              credit: 11_078,
+              creditMinusDebit: 11_078,
+            },
+          ],
+        },
+        expenseComponentMappings: [mapping],
+      };
+    });
+    const host = createTaxSummaryMaterializedReportHost(db, {
+      drilldownSources,
+    });
+    const principal = {
+      userId: 'user-a',
+      tenantId: fixture.tenantId,
+      permissions: ['taxsummaryreports.read'],
+    };
+    await expect(
+      host.drilldown(principal, {
+        id: gst.id,
+        columnId: 'recoverable_minor',
+      }),
+    ).resolves.toMatchObject({
+      complete: true,
+      contributors: [
+        expect.objectContaining({
+          source: 'expense',
+          identity: 'expense-gst',
+          values: expect.objectContaining({ valueMinor: 50 }),
+        }),
+      ],
+    });
+    await expect(
+      host.drilldown(principal, {
+        id: reconciliation.id,
+        columnId: 'difference_minor',
+      }),
+    ).resolves.toMatchObject({
+      complete: true,
+      contributors: expect.arrayContaining([
+        expect.objectContaining({
+          source: 'ledger',
+          identity: 'JNL-host',
+          values: expect.objectContaining({ valueMinor: 11_078 }),
+        }),
+      ]),
+    });
+    expect(drilldownSources).toHaveBeenCalledTimes(2);
+    await withTenant({ tenantId: 'tenant-b' }, () => activateV2('tenant-b'));
+    await expect(
+      host.drilldown(
+        {
+          userId: 'user-b',
+          tenantId: 'tenant-b',
+          permissions: ['taxsummaryreports.read'],
+        },
+        { id: gst.id, columnId: 'recoverable_minor' },
+      ),
+    ).rejects.toThrow(/unavailable/i);
+    expect(drilldownSources).toHaveBeenCalledTimes(2);
+
     const collected = await drilldownTaxSummaryContributors(db, {
       tenantId: fixture.tenantId,
       reportId: gst.id,

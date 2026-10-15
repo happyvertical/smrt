@@ -107,7 +107,11 @@ The production template exposes the generic
 `/reports/materialized/[id]` route. Applications register fixed server-only
 hosts in `src/lib/server/materialized-reports.ts`; a commerce application adds
 `createTaxSummaryMaterializedReportHost(async () =>
-(await runtime.getCollection('TaxSummaryReport')).db)`. The browser never
+(await runtime.getCollection('TaxSummaryReport')).db, { drilldownSources })`.
+`drilldownSources(context)` resolves Expense and Ledger owner ports plus the
+tenant's expense-code mappings for that authenticated request. It must use the
+provided `context.tenantId`; do not capture a fixed source or mapping set from
+another tenant. The browser never
 supplies a tenant, report class, database, or measure. The route binds the
 verified `locals` user, tenant, and permission snapshot, requires
 `taxsummaryreports.read`, and passes only a materialized row id plus a visible

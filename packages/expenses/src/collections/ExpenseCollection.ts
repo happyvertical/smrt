@@ -21,7 +21,10 @@ import {
 
 /** A reviewed, non-duplicate expense and its optional stored supplier facts. */
 export interface ReviewedExpenseTaxFact {
+  /** Legacy owner identity alias retained for existing callers. */
   id: string;
+  /** Reporting identity consumed by commerce tax-summary facts. */
+  expenseId: string;
   tenantId: string;
   incurredOn: string;
   currency: string;
@@ -191,6 +194,7 @@ export class ExpenseCollection extends SmrtCollection<Expense> {
       }
       return {
         id: expense.id,
+        expenseId: expense.id,
         tenantId: expense.tenantId,
         incurredOn: expense.incurredOn,
         currency: expense.currency,
