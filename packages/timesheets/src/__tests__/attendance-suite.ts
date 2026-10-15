@@ -531,6 +531,30 @@ export function attendanceSuite(
       const closed = await service.punchOut(at(9));
       expect(closed.durationSeconds).toBe(3600);
     });
+    it('refuses untrimmed provenance written straight through the model', async () => {
+      await service.punchIn(at(8));
+      await service.startBreak(at(9));
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const punches = await AttendancePunchCollection.create({ db });
+        const [open] = await punches.list({
+          where: { tenantId: actor.tenantId, profileId: actor.profileId },
+        });
+        await expect(
+          punches.create({
+            tenantId: actor.tenantId,
+            profileId: crypto.randomUUID(),
+            startedAt: at(1),
+            source: ' device ',
+          }),
+        ).rejects.toThrow('source or device');
+        const breaks = await AttendanceBreakCollection.create({ db });
+        const [pause] = await breaks.list({
+          where: { tenantId: actor.tenantId, punchId: open.id },
+        });
+        pause.kind = ' meal ';
+        await expect(pause.save()).rejects.toThrow('break');
+      });
+    });
     it('refuses a forged autoCloseReason and a deadline before a committed break', async () => {
       await service.punchIn(at(8), { source: 'device' });
       await service.startBreak(at(9));

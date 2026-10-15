@@ -112,10 +112,13 @@ export class AttendancePunch extends SmrtObject {
     if (
       typeof this.source !== 'string' ||
       this.source.length > 64 ||
+      this.source !== this.source.trim() ||
       typeof this.deviceRefType !== 'string' ||
       this.deviceRefType.length > 64 ||
+      this.deviceRefType !== this.deviceRefType.trim() ||
       typeof this.deviceRefId !== 'string' ||
       this.deviceRefId.length > 64 ||
+      this.deviceRefId !== this.deviceRefId.trim() ||
       !!this.deviceRefType !== !!this.deviceRefId
     )
       throw new Error('Invalid attendance punch source or device.');
@@ -232,7 +235,8 @@ export class AttendanceBreak extends SmrtObject {
       !this.punchId ||
       typeof this.paid !== 'boolean' ||
       typeof this.kind !== 'string' ||
-      this.kind.length > 64
+      this.kind.length > 64 ||
+      this.kind !== this.kind.trim()
     )
       throw new Error('Invalid attendance break.');
     if (
