@@ -7,7 +7,12 @@ import {
 import { getTenantId, withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { ServiceTimeEntryCollection } from '../models/service-time-entry.js';
-import { clipSource, instant, integer, validatePeriod } from './calculation.js';
+import {
+  attributeSource,
+  instant,
+  integer,
+  validatePeriod,
+} from './calculation.js';
 import {
   PeriodTimecard,
   PeriodTimecardCollection,
@@ -64,10 +69,17 @@ export class PeriodRollupService {
       tenantId: this.identity(actor.tenantId),
       profileId: this.identity(actor.profileId),
     });
+    if (
+      options.attribution !== undefined &&
+      options.attribution !== 'clip' &&
+      options.attribution !== 'start'
+    )
+      throw new Error("Attribution must be 'clip' or 'start'.");
     if (options.actorProfileId !== undefined && !options.actorProfileId.trim())
       throw new Error('Actor attribution must be a nonempty profile id.');
     this.options = {
       attendance: options.attendance,
+      attribution: options.attribution ?? 'clip',
       requireSubmission: options.requireSubmission === true,
       actorProfileId: this.identity(
         options.actorProfileId ?? this.actor.profileId,
@@ -176,6 +188,7 @@ export class PeriodRollupService {
           db,
           this.actor,
           period,
+          this.options.attribution,
         ));
       }
       const entries = await ServiceTimeEntryCollection.create({ db });
@@ -227,7 +240,7 @@ export class PeriodRollupService {
         )
           continue;
         const end = entry.startedAt && entry.endedAt ? entry.endedAt : start;
-        const source = clipSource(
+        const source = attributeSource(
           {
             kind: 'entry',
             id: String(entry.id),
@@ -236,6 +249,8 @@ export class PeriodRollupService {
             seconds: integer(entry.requireDurationSeconds()),
           },
           period,
+          this.options.attribution ?? 'clip',
+          instant(start),
         );
         if (source?.seconds) sources.push(source);
       }
