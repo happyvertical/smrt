@@ -4,8 +4,11 @@ import {
   type AttendanceActor,
   AttendanceConflict,
   type AttendanceContext,
+  type AttendancePunchOptions,
   type AttendanceWork,
   attendanceIdentity,
+  attendanceLabel,
+  attendanceProvenance,
   validateAttendanceWork,
 } from './context.js';
 import {
@@ -58,7 +61,9 @@ export interface CorrectPunchInput extends AttendanceCorrectionRequest {
   startedAt?: Date;
   endedAt?: Date;
 }
-export interface AddPunchInput extends AttendanceCorrectionRequest {
+export interface AddPunchInput
+  extends AttendanceCorrectionRequest,
+    AttendancePunchOptions {
   startedAt: Date;
   endedAt: Date;
 }
@@ -69,6 +74,8 @@ export interface SaveBreakInput extends AttendanceCorrectionRequest {
   startedAt?: Date;
   endedAt?: Date;
   paid?: boolean;
+  /** Short consumer-owned label (for example `meal`); omit to keep, `''` to clear. */
+  kind?: string;
 }
 export interface RemoveBreakInput extends AttendanceCorrectionRequest {
   breakId: string;
@@ -102,11 +109,16 @@ const punchState = (p: AttendancePunch) => ({
   durationSeconds: p.durationSeconds,
   unpaidBreakSeconds: p.unpaidBreakSeconds,
   reviewRequired: p.reviewRequired,
+  ...(p.source ? { source: p.source } : {}),
+  ...(p.deviceRefType
+    ? { deviceRefType: p.deviceRefType, deviceRefId: p.deviceRefId }
+    : {}),
 });
 const breakState = (b: AttendanceBreak) => ({
   startedAt: iso(b.startedAt),
   endedAt: iso(b.endedAt),
   paid: b.paid,
+  ...(b.kind ? { kind: b.kind } : {}),
 });
 const segmentState = (s: AttendanceSegment) => ({
   startedAt: iso(s.startedAt),
@@ -254,6 +266,7 @@ export class AttendanceCorrectionService {
     return this.run(input, async (tx, subject, record) => {
       const startedAt = instant(input.startedAt, 'startedAt');
       const endedAt = instant(input.endedAt, 'endedAt');
+      const meta = attendanceProvenance(input);
       if (endedAt <= startedAt)
         throw new AttendanceConflict('A punch must end after it starts.');
       for (const other of await tx.punches.list({
@@ -278,6 +291,7 @@ export class AttendanceCorrectionService {
         durationSeconds: Math.round(
           (endedAt.getTime() - startedAt.getTime()) / 1000,
         ),
+        ...meta,
         _insertOnly: true,
       });
       return record('punch.added', punch, punch.id!, null, punchState(punch));
@@ -310,6 +324,10 @@ export class AttendanceCorrectionService {
           'endedAt',
         ),
         paid: input.paid ?? existing?.paid ?? false,
+        kind:
+          input.kind === undefined
+            ? (existing?.kind ?? '')
+            : attendanceLabel(input.kind, 'kind'),
       };
       const rest = children.breaks.filter((b) => b !== existing);
       validateLayout(
@@ -328,6 +346,7 @@ export class AttendanceCorrectionService {
         existing.startedAt = next.startedAt;
         existing.endedAt = next.endedAt;
         existing.paid = next.paid;
+        existing.kind = next.kind;
         await persistCorrection(existing);
         target = existing;
       } else {
