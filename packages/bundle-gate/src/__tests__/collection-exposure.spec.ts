@@ -19,6 +19,7 @@
  * `INVENTORY` is the list of collections that published writes or custom
  * methods their model closed before this gate existed; each must still be
  * found and checked, so a rename cannot silently drop one from coverage.
+ * Collections over a narrowed model added since are listed too (education).
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -111,6 +112,29 @@ const INVENTORY: Record<string, string[]> = {
     'ContentCorrectionCollection',
     'ContentReviewCollection',
     'ContentVersionCollection',
+  ],
+  education: [
+    'CourseCollection',
+    'ExternalCourseCollection',
+    'AuthoredCourseCollection',
+    'CourseSectionCollection',
+    'LessonCollection',
+    'ReadingCollection',
+    'VideoCollection',
+    'WorksheetCollection',
+    'ExerciseCollection',
+    'LessonAssetCollection',
+    'LearnerCollection',
+    'CurriculumCollection',
+    'EnrollmentCollection',
+    'LessonProgressCollection',
+    'SubmissionCollection',
+    'ScannedSubmissionCollection',
+    'ExternalCompletionCollection',
+    'AttestationCollection',
+    'GradeCollection',
+    'SubmissionAssetCollection',
+    'CourseSourceCollection',
   ],
   events: ['EventCollection', 'EventSeriesCollection', 'EventTypeCollection'],
   facts: [
