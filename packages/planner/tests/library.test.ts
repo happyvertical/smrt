@@ -24,12 +24,17 @@ const C = '@happyvertical/smrt-commerce:';
 afterEach(() => recipeState.clear());
 
 describe('cookbook data', () => {
-  it('ships the four cookbooks with unique ids and known icons', () => {
+  it('ships the cookbooks with unique ids and known icons', () => {
     expect(libraryCookbooks.map((c) => c.id)).toEqual([
       'bakery',
       'mechanic',
       'welder',
       'yoga-studio',
+      'landscaping',
+      'salon',
+      'roaster',
+      'equipment-rental',
+      'nonprofit',
     ]);
     expect(new Set(libraryCookbooks.map((c) => c.id)).size).toBe(
       libraryCookbooks.length,
