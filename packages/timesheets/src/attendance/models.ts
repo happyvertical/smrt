@@ -104,11 +104,18 @@ export class AttendancePunch extends SmrtObject {
       throw new Error(
         'Attendance durations must be nonnegative safe integer seconds.',
       );
+    // Rows that predate the additive columns may load NULL for them.
+    this.source ??= '';
+    this.deviceRefType ??= '';
+    this.deviceRefId ??= '';
+    this.autoCloseReason ??= '';
     if (
       typeof this.source !== 'string' ||
       this.source.length > 64 ||
       typeof this.deviceRefType !== 'string' ||
+      this.deviceRefType.length > 64 ||
       typeof this.deviceRefId !== 'string' ||
+      this.deviceRefId.length > 64 ||
       !!this.deviceRefType !== !!this.deviceRefId
     )
       throw new Error('Invalid attendance punch source or device.');
@@ -219,6 +226,7 @@ export class AttendanceBreak extends SmrtObject {
   }
 
   private async saveConsistent(): Promise<this> {
+    this.kind ??= '';
     if (
       !this.tenantId ||
       !this.punchId ||

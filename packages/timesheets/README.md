@@ -391,6 +391,8 @@ Provenance is optional and consumer-owned (no enum; at most 64 characters, trimm
 `startBreak(at, paid, { kind })` stores `kind` on the break. They are immutable once
 saved except through `AttendanceCorrectionService` (`addPunch({ source, device })`,
 `saveBreak({ kind })`). All columns default to `''`, so existing rows and calls are unchanged.
+Provenance, `kind` and `autoCloseReason` are additive columns on `attendance_punches` and `attendance_breaks`:
+migrate them as `TEXT NOT NULL DEFAULT ''` (a NULL left on an older row is read as `''`).
 
 `replay(taps, options?)` accepts `{ clientId, action, at, paid?, work?, source?, device?, kind? }`, where `action` is
 `punchIn`, `punchOut`, `startBreak`, `endBreak`, or a work action (`startWork`,

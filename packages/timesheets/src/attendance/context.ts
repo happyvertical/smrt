@@ -78,8 +78,8 @@ export function attendanceProvenance(options?: AttendancePunchOptions): {
   if (device !== undefined && (!device || typeof device !== 'object'))
     throw new AttendanceConflict('device must be { type, id }.', 'invalid');
   const deviceRefType = attendanceLabel(device?.type, 'device.type');
-  const deviceRefId = device?.id ?? '';
-  if (typeof deviceRefId !== 'string' || !!deviceRefType !== !!deviceRefId)
+  const deviceRefId = attendanceLabel(device?.id, 'device.id');
+  if (!!deviceRefType !== !!deviceRefId)
     throw new AttendanceConflict(
       'device.type and device.id must be provided together.',
       'invalid',

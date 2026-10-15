@@ -505,6 +505,28 @@ export function attendanceSuite(
       punch!.autoCloseReason = 'edited';
       await expect(punch!.save()).rejects.toThrow('autoCloseReason');
     });
+    it('bounds the device id like the other provenance labels', async () => {
+      const type = '@fixture/shop:Station';
+      await expect(
+        service.punchIn(at(8), { device: { type, id: 'x'.repeat(65) } }),
+      ).rejects.toThrow('device.id');
+      await expect(
+        service.punchIn(at(8), { device: { type, id: ' padded ' } }),
+      ).rejects.toThrow('device.id');
+      const punch = await service.punchIn(at(8), {
+        device: { type, id: 'x'.repeat(64) },
+      });
+      expect(punch.deviceRefId).toHaveLength(64);
+    });
+    it('closes a punch whose new provenance columns are NULL on an older row', async () => {
+      await service.punchIn(at(8));
+      await db.query(
+        `UPDATE attendance_punches SET source = NULL, device_ref_type = NULL, device_ref_id = NULL, auto_close_reason = NULL WHERE tenant_id = ${isPostgresDatabase(db) ? '$1' : '?'}`,
+        actor.tenantId,
+      );
+      const closed = await service.punchOut(at(9));
+      expect(closed.durationSeconds).toBe(3600);
+    });
     it('refuses a forged autoCloseReason and a deadline before a committed break', async () => {
       await service.punchIn(at(8), { source: 'device' });
       await service.startBreak(at(9));
