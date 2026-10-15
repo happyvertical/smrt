@@ -37,20 +37,48 @@ export async function lockTenantMoneyBootstrap(
   );
 }
 
-/** @internal Whether any Invoice or Contract row, header or line, exists for a tenant. */
+/**
+ * @internal Whether any Invoice or Contract row, header or line, exists for a
+ * tenant.
+ *
+ * The answer must not depend on who is asking. Under the PostgreSQL
+ * permission policies a request transaction sees only the tables its
+ * principal may read, so a caller without invoice access would see no
+ * invoices and start a tenant that has them on v2. On PostgreSQL the scan
+ * therefore runs in system context for its own statements only: the
+ * transaction-local `smrt.system_context` setting is raised for the scan and
+ * restored afterwards. The scan filters by the explicit tenant and returns a
+ * boolean, never row data.
+ */
 export async function tenantHasMoneyDocuments(
   db: DatabaseInterface,
   tenantId: string,
 ): Promise<boolean> {
-  for (const table of MONEY_DOCUMENT_TABLES) {
-    if (db.tableExists && !(await db.tableExists(table))) continue;
-    const result = await db.query(
-      `SELECT 1 AS found FROM ${table} WHERE CAST(tenant_id AS TEXT) = ? LIMIT 1`,
-      tenantId,
-    );
-    if (result.rows.length > 0) return true;
+  const scan = async (): Promise<boolean> => {
+    for (const table of MONEY_DOCUMENT_TABLES) {
+      if (db.tableExists && !(await db.tableExists(table))) continue;
+      const result = await db.query(
+        `SELECT 1 AS found FROM ${table} WHERE CAST(tenant_id AS TEXT) = ? LIMIT 1`,
+        tenantId,
+      );
+      if (result.rows.length > 0) return true;
+    }
+    return false;
+  };
+  if (!isPostgresDatabase(db)) return scan();
+  const prior = String(
+    (
+      await db.query(
+        "SELECT COALESCE(current_setting('smrt.system_context', true), '') AS value",
+      )
+    ).rows[0]?.value ?? '',
+  );
+  await db.query("SELECT set_config('smrt.system_context', 'true', true)");
+  try {
+    return await scan();
+  } finally {
+    await db.query("SELECT set_config('smrt.system_context', ?, true)", prior);
   }
-  return false;
 }
 
 /** @internal The model a tenant's first marker row is created with. */

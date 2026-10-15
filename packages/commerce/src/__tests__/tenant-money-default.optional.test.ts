@@ -121,6 +121,55 @@ describePostgres(
       expect(await markers(tenantId)).toMatchObject([{ moneyModel: 'legacy' }]);
     });
 
+    it('sees documents the caller cannot read under row policies', async () => {
+      const tenantId = randomUUID();
+      await seedLegacyMoneyTenant(db, tenantId);
+      await withTenant({ tenantId }, async () => {
+        await (await InvoiceCollection.create({ db })).create({
+          invoiceNumber: 'PG-HIDDEN',
+        });
+      });
+      await db.query(
+        'DELETE FROM tax_settings WHERE CAST(tenant_id AS TEXT) = ?',
+        tenantId,
+      );
+      // Model a principal without invoice read permission: rows are visible
+      // only in system context, as with the generated permission policies.
+      await db.query('ALTER TABLE invoices ENABLE ROW LEVEL SECURITY');
+      await db.query('ALTER TABLE invoices FORCE ROW LEVEL SECURITY');
+      await db.query(
+        "CREATE POLICY smrt_4009_system_only ON invoices USING (COALESCE(NULLIF(current_setting('smrt.system_context', true), ''), 'false')::boolean)",
+      );
+      try {
+        expect(
+          (
+            await db.query(
+              'SELECT 1 FROM invoices WHERE CAST(tenant_id AS TEXT) = ?',
+              tenantId,
+            )
+          ).rows,
+        ).toEqual([]);
+        await withTenant({ tenantId }, async () => {
+          await expect(
+            (await TaxSettingsCollection.create({ db })).getOrCreateForTenant(
+              tenantId,
+            ),
+          ).resolves.toMatchObject({ moneyModel: 'legacy' });
+        });
+        // The scan restores the caller's context afterwards.
+        const restored = await db.query(
+          "SELECT COALESCE(current_setting('smrt.system_context', true), '') AS value",
+        );
+        expect(restored.rows[0]?.value).not.toBe('true');
+      } finally {
+        await db.query(
+          'DROP POLICY IF EXISTS smrt_4009_system_only ON invoices',
+        );
+        await db.query('ALTER TABLE invoices NO FORCE ROW LEVEL SECURITY');
+        await db.query('ALTER TABLE invoices DISABLE ROW LEVEL SECURITY');
+      }
+    });
+
     it('bootstraps a clean tenant from a cookbook', async () => {
       const tenantId = randomUUID();
       const cookbook: Pick<Cookbook, 'policies'> = {
