@@ -41,12 +41,19 @@ describe('prompt', () => {
         currency: 'CAD',
         taxRate: 0.13,
         paymentTerms: 'Net 30',
+        pricesIncludeTax: true,
+        taxRounding: 'document',
       },
     );
     for (const c of libraryCookbooks) {
       expect(prompt).toContain(`- ${c.id}: ${c.name}.`);
     }
-    expect(prompt).toContain('Settings: currency CAD, tax 13%, terms Net 30.');
+    expect(prompt).toContain(
+      'Settings: currency CAD, tax 13%, terms Net 30, prices include tax, tax rounded per document.',
+    );
+    expect(prompt).toContain(
+      'pricesIncludeTax (true when their prices include tax)',
+    );
     expect(prompt).toMatch(/12 words or fewer/);
     expect(prompt.length).toBeLessThan(PROMPT_BUDGET);
   });
@@ -118,6 +125,12 @@ describe('schema and parseChange', () => {
     expect(settings({ taxRate: 101 })).toEqual({});
     expect(settings({ taxRate: '13' })).toEqual({});
     expect(settings({ taxRate: 0 })).toEqual({ taxRate: 0 });
+    expect(
+      settings({ pricesIncludeTax: true, taxRounding: 'document' }),
+    ).toEqual({ pricesIncludeTax: true, taxRounding: 'document' });
+    expect(
+      settings({ pricesIncludeTax: 'yes', taxRounding: 'invoice' }),
+    ).toEqual({});
     expect(settings({ paymentTerms: 'x'.repeat(41) })).toEqual({});
     expect(settings({ paymentTerms: '   ' })).toEqual({});
     expect(settings('CAD')).toEqual({});

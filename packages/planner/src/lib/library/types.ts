@@ -19,6 +19,10 @@ export interface CookbookSettings {
   paymentTerms?: string;
   /** Default line-item tax rate as a fraction (0.0825 is 8.25%). */
   taxRate?: number;
+  /** New documents' prices include tax (Invoice / Contract `lineAmountType`). */
+  pricesIncludeTax?: boolean;
+  /** Tax rounds per line or once per document (`taxRoundingScope`). */
+  taxRounding?: 'line' | 'document';
 }
 
 /** A curated, ready-made cookbook with the words that introduce it. */

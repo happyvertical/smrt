@@ -28,7 +28,13 @@ export interface HostReply {
   /** A library cookbook to offer. */
   cookbook?: string;
   /** Settings to change; `taxRate` in percent. */
-  settings?: { currency?: string; taxRate?: number; paymentTerms?: string };
+  settings?: {
+    currency?: string;
+    taxRate?: number;
+    paymentTerms?: string;
+    pricesIncludeTax?: boolean;
+    taxRounding?: 'line' | 'document';
+  };
   /** Theme tokens: a preset or `#rrggbb`, light or dark, corner radius, density and contrast. */
   theme?: {
     preset?: string;

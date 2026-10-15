@@ -17,6 +17,10 @@ export interface SettingsPatch {
   /** Percent, 0 to 100. */
   taxRate?: number;
   paymentTerms?: string;
+  /** New documents' prices include tax. */
+  pricesIncludeTax?: boolean;
+  /** Tax rounds per line or once per document. */
+  taxRounding?: 'line' | 'document';
 }
 
 /**
@@ -121,6 +125,8 @@ export function buildResponseSchema(
         currency: { type: 'string', pattern: '^[A-Z]{3}$' },
         taxRate: { type: 'number', minimum: 0, maximum: 100 },
         paymentTerms: { type: 'string', maxLength: MAX_TERMS_LENGTH },
+        pricesIncludeTax: { type: 'boolean' },
+        taxRounding: { enum: ['line', 'document'] },
       },
       additionalProperties: false,
     };
@@ -147,7 +153,10 @@ export function buildResponseSchema(
   };
 }
 
-/** Keep only valid settings: circulating currency, tax 0-100, short terms. */
+/**
+ * Keep only valid settings: circulating currency, tax 0-100, short terms, a
+ * yes/no on prices including tax and line or document rounding.
+ */
 export function parseSettings(value: unknown): SettingsPatch {
   const out: SettingsPatch = {};
   if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
@@ -173,6 +182,12 @@ export function parseSettings(value: unknown): SettingsPatch {
       .join('')
       .trim();
     if (terms && terms.length <= MAX_TERMS_LENGTH) out.paymentTerms = terms;
+  }
+  if (typeof object.pricesIncludeTax === 'boolean') {
+    out.pricesIncludeTax = object.pricesIncludeTax;
+  }
+  if (object.taxRounding === 'line' || object.taxRounding === 'document') {
+    out.taxRounding = object.taxRounding;
   }
   return out;
 }

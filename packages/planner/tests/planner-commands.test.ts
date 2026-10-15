@@ -5,6 +5,7 @@ import {
   createBrowserAssistantTransport,
 } from '../src/lib/assistant/transport.ts';
 import { cookbookStore } from '../src/lib/cookbook/store.svelte.ts';
+import { getSamplePricing } from '../src/lib/data/packs.ts';
 import { libraryState } from '../src/lib/library/state.svelte.ts';
 import {
   COMMAND_NAMES,
@@ -366,7 +367,26 @@ describe('runtime', () => {
       currency: 'CAD',
       taxRate: 13,
       paymentTerms: 'Net 15',
+      pricesIncludeTax: false,
+      taxRounding: 'line',
     });
+    const priced = ok(controller, 'set_settings', {
+      pricesIncludeTax: true,
+      taxRounding: 'document',
+    });
+    expect(priced.receipt.summary).toBe(
+      'Prices include tax, document tax rounding.',
+    );
+    // The sample documents follow on their next reseed.
+    expect(getSamplePricing()).toMatchObject({
+      pricesIncludeTax: true,
+      taxRounding: 'document',
+    });
+    expect(priced.snapshot.settings).toMatchObject({
+      pricesIncludeTax: true,
+      taxRounding: 'document',
+    });
+    ok(controller, 'undo', { undoId: priced.receipt.undoId });
     expect(errorOf(controller, 'set_settings', { currency: 'ZZZ' }).code).toBe(
       'invalid_input',
     );

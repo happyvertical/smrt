@@ -13,6 +13,7 @@ import {
 import { buildSystemPrompt } from '../src/lib/assistant/prompt.ts';
 import { withoutThinking } from '../src/lib/assistant/session.svelte.ts';
 import { recipes } from '../src/lib/recipes/index.ts';
+import { DEFAULT_SETTINGS } from '../src/lib/settings/app-settings.ts';
 
 describe('parseChange never shows raw model output', () => {
   it('strips thinking, closed or cut off', () => {
@@ -47,7 +48,7 @@ describe('parseChange never shows raw model output', () => {
 });
 
 describe('prompt', () => {
-  const settings = { currency: 'USD', taxRate: 0, paymentTerms: '' };
+  const settings = { ...DEFAULT_SETTINGS };
   it('answers what was said, never repeats, and shows no "none" terms', () => {
     const prompt = buildSystemPrompt(recipes, [], [], settings);
     expect(prompt).toMatch(/what they just said/);

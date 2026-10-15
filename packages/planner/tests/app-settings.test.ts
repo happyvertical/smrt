@@ -1,3 +1,4 @@
+import { COMMERCE_SETTING_TARGETS } from '@happyvertical/smrt-core/cookbook/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { getModelByQualifiedName } from '../src/lib/catalog/index.ts';
 import { CookbookStore } from '../src/lib/cookbook/store.svelte.ts';
@@ -10,6 +11,7 @@ import {
 import { recipeState } from '../src/lib/recipes/state.svelte.ts';
 import {
   DEFAULT_SETTINGS,
+  isSettingRow,
   readSettings,
   SETTING_TARGETS,
   settingsOfCookbook,
@@ -80,7 +82,13 @@ describe('app settings', () => {
 
   it('round-trips written settings and rewrites cleanly', () => {
     const base = bakery().document;
-    const settings = { currency: 'EUR', taxRate: 0.2, paymentTerms: 'Net 30' };
+    const settings = {
+      currency: 'EUR',
+      taxRate: 0.2,
+      paymentTerms: 'Net 30',
+      pricesIncludeTax: true,
+      taxRounding: 'document' as const,
+    };
     const written = writeSettings(base, settings);
     expect(readSettings(written)).toEqual(settings);
     expect(writeSettings(written, settings)).toEqual(written);
@@ -93,6 +101,7 @@ describe('app settings', () => {
   it('removes rows when a value is cleared or back to the default', () => {
     const base = bakery().document;
     const cleared = writeSettings(base, {
+      ...DEFAULT_SETTINGS,
       currency: 'USD',
       taxRate: 0,
       paymentTerms: '',
@@ -110,6 +119,7 @@ describe('app settings', () => {
     const before = JSON.stringify(cookbook);
     const store = new CookbookStore();
     const result = applyLibraryCookbook(cookbook, store, {
+      ...DEFAULT_SETTINGS,
       currency: 'GBP',
       taxRate: 0.2,
       paymentTerms: 'Net 30',
@@ -117,6 +127,7 @@ describe('app settings', () => {
     expect(result.ok).toBe(true);
     expect(JSON.stringify(cookbook)).toBe(before);
     expect(store.settings()).toEqual({
+      ...DEFAULT_SETTINGS,
       currency: 'GBP',
       taxRate: 0.2,
       paymentTerms: 'Net 30',
@@ -133,6 +144,7 @@ describe('app settings', () => {
     const store = new CookbookStore();
     applyLibraryCookbook(bakery(), store);
     store.setSettings({
+      ...DEFAULT_SETTINGS,
       currency: 'CAD',
       taxRate: 0.05,
       paymentTerms: 'Net 60',
@@ -161,6 +173,7 @@ describe('settings follow recipe changes', () => {
     const store = new CookbookStore();
     recipeState.add('commerce.sales');
     store.setSettings({
+      ...DEFAULT_SETTINGS,
       currency: 'CAD',
       taxRate: 0.05,
       paymentTerms: 'Net 30',
@@ -174,6 +187,7 @@ describe('settings follow recipe changes', () => {
     recipeState.ids = [];
     recipeState.remove();
     expect(store.settings()).toEqual({
+      ...DEFAULT_SETTINGS,
       currency: 'CAD',
       taxRate: 0.05,
       paymentTerms: 'Net 30',
@@ -185,9 +199,71 @@ describe('settings follow recipe changes', () => {
 
   it('survives an export and import', () => {
     const store = new CookbookStore();
-    store.setSettings({ currency: 'EUR', taxRate: 0, paymentTerms: '' });
+    store.setSettings({
+      ...DEFAULT_SETTINGS,
+      currency: 'EUR',
+      pricesIncludeTax: true,
+      taxRounding: 'document',
+    });
     const again = new CookbookStore();
     expect(again.importText(JSON.stringify(store.snapshot())).ok).toBe(true);
     expect(again.settings().currency).toBe('EUR');
+    expect(again.settings().pricesIncludeTax).toBe(true);
+    expect(again.settings().taxRounding).toBe('document');
+  });
+
+  it('writes the money settings where smrt-core does, and only off their defaults', () => {
+    const base = bakery().document;
+    const on = writeSettings(base, {
+      ...readSettings(base),
+      pricesIncludeTax: true,
+      taxRounding: 'document',
+    });
+    const rows = (b: Cookbook, field: string) =>
+      b.policies
+        .filter((r) => r.fieldName === field && r.defaultValue !== undefined)
+        .map((r) => `${r.objectRef} ${r.defaultValue}`)
+        .sort();
+    expect(rows(on, 'lineAmountType')).toEqual([
+      `${C}Contract "inclusive"`,
+      `${C}Invoice "inclusive"`,
+    ]);
+    expect(rows(on, 'taxRoundingScope')).toEqual([
+      `${C}Contract "document"`,
+      `${C}Invoice "document"`,
+    ]);
+    expect(
+      isSettingRow({
+        objectRef: `${C}Contract`,
+        fieldName: 'lineAmountType',
+        scopeType: 'app',
+      }),
+    ).toBe(true);
+    // Exclusive prices and line rounding are what the models start as.
+    const off = writeSettings(on, {
+      ...readSettings(on),
+      pricesIncludeTax: false,
+      taxRounding: 'line',
+    });
+    expect(rows(off, 'lineAmountType')).toEqual([]);
+    expect(rows(off, 'taxRoundingScope')).toEqual([]);
+    expect(readSettings(off)).toEqual(readSettings(base));
+  });
+
+  it("matches smrt-core's setting targets for every setting the engine knows", () => {
+    for (const key of Object.keys(
+      COMMERCE_SETTING_TARGETS,
+    ) as (keyof typeof COMMERCE_SETTING_TARGETS)[]) {
+      const ours = SETTING_TARGETS[key].map((t) => `${t.model}.${t.field}`);
+      for (const target of COMMERCE_SETTING_TARGETS[key]) {
+        expect(ours, key).toContain(`${target.model}.${target.field}`);
+      }
+    }
+    expect(SETTING_TARGETS.pricesIncludeTax).toEqual(
+      COMMERCE_SETTING_TARGETS.pricesIncludeTax,
+    );
+    expect(SETTING_TARGETS.taxRounding).toEqual(
+      COMMERCE_SETTING_TARGETS.taxRounding,
+    );
   });
 });

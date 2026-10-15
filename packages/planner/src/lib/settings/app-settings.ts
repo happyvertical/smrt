@@ -17,17 +17,37 @@ export interface AppSettings {
   taxRate: number;
   /** Default payment terms; empty means unset. */
   paymentTerms: string;
+  /**
+   * New documents' prices include tax (`lineAmountType: 'inclusive'`: a
+   * line's amount is the gross and tax is backed out of it); otherwise
+   * prices exclude tax (`'exclusive'`: a line's amount is its net).
+   */
+  pricesIncludeTax: boolean;
+  /** Whether tax rounds per line or once per document (`taxRoundingScope`). */
+  taxRounding: TaxRounding;
 }
+
+export type TaxRounding = 'line' | 'document';
+
+export const TAX_ROUNDINGS: readonly TaxRounding[] = ['line', 'document'];
 
 export const DEFAULT_SETTINGS: Readonly<AppSettings> = {
   currency: 'USD',
   taxRate: 0,
   paymentTerms: '',
+  pricesIncludeTax: false,
+  taxRounding: 'line',
 };
 
 const C = '@happyvertical/smrt-commerce:';
 
-/** Which model fields each setting is the default of (the single source). */
+/**
+ * Which model fields each setting is the default of (the single source). The
+ * money settings name the same fields as smrt-core's
+ * `COMMERCE_SETTING_TARGETS`: `pricesIncludeTax` is Invoice and Contract
+ * `lineAmountType` (`'inclusive'` / `'exclusive'`), `taxRounding` their
+ * `taxRoundingScope`.
+ */
 export const SETTING_TARGETS: Readonly<
   Record<keyof AppSettings, readonly { model: string; field: string }[]>
 > = {
@@ -55,6 +75,14 @@ export const SETTING_TARGETS: Readonly<
     ].map((model) => ({ model: `${C}${model}`, field: 'terms' })),
     { model: `${C}Customer`, field: 'paymentTerms' },
   ],
+  pricesIncludeTax: ['Invoice', 'Contract'].map((model) => ({
+    model: `${C}${model}`,
+    field: 'lineAmountType',
+  })),
+  taxRounding: ['Invoice', 'Contract'].map((model) => ({
+    model: `${C}${model}`,
+    field: 'taxRoundingScope',
+  })),
 };
 
 /**
@@ -107,9 +135,17 @@ export function readSettings(
   const currency = first('currency', 'string');
   const taxRate = first('taxRate', 'number');
   const paymentTerms = first('paymentTerms', 'string');
+  const lineAmountType = first('pricesIncludeTax', 'string');
+  const taxRounding = first('taxRounding', 'string');
   if (typeof currency === 'string') out.currency = currency;
   if (typeof taxRate === 'number') out.taxRate = taxRate;
   if (typeof paymentTerms === 'string') out.paymentTerms = paymentTerms;
+  if (lineAmountType === 'inclusive' || lineAmountType === 'exclusive') {
+    out.pricesIncludeTax = lineAmountType === 'inclusive';
+  }
+  if (taxRounding === 'line' || taxRounding === 'document') {
+    out.taxRounding = taxRounding;
+  }
   return out;
 }
 
@@ -161,7 +197,11 @@ export function writeSettings(
         ? String(raw).trim()
         : key === 'currency'
           ? String(raw).trim().toUpperCase()
-          : raw;
+          : key === 'pricesIncludeTax'
+            ? raw
+              ? 'inclusive'
+              : 'exclusive'
+            : raw;
     for (const { model, field } of SETTING_TARGETS[key]) {
       const seed = seedDefault(cookbook, model, field);
       const wanted =
