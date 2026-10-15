@@ -57,3 +57,7 @@ Full catalog children remain unavailable on DuckDB due to core's existing
 ON UPDATE CASCADE/self-referential schema limitations documented in
 [catalog-service.md](catalog-service.md); no alternate schema is substituted.
 Tests use synthetic local HTML and an injected fetch callback, never the network.
+
+Generic “Printable” and “Printables” labels identify lesson PDFs; course packets
+require explicit packet/whole-course/complete-course wording. Only actual href
+attributes supply pointers; data-href metadata does not.

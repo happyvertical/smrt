@@ -62,3 +62,13 @@ refresh case verify the Resources URL never replaces a lesson pointer. Both new
 cases fail against round-2 head `122af228052078da82d474db66f00ad3b099291f`.
 The bounded round-3 gates and inherited full-root coverage are recorded in the
 review packet; only the accepted regression is changed.
+
+## Accepted external PR feedback (round 4)
+
+Both P2 findings are accepted: generic Printable/Printables labels were
+misclassified as course packets, and the href matcher read data-href metadata.
+Packet recognition now requires packet-specific wording; href names must begin
+at the attribute list or after HTML whitespace. Parser and real SQLite/PG
+refresh cases cover generic singular/plural labels, metadata preceding a real
+href, and metadata without any navigable href. Four new tests fail against
+covered head `4d3cb14587c9c3dd60dd2e1bffdf150f51e61049`.

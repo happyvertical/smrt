@@ -6,7 +6,9 @@ import {
   assertAmbiguousMarkersAtomicity,
   assertAuthorizationAndSharing,
   assertBoldInstructionRefresh,
+  assertExactHrefRefresh,
   assertInputAndIdentityGuards,
+  assertPrintableLabelRefresh,
   assertRefreshAndPrivacy,
   assertRollbackAndRetry,
   assertStructuralHeadingRefresh,
@@ -43,6 +45,8 @@ describe('source import (SQLite)', () => {
       'rejects unaccounted lesson markers without partial mutation',
       assertAmbiguousMarkersAtomicity,
     ],
+    ['refreshes generic printable labels', assertPrintableLabelRefresh],
+    ['refreshes only actual href attributes', assertExactHrefRefresh],
   ] as const) {
     it(name, async () => {
       const db = await getTestDatabase({

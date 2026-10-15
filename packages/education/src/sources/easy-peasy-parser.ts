@@ -81,7 +81,7 @@ function textContent(value: string): string {
 
 function attribute(attributes: string, name: string): string | undefined {
   const match = new RegExp(
-    `\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
+    `(?:^|[\\t\\n\\f\\r ])${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
     'i',
   ).exec(attributes);
   return match?.[1] ?? match?.[2] ?? match?.[3];
@@ -174,9 +174,7 @@ function isAnswerLink(link: LinkMatch): boolean {
 }
 
 function isPacketLink(link: LinkMatch): boolean {
-  return /\b(?:printables?|packet|whole course|complete course)\b/i.test(
-    link.text,
-  );
+  return /\b(?:packet|whole course|complete course)\b/i.test(link.text);
 }
 
 function courseTitle(html: string): string {

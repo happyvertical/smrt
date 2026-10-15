@@ -497,3 +497,51 @@ export async function assertStructuralHeadingRefresh(
     });
   });
 }
+
+/** Generic Printable labels remain lesson pointers across refresh. */
+export async function assertPrintableLabelRefresh(f: Fixture): Promise<void> {
+  f.setPage(
+    '<h1>Course</h1><h2>Lesson 1 *</h2><a href="/wp-content/old.pdf">Worksheet</a>',
+  );
+  const first = await f.run(() => f.service.importCourse(f.request));
+  for (const label of ['Printable', 'Printables']) {
+    f.setPage(
+      `<h1>Course</h1><h2>Lesson 1 *</h2><a href="/wp-content/new.pdf">${label}</a>`,
+    );
+    expect(await f.run(() => f.service.importCourse(f.request))).toEqual(first);
+    await f.run(async () => {
+      const lessons = await LessonCollection.create({ db: f.db });
+      expect(await lessons.get(first.lessonIds[0])).toMatchObject({
+        printableUrl: 'https://allinonehomeschool.com/wp-content/new.pdf',
+      });
+    });
+  }
+}
+
+/** A data-href attribute cannot replace the actual destination on refresh. */
+export async function assertExactHrefRefresh(f: Fixture): Promise<void> {
+  f.setPage(
+    '<h1>Course</h1><h2>Lesson 1 *</h2><a href="/wp-content/old.pdf">Worksheet</a>',
+  );
+  const first = await f.run(() => f.service.importCourse(f.request));
+  f.setPage(
+    '<h1>Course</h1><h2>Lesson 1 *</h2><a data-href="/wp-content/wrong.pdf" href="/wp-content/right.pdf">Worksheet</a>',
+  );
+  expect(await f.run(() => f.service.importCourse(f.request))).toEqual(first);
+  await f.run(async () => {
+    const lessons = await LessonCollection.create({ db: f.db });
+    expect(await lessons.get(first.lessonIds[0])).toMatchObject({
+      printableUrl: 'https://allinonehomeschool.com/wp-content/right.pdf',
+    });
+  });
+  f.setPage(
+    '<h1>Course</h1><h2>Lesson 1 *</h2><a data-href="/wp-content/absent.pdf">Worksheet</a>',
+  );
+  expect(await f.run(() => f.service.importCourse(f.request))).toEqual(first);
+  await f.run(async () => {
+    const lessons = await LessonCollection.create({ db: f.db });
+    expect(await lessons.get(first.lessonIds[0])).toMatchObject({
+      printableUrl: '',
+    });
+  });
+}

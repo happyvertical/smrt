@@ -137,6 +137,29 @@ describe('parseEasyPeasyPage', () => {
     );
   });
 
+  it('keeps generic printable labels on their lesson rather than the course packet', () => {
+    const parsed = parseEasyPeasyPage(
+      '<h1>Course</h1><h2>Lesson 1 *</h2><a href="/wp-content/one.pdf">Printable</a><h2>Lesson 2 *</h2><a href="/wp-content/two.pdf">Printables</a>',
+      pageUrl,
+    );
+    expect(parsed).not.toHaveProperty('packetUrl');
+    expect(parsed.lessons.map((lesson) => lesson.printableUrl)).toEqual([
+      'https://allinonehomeschool.com/wp-content/one.pdf',
+      'https://allinonehomeschool.com/wp-content/two.pdf',
+    ]);
+  });
+
+  it('uses only actual href attributes, never data-href', () => {
+    const parsed = parseEasyPeasyPage(
+      '<h1>Course</h1><h2>Lesson 1 *</h2><a data-href="/wp-content/wrong.pdf" href="/wp-content/right.pdf">Worksheet</a><h2>Lesson 2 *</h2><a data-href="/wp-content/absent.pdf">Worksheet</a>',
+      pageUrl,
+    );
+    expect(parsed.lessons[0].printableUrl).toBe(
+      'https://allinonehomeschool.com/wp-content/right.pdf',
+    );
+    expect(parsed.lessons[1]).not.toHaveProperty('printableUrl');
+  });
+
   it('rejects ambiguous compact and generic-container lesson marker layouts', () => {
     const compact = `
       <h1>Course</h1>
