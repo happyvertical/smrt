@@ -62,7 +62,12 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   try/catch localStorage wrapper (key `smrt-planner:cookbook-doc:v1`; a value under the old
   `smrt-planner:blueprint:v1` is read once, written to the new key and kept as a backup until the
   next successful save removes it; `smrt-planner:cookbook` alone is the library selection),
-  `file.ts` the `<name>.cookbook.json` export, `validate.ts` the strict
+  `file.ts` the `<name>.cookbook.json` export (plus `slugify`, size and `formatSize`),
+  `prompt.ts` the Export tab's prompt for a coding agent (the cookbook as minified JSON in a quoted
+  heredoc with a collision-checked delimiter, the released CLI's commands, the app directory as a slug
+  of the cookbook's name; the CLI version is `src/lib/smrt-version.ts`, generated from the installed
+  smrt-core by `pnpm version:smrt`, the first step of `pnpm package`, and guarded by
+  `tests/smrt-version.test.ts`), `describe.ts` the tab's one-line-per-dimension summary, `validate.ts` the strict
   import check, `legacy.ts` the read-only `?r=`/`?o=` migration. Sample records
   are NOT part of it. `layout` is smrt-svelte's published `ShellLayout`: the
   store passes it to `AppShell` (`layout` / `onlayoutchange`) and the Planner's
@@ -258,8 +263,8 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   hands the token to `kitchenState` (memory only, never storage or a URL); a `token` still in the
   config (an older CLI) is never read, only reported (`tokenInConfig`) and Send stays off. `state.svelte.ts`
   is `kitchenState` (`config` needs endpoint and token; `needsLink` is endpoint without token), which
-  `ExportPanel` reads to show **Send to kitchen** first and Download second, or the missing-link
-  notice. Contract: `docs/inference-host.md`; the server side is smrt `packages/cli/agents/kitchen.md`.
+  `ExportPanel` reads to add **Send to kitchen** to its primary actions (after Copy prompt, before
+  Download), or to show the missing-link notice. Contract: `docs/inference-host.md`; the server side is smrt `packages/cli/agents/kitchen.md`.
 - Package name is `@happyvertical/smrt-planner`. Publish only with
   `.github/workflows/publish-package.yml` from `main`: the workflow verifies the `release` environment's
   exact `main` branch policy before a secret-bearing job, then publishes one validated tarball to
@@ -352,7 +357,7 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   total (`children.ts` `MISMATCH_*`) so the line-items mismatch flag shows (the widget compares
   the recorded subtotal with the lines' tax-inclusive sum, so the note names the subtotal).
   Stored sample rows live under `smrt-planner:data:v5:`; bump it when line amounts change meaning.
-- `src/routes/`: `/` Planner with `?tab=cookbooks|recipes|features|layout|export` tabs (`planner/tab.svelte.ts`; a visitor with nothing built lands on Cookbooks; smrt-ui `Tabs`: Cookbooks cards + preview, Recipes cards with switches only, Features the browsable catalogue of every recipe with its demo label, providers and what it adds, Layout `ShellLayoutEditor`, Export / Import / Reset in `ExportPanel`), `/ai/` the AI models page (Set up your assistant), `/cookbook/` a client-side redirect to `/?tab=export`, `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),
+- `src/routes/`: `/` Planner with `?tab=cookbooks|recipes|features|layout|export` tabs (`planner/tab.svelte.ts`; a visitor with nothing built lands on Cookbooks; smrt-ui `Tabs`: Cookbooks cards + preview, Recipes cards with switches only, Features the browsable catalogue of every recipe with its demo label, providers and what it adds, Layout `ShellLayoutEditor`, Export in `ExportPanel`: the cookbook summary, Copy prompt for a coding agent / Send to kitchen / Download with the file's name, size, apply command and JSON preview, then Import and Reset apart under "Replace or start over"), `/ai/` the AI models page (Set up your assistant), `/cookbook/` a client-side redirect to `/?tab=export`, `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),
   `/packages/` and `/packages/[id]/` the package browser, `/m/[package]/[model]/` (and `/[view]/`:
   a keyed nav entry, else a record's view page; `/[view]/edit/` its edit page).
   All prerendered but the record pages; `entries()` come from the catalog.

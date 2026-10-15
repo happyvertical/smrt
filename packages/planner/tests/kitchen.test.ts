@@ -232,22 +232,23 @@ describe('the kitchen token in the address fragment', () => {
 describe('the export panel', () => {
   beforeEach(() => kitchenState.configure(undefined));
 
-  it('offers Export cookbook alone without a kitchen', () => {
+  it('offers Copy prompt and Download without a kitchen', () => {
     const { body } = render(ExportPanel, { context });
-    expect(body).toContain('Export cookbook');
+    expect(body).toContain('Copy prompt');
+    expect(body).toContain('Download cookbook');
     expect(body).not.toContain('Send to kitchen');
-    expect(body).not.toContain('Download cookbook');
   });
 
-  it('puts Send to kitchen first and keeps Download as the secondary option', () => {
+  it('puts Send to kitchen between Copy prompt and Download when linked', () => {
     kitchenState.configure(endpoint, kitchen.token);
     const { body } = render(ExportPanel, { context });
     expect(body).toContain('Send to kitchen');
-    expect(body).toContain('Download cookbook');
+    expect(body.indexOf('Copy prompt')).toBeLessThan(
+      body.indexOf('Send to kitchen'),
+    );
     expect(body.indexOf('Send to kitchen')).toBeLessThan(
       body.indexOf('Download cookbook'),
     );
-    expect(body).not.toContain('Export cookbook');
     expect(body).not.toContain('needs its link');
   });
 
@@ -257,18 +258,18 @@ describe('the export panel', () => {
     expect(kitchenState.needsLink).toBe(false);
     const { body } = render(ExportPanel, { context });
     expect(body).toContain('Send to kitchen is off');
-    expect(body).toContain('Export cookbook');
+    expect(body).toContain('Download cookbook');
     expect(body).not.toContain('needs its link');
   });
 
-  it('says what is missing when the page has no token, and offers only Export', () => {
+  it('says what is missing when the page has no token, and offers no Send', () => {
     kitchenState.configure(endpoint);
     expect(kitchenState.config).toBeUndefined();
     expect(kitchenState.needsLink).toBe(true);
     const { body } = render(ExportPanel, { context });
     expect(body).toContain('needs its link');
     expect(body).toContain('#kitchen=');
-    expect(body).toContain('Export cookbook');
+    expect(body).toContain('Download cookbook');
     expect(body).not.toContain('Send to kitchen</button>');
   });
 });
