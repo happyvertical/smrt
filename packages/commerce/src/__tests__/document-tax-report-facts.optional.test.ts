@@ -12,10 +12,12 @@ import {
 } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DocumentTaxCollection } from '../collections/DocumentTaxCollection.js';
+import { TaxSummaryReportCollection } from '../collections/TaxSummaryReportCollection.js';
 import {
   seedInvoiceTaxReportCredit,
   seedInvoiceTaxReportFacts,
 } from './helpers/invoice-tax-report-facts.js';
+import { seedReviewedPurchaseContract } from './helpers/purchase-contract-tax-report-facts.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -29,12 +31,17 @@ describePostgres(
       isolated = await createIsolatedTestDbFromManifest({
         includeObjects: [
           'Contract',
+          'ContractLineItem',
           'Customer',
           'DocumentTax',
           'Invoice',
           'InvoiceLineItem',
           'PaymentAllocation',
+          'TaxCode',
+          'TaxComponent',
           'TaxSettings',
+          'TaxSummaryReport',
+          'Vendor',
         ],
       });
       db = isolated.baseDb;
@@ -119,6 +126,96 @@ describePostgres(
           }),
         ]),
       );
+    });
+
+    it('reads tenant-scoped frozen purchase Contract snapshots with exact recoverability', async () => {
+      const tenantId = randomUUID();
+      const fixture = await withTenant({ tenantId }, () =>
+        seedReviewedPurchaseContract(db, tenantId, {
+          reference: 'PG-PO-REPORT',
+        }),
+      );
+      const foreignTenantId = randomUUID();
+      const foreign = await withTenant({ tenantId: foreignTenantId }, () =>
+        seedReviewedPurchaseContract(db, foreignTenantId, {
+          reference: 'PG-PO-FOREIGN',
+        }),
+      );
+      const facts = await (
+        await DocumentTaxCollection.create({ db })
+      ).listReportFacts({
+        tenantId,
+        from: new Date('2026-09-01T00:00:00.000Z'),
+        to: new Date('2026-09-30T23:59:59.999Z'),
+        currency: 'CAD',
+      });
+      expect(facts.map((fact) => fact.documentId)).not.toContain(
+        foreign.contractId,
+      );
+      expect(facts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            documentType: 'contract',
+            documentId: fixture.contractId,
+            partyId: fixture.vendorId,
+            direction: 'purchase',
+            taxComponentId: fixture.gstId,
+            taxableMinor: 10_000,
+            taxMinor: 500,
+            recoverableMinor: 500,
+          }),
+          expect.objectContaining({
+            documentId: fixture.contractId,
+            taxComponentId: fixture.pstId,
+            taxableMinor: 10_000,
+            taxMinor: 700,
+            recoverableMinor: 0,
+          }),
+        ]),
+      );
+    });
+
+    it('materializes and drills down the PostgreSQL purchase ITC from its stored Contract snapshot', async () => {
+      const tenantId = randomUUID();
+      const fixture = await withTenant({ tenantId }, () =>
+        seedReviewedPurchaseContract(db, tenantId, {
+          reference: 'PG-PO-ITC',
+        }),
+      );
+      const reports = await TaxSummaryReportCollection.create({ db });
+      await reports.refreshTaxSummary({
+        tenantId,
+        from: new Date('2026-09-01T00:00:00.000Z'),
+        to: new Date('2026-09-30T23:59:59.999Z'),
+        expenseSource: { listReviewedTaxFacts: async () => [] },
+        ledgerSource: { listPostedMovements: async () => [] },
+        expenseComponentMappings: [],
+      });
+      const gst = await withTenant({ tenantId }, async () =>
+        (await reports.list({ where: { tenantId } })).find(
+          (row) =>
+            row.rowKind === 'component' && row.taxComponentId === fixture.gstId,
+        ),
+      );
+      expect(gst).toMatchObject({ recoverableMinor: 500, netTaxMinor: -500 });
+      if (!gst?.id) throw new Error('Expected persisted PostgreSQL GST row.');
+      await expect(
+        reports.drilldownContributors({
+          tenantId,
+          reportId: gst.id,
+          measure: 'recoverable',
+        }),
+      ).resolves.toMatchObject({
+        complete: true,
+        pending: [],
+        contributors: [
+          expect.objectContaining({
+            source: 'contract',
+            valueMinor: 500,
+            fact: expect.objectContaining({ documentId: fixture.contractId }),
+          }),
+        ],
+      });
     });
   },
 );

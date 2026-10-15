@@ -8,6 +8,8 @@ export { ContractLineItemCollection } from './ContractLineItemCollection.js';
 export { CustomerCollection } from './CustomerCollection.js';
 export {
   DocumentTaxCollection,
+  type DocumentTaxReportFact,
+  type DocumentTaxReportFactsOptions,
   type InvoiceTaxReportFact,
   type InvoiceTaxReportFactsOptions,
 } from './DocumentTaxCollection.js';
