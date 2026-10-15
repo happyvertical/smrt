@@ -12,7 +12,7 @@ export class EducationCatalogRecipe extends SmrtRecipe {
   static section = {
     id: 'education',
     label: 'Education',
-    icon: 'bookOpen',
+    icon: 'folder',
     description: 'Courses and lessons for learning.',
   };
   static models = [Course, CourseSection, Lesson, LessonAsset];
@@ -21,7 +21,7 @@ export class EducationCatalogRecipe extends SmrtRecipe {
     {
       label: 'Courses',
       model: Course,
-      icon: 'bookOpen',
+      icon: 'folder',
       description: 'Courses available to this family.',
       noun: 'course',
     },
