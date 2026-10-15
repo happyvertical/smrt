@@ -39,6 +39,28 @@ export {
   VideoCollection,
   WorksheetCollection,
 } from './collections.js';
+export type {
+  CourseSourceConfig,
+  CourseSourceKind,
+  SourceSharing,
+} from './course-source.js';
+export { CourseSource, CourseSourceCollection } from './course-source.js';
 export type { LessonAssetRelationship } from './lesson-assets.js';
 export { LessonAsset } from './lesson-assets.js';
 export { EducationCatalogRecipe } from './recipes.js';
+export type {
+  EasyPeasyRegistration,
+  SourceImportAuthorization,
+  SourceImportAuthorizer,
+  SourceImportRequest,
+  SourceImportResult,
+} from './source-import-service.js';
+export { SourceImportService } from './source-import-service.js';
+export type {
+  ParsedSourceCourse,
+  ParsedSourceLesson,
+} from './sources/easy-peasy-parser.js';
+export {
+  parseEasyPeasyPage,
+  validateEasyPeasyUrl,
+} from './sources/easy-peasy-parser.js';

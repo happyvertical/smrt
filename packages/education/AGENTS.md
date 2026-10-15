@@ -14,3 +14,7 @@ do not add asset-id fields to lesson subclasses.
 
 Validation: `pnpm --filter @happyvertical/smrt-education test`,
 `test:postgres`, `typecheck`, and `build`.
+
+Source import: [host boundary and transaction contract](agents/source-import.md).
+`SourceImportService` requires host opt-in, matching active actor/tenant and
+explicit licensing authorization; never add a system/global write bypass.
