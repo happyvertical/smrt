@@ -204,14 +204,16 @@ async function oldFormatDocumentQueries(
     `SELECT DISTINCT CAST(tenant_id AS TEXT) AS "tenantId" FROM ${table}
       WHERE tenant_id IS NOT NULL
         AND (status <> 'draft'${extra})
-        AND COALESCE(money_snapshot_id, '') = ''${tenantFilter}`;
+        AND COALESCE(CAST(money_snapshot_id AS TEXT), '') = ''${tenantFilter}`;
   const taxed = (table: string) =>
     `SELECT DISTINCT CAST(tenant_id AS TEXT) AS "tenantId" FROM ${table}
       WHERE tenant_id IS NOT NULL
         AND tax_rate > 0
         AND tax_code_id IS NULL${tenantFilter}`;
   if (await tableExists(db, 'invoices'))
-    queries.push(issued('invoices', " OR COALESCE(ar_journal_id, '') <> ''"));
+    queries.push(
+      issued('invoices', " OR COALESCE(CAST(ar_journal_id AS TEXT), '') <> ''"),
+    );
   if (await tableExists(db, 'contracts')) queries.push(issued('contracts', ''));
   for (const table of ['invoice_line_items', 'contract_line_items'])
     if (await tableExists(db, table)) queries.push(taxed(table));
