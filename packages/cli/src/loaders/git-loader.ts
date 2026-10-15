@@ -17,6 +17,7 @@
  * - Full URL: https://github.com/user/repo.git#branch:path/to/subdir
  */
 
+import { rmSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import https from 'node:https';
 import { tmpdir } from 'node:os';
@@ -44,6 +45,11 @@ interface GitTemplateConfig extends TemplateConfig {
 const tempDirectories = new Set<string>();
 let cleanupHandlersRegistered = false;
 
+async function removeTempDirectory(tempDir: string): Promise<void> {
+  await rm(tempDir, { recursive: true, force: true });
+  tempDirectories.delete(tempDir);
+}
+
 /**
  * Register cleanup handlers for temporary directories
  * Ensures temp directories are removed on process termination
@@ -59,8 +65,7 @@ function registerCleanupHandlers() {
     await Promise.all(
       dirs.map(async (dir) => {
         try {
-          await rm(dir, { recursive: true, force: true });
-          tempDirectories.delete(dir);
+          await removeTempDirectory(dir);
         } catch (_error) {
           // Ignore cleanup errors - directory may already be removed
         }
@@ -68,10 +73,17 @@ function registerCleanupHandlers() {
     );
   };
 
-  // Clean up on normal exit
+  // The exit event cannot await promises. Successful gnode callers clean up
+  // in their own finally block, so this only retries the still-owned paths.
   process.on('exit', () => {
-    // Synchronous cleanup not ideal, but exit is synchronous
-    // Most cleanup happens via other handlers
+    for (const dir of Array.from(tempDirectories)) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+        tempDirectories.delete(dir);
+      } catch (_error) {
+        // Leave failed removals tracked until process termination completes.
+      }
+    }
   });
 
   // Clean up on termination signals
@@ -412,7 +424,17 @@ export async function loadGitTemplate(gitUrl: string): Promise<TemplateConfig> {
     }
   } catch (error) {
     // Cleanup temp directory on error
-    await rm(tempDir, { recursive: true, force: true });
+    try {
+      await removeTempDirectory(tempDir);
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `Template load failed and temporary directory cleanup failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { cause: error },
+      );
+    }
     throw error;
   }
 }
@@ -439,9 +461,12 @@ export function getGitTemplateDir(config: TemplateConfig): string {
 export async function cleanupGitTemplate(
   config: TemplateConfig,
 ): Promise<void> {
-  const tempDir = (config as GitTemplateConfig).__tempDir;
+  const gitConfig = config as GitTemplateConfig;
+  const tempDir = gitConfig.__tempDir;
   if (tempDir) {
-    await rm(tempDir, { recursive: true, force: true });
+    await removeTempDirectory(tempDir);
+    delete gitConfig.__tempDir;
+    delete gitConfig.__templateRoot;
   }
 }
 
