@@ -1357,6 +1357,251 @@
           }
         }
       }
+    },
+    {
+      "id": "roaster",
+      "name": "Coffee roaster",
+      "icon": "coffee",
+      "summary": "Cafe accounts, online orders, green coffee, roast batches and importers for a small roastery or brewery.",
+      "keywords": [
+        "coffee roaster",
+        "roaster",
+        "roastery",
+        "coffee",
+        "beans",
+        "green coffee",
+        "espresso",
+        "cafe accounts",
+        "brewery",
+        "microbrewery",
+        "taproom",
+        "kegs",
+        "small batch"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Net 30",
+        "taxRate": 0
+      },
+      "sectionDescriptions": {
+        "custom:shop": "Sell to customers and keep their details.",
+        "custom:wholesale": "Orders, invoices and payments from trade customers.",
+        "custom:roastery": "Coffees, green coffee, stock and what you are roasting.",
+        "custom:buying": "Suppliers and what you order from them."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#7c2d12",
+            "fontFamily": "Georgia"
+          }
+        },
+        "recipes": [
+          "commerce.customers",
+          "commerce.invoicing",
+          "commerce.purchases",
+          "commerce.sales",
+          "commerce.vendors",
+          "commerce.wholesale",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.ingredients",
+          "products.simple"
+        ],
+        "features": [
+          "@happyvertical/smrt-commerce:ProductionOrder"
+        ],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
+            "fieldName": "channelId",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
+            "fieldName": "customerId",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
+            "fieldName": "expiryDate",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
+            "fieldName": "vendorId",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:shop",
+            "custom:wholesale",
+            "custom:roastery",
+            "custom:buying",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:shop": [
+              "item:commerce:Order",
+              "item:commerce:Customer"
+            ],
+            "custom:wholesale": [
+              "item:commerce:WholesaleOrder",
+              "item:commerce:Invoice",
+              "item:commerce:Payment"
+            ],
+            "custom:roastery": [
+              "item:products:Product",
+              "item:products:Product:ingredients",
+              "item:inventory:StockLevel",
+              "item:commerce:ProductionOrder"
+            ],
+            "custom:buying": [
+              "item:commerce:Vendor",
+              "item:commerce:PurchaseOrder"
+            ]
+          },
+          "hidden": [
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:commerce:Order": "custom:shop",
+            "item:commerce:Customer": "custom:shop",
+            "item:commerce:WholesaleOrder": "custom:wholesale",
+            "item:commerce:Invoice": "custom:wholesale",
+            "item:commerce:Payment": "custom:wholesale",
+            "item:products:Product": "custom:roastery",
+            "item:products:Product:ingredients": "custom:roastery",
+            "item:inventory:StockLevel": "custom:roastery",
+            "item:commerce:ProductionOrder": "custom:roastery",
+            "item:commerce:Vendor": "custom:buying",
+            "item:commerce:PurchaseOrder": "custom:buying"
+          },
+          "customSections": [
+            {
+              "id": "custom:shop",
+              "label": "Shop"
+            },
+            {
+              "id": "custom:wholesale",
+              "label": "Wholesale"
+            },
+            {
+              "id": "custom:roastery",
+              "label": "Roastery"
+            },
+            {
+              "id": "custom:buying",
+              "label": "Buying"
+            }
+          ],
+          "items": {
+            "item:commerce:Order": {
+              "label": "Online & retail orders",
+              "description": "Orders from the website and the roastery door."
+            },
+            "item:commerce:WholesaleOrder": {
+              "label": "Cafe orders",
+              "description": "Standing and one-off orders from cafes, bars and grocers."
+            },
+            "item:products:Product": {
+              "label": "Coffees",
+              "description": "Roasted coffees and shop items, with prices."
+            },
+            "item:products:Product:ingredients": {
+              "label": "Green coffee",
+              "description": "Green coffee and packaging, by the bag, with costs."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Stock",
+              "description": "Roasted and green coffee on hand today."
+            },
+            "item:commerce:ProductionOrder": {
+              "label": "Roast batches",
+              "description": "What you plan to roast, with the amounts and the day."
+            },
+            "item:commerce:Vendor": {
+              "label": "Importers & suppliers",
+              "description": "The importers and packaging suppliers you buy from."
+            },
+            "item:commerce:PurchaseOrder": {
+              "label": "Green coffee orders",
+              "description": "Green coffee you have bought and when the container lands."
+            }
+          },
+          "sections": {
+            "custom:shop": {
+              "icon": "shoppingBag"
+            },
+            "custom:wholesale": {
+              "icon": "briefcase"
+            },
+            "custom:roastery": {
+              "icon": "package"
+            },
+            "custom:buying": {
+              "icon": "truck"
+            }
+          }
+        }
+      }
     }
   ]
 }
