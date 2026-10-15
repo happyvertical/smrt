@@ -316,7 +316,9 @@ rows without recomputation.
 ## Not part of this guide
 
 This guide does not define the tenant migration or marker-transition procedure,
-Contract money persistence, reports, or currency conversion. Those application
-contracts are released separately. The
-external documentation follow-up is tracked in
-[s-m-r-t.dev #309](https://github.com/happyvertical/s-m-r-t.dev/issues/309).
+reports, or currency conversion. Contract v2 persistence uses the same
+tenant-money runtime gate, writes Contract headers, line snapshots, and
+DocumentTax rows atomically, and freezes each persisted non-draft snapshot.
+See [Contract money persistence](../../packages/commerce/agents/contract-money.md)
+for the Contract-specific lifecycle, purchase recoverability, and
+migration-only materialization boundary.

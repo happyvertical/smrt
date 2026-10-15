@@ -18,7 +18,10 @@ import {
   queryWithGlobals,
 } from '@happyvertical/smrt-tenancy';
 import { DOCUMENT_MONEY_READ_REBIND } from '../document-money-internal.js';
-import { Contract } from '../models/Contract.js';
+import {
+  Contract,
+  isContractSnapshotReportEligible,
+} from '../models/Contract.js';
 import { withTenantMoneyCollectionRead } from '../tenant-money-barrier.js';
 import { ContractStatus, ContractType } from '../types/index.js';
 import { PurchaseContractCollection } from './PurchaseContractCollection.js';
@@ -125,6 +128,26 @@ export class ContractCollection extends SmrtCollection<Contract> {
       db: this.db,
     });
     return purchases.findByVendor(vendorId);
+  }
+
+  /**
+   * Hydrate a bounded tenant/date report candidate set once, retaining exact
+   * STI descendants so callers can classify custom purchase types safely.
+   */
+  async listSnapshotReportContracts(options: {
+    tenantId: string;
+    from: Date;
+    to: Date;
+  }): Promise<Contract[]> {
+    const contracts = await this.list({
+      where: {
+        tenantId: options.tenantId,
+        'issueDate >=': options.from.toISOString(),
+        'issueDate <=': options.to.toISOString(),
+      },
+      orderBy: 'issueDate ASC',
+    });
+    return contracts.filter(isContractSnapshotReportEligible);
   }
 
   /**
