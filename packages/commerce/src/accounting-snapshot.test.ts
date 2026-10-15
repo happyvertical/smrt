@@ -1,10 +1,10 @@
+import { requireCreditMemoOperations } from '@happyvertical/accounting';
 import { describe, expect, it, vi } from 'vitest';
 import {
   type FrozenAccountingDocumentSnapshot,
   type FrozenQuickBooksTaxMapping,
   mapFrozenAccountingSnapshot,
   pushFrozenCreditMemo,
-  requireCreditMemoCapability,
 } from './accounting-snapshot.js';
 
 const mapping: FrozenQuickBooksTaxMapping = {
@@ -415,7 +415,11 @@ describe('mapFrozenAccountingSnapshot', () => {
   });
 
   it('refuses a line/header mismatch before the provider write runs', async () => {
-    const push = vi.fn(async () => ({ externalId: 'should-not-write' }));
+    const push = vi.fn(async () => ({
+      action: 'created' as const,
+      externalId: 'should-not-write',
+      syncedAt: new Date('2026-10-15T00:00:00.000Z'),
+    }));
     await expect(
       pushFrozenCreditMemo(
         { type: 'quickbooks', creditMemos: { push, sync: push } },
@@ -433,7 +437,11 @@ describe('mapFrozenAccountingSnapshot', () => {
   });
 
   it('refuses positive inclusive tax without component facts before a credit-memo write', async () => {
-    const push = vi.fn(async () => ({ externalId: 'should-not-write' }));
+    const push = vi.fn(async () => ({
+      action: 'created' as const,
+      externalId: 'should-not-write',
+      syncedAt: new Date('2026-10-15T00:00:00.000Z'),
+    }));
     const snapshot = exampleNonTaxable('inclusive', 'document');
     const lineItems = snapshot.lineItems.map((line, index) =>
       index === 0 ? { ...line, taxMinor: 1 } : line,
@@ -464,7 +472,7 @@ describe('mapFrozenAccountingSnapshot', () => {
     ).toThrow(
       "Missing explicit QuickBooks tax-rate reference for component 'gst'",
     );
-    expect(() => requireCreditMemoCapability({ type: 'stripe' })).toThrow(
+    expect(() => requireCreditMemoOperations({ type: 'stripe' })).toThrow(
       "Accounting provider 'stripe' does not support credit memos",
     );
   });

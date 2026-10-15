@@ -3,15 +3,19 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type {
   AccountingProvider,
-  InvoiceInput,
+  QuickBooksCreditMemoRequest,
   QuickBooksInvoiceRequest,
   SyncResult,
 } from '@happyvertical/accounting';
-import { prepareQuickBooksInvoiceRequest } from '@happyvertical/accounting';
+import {
+  prepareQuickBooksCreditMemoRequest,
+  prepareQuickBooksInvoiceRequest,
+  requireCreditMemoOperations,
+} from '@happyvertical/accounting';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
 import {
-  type AccountingSnapshotInvoiceInput,
+  type AccountingSnapshotInput,
   type FrozenAccountingDocumentSnapshot,
   type FrozenQuickBooksTaxMapping,
   mapFrozenAccountingSnapshot,
@@ -50,18 +54,25 @@ export interface FrozenInvoiceAccountingInput
 export interface FrozenInvoiceAccountingSnapshot {
   readonly document: FrozenAccountingDocumentSnapshot;
   readonly moneySnapshotId: string;
+  readonly creditedInvoiceScope?: Readonly<{
+    provider: 'quickbooks';
+    realmId: string;
+    environment: 'sandbox' | 'production';
+  }>;
 }
 
 type FrozenSyncStatus = 'in_flight' | 'unknown' | 'rejected' | 'synced';
 
 interface FrozenSyncIdentity {
   provider: 'quickbooks';
+  documentKind: 'invoice' | 'creditMemo';
   realmId: string;
   environment: 'sandbox' | 'production';
   invoiceId: string;
   moneySnapshotId: string;
   requestId: string;
   payloadHash: string;
+  creditedInvoiceExternalId?: string;
 }
 
 interface FrozenSyncState {
@@ -83,7 +94,10 @@ export interface FrozenAccountingSyncResult {
 
 export interface SyncFrozenInvoiceToAccountingInput
   extends FrozenInvoiceAccountingInput {
-  readonly provider: Pick<AccountingProvider, 'type' | 'invoices'>;
+  readonly provider: Pick<
+    AccountingProvider,
+    'type' | 'invoices' | 'creditMemos'
+  >;
 }
 
 export interface ReconcileFrozenInvoiceAccountingInput
@@ -119,7 +133,8 @@ export interface FrozenAccountingReconciliationReady {
 
 interface PreparedSync {
   kind: 'push';
-  invoiceInput: InvoiceInput;
+  documentKind: 'invoice' | 'creditMemo';
+  accountingInput: AccountingSnapshotInput;
   identity: FrozenSyncIdentity;
   attemptId: string;
 }
@@ -172,11 +187,22 @@ function parseSyncState(value: string): FrozenSyncState | null {
       typeof identity.moneySnapshotId !== 'string' ||
       typeof identity.requestId !== 'string' ||
       typeof identity.payloadHash !== 'string' ||
+      (identity.documentKind !== undefined &&
+        identity.documentKind !== 'invoice' &&
+        identity.documentKind !== 'creditMemo') ||
+      (identity.creditedInvoiceExternalId !== undefined &&
+        typeof identity.creditedInvoiceExternalId !== 'string') ||
       typeof state.attemptId !== 'string' ||
       typeof state.startedAt !== 'string'
     )
       throw new Error('invalid shape');
-    return state as FrozenSyncState;
+    return {
+      ...(state as FrozenSyncState),
+      identity: {
+        ...(identity as FrozenSyncIdentity),
+        documentKind: identity.documentKind ?? 'invoice',
+      },
+    };
   } catch {
     throw new MoneyValidationError(
       'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
@@ -191,12 +217,14 @@ function sameIdentity(
 ): boolean {
   return (
     left.provider === right.provider &&
+    left.documentKind === right.documentKind &&
     left.realmId === right.realmId &&
     left.environment === right.environment &&
     left.invoiceId === right.invoiceId &&
     left.moneySnapshotId === right.moneySnapshotId &&
     left.requestId === right.requestId &&
-    left.payloadHash === right.payloadHash
+    left.payloadHash === right.payloadHash &&
+    left.creditedInvoiceExternalId === right.creditedInvoiceExternalId
   );
 }
 
@@ -207,6 +235,7 @@ function sameSyncScope(
 ): boolean {
   return (
     identity.provider === 'quickbooks' &&
+    identity.documentKind === snapshot.document.kind &&
     identity.realmId === mapping.realmId &&
     identity.environment === mapping.environment &&
     identity.invoiceId === snapshot.document.id &&
@@ -319,6 +348,9 @@ async function loadSnapshot(
     );
 
   let creditedInvoiceExternalId: string | undefined;
+  let creditedInvoiceScope:
+    | FrozenInvoiceAccountingSnapshot['creditedInvoiceScope']
+    | undefined;
   if (invoice.kind === 'credit_note') {
     if (!invoice.creditedInvoiceId)
       throw new MoneyValidationError(
@@ -334,11 +366,26 @@ async function loadSnapshot(
         'INVALID_MONEY_INPUT',
         'Frozen credit note requires the source invoice external ID',
       );
+    const sourceState = parseSyncState(source.accountingSyncStateJson);
+    if (
+      sourceState?.status !== 'synced' ||
+      sourceState.externalId !== source.externalId
+    )
+      throw new MoneyValidationError(
+        'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
+        'Frozen credit note requires a reconciled source invoice accounting identity',
+      );
     creditedInvoiceExternalId = source.externalId;
+    creditedInvoiceScope = {
+      provider: sourceState.identity.provider,
+      realmId: sourceState.identity.realmId,
+      environment: sourceState.identity.environment,
+    };
   }
 
   return {
     moneySnapshotId: invoice.moneySnapshotId,
+    creditedInvoiceScope,
     document: {
       kind: invoice.kind === 'invoice' ? 'invoice' : 'creditMemo',
       id: invoice.id ?? '',
@@ -361,7 +408,10 @@ async function loadSnapshot(
         quantity: line.quantity,
         unitPriceMinor: line.unitPrice,
         discountMinor: line.discount,
-        amountMinor: line.amount,
+        amountMinor:
+          invoice.lineAmountType === 'inclusive'
+            ? line.amount - line.taxAmount
+            : line.amount,
         taxMinor: line.taxAmount,
         taxComponents: structuredClone(line.taxComponents),
       })),
@@ -392,62 +442,31 @@ function validateMapping(mapping: QuickBooksFrozenInvoiceMapping): void {
     );
 }
 
-function toReleasedSdkInput(
+function toSdkInput(
   snapshot: FrozenInvoiceAccountingSnapshot,
   mapping: QuickBooksFrozenInvoiceMapping,
-): InvoiceInput {
+): AccountingSnapshotInput {
   validateMapping(mapping);
-  if (snapshot.document.kind !== 'invoice')
-    unsupported(
-      'Credit-note accounting sync requires the public accounting SDK credit-memo release',
-    );
-  if (snapshot.document.lineAmountType === 'inclusive')
-    unsupported(
-      'Tax-inclusive accounting sync requires the public accounting SDK TaxInclusive release',
+  if (
+    snapshot.document.kind === 'creditMemo' &&
+    (snapshot.creditedInvoiceScope?.provider !== 'quickbooks' ||
+      snapshot.creditedInvoiceScope.realmId !== mapping.realmId ||
+      snapshot.creditedInvoiceScope.environment !== mapping.environment)
+  )
+    throw new MoneyValidationError(
+      'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
+      'Credit note and credited invoice must use the same accounting provider, realm, and environment',
     );
   if (
-    snapshot.document.lineItems.some((line) => line.discountMinor !== 0) ||
     snapshot.document.lineItems.some(
       (line) =>
         line.quantity < 0 || line.amountMinor < 0 || line.unitPriceMinor < 0,
     )
   )
     unsupported(
-      'Discounted or signed-line accounting sync requires the public accounting SDK line-adjustment release',
+      'Signed-line accounting sync requires a public accounting SDK signed-line representation',
     );
-  const mapped = mapFrozenAccountingSnapshot(
-    snapshot.document,
-    mapping,
-  ) as AccountingSnapshotInvoiceInput;
-  return {
-    id: mapped.id,
-    externalId: mapped.externalId,
-    invoiceNumber: mapped.invoiceNumber,
-    customerId: mapped.customerId,
-    customerExternalId: mapped.customerExternalId,
-    issueDate: mapped.issueDate,
-    dueDate: mapped.dueDate,
-    currency: mapped.currency,
-    subtotal: mapped.subtotal,
-    taxAmount: mapped.taxAmount,
-    totalAmount: mapped.totalAmount,
-    reference: mapped.reference,
-    memo: mapped.memo,
-    quickbooksMapping: {
-      globalTaxCalculation:
-        mapped.quickbooksMapping.globalTaxCalculation === 'NotApplicable'
-          ? 'NotApplicable'
-          : 'TaxExcluded',
-    },
-    lineItems: mapped.lineItems.map((line) => ({
-      description: line.description,
-      sku: line.sku,
-      quantity: line.quantity,
-      unitPrice: line.unitPrice,
-      amount: line.amount,
-      quickbooksMapping: line.quickbooksMapping,
-    })),
-  };
+  return mapFrozenAccountingSnapshot(snapshot.document, mapping);
 }
 
 /** Load and validate one authoritative issued snapshot without provider I/O. */
@@ -477,7 +496,51 @@ export async function toFrozenInvoiceAccountingInput(
   input: FrozenInvoiceAccountingInput,
 ): Promise<AccountingInvoiceInput> {
   const snapshot = await loadFrozenInvoiceAccountingSnapshot(input);
-  return toReleasedSdkInput(snapshot, input.mapping) as AccountingInvoiceInput;
+  return toSdkInput(snapshot, input.mapping) as AccountingInvoiceInput;
+}
+
+function prepareRequest(
+  snapshot: FrozenInvoiceAccountingSnapshot,
+  mapping: QuickBooksFrozenInvoiceMapping,
+  sdkInput: AccountingSnapshotInput,
+): {
+  accountingInput: AccountingSnapshotInput;
+  request: QuickBooksInvoiceRequest | QuickBooksCreditMemoRequest;
+} {
+  const identity = {
+    requestId: requestIdFor(snapshot, mapping),
+    realmId: mapping.realmId,
+    environment: mapping.environment,
+  } as const;
+  if (snapshot.document.kind === 'invoice') {
+    if (!('invoiceNumber' in sdkInput))
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Frozen invoice mapping produced the wrong accounting document kind',
+      );
+    const request = prepareQuickBooksInvoiceRequest(sdkInput, identity);
+    return {
+      request,
+      accountingInput: {
+        ...sdkInput,
+        idempotencyKey: request.requestId,
+        quickbooksRequest: request,
+      },
+    };
+  }
+  if (!('creditMemoNumber' in sdkInput))
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Frozen credit-note mapping produced the wrong accounting document kind',
+    );
+  const request = prepareQuickBooksCreditMemoRequest(sdkInput, identity);
+  return {
+    request,
+    accountingInput: {
+      ...sdkInput,
+      quickbooksCreditMemoRequest: request,
+    },
+  };
 }
 
 function requestIdFor(
@@ -519,7 +582,7 @@ async function prepareSync(
       input.tenantId,
     );
     const snapshot = await loadSnapshot(tx, input.tenantId, invoice);
-    const sdkInput = toReleasedSdkInput(snapshot, input.mapping);
+    const sdkInput = toSdkInput(snapshot, input.mapping);
     const prior = parseSyncState(invoice.accountingSyncStateJson);
     if (
       prior?.status === 'synced' &&
@@ -555,25 +618,31 @@ async function prepareSync(
         'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
         'Invoice accounting identity changed across provider, realm, environment, or snapshot',
       );
-    const requestId = requestIdFor(snapshot, input.mapping);
-    const request = prepareQuickBooksInvoiceRequest(sdkInput, {
-      requestId,
-      realmId: input.mapping.realmId,
-      environment: input.mapping.environment,
-    });
-    const invoiceInput: InvoiceInput = {
-      ...sdkInput,
-      idempotencyKey: requestId,
-      quickbooksRequest: request,
-    };
+    if (snapshot.document.kind === 'creditMemo') {
+      try {
+        requireCreditMemoOperations(input.provider);
+      } catch (error) {
+        unsupported(error instanceof Error ? error.message : String(error));
+      }
+    }
+    const { accountingInput, request } = prepareRequest(
+      snapshot,
+      input.mapping,
+      sdkInput,
+    );
     const identity: FrozenSyncIdentity = {
       provider: 'quickbooks',
+      documentKind: snapshot.document.kind,
       realmId: request.realmId,
       environment: request.environment,
       invoiceId: snapshot.document.id,
       moneySnapshotId: snapshot.moneySnapshotId,
       requestId: request.requestId,
       payloadHash: request.payloadHash,
+      creditedInvoiceExternalId:
+        'creditedInvoiceExternalId' in request
+          ? request.creditedInvoiceExternalId
+          : undefined,
     };
     if (prior && !sameIdentity(prior.identity, identity))
       throw new MoneyValidationError(
@@ -592,7 +661,13 @@ async function prepareSync(
     await invoice.saveDerived(DOCUMENT_MONEY_WRITE, {
       recomputeLegacy: false,
     });
-    return { kind: 'push', invoiceInput, identity, attemptId };
+    return {
+      kind: 'push',
+      documentKind: snapshot.document.kind,
+      accountingInput,
+      identity,
+      attemptId,
+    };
   });
 }
 
@@ -700,7 +775,23 @@ export async function syncFrozenInvoiceToAccounting(
   if (prepared.kind === 'unchanged') return prepared.result;
   let result: SyncResult;
   try {
-    result = await input.provider.invoices.push(prepared.invoiceInput);
+    if (prepared.documentKind === 'invoice') {
+      if (!('invoiceNumber' in prepared.accountingInput))
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          'Prepared invoice has the wrong accounting document kind',
+        );
+      result = await input.provider.invoices.push(prepared.accountingInput);
+    } else {
+      if (!('creditMemoNumber' in prepared.accountingInput))
+        throw new MoneyValidationError(
+          'INVALID_MONEY_INPUT',
+          'Prepared credit note has the wrong accounting document kind',
+        );
+      result = await requireCreditMemoOperations(input.provider).push(
+        prepared.accountingInput,
+      );
+    }
   } catch (error) {
     await recordFailure(input, prepared, error);
     throw error;
@@ -733,20 +824,21 @@ export async function reconcileFrozenInvoiceAccountingSync(
       input.tenantId,
     );
     const snapshot = await loadSnapshot(tx, input.tenantId, invoice);
-    const sdkInput = toReleasedSdkInput(snapshot, input.mapping);
-    const request = prepareQuickBooksInvoiceRequest(sdkInput, {
-      requestId: requestIdFor(snapshot, input.mapping),
-      realmId: input.mapping.realmId,
-      environment: input.mapping.environment,
-    });
+    const sdkInput = toSdkInput(snapshot, input.mapping);
+    const { request } = prepareRequest(snapshot, input.mapping, sdkInput);
     const identity: FrozenSyncIdentity = {
       provider: 'quickbooks',
+      documentKind: snapshot.document.kind,
       realmId: request.realmId,
       environment: request.environment,
       invoiceId: snapshot.document.id,
       moneySnapshotId: snapshot.moneySnapshotId,
       requestId: request.requestId,
       payloadHash: request.payloadHash,
+      creditedInvoiceExternalId:
+        'creditedInvoiceExternalId' in request
+          ? request.creditedInvoiceExternalId
+          : undefined,
     };
     const state = parseSyncState(invoice.accountingSyncStateJson);
     if (
@@ -828,7 +920,8 @@ export function readFrozenAccountingSyncState(invoice: Invoice): Readonly<{
   requestId: string;
   attemptId: string;
   startedAt: string;
-  request: QuickBooksInvoiceRequest;
+  documentKind: 'invoice' | 'creditMemo';
+  request: QuickBooksInvoiceRequest | QuickBooksCreditMemoRequest;
 }> | null {
   const state = parseSyncState(invoice.accountingSyncStateJson);
   if (!state) return null;
@@ -837,6 +930,7 @@ export function readFrozenAccountingSyncState(invoice: Invoice): Readonly<{
     provider: state.identity.provider,
     realmId: state.identity.realmId,
     environment: state.identity.environment,
+    documentKind: state.identity.documentKind,
     moneySnapshotId: state.identity.moneySnapshotId,
     requestId: state.identity.requestId,
     attemptId: state.attemptId,
@@ -846,6 +940,14 @@ export function readFrozenAccountingSyncState(invoice: Invoice): Readonly<{
       realmId: state.identity.realmId,
       environment: state.identity.environment,
       payloadHash: state.identity.payloadHash,
+      ...(state.identity.documentKind === 'creditMemo'
+        ? {
+            creditedInvoiceExternalId: requiredText(
+              state.identity.creditedInvoiceExternalId ?? '',
+              'Credited invoice external ID',
+            ),
+          }
+        : {}),
     },
   };
 }

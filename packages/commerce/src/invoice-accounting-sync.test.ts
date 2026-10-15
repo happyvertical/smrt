@@ -1,4 +1,5 @@
 import {
+  type CreditMemoInput,
   type InvoiceInput,
   QuickBooksWriteError,
   type SyncResult,
@@ -120,12 +121,18 @@ describe('frozen invoice accounting sync (#3937)', () => {
 
   function provider(
     push: (input: InvoiceInput) => Promise<SyncResult>,
+    creditPush?: (input: CreditMemoInput) => Promise<SyncResult>,
   ): Parameters<typeof syncFrozenInvoiceToAccounting>[0]['provider'] {
     return {
       type: 'quickbooks',
       invoices: { push } as Parameters<
         typeof syncFrozenInvoiceToAccounting
       >[0]['provider']['invoices'],
+      ...(creditPush
+        ? {
+            creditMemos: { push: creditPush, sync: creditPush },
+          }
+        : {}),
     };
   }
 
@@ -481,10 +488,16 @@ describe('frozen invoice accounting sync (#3937)', () => {
   it.each([
     ['inclusive', { lineAmountType: 'inclusive' as const }],
     ['discount', { discount: 10 }],
-  ])('refuses unsupported %s snapshots before state or provider mutation', async (_name, options) => {
+  ])('syncs public SDK %s snapshots with frozen request facts', async (_name, options) => {
     const seeded = await issuedInvoice(`tenant-${_name}`, options);
     await withTenant({ tenantId: `tenant-${_name}` }, async () => {
-      const push = vi.fn();
+      const push = vi.fn(
+        async (): Promise<SyncResult> => ({
+          action: 'created',
+          externalId: `qbo-${_name}`,
+          syncedAt: new Date('2026-10-15T00:00:00.000Z'),
+        }),
+      );
       await expect(
         syncFrozenInvoiceToAccounting({
           db,
@@ -493,13 +506,214 @@ describe('frozen invoice accounting sync (#3937)', () => {
           mapping: mapping(seeded.lineId, seeded.componentId),
           provider: provider(push),
         }),
-      ).rejects.toMatchObject({ code: 'ACCOUNTING_SYNC_UNSUPPORTED' });
-      expect(push).not.toHaveBeenCalled();
+      ).resolves.toMatchObject({
+        status: 'synced',
+        externalId: `qbo-${_name}`,
+      });
+      expect(push).toHaveBeenCalledTimes(1);
+      const sent = push.mock.calls[0]?.[0];
+      expect(sent?.quickbooksRequest).toMatchObject({
+        requestId: expect.stringMatching(/^smrt_[a-f0-9]{40}$/),
+        realmId: 'realm-a',
+        environment: 'sandbox',
+        payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      });
+      expect(sent?.quickbooksMapping?.globalTaxCalculation).toBe(
+        _name === 'inclusive' ? 'TaxInclusive' : 'TaxExcluded',
+      );
+      if (_name === 'inclusive') {
+        expect(sent?.lineItems[0]).toMatchObject({
+          amount: 1.9,
+          taxAmount: 0.1,
+          taxInclusiveAmount: 2,
+        });
+      } else {
+        expect(sent?.lineItems[0]).toMatchObject({
+          unitPrice: 1,
+          discount: 0.1,
+          amount: 1.9,
+          taxAmount: 0.1,
+        });
+      }
       const stored = await (await InvoiceCollection.create({ db })).get(
         { id: seeded.invoice.id },
         { cache: false },
       );
-      expect(stored?.accountingSyncStateJson).toBe('');
+      expect(stored && readFrozenAccountingSyncState(stored)).toMatchObject({
+        status: 'synced',
+        documentKind: 'invoice',
+      });
+    });
+  });
+
+  it('syncs a positive frozen credit memo with source linkage and fails unsupported providers before ownership', async () => {
+    const tenantId = 'tenant-credit-memo';
+    const source = await issuedInvoice(tenantId, { discount: 10 });
+    await withTenant({ tenantId }, async () => {
+      const sourcePush = vi.fn(
+        async (): Promise<SyncResult> => ({
+          action: 'created',
+          externalId: 'qbo-source-invoice',
+          syncedAt: new Date('2026-10-15T01:00:00.000Z'),
+        }),
+      );
+      await syncFrozenInvoiceToAccounting({
+        db,
+        tenantId,
+        invoiceId: source.invoice.id,
+        mapping: mapping(source.lineId, source.componentId),
+        provider: provider(sourcePush),
+      });
+
+      const invoices = await InvoiceCollection.create({ db });
+      const lines = await InvoiceLineItemCollection.create({ db });
+      const credit = await invoices.create({
+        kind: 'credit_note',
+        creditedInvoiceId: source.invoice.id,
+        customerId: source.invoice.customerId,
+        invoiceNumber: 'CN-SDK-1',
+        currency: 'CAD',
+      });
+      const creditLine = await lines.create({
+        invoiceId: credit.id,
+        creditedLineId: source.lineId,
+        description: 'Full service credit',
+        quantity: 2,
+        unitPrice: 0,
+      });
+      const issuedCredit = await invoices.get(
+        { id: credit.id },
+        { cache: false },
+      );
+      if (!issuedCredit) throw new Error('Expected credit note');
+      issuedCredit.status = InvoiceStatus.SENT;
+      await issuedCredit.save();
+      const creditMapping = mapping(creditLine.id, source.componentId);
+
+      const invoicePush = vi.fn(
+        async (): Promise<SyncResult> => ({
+          action: 'created',
+          externalId: 'unexpected-invoice',
+          syncedAt: new Date('2026-10-15T01:01:00.000Z'),
+        }),
+      );
+      const wrongRealmCreditPush = vi.fn(
+        async (): Promise<SyncResult> => ({
+          action: 'created',
+          externalId: 'unexpected-cross-realm-credit',
+          syncedAt: new Date('2026-10-15T01:01:00.000Z'),
+        }),
+      );
+      await expect(
+        syncFrozenInvoiceToAccounting({
+          db,
+          tenantId,
+          invoiceId: issuedCredit.id,
+          mapping: { ...creditMapping, realmId: 'realm-b' },
+          provider: provider(invoicePush, wrongRealmCreditPush),
+        }),
+      ).rejects.toMatchObject({
+        code: 'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
+      });
+      expect(wrongRealmCreditPush).not.toHaveBeenCalled();
+      await expect(
+        syncFrozenInvoiceToAccounting({
+          db,
+          tenantId,
+          invoiceId: issuedCredit.id,
+          mapping: creditMapping,
+          provider: provider(invoicePush),
+        }),
+      ).rejects.toMatchObject({ code: 'ACCOUNTING_SYNC_UNSUPPORTED' });
+      const unsupported = await invoices.get(
+        { id: issuedCredit.id },
+        { cache: false },
+      );
+      expect(unsupported?.accountingSyncStateJson).toBe('');
+      expect(invoicePush).not.toHaveBeenCalled();
+
+      const descriptors: string[] = [];
+      const creditPush = vi.fn(
+        async (memo: CreditMemoInput): Promise<SyncResult> => {
+          descriptors.push(JSON.stringify(memo.quickbooksCreditMemoRequest));
+          if (descriptors.length === 1)
+            throw new Error('credit response lost after write');
+          return {
+            action: 'created',
+            externalId: 'qbo-credit-memo',
+            syncedAt: new Date('2026-10-15T01:02:00.000Z'),
+          };
+        },
+      );
+      const syncCredit = () =>
+        syncFrozenInvoiceToAccounting({
+          db,
+          tenantId,
+          invoiceId: issuedCredit.id,
+          mapping: creditMapping,
+          provider: provider(invoicePush, creditPush),
+        });
+      await expect(syncCredit()).rejects.toThrow(
+        'credit response lost after write',
+      );
+      const unresolved = await invoices.get(
+        { id: issuedCredit.id },
+        { cache: false },
+      );
+      if (!unresolved) throw new Error('Expected unresolved credit note');
+      const unresolvedState = readFrozenAccountingSyncState(unresolved);
+      if (!unresolvedState) throw new Error('Expected unresolved credit state');
+      await expect(
+        reconcileFrozenInvoiceAccountingSync({
+          db,
+          tenantId,
+          invoiceId: issuedCredit.id,
+          mapping: creditMapping,
+          requestId: unresolvedState.requestId,
+          attemptId: unresolvedState.attemptId,
+          outcome: { status: 'absent' },
+        }),
+      ).resolves.toMatchObject({ status: 'ready' });
+      await expect(syncCredit()).resolves.toMatchObject({
+        status: 'synced',
+        externalId: 'qbo-credit-memo',
+      });
+      expect(invoicePush).not.toHaveBeenCalled();
+      expect(creditPush).toHaveBeenCalledTimes(2);
+      expect(descriptors[1]).toBe(descriptors[0]);
+      const sent = creditPush.mock.calls[1]?.[0];
+      expect(sent).toMatchObject({
+        creditMemoNumber: 'CN-SDK-1',
+        creditedInvoiceExternalId: 'qbo-source-invoice',
+        subtotal: 1.9,
+        taxAmount: 0.1,
+        totalAmount: 2,
+        lineItems: [
+          {
+            amount: 1.9,
+            taxAmount: 0.1,
+            discount: 0.1,
+          },
+        ],
+        quickbooksCreditMemoRequest: {
+          requestId: expect.stringMatching(/^smrt_[a-f0-9]{40}$/),
+          realmId: 'realm-a',
+          environment: 'sandbox',
+          creditedInvoiceExternalId: 'qbo-source-invoice',
+          payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      });
+      const stored = await invoices.get(
+        { id: issuedCredit.id },
+        { cache: false },
+      );
+      expect(stored && readFrozenAccountingSyncState(stored)).toMatchObject({
+        status: 'synced',
+        documentKind: 'creditMemo',
+        request: {
+          creditedInvoiceExternalId: 'qbo-source-invoice',
+        },
+      });
     });
   });
 

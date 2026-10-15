@@ -1,9 +1,14 @@
-/**
- * Pure projection of frozen commerce money snapshots into the accounting SDK's
- * major-unit request shape. The released accounting package does not yet export
- * the snapshot/credit-memo types, so this module deliberately owns compatible
- * structural types until the companion SDK release is available.
- */
+/** Pure projection of frozen commerce money snapshots into accounting SDK inputs. */
+
+import {
+  type AccountingProvider,
+  type CreditMemoInput,
+  type InvoiceInput,
+  type InvoiceLineItemInput,
+  requireCreditMemoOperations,
+  type SyncResult,
+  type TaxComponentSnapshot,
+} from '@happyvertical/accounting';
 
 import { minorToMajorUnits } from './billing/units.js';
 import type { LineAmountType, TaxRoundingScope } from './money.js';
@@ -70,100 +75,23 @@ export interface FrozenAccountingDocumentSnapshot {
   readonly memo?: string;
 }
 
-/** Compatible with accounting SDK #1408's TaxComponentSnapshot. */
-export interface AccountingTaxComponentInput {
-  readonly taxCode: string;
-  readonly rate: string;
-  readonly quickbooksTaxRateRef: string;
-  readonly taxAmount: number;
-}
-
-/** Compatible with accounting SDK #1408's InvoiceLineItemInput snapshot fields. */
-export interface AccountingSnapshotLineInput {
-  readonly description: string;
-  readonly sku?: string;
-  readonly quantity: number;
-  readonly unitPrice: number;
-  readonly discount?: number;
-  readonly amount: number;
-  readonly taxAmount: number;
-  readonly taxComponents: readonly AccountingTaxComponentInput[];
-  readonly taxInclusiveAmount?: number;
-  readonly quickbooksMapping: {
-    readonly itemRef: string;
-    readonly taxCodeRef: string;
-  };
-}
-
-export interface AccountingSnapshotInvoiceInput {
-  readonly id: string;
-  readonly externalId?: string;
-  readonly invoiceNumber: string;
-  readonly customerId: string;
-  readonly customerExternalId?: string;
-  readonly issueDate: Date;
-  readonly dueDate: Date;
-  readonly currency: string;
-  readonly subtotal: number;
-  readonly taxAmount: number;
-  readonly totalAmount: number;
-  readonly lineItems: readonly AccountingSnapshotLineInput[];
-  readonly quickbooksMapping: {
-    readonly globalTaxCalculation:
-      | 'TaxExcluded'
-      | 'TaxInclusive'
-      | 'NotApplicable';
-  };
-  readonly reference?: string;
-  readonly memo?: string;
-}
-
-/** Compatible with accounting SDK #1408's positive CreditMemoInput. */
-export interface AccountingSnapshotCreditMemoInput
-  extends Omit<
-    AccountingSnapshotInvoiceInput,
-    'invoiceNumber' | 'dueDate' | 'quickbooksMapping'
-  > {
-  readonly creditMemoNumber: string;
-  readonly creditedInvoiceExternalId: string;
-  readonly quickbooksMapping: AccountingSnapshotInvoiceInput['quickbooksMapping'];
-}
-
-export type AccountingSnapshotInput =
-  | AccountingSnapshotInvoiceInput
-  | AccountingSnapshotCreditMemoInput;
-
-/** The capability shape from accounting SDK #1408, retained locally until that public release. */
-export interface CreditMemoCapability<TOutput = unknown> {
-  readonly type: string;
-  readonly creditMemos?: {
-    push(input: AccountingSnapshotCreditMemoInput): Promise<TOutput>;
-    sync(input: AccountingSnapshotCreditMemoInput): Promise<TOutput>;
-  };
-}
-
-/** Refuse unsupported providers before a credit-memo network call. */
-export function requireCreditMemoCapability<TOutput>(
-  provider: CreditMemoCapability<TOutput>,
-): NonNullable<CreditMemoCapability<TOutput>['creditMemos']> {
-  if (!provider.creditMemos) {
-    throw new Error(
-      `Accounting provider '${provider.type}' does not support credit memos`,
-    );
-  }
-  return provider.creditMemos;
-}
+/** Public SDK types retained as named aliases for commerce callers. */
+export type AccountingTaxComponentInput = TaxComponentSnapshot;
+export type AccountingSnapshotLineInput = InvoiceLineItemInput;
+export type AccountingSnapshotInvoiceInput = InvoiceInput;
+export type AccountingSnapshotCreditMemoInput = CreditMemoInput;
+export type AccountingSnapshotInput = InvoiceInput | CreditMemoInput;
 
 /**
  * Map and submit a positive credit memo only when the provider exposes that
  * capability. Mapping runs before the provider is touched, so a malformed
  * frozen snapshot cannot trigger a network write.
  */
-export async function pushFrozenCreditMemo<TOutput>(
-  provider: CreditMemoCapability<TOutput>,
+export async function pushFrozenCreditMemo(
+  provider: Pick<AccountingProvider, 'type' | 'creditMemos'>,
   snapshot: FrozenAccountingDocumentSnapshot,
   mapping: FrozenQuickBooksTaxMapping,
-): Promise<TOutput> {
+): Promise<SyncResult> {
   if (snapshot.kind !== 'creditMemo') {
     throw new Error('Credit-memo submission requires a creditMemo snapshot');
   }
@@ -171,7 +99,7 @@ export async function pushFrozenCreditMemo<TOutput>(
   if (!('creditMemoNumber' in input)) {
     throw new Error('Credit-memo submission did not produce a credit memo');
   }
-  return requireCreditMemoCapability(provider).push(input);
+  return requireCreditMemoOperations(provider).push(input);
 }
 
 function requireText(value: string | undefined, label: string): string {
@@ -221,7 +149,7 @@ function percentToFraction(percent: string, componentId: string): string {
 
 function globalTaxCalculation(
   lineAmountType: LineAmountType,
-): AccountingSnapshotInvoiceInput['quickbooksMapping']['globalTaxCalculation'] {
+): NonNullable<InvoiceInput['quickbooksMapping']>['globalTaxCalculation'] {
   switch (lineAmountType) {
     case 'exclusive':
       return 'TaxExcluded';
@@ -313,10 +241,9 @@ function mapLine(
     sku: line.sku || undefined,
     quantity: requirePositiveQuantity(line.quantity, line.id),
     unitPrice: minorToMajorUnits(unitPriceMinor, currency),
-    discount:
-      discountMinor === 0
-        ? undefined
-        : minorToMajorUnits(discountMinor, currency),
+    ...(discountMinor === 0
+      ? {}
+      : { discount: minorToMajorUnits(discountMinor, currency) }),
     amount: minorToMajorUnits(amountMinor, currency),
     taxAmount: minorToMajorUnits(taxMinor, currency),
     taxComponents,
