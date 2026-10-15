@@ -373,7 +373,7 @@ export async function mirrorRelease({
   runNpm = npm,
   fetchImpl = fetch,
   log = console.log,
-  workDir = mkdtempSync(join(tmpdir(), 'npm-mirror-')),
+  workDir,
 } = {}) {
   const source = normalizeRegistry(primary);
   const target = normalizeRegistry(mirror);
@@ -383,38 +383,43 @@ export async function mirrorRelease({
     return result;
   }
 
-  const ctx = { source, target, backfill, releaseVersion, runNpm, fetchImpl, log, workDir };
-  // Each worker takes the next package and mirrors all of its versions in
-  // order before taking another, so per-package ordering (and therefore
-  // `latest`) is exactly what a serial run produces.
-  const perPackage = new Array(packages.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < packages.length) {
-      const index = next;
-      next += 1;
-      try {
-        perPackage[index] = await mirrorPackage(packages[index], ctx);
-      } catch (error) {
-        const entry = failure(packages[index].name, error);
-        log(`❌ npmjs mirror failed: ${entry}`);
-        perPackage[index] = { mirrored: [], skipped: [], failed: [entry] };
+  const ownsWorkDir = workDir === undefined;
+  const activeWorkDir = workDir ?? mkdtempSync(join(tmpdir(), 'npm-mirror-'));
+  try {
+    const ctx = { source, target, backfill, releaseVersion, runNpm, fetchImpl, log, workDir: activeWorkDir };
+    // Each worker takes the next package and mirrors all of its versions in
+    // order before taking another, so per-package ordering (and therefore
+    // `latest`) is exactly what a serial run produces.
+    const perPackage = new Array(packages.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < packages.length) {
+        const index = next;
+        next += 1;
+        try {
+          perPackage[index] = await mirrorPackage(packages[index], ctx);
+        } catch (error) {
+          const entry = failure(packages[index].name, error);
+          log(`❌ npmjs mirror failed: ${entry}`);
+          perPackage[index] = { mirrored: [], skipped: [], failed: [entry] };
+        }
       }
+    };
+    const workers = Math.max(1, Math.min(concurrency, packages.length));
+    log(`Mirroring ${packages.length} package(s) to ${target} with ${workers} worker(s).`);
+    await Promise.all(Array.from({ length: workers }, worker));
+
+    // Report in package order, not completion order, so runs stay comparable.
+    for (const part of perPackage) {
+      result.mirrored.push(...part.mirrored);
+      result.skipped.push(...part.skipped);
+      result.failed.push(...part.failed);
     }
-  };
-  const workers = Math.max(1, Math.min(concurrency, packages.length));
-  log(`Mirroring ${packages.length} package(s) to ${target} with ${workers} worker(s).`);
-  await Promise.all(Array.from({ length: workers }, worker));
 
-  // Report in package order, not completion order, so runs stay comparable.
-  for (const part of perPackage) {
-    result.mirrored.push(...part.mirrored);
-    result.skipped.push(...part.skipped);
-    result.failed.push(...part.failed);
+    return result;
+  } finally {
+    if (ownsWorkDir) rmSync(activeWorkDir, { recursive: true, force: true });
   }
-
-  rmSync(workDir, { recursive: true, force: true });
-  return result;
 }
 
 export function reportMirror(

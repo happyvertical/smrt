@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -83,9 +90,22 @@ function run(fakes, extra = {}) {
     runNpm: fakes.runNpm,
     fetchImpl: fakes.fetchImpl,
     log: () => {},
-    workDir: mkdtempSync(join(tmpdir(), 'mirror-test-')),
     ...extra,
   });
+}
+
+async function withIsolatedTmpdir(run) {
+  const previous = process.env.TMPDIR;
+  const directory = mkdtempSync(join(tmpdir(), 'mirror-test-tmp-'));
+  process.env.TMPDIR = directory;
+  try {
+    assert.equal(tmpdir(), directory);
+    return await run(directory);
+  } finally {
+    if (previous === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previous;
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 test('versions are compared numerically', () => {
@@ -207,11 +227,49 @@ test('a tarball URL outside the primary is refused before anything is fetched', 
   assert.match(result.failed[0], /tarball outside itself/);
 });
 
-test('mirroring a registry onto itself is a no-op', async () => {
-  const fakes = fakeRegistries({ primary: {}, npmjs: {} });
-  const result = await run(fakes, { primary: NPMJS });
-  assert.equal(fakes.calls.length, 0);
-  assert.deepEqual(result, { mirrored: [], skipped: [], failed: [] });
+test('mirroring a registry onto itself is a no-op', { concurrency: false }, async () => {
+  await withIsolatedTmpdir(async (directory) => {
+    const fakes = fakeRegistries({ primary: {}, npmjs: {} });
+    const result = await run(fakes, { primary: NPMJS });
+    assert.equal(fakes.calls.length, 0);
+    assert.deepEqual(result, { mirrored: [], skipped: [], failed: [] });
+    assert.deepEqual(readdirSync(directory), []);
+  });
+});
+
+test('a caller-owned work directory is preserved', async () => {
+  const fakes = fakeRegistries({
+    primary: { [NAME]: ['0.51.11'] },
+    npmjs: {},
+  });
+  const workDir = mkdtempSync(join(tmpdir(), 'mirror-test-'));
+  try {
+    const sentinel = join(workDir, 'caller-owned');
+    writeFileSync(sentinel, 'preserve me');
+    const result = await run(fakes, { workDir });
+    assert.deepEqual(result.mirrored, [`${NAME}@0.51.11`]);
+    assert.ok(existsSync(workDir));
+    assert.equal(readFileSync(sentinel, 'utf8'), 'preserve me');
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('an internally-owned work directory is removed when logging throws', { concurrency: false }, async () => {
+  await withIsolatedTmpdir(async (directory) => {
+    await assert.rejects(
+      mirrorRelease({
+        packages: [],
+        primary: PRIMARY,
+        mirror: NPMJS,
+        log: () => {
+          throw new Error('injected log failure');
+        },
+      }),
+      /injected log failure/,
+    );
+    assert.deepEqual(readdirSync(directory), []);
+  });
 });
 
 test('the report warns on failures and never throws on an unwritable summary', () => {
