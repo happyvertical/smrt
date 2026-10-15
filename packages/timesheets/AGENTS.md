@@ -63,11 +63,24 @@ stamps the user's linked profile. Only the participant records/submits their
 own time unless the caller holds `approve`. `approve` prices with the host's
 `setServiceTimeEntryCommercialResolver()` — a factory called per request with
 the collection's options, so a writing resolver shares the request executor;
-without one it is a 409 and writes nothing. The runtime REST transport gates a collection-hosted action on the
-ITEM's `api.include`, SvelteKit on the collection's, so both list the actions;
+without one it is a 409 and writes nothing. The runtime REST transport gates
+a collection-hosted action on the ITEM's `api.include`, SvelteKit on the
+collection's, so both list the actions;
 a consumer closing them overrides both registrations. The collection and both
 snapshot collections carry their own `@smrt()` surface: undecorated, they
 published generated create/update/delete MCP tools. `reject` waits for #3994.
+
+## Recipe
+
+`src/recipes.ts` declares one `SmrtRecipe`, `timesheets.time-entries`
+(label "Time entries", section `work`), emitted into the built
+`manifest.json` and `smrt-knowledge.json` `recipes`. It shows
+`ServiceTimeEntry` alone, with the generic work reference, evidence, agent
+and approval-trail fields hidden; attendance and rollup models stay out of
+it. `status` and its trail are hidden and locked, and the help never says to
+set them: `save()` accepts a bare transition, so submit and approve must go
+through `ServiceEvidenceService` (the recipe declares no surface for that). Help lives in `src/time-entries.recipe.md` (#3591); keep it and the recipe
+in plain language. See [core recipes](../core/agents/recipes.md).
 
 ## Invariants
 
