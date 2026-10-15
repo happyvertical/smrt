@@ -15,9 +15,17 @@
  *   totalAmount   = subtotal - discount + taxAmount = sum of line amounts
  *
  * A parent with line items takes `subtotal`, `taxAmount` and `totalAmount`
- * from its lines, ignoring what a form sent. INTERIM: smrt#3931 (the money
- * model) will add an explicit tax-exclusive mode; until it ships the planner
- * follows the released, tax-inclusive reading (see AGENTS.md).
+ * from its lines, ignoring what a form sent.
+ *
+ * INTERIM rule, until the money-model release: line amount = qty * unitPrice
+ * - discount + tax, subtotal = the sum of pre-discount prices. It matches the
+ * smrt <=0.56.0 line-items widget. smrt main's money model (smrt#3988, merged
+ * but unreleased) makes `amount` the net after discount, stores tax apart
+ * (`taxAmount`), and adds `lineAmountType` (exclusive / inclusive / none), tax
+ * codes and components, `discountType` / `discountRate` and
+ * `taxRoundingScope`. The planner moves to it when the release lands. Upstream
+ * gap: fresh tenants default to the legacy model (being filed upstream).
+ * See AGENTS.md.
  */
 import type { CatalogModel } from '../catalog/types.ts';
 

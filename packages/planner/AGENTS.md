@@ -348,12 +348,17 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   Sample foreign keys spread over every row of their target (`fakes.ts` `relatedIndex`), so each
   record has related rows; a customer-linked model (a FK to Customer) gets 3-6 rows per customer
   (`customerSlots`, seeded by the customer's index), so related lists hold several records. Sample
-  lines (`data/derived.ts`): `amount` is tax-inclusive, quantity x unit price - discount + tax, as
-  smrt-commerce's `ContractLineItem.calculateAmount` computes it and as smrt-svelte 0.55.24's
-  `line-items` widget reads it (smrt#3954: lines adding up to the recorded total agree). INTERIM:
-  the money-model epic smrt#3931 will add an explicit tax-exclusive mode (amount excludes tax);
-  until it ships, follow the released reading, and if the widget changes, re-check
-  `tests/record-page.test.ts` (only the seeded documents flag) before changing the sample data.
+  lines (`data/derived.ts`): INTERIM line-amount rule until the money-model release: line amount =
+  qty x unitPrice - discount + tax (tax-inclusive), subtotal = the sum of the lines' pre-discount
+  prices. It matches the smrt <=0.56.0 `line-items` widget and smrt-commerce's
+  `ContractLineItem.calculateAmount` (smrt#3954: lines adding up to the recorded total agree).
+  smrt main's money model (smrt#3988, merged, not yet released) changes it: `amount` becomes the net
+  after discount, tax is stored apart (`taxAmount`), and the model adds `lineAmountType`
+  (exclusive / inclusive / none), tax codes and components, `discountType` / `discountRate` and
+  `taxRoundingScope`. The planner moves to that model when the release lands. Upstream gap: a fresh
+  tenant defaults to the legacy model, not the new one (being filed upstream). Until then, if the
+  widget changes, re-check `tests/record-page.test.ts` (only the seeded documents flag) before
+  changing the sample data.
   The document's subtotal is the lines' prices (quantity x unit price), total = subtotal - discount
   + tax = the lines' amounts, taxed at the app's setting, else the pack's, else 5%;
   about a third of documents discount a line (only where the app shows the line's discount: generated
