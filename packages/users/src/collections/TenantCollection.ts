@@ -4,6 +4,10 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import {
+  getCurrentTenant,
+  runTenantHierarchyReadScope,
+} from '@happyvertical/smrt-tenancy';
 import { Tenant } from '../models/Tenant.js';
 import { TenantHierarchyError } from '../models/tenant-hierarchy.js';
 import { TenantStatus } from '../types/index.js';
@@ -22,6 +26,26 @@ export interface CreateChildTenantOptions {
   inheritPermissions?: boolean;
   /** Whether this child cascades permissions to its children. Default: true */
   cascadePermissions?: boolean;
+}
+
+/** The verified actor supplied to a hierarchy read-scope authorizer. */
+export interface TenantReadScopeAuthorizationContext {
+  actorTenantId: string;
+  actorUserId: string;
+  rootTenantId: string;
+  mode: 'catalog' | 'subtree';
+}
+
+/** Authorization must return exactly `true`; every other result fails closed. */
+export type TenantReadScopeAuthorizer = (
+  context: TenantReadScopeAuthorizationContext,
+) => boolean | Promise<boolean>;
+
+export interface TenantReadScopeOptions {
+  /** Qualified tenant-scoped model identities whose list reads may widen. */
+  collections: readonly string[];
+  /** Owning service's affirmative permission decision for this scope. */
+  authorize: TenantReadScopeAuthorizer;
 }
 
 /**
@@ -135,6 +159,12 @@ export class TenantCollection extends SmrtCollection<Tenant> {
     return ancestors;
   }
 
+  /** Return ancestor IDs in the model's canonical root-to-parent order. */
+  async getAncestorIds(tenantId: string): Promise<string[]> {
+    const tenant = await this.get({ id: tenantId });
+    return tenant?.getAncestorIds() ?? [];
+  }
+
   /**
    * Get all ancestors in order from root to immediate parent.
    * Reverse of getAncestors.
@@ -173,6 +203,13 @@ export class TenantCollection extends SmrtCollection<Tenant> {
       (t) =>
         t.hierarchyPath === pathPrefix ||
         t.hierarchyPath?.startsWith(`${pathPrefix}/`),
+    );
+  }
+
+  /** Return descendant IDs without reimplementing materialized-path traversal. */
+  async getDescendantIds(tenantId: string): Promise<string[]> {
+    return (await this.getDescendants(tenantId)).flatMap((tenant) =>
+      tenant.id ? [tenant.id] : [],
     );
   }
 
@@ -218,6 +255,128 @@ export class TenantCollection extends SmrtCollection<Tenant> {
     tenantId: string,
   ): Promise<boolean> {
     return await this.isAncestorOf(tenantId, potentialDescendantId);
+  }
+
+  /** Require `childId` to sit below `parentId`, failing closed otherwise. */
+  async requireChildOf(parentId: string, childId: string): Promise<void> {
+    if (!(await this.isAncestorOf(parentId, childId))) {
+      throw new TenantHierarchyError(
+        `Tenant ${childId} is not a descendant of ${parentId}`,
+        'INVALID_OPERATION',
+      );
+    }
+  }
+
+  /**
+   * Allow list reads for the active family's catalog rows, its ancestors, and
+   * global rows. This never includes descendants or siblings.
+   */
+  async withTenantCatalogReadScope<T>(
+    options: TenantReadScopeOptions,
+    callback: () => Promise<T>,
+  ): Promise<T> {
+    const actor = this.requireReadScopeActor();
+    const actorTenant = await this.get({ id: actor.tenantId });
+    if (!actorTenant?.id) {
+      throw new TenantHierarchyError(
+        `Active tenant not found: ${actor.tenantId}`,
+        'PARENT_NOT_FOUND',
+      );
+    }
+    const ancestorIds = actorTenant.getAncestorIds();
+    return await this.runAuthorizedReadScope(
+      actor,
+      actor.tenantId,
+      'catalog',
+      [...ancestorIds, actor.tenantId],
+      true,
+      options,
+      callback,
+    );
+  }
+
+  /**
+   * Allow list reads for one authorized root and its descendants. Global and
+   * ancestor rows remain unavailable so aggregate views cannot become catalog
+   * lookups by accident.
+   */
+  async withTenantHierarchyContext<T>(
+    rootTenantId: string,
+    options: TenantReadScopeOptions,
+    callback: () => Promise<T>,
+  ): Promise<T> {
+    const actor = this.requireReadScopeActor();
+    const root = await this.get({ id: rootTenantId });
+    if (!root?.id) {
+      throw new TenantHierarchyError(
+        `Tenant root not found: ${rootTenantId}`,
+        'PARENT_NOT_FOUND',
+      );
+    }
+    return await this.runAuthorizedReadScope(
+      actor,
+      rootTenantId,
+      'subtree',
+      [rootTenantId, ...(await this.getDescendantIds(rootTenantId))],
+      false,
+      options,
+      callback,
+    );
+  }
+
+  private requireReadScopeActor(): { tenantId: string; userId: string } {
+    const actor = getCurrentTenant();
+    if (!actor?.tenantId || !actor.userId) {
+      throw new TenantHierarchyError(
+        'Tenant hierarchy read scope requires an active tenant and user',
+        'INVALID_OPERATION',
+      );
+    }
+    return { tenantId: actor.tenantId, userId: actor.userId };
+  }
+
+  private async runAuthorizedReadScope<T>(
+    actor: { tenantId: string; userId: string },
+    rootTenantId: string,
+    mode: TenantReadScopeAuthorizationContext['mode'],
+    tenantIds: readonly string[],
+    includeGlobal: boolean,
+    options: TenantReadScopeOptions,
+    callback: () => Promise<T>,
+  ): Promise<T> {
+    if (
+      !Array.isArray(options.collections) ||
+      options.collections.length === 0 ||
+      typeof options.authorize !== 'function' ||
+      typeof callback !== 'function'
+    ) {
+      throw new TenantHierarchyError(
+        'Tenant hierarchy read scope requires collections, authorize, and callback',
+        'INVALID_OPERATION',
+      );
+    }
+    const authorized = await options.authorize({
+      actorTenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      rootTenantId,
+      mode,
+    });
+    if (authorized !== true) {
+      throw new TenantHierarchyError(
+        'Tenant hierarchy read scope authorization was denied',
+        'INVALID_OPERATION',
+      );
+    }
+    return await runTenantHierarchyReadScope(
+      {
+        actorTenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        collections: options.collections,
+        includeGlobal,
+        tenantIds,
+      },
+      callback,
+    );
   }
 
   // ============= Hierarchy Management Methods =============

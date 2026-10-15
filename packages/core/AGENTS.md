@@ -60,6 +60,9 @@ and repository rules.
   key adopts: a slug `getSlug()` derived from `name`/`title`/`label` moves to
   a free `-2`, `-3`, … slug and INSERTs. See `agents/schema-paths.md`
   ("Tenant OWNERSHIP").
+- Owning `CollectionInterceptor.writeGuard` predicates must reach final writes,
+  including natural-key adoption and deletes; zero matched rows fail closed.
+  See [object runtime](agents/object-runtime.md).
 - Persisted saves use `id` and loaded `updated_at`; new saves use natural keys.
   Preserve revision compare-and-swap ordering through public `save()`,
   `claimRevision()`, and transaction APIs. Embedded saves, deletes, and complete

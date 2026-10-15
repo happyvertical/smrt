@@ -11,10 +11,12 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import ts from 'typescript';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const packageDir = resolve(import.meta.dirname, '../..');
@@ -77,10 +79,13 @@ describe('MCP get serializer packed consumer (#3937)', () => {
     const { createPackedConsumer } = (await import(
       packedConsumerModule
     )) as PackedConsumerModule;
+    const liveCoreArtifact = join(packageDir, 'dist/database.js');
+    const liveArtifactMtime = statSync(liveCoreArtifact).mtimeMs;
     consumer = createPackedConsumer({
       root: workspaceRoot,
       packageNames: ['@happyvertical/smrt-core'],
     });
+    expect(statSync(liveCoreArtifact).mtimeMs).toBe(liveArtifactMtime);
 
     const commerceSource = join(consumer.directory, 'commerce-source');
     const tarballs = join(consumer.directory, 'tarballs');
@@ -226,6 +231,80 @@ console.log(JSON.stringify({
   afterAll(() => {
     consumer?.cleanup();
     consumer = undefined;
+  });
+
+  it('ships every relative JavaScript import in the installed tarball (#4008)', () => {
+    if (!consumer) throw new Error('Packed consumer was not created');
+    const dist = join(
+      consumer.directory,
+      'node_modules/@happyvertical/smrt-core/dist',
+    );
+    const visit = (directory: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const file = join(directory, entry.name);
+        if (entry.isDirectory()) visit(file);
+        else if (entry.name.endsWith('.js')) {
+          const source = ts.createSourceFile(
+            file,
+            readFileSync(file, 'utf8'),
+            ts.ScriptTarget.Latest,
+            true,
+            ts.ScriptKind.JS,
+          );
+          const check = (node: ts.Node) => {
+            const specifier =
+              ts.isImportDeclaration(node) || ts.isExportDeclaration(node)
+                ? node.moduleSpecifier
+                : ts.isCallExpression(node) &&
+                    (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+                      (ts.isIdentifier(node.expression) &&
+                        node.expression.text === 'require'))
+                  ? node.arguments[0]
+                  : undefined;
+            if (
+              specifier &&
+              ts.isStringLiteral(specifier) &&
+              specifier.text.startsWith('.')
+            ) {
+              expect(
+                existsSync(resolve(dirname(file), specifier.text)),
+                `${file}: ${specifier.text}`,
+              ).toBe(true);
+            }
+            ts.forEachChild(node, check);
+          };
+          check(source);
+        }
+      }
+    };
+    visit(dist);
+  });
+
+  it('executes packed SHA-256 dependencies without producer paths (#4008)', () => {
+    if (!consumer) throw new Error('Packed consumer was not created');
+    const hashModule = pathToFileURL(
+      join(
+        consumer.directory,
+        'node_modules/@happyvertical/smrt-core/dist/utils/sha256.js',
+      ),
+    ).href;
+    run(
+      process.execPath,
+      [
+        '--input-type=module',
+        '--eval',
+        `
+      import assert from 'node:assert/strict';
+      import { createHash } from 'node:crypto';
+      const { sha256Hex, sha256Base64Url } = await import(${JSON.stringify(hashModule)});
+      for (const text of ['', 'abc', 'éducation 🎓']) {
+        assert.equal(sha256Hex(text), createHash('sha256').update(text).digest('hex'));
+        assert.equal(sha256Base64Url(text), createHash('sha256').update(text).digest('base64url'));
+      }
+    `,
+      ],
+      consumer.directory,
+    );
   });
 
   it('anchors an import-only Commerce serializer to its installed Invoice module, not cwd', () => {

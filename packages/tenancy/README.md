@@ -194,6 +194,28 @@ normal guards. The capability is async-local, restores after exceptions, and doe
 not affect concurrent requests. Real system/super-admin callers retain their
 existing bypass behavior. Use bounded collection reads inside the callback.
 
+### Authorized hierarchy read scopes
+
+Hosts use the owning `TenantCollection.withTenantCatalogReadScope()` or
+`withTenantHierarchyContext()` APIs in `@happyvertical/smrt-users`, with active
+`enableTenancy()` enforcement and an affirmative server-side authorizer. Catalog
+scopes allow self, ancestors and global rows; subtree scopes allow only the
+approved root and descendants. See the users package's hierarchical-tenants docs.
+
+`runTenantHierarchyReadScope()` and `getTenantHierarchyReadScope()` are trusted
+plumbing for that owning package, not host authorization entry points. The runner
+checks enforcement is enabled but does not authorize the actor or derive the
+hierarchy. Do not construct a scope from request input.
+
+Inside a scope, only allowlisted tenant-scoped list-family reads widen; caller
+filters still narrow them. Point `get()` reads retain the active tenant predicate,
+including under nested super-admin bypass. Tenant-scoped saves, deletes and raw
+queries are rejected, including explicit raw-query opt-ins. Actor switches and
+nested scopes fail closed. The callback does not alter actor/session authority,
+and PostgreSQL RLS remains an additional restriction. These collection hooks do
+not sandbox direct database access or models without tenancy. Outside the scope,
+normal opted-in super-admin bypass behavior is unchanged.
+
 A consumer can strengthen an already tenant-scoped package model at startup with
 `ObjectRegistry.registerOverride(qualifiedName, { tenancy: { mode: 'required' } })`.
 This policy survives manifest/decorator re-registration and takes precedence over

@@ -24,6 +24,7 @@
       "@happyvertical/smrt-content",
       "@happyvertical/smrt-core",
       "@happyvertical/smrt-dev-mcp",
+      "@happyvertical/smrt-education",
       "@happyvertical/smrt-events",
       "@happyvertical/smrt-expenses",
       "@happyvertical/smrt-facts",

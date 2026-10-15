@@ -1138,6 +1138,27 @@ immediately invalidates every child at the next guard check.
 
 ### Hierarchical tenants
 
+`TenantCollection` is the only hierarchy traversal API. Use
+`getAncestorIds()`, `getDescendantIds()`, and `requireChildOf()` rather than
+walking `parentTenantId` in an application.
+
+For a reviewed cross-tenant **list** read, use
+`withTenantCatalogReadScope()` for the active family, its ancestors, and
+global rows, or `withTenantHierarchyContext()` for one authorized root and its
+descendants. Both require an active tenant **and user**, a non-empty qualified
+collection allowlist, active `enableTenancy()` enforcement, and an authorizer
+that returns exactly `true`; every
+other result fails closed. The callback can widen only `list()` for those
+collections. `get()`, raw queries, saves, and deletes retain normal tenancy
+guards (tenant-scoped collection writes and raw queries are rejected while the
+scope is active). This is a trusted server API, not a sandbox: direct database
+executors and models without tenancy remain the host's responsibility. Catalog scopes never
+include descendants or siblings; subtree scopes never include ancestors or
+global rows. The actor and database session authority are unchanged. PostgreSQL
+RLS remains an additional restriction: effective visibility is the intersection
+of the approved scope and the database policies, so a stricter RLS policy may
+exclude ancestor or global rows even after application authorization.
+
 Tenants support parent-child trees (max depth 10). Two flags control inheritance: `cascadePermissions` (parent pushes down) and `inheritPermissions` (child accepts). Both must be true for permissions to flow.
 
 The materialized `hierarchyPath` / `hierarchyLevel` are **derived by the

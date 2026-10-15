@@ -83,3 +83,9 @@ Registered slots: `asset-manager` (admin), `asset-grid` / `asset-list` (list), `
 - **Folder tree traversal**: via `SmrtHierarchical` (`getParent`/`getChildren`/`getAncestors`/`getDescendants`/`getHierarchy`/`moveTo`); `FolderCollection.getTree(rootId?)` and `getPath(folderId)` wrap these for convenience
 - **AssetAssociation polymorphic FK**: requires manual `metaType` string matching
 - **Optional tenancy**: assets can be global (tenantId=null) or tenant-scoped
+
+## Private records
+
+`Asset.accessMode` and the mandatory owning interceptor protect private records
+across generated and parent STI surfaces. Use the exact actor/owner/ID capability
+only after host authorization; see [private assets](agents/private-assets.md).

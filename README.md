@@ -233,6 +233,7 @@ Status legend:
 | [`smrt-affiliates`](./packages/affiliates/README.md) | Deprecated | Compatibility shim over the `smrt-sales` commissions core. |
 | [`smrt-subscriptions`](./packages/subscriptions/README.md) | Preview | Plans, entitlements, usage, pricing, and spending policies. |
 | [`smrt-ledgers`](./packages/ledgers/README.md) | Stable | Double-entry accounting and journal lifecycle. |
+| [`smrt-education`](./packages/education/README.md) | Preview | Tenant-aware course catalog, learner curricula, and enrollment progress with authorized private learning materials. |
 | [`smrt-expenses`](./packages/expenses/README.md) | Preview | Reviewed expenses against a cost object, deduplicated receipts, and commitment drawdown. |
 | [`smrt-ads`](./packages/ads/README.md) | Stable | Ad selection, variation testing, and immutable delivery events. |
 | [`smrt-analytics`](./packages/analytics/README.md) | Stable | Analytics properties, streams, events, and reports. |

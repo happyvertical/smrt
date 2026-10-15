@@ -197,3 +197,20 @@ instances and never use this path to overwrite a loaded revision.
 - **Runtime-only** — attached to the prototype, invisible to the build-time manifest, so it never leaks into the REST/CLI/MCP surface.
 
 When the target declares multiple FKs back to the parent, annotate `@oneToMany(Target, { foreignKey: '<inverseField>' })`; `loadRelatedMany` and the eager `include:` loader both honor it (else first-match).
+
+## Mandatory persisted write predicates
+
+`CollectionInterceptor.writeGuard` supplies trusted column predicates that callers
+cannot override through patches or save options. Core conjoins these with CAS
+conditions at the final mutation. Guarded new rows insert without unconditional
+upsert fallback; existing natural-key targets update conditionally, with zero rows
+failing closed. Embedded adapter checks execute inside the shared write queue;
+PostgreSQL uses the final SQL predicate. Guarded policies disable bulk shortcuts
+unless explicitly compatible. Preserve this enforcement in save, claimRevision,
+delete and natural-key adoption paths, including transaction-bound executors.
+
+Mandatory write guards preserve natural-key identity: only the row found and
+owner-checked by the natural-key lookup can be adopted for a conditional update.
+An unmatched natural key uses INSERT, even if its explicit primary key names an
+existing row. Duplicate IDs therefore fail without changing foreign/global rows,
+including NULL-bearing natural keys on PostgreSQL.

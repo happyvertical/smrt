@@ -335,9 +335,13 @@ function getTestManifest(): SmartObjectManifest | null {
     }
 
     try {
-      // Dynamically import test manifest to avoid loading in production
-      const imported = require('./test-manifest-stub.js');
-      const manifest = imported.testManifest || imported.default;
+      // Read the generated JSON only inside the core-test environment gate.
+      const manifest: SmartObjectManifest = parse(
+        readFileSync(
+          join(process.cwd(), 'src/manifest/test-manifest.json'),
+          'utf-8',
+        ),
+      );
       setTestManifestCache(manifest);
       if (process.env.DEBUG_TEST_ENV) {
         logger.debug(

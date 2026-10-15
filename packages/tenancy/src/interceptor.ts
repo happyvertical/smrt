@@ -38,6 +38,38 @@ import { getTenantScopedConfig, isTenantScopedClass } from './registry.js';
 
 import { assertTenantReadAllowed } from './tenant-global-queries.js';
 import { getTenantGlobalReadScope } from './tenant-global-read-scope.js';
+import { getTenantHierarchyReadScope } from './tenant-hierarchy-read-scope.js';
+
+function assertHierarchyReadScope(
+  tenancyIdentity: string,
+  operation: 'list' | 'get' | 'query' | 'save' | 'delete',
+): ReturnType<typeof getTenantHierarchyReadScope> {
+  const scope = getTenantHierarchyReadScope();
+  if (!scope) return undefined;
+  const actor = getCurrentTenant();
+  if (
+    !actor ||
+    actor.tenantId !== scope.actorTenantId ||
+    actor.userId !== scope.actorUserId
+  ) {
+    throw new TenantIsolationError(
+      'Tenant hierarchy read scope actor changed or is unavailable',
+    );
+  }
+  // Point reads retain their ordinary predicate, but cannot switch actors.
+  if (operation === 'get') return scope;
+  if (operation !== 'list') {
+    throw new TenantIsolationError(
+      `Tenant hierarchy read scope does not permit ${operation}`,
+    );
+  }
+  if (!scope.collections.includes(tenancyIdentity)) {
+    throw new TenantIsolationError(
+      `Tenant hierarchy read scope does not allow ${tenancyIdentity}`,
+    );
+  }
+  return scope;
+}
 
 const logger = createLogger({ level: 'info' });
 
@@ -247,8 +279,13 @@ export function createTenantInterceptor(
         return; // Not tenant-scoped, pass through
       }
 
-      // Super-admin bypass applies only to classes that opt in (#2973)
-      if (isSuperAdminBypassAllowed(tenancyIdentity)) {
+      const hierarchyReadScope = assertHierarchyReadScope(
+        tenancyIdentity,
+        'list',
+      );
+      // A hierarchy capability remains bounded even inside an opted-in bypass.
+      // Super-admin bypass applies only to classes that opt in (#2973).
+      if (!hierarchyReadScope && isSuperAdminBypassAllowed(tenancyIdentity)) {
         return; // Bypass enabled and allowed for this class, pass through
       }
 
@@ -259,6 +296,43 @@ export function createTenantInterceptor(
 
       const config = getTenantScopedConfig(tenancyIdentity);
       const tenantContext = getCurrentTenant();
+      if (hierarchyReadScope) {
+        const tenantField = config?.field || 'tenantId';
+        const where = listOptions.where || {};
+        const groups = Array.isArray(where) ? where : [[where]];
+        if (!groups.length || groups.some((group) => !group.length)) {
+          throw new Error('Invalid DNF where clause for tenant hierarchy list');
+        }
+        const allowed = new Set<unknown>(hierarchyReadScope.tenantIds);
+        if (hierarchyReadScope.includeGlobal) allowed.add(null);
+        for (const group of groups) {
+          for (const condition of group) {
+            if (!Object.hasOwn(condition, tenantField)) continue;
+            const values = Array.isArray(condition[tenantField])
+              ? condition[tenantField]
+              : [condition[tenantField]];
+            if (values.some((value) => !allowed.has(value))) {
+              throw new TenantIsolationError(
+                `Tenant hierarchy read scope rejected an out-of-scope ${tenantField} filter`,
+              );
+            }
+          }
+        }
+        return {
+          ...listOptions,
+          // SQL IN does not match NULL. Preserve each caller conjunction in
+          // both branches so global rows cannot bypass the caller's filters.
+          where: groups.flatMap((group) => {
+            const scoped = [
+              ...group,
+              { [tenantField]: hierarchyReadScope.tenantIds },
+            ];
+            return hierarchyReadScope.includeGlobal
+              ? [scoped, [...group, { [tenantField]: null }]]
+              : [scoped];
+          }),
+        };
+      }
       const globalReadTenant = getTenantGlobalReadScope();
       if (globalReadTenant !== undefined) {
         // Recheck if nested code changed actors after entering the capability.
@@ -399,7 +473,12 @@ export function createTenantInterceptor(
         return;
       }
 
-      if (isSuperAdminBypassAllowed(tenancyIdentity)) {
+      const hierarchyReadScope = assertHierarchyReadScope(
+        tenancyIdentity,
+        'get',
+      );
+
+      if (!hierarchyReadScope && isSuperAdminBypassAllowed(tenancyIdentity)) {
         return;
       }
 
@@ -490,6 +569,8 @@ export function createTenantInterceptor(
         return;
       }
 
+      assertHierarchyReadScope(tenancyIdentity, 'query');
+
       // Check for explicit bypass flag
       if (queryOptions.allowRawOnTenantScoped) {
         opts.onRawQuery?.(className, queryOptions.sql, context);
@@ -559,6 +640,8 @@ export function createTenantInterceptor(
         return;
       }
 
+      assertHierarchyReadScope(tenancyIdentity, 'save');
+
       if (isSuperAdminBypassAllowed(tenancyIdentity)) {
         return;
       }
@@ -624,6 +707,8 @@ export function createTenantInterceptor(
       if (!isTenantScopedClass(tenancyIdentity)) {
         return;
       }
+
+      assertHierarchyReadScope(tenancyIdentity, 'delete');
 
       if (isSuperAdminBypassAllowed(tenancyIdentity)) {
         return;
