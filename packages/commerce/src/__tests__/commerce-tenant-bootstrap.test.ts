@@ -141,6 +141,29 @@ describe('ensureCommerceTenant', () => {
     });
   });
 
+  it('refuses a major-unit line price before it reaches the database', async () => {
+    await ensureCommerceTenant(db, 'units');
+    await withTenant({ tenantId: 'units' }, async () => {
+      const invoice = await (await InvoiceCollection.create({ db })).create({
+        invoiceNumber: 'U-1',
+        currency: 'USD',
+      });
+      await expect(
+        (await InvoiceLineItemCollection.create({ db })).create({
+          invoiceId: invoice.id,
+          description: 'Major units',
+          quantity: 1,
+          unitPrice: 19.99,
+        }),
+      ).rejects.toMatchObject({ code: 'UNSAFE_MONEY' });
+      expect(
+        await (await InvoiceLineItemCollection.create({ db })).findByInvoice(
+          String(invoice.id),
+        ),
+      ).toEqual([]);
+    });
+  });
+
   it('requires a tenant', async () => {
     await expect(ensureCommerceTenant(db, ' ')).rejects.toThrow(
       'requires a tenant',

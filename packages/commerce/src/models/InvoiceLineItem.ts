@@ -341,6 +341,17 @@ export class InvoiceLineItem extends SmrtObject {
   async saveDerived(capability: DocumentMoneyWriteCapability): Promise<this> {
     if (capability !== DOCUMENT_MONEY_WRITE)
       throw new Error('Invoice line money write capability is required');
+    // Money is integer minor units: refuse a major-unit price before it can
+    // reach the database (#2401), ahead of the aggregate recompute.
+    for (const [field, value] of [
+      ['unitPrice', this.unitPrice],
+      ['discount', this.discount],
+    ] as const)
+      if (!Number.isSafeInteger(value))
+        throw new MoneyValidationError(
+          'UNSAFE_MONEY',
+          `Invoice line ${field} ${value} must be a safe integer number of minor units`,
+        );
     return (await super.save()) as this;
   }
 

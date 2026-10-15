@@ -276,6 +276,7 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
     // `Payment.amount`. Both are INTEGER minor units as of #2401, so the cap is
     // an exact integer comparison with no tolerance.
     const payment = await payments.create({
+      tenantId: TENANT,
       paymentNumber: 'PAY-2361',
       currency: invoice.currency,
       amount: 2159,
