@@ -1336,6 +1336,26 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `Group` | Team within a tenant. Gains permissions via GroupRole. |
 | `Membership` | User + Tenant + Role junction. UNIQUE(userId, tenantId). |
 | `MembershipOverride` | Per-user permission grant/deny on a membership. |
+| `LegalMember` | Tenant-scoped legal member register entry, separate from authentication/RBAC membership and subscriptions. |
+| `MemberClass` | Configurable legal member classification; classes have no built-in authority or entitlement effect. |
+| `LegalMemberStatusHistory` | Append-only effective status history for historical and record-date queries. |
+| `LegalMemberReference` | Qualified reference to authoritative shares, dues, subscription, agreement, or ledger evidence; it never stores a balance. |
+| `MemberOfficerAppointment` | Effective-dated board/officer register entry; it is not an RBAC grant or ballot engine. |
+
+## Legal member register
+
+`MemberRegisterService` manages a tenant's legal member register. It is distinct
+from `Membership`, which is a user-to-tenant authorization row, and from
+subscriptions, which resolve paid entitlements. A legal member may be an
+individual or organisation and may link to a user/profile or an external-party
+reference, without requiring any of them.
+
+The service writes effective status history, references financial evidence
+without copying balances, and effective board/officer terms. `asOf(recordDate,
+policy)` produces persisted, neutral eligibility snapshots plus CSV/JSON
+exports. A policy that requires shares or dues evidence fails closed unless the
+register has an explicitly authoritative reference for every required kind; the
+snapshot names that missing evidence rather than inferring payment status.
 | `TenantPermissionOverride` | Tenant-level permission override (INHERIT/GRANT/DENY). |
 | `GroupMember`, `GroupRole`, `RolePermission` | Junction tables for groups and role-permission assignments. |
 | `AccessRequest` | "Request access / waitlist" record captured before a `User` exists. Closed generated surface — all access via `AccessRequestService`. |
