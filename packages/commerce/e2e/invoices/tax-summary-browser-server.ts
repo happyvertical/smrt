@@ -1,4 +1,6 @@
-import '../../dist/index.js';
+// Keep the browser fixture on one source-module identity. Mixing dist's
+// registration with source constructors splits decorator foreign-key targets.
+import '../../src/index.js';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { queryReportMaterializedRows } from '@happyvertical/smrt-reports';
@@ -15,7 +17,6 @@ import {
   TAX_SUMMARY_REPORT_ADAPTER,
 } from '../../src/tax-summary-report-adapter.js';
 import { seedInvoiceTaxReportFacts } from '../../src/__tests__/helpers/invoice-tax-report-facts.js';
-import '../..//src/collections/ContractCollection.js';
 
 const from = new Date('2026-09-01T00:00:00.000Z');
 const to = new Date('2026-09-30T23:59:59.999Z');

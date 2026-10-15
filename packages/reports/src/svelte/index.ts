@@ -7,6 +7,12 @@ export {
   type RuntimeReportsHttpClientOptions,
   RuntimeReportsHttpError,
 } from './client.js';
+export { default as MaterializedReportTable } from './MaterializedReportTable.svelte';
+export type {
+  MaterializedReportCell,
+  MaterializedReportDrilldown,
+  MaterializedReportPage,
+} from './materialized.js';
 export { default as ReportConfirmation } from './ReportConfirmation.svelte';
 export { default as ReportDetail } from './ReportDetail.svelte';
 export { default as ReportPicker } from './ReportPicker.svelte';
