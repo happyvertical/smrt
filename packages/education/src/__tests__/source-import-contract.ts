@@ -411,3 +411,68 @@ export async function assertInputAndIdentityGuards(f: Fixture): Promise<void> {
     ).toBeNull();
   });
 }
+
+/** Regression: ordinary bold instructions cannot terminate the worksheet day. */
+export async function assertBoldInstructionRefresh(f: Fixture): Promise<void> {
+  const first = await f.run(() => f.service.importCourse(f.request));
+  f.setPage(
+    '<h1>Language Arts</h1><p><strong>Lesson 1 *</strong></p><p><strong>Print this worksheet</strong></p><a href="/wp-content/uploads/refreshed-day1.pdf">Worksheet</a><h2>Lesson 2</h2>',
+  );
+  const refreshed = await f.run(() => f.service.importCourse(f.request));
+  expect(refreshed).toEqual(first);
+  await f.run(async () => {
+    const lessons = await LessonCollection.create({ db: f.db });
+    expect(await lessons.get(first.lessonIds[0])).toMatchObject({
+      printableUrl:
+        'https://allinonehomeschool.com/wp-content/uploads/refreshed-day1.pdf',
+    });
+  });
+}
+
+/** Regression: unaccounted markers cannot commit pointers to a different day. */
+export async function assertAmbiguousMarkersAtomicity(
+  f: Fixture,
+): Promise<void> {
+  f.setPage(
+    '<h1>Original</h1><p><strong>Lesson 1 *</strong></p><a href="/wp-content/uploads/old1.pdf">Worksheet</a><p><strong>Lesson 2 *</strong></p><a href="/wp-content/uploads/old2.pdf">Worksheet</a>',
+  );
+  const first = await f.run(() => f.service.importCourse(f.request));
+  const courseBefore = await f.db.get('courses', { id: first.courseId });
+  const lessonsBefore = await Promise.all(
+    first.lessonIds.map((id) => f.db.get('lessons', { id })),
+  );
+  const malformed = [
+    '<h1>Changed</h1><p><strong>Lesson 1 *</strong><br><strong>Lesson 2 *</strong> <a href="/wp-content/uploads/wrong-day2.pdf">worksheet</a></p>',
+    ...['div', 'td', 'span'].map(
+      (tag) =>
+        `<h1>Changed</h1><p><strong>Lesson 1 *</strong></p><${tag}><strong>Lesson 2 *</strong> <a href="/wp-content/uploads/wrong-day2.pdf">worksheet</a></${tag}>`,
+    ),
+  ];
+  await f.run(async () => {
+    const courses = await CourseCollection.create({ db: f.db });
+    const countBefore = (await courses.list()).length;
+    for (const html of malformed) {
+      f.setPage(html);
+      await expect.soft(f.service.importCourse(f.request)).rejects.toThrow();
+      await expect
+        .soft(
+          f.service.importCourse({
+            ...f.request,
+            courseRef: 'ambiguous-new-course',
+          }),
+        )
+        .rejects.toThrow();
+      expect
+        .soft(await f.db.get('courses', { id: first.courseId }))
+        .toEqual(courseBefore);
+      expect
+        .soft(
+          await Promise.all(
+            first.lessonIds.map((id) => f.db.get('lessons', { id })),
+          ),
+        )
+        .toEqual(lessonsBefore);
+      expect.soft((await courses.list()).length).toBe(countBefore);
+    }
+  });
+}

@@ -5,7 +5,9 @@ import {
 } from '@happyvertical/smrt-vitest';
 import { afterAll, beforeAll, describe, it } from 'vitest';
 import {
+  assertAmbiguousMarkersAtomicity,
   assertAuthorizationAndSharing,
+  assertBoldInstructionRefresh,
   assertInputAndIdentityGuards,
   assertRefreshAndPrivacy,
   assertRollbackAndRetry,
@@ -33,6 +35,14 @@ import {
       [
         'validates fetch, rechecks policy and rejects corrupted identities',
         assertInputAndIdentityGuards,
+      ],
+      [
+        'refreshes worksheet URLs after ordinary bold instructions',
+        assertBoldInstructionRefresh,
+      ],
+      [
+        'rejects unaccounted lesson markers without partial mutation',
+        assertAmbiguousMarkersAtomicity,
       ],
     ] as const) {
       it(name, async () => {

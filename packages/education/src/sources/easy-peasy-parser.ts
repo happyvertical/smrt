@@ -91,26 +91,44 @@ function lessonHeadings(html: string): HeadingMatch[] {
   const matches: HeadingMatch[] = [];
   const headings = /<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]\s*>/gi;
   for (const match of html.matchAll(headings)) {
+    const text = textContent(match[1]);
+    if (!/^lesson\b/i.test(text)) continue;
     matches.push({
       index: match.index ?? 0,
       end: (match.index ?? 0) + match[0].length,
-      text: textContent(match[1]),
+      text,
     });
   }
-  const paragraphs = /<(p|li)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi;
-  for (const match of html.matchAll(paragraphs)) {
+  const blocks = /<(p|li)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi;
+  for (const block of html.matchAll(blocks)) {
     const bold = /<(?:strong|b)\b[^>]*>([\s\S]*?)<\/(?:strong|b)\s*>/i.exec(
-      match[2],
+      block[2],
     );
     if (!bold) continue;
-    const boldOffset = match[0].indexOf(bold[0]);
+    const text = textContent(bold[1]);
+    if (!/^lesson\b/i.test(text)) continue;
+    const boldIndex = (block.index ?? 0) + block[0].indexOf(bold[0]);
     matches.push({
-      index: match.index ?? 0,
-      end: (match.index ?? 0) + boldOffset + bold[0].length,
-      text: textContent(bold[1]),
+      index: block.index ?? 0,
+      end: boldIndex + bold[0].length,
+      text,
     });
   }
-  return matches.sort((left, right) => left.index - right.index);
+  const sorted = matches.sort((left, right) => left.index - right.index);
+  const boldMarkers = /<(strong|b)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi;
+  for (const marker of html.matchAll(boldMarkers)) {
+    if (!/^lesson\b/i.test(textContent(marker[2]))) continue;
+    const index = marker.index ?? 0;
+    const end = index + marker[0].length;
+    const accountedFor = sorted.some(
+      (heading) =>
+        heading.index === index ||
+        (heading.index <= index && end <= heading.end),
+    );
+    if (!accountedFor)
+      throw new Error('Easy Peasy lesson marker layout is unsupported.');
+  }
+  return sorted;
 }
 
 /** Reject incomplete lesson markup before the tolerant extractors can skip it. */

@@ -3,7 +3,9 @@ import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CourseSource } from '../course-source.js';
 import {
+  assertAmbiguousMarkersAtomicity,
   assertAuthorizationAndSharing,
+  assertBoldInstructionRefresh,
   assertInputAndIdentityGuards,
   assertRefreshAndPrivacy,
   assertRollbackAndRetry,
@@ -27,6 +29,14 @@ describe('source import (SQLite)', () => {
     [
       'validates fetch, rechecks policy and rejects corrupted identities',
       assertInputAndIdentityGuards,
+    ],
+    [
+      'refreshes worksheet URLs after ordinary bold instructions',
+      assertBoldInstructionRefresh,
+    ],
+    [
+      'rejects unaccounted lesson markers without partial mutation',
+      assertAmbiguousMarkersAtomicity,
     ],
   ] as const) {
     it(name, async () => {

@@ -31,3 +31,23 @@ Documented root validation: `pnpm install`, `pnpm build`, `pnpm test`,
 `pnpm typecheck`, `pnpm lint`, `pnpm format-check`,
 `pnpm knowledge:check --strict --format markdown`, `pnpm audit:policy`.
 The review packet records exact commands, current-head evidence files and hashes.
+
+## Accepted round-1 parser regressions
+
+- **Accepted — Astra (P2):** non-lesson bold instructions ended a lesson's
+  segment, causing a valid printable URL to disappear on refresh. The parser
+  now delimits only validated lesson headings; real SQLite/PostgreSQL refresh
+  tests require the existing worksheet ID to receive the new PDF URL.
+- **Accepted — Opus (medium):** ignored second bold markers or markers in
+  unsupported containers could attach another day's PDF to the prior lesson.
+  Every recognizable marker must be accounted for. Ambiguous multi-marker
+  paragraphs and unsupported div/td/span layouts fail before persistence.
+  Real SQLite/PostgreSQL tests assert unchanged course/lesson rows and no new
+  course for both refresh and initial-import attempts.
+
+Both regression groups are run against covered head
+`d71113876ad52c2e6da21d04e8e0e89848114bf2`'s parser to establish failing
+baseline behavior, then against the correction. This is a bounded parser
+correction: the full root suite already passed on the covered head; round 2
+reruns the affected package, PostgreSQL, build/typecheck, browser boundary,
+static and knowledge gates rather than an unrelated full-root test rerun.

@@ -109,6 +109,38 @@ describe('parseEasyPeasyPage', () => {
     expect(() => parseEasyPeasyPage(html, pageUrl)).toThrow('ambiguous');
   });
 
+  it('keeps a lesson segment open through unrelated bold instructions', () => {
+    const html = `
+      <h1>Course</h1>
+      <p><strong>Lesson 1 *</strong></p>
+      <p><strong>Print this worksheet</strong></p>
+      <a href="/wp-content/uploads/day-1.pdf">Worksheet</a>
+      <p><strong>Lesson 2</strong></p>`;
+    expect(parseEasyPeasyPage(html, pageUrl).lessons).toEqual([
+      expect.objectContaining({
+        day: 1,
+        printableUrl:
+          'https://allinonehomeschool.com/wp-content/uploads/day-1.pdf',
+      }),
+      expect.objectContaining({ day: 2 }),
+    ]);
+  });
+
+  it('rejects ambiguous compact and generic-container lesson marker layouts', () => {
+    const compact = `
+      <h1>Course</h1>
+      <p><strong>Lesson 1 *</strong><br><strong>Lesson 2 *</strong>
+      <a href="/wp-content/uploads/day-2.pdf">Worksheet</a></p>`;
+    const genericContainer = `
+      <h1>Course</h1>
+      <div><span><strong>Lesson 3 *</strong></span>
+      <a href="/wp-content/uploads/day-3.pdf">Worksheet</a></div>`;
+    expect(() => parseEasyPeasyPage(compact, pageUrl)).toThrow('unsupported');
+    expect(() => parseEasyPeasyPage(genericContainer, pageUrl)).toThrow(
+      'unsupported',
+    );
+  });
+
   it('ignores scripts, comments, and third-party non-PDF links', () => {
     const html = `
       <h1>Course</h1>
