@@ -6,7 +6,11 @@ import {
   withSystemContext,
   withTenant,
 } from '../context';
-import { createTenantInterceptor } from '../interceptor';
+import {
+  createTenantInterceptor,
+  disableTenancy,
+  enableTenancy,
+} from '../interceptor';
 import {
   registerTenantScopedClass,
   unregisterTenantScopedClass,
@@ -22,8 +26,14 @@ const read = (
 ) => interceptor.beforeList?.(name, { where }, context);
 
 describe('tenant/global list capability', () => {
-  beforeEach(() => registerTenantScopedClass(name, { mode: 'required' }));
-  afterEach(() => unregisterTenantScopedClass(name));
+  beforeEach(() => {
+    registerTenantScopedClass(name, { mode: 'required' });
+    enableTenancy();
+  });
+  afterEach(() => {
+    unregisterTenantScopedClass(name);
+    disableTenancy();
+  });
 
   it('ANDs object and DNF filters with the allowed scope without changing actors', async () => {
     await withTenant(
@@ -98,6 +108,26 @@ describe('tenant/global list capability', () => {
         expect(await read()).toBeUndefined();
       });
     });
+  });
+
+  it('rejects a hierarchy capability before callback when tenancy is disabled', async () => {
+    disableTenancy();
+    let called = false;
+    await expect(
+      runTenantHierarchyReadScope(
+        {
+          actorTenantId: 'family',
+          actorUserId: 'guardian',
+          collections: [name],
+          includeGlobal: true,
+          tenantIds: ['family'],
+        },
+        async () => {
+          called = true;
+        },
+      ),
+    ).rejects.toThrow('requires enableTenancy()');
+    expect(called).toBe(false);
   });
 
   it('limits trusted hierarchy scope to one allowlisted list read and restores on failure', async () => {

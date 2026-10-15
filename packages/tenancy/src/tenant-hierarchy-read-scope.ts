@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { isTenancyEnabled } from './enabled-state.js';
 
 /** A trusted, list-only scope issued by an owning authorization package. */
 export interface TenantHierarchyReadScope {
@@ -31,6 +32,9 @@ export async function runTenantHierarchyReadScope<T>(
   scope: TenantHierarchyReadScope,
   callback: () => Promise<T>,
 ): Promise<T> {
+  if (!isTenancyEnabled()) {
+    throw new Error('Tenant hierarchy read scope requires enableTenancy()');
+  }
   if (
     !scope.actorTenantId ||
     !scope.actorUserId ||

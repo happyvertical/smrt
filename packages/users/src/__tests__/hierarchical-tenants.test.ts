@@ -14,6 +14,8 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  disableTenancy,
+  enableTenancy,
   getTenantHierarchyReadScope,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
@@ -39,6 +41,7 @@ describe('Tenant Hierarchy', () => {
   });
 
   afterEach(() => {
+    disableTenancy();
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
@@ -272,6 +275,7 @@ describe('Tenant Hierarchy', () => {
     });
 
     it('creates only authorized catalog and subtree list scopes', async () => {
+      enableTenancy();
       await withTenant(
         { tenantId: grandchild1.id!, userId: 'guardian' },
         async () => {
@@ -345,6 +349,7 @@ describe('Tenant Hierarchy', () => {
     });
 
     it('rejects missing actor/root and non-affirmative authorizers', async () => {
+      enableTenancy();
       const options = {
         collections: ['@happyvertical/smrt-education:Course'],
         authorize: () => true,

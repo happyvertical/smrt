@@ -1146,7 +1146,8 @@ For a reviewed cross-tenant **list** read, use
 `withTenantCatalogReadScope()` for the active family, its ancestors, and
 global rows, or `withTenantHierarchyContext()` for one authorized root and its
 descendants. Both require an active tenant **and user**, a non-empty qualified
-collection allowlist, and an authorizer that returns exactly `true`; every
+collection allowlist, active `enableTenancy()` enforcement, and an authorizer
+that returns exactly `true`; every
 other result fails closed. The callback can widen only `list()` for those
 collections. `get()`, raw queries, saves, and deletes retain normal tenancy
 guards (tenant-scoped collection writes and raw queries are rejected while the
