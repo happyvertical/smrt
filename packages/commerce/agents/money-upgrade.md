@@ -7,11 +7,15 @@ and names the upgrade command. The operator steps are in the CLI guide,
 
 ## Detection
 
-`src/upgrade/detect.ts` owns detection. Three shapes count as old data:
+`src/upgrade/detect.ts` owns detection. Four shapes count as old data:
 
 - **Old schema.** The database still has `tax_settings.money_model`,
   `tax_settings.money_migration_id`, `*_line_items.legacy_amount`, or the
   `money_migration_documents` table. This refuses the whole database.
+- **Documents without a tenant.** An Invoice or Contract row, header or line,
+  with no tenant. The current model writes none, and the upgrade cannot convert
+  one: assign it to a tenant or delete it. This refuses the whole database and
+  keeps the old schema in place until it is resolved.
 - **Tenant without settings.** A tenant has Invoice or Contract rows but no
   `tax_settings` row. This refuses that tenant only.
 - **Old-format documents.** An issued Invoice or Contract without a money

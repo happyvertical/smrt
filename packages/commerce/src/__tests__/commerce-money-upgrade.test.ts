@@ -20,6 +20,7 @@ import { DocumentTaxCollection } from '../collections/DocumentTaxCollection.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
 import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
+import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import {
   COMMERCE_DATA_NEEDS_UPGRADE,
@@ -225,6 +226,7 @@ describe('commerce money upgrade (#4021)', () => {
     expect(second.remaining).toEqual([]);
     expect(await findCommerceMoneyUpgradeNeeds(db)).toEqual({
       oldSchema: [],
+      tenantlessDocuments: [],
       tenants: [],
     });
     // Nothing is left behind and a rerun is a no-op.
@@ -233,6 +235,7 @@ describe('commerce money upgrade (#4021)', () => {
       failures: [],
       droppedSchema: [],
       remaining: [],
+      tenantlessDocuments: [],
     });
 
     // The issued invoice kept every stored total and gained v2 facts.
@@ -352,6 +355,140 @@ describe('commerce money upgrade (#4021)', () => {
     ).toEqual([]);
   });
 
+  it('refuses a first settings row stamped by tenancy for a tenant with old documents', async () => {
+    await ensureCommerceTenant(db, 'stamped');
+    await oldInvoice('stamped', 'S-1', { issued: false });
+    // A zero-rate old draft: no row-level signal, only the missing settings.
+    await db.query(
+      "UPDATE invoice_line_items SET tax_rate = 0, amount = 200 WHERE tenant_id = 'stamped'",
+    );
+    await db.query("DELETE FROM tax_settings WHERE tenant_id = 'stamped'");
+    await restart();
+    await expect(
+      withTenant({ tenantId: 'stamped' }, async () =>
+        (await TaxSettingsCollection.create({ db })).create({}),
+      ),
+    ).rejects.toMatchObject({ code: COMMERCE_DATA_NEEDS_UPGRADE });
+  });
+
+  it('blocks on documents without a tenant until they are assigned', async () => {
+    await ensureCommerceTenant(db, 'owner');
+    const global = await oldInvoice('owner', 'G-1', { issued: true });
+    await earlierSchema(['owner']);
+    // An earlier version allowed tenantless documents.
+    await db.query(
+      'UPDATE invoices SET tenant_id = NULL WHERE id = ?',
+      global.invoiceId,
+    );
+    await db.query(
+      'UPDATE invoice_line_items SET tenant_id = NULL WHERE id = ?',
+      global.lineId,
+    );
+    await restart();
+    expect(
+      (await findCommerceMoneyUpgradeNeeds(db)).tenantlessDocuments,
+    ).toEqual([
+      { table: 'invoices', id: global.invoiceId },
+      { table: 'invoice_line_items', id: global.lineId },
+    ]);
+    const first = await upgradeCommerceMoney(db);
+    expect(first.failures).toEqual([
+      expect.objectContaining({
+        tenantId: '',
+        documentId: global.invoiceId,
+        reason: expect.stringContaining('has no tenant'),
+      }),
+      expect.objectContaining({ tenantId: '', documentId: global.lineId }),
+    ]);
+    expect(first.droppedSchema).toEqual([]);
+
+    // Even after the old columns are gone, a tenantless row refuses reads.
+    for (const sql of [
+      'ALTER TABLE tax_settings DROP COLUMN money_model',
+      'ALTER TABLE tax_settings DROP COLUMN money_migration_id',
+      'ALTER TABLE invoice_line_items DROP COLUMN legacy_amount',
+      'ALTER TABLE contract_line_items DROP COLUMN legacy_amount',
+      'DROP TABLE money_migration_documents',
+    ])
+      await db.query(sql);
+    await restart();
+    await expect(
+      (await InvoiceCollection.create({ db })).list({}),
+    ).rejects.toThrow(/without a tenant/);
+
+    // Assigned to its tenant, it converts and the database is current.
+    await db.query(
+      "UPDATE invoices SET tenant_id = 'owner' WHERE id = ?",
+      global.invoiceId,
+    );
+    await db.query(
+      "UPDATE invoice_line_items SET tenant_id = 'owner' WHERE id = ?",
+      global.lineId,
+    );
+    await restart();
+    const second = await upgradeCommerceMoney(db);
+    expect(second.failures).toEqual([]);
+    expect(second.upgraded).toMatchObject([
+      { tenantId: 'owner', issuedBackfilled: 1 },
+    ]);
+    expect(await readInvoices('owner')).toHaveLength(1);
+  });
+
+  it('keeps a current draft unchanged in a tenant it converts', async () => {
+    await ensureCommerceTenant(db, 'mixed');
+    const old = await oldInvoice('mixed', 'M-OLD', { issued: true });
+    // A current inclusive draft with a 5% code, written by the runtime.
+    const current = await withTenant({ tenantId: 'mixed' }, async () => {
+      const component = await (
+        await TaxComponentCollection.create({ db })
+      ).create({ tenantId: 'mixed', name: 'GST', percent: '5' });
+      const code = await (await TaxCodeCollection.create({ db })).create({
+        tenantId: 'mixed',
+        code: 'gst',
+        name: 'GST',
+        kind: 'taxable',
+        components: [{ taxComponentId: String(component.id), compound: false }],
+      });
+      const settings = await (
+        await TaxSettingsCollection.create({ db })
+      ).getOrCreateForTenant('mixed');
+      settings.defaultLineAmountType = 'inclusive';
+      settings.defaultSalesTaxCodeId = String(code.id);
+      await settings.save();
+      const invoice = await (await InvoiceCollection.create({ db })).create({
+        invoiceNumber: 'M-CURRENT',
+        currency: 'CAD',
+      });
+      await (await InvoiceLineItemCollection.create({ db })).create({
+        invoiceId: invoice.id,
+        description: 'Inclusive',
+        quantity: 1,
+        unitPrice: 105,
+      });
+      return String(invoice.id);
+    });
+    await earlierSchema(['mixed']);
+    await restart();
+    const result = await upgradeCommerceMoney(db);
+    expect(result.failures).toEqual([]);
+    expect(result.upgraded[0]).toMatchObject({
+      issuedBackfilled: 1,
+      changedDrafts: [],
+    });
+    await withTenant({ tenantId: 'mixed' }, async () => {
+      const invoices = await InvoiceCollection.create({ db });
+      expect(await invoices.get({ id: current })).toMatchObject({
+        lineAmountType: 'inclusive',
+        subtotal: 100,
+        taxAmount: 5,
+        totalAmount: 105,
+      });
+      expect(await invoices.get({ id: old.invoiceId })).toMatchObject({
+        totalAmount: 210,
+      });
+    });
+  });
+
   it('refuses a tenantless read of a database with old money storage', async () => {
     await ensureCommerceTenant(db, 'legacy');
     await oldInvoice('legacy', 'L-1', { issued: false });
@@ -371,6 +508,7 @@ describe('commerce money upgrade (#4021)', () => {
     await restart();
     expect(await findCommerceMoneyUpgradeNeeds(db)).toEqual({
       oldSchema: [],
+      tenantlessDocuments: [],
       tenants: [{ tenantId: 'dropped', reason: 'old-format-documents' }],
     });
     await expect(readInvoices('dropped')).rejects.toMatchObject({
@@ -386,6 +524,7 @@ describe('commerce money upgrade (#4021)', () => {
     ]);
     expect(await findCommerceMoneyUpgradeNeeds(db)).toEqual({
       oldSchema: [],
+      tenantlessDocuments: [],
       tenants: [],
     });
     await withTenant({ tenantId: 'dropped' }, async () => {

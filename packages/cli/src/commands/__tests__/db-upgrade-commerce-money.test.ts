@@ -126,7 +126,9 @@ describe('smrt db:upgrade-commerce-money (#4021)', () => {
     });
     const errors = errorSpy.mock.calls.flat().join('\n');
     expect(errors).toContain('tenant-b invoice INV-9: does not reconcile');
-    expect(errors).toContain('1 tenant(s) still need the upgrade');
+    expect(errors).toContain(
+      '1 tenant(s) and 0 row(s) without a tenant still need attention',
+    );
     expect(process.exitCode).toBe(1);
   });
 
@@ -160,6 +162,15 @@ describe('smrt db:upgrade-commerce-money (#4021)', () => {
     expect(precondition?.message).toContain('COMMERCE_DATA_NEEDS_UPGRADE');
     expect(precondition?.recommendation).toContain(
       'smrt db:upgrade-commerce-money',
+    );
+    mocks.needs.mockResolvedValueOnce({
+      oldSchema: [],
+      tenants: [],
+      tenantlessDocuments: [{ table: 'invoices', id: 'global-1' }],
+    });
+    const [tenantless] = await checkCommerceMoneyPreconditions(db);
+    expect(tenantless?.message).toContain(
+      '1 document row(s) without a tenant to assign or delete',
     );
     mocks.missing = true;
     expect(await checkCommerceMoneyPreconditions(db)).toEqual([]);

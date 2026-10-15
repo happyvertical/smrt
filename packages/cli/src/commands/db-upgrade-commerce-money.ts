@@ -22,9 +22,11 @@ interface TenantNeed {
 }
 
 interface CommerceMoneyUpgradeModule {
-  findCommerceMoneyUpgradeNeeds(
-    db: DatabaseInterface,
-  ): Promise<{ oldSchema: string[]; tenants: TenantNeed[] }>;
+  findCommerceMoneyUpgradeNeeds(db: DatabaseInterface): Promise<{
+    oldSchema: string[];
+    tenantlessDocuments?: Array<{ table: string; id: string }>;
+    tenants: TenantNeed[];
+  }>;
   upgradeCommerceMoney(
     db: DatabaseInterface,
     options: { tenantId?: string },
@@ -49,6 +51,7 @@ interface CommerceMoneyUpgradeModule {
     }>;
     droppedSchema: string[];
     remaining: TenantNeed[];
+    tenantlessDocuments?: Array<{ table: string; id: string }>;
   }>;
 }
 
@@ -107,7 +110,13 @@ export async function checkCommerceMoneyPreconditions(
       },
     ];
   }
-  if (status.oldSchema.length === 0 && status.tenants.length === 0) return [];
+  const tenantless = status.tenantlessDocuments ?? [];
+  if (
+    status.oldSchema.length === 0 &&
+    status.tenants.length === 0 &&
+    tenantless.length === 0
+  )
+    return [];
   return [
     {
       name: 'commerce-money-upgrade',
@@ -116,9 +125,17 @@ export async function checkCommerceMoneyPreconditions(
         status.oldSchema.length
           ? `; old columns ${status.oldSchema.join(', ')}`
           : ''
+      }${
+        tenantless.length
+          ? `; ${tenantless.length} document row(s) without a tenant to assign or delete`
+          : ''
       }). Commerce refuses it until it is upgraded.`,
       recommendation: `Run ${COMMERCE_MONEY_UPGRADE_COMMAND} (add --tenant-id <id> to convert one tenant).`,
-      details: { oldSchema: status.oldSchema, tenants: status.tenants },
+      details: {
+        oldSchema: status.oldSchema,
+        tenants: status.tenants,
+        tenantlessDocuments: tenantless.length,
+      },
     },
   ];
 }
@@ -184,7 +201,14 @@ export const dbUpgradeCommerceMoneyCommand: CLICommand = {
           console.log(`  ${need.tenantId}: ${need.reason}`);
         if (status.oldSchema.length)
           console.log(`  old columns: ${status.oldSchema.join(', ')}`);
-        if (status.tenants.length === 0 && status.oldSchema.length === 0)
+        const tenantless = status.tenantlessDocuments ?? [];
+        for (const row of tenantless)
+          console.log(`  ${row.table} ${row.id}: no tenant (assign or delete)`);
+        if (
+          status.tenants.length === 0 &&
+          status.oldSchema.length === 0 &&
+          tenantless.length === 0
+        )
           console.log('Nothing to upgrade.\n');
         else {
           console.log(
@@ -211,7 +235,7 @@ export const dbUpgradeCommerceMoneyCommand: CLICommand = {
       }
       for (const failure of result.failures)
         console.error(
-          `✗ ${failure.tenantId}${
+          `✗ ${failure.tenantId || '(no tenant)'}${
             failure.documentType
               ? ` ${failure.documentType} ${failure.documentId}`
               : ''
@@ -223,7 +247,7 @@ export const dbUpgradeCommerceMoneyCommand: CLICommand = {
         );
       if (result.failures.length || result.remaining.length) {
         console.error(
-          `\n❌ ${result.remaining.length} tenant(s) still need the upgrade.\n`,
+          `\n❌ ${result.remaining.length} tenant(s) and ${(result.tenantlessDocuments ?? []).length} row(s) without a tenant still need attention.\n`,
         );
         process.exitCode = 1;
         return;

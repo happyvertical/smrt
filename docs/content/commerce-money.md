@@ -342,8 +342,8 @@ rows without recomputation.
 ## Data from an earlier version
 
 Commerce does not read money data written by an earlier version. A schema that
-still has the earlier money columns or the `money_migration_documents` table
-refuses the whole database; a tenant with invoices or contracts but no tax
+still has the earlier money columns or the `money_migration_documents` table,
+or an invoice or contract without a tenant, refuses the whole database; a tenant with invoices or contracts but no tax
 settings row, or with documents in the earlier format, is refused on its own. Reads, writes, money tools, and the tax
 summary fail with `COMMERCE_DATA_NEEDS_UPGRADE` and name the command, and
 `smrt db:status` and `smrt app doctor` report it. Run the normal schema

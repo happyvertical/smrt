@@ -15,6 +15,10 @@
  *   drops them, so their presence means the database has not been upgraded.
  * - **Pre-settings tenant.** A tenant with Invoice or Contract rows but no
  *   `tax_settings` row. Its documents predate tenant tax settings.
+ * - **Tenantless documents.** An Invoice or Contract row (header or line)
+ *   without a tenant. The current model writes none; such rows must be
+ *   assigned to a tenant or deleted. Like the old schema, they refuse the
+ *   whole database.
  * - **Old-format documents.** An issued Invoice or Contract without a money
  *   snapshot, or a line with a tax rate but no tax code. The current model
  *   never writes either, so they remain detectable after a
@@ -220,6 +224,34 @@ async function oldFormatDocumentQueries(
   return queries;
 }
 
+/** A money row without a tenant: the current model never writes one. */
+export interface TenantlessMoneyDocument {
+  table: (typeof MONEY_DOCUMENT_TABLES)[number];
+  id: string;
+}
+
+/** Every Invoice or Contract row, header or line, that has no tenant. */
+export async function findTenantlessMoneyDocuments(
+  db: DatabaseInterface,
+  limit?: number,
+): Promise<TenantlessMoneyDocument[]> {
+  return withPermissionIndependentScan(db, async (scanDb) => {
+    const found: TenantlessMoneyDocument[] = [];
+    for (const table of MONEY_DOCUMENT_TABLES) {
+      if (!(await tableExists(scanDb, table))) continue;
+      const result = await scanDb.query(
+        `SELECT CAST(id AS TEXT) AS id FROM ${table} WHERE tenant_id IS NULL ORDER BY id${
+          limit ? ` LIMIT ${Math.trunc(limit)}` : ''
+        }`,
+      );
+      for (const row of rowsOf(result))
+        found.push({ table, id: String(row.id) });
+      if (limit && found.length >= limit) return found.slice(0, limit);
+    }
+    return found;
+  });
+}
+
 /** Why one tenant needs the upgrade. */
 export interface TenantMoneyUpgradeNeed {
   tenantId: string;
@@ -241,6 +273,8 @@ export interface TenantMoneyUpgradeNeed {
 /** The full database view: old schema storage and every tenant to convert. */
 export interface CommerceMoneyUpgradeStatus {
   oldSchema: string[];
+  /** Money rows without a tenant; assign or delete them (not converted). */
+  tenantlessDocuments: TenantlessMoneyDocument[];
   tenants: TenantMoneyUpgradeNeed[];
 }
 
@@ -302,7 +336,8 @@ export async function findCommerceMoneyUpgradeNeeds(
             : 0,
       );
   });
-  return { oldSchema, tenants };
+  const tenantlessDocuments = await findTenantlessMoneyDocuments(db);
+  return { oldSchema, tenantlessDocuments, tenants };
 }
 
 /**
@@ -365,7 +400,8 @@ export async function withCommerceMoneyUpgradeExecutor<T>(
 }
 
 /**
- * Refuse a database whose schema still carries pre-#4021 money storage.
+ * Refuse a database whose schema still carries pre-#4021 money storage, or
+ * that holds money documents without a tenant.
  * Only a passing result is cached, so a database upgraded while the process
  * runs is accepted on the next call.
  */
@@ -379,6 +415,11 @@ export async function assertCommerceMoneySchemaCurrent(
   if (old.length > 0)
     throw new CommerceDataNeedsUpgradeError(
       `The database holds commerce money data from an earlier version (${old.join(', ')}).`,
+    );
+  const tenantless = await findTenantlessMoneyDocuments(db, 1);
+  if (tenantless.length > 0)
+    throw new CommerceDataNeedsUpgradeError(
+      `The database holds commerce money documents without a tenant (first: ${tenantless[0]?.table} ${tenantless[0]?.id}); assign each to a tenant or delete it.`,
     );
   state.schema = true;
 }

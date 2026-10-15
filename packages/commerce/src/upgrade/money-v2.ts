@@ -17,7 +17,8 @@
  *    snapshot, document taxes and a money snapshot. A document whose stored
  *    lines do not add up exactly to its stored header fails the tenant;
  * 4. recomputes each draft through the runtime from its prices, mapping only
- *    lines that carry no tax code yet.
+ *    lines taxed at a rate without a tax code; a draft header keeps its
+ *    stored amount type and rounding.
  *
  * Each tenant converts in its own transaction, so one failing tenant leaves
  * the others converted. Once no tenant needs the upgrade, the pre-#4021
@@ -54,6 +55,7 @@ import {
   findOldMoneySchema,
   OLD_MONEY_COLUMNS,
   OLD_MONEY_TABLES,
+  type TenantlessMoneyDocument,
   type TenantMoneyUpgradeNeed,
   withCommerceMoneyUpgradeExecutor,
 } from './detect.js';
@@ -99,6 +101,8 @@ export interface CommerceMoneyUpgradeResult {
   droppedSchema: string[];
   /** Tenants still needing the upgrade after this run. */
   remaining: TenantMoneyUpgradeNeed[];
+  /** Money rows without a tenant; they block the schema drop until resolved. */
+  tenantlessDocuments: TenantlessMoneyDocument[];
 }
 
 type Row = Record<string, unknown>;
@@ -507,18 +511,18 @@ async function recomputeDraft(
   const documentId = String(header.id);
   const party = await partyFor(db, header);
   for (const line of lines) {
-    // A line that already names a tax code was written by the current model.
+    // Only an old-format line is taxed at a rate without a tax code. A line
+    // with a code, or with no tax, already means the same under the current
+    // model; the draft header keeps its stored amount type and rounding
+    // (old-format drafts carry the schema defaults, exclusive and per line).
     if (line.tax_code_id) continue;
+    if (fractionToPercent(line.tax_rate) === '0') continue;
     const mapped = await codes.forRate(line.tax_rate, party.exempt);
     await updateRow(db, kind.lines, String(line.id), {
       tax_mode: 'override',
       tax_code_id: mapped.taxCodeId,
     });
   }
-  await updateRow(db, kind.header, documentId, {
-    line_amount_type: 'exclusive',
-    tax_rounding_scope: 'line',
-  });
   const document =
     kind.documentType === 'invoice'
       ? await (await InvoiceCollection.create({ db })).get(
@@ -729,11 +733,28 @@ export async function upgradeCommerceMoney(
     }
   }
   const after = await findCommerceMoneyUpgradeNeeds(db);
+  // A row without a tenant has no settings to convert against: the operator
+  // assigns it to a tenant (then reruns) or deletes it.
+  for (const row of after.tenantlessDocuments)
+    failures.push({
+      tenantId: '',
+      documentType: row.table.startsWith('invoice') ? 'invoice' : 'contract',
+      documentId: row.id,
+      reason: `${row.table} row has no tenant; assign it to a tenant or delete it, then rerun`,
+    });
   const droppedSchema =
-    after.tenants.length === 0 && after.oldSchema.length > 0
+    after.tenants.length === 0 &&
+    after.tenantlessDocuments.length === 0 &&
+    after.oldSchema.length > 0
       ? await dropOldSchema(db, after.oldSchema)
       : [];
   if (droppedSchema.length > 0 && (await findOldMoneySchema(db)).length > 0)
     throw new Error('The pre-upgrade commerce money schema was not removed');
-  return { upgraded, failures, droppedSchema, remaining: after.tenants };
+  return {
+    upgraded,
+    failures,
+    droppedSchema,
+    remaining: after.tenants,
+    tenantlessDocuments: after.tenantlessDocuments,
+  };
 }

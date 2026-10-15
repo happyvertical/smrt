@@ -376,6 +376,8 @@ export {
   type CommerceMoneyUpgradeStatus,
   commerceMoneyUpgradeCommand,
   findCommerceMoneyUpgradeNeeds,
+  findTenantlessMoneyDocuments,
+  type TenantlessMoneyDocument,
   type TenantMoneyUpgradeNeed,
 } from './upgrade/detect.js';
 export {

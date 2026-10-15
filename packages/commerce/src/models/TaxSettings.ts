@@ -1,5 +1,9 @@
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import type { TaxSettingsOptions } from '../types/index.js';
 
 export interface TaxRegistration {
@@ -113,9 +117,13 @@ export class TaxSettings extends SmrtObject {
       throw new Error('Tax registrations require component, number and label');
     // A tenant's first settings row must not adopt documents an earlier
     // version wrote: that tenant needs the upgrade, not fresh defaults.
-    if (!this.isPersisted && this.tenantId) {
+    // The tenant may still be empty here: tenancy stamps it during save.
+    const firstTenant = this.isPersisted
+      ? ''
+      : this.tenantId || getTenantId() || '';
+    if (firstTenant) {
       const { assertTenantMoneyCurrent } = await import('../upgrade/detect.js');
-      await assertTenantMoneyCurrent(this.db, this.tenantId);
+      await assertTenantMoneyCurrent(this.db, firstTenant);
     }
     return this.withTransaction(async () => {
       const { TaxCodeCollection } = await import(
