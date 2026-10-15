@@ -474,16 +474,15 @@ service-only: a generic `save()`, `delete()` or collection `create()` is refused
 - **Confirmed timecards.** A confirmed `PeriodTimecard` never changes, so
   correcting its sources would leave card and attendance disagreeing for good.
   Pass `confirmedTimecardGuard` (from `./rollup`) and a correction overlapping a
-  confirmed card is refused before any write; reopen the card first (that
-  lifecycle is happyvertical/smrt#3950, not part of this service), correct, then
-  `rollup()` again. Any other lock can be supplied as `guard`.
+  confirmed (or submitted) card is refused before any write; call
+  `PeriodRollupService.reopen()` first, correct, then `rollup()` again. Any other lock can be supplied as `guard`.
 - Closed `AttendanceBreak`/`AttendanceSegment` rows can no longer be deleted
   directly; `removeBreak`/`removeSegment` are the path.
 
 ## Period timecards
 
 `./rollup` provides per-person integer-second regular/overtime rollups, immutable
-confirmation, and attributed append-only adjustments. Consumer resolvers own
+confirmation (with an optional submitted step), audited reopening, and attributed append-only adjustments. Consumer resolvers own
 calendar/timezone, holiday and overtime rules. See the [contract and example](agents/period-rollup.md).
 
 ## Effective-dated labour pricing

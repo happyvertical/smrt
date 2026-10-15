@@ -15,6 +15,7 @@ if (isPostgresAvailable()) {
         includeObjects: [
           'PeriodTimecard',
           'TimecardAdjustment',
+          'TimecardReopening',
           'ServiceTimeEntry',
           'AttendancePunch',
           'AttendanceBreak',
