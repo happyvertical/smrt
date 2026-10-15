@@ -6,6 +6,7 @@
 import { getPackageConfig } from '@happyvertical/smrt-config';
 import {
   findManifestEntryByQualifiedName,
+  inheritedCollectionSurface,
   ObjectRegistry,
   resolveOperationPermissionAlias,
   type SmartObjectDefinition,
@@ -515,8 +516,13 @@ function getCollectionClassActionDefinitions(
   const methodEntries = manifestEntry.methods
     ? Object.values(manifestEntry.methods)
     : Array.from(registered.methods.entries());
+  const catalogApi = ownCollectionApiConfig(
+    objectConfig?.api,
+    manifestEntry,
+    itemEntry,
+  );
   return getPublicCustomMethodNames(methodEntries, standardActions)
-    .filter((methodName) => isOperationEnabled(objectConfig?.api, methodName))
+    .filter((methodName) => isOperationEnabled(catalogApi, methodName))
     .map((methodName) => {
       const alias = resolveOperationPermissionAlias(objectConfig, methodName);
       const action = alias?.action ?? methodName;
@@ -531,6 +537,38 @@ function getCollectionClassActionDefinitions(
       addAliasDatabaseBindings(definition, alias, item, itemEntry);
       return definition;
     });
+}
+
+/**
+ * The collection's own `api` config for cataloguing its operation slugs. A
+ * collection's unset surface inherits its model's (smrt-core
+ * `inheritedCollectionSurface`), which gates the generated routes; the
+ * services in this package still assert the collection's operation slugs
+ * (`tenants.moveToParent`, ...), so an inherited include list reads as unset
+ * here, exactly as before the collection inherited it. An inherited `false`
+ * stays `false`, as it always has.
+ */
+function ownCollectionApiConfig(
+  apiConfig: unknown,
+  collectionEntry: SmartObjectDefinition,
+  itemEntry: SmartObjectDefinition | undefined,
+): unknown {
+  if (apiConfig === undefined || apiConfig === false || !itemEntry) {
+    return apiConfig;
+  }
+  const inherited = inheritedCollectionSurface(
+    'api',
+    itemEntry.decoratorConfig ?? {},
+    {
+      collection: new Set(Object.keys(collectionEntry.methods ?? {})),
+      item: new Set(Object.keys(itemEntry.methods ?? {})),
+    },
+  );
+  return inherited !== undefined &&
+    inherited !== false &&
+    JSON.stringify(inherited) === JSON.stringify(apiConfig)
+    ? undefined
+    : apiConfig;
 }
 
 function addAliasDatabaseBindings(
