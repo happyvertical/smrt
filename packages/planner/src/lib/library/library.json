@@ -81,12 +81,6 @@
           },
           {
             "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
-            "fieldName": "customerId",
-            "scopeType": "app",
-            "visibility": "hidden"
-          },
-          {
-            "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
             "fieldName": "expiryDate",
             "scopeType": "app",
             "visibility": "hidden"
@@ -1459,12 +1453,6 @@
           {
             "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
             "fieldName": "channelId",
-            "scopeType": "app",
-            "visibility": "hidden"
-          },
-          {
-            "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
-            "fieldName": "customerId",
             "scopeType": "app",
             "visibility": "hidden"
           },

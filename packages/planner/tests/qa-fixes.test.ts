@@ -44,9 +44,11 @@ describe('STI discriminators', () => {
 });
 
 describe('Bakery batches', () => {
-  it('hide customer, vendor, expiry and channel', () => {
+  it('hide vendor, expiry and channel, and have no customer', () => {
     const bakery = getLibraryCookbook('bakery');
     const po = model(`${C}ProductionOrder`);
+    // smrt 0.56: a production order is a purchase contract, with no customer.
+    expect(po.fields.map((f) => f.name)).not.toContain('customerId');
     const names = viewFields(
       resolveFields(po, undefined, bakery?.document.policies),
     ).map((f) => f.name);

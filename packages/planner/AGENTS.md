@@ -112,7 +112,8 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
 - `src/lib/library/`: the curated library of ready-made cookbooks (`LibraryCookbook`; not to be
   confused with the `Cookbook` document). `library.json` holds each entry
   (`{ id, name, icon, summary, keywords, settings, document }`); `document` is the
-  same `Cookbook` the Export tab saves and must pass `parseCookbook` (tests check it,
+  same `Cookbook` the Export tab saves and must pass `parseCookbook` and the planner's own
+  `validate` command, so every policy names a field its model has (tests check it,
   its layout ids against the nav the app generates, and that `settings` are what new
   records default to). Menu words come from `layout.customSections` (sections) and
   `layout.items[<navItemId>].label` (entries; smrt-svelte renders it once its build

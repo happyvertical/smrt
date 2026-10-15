@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { Cookbook } from '../src/lib/cookbook/types.ts';
 import { parseCookbook } from '../src/lib/cookbook/validate.ts';
+import { createHeadlessPlanner } from '../src/lib/core/index.ts';
 import { COOKBOOK_PACKS } from '../src/lib/data/packs.ts';
 import { COOKBOOK_ICONS, libraryCookbooks } from '../src/lib/library/index.ts';
 import { previewMenu } from '../src/lib/library/menu.ts';
@@ -22,6 +24,27 @@ import {
 const pending = pendingFile as unknown as LibraryFile & {
   awaiting: Record<string, { recipes: string[]; upstream: string }>;
 };
+
+/**
+ * The planner's own `validate` command (smrt's cookbook engine over the
+ * catalog): every policy names a field its model has, every id is known. The
+ * same checks as `smrt cookbook validate`, so a smrt release that moves a
+ * field (0.56's Contract split took `customerId` off ProductionOrder) fails
+ * here rather than in a visitor's terminal. Returns the error diagnostics.
+ */
+function validationErrors(document: Cookbook): string[] {
+  const result = createHeadlessPlanner(document).run({
+    name: 'validate',
+    input: {},
+  });
+  if (!result.ok) return [`${result.error.code}: ${result.error.message}`];
+  const data = result.data as {
+    diagnostics?: { severity: string; path?: string; message: string }[];
+  };
+  return (data.diagnostics ?? [])
+    .filter((d) => d.severity === 'error')
+    .map((d) => `${d.path ?? ''} ${d.message}`.trim());
+}
 
 /** `custom:` section ids whose blurb every cookbook must spell the same way. */
 function customDescriptions(cookbooks: readonly LibraryCookbook[]) {
@@ -50,6 +73,30 @@ describe('library cookbooks', () => {
     expect(readSettings(result.cookbook)).toEqual(
       settingsOfCookbook(cookbook.settings),
     );
+  });
+
+  it.each(
+    libraryCookbooks.map((c) => [c.id, c] as const),
+  )('%s validates against the catalog: every policy names a real field', (_id, cookbook) => {
+    expect(validationErrors(cookbook.document)).toEqual([]);
+  });
+
+  it('the validation catches a policy on a field the model lacks', () => {
+    const bakery = libraryCookbooks.find((c) => c.id === 'bakery');
+    if (!bakery) throw new Error('bakery');
+    const document = structuredClone(bakery.document);
+    document.policies = [
+      ...document.policies,
+      {
+        objectRef: '@happyvertical/smrt-commerce:ProductionOrder',
+        fieldName: 'customerId',
+        scopeType: 'app',
+        visibility: 'hidden',
+      },
+    ];
+    expect(validationErrors(document)).toEqual([
+      expect.stringContaining('ProductionOrder has no field "customerId"'),
+    ]);
   });
 
   it.each(
@@ -118,6 +165,16 @@ describe('pending cookbooks', () => {
       dropUnknownRecipes: true,
     });
     expect(result.ok, result.ok ? '' : result.error).toBe(true);
+    // ...and the catalog validation finds nothing but the awaited recipes.
+    if (result.ok) {
+      expect(
+        validationErrors(result.cookbook)
+          .map((e) =>
+            e.replace(/^recipes\[\d+\] Unknown recipe "(.+)"\.$/, '$1'),
+          )
+          .sort(),
+      ).toEqual([...awaited.recipes].sort());
+    }
     expect(COOKBOOK_ICONS[cookbook.icon], `${id} icon`).toBeTruthy();
     expect(COOKBOOK_PACKS[id]?.id).toBe(id);
     expect(customDescriptions([...libraryCookbooks, cookbook])).toEqual([]);
