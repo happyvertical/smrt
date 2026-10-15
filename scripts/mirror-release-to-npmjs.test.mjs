@@ -4,7 +4,14 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { compareVersions, mirrorRelease, reportMirror } from './mirror-release-to-npmjs.mjs';
+import {
+  compareVersions,
+  DEFAULT_CONCURRENCY,
+  describeNpmError,
+  mirrorRelease,
+  reportMirror,
+  resolveConcurrency,
+} from './mirror-release-to-npmjs.mjs';
 
 const PRIMARY = 'https://npm.happyvertical.com/';
 const NPMJS = 'https://registry.npmjs.org/';
@@ -163,7 +170,7 @@ test('a failed publish stops that package so later versions cannot leapfrog it',
   });
   const result = await run(fakes);
   assert.deepEqual(result.mirrored, []);
-  assert.deepEqual(result.failed, [`${NAME}@0.51.11: npm error code E403`]);
+  assert.deepEqual(result.failed, [`${NAME}@0.51.11: E403 — more detail`]);
 });
 
 test('a tarball whose bytes do not match the primary metadata is refused', async () => {
@@ -315,4 +322,98 @@ test('the version this run released is compared, not only the checkout version',
   });
   assert.equal(withRelease.failed.length, 1);
   assert.match(withRelease.failed[0], /0\.51\.11: DIVERGED/);
+});
+
+test('npm failures report the error code and the real cause, not a leading warning', () => {
+  assert.deepEqual(
+    describeNpmError(
+      new Error(
+        '[WARN] Failed to replace env in config: ${NODE_AUTH_TOKEN}\nnpm warn publish npm auto-corrected some errors\nnpm error code E401\nnpm error 401 Unauthorized - PUT https://registry.npmjs.org/@happyvertical%2fsmrt-ui',
+      ),
+    ),
+    { code: 'E401', detail: '401 Unauthorized - PUT https://registry.npmjs.org/@happyvertical%2fsmrt-ui' },
+  );
+  const timedOut = new Error('npm publish was stopped (SIGTERM) after 600s');
+  timedOut.code = 'TIMEOUT';
+  assert.deepEqual(describeNpmError(timedOut), {
+    code: 'TIMEOUT',
+    detail: 'npm publish was stopped (SIGTERM) after 600s',
+  });
+  assert.equal(describeNpmError(new Error('HTTP 502 from the primary')).code, null);
+});
+
+test('the report prints every failure to the log as well as the summary', () => {
+  const lines = [];
+  let summary = '';
+  reportMirror(
+    { mirrored: [], skipped: [], failed: ['a@1.0.0: E401 — Unauthorized', 'b@2.0.0: E429 — Too Many Requests'] },
+    {
+      log: (line) => lines.push(line),
+      env: { GITHUB_STEP_SUMMARY: '/summary' },
+      appendSummary: (_file, text) => {
+        summary += text;
+      },
+    },
+  );
+  assert.ok(lines.some((line) => line.includes('a@1.0.0: E401 — Unauthorized')));
+  assert.ok(lines.some((line) => line.includes('b@2.0.0: E429 — Too Many Requests')));
+  assert.match(summary, /- a@1\.0\.0: E401 — Unauthorized/);
+  assert.match(summary, /- b@2\.0\.0: E429 — Too Many Requests/);
+});
+
+test('the concurrency setting falls back to the default and is capped', () => {
+  assert.equal(resolveConcurrency(undefined), DEFAULT_CONCURRENCY);
+  assert.equal(resolveConcurrency('0'), DEFAULT_CONCURRENCY);
+  assert.equal(resolveConcurrency('nope'), DEFAULT_CONCURRENCY);
+  assert.equal(resolveConcurrency('3'), 3);
+  assert.equal(resolveConcurrency('500'), 16);
+});
+
+test('packages mirror concurrently while each keeps its versions in order', async () => {
+  const names = ['@happyvertical/a', '@happyvertical/b', '@happyvertical/c', '@happyvertical/d'];
+  const primary = Object.fromEntries(names.map((name) => [name, ['1.0.0', '1.0.1', '1.0.2', '1.0.3']]));
+  const npmjs = Object.fromEntries(names.map((name) => [name, ['1.0.0']]));
+  const fakes = fakeRegistries({ primary, npmjs });
+  const order = [];
+  let inFlight = 0;
+  let peak = 0;
+  const result = await run(fakes, {
+    packages: names.map((name) => ({ name })),
+    concurrency: 3,
+    runNpm: async (args, options) => {
+      if (args[0] !== 'publish') return fakes.runNpm(args, options);
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      order.push(/_happyvertical_(\w)-(.+)\.tgz$/.exec(args[1]).slice(1).join('@'));
+      return fakes.runNpm(args, options);
+    },
+  });
+
+  assert.equal(peak, 3);
+  assert.equal(result.failed.length, 0);
+  // Reported in package order regardless of completion order.
+  assert.deepEqual(
+    result.mirrored,
+    names.flatMap((name) => ['1.0.1', '1.0.2', '1.0.3'].map((v) => `${name}@${v}`)),
+  );
+  for (const letter of ['a', 'b', 'c', 'd']) {
+    assert.deepEqual(
+      order.filter((spec) => spec.startsWith(`${letter}@`)),
+      ['1.0.1', '1.0.2', '1.0.3'].map((v) => `${letter}@${v}`),
+    );
+  }
+});
+
+test('one package failing does not stop the others in the pool', async () => {
+  const names = ['@happyvertical/a', '@happyvertical/b'];
+  const fakes = fakeRegistries({
+    primary: Object.fromEntries(names.map((name) => [name, ['1.0.0', '1.0.1']])),
+    npmjs: Object.fromEntries(names.map((name) => [name, ['1.0.0']])),
+    publishFails: (args) => args[1].includes('_happyvertical_a-'),
+  });
+  const result = await run(fakes, { packages: names.map((name) => ({ name })), concurrency: 2 });
+  assert.deepEqual(result.mirrored, ['@happyvertical/b@1.0.1']);
+  assert.deepEqual(result.failed, ['@happyvertical/a@1.0.1: E403 — more detail']);
 });
