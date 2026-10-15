@@ -155,11 +155,9 @@ describePostgres('commerce line amount migration on PostgreSQL (#3933)', () => {
         const customers = await CustomerCollection.create({ db });
         const invoices = await InvoiceCollection.create({ db });
         const lines = await InvoiceLineItemCollection.create({ db });
-        const ordinary = await customers.create({
-          profileId: 'pg-ordinary-zero',
-        });
+        const ordinary = await customers.create({ profileId: randomUUID() });
         const exempt = await customers.create({
-          profileId: 'pg-exempt-zero',
+          profileId: randomUUID(),
           taxExempt: true,
         });
         const draft = await invoices.create({
