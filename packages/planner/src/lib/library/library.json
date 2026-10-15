@@ -1833,6 +1833,219 @@
           }
         }
       }
+    },
+    {
+      "id": "nonprofit",
+      "name": "Non-profit",
+      "icon": "heart",
+      "summary": "Members, memberships, dues and donations, events and the books for a club, society or charity.",
+      "keywords": [
+        "non-profit",
+        "nonprofit",
+        "charity",
+        "club",
+        "society",
+        "association",
+        "members",
+        "membership dues",
+        "donations",
+        "donors",
+        "fundraiser",
+        "volunteers",
+        "community group"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Due on receipt",
+        "taxRate": 0
+      },
+      "sectionDescriptions": {
+        "custom:members": "Members and their memberships.",
+        "custom:events": "Meetings, fundraisers and volunteer days.",
+        "custom:giving": "Dues, pledges and the money that comes in."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#1d4ed8"
+          }
+        },
+        "recipes": [
+          "commerce.agreements",
+          "commerce.customers",
+          "commerce.invoicing",
+          "events.calendar",
+          "ledgers.bookkeeping"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "creditLimit",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "customerType",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "taxExempt",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "taxId",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:members",
+            "custom:events",
+            "custom:giving",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:members": [
+              "item:commerce:Customer",
+              "item:commerce:Agreement"
+            ],
+            "custom:events": [
+              "item:events:Event",
+              "item:events:EventSeries",
+              "item:events:EventType"
+            ],
+            "custom:giving": [
+              "item:commerce:Invoice",
+              "item:commerce:Payment"
+            ]
+          },
+          "hidden": [
+            "item:commerce:Contract"
+          ],
+          "moved": {
+            "item:commerce:Customer": "custom:members",
+            "item:commerce:Agreement": "custom:members",
+            "item:events:Event": "custom:events",
+            "item:events:EventSeries": "custom:events",
+            "item:events:EventType": "custom:events",
+            "item:commerce:Invoice": "custom:giving",
+            "item:commerce:Payment": "custom:giving"
+          },
+          "customSections": [
+            {
+              "id": "custom:members",
+              "label": "Members"
+            },
+            {
+              "id": "custom:events",
+              "label": "Events"
+            },
+            {
+              "id": "custom:giving",
+              "label": "Giving"
+            }
+          ],
+          "items": {
+            "item:commerce:Customer": {
+              "label": "Members",
+              "description": "Your members and donors, with how to reach them."
+            },
+            "item:commerce:Agreement": {
+              "label": "Memberships",
+              "description": "Annual, family and student memberships, with who holds them and when they renew."
+            },
+            "item:events:Event": {
+              "label": "Events",
+              "description": "Meetings, fundraisers and volunteer days, with who is coming."
+            },
+            "item:events:EventSeries": {
+              "label": "Regular meetings",
+              "description": "Meetings that repeat, like the monthly meetup, set up once."
+            },
+            "item:events:EventType": {
+              "label": "Event types",
+              "description": "The kinds of event you run, like a fundraiser or a clean-up."
+            },
+            "item:commerce:Invoice": {
+              "label": "Dues & pledges",
+              "description": "Dues and pledges you have asked for and which are still owed."
+            },
+            "item:commerce:Payment": {
+              "label": "Donations & payments",
+              "description": "Money that has come in, from dues, gifts and tickets."
+            }
+          },
+          "sections": {
+            "custom:members": {
+              "icon": "users"
+            },
+            "custom:events": {
+              "icon": "calendar"
+            },
+            "custom:giving": {
+              "icon": "creditCard"
+            }
+          }
+        }
+      }
     }
   ]
 }
