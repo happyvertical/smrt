@@ -48,15 +48,16 @@
     "test:live-preview-browser": "node scripts/test-live-preview-browser.mjs",
     "test:release-workflow": "node scripts/test-release-workflow.mjs",
     "lint": "biome ci .",
-    "package": "svelte-package -i src/lib -o dist --tsconfig tsconfig.package.json && node scripts/package-app.ts && publint"
+    "package": "node scripts/write-smrt-version.ts && svelte-package -i src/lib -o dist --tsconfig tsconfig.package.json && node scripts/package-app.ts && publint",
+    "version:smrt": "node scripts/write-smrt-version.ts"
   },
   "dependencies": {
     "@happyvertical/ai": "^0.103.1",
-    "@happyvertical/smrt-assets": "^0.55.24",
-    "@happyvertical/smrt-chat": "^0.55.24",
-    "@happyvertical/smrt-core": "^0.55.24",
-    "@happyvertical/smrt-svelte": "^0.55.24",
-    "@happyvertical/smrt-ui": "^0.55.24",
+    "@happyvertical/smrt-assets": "^0.56.0",
+    "@happyvertical/smrt-chat": "^0.56.0",
+    "@happyvertical/smrt-core": "^0.56.0",
+    "@happyvertical/smrt-svelte": "^0.56.0",
+    "@happyvertical/smrt-ui": "^0.56.0",
     "@happyvertical/speech": "^0.103.1",
     "@huggingface/transformers": "^4.3.0",
     "@mlc-ai/web-llm": "^0.2.85"

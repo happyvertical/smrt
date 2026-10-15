@@ -18,7 +18,8 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   `pnpm catalog:generate`; never edit by hand. `types.ts` is its shape,
   `index.ts` the lookup and search helpers.
 - `src/lib/catalog/generate/`: the generator (`registry.ts` discovery and
-  tarball reads, `extract.ts` manifest -> catalog, `exclusions.ts` the
+  tarball reads, `extract.ts` manifest -> catalog (a `Meta<T>` field is kept
+  as its `_meta.underlyingType`), `exclusions.ts` the
   documented infrastructure exclusion list; `recipe-metadata.ts` validates the
   recipes' surfaces, providers, runtime, demo seed and `demo` and the package's
   `browser`, carried as authored). `scripts/generate-catalog.ts` is
@@ -62,7 +63,12 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   try/catch localStorage wrapper (key `smrt-planner:cookbook-doc:v1`; a value under the old
   `smrt-planner:blueprint:v1` is read once, written to the new key and kept as a backup until the
   next successful save removes it; `smrt-planner:cookbook` alone is the library selection),
-  `file.ts` the `<name>.cookbook.json` export, `validate.ts` the strict
+  `file.ts` the `<name>.cookbook.json` export (plus `slugify`, size and `formatSize`),
+  `prompt.ts` the Export tab's prompt for a coding agent (the cookbook as minified JSON in a quoted
+  heredoc with a collision-checked delimiter, the released CLI's commands, the app directory as a slug
+  of the cookbook's name; the CLI version is `src/lib/smrt-version.ts`, generated from the installed
+  smrt-core by `pnpm version:smrt`, the first step of `pnpm package`, and guarded by
+  `tests/smrt-version.test.ts`), `describe.ts` the tab's one-line-per-dimension summary, `validate.ts` the strict
   import check, `legacy.ts` the read-only `?r=`/`?o=` migration. Sample records
   are NOT part of it. `layout` is smrt-svelte's published `ShellLayout`: the
   store passes it to `AppShell` (`layout` / `onlayoutchange`) and the Planner's
@@ -106,7 +112,8 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
 - `src/lib/library/`: the curated library of ready-made cookbooks (`LibraryCookbook`; not to be
   confused with the `Cookbook` document). `library.json` holds each entry
   (`{ id, name, icon, summary, keywords, settings, document }`); `document` is the
-  same `Cookbook` the Export tab saves and must pass `parseCookbook` (tests check it,
+  same `Cookbook` the Export tab saves and must pass `parseCookbook` and the planner's own
+  `validate` command, so every policy names a field its model has (tests check it,
   its layout ids against the nav the app generates, and that `settings` are what new
   records default to). Menu words come from `layout.customSections` (sections) and
   `layout.items[<navItemId>].label` (entries; smrt-svelte renders it once its build
@@ -258,8 +265,8 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   hands the token to `kitchenState` (memory only, never storage or a URL); a `token` still in the
   config (an older CLI) is never read, only reported (`tokenInConfig`) and Send stays off. `state.svelte.ts`
   is `kitchenState` (`config` needs endpoint and token; `needsLink` is endpoint without token), which
-  `ExportPanel` reads to show **Send to kitchen** first and Download second, or the missing-link
-  notice. Contract: `docs/inference-host.md`; the server side is smrt `packages/cli/agents/kitchen.md`.
+  `ExportPanel` reads to add **Send to kitchen** to its primary actions (after Copy prompt, before
+  Download), or to show the missing-link notice. Contract: `docs/inference-host.md`; the server side is smrt `packages/cli/agents/kitchen.md`.
 - Package name is `@happyvertical/smrt-planner`. Publish only with
   `.github/workflows/publish-package.yml` from `main`: the workflow verifies the `release` environment's
   exact `main` branch policy before a secret-bearing job, then publishes one validated tarball to
@@ -296,7 +303,9 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   `@foreignKey` relations), each file headed with what it replaces.
   `overlay.ts` applies the widget and relation hints to the catalog on load so
   consumers read `field.ui.widget` and `field.related` where the manifest will
-  put them; published values always win. Enum values, `displayLabelField`
+  put them, and lends an STI leaf the enumeration its ancestor declares
+  (smrt 0.56's Contract leaves lost `contractType`'s, smrt#4005); published
+  values always win. Enum values, `displayLabelField`
   (`model.display`) and `RelationInput` (`@happyvertical/smrt-svelte/forms`) are
   published and read directly. Delete a stand-in when its issue ships.
 - `src/lib/fields/`: `renderer.ts` picks the input per field (pure, tested);
@@ -339,12 +348,17 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   Sample foreign keys spread over every row of their target (`fakes.ts` `relatedIndex`), so each
   record has related rows; a customer-linked model (a FK to Customer) gets 3-6 rows per customer
   (`customerSlots`, seeded by the customer's index), so related lists hold several records. Sample
-  lines (`data/derived.ts`): `amount` is tax-inclusive, quantity x unit price - discount + tax, as
-  smrt-commerce's `ContractLineItem.calculateAmount` computes it and as smrt-svelte 0.55.24's
-  `line-items` widget reads it (smrt#3954: lines adding up to the recorded total agree). INTERIM:
-  the money-model epic smrt#3931 will add an explicit tax-exclusive mode (amount excludes tax);
-  until it ships, follow the released reading, and if the widget changes, re-check
-  `tests/record-page.test.ts` (only the seeded documents flag) before changing the sample data.
+  lines (`data/derived.ts`): INTERIM line-amount rule until the money-model release: line amount =
+  qty x unitPrice - discount + tax (tax-inclusive), subtotal = the sum of the lines' pre-discount
+  prices. It matches the smrt <=0.56.0 `line-items` widget and smrt-commerce's
+  `ContractLineItem.calculateAmount` (smrt#3954: lines adding up to the recorded total agree).
+  smrt main's money model (smrt#3988, merged, not yet released) changes it: `amount` becomes the net
+  after discount, tax is stored apart (`taxAmount`), and the model adds `lineAmountType`
+  (exclusive / inclusive / none), tax codes and components, `discountType` / `discountRate` and
+  `taxRoundingScope`. The planner moves to that model when the release lands. Upstream gap: a fresh
+  tenant defaults to the legacy model, not the new one (being filed upstream). Until then, if the
+  widget changes, re-check `tests/record-page.test.ts` (only the seeded documents flag) before
+  changing the sample data.
   The document's subtotal is the lines' prices (quantity x unit price), total = subtotal - discount
   + tax = the lines' amounts, taxed at the app's setting, else the pack's, else 5%;
   about a third of documents discount a line (only where the app shows the line's discount: generated
@@ -352,7 +366,7 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   total (`children.ts` `MISMATCH_*`) so the line-items mismatch flag shows (the widget compares
   the recorded subtotal with the lines' tax-inclusive sum, so the note names the subtotal).
   Stored sample rows live under `smrt-planner:data:v5:`; bump it when line amounts change meaning.
-- `src/routes/`: `/` Planner with `?tab=cookbooks|recipes|features|layout|export` tabs (`planner/tab.svelte.ts`; a visitor with nothing built lands on Cookbooks; smrt-ui `Tabs`: Cookbooks cards + preview, Recipes cards with switches only, Features the browsable catalogue of every recipe with its demo label, providers and what it adds, Layout `ShellLayoutEditor`, Export / Import / Reset in `ExportPanel`), `/ai/` the AI models page (Set up your assistant), `/cookbook/` a client-side redirect to `/?tab=export`, `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),
+- `src/routes/`: `/` Planner with `?tab=cookbooks|recipes|features|layout|export` tabs (`planner/tab.svelte.ts`; a visitor with nothing built lands on Cookbooks; smrt-ui `Tabs`: Cookbooks cards + preview, Recipes cards with switches only, Features the browsable catalogue of every recipe with its demo label, providers and what it adds, Layout `ShellLayoutEditor`, Export in `ExportPanel`: the cookbook summary, Copy prompt for a coding agent / Send to kitchen / Download with the file's name, size, apply command and JSON preview, then Import and Reset apart under "Replace or start over"), `/ai/` the AI models page (Set up your assistant), `/cookbook/` a client-side redirect to `/?tab=export`, `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),
   `/packages/` and `/packages/[id]/` the package browser, `/m/[package]/[model]/` (and `/[view]/`:
   a keyed nav entry, else a record's view page; `/[view]/edit/` its edit page).
   All prerendered but the record pages; `entries()` come from the catalog.

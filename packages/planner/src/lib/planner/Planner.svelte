@@ -7,10 +7,7 @@ import {
   type CookbookSectionHeadingInfo,
   CookbookSectionPage,
 } from '@happyvertical/smrt-svelte/cookbook';
-import {
-  ShellDockTool,
-  ShellSectionIcon,
-} from '@happyvertical/smrt-svelte/workspace';
+import { ShellDockTool } from '@happyvertical/smrt-svelte/workspace';
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import { type ComponentProps, onMount, tick, untrack } from 'svelte';
 import { aiState } from '../ai/instance.ts';
@@ -19,6 +16,7 @@ import { catalog, getModel } from '../catalog/index.ts';
 import AdvancedStyles from '../components/AdvancedStyles.svelte';
 import AiModelsPage from '../components/AiModelsPage.svelte';
 import BrowserAssistant from '../components/BrowserAssistant.svelte';
+import HeaderIconLink from '../components/HeaderIconLink.svelte';
 import ModelWorkspace from '../components/ModelWorkspace.svelte';
 import PackagePage from '../components/PackagePage.svelte';
 import RecordView from '../components/RecordView.svelte';
@@ -44,11 +42,15 @@ import { sectionInfo, sectionTitle } from '../sections/info.ts';
 import { sectionIdFromSlug } from '../sections/path.ts';
 import { DEFAULT_PRESET } from '../theme/theme.ts';
 import { appHref, setBasePath } from './app.svelte.ts';
+import { PLANNER_TAB_IDS } from './commands/index.ts';
+import { CHEF_HAT_ICON, EXPORT_ICON } from './header-icons.ts';
 import PlannerControls from './PlannerControls.svelte';
 import PlannerLifecycle from './PlannerLifecycle.svelte';
 import { parseModelRoute, recordFilter, splitRoute } from './routes.ts';
 import { plannerAssistantToggle, plannerShellProps } from './shell.ts';
+import { plannerTab } from './tab.svelte.ts';
 import { currentPlannerTitle } from './title.svelte.ts';
+import { DEFAULT_PLANNER_TITLE } from './title.ts';
 import type { PlannerProps } from './types.ts';
 
 let {
@@ -57,6 +59,7 @@ let {
   inference,
   persistence,
   themeControls = true,
+  defaultTitle = DEFAULT_PLANNER_TITLE,
   tabs,
   backLink,
   onready,
@@ -97,7 +100,7 @@ const cookbook = $derived.by(() => {
     ? value
     : { ...value, theme: { ...value.theme, preset: DEFAULT_PRESET } };
 });
-const title = $derived(currentPlannerTitle());
+const title = $derived(currentPlannerTitle(defaultTitle));
 const shell = $derived(
   buildCookbookShell({
     cookbook: cookbook as ComponentProps<typeof CookbookApp>['cookbook'],
@@ -208,6 +211,26 @@ const scope = $derived.by(() => {
   );
 });
 const preset = $derived(scopePreset(scope));
+// The planner's own pages (`#/configure/`, and any route no page above
+// claims) show the customization controls; the header marks them current.
+const configuring = $derived(
+  !sectionSlug &&
+    !packageId &&
+    pathParts[0] !== 'advanced-styles' &&
+    pathParts[0] !== 'ai' &&
+    !(applied && model),
+);
+// `#/configure/<tab>/` opens that tab (the header's export shortcut is
+// `#/configure/export/`); the tabs themselves keep the route as it is.
+const routeTab = $derived(
+  pathParts[0] === 'configure'
+    ? PLANNER_TAB_IDS.find((id) => id === pathParts[1])
+    : undefined,
+);
+$effect(() => {
+  if (routeTab) plannerTab.active = routeTab;
+});
+const exporting = $derived(configuring && plannerTab.active === 'export');
 /** The mount's own way around: a fragment route. */
 const navigate = (path: string) => {
   location.hash = path;
@@ -230,9 +253,15 @@ const slotItems = $derived<ShellSlotItem[]>([
     : []),
   {
     id: 'planner-customize',
-    label: 'Customize',
+    label: 'Plan the app',
     slot: 'header.end' as const,
     render: customize,
+  },
+  {
+    id: 'planner-export',
+    label: 'Export the app',
+    slot: 'header.end' as const,
+    render: exportLink,
   },
 ]);
 // The shell's own `dock:assistant` button (header end, the dock tab on phones)
@@ -263,15 +292,38 @@ const dockToggles = $derived(
 {#snippet sectionHeading({ section }: { section: CookbookSectionHeadingInfo })}
   <SectionHeading
     icon={section.icon}
-    title={sectionTitle(section.title)}
+    title={sectionTitle(section.title, defaultTitle)}
     description={sectionInfo(section.id).description ?? section.description}
   />
 {/snippet}
 
+<!-- The chef's hat: the planner's own pages (Cookbooks, Recipes, Theme,
+     Settings, Export), apart from the shell's pencil, which edits the layout. -->
 {#snippet customize()}
-  <a class="customize" href="#/configure/" aria-label="Customize" title="Customize">
-    <ShellSectionIcon name="edit" />
-  </a>
+  <HeaderIconLink
+    href="#/configure/"
+    label="Plan the app"
+    path={CHEF_HAT_ICON}
+    current={configuring && !exporting}
+    transitionName="planner-customize"
+    onclick={() => plannerTab.leaveExport()}
+  />
+{/snippet}
+
+<!-- The export shortcut: the Export tab, where the cookbook is downloaded or
+     sent to the kitchen. The route selects the tab; the click also does, for
+     when the hash is already there. -->
+{#snippet exportLink()}
+  <HeaderIconLink
+    href="#/configure/export/"
+    label="Export the app"
+    icon={EXPORT_ICON}
+    current={exporting}
+    transitionName="planner-export"
+    onclick={() => {
+      plannerTab.active = 'export';
+    }}
+  />
 {/snippet}
 
 <!--
@@ -352,11 +404,7 @@ const dockToggles = $derived(
      shell's top bar. */
   .content { width: min(100%, 72rem); margin-inline: auto; padding: var(--smrt-spacing-6); }
   :global([data-smrt-view-transition]) .content { view-transition-name: planner-content; }
-  :global([data-smrt-view-transition]) .customize { view-transition-name: planner-customize; }
   :global([data-smrt-view-transition]) .back { view-transition-name: planner-back; }
-  .customize { display: inline-grid; place-items: center; inline-size: 2rem; block-size: 2rem; color: inherit; border-radius: var(--smrt-radius-medium, 0.5rem); }
-  .customize:hover { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); }
-  .customize:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   .back { display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); block-size: 2rem; padding-inline: var(--smrt-spacing-2); color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size, 0.8125rem); text-decoration: none; white-space: nowrap; border-radius: var(--smrt-radius-medium, 0.5rem); }
   .back:hover { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); color: var(--smrt-color-on-surface); }
   .back:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }

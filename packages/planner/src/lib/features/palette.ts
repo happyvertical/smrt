@@ -20,6 +20,8 @@ export interface PlannerPaletteOptions {
   add: (id: string) => void;
   /** In-app path of a Planner tab, with the app query. */
   href: (tab: string) => string;
+  /** The group label of the planner's tabs; defaults to "Planner". */
+  title?: string;
 }
 
 /**
@@ -35,7 +37,7 @@ export function plannerProviders(
   return [
     {
       id: 'planner-tabs',
-      label: 'Planner',
+      label: options.title ?? 'Planner',
       order: 20,
       items: () =>
         PLANNER_TAB_COMMANDS.map((tab) => ({

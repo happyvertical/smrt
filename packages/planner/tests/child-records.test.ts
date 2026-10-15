@@ -75,7 +75,7 @@ describe('childLinks', () => {
 describe('childTitle', () => {
   it('drops the parent prefix and pluralises', () => {
     const parents = lineageNames(catalog, `${C}Agreement`);
-    expect(parents).toEqual(['Agreement', 'Contract']);
+    expect(parents).toEqual(['Agreement', 'SalesContract', 'Contract']);
     expect(childTitle('ContractLineItem', parents)).toBe('Line items');
     expect(childTitle('InvoiceLineItem', ['Invoice'])).toBe('Line items');
     expect(childTitle('PaymentAllocation', ['Invoice'])).toBe(

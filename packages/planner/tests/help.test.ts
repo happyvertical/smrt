@@ -287,14 +287,21 @@ describe('every recipe', () => {
               : 0),
         0,
       );
-      expect(parts, recipe.id).toBeGreaterThanOrEqual(2);
+      if (!UPSTREAM_GAPS.unstructuredHelp.has(recipe.id)) {
+        expect(parts, recipe.id).toBeGreaterThanOrEqual(2);
+      }
       // Every shown field has a glossary entry.
       for (const m of models) {
         if (UPSTREAM_GAPS.undescribedModel.has(`${recipe.id} ${m.name}`)) {
           continue;
         }
         const shown = m.fields.filter(
-          (x) => m.glossary !== false && x.visibility === 'basic',
+          (x) =>
+            m.glossary !== false &&
+            x.visibility === 'basic' &&
+            !UPSTREAM_GAPS.undescribedField.has(
+              `${recipe.id} ${m.name}.${x.name}`,
+            ),
         );
         expect(glossary.filter((g) => g.model === m.name)).toHaveLength(
           shown.length,

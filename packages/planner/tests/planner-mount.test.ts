@@ -13,6 +13,7 @@ import {
   setBasePath,
 } from '../src/lib/planner/app.svelte.ts';
 import { PLANNER_TAB_IDS } from '../src/lib/planner/commands/index.ts';
+import { CHEF_HAT_ICON, EXPORT_ICON } from '../src/lib/planner/header-icons.ts';
 import Planner from '../src/lib/planner/Planner.svelte';
 import PlannerControls from '../src/lib/planner/PlannerControls.svelte';
 import { selection } from '../src/lib/planner/selection.svelte.ts';
@@ -46,6 +47,85 @@ describe('Planner component', () => {
     expect(body).toContain('data-planner-back');
     expect(body).toContain('href="/docs"');
     expect(body).toContain('Back to documentation');
+  });
+
+  it('names the shell for the host when no cookbook is chosen', () => {
+    const plain = render(Planner, { props: { basePath: '/planner' } }).body;
+    expect(plain).toContain('>Planner<');
+    const { body } = render(Planner, {
+      props: { basePath: '/planner', defaultTitle: 'Build a boilerplate' },
+    });
+    expect(body).toContain('>Build a boilerplate<');
+    expect(body).not.toContain('>Planner<');
+  });
+
+  it("puts the chef's hat, not a second pencil, at the end of its header", () => {
+    const { body } = render(Planner, { props: { basePath: '/planner' } });
+    // The shell's pencil edits the layout; the planner's own pages are behind
+    // the chef's hat (`#/configure/`), so the header never shows two pencils.
+    const hat = body.match(
+      /<a class="header-link[^>]*aria-label="Plan the app"[^>]*>/,
+    );
+    expect(hat, 'Plan the app link').toBeTruthy();
+    expect(hat?.[0]).toContain('href="#/configure/"');
+    expect(hat?.[0]).toContain('title="Plan the app"');
+    expect(body).not.toContain('aria-label="Customize"');
+    expect(body).toContain(CHEF_HAT_ICON);
+    expect(body).toContain('aria-label="Edit layout"');
+    // The export shortcut follows it: the Export tab as a route
+    // (`#/configure/<tab>/` selects a tab).
+    const exportLink = body.match(
+      /<a class="header-link[^>]*aria-label="Export the app"[^>]*>/,
+    );
+    expect(exportLink, 'Export the app link').toBeTruthy();
+    expect(exportLink?.[0]).toContain('href="#/configure/export/"');
+    expect(exportLink?.[0]).toContain('title="Export the app"');
+    expect(body.indexOf('aria-label="Export the app"')).toBeGreaterThan(
+      body.indexOf('aria-label="Plan the app"'),
+    );
+    // smrt-ui's `download` preset (an arrow onto a tray), drawn by name.
+    expect(EXPORT_ICON).toBe('download');
+    expect(exportLink?.[0]).toBeDefined();
+    expect(body.slice(body.indexOf('aria-label="Export the app"'))).toMatch(
+      /<path d="M11 3h2v9l4-4/,
+    );
+  });
+
+  it("marks the export shortcut current on the Export tab, else the chef's hat", () => {
+    try {
+      plannerTab.active = 'export';
+      let { body } = render(Planner, { props: { basePath: '/planner' } });
+      expect(body).toMatch(
+        /aria-label="Export the app"[^>]*aria-current="page"|aria-current="page"[^>]*aria-label="Export the app"/,
+      );
+      expect(body).not.toMatch(
+        /aria-label="Plan the app"[^>]*aria-current="page"|aria-current="page"[^>]*aria-label="Plan the app"/,
+      );
+      plannerTab.active = 'recipes';
+      ({ body } = render(Planner, { props: { basePath: '/planner' } }));
+      expect(body).toMatch(
+        /aria-label="Plan the app"[^>]*aria-current="page"|aria-current="page"[^>]*aria-label="Plan the app"/,
+      );
+      expect(body).not.toMatch(
+        /aria-label="Export the app"[^>]*aria-current="page"|aria-current="page"[^>]*aria-label="Export the app"/,
+      );
+    } finally {
+      plannerTab.active = 'cookbooks';
+    }
+  });
+
+  it("leaves Export for the default tab through the chef's hat, keeping any other tab", () => {
+    // `#/configure/` names no tab, so the route alone would stay on Export.
+    try {
+      plannerTab.active = 'export';
+      plannerTab.leaveExport();
+      expect(plannerTab.active).toBe('cookbooks');
+      plannerTab.active = 'theme';
+      plannerTab.leaveExport();
+      expect(plannerTab.active).toBe('theme');
+    } finally {
+      plannerTab.active = 'cookbooks';
+    }
   });
 
   it('has an assistant toggle and dock only when the host gives it a model', () => {

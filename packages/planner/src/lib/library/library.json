@@ -5,7 +5,20 @@
       "name": "Bakery",
       "icon": "bread",
       "summary": "Retail and cafe wholesale orders, ingredient stock, batches and suppliers.",
-      "keywords": ["bake", "baker", "bakery", "baking", "bread", "pastry", "cake", "cookies", "cafe wholesale", "coffee shop", "patisserie", "sourdough"],
+      "keywords": [
+        "bake",
+        "baker",
+        "bakery",
+        "baking",
+        "bread",
+        "pastry",
+        "cake",
+        "cookies",
+        "cafe wholesale",
+        "coffee shop",
+        "patisserie",
+        "sourdough"
+      ],
       "settings": {
         "currency": "USD",
         "paymentTerms": "Net 15",
@@ -14,7 +27,12 @@
       "document": {
         "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
         "version": 1,
-        "theme": { "custom": { "primary": "#b45309", "fontFamily": "Georgia" } },
+        "theme": {
+          "custom": {
+            "primary": "#b45309",
+            "fontFamily": "Georgia"
+          }
+        },
         "recipes": [
           "commerce.customers",
           "commerce.invoicing",
@@ -58,12 +76,6 @@
           {
             "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
             "fieldName": "channelId",
-            "scopeType": "app",
-            "visibility": "hidden"
-          },
-          {
-            "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
-            "fieldName": "customerId",
             "scopeType": "app",
             "visibility": "hidden"
           },
@@ -205,7 +217,21 @@
       "name": "Mechanic",
       "icon": "car",
       "summary": "Quotes, work orders, parts, appointments and billing for a repair shop.",
-      "keywords": ["mechanic", "garage", "auto repair", "car repair", "fix cars", "car", "vehicle", "brakes", "oil change", "tyres", "tires", "servicing", "repair shop"],
+      "keywords": [
+        "mechanic",
+        "garage",
+        "auto repair",
+        "car repair",
+        "fix cars",
+        "car",
+        "vehicle",
+        "brakes",
+        "oil change",
+        "tyres",
+        "tires",
+        "servicing",
+        "repair shop"
+      ],
       "settings": {
         "currency": "USD",
         "paymentTerms": "Due on receipt",
@@ -214,7 +240,9 @@
       "document": {
         "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
         "version": 1,
-        "theme": { "preset": "smrt" },
+        "theme": {
+          "preset": "smrt"
+        },
         "recipes": [
           "commerce.customers",
           "commerce.estimates",
@@ -412,7 +440,19 @@
       "name": "Welder",
       "icon": "flame",
       "summary": "Quotes, jobs, agreements, material and site visits for a welding business.",
-      "keywords": ["weld", "welder", "welding", "fabrication", "fabricate", "metal", "steel", "gates", "railings", "metalwork", "boilermaker"],
+      "keywords": [
+        "weld",
+        "welder",
+        "welding",
+        "fabrication",
+        "fabricate",
+        "metal",
+        "steel",
+        "gates",
+        "railings",
+        "metalwork",
+        "boilermaker"
+      ],
       "settings": {
         "currency": "USD",
         "paymentTerms": "50% deposit, balance on completion"
@@ -420,7 +460,9 @@
       "document": {
         "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
         "version": 1,
-        "theme": { "preset": "studio" },
+        "theme": {
+          "preset": "studio"
+        },
         "recipes": [
           "commerce.agreements",
           "commerce.customers",
@@ -604,7 +646,18 @@
       "name": "Yoga studio",
       "icon": "yoga",
       "summary": "Classes, class series, members, memberships and a small retail shop.",
-      "keywords": ["yoga", "yoga studio", "pilates", "studio", "classes", "class series", "meditation", "members", "memberships", "instructor"],
+      "keywords": [
+        "yoga",
+        "yoga studio",
+        "pilates",
+        "studio",
+        "classes",
+        "class series",
+        "meditation",
+        "members",
+        "memberships",
+        "instructor"
+      ],
       "settings": {
         "currency": "USD",
         "paymentTerms": "Due on receipt"
@@ -612,7 +665,12 @@
       "document": {
         "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
         "version": 1,
-        "theme": { "custom": { "primary": "#0f766e", "fontFamily": "ui-rounded" } },
+        "theme": {
+          "custom": {
+            "primary": "#0f766e",
+            "fontFamily": "ui-rounded"
+          }
+        },
         "recipes": [
           "commerce.agreements",
           "commerce.customers",
@@ -782,6 +840,1199 @@
         "custom:members": "Members and their memberships.",
         "custom:shop": "Sell to customers and keep their details.",
         "custom:billing": "Invoices and the payments against them."
+      }
+    },
+    {
+      "id": "landscaping",
+      "name": "Landscaping",
+      "icon": "leaf",
+      "summary": "Quotes, jobs, maintenance contracts, materials and the crew schedule for a lawn and landscape business.",
+      "keywords": [
+        "landscaping",
+        "landscaper",
+        "lawn care",
+        "lawn",
+        "mowing",
+        "garden",
+        "gardener",
+        "yard work",
+        "hardscape",
+        "irrigation",
+        "tree service",
+        "snow removal",
+        "grounds"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Net 15",
+        "taxRate": 0.06
+      },
+      "sectionDescriptions": {
+        "custom:jobs": "Work orders and the customers they belong to.",
+        "custom:schedule": "Appointments and what is on the calendar.",
+        "custom:yard": "Materials, stock and the suppliers you buy from.",
+        "custom:billing": "Invoices and the payments against them."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#15803d"
+          }
+        },
+        "recipes": [
+          "commerce.agreements",
+          "commerce.customers",
+          "commerce.estimates",
+          "commerce.invoicing",
+          "commerce.purchases",
+          "commerce.sales",
+          "commerce.vendors",
+          "events.calendar",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.simple"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.06"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:InvoiceLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.06"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 15\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:jobs",
+            "custom:schedule",
+            "custom:yard",
+            "custom:billing",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:jobs": [
+              "item:commerce:Estimate",
+              "item:commerce:Order",
+              "item:commerce:Customer",
+              "item:commerce:Agreement"
+            ],
+            "custom:schedule": [
+              "item:events:Event",
+              "item:events:EventSeries",
+              "item:events:EventType"
+            ],
+            "custom:yard": [
+              "item:products:Product",
+              "item:inventory:StockLevel",
+              "item:commerce:Vendor",
+              "item:commerce:PurchaseOrder"
+            ],
+            "custom:billing": [
+              "item:commerce:Invoice",
+              "item:commerce:Payment"
+            ]
+          },
+          "hidden": [
+            "item:commerce:Contract",
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:commerce:Estimate": "custom:jobs",
+            "item:commerce:Order": "custom:jobs",
+            "item:commerce:Customer": "custom:jobs",
+            "item:commerce:Agreement": "custom:jobs",
+            "item:events:Event": "custom:schedule",
+            "item:events:EventSeries": "custom:schedule",
+            "item:events:EventType": "custom:schedule",
+            "item:products:Product": "custom:yard",
+            "item:inventory:StockLevel": "custom:yard",
+            "item:commerce:Vendor": "custom:yard",
+            "item:commerce:PurchaseOrder": "custom:yard",
+            "item:commerce:Invoice": "custom:billing",
+            "item:commerce:Payment": "custom:billing"
+          },
+          "customSections": [
+            {
+              "id": "custom:jobs",
+              "label": "Jobs"
+            },
+            {
+              "id": "custom:schedule",
+              "label": "Schedule"
+            },
+            {
+              "id": "custom:yard",
+              "label": "Yard"
+            },
+            {
+              "id": "custom:billing",
+              "label": "Billing"
+            }
+          ],
+          "items": {
+            "item:commerce:Estimate": {
+              "label": "Quotes",
+              "description": "Quotes for new work, ready to become jobs once approved."
+            },
+            "item:commerce:Order": {
+              "label": "Jobs",
+              "description": "Every job you have won, from the first visit to the final invoice."
+            },
+            "item:commerce:Agreement": {
+              "label": "Maintenance contracts",
+              "description": "Weekly mowing and seasonal programs, with who holds them and when they renew."
+            },
+            "item:events:Event": {
+              "label": "Crew schedule",
+              "description": "Visits on the calendar, by day and crew."
+            },
+            "item:events:EventSeries": {
+              "label": "Recurring visits",
+              "description": "Routes that repeat, like a Tuesday mowing round, set up once."
+            },
+            "item:events:EventType": {
+              "label": "Visit types",
+              "description": "The kinds of visit you make, like a mow, a clean-up or an install."
+            },
+            "item:products:Product": {
+              "label": "Materials",
+              "description": "Mulch, soil, sod, plants and the other things you sell and install."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Materials on hand",
+              "description": "What is in the yard and on the trucks."
+            },
+            "item:commerce:Vendor": {
+              "label": "Suppliers",
+              "description": "The nurseries and stone yards you buy from."
+            },
+            "item:commerce:PurchaseOrder": {
+              "label": "Material orders",
+              "description": "Material you have ordered and when it lands."
+            }
+          },
+          "sections": {
+            "custom:jobs": {
+              "icon": "wrench"
+            },
+            "custom:schedule": {
+              "icon": "calendar"
+            },
+            "custom:yard": {
+              "icon": "package"
+            },
+            "custom:billing": {
+              "icon": "receipt"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "salon",
+      "name": "Hair salon",
+      "icon": "scissors",
+      "summary": "Appointments, clients, services, retail stock and payments at the desk for a salon or barbershop.",
+      "keywords": [
+        "salon",
+        "hair salon",
+        "barber",
+        "barbershop",
+        "hairdresser",
+        "stylist",
+        "haircut",
+        "hair colour",
+        "hair color",
+        "highlights",
+        "blow-dry",
+        "nails",
+        "beauty",
+        "spa"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Due on receipt",
+        "taxRate": 0.07
+      },
+      "sectionDescriptions": {
+        "custom:appointments": "Bookings and the services behind them.",
+        "custom:clients": "Clients and what they usually have.",
+        "custom:checkout": "Sales at the desk and the payments against them.",
+        "custom:shelf": "Retail, backbar stock and who you buy from."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#9d174d"
+          }
+        },
+        "recipes": [
+          "commerce.customers",
+          "commerce.invoicing",
+          "commerce.purchases",
+          "commerce.sales",
+          "commerce.vendors",
+          "events.calendar",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.simple"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.07"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "creditLimit",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "customerType",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "taxExempt",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "taxId",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:InvoiceLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.07"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:appointments",
+            "custom:clients",
+            "custom:checkout",
+            "custom:shelf",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:appointments": [
+              "item:events:Event",
+              "item:events:EventType",
+              "item:events:EventSeries"
+            ],
+            "custom:clients": [
+              "item:commerce:Customer"
+            ],
+            "custom:checkout": [
+              "item:commerce:Order",
+              "item:commerce:Payment",
+              "item:commerce:Invoice"
+            ],
+            "custom:shelf": [
+              "item:products:Product",
+              "item:inventory:StockLevel",
+              "item:commerce:Vendor",
+              "item:commerce:PurchaseOrder"
+            ]
+          },
+          "hidden": [
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:events:Event": "custom:appointments",
+            "item:events:EventType": "custom:appointments",
+            "item:events:EventSeries": "custom:appointments",
+            "item:commerce:Customer": "custom:clients",
+            "item:commerce:Order": "custom:checkout",
+            "item:commerce:Payment": "custom:checkout",
+            "item:commerce:Invoice": "custom:checkout",
+            "item:products:Product": "custom:shelf",
+            "item:inventory:StockLevel": "custom:shelf",
+            "item:commerce:Vendor": "custom:shelf",
+            "item:commerce:PurchaseOrder": "custom:shelf"
+          },
+          "customSections": [
+            {
+              "id": "custom:appointments",
+              "label": "Appointments"
+            },
+            {
+              "id": "custom:clients",
+              "label": "Clients"
+            },
+            {
+              "id": "custom:checkout",
+              "label": "Checkout"
+            },
+            {
+              "id": "custom:shelf",
+              "label": "Shelf"
+            }
+          ],
+          "items": {
+            "item:events:Event": {
+              "label": "Appointments",
+              "description": "Every booking in the book, by stylist and chair."
+            },
+            "item:events:EventType": {
+              "label": "Appointment types",
+              "description": "The services you book, like a cut, a colour or a beard trim, with their length."
+            },
+            "item:events:EventSeries": {
+              "label": "Standing appointments",
+              "description": "Regulars who come back every few weeks, set up once."
+            },
+            "item:commerce:Customer": {
+              "label": "Clients",
+              "description": "Your clients, with how to reach them and what they usually have."
+            },
+            "item:commerce:Order": {
+              "label": "Sales",
+              "description": "Each visit’s ticket: the services done and anything bought at the desk."
+            },
+            "item:commerce:Payment": {
+              "label": "Payments",
+              "description": "Money taken at the desk, by card or cash."
+            },
+            "item:commerce:Invoice": {
+              "label": "Invoices",
+              "description": "Bills for bridal parties, packages and accounts that pay later."
+            },
+            "item:products:Product": {
+              "label": "Services & products",
+              "description": "Your services and the retail you sell, with prices."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Retail stock",
+              "description": "Product on the shelf and at the backbar."
+            },
+            "item:commerce:Vendor": {
+              "label": "Suppliers",
+              "description": "The distributors you buy colour, product and towels from."
+            },
+            "item:commerce:PurchaseOrder": {
+              "label": "Supply orders",
+              "description": "Product you have ordered and when it arrives."
+            }
+          },
+          "sections": {
+            "custom:appointments": {
+              "icon": "calendar"
+            },
+            "custom:clients": {
+              "icon": "users"
+            },
+            "custom:checkout": {
+              "icon": "creditCard"
+            },
+            "custom:shelf": {
+              "icon": "shoppingBag"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "roaster",
+      "name": "Coffee roaster",
+      "icon": "coffee",
+      "summary": "Cafe accounts, online orders, green coffee, roast batches and importers for a small roastery or brewery.",
+      "keywords": [
+        "coffee roaster",
+        "roaster",
+        "roastery",
+        "coffee",
+        "beans",
+        "green coffee",
+        "espresso",
+        "cafe accounts",
+        "brewery",
+        "microbrewery",
+        "taproom",
+        "kegs",
+        "small batch"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Net 30",
+        "taxRate": 0
+      },
+      "sectionDescriptions": {
+        "custom:shop": "Sell to customers and keep their details.",
+        "custom:wholesale": "Orders, invoices and payments from trade customers.",
+        "custom:roastery": "Coffees, green coffee, stock and what you are roasting.",
+        "custom:buying": "Suppliers and what you order from them."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#7c2d12",
+            "fontFamily": "Georgia"
+          }
+        },
+        "recipes": [
+          "commerce.customers",
+          "commerce.invoicing",
+          "commerce.purchases",
+          "commerce.sales",
+          "commerce.vendors",
+          "commerce.wholesale",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.ingredients",
+          "products.simple"
+        ],
+        "features": [
+          "@happyvertical/smrt-commerce:ProductionOrder"
+        ],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
+            "fieldName": "channelId",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
+            "fieldName": "expiryDate",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ProductionOrder",
+            "fieldName": "vendorId",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:shop",
+            "custom:wholesale",
+            "custom:roastery",
+            "custom:buying",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:shop": [
+              "item:commerce:Order",
+              "item:commerce:Customer"
+            ],
+            "custom:wholesale": [
+              "item:commerce:WholesaleOrder",
+              "item:commerce:Invoice",
+              "item:commerce:Payment"
+            ],
+            "custom:roastery": [
+              "item:products:Product",
+              "item:products:Product:ingredients",
+              "item:inventory:StockLevel",
+              "item:commerce:ProductionOrder"
+            ],
+            "custom:buying": [
+              "item:commerce:Vendor",
+              "item:commerce:PurchaseOrder"
+            ]
+          },
+          "hidden": [
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:commerce:Order": "custom:shop",
+            "item:commerce:Customer": "custom:shop",
+            "item:commerce:WholesaleOrder": "custom:wholesale",
+            "item:commerce:Invoice": "custom:wholesale",
+            "item:commerce:Payment": "custom:wholesale",
+            "item:products:Product": "custom:roastery",
+            "item:products:Product:ingredients": "custom:roastery",
+            "item:inventory:StockLevel": "custom:roastery",
+            "item:commerce:ProductionOrder": "custom:roastery",
+            "item:commerce:Vendor": "custom:buying",
+            "item:commerce:PurchaseOrder": "custom:buying"
+          },
+          "customSections": [
+            {
+              "id": "custom:shop",
+              "label": "Shop"
+            },
+            {
+              "id": "custom:wholesale",
+              "label": "Wholesale"
+            },
+            {
+              "id": "custom:roastery",
+              "label": "Roastery"
+            },
+            {
+              "id": "custom:buying",
+              "label": "Buying"
+            }
+          ],
+          "items": {
+            "item:commerce:Order": {
+              "label": "Online & retail orders",
+              "description": "Orders from the website and the roastery door."
+            },
+            "item:commerce:WholesaleOrder": {
+              "label": "Cafe orders",
+              "description": "Standing and one-off orders from cafes, bars and grocers."
+            },
+            "item:products:Product": {
+              "label": "Coffees",
+              "description": "Roasted coffees and shop items, with prices."
+            },
+            "item:products:Product:ingredients": {
+              "label": "Green coffee",
+              "description": "Green coffee and packaging, by the bag, with costs."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Stock",
+              "description": "Roasted and green coffee on hand today."
+            },
+            "item:commerce:ProductionOrder": {
+              "label": "Roast batches",
+              "description": "What you plan to roast, with the amounts and the day."
+            },
+            "item:commerce:Vendor": {
+              "label": "Importers & suppliers",
+              "description": "The importers and packaging suppliers you buy from."
+            },
+            "item:commerce:PurchaseOrder": {
+              "label": "Green coffee orders",
+              "description": "Green coffee you have bought and when the container lands."
+            }
+          },
+          "sections": {
+            "custom:shop": {
+              "icon": "shoppingBag"
+            },
+            "custom:wholesale": {
+              "icon": "briefcase"
+            },
+            "custom:roastery": {
+              "icon": "package"
+            },
+            "custom:buying": {
+              "icon": "truck"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "equipment-rental",
+      "name": "Equipment rental",
+      "icon": "forklift",
+      "summary": "Rentals, quotes, the fleet and its availability, pickups and returns, and billing for a hire yard.",
+      "keywords": [
+        "equipment rental",
+        "rental",
+        "rentals",
+        "hire",
+        "tool hire",
+        "plant hire",
+        "party rental",
+        "excavator",
+        "scaffolding",
+        "generators",
+        "bike rental",
+        "kayak rental",
+        "fleet"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Deposit on pickup, balance on return",
+        "taxRate": 0.08
+      },
+      "sectionDescriptions": {
+        "custom:rentals": "Rentals, quotes and the customers they belong to.",
+        "custom:fleet": "Equipment, availability and who you buy from.",
+        "custom:schedule": "Appointments and what is on the calendar.",
+        "custom:billing": "Invoices and the payments against them."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#a16207"
+          }
+        },
+        "recipes": [
+          "commerce.customers",
+          "commerce.estimates",
+          "commerce.invoicing",
+          "commerce.leases",
+          "commerce.purchases",
+          "commerce.vendors",
+          "events.calendar",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.simple"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.08"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:InvoiceLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.08"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:rentals",
+            "custom:fleet",
+            "custom:schedule",
+            "custom:billing",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:rentals": [
+              "item:commerce:Lease",
+              "item:commerce:Estimate",
+              "item:commerce:Customer"
+            ],
+            "custom:fleet": [
+              "item:products:Product",
+              "item:inventory:StockLevel",
+              "item:commerce:Vendor",
+              "item:commerce:PurchaseOrder"
+            ],
+            "custom:schedule": [
+              "item:events:Event",
+              "item:events:EventType"
+            ],
+            "custom:billing": [
+              "item:commerce:Invoice",
+              "item:commerce:Payment"
+            ]
+          },
+          "hidden": [
+            "item:events:EventSeries",
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:commerce:Lease": "custom:rentals",
+            "item:commerce:Estimate": "custom:rentals",
+            "item:commerce:Customer": "custom:rentals",
+            "item:products:Product": "custom:fleet",
+            "item:inventory:StockLevel": "custom:fleet",
+            "item:commerce:Vendor": "custom:fleet",
+            "item:commerce:PurchaseOrder": "custom:fleet",
+            "item:events:Event": "custom:schedule",
+            "item:events:EventType": "custom:schedule",
+            "item:commerce:Invoice": "custom:billing",
+            "item:commerce:Payment": "custom:billing"
+          },
+          "customSections": [
+            {
+              "id": "custom:rentals",
+              "label": "Rentals"
+            },
+            {
+              "id": "custom:fleet",
+              "label": "Fleet"
+            },
+            {
+              "id": "custom:schedule",
+              "label": "Schedule"
+            },
+            {
+              "id": "custom:billing",
+              "label": "Billing"
+            }
+          ],
+          "items": {
+            "item:commerce:Lease": {
+              "label": "Rentals",
+              "description": "Every rental out the gate, with the dates and what is due."
+            },
+            "item:commerce:Estimate": {
+              "label": "Quotes",
+              "description": "Quotes for a hire, ready to become a rental when accepted."
+            },
+            "item:products:Product": {
+              "label": "Equipment",
+              "description": "The machines and tools you hire out, with the daily rate."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Availability",
+              "description": "What is in the yard, out on hire or in for service."
+            },
+            "item:commerce:Vendor": {
+              "label": "Suppliers",
+              "description": "The dealers and parts suppliers you buy from."
+            },
+            "item:commerce:PurchaseOrder": {
+              "label": "Equipment & parts orders",
+              "description": "Machines and parts you have ordered and when they arrive."
+            },
+            "item:events:Event": {
+              "label": "Pickups & returns",
+              "description": "Pickups, returns and deliveries on the calendar, by day."
+            },
+            "item:events:EventType": {
+              "label": "Booking types",
+              "description": "The kinds of booking you make, like a pickup, a return or a delivery."
+            }
+          },
+          "sections": {
+            "custom:rentals": {
+              "icon": "fileText"
+            },
+            "custom:fleet": {
+              "icon": "truck"
+            },
+            "custom:schedule": {
+              "icon": "calendar"
+            },
+            "custom:billing": {
+              "icon": "receipt"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "nonprofit",
+      "name": "Non-profit",
+      "icon": "heart",
+      "summary": "Members, memberships, dues and donations, events and the books for a club, society or charity.",
+      "keywords": [
+        "non-profit",
+        "nonprofit",
+        "charity",
+        "club",
+        "society",
+        "association",
+        "members",
+        "membership dues",
+        "donations",
+        "donors",
+        "fundraiser",
+        "volunteers",
+        "community group"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Due on receipt",
+        "taxRate": 0
+      },
+      "sectionDescriptions": {
+        "custom:members": "Members and their memberships.",
+        "custom:events": "Meetings, fundraisers and volunteer days.",
+        "custom:giving": "Dues, pledges and the money that comes in."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#1d4ed8"
+          }
+        },
+        "recipes": [
+          "commerce.agreements",
+          "commerce.customers",
+          "commerce.invoicing",
+          "events.calendar",
+          "ledgers.bookkeeping"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "creditLimit",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "customerType",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "taxExempt",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "taxId",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:members",
+            "custom:events",
+            "custom:giving",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:members": [
+              "item:commerce:Customer",
+              "item:commerce:Agreement"
+            ],
+            "custom:events": [
+              "item:events:Event",
+              "item:events:EventSeries",
+              "item:events:EventType"
+            ],
+            "custom:giving": [
+              "item:commerce:Invoice",
+              "item:commerce:Payment"
+            ]
+          },
+          "hidden": [
+            "item:commerce:Contract"
+          ],
+          "moved": {
+            "item:commerce:Customer": "custom:members",
+            "item:commerce:Agreement": "custom:members",
+            "item:events:Event": "custom:events",
+            "item:events:EventSeries": "custom:events",
+            "item:events:EventType": "custom:events",
+            "item:commerce:Invoice": "custom:giving",
+            "item:commerce:Payment": "custom:giving"
+          },
+          "customSections": [
+            {
+              "id": "custom:members",
+              "label": "Members"
+            },
+            {
+              "id": "custom:events",
+              "label": "Events"
+            },
+            {
+              "id": "custom:giving",
+              "label": "Giving"
+            }
+          ],
+          "items": {
+            "item:commerce:Customer": {
+              "label": "Members",
+              "description": "Your members and donors, with how to reach them."
+            },
+            "item:commerce:Agreement": {
+              "label": "Memberships",
+              "description": "Annual, family and student memberships, with who holds them and when they renew."
+            },
+            "item:events:Event": {
+              "label": "Events",
+              "description": "Meetings, fundraisers and volunteer days, with who is coming."
+            },
+            "item:events:EventSeries": {
+              "label": "Regular meetings",
+              "description": "Meetings that repeat, like the monthly meetup, set up once."
+            },
+            "item:events:EventType": {
+              "label": "Event types",
+              "description": "The kinds of event you run, like a fundraiser or a clean-up."
+            },
+            "item:commerce:Invoice": {
+              "label": "Dues & pledges",
+              "description": "Dues and pledges you have asked for and which are still owed."
+            },
+            "item:commerce:Payment": {
+              "label": "Donations & payments",
+              "description": "Money that has come in, from dues, gifts and tickets."
+            }
+          },
+          "sections": {
+            "custom:members": {
+              "icon": "users"
+            },
+            "custom:events": {
+              "icon": "calendar"
+            },
+            "custom:giving": {
+              "icon": "creditCard"
+            }
+          }
+        }
       }
     }
   ]

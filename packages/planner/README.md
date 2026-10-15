@@ -99,7 +99,8 @@ const controller = createPlannerController();
 
 `Planner` props, all optional: `controller`, `basePath` (where its pages are
 served from), `persistence` (`'self'` reads and saves the cookbook in this
-browser, `'host'` leaves both to you), `themeControls`, `tabs`, `onready`, and:
+browser, `'host'` leaves both to you), `themeControls`, `defaultTitle` (the shell title when no cookbook name or
+library cookbook applies; defaults to `'Planner'`), `tabs`, `onready`, and:
 
 The mounted planner is the framework's cookbook-driven app shell with its
 customizable overviews switched on: the pencil at the start of the header

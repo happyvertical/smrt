@@ -19,6 +19,7 @@ import {
 import {
   loadShortcutCounts,
   overviewRegistry,
+  RECIPE_WIDGET_TYPES,
 } from '../src/lib/overviews/registry.ts';
 import { checkStoredOverride } from '../src/lib/overviews/validate.ts';
 import {
@@ -459,20 +460,26 @@ describe('section page overview', () => {
 
   it('the registry offers exactly the widgets the planner can load', () => {
     // The core widgets, plus the record page's (`related`, `line-items`),
-    // which only a record overview allows.
+    // which only a record overview allows, plus each recipe `widget` surface
+    // (smrt 0.56's `runtime-report-chart`; with no module to load it in the
+    // browser, it renders as unavailable).
+    expect(RECIPE_WIDGET_TYPES).toContain('runtime-report-chart');
     expect(
       overviewRegistry
         .list()
         .map((w) => w.type)
         .sort(),
-    ).toEqual([
-      'chart',
-      'line-items',
-      'metric',
-      'note',
-      'records',
-      'related',
-      'shortcuts',
-    ]);
+    ).toEqual(
+      [
+        'chart',
+        'line-items',
+        'metric',
+        'note',
+        'records',
+        'related',
+        'shortcuts',
+        ...RECIPE_WIDGET_TYPES,
+      ].sort(),
+    );
   });
 });

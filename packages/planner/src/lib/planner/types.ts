@@ -46,6 +46,13 @@ export interface PlannerProps {
   themeControls?: boolean;
   /** Link to the host's Advanced Styles page, when mounting controls alone. */
   advancedStylesHref?: string;
+  /**
+   * The shell title shown when no cookbook name and no applied library
+   * cookbook names the app (the brand label, and the fallback for a section
+   * page without a heading). A host that calls the planner something else
+   * passes it here. Defaults to `'Planner'`. The complete `Planner` only.
+   */
+  defaultTitle?: string;
   /** Tabs to show, in order; defaults to all. */
   tabs?: readonly PlannerTabId[];
   /**

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getModel } from '../src/lib/catalog/index.ts';
+import type { CatalogField } from '../src/lib/catalog/types.ts';
 import { fakeRecords, isMoneyField } from '../src/lib/data/fakes.ts';
 import { formatMoney, parseMoney } from '../src/lib/data/format.ts';
 import { createMemoryDataSource } from '../src/lib/data/source.ts';
@@ -82,5 +83,43 @@ describe('memory data source defaults', () => {
     const created = await source.create(model, { other: 1 });
     expect(created.name).toBe('fixed');
     expect((await source.get(model, created.id))?.name).toBe('fixed');
+  });
+});
+
+describe('money detection precedence', () => {
+  const field = (over: Partial<CatalogField>): CatalogField => ({
+    name: 'legacyAmount',
+    type: 'integer',
+    required: false,
+    ...over,
+  });
+
+  it('prefers the declared format over the name', () => {
+    expect(
+      isMoneyField(field({ name: 'gross', ui: { format: 'money' } })),
+    ).toBe(true);
+    expect(isMoneyField(field({ ui: { format: 'money' } }))).toBe(true);
+  });
+
+  it('falls back to the name when no format is declared', () => {
+    expect(isMoneyField(field({}))).toBe(true);
+    expect(isMoneyField(field({ name: 'gross' }))).toBe(false);
+    expect(isMoneyField(field({ ui: { basic: true } }))).toBe(true);
+    expect(isMoneyField(field({ name: 'itemCount' }))).toBe(false);
+  });
+
+  it('does not show legacyAmount as money when another format is declared', () => {
+    expect(isMoneyField(field({ ui: { format: 'datetime' } }))).toBe(false);
+    expect(isMoneyField(field({ ui: { format: 'percent' } }))).toBe(false);
+  });
+
+  it('does not show a framework-managed field as money by name', () => {
+    expect(isMoneyField(field({ system: true }))).toBe(false);
+  });
+
+  it('never treats a non-integer field as money', () => {
+    expect(
+      isMoneyField(field({ type: 'string', ui: { format: 'money' } })),
+    ).toBe(false);
   });
 });

@@ -184,13 +184,37 @@ describe('reverse and forward links', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('point an order up at its customer and vendor', () => {
-    const up = forwardLinks(catalog, ORDER).map(
-      (l) => `${l.fk}->${l.model.name}`,
+  it('point a sales document at its customer, a purchase at its vendor', () => {
+    const up = (ref: string) =>
+      forwardLinks(catalog, ref).map((l) => `${l.fk}->${l.model.name}`);
+    // smrt 0.56 splits Contract: the parties live on the branch they apply to.
+    expect(up(ORDER)).toContain('customerId->Customer');
+    expect(up(ORDER)).not.toContain('vendorId->Vendor');
+    const purchase = '@happyvertical/smrt-commerce:PurchaseOrder';
+    expect(up(purchase)).toContain('vendorId->Vendor');
+    expect(up(purchase)).not.toContain('customerId->Customer');
+    // So a customer's page lists no purchase orders, and a vendor's no sales.
+    const down = (ref: string) =>
+      reverseLinks(catalog, ref).map((l) => `${l.model.name}.${l.fk}`);
+    expect(down(CUSTOMER)).toContain('Order.customerId');
+    expect(down(CUSTOMER).some((l) => l.startsWith('PurchaseOrder.'))).toBe(
+      false,
     );
-    expect(up).toEqual(
-      expect.arrayContaining(['customerId->Customer', 'vendorId->Vendor']),
+    const vendor = '@happyvertical/smrt-commerce:Vendor';
+    expect(down(vendor)).toContain('PurchaseOrder.vendorId');
+    expect(down(vendor).some((l) => l.startsWith('Order.'))).toBe(false);
+    // Invoices, payments and fulfilments follow a sales document; an expense
+    // commitment a purchase.
+    expect(down(ORDER)).toEqual(
+      expect.arrayContaining([
+        'Invoice.contractId',
+        'Payment.contractId',
+        'Fulfillment.contractId',
+      ]),
     );
+    expect(down(ORDER)).not.toContain('Expense.commitmentId');
+    expect(down(purchase)).toContain('Expense.commitmentId');
+    expect(down(purchase)).not.toContain('Invoice.contractId');
     expect(forwardLinks(catalog, 'nope:Nope')).toEqual([]);
   });
 });

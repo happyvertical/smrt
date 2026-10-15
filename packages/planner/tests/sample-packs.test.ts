@@ -16,6 +16,7 @@ import {
   getLibraryCookbook,
   libraryCookbooks,
 } from '../src/lib/library/index.ts';
+import pending from '../src/lib/library/pending.json' with { type: 'json' };
 import { recipes } from '../src/lib/recipes/index.ts';
 import { childLinks } from '../src/lib/recipes/plumbing.ts';
 
@@ -48,8 +49,9 @@ afterEach(() => setSamplePack(null));
 
 describe('sample packs', () => {
   it('ship one per cookbook, each with the vocabulary it needs', () => {
+    // One per library cookbook, plus the pending ones (library/pending.json).
     expect(Object.keys(COOKBOOK_PACKS).sort()).toEqual(
-      libraryCookbooks.map((c) => c.id).sort(),
+      [...libraryCookbooks, ...pending.cookbooks].map((c) => c.id).sort(),
     );
     for (const pack of Object.values(COOKBOOK_PACKS)) {
       expect(pack.products.length, pack.id).toBeGreaterThanOrEqual(8);

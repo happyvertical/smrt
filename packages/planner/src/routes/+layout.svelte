@@ -13,6 +13,7 @@ import smrtMark from '$lib/assets/smrt-mark.svg';
 import { exposedModels, getModel, getPackage } from '$lib/catalog/index.ts';
 import AiStatusIcons from '$lib/components/AiStatusIcons.svelte';
 import BrowserAssistant from '$lib/components/BrowserAssistant.svelte';
+import HeaderIconLink from '$lib/components/HeaderIconLink.svelte';
 import PlannerEditBridge from '$lib/components/PlannerEditBridge.svelte';
 import PlannerPalette from '$lib/components/PlannerPalette.svelte';
 import SectionActions from '$lib/components/SectionActions.svelte';
@@ -39,6 +40,7 @@ import { kitchenState } from '$lib/kitchen/state.svelte.ts';
 import { libraryState } from '$lib/library/state.svelte.ts';
 import { createOnNavigateViewTransition } from '$lib/motion/view-transition.ts';
 import { appHref, appQuery, setBasePath } from '$lib/planner/app.svelte.ts';
+import { CHEF_HAT_ICON, EXPORT_ICON } from '$lib/planner/header-icons.ts';
 import { plannerRuntime } from '$lib/planner/instance.ts';
 import { hasAppState, withTab } from '$lib/planner/query.ts';
 import { recordFilter, recordFilterQuery } from '$lib/planner/routes.ts';
@@ -379,6 +381,30 @@ function flushOnHide() {
   <PlannerPalette />
 {/snippet}
 
+<!-- The chef's hat: the Planner page (Cookbooks, Recipes, Theme, Settings,
+     Export), as in the mounted `Planner`; the shell's pencil edits the layout. -->
+{#snippet plan()}
+  <HeaderIconLink
+    href={appHref('/')}
+    label="Plan the app"
+    path={CHEF_HAT_ICON}
+    current={page.route.id === '/' && plannerTab.active !== 'export'}
+    transitionName="planner-customize"
+  />
+{/snippet}
+
+<!-- The export shortcut: the Planner's Export tab (`?tab=export`, read after
+     navigation like any tab). -->
+{#snippet exportLink()}
+  <HeaderIconLink
+    href={appHref('/?tab=export')}
+    label="Export the app"
+    icon={EXPORT_ICON}
+    current={page.route.id === '/' && plannerTab.active === 'export'}
+    transitionName="planner-export"
+  />
+{/snippet}
+
 <div class="shell-host" inert={liveLocked}>
 <AppShell
   storageKey={SHELL_STORAGE_KEY}
@@ -403,6 +429,18 @@ function flushOnHide() {
       label: 'Search',
       slot: 'header.center',
       render: palette,
+    },
+    {
+      id: 'planner-customize',
+      label: 'Plan the app',
+      slot: 'header.end',
+      render: plan,
+    },
+    {
+      id: 'planner-export',
+      label: 'Export the app',
+      slot: 'header.end',
+      render: exportLink,
     },
   ]}
   dockToggles={[plannerAssistantToggle(appHref('/ai/'), aiState.assistantReady)]}

@@ -156,7 +156,6 @@
   },
   "@happyvertical/smrt-commerce:Contract": {
     "status": "Where the contract stands, for example draft, sent, accepted or completed.",
-    "customerId": "The customer this contract is for.",
     "subtotal": "The contract amount before tax.",
     "taxAmount": "The tax charged on the contract.",
     "totalAmount": "What the customer pays in all, tax included.",
@@ -168,8 +167,7 @@
     "notes": "Anything worth remembering about this contract.",
     "terms": "The conditions agreed with the customer, such as deposits, delivery or payment conditions.",
     "channelId": "Where the contract came from, for example your shop or a marketplace.",
-    "contractType": "The kind of contract: order, estimate, lease, agreement and so on.",
-    "vendorId": "The vendor on the other side, for contracts you buy."
+    "contractType": "The kind of contract: order, estimate, lease, agreement and so on."
   },
   "@happyvertical/smrt-commerce:ContractLineItem": {
     "contractId": "The order, quote or agreement this line belongs to.",
