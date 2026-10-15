@@ -30,6 +30,8 @@ describe('expenses recipes (#3590)', () => {
       expect(fields[name].visibility).toBe('hidden');
     }
     expect(fields.description.required).toBe(true);
+    // save() requires the payer's profile when a person paid.
+    expect(fields.paidByProfileId).not.toHaveProperty('visibility');
     const expense = new Expense();
     for (const name of Object.keys(fields)) {
       expect(name in expense, name).toBe(true);

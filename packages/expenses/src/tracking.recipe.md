@@ -13,7 +13,8 @@ the person is paid back.
 3. Set the **{field:incurredOn}** date from the receipt and pick a
    **{field:category}**.
 4. Choose who **{field:paidBy}**: the company, a person or a third party.
-   Tick **{field:reimbursable}** when a person is owed the money back.
+5. When a person paid, pick the **{field:paidByProfileId}** and tick
+   **{field:reimbursable}** when they are owed the money back.
 
 ### Review it
 
