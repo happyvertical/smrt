@@ -158,4 +158,82 @@ describePostgres('tenant money runtime barrier on PostgreSQL (#3933)', () => {
       });
     });
   });
+
+  it('serializes a natural-key settings upsert with a racing migration claim', async () => {
+    const tenantId = randomUUID();
+    await withTenant({ tenantId }, async () => {
+      await (await TaxSettingsCollection.create({ db })).getOrCreateForTenant(
+        tenantId,
+      );
+    });
+
+    const originalTransaction = db.transaction?.bind(db);
+    if (!originalTransaction) throw new Error('transaction support required');
+    let releaseCreate!: () => void;
+    const release = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+    let markerLocked!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      markerLocked = resolve;
+    });
+    let paused = false;
+    Object.assign(db, {
+      transaction: async (
+        operation: (transaction: DatabaseInterface) => Promise<unknown>,
+      ) =>
+        originalTransaction(async (transaction) => {
+          const originalQuery = transaction.query.bind(transaction);
+          Object.assign(transaction, {
+            query: async (...args: Parameters<typeof transaction.query>) => {
+              const result = await originalQuery(...args);
+              const sql = args[0];
+              if (
+                !paused &&
+                typeof sql === 'string' &&
+                sql.includes('UPDATE "tax_settings"') &&
+                sql.includes('RETURNING "id"')
+              ) {
+                paused = true;
+                markerLocked();
+                await release;
+              }
+              return result;
+            },
+          });
+          return operation(transaction);
+        }),
+    });
+
+    const create = withTenant({ tenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db });
+      return settings.create({ tenantId, taxRoundingScope: 'document' });
+    });
+    await locked;
+
+    let migrationSettled = false;
+    const migration = withTenant({ tenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db: peer });
+      return settings.beginMoneyMigration(tenantId);
+    }).finally(() => {
+      migrationSettled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(migrationSettled).toBe(false);
+
+    releaseCreate();
+    await expect(create).resolves.toMatchObject({
+      tenantId,
+      moneyModel: 'legacy',
+    });
+    const migrationId = await migration;
+    await withTenant({ tenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db: peer });
+      await expect(settings.getForTenant(tenantId)).resolves.toMatchObject({
+        moneyModel: 'migrating',
+        moneyMigrationId: migrationId,
+      });
+      await settings.restoreLegacyMoneyModel(tenantId, migrationId);
+    });
+  });
 });

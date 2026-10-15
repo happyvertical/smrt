@@ -16,6 +16,8 @@ they do not replace persisted tax settings. The per-tenant migration marker is
 owned by the money-snapshot migration. Ordinary saves and generated creates
 cannot change it: a new instance whose tenant natural key would upsert over a
 `migrating` or `v2` row is refused rather than resetting that tenant to legacy.
+The ordinary save transaction locks and re-reads the tenant marker before its
+natural-key upsert, serializing that check with migration claim and activation.
 
 `applyCommerceCookbookSettings(db, tenantId, cookbook)` is the explicit
 server-side activation boundary for core's portable `taxRate`, inclusion, and
