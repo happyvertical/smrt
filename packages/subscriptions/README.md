@@ -41,9 +41,14 @@ subscription and plan.
 
 ## Core model
 
-- `SubscriptionPlan` stores versioned feature grants and thresholds.
+- `SubscriptionPlan` is tenant-scoped by `(tenantId, planKey)` and stores
+  feature grants, thresholds, and a `free`, `fixed`, or `pay_what_you_can`
+  pricing mode. Amounts (`priceAmount`, `minimumAmount`, and
+  `suggestedAmount`) are integer minor units. Provider bindings are optional
+  metadata (`externalProvider`, `providerProductId`, `providerPriceId`).
 - `TenantSubscription` binds a tenant or external subscriber to a plan over an
-  effective period.
+  effective period and records its chosen `agreedAmount` in integer minor
+  units when applicable.
 - `TenantUsageMetric` is immutable, idempotent usage evidence.
 - `SubscriptionResolver` combines current subscription, plan, and batched usage
   summaries into one entitlement decision.
@@ -60,6 +65,15 @@ Subscribers are polymorphic: tenant subscribers use a tenant ID, while external
 subscribers add a stable external discriminator. Utilities such as
 `normalizeSubscriber()` and `assertSubscriberInvariant()` keep that identity
 coherent.
+
+## Upgrade note
+
+Existing databases created before #3829 retain the global
+`_smrt_subscription_plans_plan_key_idx` unless it is explicitly removed. Run
+`scripts/migrate-3829-drop-legacy-plan-key-index.ts` after the ordinary manifest
+migration so different tenants can reuse a plan key. The script supports SQLite
+and PostgreSQL and refuses DuckDB, whose inline unique constraint needs a
+reviewed table rebuild.
 
 ## Thresholds and spending
 

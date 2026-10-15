@@ -17,6 +17,9 @@ export type SubscriptionPlanStatus = 'active' | 'archived' | 'draft';
 
 export type BillingInterval = 'day' | 'week' | 'month' | 'year';
 
+/** How a subscriber agrees to pay for a plan. Amounts are integer minor units. */
+export type PricingMode = 'free' | 'fixed' | 'pay_what_you_can';
+
 export type ThresholdEnforcement = 'observe' | 'warn' | 'block';
 
 export type ThresholdWindow = 'day' | 'week' | 'month' | 'year' | 'rolling';
@@ -217,9 +220,16 @@ export interface SubscriptionPlanOptions extends SmrtObjectOptions {
   priceAmount?: number;
   currency?: string;
   billingInterval?: BillingInterval;
-  externalProvider?: string;
-  stripeProductId?: string;
-  stripePriceId?: string;
+  pricingMode?: PricingMode;
+  minimumAmount?: number;
+  suggestedAmount?: number;
+  externalProvider?: string | null;
+  providerProductId?: string | null;
+  providerPriceId?: string | null;
+  /** @deprecated Use providerProductId. Retained to read existing Stripe bindings. */
+  stripeProductId?: string | null;
+  /** @deprecated Use providerPriceId. Retained to read existing Stripe bindings. */
+  stripePriceId?: string | null;
   features?: string;
   thresholds?: string;
   metadata?: string;
@@ -242,7 +252,8 @@ export interface TenantSubscriptionOptions extends SmrtObjectOptions {
   trialEndsAt?: Date | null;
   cancelAtPeriodEnd?: boolean;
   canceledAt?: Date | null;
-  externalProvider?: string;
+  agreedAmount?: number | null;
+  externalProvider?: string | null;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   stripeCheckoutSessionId?: string;

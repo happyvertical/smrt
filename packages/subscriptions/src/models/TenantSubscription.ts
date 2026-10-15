@@ -72,7 +72,9 @@ export class TenantSubscription extends SmrtObject {
   trialEndsAt: Date | null = null;
   cancelAtPeriodEnd: boolean = false;
   canceledAt: Date | null = null;
-  externalProvider: string = 'stripe';
+  /** Amount selected for this subscription, in integer minor units. */
+  agreedAmount: number | null = null;
+  externalProvider: string | null = null;
   stripeCustomerId: string = '';
   stripeSubscriptionId: string = '';
   stripeCheckoutSessionId: string = '';
@@ -109,6 +111,8 @@ export class TenantSubscription extends SmrtObject {
       this.cancelAtPeriodEnd = options.cancelAtPeriodEnd;
     }
     if (options.canceledAt !== undefined) this.canceledAt = options.canceledAt;
+    if (options.agreedAmount !== undefined)
+      this.agreedAmount = options.agreedAmount;
     if (options.externalProvider !== undefined) {
       this.externalProvider = options.externalProvider;
     }
@@ -139,6 +143,14 @@ export class TenantSubscription extends SmrtObject {
       subscriberKind: this.subscriberKind,
       subscriberExternalId: this.subscriberExternalId,
     });
+    if (
+      this.agreedAmount !== null &&
+      (!Number.isSafeInteger(this.agreedAmount) || this.agreedAmount < 0)
+    ) {
+      throw new Error(
+        'agreedAmount must be a non-negative integer minor-unit amount',
+      );
+    }
   }
 
   isEntitled(now = new Date()): boolean {
