@@ -637,17 +637,19 @@ type McpGetSerializer = (
 
 async function resolveToolLoopMcpGetSerializer(
   reference: McpGetSerializerReference,
+  ownerRegistryKey?: string,
 ): Promise<McpGetSerializer> {
   const resolver = (await import(
     /* @vite-ignore */ '@happyvertical/smrt-core/mcp-serializer'
   )) as {
     resolveMcpGetSerializer: (
       reference: McpGetSerializerReference,
-      options: { parentUrl: string },
+      options: { parentUrl: string; ownerRegistryKey?: string },
     ) => Promise<McpGetSerializer>;
   };
   return resolver.resolveMcpGetSerializer(reference, {
     parentUrl: import.meta.url,
+    ownerRegistryKey,
   });
 }
 
@@ -673,11 +675,14 @@ async function itemToObservation(
   item: unknown,
   run: PrincipalRun,
   serializerReference?: McpGetSerializerReference,
+  serializerOwnerRegistryKey?: string,
 ): Promise<unknown> {
   const publicOptions: PublicJsonOptions = { permissions: run.permissions };
   if (serializerReference) {
-    const serializer =
-      await resolveToolLoopMcpGetSerializer(serializerReference);
+    const serializer = await resolveToolLoopMcpGetSerializer(
+      serializerReference,
+      serializerOwnerRegistryKey,
+    );
     return serializer(item as SmrtObject, publicOptions);
   }
   const candidate = item as {
@@ -733,7 +738,12 @@ export async function invokeManifestTool(
       if (id) {
         const item = await collection.get(id);
         return item
-          ? itemToObservation(item, run, mcpGetSerializerReference(tool))
+          ? itemToObservation(
+              item,
+              run,
+              mcpGetSerializerReference(tool),
+              registryKeyFor(tool),
+            )
           : { found: false };
       }
       const items = await collection.list({
