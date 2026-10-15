@@ -1451,6 +1451,32 @@ export async function rollbackCommerceLineAmounts(
               'INVALID_MONEY_INPUT',
               'Rollback journal is empty',
             );
+          // Migration journals every tenant header, so an unjournaled header
+          // was written under v2. Restoring the legacy marker would let legacy
+          // recomputation reprice it, so refuse before any restore.
+          const journaled = new Set(
+            claimedJournals.map(
+              (journal) => `${journal.documentType}\0${journal.documentId}`,
+            ),
+          );
+          for (const [documentType, headerTable] of [
+            ['invoice', 'invoices'],
+            ['contract', 'contracts'],
+          ] as const) {
+            if (!(await tableExists(scope.db, headerTable))) continue;
+            const headers = rows(
+              await scope.db.query(
+                `SELECT id FROM ${headerTable} WHERE CAST(tenant_id AS TEXT) = ?`,
+                options.tenantId,
+              ),
+            );
+            for (const header of headers)
+              if (!journaled.has(`${documentType}\0${String(header.id)}`))
+                throw new MoneyValidationError(
+                  'FROZEN_DOCUMENT',
+                  `${documentType} ${String(header.id)} was created after migration; rollback refused`,
+                );
+          }
           // Claim and validate the complete rollback set on the same locked
           // transaction. Any refusal before restoration begins rolls a fresh
           // v2 claim back, keeping ordinary tenant runtime available.

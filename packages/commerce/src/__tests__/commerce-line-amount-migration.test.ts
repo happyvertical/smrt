@@ -414,6 +414,69 @@ describe('commerce line amount migration (#3933)', () => {
     });
   });
 
+  it('refuses rollback when a document was created under v2', async () => {
+    const { line } = await issued();
+    await setNonLegacyDefaults();
+    const result = await migrateCommerceLineAmounts(db, { tenantId: TENANT });
+    const taxCodeId = (
+      await db.query(
+        'SELECT tax_code_id FROM invoice_line_items WHERE id = ?',
+        line.id,
+      )
+    ).rows[0]?.tax_code_id;
+    const invoiceId = await withTenant({ tenantId: TENANT }, async () => {
+      const invoices = await InvoiceCollection.create({ db });
+      const invoice = await invoices.create({
+        tenantId: TENANT,
+        invoiceNumber: 'V2-AFTER',
+        currency: 'CAD',
+      });
+      await (await InvoiceLineItemCollection.create({ db })).create({
+        tenantId: TENANT,
+        invoiceId: invoice.id,
+        description: 'Inclusive v2 service',
+        quantity: 1,
+        unitPrice: 10_500,
+        taxMode: 'override',
+        taxCodeId,
+      });
+      const draft = await invoices.get({ id: invoice.id });
+      if (!draft) throw new Error('v2 invoice missing');
+      draft.status = InvoiceStatus.SENT;
+      await draft.save();
+      return String(invoice.id);
+    });
+    const issuedTotals =
+      'SELECT subtotal, tax_amount, total_amount FROM invoices WHERE id = ?';
+    const before = (await db.query(issuedTotals, invoiceId)).rows[0];
+    expect(before).toMatchObject({ subtotal: 10_000, total_amount: 10_500 });
+
+    // Restoring legacy would let an ordinary lifecycle save reprice this
+    // inclusive issued invoice as exclusive (10,500 -> 11,025).
+    await expect(
+      rollbackCommerceLineAmounts(db, {
+        tenantId: TENANT,
+        migrationId: result.migrationId,
+      }),
+    ).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
+    await withTenant({ tenantId: TENANT }, async () => {
+      const settings = await (
+        await TaxSettingsCollection.create({ db })
+      ).getForTenant(TENANT);
+      expect(settings).toMatchObject({
+        moneyModel: 'v2',
+        moneyMigrationId: '',
+      });
+      const invoice = await (await InvoiceCollection.create({ db })).get({
+        id: invoiceId,
+      });
+      if (!invoice) throw new Error('v2 invoice missing');
+      invoice.status = InvoiceStatus.VIEWED;
+      await invoice.save();
+    });
+    expect((await db.query(issuedTotals, invoiceId)).rows[0]).toEqual(before);
+  });
+
   it('leaves v2 runtime available when a rollback owner has no journal', async () => {
     const { invoice } = await issued();
     await migrateCommerceLineAmounts(db, { tenantId: TENANT });
