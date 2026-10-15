@@ -116,7 +116,11 @@ export function attendanceSuite(
       await withTenant({ tenantId: actor.tenantId }, async () => {
         const collection = await AttendanceSegmentCollection.create({ db });
         const byTask = await collection.list({
-          where: { taskRefType: '@fixture/work:Operation', taskRefId: 'WELD' },
+          where: {
+            tenantId: actor.tenantId,
+            taskRefType: '@fixture/work:Operation',
+            taskRefId: 'WELD',
+          },
         });
         expect(byTask).toHaveLength(2);
         const closed = byTask[0];
