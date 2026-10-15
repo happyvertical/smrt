@@ -34,9 +34,7 @@ async function requireParentTenant(
 ): Promise<void> {
   const parent = await child.db.get(table, { id: parentId });
   if (!parent) throw new Error(`education parent ${parentId} does not exist`);
-  const row = parent as Record<string, unknown>;
-  const parentTenant = (row.tenantId ?? row.tenant_id ?? null) as string | null;
-  if (parentTenant !== child.tenantId)
+  if (!(await child.db.get(table, { id: parentId, tenant_id: child.tenantId })))
     throw new Error('education children must retain the course tenant');
 }
 
@@ -70,7 +68,13 @@ export class Course extends SmrtObject {
   /** A personal copy remains pinned to its original family and license. */
   override async save(): Promise<this> {
     if (this.licenseKind === 'personal-use-copy' && !this.tenantId) {
-      throw new Error('personal-use-copy courses require a family tenant');
+      throw new Error('personal-use-copy courses require an owning tenant');
+    }
+    if (
+      this.licenseKind === 'personal-use-copy' &&
+      this.status === 'published'
+    ) {
+      throw new Error('personal-use-copy courses cannot be published');
     }
     const prior = this.id
       ? await this.db.get(this.tableName, { id: this.id })
@@ -78,10 +82,12 @@ export class Course extends SmrtObject {
     if (prior) {
       const row = prior as Record<string, unknown>;
       const priorLicense = row.licenseKind ?? row.license_kind;
-      const priorTenant = row.tenantId ?? row.tenant_id;
       if (
         priorLicense === 'personal-use-copy' &&
-        (priorTenant !== this.tenantId ||
+        (!(await this.db.get(this.tableName, {
+          id: this.id,
+          tenant_id: this.tenantId,
+        })) ||
           this.licenseKind !== 'personal-use-copy')
       ) {
         throw new Error(

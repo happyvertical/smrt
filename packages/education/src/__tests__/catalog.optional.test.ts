@@ -5,9 +5,44 @@ import {
 import { describe, expect, it } from 'vitest';
 import { CourseCollection, CourseSectionCollection } from '../collections.js';
 
+import {
+  assertCatalogOwnerGuards,
+  assertLessonAssetOwnerGuard,
+  assertPersonalCopyPublicationGuard,
+} from './publication-regression.js';
+
 (isPostgresAvailable() ? describe : describe.skip)(
   'education catalog (postgres)',
   () => {
+    it('rejects personal-copy publication without mutating persisted state', async () => {
+      const isolated = await createIsolatedTestDbFromManifest({
+        includeObjects: ['Course'],
+      });
+      try {
+        await assertPersonalCopyPublicationGuard(isolated.baseDb);
+      } finally {
+        await isolated.cleanup();
+      }
+    });
+
+    it('compares native tenant ownership', async () => {
+      const isolated = await createIsolatedTestDbFromManifest({
+        includeObjects: [
+          'Course',
+          'CourseSection',
+          'Lesson',
+          'LessonAsset',
+          'Asset',
+        ],
+      });
+      try {
+        await assertCatalogOwnerGuards(isolated.baseDb);
+        await assertLessonAssetOwnerGuard(isolated.baseDb);
+      } finally {
+        await isolated.cleanup();
+      }
+    });
+
     it('persists optional-tenant courses with native UUID tenant columns', async () => {
       const isolated = await createIsolatedTestDbFromManifest({
         includeObjects: ['Course', 'CourseSection'],

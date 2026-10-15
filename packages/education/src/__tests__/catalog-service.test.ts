@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { AssetCollection } from '@happyvertical/smrt-assets';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import {
   disableTenancy,
@@ -17,8 +18,15 @@ import {
 import {
   CourseCollection,
   CourseSectionCollection,
+  LessonAssetCollection,
   LessonCollection,
 } from '../collections.js';
+
+import {
+  assertCatalogOwnerGuards,
+  assertLessonAssetOwnerGuard,
+  assertPersonalCopyPublicationGuard,
+} from './publication-regression.js';
 
 const courses = {
   list: async () => [
@@ -100,6 +108,45 @@ describe('CatalogService', () => {
 });
 
 describe('family copy persistence guard', () => {
+  it.each([
+    'sqlite',
+    'duckdb',
+  ] as const)('rejects personal-copy publication on %s without mutating persisted state', async (type) => {
+    const db = await getTestDatabase({
+      type,
+      url: ':memory:',
+      classes: ['Course'],
+    });
+    try {
+      await assertPersonalCopyPublicationGuard(db);
+    } finally {
+      await db.close?.();
+    }
+  });
+
+  it('compares child tenant ownership on SQLite', async () => {
+    const type = 'sqlite';
+    const db = await getTestDatabase({
+      type,
+      url: ':memory:',
+      classes: ['Course', 'CourseSection', 'Lesson'],
+    });
+    try {
+      await assertCatalogOwnerGuards(db);
+    } finally {
+      await db.close?.();
+    }
+  });
+
+  it('compares asset join ownership on SQLite', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    try {
+      await assertLessonAssetOwnerGuard(db);
+    } finally {
+      await db.close?.();
+    }
+  });
+
   it('rejects tenant promotion and license relabeling before a write', async () => {
     const { Course } = await import('../catalog.js');
     const course = new Course({
@@ -265,6 +312,202 @@ describe('CatalogService tenant integration', () => {
       rmSync(path, { force: true });
     }
   });
+  it('keeps ancestor private copies out of an authorized family guardian catalog', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    try {
+      const tenants = await TenantCollection.create({ db });
+      const group = await tenants.create({ name: 'Private group' });
+      const family = await tenants.createChild(String(group.id), {
+        name: 'Private family',
+      });
+      const sibling = await tenants.createChild(String(group.id), {
+        name: 'Private sibling',
+      });
+      const courses = await CourseCollection.create({ db });
+      const own = await courses.create({
+        title: 'Own private',
+        tenantId: String(family.id),
+        licenseKind: 'personal-use-copy',
+      });
+      const ancestor = await courses.create({
+        title: 'Ancestor private',
+        tenantId: String(group.id),
+        licenseKind: 'personal-use-copy',
+      });
+      const other = await courses.create({
+        title: 'Sibling private',
+        tenantId: String(sibling.id),
+        licenseKind: 'personal-use-copy',
+      });
+      const global = await courses.create({ title: 'Invalid global private' });
+      await db.update(
+        'courses',
+        { id: global.id },
+        { license_kind: 'personal-use-copy' },
+      );
+      const service = new CatalogService(
+        courses,
+        await CourseSectionCollection.create({ db }),
+        await LessonCollection.create({ db }),
+        await LessonAssetCollection.create({ db }),
+        tenants,
+        () => true,
+      );
+      await withTenant(
+        { tenantId: String(family.id), userId: 'guardian' },
+        async () => {
+          const request = {
+            tenantId: String(family.id),
+            actorUserId: 'guardian',
+            includePrivate: true,
+          };
+          expect
+            .soft(
+              (await service.findVisible(request)).map((course) => course.id),
+            )
+            .toEqual([own.id]);
+          expect
+            .soft(
+              (
+                await service.projectCourse({
+                  ...request,
+                  courseId: String(own.id),
+                })
+              )?.course.id,
+            )
+            .toBe(own.id);
+          for (const hidden of [ancestor, other, global]) {
+            expect
+              .soft(
+                await service.projectCourse({
+                  ...request,
+                  courseId: String(hidden.id),
+                  includeAnswerKeys: true,
+                }),
+              )
+              .toBeNull();
+          }
+        },
+      );
+    } finally {
+      await db.close?.();
+    }
+  });
+
+  it('excludes hostile existing child owners at every course projection level', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    try {
+      const tenants = await TenantCollection.create({ db });
+      const group = await tenants.create({ name: 'Projection group' });
+      const family = await tenants.createChild(String(group.id), {
+        name: 'Projection family',
+      });
+      const owner = String(family.id);
+      const courses = await CourseCollection.create({ db });
+      const sections = await CourseSectionCollection.create({ db });
+      const lessons = await LessonCollection.create({ db });
+      const assets = await LessonAssetCollection.create({ db });
+      const files = await AssetCollection.create({ db });
+      const course = await courses.create({
+        title: 'Owned projection',
+        tenantId: owner,
+      });
+      const section = await sections.create({
+        title: 'Owned section',
+        courseId: String(course.id),
+        tenantId: owner,
+      });
+      const lesson = await lessons.create({
+        title: 'Owned lesson',
+        sectionId: String(section.id),
+        tenantId: owner,
+      });
+      const file = await files.create({
+        name: 'Owned attachment',
+        sourceUri: 'file://attachment',
+        tenantId: owner,
+      });
+      const asset = await assets.create({
+        lessonId: String(lesson.id),
+        assetId: String(file.id),
+        tenantId: owner,
+      });
+      for (const hostileOwner of [String(group.id), null]) {
+        const suffix = hostileOwner ?? 'global';
+        const hostileSection = await sections.create({
+          title: `Hostile section ${suffix}`,
+          courseId: String(course.id),
+          tenantId: owner,
+        });
+        const hostileLesson = await lessons.create({
+          title: `Hostile lesson ${suffix}`,
+          sectionId: String(section.id),
+          tenantId: owner,
+        });
+        const hostileFile = await files.create({
+          name: `Hostile file ${suffix}`,
+          sourceUri: `file://${suffix}`,
+          tenantId: owner,
+        });
+        const hostileAsset = await assets.create({
+          lessonId: String(lesson.id),
+          assetId: String(hostileFile.id),
+          tenantId: owner,
+        });
+        // Simulate pre-existing corrupt links without weakening normal save guards.
+        await db.update(
+          'course_sections',
+          { id: hostileSection.id },
+          { tenant_id: hostileOwner },
+        );
+        await db.update(
+          'lessons',
+          { id: hostileLesson.id },
+          { tenant_id: hostileOwner },
+        );
+        await db.update(
+          'lesson_assets',
+          { id: hostileAsset.id },
+          { tenant_id: hostileOwner },
+        );
+      }
+      const service = new CatalogService(
+        courses,
+        sections,
+        lessons,
+        assets,
+        tenants,
+        () => true,
+      );
+      await withTenant({ tenantId: owner, userId: 'guardian' }, async () => {
+        const projection = await service.projectCourse({
+          tenantId: owner,
+          actorUserId: 'guardian',
+          courseId: String(course.id),
+          includeAnswerKeys: true,
+        });
+        expect
+          .soft(projection?.sections.map((entry) => entry.section.id))
+          .toEqual([section.id]);
+        const ownedSection = projection?.sections.find(
+          (entry) => entry.section.id === section.id,
+        );
+        expect
+          .soft(ownedSection?.lessons.map((entry) => entry.lesson.id))
+          .toEqual([lesson.id]);
+        expect
+          .soft(
+            ownedSection?.lessons
+              .find((entry) => entry.lesson.id === lesson.id)
+              ?.assets.map((entry) => entry.id),
+          )
+          .toEqual([asset.id]);
+      });
+    } finally {
+      await db.close?.();
+    }
+  });
+
   it('initializes catalog records on DuckDB with the focused schema selector', async () => {
     const db = await getTestDatabase({
       type: 'duckdb',

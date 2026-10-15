@@ -116,9 +116,11 @@ export class CatalogService {
       scope,
       async () => this.courses.list(options),
     );
-    return includePrivate
-      ? visible
-      : visible.filter((course) => course.licenseKind !== 'personal-use-copy');
+    return visible.filter(
+      (course) =>
+        course.licenseKind !== 'personal-use-copy' ||
+        (includePrivate && course.tenantId === tenantId),
+    );
   }
 
   /** Project one already-visible course without exposing answer-key assets by default. */
@@ -164,6 +166,7 @@ export class CatalogService {
         });
         const result = [];
         for (const section of sections) {
+          if (section.tenantId !== course.tenantId) continue;
           const lessons = await this.lessons.list({
             where: { sectionId: section.id },
             orderBy: ['sortOrder ASC', 'id ASC'],
@@ -171,13 +174,17 @@ export class CatalogService {
           result.push({
             section,
             lessons: await Promise.all(
-              lessons.map(async (lesson) => ({
-                lesson: projectLesson(lesson, includeAnswerKeys),
-                assets: (await this.assets.byLeft(String(lesson.id))).filter(
-                  (asset) =>
-                    includeAnswerKeys || asset.relationship !== 'answer-key',
-                ),
-              })),
+              lessons
+                .filter((lesson) => lesson.tenantId === course.tenantId)
+                .map(async (lesson) => ({
+                  lesson: projectLesson(lesson, includeAnswerKeys),
+                  assets: (await this.assets.byLeft(String(lesson.id))).filter(
+                    (asset) =>
+                      asset.tenantId === course.tenantId &&
+                      (includeAnswerKeys ||
+                        asset.relationship !== 'answer-key'),
+                  ),
+                })),
             ),
           });
         }

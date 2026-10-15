@@ -41,11 +41,12 @@ export class LessonAsset extends SmrtObject {
     const lesson = await this.db.get('lessons', { id: this.lessonId });
     if (!lesson)
       throw new Error(`education lesson ${this.lessonId} does not exist`);
-    const row = lesson as Record<string, unknown>;
-    const lessonTenant = (row.tenantId ?? row.tenant_id ?? null) as
-      | string
-      | null;
-    if (lessonTenant !== this.tenantId)
+    if (
+      !(await this.db.get('lessons', {
+        id: this.lessonId,
+        tenant_id: this.tenantId,
+      }))
+    )
       throw new Error('education assets must retain the course tenant');
     return await super.save();
   }
