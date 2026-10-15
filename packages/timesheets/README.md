@@ -146,12 +146,16 @@ Each delegates to `ServiceEvidenceService`, so `submittedAt`/`submittedBy`,
 `approvedAt`/`approvedBy`/`approvalPath` (`operator`) and both snapshots are
 set exactly as the service sets them. The tenant and the acting profile come
 from the authenticated session, never the body. Recording or submitting
-someone else's time needs `approve` as well. Install pricing for `approve`:
+someone else's time needs `approve` as well. Install pricing for `approve`
+as a factory, so a resolver that writes (client charges) runs on the request's
+executor and transaction:
 
 ```ts
 import { setServiceTimeEntryCommercialResolver } from '@happyvertical/smrt-timesheets';
 
-setServiceTimeEntryCommercialResolver(new SubscriptionServiceCommercialResolver(/* … */));
+setServiceTimeEntryCommercialResolver(({ options }) =>
+  SubscriptionServiceCommercialResolver.create(options, provider),
+);
 ```
 
 Without a resolver, `approve` answers 409 `approval_not_configured`. MCP and

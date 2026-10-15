@@ -16,6 +16,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { APIGenerator } from '@happyvertical/smrt-core/generators';
 import {
+  getTenantId,
   type TenantContextData,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
@@ -267,6 +268,22 @@ describe('service-backed time entry actions (#4001)', () => {
     expect(
       (await call(foreign, 'POST', '/submit', { entryId: id })).status,
     ).toBe(404);
+  });
+
+  it('builds a factory resolver per request on the collection executor', async () => {
+    const seen: Array<{ db: unknown; tenantId: string | undefined }> = [];
+    setServiceTimeEntryCommercialResolver(({ options }) => {
+      seen.push({ db: options.db, tenantId: getTenantId() ?? undefined });
+      return resolver;
+    });
+    const id = await recordOne();
+    await call(worker(), 'POST', '/submit', { entryId: id });
+    const approved = await call(approver(), 'POST', '/approve', {
+      entryId: id,
+    });
+    expect(approved.status).toBe(200);
+    expect(approved.body.result).toMatchObject({ status: 'approved' });
+    expect(seen).toEqual([{ db, tenantId: TENANT_A }]);
   });
 
   it('refuses approval with no installed commercial resolver, writing nothing', async () => {

@@ -61,8 +61,9 @@ body; authorizes `servicetimeentries.<action>` with `assertOperationPermission`
 (system context never bypasses; `approve` refuses super-admin bypass); and
 stamps the user's linked profile. Only the participant records/submits their
 own time unless the caller holds `approve`. `approve` prices with the host's
-`setServiceTimeEntryCommercialResolver()`; without one it is a 409 and writes
-nothing. The runtime REST transport gates a collection-hosted action on the
+`setServiceTimeEntryCommercialResolver()` — a factory called per request with
+the collection's options, so a writing resolver shares the request executor;
+without one it is a 409 and writes nothing. The runtime REST transport gates a collection-hosted action on the
 ITEM's `api.include`, SvelteKit on the collection's, so both list the actions;
 a consumer closing them overrides both registrations. The collection and both
 snapshot collections carry their own `@smrt()` surface: undecorated, they

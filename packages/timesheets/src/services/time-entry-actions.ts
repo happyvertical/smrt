@@ -32,23 +32,43 @@ import {
 /** Approval path stamped by the generated `approve` action. */
 export const SERVICE_TIME_ENTRY_ACTION_APPROVAL_PATH = 'operator';
 
-let actionCommercialResolver: ServiceCommercialResolver | null = null;
+/**
+ * What `approve` prices with: a resolver, or a factory the action calls per
+ * request with the collection's options. Use the factory whenever the
+ * resolver writes (e.g. smrt-projects' `SubscriptionServiceCommercialResolver`
+ * records client charges): `options.db` is the request-bound executor, so
+ * those writes share the request's transaction and PostgreSQL RLS state
+ * instead of a connection captured at startup.
+ */
+export type ServiceTimeEntryCommercialResolverSource =
+  | ServiceCommercialResolver
+  | ((context: {
+      options: SmrtClassOptions;
+    }) => ServiceCommercialResolver | Promise<ServiceCommercialResolver>);
+
+let actionCommercialResolver: ServiceTimeEntryCommercialResolverSource | null =
+  null;
 
 /**
- * Install the commercial resolver the generated `approve` action prices with
- * (a host's `ServiceCommercialResolver`, e.g. smrt-projects'
- * `SubscriptionServiceCommercialResolver`). Pass `null` to remove it. Without
- * one, `approve` refuses with 409 (`approval_not_configured`) and writes
- * nothing.
+ * Install what the generated `approve` action prices with. Pass `null` to
+ * remove it. Without one, `approve` refuses with 409
+ * (`approval_not_configured`) and writes nothing.
+ *
+ * @example
+ * ```ts
+ * setServiceTimeEntryCommercialResolver(({ options }) =>
+ *   SubscriptionServiceCommercialResolver.create(options, provider),
+ * );
+ * ```
  */
 export function setServiceTimeEntryCommercialResolver(
-  resolver: ServiceCommercialResolver | null,
+  resolver: ServiceTimeEntryCommercialResolverSource | null,
 ): void {
   actionCommercialResolver = resolver;
 }
 
-/** The resolver installed by {@link setServiceTimeEntryCommercialResolver}. */
-export function getServiceTimeEntryCommercialResolver(): ServiceCommercialResolver | null {
+/** The source installed by {@link setServiceTimeEntryCommercialResolver}. */
+export function getServiceTimeEntryCommercialResolver(): ServiceTimeEntryCommercialResolverSource | null {
   return actionCommercialResolver;
 }
 
@@ -316,7 +336,8 @@ export async function submitServiceTimeAction(
  * `approve`: `submitted → approved` through `ServiceEvidenceService.approve()`,
  * which stamps `approvedAt`, the acting profile and the approval path, then
  * writes the immutable charge and compensation snapshots through the
- * installed {@link setServiceTimeEntryCommercialResolver resolver}. Money:
+ * installed {@link setServiceTimeEntryCommercialResolver resolver} (a factory
+ * is called per request with the collection's options). Money:
  * super-admin bypass does not apply, the grant must be explicit.
  */
 export async function approveServiceTimeAction(
@@ -330,8 +351,8 @@ export async function approveServiceTimeAction(
     entries.options,
     { allowSuperAdminBypass: false },
   );
-  const commercial = actionCommercialResolver;
-  if (!commercial) {
+  const source = actionCommercialResolver;
+  if (!source) {
     throw new TimesheetActionError(
       // A 4xx so generated transports return the message; the host has not
       // installed the pricing the approval needs.
@@ -342,6 +363,12 @@ export async function approveServiceTimeAction(
   }
   return withActionPrincipal(principal, async () => {
     const entry = await loadEntry(entries, principal, body);
+    // Built per request inside the principal's tenancy context, on the same
+    // options (and so the same request-bound executor) as the entries.
+    const commercial =
+      typeof source === 'function'
+        ? await source({ options: entries.options })
+        : source;
     const service = await evidenceService(entries, commercial);
     return serviceCall(() =>
       service.approve(entry, {
