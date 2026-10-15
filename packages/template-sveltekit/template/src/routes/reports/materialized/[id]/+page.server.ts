@@ -25,14 +25,21 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
   const offset = pageValue(url.searchParams.get('offset'), 0, 100_000);
   const limit = pageValue(url.searchParams.get('limit'), 50, 100);
   if (limit < 1) error(400, 'Invalid report page');
+  const result = await host.query(context, {
+    version: 1, requestId: `materialized:${host.id}`, mode: 'rows',
+    projection: [descriptor.identityField, ...descriptor.dataTable.columns.map((column) => column.id)],
+    page: { kind: 'offset', offset, limit },
+  });
+  if (result.page?.kind !== 'offset') error(500, 'Invalid report page');
   return {
     hostId: host.id,
     drilldownColumnIds: host.drilldownColumnIds,
-    page: await host.query(context, {
-      version: 1, requestId: `materialized:${host.id}`, mode: 'rows',
-      projection: [descriptor.identityField, ...descriptor.dataTable.columns.map((column) => column.id)],
-      page: { kind: 'offset', offset, limit },
-    }),
-    descriptor,
+    page: {
+      descriptor,
+      rows: result.rows,
+      totalRows: result.total.value,
+      offset: result.page.offset,
+      limit: result.page.limit,
+    },
   };
 };

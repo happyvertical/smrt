@@ -8,9 +8,21 @@ const host = {
   readPermission: 'taxsummaryreports.read',
   drilldownColumnIds: ['tax_minor'],
   descriptor: async () => ({ reportClassName: 'Tax summary', identityField: 'id', dataTable: { columns: [] } }),
-  query: async (context: { tenantId: string }) => {
+  query: async (context: { tenantId: string }, request: { page: { offset: number; limit: number } }) => {
     if (context.tenantId !== 'tenant-a') throw new Error('wrong tenant');
-    return { rows: [{ id: 'a-row' }], count: 1 };
+    return {
+      version: 1 as const,
+      requestId: 'stub',
+      queryFingerprint: 'stub',
+      identityField: 'id',
+      rows: [{ id: 'a-row' }],
+      page: { kind: 'offset' as const, offset: request.page.offset, limit: request.page.limit, hasMore: false },
+      total: { kind: 'exact' as const, value: 1 },
+      freshness: { state: 'unknown' as const },
+      warnings: [],
+      truncated: false,
+      execution: 'visible' as const,
+    };
   },
   drilldown: async (context: { tenantId: string }, cell: { id: string; columnId: string }) => {
     if (context.tenantId !== 'tenant-a' || cell.id !== 'a-row') throw new Error('missing');
@@ -32,9 +44,14 @@ describe('materialized report route', () => {
     const args = (permissions = ['taxsummaryreports.read'], tenantId: string | null = 'tenant-a', id = 'tax-summary', search = '') => ({ locals: locals(permissions, tenantId), params: { id }, url: new URL(`https://app.test/${search}`) });
     await expect(load(args([], null) as never)).rejects.toMatchObject({ status: 401 });
     await expect(load(args([]) as never)).rejects.toMatchObject({ status: 403 });
-    await expect(load(args() as never)).resolves.toMatchObject({ hostId: 'tax-summary' });
+    await expect(load(args() as never)).resolves.toMatchObject({
+      hostId: 'tax-summary',
+      page: { totalRows: 1, offset: 0, limit: 50 },
+    });
     await expect(load(args(undefined, 'tenant-a', 'unknown') as never)).rejects.toMatchObject({ status: 404 });
-    await expect(load(args(undefined, 'tenant-a', 'tax-summary', '?offset=25&limit=10') as never)).resolves.toMatchObject({ hostId: 'tax-summary' });
+    await expect(
+      load(args(undefined, 'tenant-a', 'tax-summary', '?offset=25&limit=10') as never),
+    ).resolves.toMatchObject({ page: { totalRows: 1, offset: 25, limit: 10 } });
   });
   it('rejects malformed, cross-tenant, and hidden-cell drilldowns', async () => {
     const request = (body: unknown) => new Request('https://app.test', { method: 'POST', body: JSON.stringify(body) });
