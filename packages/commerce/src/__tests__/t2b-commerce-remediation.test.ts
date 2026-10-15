@@ -6,8 +6,10 @@
  *  1. [blocking] Invoice.updatePaymentStatus decides PAID with the SAME test
  *     the save-time guard uses, so a fully-paid invoice is PAID-and-saveable
  *     (not PARTIAL-then-rejected).
- *  2. [major] A no-line-item invoice's totalAmount must equal subtotal+tax, and
- *     the journal `recognizeRevenue` builds from it balances.
+ *  2. [major] The journal `recognizeRevenue` builds balances exactly. Under
+ *     money v2 (#4021) header totals always come from lines and posting
+ *     reads the issued invoice's frozen facts, so the former no-line-item
+ *     arithmetic check has nothing left to guard.
  *  3. [major] Fulfillment rejects illegal status transitions on save and via
  *     its mark* helpers (e.g. DELIVERED → PENDING).
  *  4. [major] FulfillmentLineItem rejects over-fulfilling a contract line
@@ -35,17 +37,22 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { ContractLineItemCollection } from '../collections/ContractLineItemCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { FulfillmentCollection } from '../collections/FulfillmentCollection.js';
 import { FulfillmentLineItemCollection } from '../collections/FulfillmentLineItemCollection.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
-import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
 import { PaymentAllocationCollection } from '../collections/PaymentAllocationCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
 import { FulfillmentStatus, InvoiceStatus } from '../types/index.js';
+import { createV2Invoice, tenantIt, useTenancy } from './helpers/v2-tenant.js';
+
+// Commerce money documents require a tenant (#4021); payments and
+// allocations are stamped with it so they match the invoices they settle.
+const it = tenantIt();
+useTenancy();
 
 function tmpDb(tag: string): string {
   return join(tmpdir(), `smrt-t2b-${tag}-${Date.now()}-${Math.random()}.db`);
@@ -58,16 +65,12 @@ function tmpDb(tag: string): string {
 describe('Invoice payment-status epsilon (#1389 blocking)', () => {
   let dbPath: string;
   let invoices: InvoiceCollection;
-  let lineItems: InvoiceLineItemCollection;
   let payments: PaymentCollection;
   let allocations: PaymentAllocationCollection;
 
   beforeEach(async () => {
     dbPath = tmpDb('epsilon');
     invoices = await InvoiceCollection.create({
-      db: { type: 'sqlite', url: dbPath },
-    });
-    lineItems = await InvoiceLineItemCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
     payments = await PaymentCollection.create({
@@ -95,31 +98,13 @@ describe('Invoice payment-status epsilon (#1389 blocking)', () => {
     // `updatePaymentStatus` (which decides PAID) and the save-time guard
     // (which validates PAID) must agree, so a fully-paid invoice is
     // PAID-and-saveable rather than PARTIAL-then-rejected.
-    const invoice = await invoices.create({
-      currency: 'USD',
+    // Three line items of 10 cents each → authoritative total 30 cents,
+    // frozen when the invoice is issued.
+    const reloaded = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-EPS-1',
-      totalAmount: 0,
+      lines: [10, 10, 10],
     });
-    // Get the invoice out of DRAFT so a payment can drive it to PAID.
-    invoice.markSent();
-    await invoice.save();
-
-    // Three line items of 10 cents each → authoritative total 30 cents, exact.
-    for (let i = 0; i < 3; i++) {
-      const li = await lineItems.create({
-        invoiceId: invoice.id,
-        description: `Item ${i}`,
-        quantity: 1,
-        unitPrice: 10,
-      });
-      li.amount = li.calculateAmount();
-      await li.save();
-    }
-
-    // Reload so totalAmount is recomputed from the line items on save.
-    const reloaded = await invoices.get({ id: invoice.id });
-    if (!reloaded) throw new Error('invoice did not reload');
-    await reloaded.save(); // recompute totalAmount from line items
+    expect(reloaded.status).toBe(InvoiceStatus.SENT);
     expect(reloaded.totalAmount).toBe(30);
 
     // Pay EXACTLY 30 cents via an allocation, then update payment status.
@@ -153,15 +138,11 @@ describe('Invoice payment-status epsilon (#1389 blocking)', () => {
   it('treats a one-minor-unit shortfall as PARTIAL, not PAID', async () => {
     // The other half of the retired epsilon: 1¢ short used to fall inside the
     // 0.01 tolerance and read as fully paid. It is a shortfall (#2401).
-    const invoice = await invoices.create({
-      currency: 'USD',
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-EPS-2',
-      subtotal: 30,
-      taxAmount: 0,
-      totalAmount: 30,
+      lines: [30],
     });
-    invoice.markSent();
-    await invoice.save();
+    expect(invoice.totalAmount).toBe(30);
 
     const payment = await payments.create({ amount: 29, currency: 'USD' });
     await payment.save();
@@ -207,34 +188,21 @@ describe('Invoice/ledger epsilon snap (#1389 major)', () => {
     }
   });
 
-  it('rejects a no-line-item invoice whose total does not equal subtotal+tax, and posts a balanced journal when it does', async () => {
-    // The "snap" this case was written for is retired (#2401). It existed
-    // because the invoice tolerated a 0.01 gap that the ledger's tighter
-    // 0.001 balance check would then reject, so the total had to be silently
-    // rewritten to keep revenue recognition possible. With integer minor units
-    // there is no gap to tolerate: a total that is not `subtotal + taxAmount`
-    // is rejected outright, and every journal built from an accepted total
-    // balances exactly — which is the property the snap was protecting.
-    await expect(
-      invoices.create({
-        currency: 'USD',
-        invoiceNumber: 'INV-SNAP-MISMATCH',
-        subtotal: 10000, // $100.00
-        taxAmount: 0,
-        totalAmount: 10001, // one cent adrift
-      }),
-    ).rejects.toThrow(/must equal subtotal \+ taxAmount/);
-
-    const invoice = await invoices.create({
-      currency: 'USD',
+  it('posts a balanced journal from the issued invoice total', async () => {
+    // The "snap" this case was written for is retired (#2401), and so is the
+    // no-line-item arithmetic check that replaced it (#4021): header totals
+    // are recomputed from lines, so a caller cannot store a total adrift of
+    // subtotal + tax. What remains is the property the snap protected —
+    // every journal built from an issued invoice balances exactly.
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-SNAP-1',
+      lines: [10000],
+    });
+    expect(invoice).toMatchObject({
       subtotal: 10000,
       taxAmount: 0,
       totalAmount: 10000,
     });
-    await invoice.save();
-
-    expect(invoice.totalAmount).toBe(10000);
 
     // Real ledger accounts so revenue recognition can actually post.
     const { AccountCollection } = await import('@happyvertical/smrt-ledgers');
@@ -257,15 +225,25 @@ describe('Invoice/ledger epsilon snap (#1389 major)', () => {
     const journal = await invoice.recognizeRevenue({
       arAccountId: arAcct.id!,
       revenueAccountId: revAcct.id!,
-    } as any);
+      bookCurrency: 'USD',
+    });
     expect(journal).toBeTruthy();
 
-    const entries = await journal.getEntries();
+    // Read the entries through a fresh collection: the returned journal is
+    // bound to the posting transaction's executor.
+    const { JournalEntryCollection } = await import(
+      '@happyvertical/smrt-ledgers'
+    );
+    const entries = await (
+      await JournalEntryCollection.create({ db: invoices.db })
+    ).findByJournal(journal.id!);
+    expect(entries.length).toBeGreaterThan(0);
     const debit = entries.reduce((s: number, e: any) => s + (e.debit || 0), 0);
     const credit = entries.reduce(
       (s: number, e: any) => s + (e.credit || 0),
       0,
     );
+    expect(debit).toBe(10000);
     // Integer minor units on both sides — exactly balanced, not merely inside
     // the ledger's BALANCE_EPSILON.
     expect(debit).toBe(credit);
@@ -651,14 +629,10 @@ describe('PaymentAllocation invoice-level cap (#1389 speculative)', () => {
   });
 
   it('rejects allocations from two different payments that jointly over-pay an invoice', async () => {
-    const invoice = await invoices.create({
-      currency: 'USD',
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-CAP-1',
-      subtotal: 100,
-      taxAmount: 0,
-      totalAmount: 100,
+      lines: [100],
     });
-    await invoice.save();
 
     // Two separate payments, each large enough to pass its own per-payment cap.
     const p1 = await payments.create({ amount: 100, currency: 'USD' });
@@ -686,14 +660,10 @@ describe('PaymentAllocation invoice-level cap (#1389 speculative)', () => {
   });
 
   it('allows allocations from different payments that stay within the invoice total', async () => {
-    const invoice = await invoices.create({
-      currency: 'USD',
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-CAP-2',
-      subtotal: 100,
-      taxAmount: 0,
-      totalAmount: 100,
+      lines: [100],
     });
-    await invoice.save();
 
     const p1 = await payments.create({ amount: 100, currency: 'USD' });
     await p1.save();
@@ -717,14 +687,10 @@ describe('PaymentAllocation invoice-level cap (#1389 speculative)', () => {
 
   // #3801 deliberately closes the former zero-total bypass.
   it('rejects allocation against a total=0 invoice', async () => {
-    const invoice = await invoices.create({
-      currency: 'USD',
+    // An issued invoice with no lines totals zero.
+    const invoice = await createV2Invoice(invoices.db, {
       invoiceNumber: 'INV-ZERO',
-      subtotal: 0,
-      taxAmount: 0,
-      totalAmount: 0,
     });
-    await invoice.save();
     expect(invoice.totalAmount).toBe(0);
 
     const payment = await payments.create({ amount: 50, currency: 'USD' });

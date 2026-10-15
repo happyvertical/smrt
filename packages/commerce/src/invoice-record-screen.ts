@@ -119,7 +119,7 @@ export function invoiceRecordStoredTotals(
 }
 
 /**
- * Loads a v2 invoice's frozen record-screen data in one tenant money read
+ * Loads an invoice's frozen record-screen data in one tenant money read
  * scope. Callers must already be executing for the same tenant; this helper
  * never switches a principal from its supplied id.
  */

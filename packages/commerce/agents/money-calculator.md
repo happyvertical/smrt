@@ -35,11 +35,10 @@ codes include `TAX_CODE_DUPLICATE_COMPONENT`,
 shared input, discount, percent, compound, state, scope, safety, freeze, and
 currency codes exported as `MoneyValidationCode`.
 
-The existing invoice functions in `src/svelte/invoices/calculations.ts` remain
-compatibility adapters for the legacy single-component exclusive model until the
-tenant migration gate enables persisted money-v2 fields. In particular,
-`calculateInvoiceMinorLine(input)` defaults to the legacy negative-tie rule for
-existing model saves. Migration-aware callers explicitly pass
-`{ moneyModel: 'v2' }`; there is no process-global mode. V2 callers pass the
-stored signed discount through unchanged; editor magnitude normalization happens
-before constructing that stored input.
+`calculateInvoiceMinorLine(input)` in `src/svelte/invoices/calculations.ts`
+(also exported from `@happyvertical/smrt-commerce/invoices`) runs one line
+through this calculator with a single-component code built from its resolved
+fraction. It takes no options. Its discount is signed minor units and passes
+through unchanged, and its ties round half away from zero for negative
+lines too. Editor magnitude normalization happens before constructing that
+input. See [invoice line calculation](invoice-calculations.md).

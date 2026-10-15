@@ -15,12 +15,16 @@ import {
   AccountCollection,
   JournalCollection,
 } from '@happyvertical/smrt-ledgers';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
 import type { Payment } from '../models/Payment.js';
 import { PaymentMethod, PaymentStatus } from '../types/index.js';
+import { tenantIt } from './helpers/v2-tenant.js';
+
+// Commerce money documents require a tenant (#4021).
+const it = tenantIt();
 
 /**
  * Drive a payment to COMPLETED through the verified `recordPayment()`

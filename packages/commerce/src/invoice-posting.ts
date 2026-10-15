@@ -179,6 +179,23 @@ async function createOrReadPostedJournal(
   return journal;
 }
 
+/**
+ * Reload a journal posted inside a money transaction on `db`, so the caller
+ * gets an instance whose reads do not run on the finished transaction.
+ */
+export async function rebindJournal(
+  db: DatabaseInterface,
+  journal: Journal,
+): Promise<Journal> {
+  const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
+  return (
+    (await (
+      await JournalCollection.create({ db })
+    ).get({ id: required(journal.id, 'Journal ID') }, { cache: false })) ??
+    journal
+  );
+}
+
 /** Post an issued invoice's revenue journal from its frozen money facts. */
 export async function recognizeInvoiceRevenue(
   input: Invoice,

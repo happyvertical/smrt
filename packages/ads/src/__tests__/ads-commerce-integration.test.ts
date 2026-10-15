@@ -17,13 +17,24 @@ import {
   SalesContractCollection,
   VendorCollection,
 } from '@happyvertical/smrt-commerce';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { withTenant } from '@happyvertical/smrt-tenancy';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it as vitestIt,
+} from 'vitest';
 import {
   AdDeliveryTierCollection,
   AdGroupCollection,
   AdGroupStatus,
   PricingModel,
 } from '../index.js';
+
+// Commerce money documents (contracts) require a tenant (#4021).
+const it = (name: string, fn: () => Promise<void>) =>
+  vitestIt(name, () => withTenant({ tenantId: 'ads-tenant' }, fn));
 
 describe('ads + commerce integration', () => {
   let dbPath: string;
@@ -67,7 +78,6 @@ describe('ads + commerce integration', () => {
     const contract = await contracts.create({
       _meta_type: 'Order',
       customerId: customer.id!,
-      totalAmount: 1500.0,
       status: ContractStatus.ACCEPTED,
     });
     await contract.save();
@@ -128,7 +138,6 @@ describe('ads + commerce integration', () => {
     const contract = await contracts.create({
       _meta_type: 'Order',
       customerId: customer.id!,
-      totalAmount: 3000.0,
       status: ContractStatus.ACCEPTED,
     });
     await contract.save();

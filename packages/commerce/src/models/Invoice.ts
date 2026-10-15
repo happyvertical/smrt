@@ -615,20 +615,14 @@ export class Invoice extends SmrtObject {
    * raw mass-assignment on the generated CRUD routes.
    *
    * Behaviour:
-   *  - **Totals are authoritative from line items.** When the invoice is
-   *    persisted and has line items, `subtotal` / `taxAmount` / `totalAmount`
-   *    are recomputed from those items, overriding whatever the caller sent.
-   *    This blocks "create real line items but claim a tiny total" forgery.
-   *  - **Without line items**, the caller-supplied totals are accepted but the
-   *    `totalAmount === subtotal + taxAmount` arithmetic invariant is enforced.
+   *  - **Totals are authoritative from line items.** A draft's `subtotal` /
+   *    `discountTotal` / `taxAmount` / `totalAmount` are recomputed from its
+   *    lines and tax codes on every save, whatever the caller sent; a new
+   *    invoice with no lines starts at zero. Issued invoices are frozen.
    *  - **amountPaid is derived/validated.** When persisted, it is recomputed
    *    from PaymentAllocations rather than trusted from the caller. It may
-   *    never exceed `totalAmount`.
-   *  - **Whole minor units and non-negativity** are enforced on all four
-   *    amounts. The integer check runs FIRST (#2401), before the
-   *    `totalAmount === subtotal + taxAmount` invariant, so a caller who wrote
-   *    major units gets "money is minor units" rather than a confusing
-   *    arithmetic-mismatch error from float addition.
+   *    never exceed `totalAmount`, and a new invoice cannot start paid.
+   *  - **Whole minor units and non-negativity** are enforced on all amounts.
    *  - **Status transitions** are validated against the prior persisted status.
    */
   override async save(): Promise<this> {
@@ -646,7 +640,21 @@ export class Invoice extends SmrtObject {
 
     this.assertAmountsAreMinorUnits();
     if (persisted && this.id) await this.recomputeAmountPaid();
-    else this.amountPaid = 0;
+    else {
+      // A new invoice has no PaymentAllocations behind it, so it cannot
+      // start paid: payment status is derived from allocations.
+      this.amountPaid = 0;
+      if (
+        this.status === InvoiceStatus.PAID ||
+        this.status === InvoiceStatus.PARTIAL
+      )
+        throw new Error(
+          `Invoice ${this.invoiceNumber || '<new>'}: a new invoice cannot start ` +
+            `in status '${this.status}' — payment status is derived from ` +
+            'PaymentAllocations, not set at creation. Create the invoice unpaid ' +
+            '(DRAFT / SENT) and record payments via allocations.',
+        );
+    }
     this.assertNonNegativeAmounts();
     this.assertStatusTransition(prior);
     this.assertPaymentStatusConsistent();
@@ -1036,14 +1044,17 @@ export class Invoice extends SmrtObject {
     this.status = InvoiceStatus.CANCELLED;
   }
 
-  /** Cancel a posted money-v2 invoice with an exact atomic journal reversal. */
+  /** Cancel a posted invoice with an exact atomic journal reversal. */
   async cancelWithRevenueReversal(
     options: CancelRevenueOptions,
   ): Promise<Journal> {
-    const { cancelInvoiceWithRevenueReversal } = await import(
+    const { cancelInvoiceWithRevenueReversal, rebindJournal } = await import(
       '../invoice-posting.js'
     );
-    return cancelInvoiceWithRevenueReversal(this, options);
+    return rebindJournal(
+      this.db,
+      await cancelInvoiceWithRevenueReversal(this, options),
+    );
   }
 
   /**
@@ -1079,8 +1090,10 @@ export class Invoice extends SmrtObject {
    * ```
    */
   async recognizeRevenue(options: RecognizeRevenueOptions): Promise<Journal> {
-    const { recognizeInvoiceRevenue } = await import('../invoice-posting.js');
-    return recognizeInvoiceRevenue(this, options);
+    const { recognizeInvoiceRevenue, rebindJournal } = await import(
+      '../invoice-posting.js'
+    );
+    return rebindJournal(this.db, await recognizeInvoiceRevenue(this, options));
   }
 
   /**

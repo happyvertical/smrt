@@ -4,23 +4,19 @@
 change a rate, archive the old component, create a replacement and update the
 editable `TaxCode.components` list. Never edit a used component's percent.
 
-Every tenant seeds `exempt`, `zero-rated`, `out-of-scope`, and
-`legacy-unreconciled`. Those kinds have no components because they report
-differently. A legacy zero rate means out-of-scope unless the linked customer
-was explicitly exempt; malformed or out-of-range legacy rates stay visible
-through `legacy-unreconciled` and the mapping report.
+Every tenant seeds `exempt`, `zero-rated`, and `out-of-scope`
+(`STANDARD_TAX_CODES`, seeded by `ensureTenantTaxCodes(db, tenantId)` in
+`src/tax/standard-codes.ts`). Those kinds have no components because they
+report differently. `TaxCodeCollection.findByCode(code, tenantId?)` finds a
+code by its tenant-unique `code`, optionally for an explicit tenant.
+The [money data upgrade](money-upgrade.md) adds a one-component
+`rate-<percent>` code for each nonzero rate it finds in earlier-version data.
 
 `TaxSettings` owns tenant defaults, tax registrations, default line amount type
 and rounding scope. Cookbook policies adapt the portable settings document;
-they do not replace persisted tax settings. The per-tenant migration marker is
-owned by the money-snapshot migration. Ordinary saves and generated creates
-cannot change it: a new instance whose tenant natural key would upsert over a
-`migrating` or `v2` row is refused rather than resetting that tenant to legacy.
-The ordinary save transaction locks and re-reads the tenant marker before its
-natural-key upsert, serializing that check with migration claim and activation.
-If the tenant has no marker to lock, its first ordinary save is insert-only: a
-concurrent migration that creates the marker wins and the stale save is refused
-instead of adopting and overwriting the migration-owned row.
+they do not replace persisted tax settings. There is one settings row per
+tenant, created once under a tenant lock (see
+[document money](document-money.md#tenant-settings-and-bootstrap-4009)).
 
 `applyCommerceCookbookSettings(db, tenantId, cookbook)` is the explicit
 server-side activation boundary for core's portable `taxRate`, inclusion, and
@@ -35,8 +31,8 @@ await applyCommerceCookbookSettings(db, session.tenantId, cookbook);
 ```
 
 `ensureCommerceTenant(db, tenantId, { cookbook })` wraps this call with the
-standard code seed and the clean-tenant `v2` activation; prefer it for a newly
-created tenant (#4009).
+settings row and standard code seed; prefer it for a newly created tenant
+(#4009).
 
 `smrt cookbook apply` writes project files and does not have a database or
 tenant, so it deliberately performs no storage writes. Activation creates or

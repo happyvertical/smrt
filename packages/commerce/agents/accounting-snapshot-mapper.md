@@ -4,9 +4,9 @@
 snapshot. `src/invoice-accounting-sync.ts` is the owning persistence and
 provider boundary. It re-reads the issued Invoice, InvoiceLineItem and
 DocumentTax rows and verifies their shared `moneySnapshotId` before calling the
-pure mapper. `Invoice.toAccountingInput()` keeps its legacy behavior for legacy
-tenants; a money-v2 tenant must supply explicit QuickBooks realm mapping and is
-routed through the frozen boundary.
+pure mapper. `Invoice.toAccountingInput({ mapping })` always requires explicit
+QuickBooks realm mapping and is routed through the frozen boundary; calling it
+without options throws `INVALID_MONEY_INPUT`.
 
 The released `@happyvertical/accounting` 0.103.7 path accepts frozen invoices
 and positive credit memos. Commerce sends persisted pre-discount unit price,

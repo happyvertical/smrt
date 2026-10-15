@@ -90,9 +90,14 @@ function required(value: string | null | undefined, label: string): string {
     );
   return value;
 }
+/** Frozen-field identity: an absent optional reference (`''`) equals a stored NULL. */
 function same(a: unknown, b: unknown): boolean {
   const value = (item: unknown) =>
-    item instanceof Date ? item.toISOString() : (item ?? null);
+    item instanceof Date
+      ? item.toISOString()
+      : item === '' || item === undefined
+        ? null
+        : item;
   return value(a) === value(b);
 }
 function assertUnchanged<T extends object>(
@@ -402,6 +407,12 @@ export async function saveContract(input: Contract): Promise<Contract> {
         contract.tenantId = tenantId;
         contract.lineAmountType = settings.defaultLineAmountType;
         contract.taxRoundingScope = settings.taxRoundingScope;
+        // A new Contract has no lines yet: its totals start at zero and are
+        // derived from lines on every later save, never taken from the caller.
+        contract.subtotal = 0;
+        contract.discountTotal = 0;
+        contract.taxAmount = 0;
+        contract.totalAmount = 0;
         if (contract.status !== ContractStatus.DRAFT) {
           contract.moneySnapshotId = crypto.randomUUID();
           contract.sellerTaxRegistrations = structuredClone(

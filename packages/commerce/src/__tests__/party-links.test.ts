@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ObjectRegistry, smrt } from '@happyvertical/smrt-core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { PurchaseContractCollection } from '../collections/PurchaseContractCollection.js';
@@ -21,6 +21,10 @@ import {
 import { Fulfillment } from '../models/Fulfillment.js';
 import { Invoice } from '../models/Invoice.js';
 import { Payment } from '../models/Payment.js';
+import { tenantIt } from './helpers/v2-tenant.js';
+
+// Commerce money documents require a tenant (#4021).
+const it = tenantIt();
 
 async function save<T extends Contract>(object: T): Promise<T> {
   await object.initialize();
@@ -421,6 +425,12 @@ describe('Contract party branches', () => {
     await contracts.db.query(
       "UPDATE contracts SET tenant_id = 'tenant-b' WHERE id = ?",
       otherOrder.id,
+    );
+    // Money documents can no longer be saved global (#4021); a legacy global
+    // contract row is reproduced directly.
+    await contracts.db.query(
+      'UPDATE contracts SET tenant_id = NULL WHERE id = ?',
+      globalOrder.id,
     );
     const report = await preflightCommercePartyLinks(contracts.db);
     expect(report.invalidSalesReferences).toEqual(

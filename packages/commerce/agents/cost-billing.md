@@ -3,13 +3,10 @@
 `@happyvertical/smrt-commerce/cost-billing` is an independent, transport-neutral
 entry point without model, server or Svelte dependencies. It does not persist,
 post, authorize, select a currency/jurisdiction, or implement credit-note lifecycle.
-Legacy Invoice calculations and editor defaults are unchanged by this entry
-point. In particular,
-`calculateInvoiceMinorLine` retains negative ties toward positive infinity; the
-new opt-in helpers use symmetric half-away-from-zero ties. Positive-only invoice
-editor validation remains distinct from these generic signed calculations. The
+It does not change Invoice calculations or the invoice editor; both use the
+commerce money calculator, whose ties also round half away from zero. The
 `roundingScope: 'invoice'` behavior in this guide is a standalone cost-billing
-convention; v2 document arithmetic uses `roundingScope: 'document'` and stores
+convention; document arithmetic uses `roundingScope: 'document'` and stores
 allocated tax facts. See the [commercial money model](money-model.md) and
 [money calculator](money-calculator.md).
 

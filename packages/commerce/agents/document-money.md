@@ -1,69 +1,46 @@
 # Document money persistence
 
-Tenant money behavior is selected by the server-owned `TaxSettings.moneyModel`
-marker. `legacy` preserves the existing line-save behavior, as do older schemas
-without the settings table.
-`migrating` is a persisted maintenance guard: invoice money writes fail until
-the owning migration restores `legacy` or activates `v2`. Generated surfaces
-cannot write either the marker or its owner token.
+Commerce has one money model. Tax codes resolve each line's tax, the server
+computes line `taxAmount` and the header totals, and issuing a document freezes
+it with a money snapshot. Every Invoice and Contract money write needs a
+tenant; a tenantless write fails with `MoneyValidationError`
+`INVALID_MONEY_INPUT` (`Commerce money documents require a tenant`).
 
-### Initial model (#4009)
+### Tenant settings and bootstrap (#4009)
 
-A tenant's first `TaxSettings` row chooses its model once, wherever it is
-created: `getOrCreateForTenant`, the cookbook path, a generated create, or the
-runtime barrier ahead of a tenant's first document. A tenant with no stored
-Invoice or Contract row (header or line) starts on `v2`; a tenant whose rows
-predate its marker stays `legacy` until `smrt db:migrate-commerce-money`
-converts it. The document check reads raw tables, never the guarded
-collections, and does not depend on the caller's table permissions: on
-PostgreSQL it raises the transaction-local `smrt.system_context` for its own
-scan and restores it, returning only a boolean for the explicit tenant. Creation runs in one transaction under a tenant advisory lock on
-PostgreSQL (the embedded write queue elsewhere), re-reads before inserting, and
-inserts the deterministic settings id, so racing first writers converge on one
-row and one model. An existing marker is never changed by this rule. A caller
-that passes `moneyModel` explicitly keeps it; the migration claim materializes
-a `legacy` row for a tenant it sees first, so an empty tenant still migrates.
+Each tenant has one `TaxSettings` row. It is created once, wherever the first
+caller reaches it: `getOrCreateForTenant`, the cookbook path, a generated
+create, or the runtime barrier ahead of a tenant's first document. Creation
+runs in one transaction under a tenant advisory lock on PostgreSQL (the
+embedded write queue elsewhere), re-reads before inserting, and inserts the
+deterministic settings id, so racing first writers converge on one row.
 
 `ensureCommerceTenant(db, tenantId, { cookbook? })` is the one host bootstrap
-call after tenant creation: standard tax codes, the cookbook's commerce tax
-settings, then `v2` for a tenant with no documents. It also moves an empty
-`legacy` marker (for example one materialized by a read before this release) to
-`v2`, under the marker row lock that every runtime document write takes first,
-so its document check is authoritative. It returns the tenant's model, refuses
-a migrating tenant, and is idempotent; re-running it with a cookbook re-applies
-the cookbook defaults.
+call after tenant creation. It seeds the settings row, the standard tax codes
+(`exempt`, `zero-rated`, `out-of-scope`), and the cookbook's commerce tax
+settings when one is given. It returns `{ tenantId }` and is idempotent;
+re-running it with a cookbook re-applies the cookbook defaults.
 
-Legacy documents reach a `v2` tenant only through the model API, which converts
-them: a draft is recalculated by the v2 coordinator, so a legacy `taxRate`,
-tax-inclusive `amount`, or header totals are not inputs (tax resolves from
-codes). An issued legacy document cannot be converted after issue: adding its
-lines fails with `FROZEN_DOCUMENT`, and the migration refuses a `v2` tenant.
-Import issued history into a tenant before its first marker or bootstrap (it
-then stays `legacy`) and migrate it. Rows written with raw SQL bypass the model
-and are not converted.
-
-Billing period close still writes legacy invoices (#4013): it materializes a
-`legacy` marker for a seller tenant that has none and refuses a `v2` seller
-before writing any invoice row. Provision a billing seller with
-`ensureCommerceTenant(db, tenantId, { moneyModel: 'legacy' })`; that option
-also returns an empty `v2` tenant to `legacy` and refuses one with documents.
+Money data written by an earlier version is refused, never read. A schema with
+the earlier version's money columns or table refuses the whole database, and a
+tenant with Invoice or Contract rows but no settings row is refused. Both fail
+with `COMMERCE_DATA_NEEDS_UPGRADE` and name `smrt db:upgrade-commerce-money`.
+See [money data upgrade](money-upgrade.md). Rows written with raw SQL bypass
+the model and are not recalculated.
 
 Every Invoice/InvoiceLineItem get, list, preview, mutation, posting, and
-accounting-sync phase acquires the same tenant settings row before document
-rows. The barrier is held through the owning transaction, so migration cannot
-start between the marker check and a money read/write. Nested coordinators
-reuse an explicitly registered transaction executor; adapter shape is never
-used as transaction proof. When the settings table exists, the first runtime
-boundary materializes the deterministic marker row as this durable
-serialization point; its initial model follows
-[initial model](#initial-model-4009). Older schemas without the table remain legacy
-and runtime never creates schema.
+accounting-sync phase checks for old-format data, then acquires the tenant
+settings row before document rows. The lock is held through the owning
+transaction. Nested coordinators reuse an explicitly registered transaction
+executor; adapter shape is never used as transaction proof. Runtime code never
+creates schema.
 
-In `v2`, saving an invoice line locks and reloads its parent on the caller's
+Saving an invoice line locks and reloads its parent on the caller's
 transaction, reloads every sibling, resolves current tax defaults, calculates
 the document once, and writes line snapshots, `DocumentTax`, and header totals
-atomically. Tax resolution order is line override, product, customer, then app
-default. Product reads use the products package's collection on that same
+atomically. Tax resolution order is line override, customer exemption,
+product, customer code, then the tenant default; `none` mode uses the tenant's
+`out-of-scope` code. Product reads use the products package's collection on that same
 transaction executor; tenant-owned and catalog-global products are accepted.
 
 The first transition away from `DRAFT`, or setting `arJournalId`, freezes the
@@ -111,18 +88,17 @@ draft overlay through the owning resolver/calculator without writes and rejects
 frozen documents. A supplied line id must name a stored line exactly once; omit
 the id for a new preview-only line. `getInvoiceMoneyFacts({ db, tenantId,
 invoiceId })` reads the authoritative stored header, lines, `moneySnapshotId`,
-and `DocumentTax` rows without recalculation. Both facades require an active
-`v2` tenant and fail closed while migration is in progress, so legacy or
-partially migrated amounts are never presented as money-v2 facts.
+and `DocumentTax` rows without recalculation. Both facades take the tenant
+settings lock and refuse a tenant whose data needs the upgrade.
 
 ### Record-screen composition
 
 `loadInvoiceRecordScreenData({ db, tenantId, invoiceId })` is the commerce
 server adapter for a generic invoice record page. A caller must already have
 that exact active tenant; the adapter never switches principals based on its
-argument. It holds the shared v2 money read barrier while it reads the stored
-header, lines, `DocumentTax`, and related credit-note summaries, so a migration
-cannot mix a stale header with a different snapshot of those rows. Its totals
+argument. It holds the tenant money lock while it reads the stored header,
+lines, `DocumentTax`, and related credit-note summaries, so it never mixes a
+stale header with a different snapshot of those rows. Its totals
 are a direct projection of persisted minor-unit values and component snapshots;
 it does not resolve a code or recalculate tax.
 
@@ -133,9 +109,10 @@ may expose `onCreateCreditNote` only with a server-derived
 `canCreateCreditNote` authorization result. The wrapper hides the action for
 credit-note records and never treats a client callback as authorization.
 
-`InvoiceLineItem.amount` is tax-exclusive net money in `v2`.
-`taxAmount` is separate, while `legacyAmount` is reserved for rollback during
-the compatibility migration. `taxCodeId` and component identity may be null for
+`InvoiceLineItem.amount` is the post-discount amount in the document's
+`lineAmountType`: tax-exclusive net for `exclusive`, tax-inclusive for
+`inclusive`. `taxAmount` is separate. `taxRate` is derived by the server from
+the resolved components (`0.05` means 5%); it is never an input. `taxCodeId` and component identity may be null for
 a genuine unassigned zero-tax line. Optional `productId` and
 `revenueAccountId` are nullable UUID references so PostgreSQL never receives an
 empty-string sentinel.
@@ -145,7 +122,7 @@ labels, percentage, liability account, taxable minor units, and tax minor
 units. Provider tax remains the invoice header's `providerTaxAmount`; commerce
 does not invent a tax code or component for provider-owned tax.
 
-Revenue recognition for `v2` reads only the frozen invoice, lines, and
+Revenue recognition reads only the frozen invoice, lines, and
 `DocumentTax` rows. It groups each line's stored net by its snapshotted revenue
 account (falling back to the caller's revenue account), groups component tax by
 the snapshotted liability account (falling back to the caller's tax account),
@@ -160,10 +137,14 @@ the invoice parent lock and transaction, so retries converge. Account IDs from
 frozen snapshots are still authorization checked: every used account must be
 active and owned by the invoice tenant.
 
-A posted `v2` invoice cannot move directly to `CANCELLED`. Call
+A posted invoice cannot move directly to `CANCELLED`. Call
 `cancelWithRevenueReversal({ bookCurrency })`; it reads the original posted
 journal, posts one deterministic journal with every debit and credit reversed,
 and stores `arReversalJournalId` with the status transition atomically. The
 original journal remains posted. Failed link or reversal writes roll back the
-entire operation, and retry returns the same reversal. Legacy tenants keep the
-existing recognition and cancellation behavior.
+entire operation, and retry returns the same reversal.
+
+Billing period close writes ordinary money-model invoices. The payment provider
+taxes them, so each billing line is an explicit override to the seller's
+`out-of-scope` code, and the provider's tax is stored in `providerTaxAmount`
+in the save that issues the invoice.

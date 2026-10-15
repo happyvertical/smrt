@@ -181,8 +181,10 @@ const FROZEN_LINE_FIELDS = [
   'moneySnapshotId',
 ] as const;
 
+/** Frozen-field identity: an absent optional reference (`''`) equals a stored NULL. */
 function comparable(value: unknown): unknown {
-  return value instanceof Date ? value.toISOString() : (value ?? null);
+  if (value instanceof Date) return value.toISOString();
+  return value === '' || value === undefined ? null : value;
 }
 
 function assertFieldsUnchanged<T extends object>(
@@ -205,7 +207,7 @@ function assertTenantId(value: string | null): asserts value is string {
   if (!value || value.trim() !== value)
     throw new MoneyValidationError(
       'INVALID_MONEY_INPUT',
-      'Money v2 requires a tenant-owned invoice',
+      'Invoice money requires a tenant-owned invoice',
     );
 }
 
@@ -1390,7 +1392,7 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
           )
             throw new MoneyValidationError(
               'FROZEN_DOCUMENT',
-              'A posted money-v2 invoice requires an atomic reversal before cancellation',
+              'A posted invoice requires an atomic reversal before cancellation',
             );
           assertFieldsUnchanged(
             invoice,

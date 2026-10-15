@@ -3,7 +3,7 @@
 InvoiceLineItem accepts nonnegative decimal quantities with at most six decimal
 places. The `1.0` default declares a floating-point quantity column. Unit price,
 discount and amount stay safe integer minor units. Every save goes through the
-invoice money aggregate, which recomputes the line under money v2 and ignores
+invoice money aggregate, which recomputes the line and ignores
 any supplied amount. Tax comes from the line's resolved tax code, never from a
 stored rate. See the [commercial money model](money-model.md).
 

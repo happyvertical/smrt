@@ -36,8 +36,8 @@ Do not mix currencies in totals or infer an unknown allocation as zero.
 
 The original invoice display DTOs in `src/svelte/types.ts` and their components
 accept decimal major-unit amounts. Preserve that published behavior. Applications
-adapting model amounts into those legacy components must explicitly convert units;
-do not pass a model's integer amount directly or silently change a legacy prop's
+adapting model amounts into those major-unit components must explicitly convert
+units; do not pass a model's integer amount directly or silently change a prop's
 meaning. New editor DTOs are separate contracts.
 
 Approved or otherwise retained invoice facts use the explicit `retained` display

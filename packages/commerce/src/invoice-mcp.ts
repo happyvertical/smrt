@@ -100,9 +100,9 @@ async function mayExposeMoneyProjection(
 /**
  * Serialize one already-authorized Invoice get response.
  *
- * Legacy tenants keep the ordinary public Invoice shape. Money-v2 tenants get
- * the authoritative stored snapshot and DocumentTax rows under `money`; this
- * function never resolves current tax codes or recalculates totals.
+ * A persisted tenant invoice gets the authoritative stored snapshot and
+ * DocumentTax rows under `money`; this function never resolves current tax
+ * codes or recalculates totals.
  */
 export async function serializeInvoiceMcpGet(
   invoice: Invoice,

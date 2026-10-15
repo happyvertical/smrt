@@ -3,7 +3,7 @@
 Import `InvoiceEditor`, `InvoiceAllocationFields`, `InvoiceReview` and their
 Props types from `@happyvertical/smrt-commerce/svelte`. `InvoiceEditor` is the
 invoice form. It renders `MoneyInvoiceEditor` (also exported) and uses the
-commercial money model, v2, which is the only invoice money model. Line tax
+commercial money model, the only invoice money model. Line tax
 comes from tax codes, never from a typed rate. See the
 [commercial money model](money-model.md) and the
 [money calculator](money-calculator.md).
@@ -13,7 +13,7 @@ props are `method` (default `post`), `canEdit`, `pending`, `hiddenFields`,
 `intentField` (default `intent`), `saveIntent` (default `save`), `saveLabel`
 and `onsubmit`. `money` carries:
 
-- `mode: 'v2'`;
+- `mode: 'v2'` (a fixed discriminator);
 - `draft`: currency, `lineAmountType` (`exclusive`, `inclusive` or `none`),
   `roundingScope` (`line` or `document`) and ordered `lines`;
 - `taxCodes`: the authorized tax-code choices, each with its components;
