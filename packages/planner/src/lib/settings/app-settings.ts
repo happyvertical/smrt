@@ -38,15 +38,21 @@ export const SETTING_TARGETS: Readonly<
     'Estimate',
     'Invoice',
     'Agreement',
+    'Lease',
   ].map((model) => ({ model: `${C}${model}`, field: 'currency' })),
   taxRate: ['InvoiceLineItem', 'ContractLineItem'].map((model) => ({
     model: `${C}${model}`,
     field: 'taxRate',
   })),
   paymentTerms: [
-    ...['Order', 'WholesaleOrder', 'Estimate', 'Invoice', 'Agreement'].map(
-      (model) => ({ model: `${C}${model}`, field: 'terms' }),
-    ),
+    ...[
+      'Order',
+      'WholesaleOrder',
+      'Estimate',
+      'Invoice',
+      'Agreement',
+      'Lease',
+    ].map((model) => ({ model: `${C}${model}`, field: 'terms' })),
     { model: `${C}Customer`, field: 'paymentTerms' },
   ],
 };
