@@ -54,7 +54,11 @@ import { recipes } from '../recipes/index.ts';
 import { isPlumbing } from '../recipes/plumbing.ts';
 import { inScope } from '../recipes/scope.ts';
 import { screenDefinition } from '../screens/definition.ts';
-import { documentTotals } from '../screens/totals.ts';
+import {
+  documentTotals,
+  type StoredLineItemsTotals,
+  storedDocumentTotals,
+} from '../screens/totals.ts';
 import type { SectionEntry } from '../sections/entries.ts';
 
 /** The capabilities a section page hands its widgets' loaders. */
@@ -692,14 +696,19 @@ function recordWidgetOptions(ctx: WidgetLoadContext) {
 }
 
 /**
- * The page's record, read fresh at load time: its totals
- * (`documentTotals`: its own fields by role, plus its lines' discounts) and
- * its currency code, for the line-items totals block.
+ * The page's record, read fresh at load time, for the line-items totals
+ * block: an issued document's frozen money (`storedDocumentTotals`, shown as
+ * stored with a row per tax component), else a draft's own totals by role
+ * (`documentTotals`, read against its lines); and its currency code.
  */
 async function recordFigures(
   ctx: WidgetLoadContext,
   relations: readonly ScreenRelation[],
-): Promise<{ totals?: LineItemsTotals; currency?: string }> {
+): Promise<{
+  totals?: LineItemsTotals;
+  storedTotals?: StoredLineItemsTotals;
+  currency?: string;
+}> {
   const { source } = dataCapabilities(ctx);
   const ref = ctx.record;
   if (!ref?.id) throw new Error('line items need a record');
@@ -714,10 +723,12 @@ async function recordFigures(
     items && lineModel
       ? await source.listWhere(lineModel, items.field, ref.id)
       : [];
-  const totals = documentTotals(model, record, lines);
+  const storedTotals = storedDocumentTotals(model, record, lines);
+  const totals = storedTotals ? undefined : documentTotals(model, record);
   const code = currencyCodeField(screenDefinition(model));
   const currency = code ? record[code] : undefined;
   return {
+    ...(storedTotals ? { storedTotals } : {}),
     ...(totals ? { totals } : {}),
     ...(typeof currency === 'string' && currency ? { currency } : {}),
   };
@@ -731,10 +742,14 @@ overviewRegistry.register(
 overviewRegistry.register(
   createLineItemsWidget(async (options, ctx) => {
     const base = recordWidgetOptions(ctx);
-    const { totals, currency } = await recordFigures(ctx, base.relations);
+    const { totals, storedTotals, currency } = await recordFigures(
+      ctx,
+      base.relations,
+    );
     return createLineItemsLoader({
       ...base,
       totals: () => totals,
+      storedTotals: () => storedTotals,
       currency: () => currency,
     })(options, ctx);
   }),

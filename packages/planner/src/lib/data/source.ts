@@ -3,27 +3,37 @@ import {
   type ChildOf,
   fakeChildrenOf,
   seedMismatch,
-  syncTotals,
+  settleSample,
 } from './children.ts';
 import {
   allocationInvoiceField,
   allocationPaymentField,
+  documentLineAmountType,
+  documentRoundingScope,
   isAllocationModel,
   isLineModel,
   PAID_PAYMENT_STATUS,
   settleInvoice,
-  settleLine,
+  settleWithLines,
   tracksPayments,
-  withTotals,
 } from './derived.ts';
 import {
   DEFAULT_SAMPLE_ROWS,
+  DEFAULT_SAMPLE_TAX_RATE,
   EPOCH,
   fakeId,
   fakeRecords,
   type ModelRecord,
   sampleRowCount,
 } from './fakes.ts';
+import {
+  defaultTaxCode,
+  type MoneyContext,
+  moneyCurrency,
+  sampleTaxCodes,
+  settleDocument,
+} from './money.ts';
+import { getSamplePricing, getSampleTaxRate } from './packs.ts';
 
 import { fakeAllocations } from './payments.ts';
 
@@ -125,12 +135,13 @@ export interface DataSource {
 }
 
 /**
- * Prefix of the localStorage keys rows are kept under, one per model. v5:
- * a line's `amount` is tax-inclusive again, as smrt-commerce and the
- * released line-items widget read it (`derived.ts`); rows kept under v4 hold
- * pre-tax amounts, so they are left behind for fresh samples.
+ * Prefix of the localStorage keys rows are kept under, one per model. v6:
+ * documents are on smrt-commerce's money model (a line's `amount` is its net
+ * after discount, or its gross when prices include tax, with tax stored
+ * apart; `derived.ts`). Rows kept under an older prefix are left behind for
+ * fresh samples, never migrated.
  */
-export const DATA_STORAGE_PREFIX = 'smrt-planner:data:v5:';
+export const DATA_STORAGE_PREFIX = 'smrt-planner:data:v6:';
 const CREATED_KEY = `${DATA_STORAGE_PREFIX}_created`;
 
 /** Remove every stored row. Never throws. */
@@ -404,18 +415,71 @@ export function createMemoryDataSource(
         const carried = options.defaults?.(model) ?? {};
         table(parent).forEach((row, index) => {
           const items = fakeChildrenOf(model, fk, row, seed, rows).map(
-            (item) =>
-              isLineModel(model)
-                ? settleLine({ ...item, ...carried })
-                : { ...item, ...carried },
+            (item) => ({ ...item, ...carried }),
           );
-          made.push(...items);
-          syncTotals(row, parent, items);
-          if (isLineModel(model)) seedMismatch(row, parent, index);
+          if (!isLineModel(model)) {
+            made.push(...items);
+            return;
+          }
+          made.push(
+            ...settleSample(row, parent, items, moneyContext(parent, row)),
+          );
+          seedMismatch(row, parent, index);
         });
       }
     }
     return made;
+  };
+
+  const modelById = new Map(
+    (options.children?.models ?? []).map((m) => [m.id, m] as const),
+  );
+
+  /**
+   * How a document's money is settled: its own pricing mode and rounding,
+   * else the app's; the sample tenant's tax codes, the app default for its
+   * tax rate; and what its customer and products say about tax.
+   */
+  const moneyContext = (
+    parent: CatalogModel,
+    row: ModelRecord,
+  ): MoneyContext => {
+    const pricing = getSamplePricing();
+    const rate = getSampleTaxRate() ?? DEFAULT_SAMPLE_TAX_RATE;
+    const codes = sampleTaxCodes(rate, pricing.currency);
+    const customerField = parent.fields.find(
+      (f) => f.name === 'customerId' && f.related,
+    );
+    const customerModel = customerField?.related
+      ? modelById.get(customerField.related)
+      : undefined;
+    const customer = customerModel
+      ? table(customerModel).find((c) => c.id === row.customerId)
+      : undefined;
+    const products = (productId: string) => {
+      for (const [id, rows] of tables) {
+        if (!id.endsWith(':Product')) continue;
+        const found = rows.find((p) => p.id === productId);
+        if (found) return found;
+      }
+      return undefined;
+    };
+    const codeOf = (value: unknown) =>
+      typeof value === 'string' && value ? value : null;
+    return {
+      lineAmountType: documentLineAmountType(
+        row,
+        pricing.pricesIncludeTax ? 'inclusive' : 'exclusive',
+      ),
+      roundingScope: documentRoundingScope(row, pricing.taxRounding),
+      currency: moneyCurrency(row.currency, moneyCurrency(pricing.currency)),
+      codes,
+      appDefaultCodeId: defaultTaxCode(rate, pricing.currency).id,
+      customerTaxExempt: customer?.taxExempt === true,
+      partyCodeId: codeOf(customer?.defaultTaxCodeId),
+      productCodeOf: (productId) =>
+        codeOf(products(productId)?.defaultSalesTaxCodeId),
+    };
   };
 
   /** Save the model and the tables it is built together with. */
@@ -449,32 +513,64 @@ export function createMemoryDataSource(
   const lineLink = (parent: CatalogModel) =>
     linksOf(parent.id).find((l) => isLineModel(l.model));
 
-  /** Recompute a parent's totals from its lines (they are never typed in). */
-  const resync = (parent: CatalogModel, parentId: unknown) => {
+  /**
+   * Settle a parent with its lines (they are never typed in): the lines'
+   * money and the parent's totals, written back to both tables. Whether the
+   * parent was there to settle.
+   */
+  const resync = (parent: CatalogModel, parentId: unknown): boolean => {
     const link = lineLink(parent);
-    if (!link) return;
+    if (!link) return false;
     const list = table(parent);
     const index = list.findIndex((r) => r.id === parentId);
-    if (index < 0) return;
-    const lines = table(link.model).filter((r) => r[link.fk] === parentId);
-    list[index] = withTotals(parent, list[index] as ModelRecord, lines);
+    if (index < 0) return false;
+    const lineRows = table(link.model);
+    const lines = lineRows.filter((r) => r[link.fk] === parentId);
+    const row = list[index] as ModelRecord;
+    const settled = settleWithLines(
+      parent,
+      row,
+      lines,
+      moneyContext(parent, row),
+    );
+    list[index] = settled.row;
+    for (const line of settled.lines) {
+      const at = lineRows.findIndex((r) => r.id === line.id);
+      if (at >= 0) lineRows[at] = line as ModelRecord;
+    }
+    return true;
   };
 
-  /** Settle a written row, then the parents whose totals depend on it. */
+  /**
+   * Settle a written row, then the parents whose totals depend on it. Throws
+   * smrt's `MoneyValidationError` for money the model refuses.
+   */
   const settle = (model: CatalogModel, record: ModelRecord): ModelRecord => {
     let settled = record;
-    if (isLineModel(model)) {
-      settled = settleLine(record);
-      const list = table(model);
-      const index = list.findIndex((r) => r.id === record.id);
-      if (index >= 0) list[index] = settled;
-    }
     if (lineLink(model)) {
       resync(model, record.id);
       settled = table(model).find((r) => r.id === record.id) ?? settled;
     }
-    for (const { parent, fk } of ownersOf(model.id)) {
-      if (isLineModel(model)) resync(parent, record[fk]);
+    if (isLineModel(model)) {
+      const owned = ownersOf(model.id).some(({ parent, fk }) =>
+        resync(parent, record[fk]),
+      );
+      const list = table(model);
+      const index = list.findIndex((r) => r.id === record.id);
+      if (!owned && index >= 0) {
+        // A line with no document settles on its own, on the app's terms.
+        const pricing = getSamplePricing();
+        const rate = getSampleTaxRate() ?? DEFAULT_SAMPLE_TAX_RATE;
+        const alone = settleDocument([record], {
+          lineAmountType: pricing.pricesIncludeTax ? 'inclusive' : 'exclusive',
+          roundingScope: pricing.taxRounding,
+          currency: moneyCurrency(pricing.currency),
+          codes: sampleTaxCodes(rate, pricing.currency),
+          appDefaultCodeId: defaultTaxCode(rate, pricing.currency).id,
+        }).lines[0] as ModelRecord;
+        list[index] = alone;
+      }
+      settled = table(model).find((r) => r.id === record.id) ?? settled;
     }
     // What an invoice has paid follows its allocations and their payments.
     if (tracksPayments(model)) {
@@ -493,6 +589,25 @@ export function createMemoryDataSource(
       }
     }
     return settled;
+  };
+
+  /** Copies of the tables a write to `model` may settle, to undo a refusal. */
+  const snapshotFamily = (model: CatalogModel) => {
+    const family = [
+      model,
+      ...linksOf(model.id).map((l) => l.model),
+      ...ownersOf(model.id).map((o) => o.parent),
+    ];
+    return new Map(
+      family.map((m) => [m.id, table(m).map((r) => ({ ...r }))] as const),
+    );
+  };
+
+  const restore = (snapshot: Map<string, ModelRecord[]>) => {
+    for (const [id, rows] of snapshot) {
+      const list = tables.get(id);
+      if (list) list.splice(0, list.length, ...rows);
+    }
   };
 
   const present = (model: CatalogModel, record: ModelRecord): ModelRecord => ({
@@ -525,8 +640,16 @@ export function createMemoryDataSource(
         ...values,
         id: nextId(model),
       };
+      const snapshot = snapshotFamily(model);
       table(model).push(record);
-      const settled = settle(model, record);
+      let settled: ModelRecord;
+      try {
+        settled = settle(model, record);
+      } catch (error) {
+        restore(snapshot);
+        created--;
+        throw error;
+      }
       persist(model);
       return { ...settled };
     },
@@ -534,9 +657,16 @@ export function createMemoryDataSource(
       const list = table(model);
       const index = list.findIndex((r) => r.id === id);
       if (index < 0) return undefined;
+      const snapshot = snapshotFamily(model);
       const next: ModelRecord = { ...list[index], ...values, id };
       list[index] = next;
-      const settled = settle(model, next);
+      let settled: ModelRecord;
+      try {
+        settled = settle(model, next);
+      } catch (error) {
+        restore(snapshot);
+        throw error;
+      }
       persist(model);
       return { ...settled };
     },

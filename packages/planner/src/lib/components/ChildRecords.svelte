@@ -17,7 +17,7 @@ import {
   derivedFieldNames,
   isLineModel,
   isProductField,
-  lineAmounts,
+  lineAmount,
   productPrefill,
 } from '../data/derived.ts';
 import type { ModelRecord } from '../data/fakes.ts';
@@ -66,9 +66,10 @@ const columns = $derived(listColumns(fields));
 const calculated = $derived(derivedFieldNames(model, false));
 /** The line's amount as it will be saved, live as quantity and price change. */
 const derivedPreview = (name: string): unknown =>
-  name === 'amount' ? lineAmounts(draft).amount : draft[name];
+  name === 'amount' ? lineAmount(draft) : draft[name];
 let errors = $state<Record<string, string>>({});
-const summary = $derived(errorSummary(fields, errors));
+let saveError = $state('');
+const summary = $derived(errorSummary(fields, errors) || saveError);
 
 let rows = $state<ModelRecord[]>([]);
 let labels = $state(new Map<string, string>());
@@ -111,6 +112,7 @@ const nameOf = (row: ModelRecord) =>
 
 function startCreate() {
   errors = {};
+  saveError = '';
   draft = blankChild(fields, fk, parentId);
   editing = 'new';
   formKey++;
@@ -118,6 +120,7 @@ function startCreate() {
 
 function startEdit(row: ModelRecord) {
   errors = {};
+  saveError = '';
   draft = { ...row };
   editing = row.id;
   formKey++;
@@ -147,8 +150,16 @@ async function save(event: SubmitEvent) {
     if (!calculated.has(field.name)) values[field.name] = draft[field.name];
   }
   values[fk] = parentId;
-  if (editing === 'new') await source.create(model, values);
-  else if (editing) await source.update(model, editing, values);
+  try {
+    if (editing === 'new') await source.create(model, values);
+    else if (editing) await source.update(model, editing, values);
+  } catch (failure) {
+    // Money the model refuses (a discount above the line's price): the
+    // write was undone, and the form stays open with the reason.
+    saveError = failure instanceof Error ? failure.message : String(failure);
+    return;
+  }
+  saveError = '';
   editing = null;
   await load();
   onchanged?.();

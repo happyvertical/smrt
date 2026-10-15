@@ -9,7 +9,7 @@ import {
   type RelatedWidgetData,
 } from '@happyvertical/smrt-svelte/overview';
 import { relationKey } from '@happyvertical/smrt-svelte/screens';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { catalog } from '../src/lib/catalog/index.ts';
 import {
   discounted,
@@ -21,6 +21,7 @@ import {
   recordHeading,
   recordName,
 } from '../src/lib/data/display.ts';
+import { setSamplePricing, setSampleTaxRate } from '../src/lib/data/packs.ts';
 import { createMemoryDataSource } from '../src/lib/data/source.ts';
 import {
   detailOverviewFor,
@@ -31,7 +32,10 @@ import { plannerLoaders } from '../src/lib/overviews/registry.ts';
 import { recipes, recipesById } from '../src/lib/recipes/index.ts';
 import { childLinks } from '../src/lib/recipes/plumbing.ts';
 import { appModels, screenRelations } from '../src/lib/screens/relations.ts';
-import { documentTotals } from '../src/lib/screens/totals.ts';
+import {
+  documentTotals,
+  storedDocumentTotals,
+} from '../src/lib/screens/totals.ts';
 
 const C = '@happyvertical/smrt-commerce:';
 const CUSTOMER = `${C}Customer`;
@@ -189,32 +193,53 @@ describe('the record page widgets', () => {
     [],
   );
 
-  async function orderPage(index: number) {
-    // Sample parents come with their line items, as in the app.
-    const source = createMemoryDataSource({
+  afterEach(() => {
+    setSamplePricing({});
+    setSampleTaxRate(undefined);
+  });
+
+  const sampleSource = () =>
+    createMemoryDataSource({
       children: {
         models: catalog.packages.flatMap((p) => p.models),
         links: (id) => childLinks(catalog, recipes, id),
       },
     });
-    const orders = await source.list(model(ORDER));
-    const order = must(orders[index], `order ${index}`);
-    const relations = screenRelations(catalog, ORDER, inApp);
+
+  /** A sample document's page: `pick` chooses the order (or invoice) by its row. */
+  async function documentPage(
+    parentId: typeof ORDER | typeof INVOICE,
+    pick: (row: Record<string, unknown>, index: number) => boolean,
+  ) {
+    // Sample parents come with their line items, as in the app.
+    const source = sampleSource();
+    const rows = await source.list(model(parentId));
+    const index = rows.findIndex((row, i) => pick(row, i));
+    const order = must(rows[index], `${parentId} matching`);
+    const app =
+      parentId === ORDER
+        ? inApp
+        : appModels(
+            [must(recipesById.get('commerce.invoicing'), 'invoicing')],
+            [],
+          );
+    const relations = screenRelations(catalog, parentId, app);
     const items = must(relations.find((r) => r.kind === 'items'));
     const lines = await source.listWhere(
       model(items.model),
       items.field,
       order.id,
     );
+    const name = parentId === ORDER ? 'Order' : 'Invoice';
     const definition = must(
-      detailOverviewFor(detailOverviewId('commerce', 'Order'), inApp),
+      detailOverviewFor(detailOverviewId('commerce', name), app),
     );
     const ctx = {
       source,
       sections: [],
       entryIndex: new Map(),
       href,
-      record: { model: ORDER, id: order.id },
+      record: { model: parentId, id: order.id },
       relations,
     };
     const widget = (type: string) =>
@@ -222,16 +247,24 @@ describe('the record page widgets', () => {
         definition.defaults.find((w) => w.type === type),
         type,
       );
-    return { source, order, lines, definition, ctx, widget };
+    const data = (await loadSectionWidget(
+      definition,
+      ctx,
+      widget('line-items'),
+    )) as LineItemsWidgetData;
+    return { source, order, index, lines, data };
   }
 
-  it('lists the lines with the record totals, which agree with them', async () => {
-    const page = await orderPage(0);
-    const data = (await loadSectionWidget(
-      page.definition,
-      page.ctx,
-      page.widget('line-items'),
-    )) as LineItemsWidgetData;
+  const draft = (row: Record<string, unknown>, i: number) =>
+    row.status === 'draft' && i !== MISMATCH_ROW;
+  const issued = (row: Record<string, unknown>) =>
+    typeof row.status === 'string' && row.status !== 'draft';
+  const sum = (rows: readonly Record<string, unknown>[], key: string) =>
+    rows.reduce((t, r) => t + Number(r[key] ?? 0), 0);
+
+  it('lists a draft order with its live totals, which agree with its lines', async () => {
+    const page = await documentPage(ORDER, draft);
+    const { data } = page;
     expect(page.lines.length).toBeGreaterThan(0);
     expect(data.rows).toHaveLength(page.lines.length);
     expect(data.columns.map((c) => c.key)).toEqual([
@@ -240,46 +273,121 @@ describe('the record page widgets', () => {
       'unitPrice',
       'amount',
     ]);
-    const amounts = page.lines.reduce((t, l) => t + Number(l.amount), 0);
+    const amounts = sum(page.lines, 'amount');
     expect(data.summaries?.amount).toBe(amounts);
     // Lines live inside the order: no row links, no "View all".
     expect(data.rows.some((row) => row.href)).toBe(false);
     expect(data.href).toBeUndefined();
-    expect(data.totals?.subtotal).toBe(page.order.subtotal);
-    expect(data.totals?.tax).toBe(page.order.taxAmount);
-    expect(data.totals?.total).toBe(page.order.totalAmount);
+    expect(data.storedTotals).toBeUndefined();
+    // The informational discount stays out of the live block (smrt#4010).
+    expect(data.totals).toEqual({
+      subtotal: page.order.subtotal,
+      tax: page.order.taxAmount,
+      total: page.order.totalAmount,
+    });
+    expect(amounts).toBe(page.order.subtotal);
     expect(lineItemTotals(data.totals, amounts).mismatch).toBeNull();
   });
 
-  it('flags the seeded order whose subtotal disagrees with its lines', async () => {
-    const page = await orderPage(MISMATCH_ROW);
-    const data = (await loadSectionWidget(
-      page.definition,
-      page.ctx,
-      page.widget('line-items'),
-    )) as LineItemsWidgetData;
-    const result = lineItemTotals(data.totals, data.summaries?.amount ?? null);
-    // The lines add up to the true (tax-inclusive) total, not the stale one,
-    // so the widget checks the recorded subtotal against them and flags it.
-    expect(data.summaries?.amount).toBe(
-      Number(page.order.totalAmount) - MISMATCH_AMOUNT,
+  it("shows an issued order's frozen totals with a row per tax component", async () => {
+    const page = await documentPage(ORDER, issued);
+    const stored = must(page.data.storedTotals, 'storedTotals');
+    expect(page.data.totals).toBeUndefined();
+    expect(stored).toMatchObject({
+      subtotal: page.order.subtotal,
+      discount: page.order.discountTotal,
+      tax: page.order.taxAmount,
+      total: page.order.totalAmount,
+      lineAmountType: 'exclusive',
+      roundingScope: 'line',
+    });
+    expect(sum(stored.taxes, 'tax')).toBe(page.order.taxAmount);
+    // The app's 5% is smrt's cookbook activation code: one component.
+    for (const tax of stored.taxes) {
+      expect(tax).toMatchObject({ name: 'Cookbook 5%', percent: '5' });
+    }
+  });
+
+  it('keeps GST and PST apart on an issued invoice of a CAD app at 12%', async () => {
+    setSamplePricing({ currency: 'CAD' });
+    setSampleTaxRate(0.12);
+    const page = await documentPage(
+      INVOICE,
+      (row) => issued(row) && Number(row.taxAmount) > 0,
+    );
+    const stored = must(page.data.storedTotals, 'storedTotals');
+    expect(stored.taxes.map((t) => `${t.name} ${t.percent}`).sort()).toEqual([
+      'BC PST 7% 7',
+      'Canada GST 5% 5',
+    ]);
+    const gst = must(stored.taxes.find((t) => t.percent === '5'));
+    const pst = must(stored.taxes.find((t) => t.percent === '7'));
+    // Both components tax the same lines: the same base, each its own rate.
+    expect(gst.taxable).toBe(pst.taxable);
+    expect(gst.tax + pst.tax).toBe(page.order.taxAmount);
+    const taxed = page.lines.filter((l) => Number(l.taxAmount) > 0);
+    expect(gst.taxable).toBe(sum(taxed, 'amount'));
+    expect(
+      page.lines.every((l) => l.currency === undefined || l.currency === 'CAD'),
+    ).toBe(true);
+  });
+
+  it('prices tax-inclusive documents when the app does', async () => {
+    setSamplePricing({ pricesIncludeTax: true });
+    const page = await documentPage(
+      INVOICE,
+      (row) => issued(row) && Number(row.taxAmount) > 0,
+    );
+    const stored = must(page.data.storedTotals, 'storedTotals');
+    // Inclusive: a line's amount is its gross; the total is what the lines
+    // add up to and the subtotal is that less the tax inside it.
+    expect(page.order.lineAmountType).toBe('inclusive');
+    expect(stored.lineAmountType).toBe('inclusive');
+    expect(stored.showNetSubtotal).toBe(true);
+    expect(stored.total).toBe(sum(page.lines, 'amount'));
+    expect(stored.subtotal).toBe(stored.total - stored.tax);
+    for (const tax of stored.taxes) {
+      expect(tax.taxable).toBe(
+        sum(
+          page.lines.filter((l) => Number(l.taxAmount) > 0),
+          'amount',
+        ) - sum(page.lines, 'taxAmount'),
+      );
+    }
+    const live = await documentPage(INVOICE, draft);
+    expect(live.data.storedTotals).toBeUndefined();
+    expect(
+      lineItemTotals(live.data.totals, sum(live.lines, 'amount')).mismatch,
+    ).toBeNull();
+  });
+
+  it('rounds tax once per document when the app does', async () => {
+    setSamplePricing({ taxRounding: 'document' });
+    const page = await documentPage(ORDER, issued);
+    expect(page.order.taxRoundingScope).toBe('document');
+    expect(page.data.storedTotals?.roundingScope).toBe('document');
+  });
+
+  it('flags the seeded draft order whose subtotal disagrees with its lines', async () => {
+    const page = await documentPage(ORDER, (_row, i) => i === MISMATCH_ROW);
+    expect(page.order.status).toBe('draft');
+    const result = lineItemTotals(
+      page.data.totals,
+      page.data.summaries?.amount ?? null,
+    );
+    // The lines add up to the true subtotal, not the stale one.
+    expect(page.data.summaries?.amount).toBe(
+      Number(page.order.subtotal) - MISMATCH_AMOUNT,
     );
     expect(result.mismatch).toEqual({
       field: 'subtotal',
       recorded: Number(page.order.subtotal),
-      lines: Number(page.order.totalAmount) - MISMATCH_AMOUNT,
+      lines: Number(page.order.subtotal) - MISMATCH_AMOUNT,
     });
   });
 
   it('flags only the seeded stale Order and Invoice, never a correct one', async () => {
-    // smrt-svelte 0.55.24's widget reads commerce line amounts as
-    // tax-inclusive (smrt#3954): lines adding up to the recorded total agree.
-    const source = createMemoryDataSource({
-      children: {
-        models: catalog.packages.flatMap((p) => p.models),
-        links: (id) => childLinks(catalog, recipes, id),
-      },
-    });
+    const source = sampleSource();
     for (const [parentId, lineId, fk] of [
       [ORDER, `${C}ContractLineItem`, 'contractId'],
       [INVOICE, `${C}InvoiceLineItem`, 'invoiceId'],
@@ -288,51 +396,30 @@ describe('the record page widgets', () => {
       const lines = await source.list(model(lineId));
       const flagged = parents.flatMap((parent, index) => {
         const mine = lines.filter((l) => l[fk] === parent.id);
-        const sum = mine.reduce((t, l) => t + Number(l.amount), 0);
-        const totals = documentTotals(model(parentId), parent, mine);
-        return lineItemTotals(totals, sum).mismatch ? [index] : [];
+        if (storedDocumentTotals(model(parentId), parent, mine)) return [];
+        const totals = documentTotals(model(parentId), parent);
+        return lineItemTotals(totals, sum(mine, 'amount')).mismatch
+          ? [index]
+          : [];
       });
       expect(parents.length).toBeGreaterThan(MISMATCH_ROW + 1);
       expect(flagged, parentId).toEqual([MISMATCH_ROW]);
     }
   });
 
-  it('reads a discounted order discount from its lines at load time', async () => {
-    const first = await orderPage(0);
-    const orders = await first.source.list(model(ORDER));
-    const index = orders.findIndex(
-      (o, i) => i !== MISMATCH_ROW && discounted(o),
+  it("reports a discounted document's discount without taking it off again", async () => {
+    const page = await documentPage(
+      ORDER,
+      (row, i) =>
+        i !== MISMATCH_ROW && issued(row) && discounted(row as { id: string }),
     );
-    const page = await orderPage(index);
-    const data = (await loadSectionWidget(
-      page.definition,
-      page.ctx,
-      page.widget('line-items'),
-    )) as LineItemsWidgetData;
-    const discount = page.lines.reduce((t, l) => t + Number(l.discount), 0);
+    const discount = sum(page.lines, 'discount');
     expect(discount).toBeGreaterThan(0);
-    expect(data.totals?.discount).toBe(discount);
-    expect(data.totals?.total).toBe(
-      Number(page.order.subtotal) - discount + Number(page.order.taxAmount),
-    );
-    expect(
-      lineItemTotals(data.totals, data.summaries?.amount ?? null).mismatch,
-    ).toBeNull();
-  });
-
-  it('shows a discount from the lines when the document has no field for it', () => {
-    const totals = documentTotals(
-      model(ORDER),
-      { id: 'o', subtotal: 2000, taxAmount: 90, totalAmount: 1890 },
-      [{ quantity: 2, unitPrice: 1000, discount: 200, taxRate: 0.05 }],
-    );
-    expect(totals).toEqual({
-      subtotal: 2000,
-      discount: 200,
-      tax: 90,
-      total: 1890,
-    });
-    expect(lineItemTotals(totals, 2000).mismatch).toBeNull();
+    const stored = must(page.data.storedTotals, 'storedTotals');
+    expect(stored.discount).toBe(discount);
+    // The discount is already inside the subtotal: total = subtotal + tax.
+    expect(stored.subtotal).toBe(sum(page.lines, 'amount'));
+    expect(stored.total).toBe(stored.subtotal + stored.tax);
   });
 
   it('tabs the related records with columns and totals over every row', async () => {

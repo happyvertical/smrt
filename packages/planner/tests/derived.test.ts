@@ -5,11 +5,7 @@ import {
   missingRequired,
   recordTitle,
 } from '../src/lib/data/columns.ts';
-import {
-  derivedFieldNames,
-  lineAmounts,
-  totalsOf,
-} from '../src/lib/data/derived.ts';
+import { derivedFieldNames, lineAmount } from '../src/lib/data/derived.ts';
 import { fakeRecords, TAX_RATES } from '../src/lib/data/fakes.ts';
 import {
   fieldLabel,
@@ -40,49 +36,49 @@ const source = () =>
     },
   });
 
-describe('line and parent amounts', () => {
-  it('prices a line tax-inclusive: quantity x unit price - discount + tax', () => {
-    expect(lineAmounts({ quantity: 3, unitPrice: 1000 }).amount).toBe(3000);
+describe('line and parent amounts (smrt money model)', () => {
+  it('prices a line at quantity x unit price less its discount, tax apart', () => {
+    expect(lineAmount({ quantity: 3, unitPrice: 1000 })).toBe(3000);
     expect(
-      lineAmounts({
+      lineAmount({
         quantity: 2,
         unitPrice: 1000,
+        discountType: 'amount',
         discount: 500,
-        taxRate: 0.1,
       }),
-    ).toEqual({ price: 2000, discount: 500, tax: 150, amount: 1650 });
-  });
-
-  it('adds lines up to the total, as the line-items widget reads them', () => {
-    const lines = [
-      { quantity: 1, unitPrice: 1000, taxRate: 0.05, discount: 200 },
-      { quantity: 3, unitPrice: 333, taxRate: 0.0825 },
-    ];
-    const amounts = lines.reduce((t, l) => t + lineAmounts(l).amount, 0);
-    expect(amounts).toBe(totalsOf(lines).totalAmount);
-  });
-
-  it('sums lines into subtotal, discount, tax and total', () => {
+    ).toBe(1500);
     expect(
-      totalsOf([
-        { quantity: 1, unitPrice: 1000, taxRate: 0.05, discount: 200 },
-        { quantity: 2, unitPrice: 500, taxRate: 0 },
-      ]),
-    ).toEqual({
-      subtotal: 2000,
-      discount: 200,
-      taxAmount: 40,
-      totalAmount: 1840,
-    });
+      lineAmount({
+        quantity: 2,
+        unitPrice: 1000,
+        discountType: 'percent',
+        discountRate: '10',
+      }),
+    ).toBe(1800);
+    // A discount with no kind is no discount: the model reads `discountType`.
+    expect(lineAmount({ quantity: 1, unitPrice: 1000, discount: 300 })).toBe(
+      1000,
+    );
   });
 
-  it('marks line amounts and a parent with lines as calculated', () => {
-    expect([...derivedFieldNames(lineItem, false)]).toEqual(['amount']);
-    expect(derivedFieldNames(agreement, true).has('totalAmount')).toBe(true);
+  it("marks a line's money and a parent's totals as calculated", () => {
+    expect([...derivedFieldNames(lineItem, false)]).toEqual([
+      'amount',
+      'taxAmount',
+      'taxRate',
+      'taxCodeCode',
+      'taxCodeName',
+    ]);
+    expect([...derivedFieldNames(agreement, true)]).toEqual([
+      'subtotal',
+      'taxAmount',
+      'totalAmount',
+      'discountTotal',
+    ]);
     expect(derivedFieldNames(agreement, false).size).toBe(0);
   });
 
-  it('computes the amount on save and the parent total on add, edit and delete', async () => {
+  it('settles lines and totals on add, edit and delete, at the default 5%', async () => {
     const data = source();
     const parent = await data.create(agreement, {});
     const a = await data.create(lineItem, {
@@ -91,26 +87,62 @@ describe('line and parent amounts', () => {
       unitPrice: 1000,
       amount: 0,
     });
-    expect(a.amount).toBe(3000);
-    expect((await data.get(agreement, parent.id))?.totalAmount).toBe(3000);
+    expect(a).toMatchObject({ amount: 3000, taxAmount: 150, taxRate: 0.05 });
+    expect(await data.get(agreement, parent.id)).toMatchObject({
+      subtotal: 3000,
+      taxAmount: 150,
+      totalAmount: 3150,
+      discountTotal: 0,
+    });
     const b = await data.create(lineItem, {
       contractId: parent.id,
       quantity: 1,
       unitPrice: 500,
+      // A typed rate is not an input: the line's code decides its tax.
       taxRate: 0.2,
+      discountType: 'amount',
+      discount: 100,
     });
-    // The line's amount includes its tax, as smrt-commerce's does.
-    expect(b.amount).toBe(600);
-    expect((await data.get(agreement, parent.id))?.totalAmount).toBe(3600);
+    expect(b).toMatchObject({ amount: 400, taxAmount: 20, discount: 100 });
+    expect(await data.get(agreement, parent.id)).toMatchObject({
+      subtotal: 3400,
+      taxAmount: 170,
+      totalAmount: 3570,
+      discountTotal: 100,
+    });
     await data.update(lineItem, a.id, { quantity: 1 });
-    expect((await data.get(agreement, parent.id))?.totalAmount).toBe(1600);
+    expect((await data.get(agreement, parent.id))?.totalAmount).toBe(1470);
     await data.delete(lineItem, b.id);
     const left = await data.get(agreement, parent.id);
-    expect(left?.totalAmount).toBe(1000);
-    expect(left?.subtotal).toBe(1000);
+    expect(left).toMatchObject({
+      subtotal: 1000,
+      taxAmount: 50,
+      totalAmount: 1050,
+    });
     // A form cannot overwrite the calculated total.
     await data.update(agreement, parent.id, { totalAmount: 99999 });
-    expect((await data.get(agreement, parent.id))?.totalAmount).toBe(1000);
+    expect((await data.get(agreement, parent.id))?.totalAmount).toBe(1050);
+  });
+
+  it('refuses money the model refuses and leaves the rows as they were', async () => {
+    const data = source();
+    const parent = await data.create(agreement, {});
+    const line = await data.create(lineItem, {
+      contractId: parent.id,
+      quantity: 1,
+      unitPrice: 1000,
+    });
+    await expect(
+      data.update(lineItem, line.id, {
+        discountType: 'amount',
+        discount: 5000,
+      }),
+    ).rejects.toThrow();
+    expect(await data.get(lineItem, line.id)).toMatchObject({
+      amount: 1000,
+      discount: 0,
+    });
+    expect((await data.get(agreement, parent.id))?.totalAmount).toBe(1050);
   });
 });
 

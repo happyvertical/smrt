@@ -1,33 +1,30 @@
 /**
- * Amounts a document's lines derive rather than take as input, in integer
- * minor units, mirrored from smrt-commerce's `ContractLineItem.calculateAmount`
- * (a line's `amount` is tax-inclusive) and read the way smrt-svelte 0.55.24's
- * `line-items` widget reads them (lines that add up to the recorded total
- * agree with the record):
+ * Amounts a document's lines derive rather than take as input, on
+ * smrt-commerce's money model (released in 0.56.1; `money.ts` holds the
+ * mapping to the package's own calculator):
  *
- *   line price    = round(quantity * unitPrice)                (before discount and tax)
- *   line tax      = round((line price - discount) * taxRate)   (taxRate is a fraction)
- *   line amount   = line price - discount + line tax           (tax-inclusive)
+ *   line amount   = quantity x unitPrice - discount
+ *                   (prices without tax: the line's net; with tax: its gross)
+ *   line tax      = from the line's resolved tax code, per component
+ *   subtotal      = sum of the lines' net
+ *   taxAmount     = sum of the lines' tax
+ *   totalAmount   = subtotal + taxAmount
+ *   discountTotal = sum of the lines' discounts, informational: already
+ *                   inside the line amounts, never subtracted again
  *
- *   subtotal      = sum of line prices
- *   discount      = sum of line discounts (no document field: the totals block)
- *   taxAmount     = sum of line taxes
- *   totalAmount   = subtotal - discount + taxAmount = sum of line amounts
- *
- * A parent with line items takes `subtotal`, `taxAmount` and `totalAmount`
- * from its lines, ignoring what a form sent.
- *
- * INTERIM rule, until the money-model release: line amount = qty * unitPrice
- * - discount + tax, subtotal = the sum of pre-discount prices. It matches the
- * smrt <=0.56.0 line-items widget. smrt main's money model (smrt#3988, merged
- * but unreleased) makes `amount` the net after discount, stores tax apart
- * (`taxAmount`), and adds `lineAmountType` (exclusive / inclusive / none), tax
- * codes and components, `discountType` / `discountRate` and
- * `taxRoundingScope`. The planner moves to it when the release lands. Upstream
- * gap: fresh tenants default to the legacy model (being filed upstream).
- * See AGENTS.md.
+ * A parent with line items takes these from its lines, ignoring what a form
+ * sent. See AGENTS.md.
  */
 import type { CatalogModel } from '../catalog/types.ts';
+import {
+  type LineAmountType,
+  type MoneyContext,
+  type SettledDocument,
+  settleDocument,
+  type TaxRoundingScope,
+} from './money.ts';
+
+export { lineAmount } from './money.ts';
 
 type Row = Readonly<Record<string, unknown>>;
 
@@ -44,67 +41,66 @@ export function isLineModel(model: CatalogModel): boolean {
   return ['quantity', 'unitPrice', 'amount'].every((n) => has(model, n));
 }
 
-export interface LineAmounts {
-  /** Quantity times unit price, before discount and tax. */
-  price: number;
-  discount: number;
-  tax: number;
-  /** What the line comes to: price - discount + tax (tax-inclusive). */
-  amount: number;
-}
-
-export function lineAmounts(line: Row): LineAmounts {
-  const price = Math.round(num(line.quantity) * num(line.unitPrice));
-  const discount = num(line.discount);
-  const tax = Math.round((price - discount) * num(line.taxRate));
-  return { price, discount, tax, amount: price - discount + tax };
-}
-
-/** The line with its `amount` brought in line with its other fields. */
-export function settleLine<T extends Row>(line: T): T & { amount: number } {
-  return { ...line, amount: lineAmounts(line).amount };
-}
-
-export interface ParentTotals {
-  subtotal: number;
-  /** The lines' discounts; documents carry no field for it. */
-  discount: number;
-  taxAmount: number;
-  totalAmount: number;
-}
-
-export function totalsOf(lines: readonly Row[]): ParentTotals {
-  let subtotal = 0;
-  let discount = 0;
-  let taxAmount = 0;
-  for (const line of lines) {
-    const parts = lineAmounts(line);
-    subtotal += parts.price;
-    discount += parts.discount;
-    taxAmount += parts.tax;
-  }
-  return {
-    subtotal,
-    discount,
-    taxAmount,
-    totalAmount: subtotal - discount + taxAmount,
-  };
-}
-
+/** The totals a document's summary shows: subtotal, tax, total. */
 export const TOTAL_FIELDS = ['subtotal', 'taxAmount', 'totalAmount'] as const;
 
-/** `row` with the model's total fields set from `lines`. */
-export function withTotals<T extends Record<string, unknown>>(
+/** Every header field its lines decide, `discountTotal` included. */
+export const DOCUMENT_MONEY_FIELDS = [
+  ...TOTAL_FIELDS,
+  'discountTotal',
+] as const;
+
+/** The fields of a line its document's calculation writes. */
+export const LINE_MONEY_FIELDS = [
+  'amount',
+  'taxAmount',
+  'taxRate',
+  'taxCodeCode',
+  'taxCodeName',
+] as const;
+
+const LINE_AMOUNT_TYPES: readonly string[] = ['exclusive', 'inclusive', 'none'];
+
+/** The document's own pricing mode, else `fallback` (the app's). */
+export function documentLineAmountType(
+  row: Row,
+  fallback: LineAmountType,
+): LineAmountType {
+  const value = row.lineAmountType;
+  return typeof value === 'string' && LINE_AMOUNT_TYPES.includes(value)
+    ? (value as LineAmountType)
+    : fallback;
+}
+
+/** The document's own rounding scope, else `fallback` (the app's). */
+export function documentRoundingScope(
+  row: Row,
+  fallback: TaxRoundingScope,
+): TaxRoundingScope {
+  const value = row.taxRoundingScope;
+  return value === 'line' || value === 'document' ? value : fallback;
+}
+
+/**
+ * `row` and its `lines` settled together: the lines' derived fields, and the
+ * model's header money fields (`subtotal`, `discountTotal`, `taxAmount`,
+ * `totalAmount`, where the model has them).
+ */
+export function settleWithLines<
+  T extends Record<string, unknown>,
+  L extends Row,
+>(
   model: CatalogModel,
   row: T,
-  lines: readonly Row[],
-): T {
-  const totals = totalsOf(lines);
+  lines: readonly L[],
+  context: MoneyContext,
+): { row: T; lines: SettledDocument<L>['lines'] } {
+  const settled = settleDocument(lines, context);
   const next: Record<string, unknown> = { ...row };
-  for (const name of TOTAL_FIELDS) {
-    if (has(model, name)) next[name] = totals[name];
+  for (const name of DOCUMENT_MONEY_FIELDS) {
+    if (has(model, name)) next[name] = settled[name];
   }
-  return next as T;
+  return { row: next as T, lines: settled.lines };
 }
 
 /** A record that tracks what has been paid against it (an Invoice). */
@@ -178,9 +174,10 @@ export function settleInvoice(
 }
 
 /**
- * The fields a form shows but does not let anyone type: a line's `amount`, a
- * parent's totals when it has line items, and what an invoice has paid (and
- * when) when it has payment allocations.
+ * The fields a form shows but does not let anyone type: a line's money (its
+ * amount, tax and the tax code's snapshot), a parent's totals when it has line
+ * items, and what an invoice has paid (and when) when it has payment
+ * allocations.
  */
 export function derivedFieldNames(
   model: CatalogModel,
@@ -188,9 +185,13 @@ export function derivedFieldNames(
   hasPaymentChildren = false,
 ): ReadonlySet<string> {
   const names = new Set<string>();
-  if (isLineModel(model)) names.add('amount');
+  if (isLineModel(model)) {
+    for (const name of LINE_MONEY_FIELDS) if (has(model, name)) names.add(name);
+  }
   if (hasLineChildren) {
-    for (const name of TOTAL_FIELDS) if (has(model, name)) names.add(name);
+    for (const name of DOCUMENT_MONEY_FIELDS) {
+      if (has(model, name)) names.add(name);
+    }
   }
   if (hasPaymentChildren && tracksPayments(model)) {
     for (const name of ['amountPaid', 'paidDate']) {
