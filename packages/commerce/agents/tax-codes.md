@@ -13,7 +13,9 @@ through `legacy-unreconciled` and the mapping report.
 `TaxSettings` owns tenant defaults, tax registrations, default line amount type
 and rounding scope. Cookbook policies adapt the portable settings document;
 they do not replace persisted tax settings. The per-tenant migration marker is
-owned by the money-snapshot migration.
+owned by the money-snapshot migration. Ordinary saves and generated creates
+cannot change it: a new instance whose tenant natural key would upsert over a
+`migrating` or `v2` row is refused rather than resetting that tenant to legacy.
 
 `applyCommerceCookbookSettings(db, tenantId, cookbook)` is the explicit
 server-side activation boundary for core's portable `taxRate`, inclusion, and
