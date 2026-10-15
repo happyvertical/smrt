@@ -9,10 +9,12 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { ContractLineItemCollection } from '../collections/ContractLineItemCollection.js';
+import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { DocumentTaxCollection } from '../collections/DocumentTaxCollection.js';
 import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
+import { VendorCollection } from '../collections/VendorCollection.js';
 import {
   classifyContractPurchase,
   isContractSnapshotReportEligible,
@@ -35,7 +37,11 @@ describe('Contract money persistence (#3933)', () => {
   async function activateV2(tenantId: string): Promise<string> {
     return withTenant({ tenantId }, async () => {
       const components = await TaxComponentCollection.create({ db });
-      const gst = await components.create({ name: 'GST', percent: '5' });
+      const gst = await components.create({
+        name: 'GST',
+        percent: '5',
+        recoverable: true,
+      });
       const codes = await TaxCodeCollection.create({ db });
       const code = await codes.create({
         code: 'gst',
@@ -61,7 +67,11 @@ describe('Contract money persistence (#3933)', () => {
   ): Promise<{ gst: string; gstPst: string; exempt: string }> {
     return withTenant({ tenantId }, async () => {
       const components = await TaxComponentCollection.create({ db });
-      const gst = await components.create({ name: 'GST', percent: '5' });
+      const gst = await components.create({
+        name: 'GST',
+        percent: '5',
+        recoverable: true,
+      });
       const pst = await components.create({ name: 'PST', percent: '7' });
       const codes = await TaxCodeCollection.create({ db });
       const gstCode = await codes.create({
@@ -97,8 +107,11 @@ describe('Contract money persistence (#3933)', () => {
   }
 
   it('classifies both STI branches and keeps declined snapshots reportable', () => {
+    class CustomPurchaseOrder extends PurchaseOrder {}
+
     expect(classifyContractPurchase(new Order())).toBe(false);
     expect(classifyContractPurchase(new PurchaseOrder())).toBe(true);
+    expect(classifyContractPurchase(new CustomPurchaseOrder())).toBe(true);
     expect(
       isContractSnapshotReportEligible(
         new Order({ status: ContractStatus.DECLINED }),
@@ -188,6 +201,77 @@ describe('Contract money persistence (#3933)', () => {
     });
   });
 
+  it('uses the party default, then exemption, and persists purchase recovery', async () => {
+    const tenantId = 'contract-party-purchase';
+    const codes = await activateCadV2(tenantId, 'exclusive', 'line');
+    await withTenant({ tenantId }, async () => {
+      const customers = await CustomerCollection.create({ db });
+      const customer = await customers.create({
+        defaultTaxCodeId: codes.gstPst,
+      });
+      const sales = new Order({
+        db,
+        customerId: customer.id,
+        currency: 'CAD',
+      });
+      await sales.initialize();
+      await sales.save();
+      const lines = await ContractLineItemCollection.create({ db });
+      const partyLine = await lines.create({
+        contractId: sales.id,
+        description: 'Party default',
+        quantity: 1,
+        unitPrice: 100,
+      });
+      expect(partyLine).toMatchObject({
+        taxCodeId: codes.gstPst,
+        taxAmount: 12,
+      });
+      customer.taxExempt = true;
+      await customer.save();
+      const exemptLine = await lines.create({
+        contractId: sales.id,
+        description: 'Exempt party',
+        quantity: 1,
+        unitPrice: 100,
+      });
+      expect(exemptLine).toMatchObject({
+        taxCodeId: codes.exempt,
+        taxAmount: 0,
+      });
+      exemptLine.taxMode = 'override';
+      exemptLine.taxCodeId = codes.gst;
+      await exemptLine.save();
+      expect(exemptLine).toMatchObject({ taxCodeId: codes.gst, taxAmount: 5 });
+
+      const vendor = await (await VendorCollection.create({ db })).create({
+        defaultTaxCodeId: codes.gst,
+      });
+      const purchase = new PurchaseOrder({
+        db,
+        vendorId: vendor.id,
+        currency: 'CAD',
+      });
+      await purchase.initialize();
+      await purchase.save();
+      await lines.create({
+        contractId: purchase.id,
+        description: 'Recoverable purchase',
+        quantity: 1,
+        unitPrice: 100,
+      });
+      expect(
+        await (await DocumentTaxCollection.create({ db })).findByDocument(
+          tenantId,
+          'contract',
+          purchase.id,
+        ),
+      ).toMatchObject([
+        { taxableMinor: 100, taxMinor: 5, recoverableMinor: 5 },
+      ]);
+    });
+  });
+
   it.each([
     ContractStatus.SENT,
     ContractStatus.ACCEPTED,
@@ -260,6 +344,41 @@ describe('Contract money persistence (#3933)', () => {
       line.unitPrice = 101;
       await expect(line.save()).rejects.toMatchObject({
         code: 'FROZEN_DOCUMENT',
+      });
+    });
+  });
+
+  it('blocks Contract and line reads while its tenant is migrating', async () => {
+    const tenantId = 'contract-read-migration';
+    await withTenant({ tenantId }, async () => {
+      const contracts = await ContractCollection.create({ db });
+      const contract = await contracts.create({ currency: 'CAD' });
+      const lines = await ContractLineItemCollection.create({ db });
+      const line = await lines.create({
+        contractId: contract.id,
+        description: 'Read barrier',
+        quantity: 1,
+        unitPrice: 100,
+      });
+      const settings = await TaxSettingsCollection.create({ db });
+      const migrationId = await settings.beginMoneyMigration(tenantId);
+
+      await expect(contracts.get({ id: contract.id })).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+      await expect(contracts.list()).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+      await expect(lines.get({ id: line.id })).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+      await expect(lines.list()).rejects.toMatchObject({
+        code: 'FROZEN_DOCUMENT',
+      });
+
+      await settings.restoreLegacyMoneyModel(tenantId, migrationId);
+      await expect(contracts.get({ id: contract.id })).resolves.toMatchObject({
+        id: contract.id,
       });
     });
   });
