@@ -163,6 +163,20 @@ function inPeriod(date: string, from: string, to: string) {
   return date >= from && date <= to;
 }
 
+/** Expenses use calendar dates, even when a report range is an ISO timestamp. */
+function expenseCalendarDate(value: string): string {
+  const match = /^(\d{4}-\d{2}-\d{2})(?:T.*)?$/.exec(value);
+  return match?.[1] ?? value;
+}
+
+function expenseInPeriod(date: string, from: string, to: string) {
+  return inPeriod(
+    expenseCalendarDate(date),
+    expenseCalendarDate(from),
+    expenseCalendarDate(to),
+  );
+}
+
 function sourceSign(kind: TaxSummaryStoredFact['documentKind']) {
   return kind === 'credit_note' ? -1 : 1;
 }
@@ -334,7 +348,7 @@ export function aggregateTaxSummary(input: TaxSummaryInput): TaxSummaryResult {
   for (const expense of input.expenses) {
     if (
       expense.tenantId !== input.tenantId ||
-      !inPeriod(expense.incurredOn, input.from, input.to)
+      !expenseInPeriod(expense.incurredOn, input.from, input.to)
     )
       continue;
     if (!expense.financialBreakdown) {

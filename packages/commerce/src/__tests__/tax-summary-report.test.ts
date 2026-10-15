@@ -438,7 +438,7 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
     const expense = {
       tenantId: fixture.tenantId,
       expenseId: 'expense-gst',
-      incurredOn: '2026-09-15',
+      incurredOn: '2026-09-01',
       currency: 'CAD',
       commitmentId: null,
       commitmentLineId: null,
@@ -482,6 +482,11 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
     );
     if (!gst?.id || !reconciliation?.id)
       throw new Error('Expected GST report rows.');
+    expect(gst).toMatchObject({
+      recoverableMinor: 50,
+      netTaxMinor: 11_028,
+      complete: true,
+    });
 
     const recoverable = await drilldownTaxSummaryContributors(db, {
       tenantId: fixture.tenantId,

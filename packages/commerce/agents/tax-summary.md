@@ -94,8 +94,10 @@ identity, not a duplicate set of source amounts. A missing injected owner,
 missing historical provenance, or a source total that no longer equals the
 materialized cell returns `complete: false` with a machine-readable pending
 reason. Purchase Contract contributors reconcile their stored recoverable
-amounts directly; a materialized purchase fact missing from its source returns
-`source-state-diverged`, never a zero ITC. The Ledger detail port is adapted from the public
+amounts directly and retain the Contract id as `commitmentId`, so a reviewed
+expense drawn against that Contract produces the explicit linked-source warning
+instead of being counted twice. A materialized purchase fact missing from its
+source returns `source-state-diverged`, never a zero ITC. The Ledger detail port is adapted from the public
 `JournalEntryCollection.listPostedMovements()` and remains raw ledger units;
 the host must retain the commerce minor-unit convention.
 
