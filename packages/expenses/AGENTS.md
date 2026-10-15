@@ -89,10 +89,24 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   Consumers make it required with a qualified
   `registerTenantScopedClass(…, { mode: 'required' })`.
 - **Closed generated surface.** Models AND collections declare
-  `api: { include: [] }`, `mcp: { include: [] }`, `cli: false`. Collection
-  classes are registered too: an undecorated collection publishes its CRUD and
-  public methods as MCP tools. Core has no consumer-side switch to reopen a
-  package model's surface; consumers write their own routes.
+  `mcp: { include: [] }`, `cli: false` and no generated CRUD or reads
+  (generated reads check no read permission, and cost visibility is
+  permission-gated). Collection classes are registered too: an undecorated
+  collection publishes its CRUD and public methods as MCP tools. Core has no
+  consumer-side switch to reopen a package model's surface.
+- **Generated write actions (#4001).** `ExpenseCollection` hosts the only
+  generated writes, on REST: `record`, `attachReceipt`, `recordReview`
+  (`decision: 'approve' | 'reject'`, reject needs `reason`) and
+  `recordReimbursement`. `Expense` and `ExpenseCollection` both list them in
+  `api.include` (runtime REST gates on the item, SvelteKit on the collection).
+  Their names differ from `Expense.review()` / `markReimbursed()` on purpose:
+  allowlisting a collection action must never open an instance method that
+  takes the actor from its input. `src/actions/` delegates to the guarded
+  model flow; identity comes from the tenancy/session ALS, never the body;
+  each authorizes `expenses.<action>` via `assertOperationPermission` (system
+  context never bypasses; review and reimbursement refuse super-admin bypass).
+  Acting on someone else's expense needs `recordReview`. There is no submit
+  state: a recorded expense is `unreviewed`, i.e. awaiting review.
 - **Cost object is not dereferenced on save.** `getCostObject()` resolves it
   through the registry and returns `null` for a foreign-tenant row. One cost
   object per expense (columns, not a `SmrtPolymorphicAssociation` join) so a

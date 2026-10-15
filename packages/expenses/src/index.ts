@@ -44,6 +44,16 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+export type {
+  AttachExpenseReceiptActionInput,
+  MarkExpenseReimbursedActionInput,
+  RecordExpenseActionInput,
+  ReviewExpenseActionInput,
+} from './actions/expense-actions.js';
+export {
+  ExpenseActionError,
+  type ExpenseActionPrincipal,
+} from './actions/principal.js';
 export {
   ExpenseCollection,
   type ReviewedExpenseTaxFact,

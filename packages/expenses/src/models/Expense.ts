@@ -141,14 +141,20 @@ function asNullableString(value: unknown): string | null {
  * - **Commitment** — optional commerce `Contract` (usually a `PurchaseOrder`)
  *   or one of its lines that this actual draws down.
  *
- * The generated REST/MCP/CLI surface is closed (`api: { include: [] }`):
- * cost visibility is permission-gated by every consumer, so they expose
- * expenses through their own routes and call the domain methods here.
+ * The generated CRUD surface is closed: cost visibility is permission-gated
+ * by every consumer, and generated reads check no read permission, so hosts
+ * list expenses through their own routes. The only generated writes are the
+ * service-backed actions on {@link ExpenseCollection} (#4001); the runtime
+ * REST transport gates a collection-hosted action on this item allowlist.
+ * Their names differ from this class's own methods, so allowlisting them never
+ * opens `review()` or `markReimbursed()`, which take the actor as input.
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'expenses',
-  api: { include: [] },
+  api: {
+    include: ['record', 'attachReceipt', 'recordReview', 'recordReimbursement'],
+  },
   mcp: { include: [] },
   cli: false,
   indexes: [
