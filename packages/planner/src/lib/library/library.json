@@ -1091,6 +1091,272 @@
           }
         }
       }
+    },
+    {
+      "id": "salon",
+      "name": "Hair salon",
+      "icon": "scissors",
+      "summary": "Appointments, clients, services, retail stock and payments at the desk for a salon or barbershop.",
+      "keywords": [
+        "salon",
+        "hair salon",
+        "barber",
+        "barbershop",
+        "hairdresser",
+        "stylist",
+        "haircut",
+        "hair colour",
+        "hair color",
+        "highlights",
+        "blow-dry",
+        "nails",
+        "beauty",
+        "spa"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Due on receipt",
+        "taxRate": 0.07
+      },
+      "sectionDescriptions": {
+        "custom:appointments": "Bookings and the services behind them.",
+        "custom:clients": "Clients and what they usually have.",
+        "custom:checkout": "Sales at the desk and the payments against them.",
+        "custom:shelf": "Retail, backbar stock and who you buy from."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#9d174d"
+          }
+        },
+        "recipes": [
+          "commerce.customers",
+          "commerce.invoicing",
+          "commerce.purchases",
+          "commerce.sales",
+          "commerce.vendors",
+          "events.calendar",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.simple"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.07"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "creditLimit",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "customerType",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "taxExempt",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "taxId",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:InvoiceLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.07"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Due on receipt\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:appointments",
+            "custom:clients",
+            "custom:checkout",
+            "custom:shelf",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:appointments": [
+              "item:events:Event",
+              "item:events:EventType",
+              "item:events:EventSeries"
+            ],
+            "custom:clients": [
+              "item:commerce:Customer"
+            ],
+            "custom:checkout": [
+              "item:commerce:Order",
+              "item:commerce:Payment",
+              "item:commerce:Invoice"
+            ],
+            "custom:shelf": [
+              "item:products:Product",
+              "item:inventory:StockLevel",
+              "item:commerce:Vendor",
+              "item:commerce:PurchaseOrder"
+            ]
+          },
+          "hidden": [
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:events:Event": "custom:appointments",
+            "item:events:EventType": "custom:appointments",
+            "item:events:EventSeries": "custom:appointments",
+            "item:commerce:Customer": "custom:clients",
+            "item:commerce:Order": "custom:checkout",
+            "item:commerce:Payment": "custom:checkout",
+            "item:commerce:Invoice": "custom:checkout",
+            "item:products:Product": "custom:shelf",
+            "item:inventory:StockLevel": "custom:shelf",
+            "item:commerce:Vendor": "custom:shelf",
+            "item:commerce:PurchaseOrder": "custom:shelf"
+          },
+          "customSections": [
+            {
+              "id": "custom:appointments",
+              "label": "Appointments"
+            },
+            {
+              "id": "custom:clients",
+              "label": "Clients"
+            },
+            {
+              "id": "custom:checkout",
+              "label": "Checkout"
+            },
+            {
+              "id": "custom:shelf",
+              "label": "Shelf"
+            }
+          ],
+          "items": {
+            "item:events:Event": {
+              "label": "Appointments",
+              "description": "Every booking in the book, by stylist and chair."
+            },
+            "item:events:EventType": {
+              "label": "Appointment types",
+              "description": "The services you book, like a cut, a colour or a beard trim, with their length."
+            },
+            "item:events:EventSeries": {
+              "label": "Standing appointments",
+              "description": "Regulars who come back every few weeks, set up once."
+            },
+            "item:commerce:Customer": {
+              "label": "Clients",
+              "description": "Your clients, with how to reach them and what they usually have."
+            },
+            "item:commerce:Order": {
+              "label": "Sales",
+              "description": "Each visit’s ticket: the services done and anything bought at the desk."
+            },
+            "item:commerce:Payment": {
+              "label": "Payments",
+              "description": "Money taken at the desk, by card or cash."
+            },
+            "item:commerce:Invoice": {
+              "label": "Invoices",
+              "description": "Bills for bridal parties, packages and accounts that pay later."
+            },
+            "item:products:Product": {
+              "label": "Services & products",
+              "description": "Your services and the retail you sell, with prices."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Retail stock",
+              "description": "Product on the shelf and at the backbar."
+            },
+            "item:commerce:Vendor": {
+              "label": "Suppliers",
+              "description": "The distributors you buy colour, product and towels from."
+            },
+            "item:commerce:PurchaseOrder": {
+              "label": "Supply orders",
+              "description": "Product you have ordered and when it arrives."
+            }
+          },
+          "sections": {
+            "custom:appointments": {
+              "icon": "calendar"
+            },
+            "custom:clients": {
+              "icon": "users"
+            },
+            "custom:checkout": {
+              "icon": "creditCard"
+            },
+            "custom:shelf": {
+              "icon": "shoppingBag"
+            }
+          }
+        }
+      }
     }
   ]
 }
