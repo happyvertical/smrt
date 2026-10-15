@@ -3,6 +3,11 @@
 Run the normal schema migration before these data commands. The Commerce data
 migration never creates tables or columns at runtime.
 
+These commands are for tenants that already hold legacy Invoice or Contract
+rows. A tenant with no documents starts on money v2 when its settings are first
+created, or through `ensureCommerceTenant()` (#4009); it has nothing to
+migrate and the claim refuses it.
+
 1. Generate review artifacts without changing the database:
 
    ```sh

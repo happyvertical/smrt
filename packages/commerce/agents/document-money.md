@@ -1,10 +1,48 @@
 # Document money persistence
 
 Tenant money behavior is selected by the server-owned `TaxSettings.moneyModel`
-marker. Missing settings and `legacy` preserve the existing line-save behavior.
+marker. `legacy` preserves the existing line-save behavior, as do older schemas
+without the settings table.
 `migrating` is a persisted maintenance guard: invoice money writes fail until
 the owning migration restores `legacy` or activates `v2`. Generated surfaces
 cannot write either the marker or its owner token.
+
+### Initial model (#4009)
+
+A tenant's first `TaxSettings` row chooses its model once, wherever it is
+created: `getOrCreateForTenant`, the cookbook path, a generated create, or the
+runtime barrier ahead of a tenant's first document. A tenant with no stored
+Invoice or Contract row (header or line) starts on `v2`; a tenant whose rows
+predate its marker stays `legacy` until `smrt db:migrate-commerce-money`
+converts it. The document check reads raw tables, never the guarded
+collections. Creation runs in one transaction under a tenant advisory lock on
+PostgreSQL (the embedded write queue elsewhere), re-reads before inserting, and
+inserts the deterministic settings id, so racing first writers converge on one
+row and one model. An existing marker is never changed by this rule. A caller
+that passes `moneyModel` explicitly keeps it; the migration claim materializes
+a `legacy` row for a tenant it sees first, so an empty tenant still migrates.
+
+`ensureCommerceTenant(db, tenantId, { cookbook? })` is the one host bootstrap
+call after tenant creation: standard tax codes, the cookbook's commerce tax
+settings, then `v2` for a tenant with no documents. It also moves an empty
+`legacy` marker (for example one materialized by a read before this release) to
+`v2`, under the marker row lock that every runtime document write takes first,
+so its document check is authoritative. It returns the tenant's model, refuses
+a migrating tenant, and is idempotent; re-running it with a cookbook re-applies
+the cookbook defaults.
+
+Legacy documents reach a `v2` tenant only through the model API, which converts
+them: a draft is recalculated by the v2 coordinator, so a legacy `taxRate`,
+tax-inclusive `amount`, or header totals are not inputs (tax resolves from
+codes). An issued legacy document cannot be converted after issue: adding its
+lines fails with `FROZEN_DOCUMENT`, and the migration refuses a `v2` tenant.
+Import issued history into a tenant before its first marker or bootstrap (it
+then stays `legacy`) and migrate it. Rows written with raw SQL bypass the model
+and are not converted.
+
+Billing period close still writes legacy invoices (#4013): it materializes a
+`legacy` marker for a seller tenant that has none, and a `v2` seller cannot
+close a period yet.
 
 Every Invoice/InvoiceLineItem get, list, preview, mutation, posting, and
 accounting-sync phase acquires the same tenant settings row before document

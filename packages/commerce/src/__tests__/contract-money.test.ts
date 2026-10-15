@@ -21,6 +21,7 @@ import {
 } from '../contract-money.js';
 import { Order, PurchaseOrder } from '../models/Contract.js';
 import { ContractStatus } from '../types/index.js';
+import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant.js';
 
 describe('Contract money persistence (#3933)', () => {
   let db: DatabaseInterface;
@@ -54,8 +55,9 @@ describe('Contract money persistence (#3933)', () => {
       current.defaultLineAmountType = 'exclusive';
       current.taxRoundingScope = 'document';
       await current.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+        throw new Error('Expected a clean tenant on money v2');
       return code.id;
     });
   }
@@ -100,8 +102,9 @@ describe('Contract money persistence (#3933)', () => {
       current.defaultLineAmountType = lineAmountType;
       current.taxRoundingScope = taxRoundingScope;
       await current.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+        throw new Error('Expected a clean tenant on money v2');
       return { gst: gstCode.id, gstPst: gstPstCode.id, exempt: exemptCode.id };
     });
   }
@@ -350,6 +353,7 @@ describe('Contract money persistence (#3933)', () => {
 
   it('blocks Contract and line reads while its tenant is migrating', async () => {
     const tenantId = 'contract-read-migration';
+    await seedLegacyMoneyTenant(db, tenantId);
     await withTenant({ tenantId }, async () => {
       const contracts = await ContractCollection.create({ db });
       const contract = await contracts.create({ currency: 'CAD' });

@@ -17,6 +17,7 @@ import {
   rollbackCommerceLineAmounts,
 } from '../migrations/commerceLineAmounts.js';
 import { InvoiceStatus } from '../types/index.js';
+import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -39,6 +40,7 @@ describePostgres('commerce line amount migration on PostgreSQL (#3933)', () => {
 
   it('persists journal ownership and exact rollback on the managed adapter', async () => {
     const tenantId = randomUUID();
+    await seedLegacyMoneyTenant(db, tenantId);
     const { invoice, line } = await withTenant({ tenantId }, async () => {
       const invoice = await (await InvoiceCollection.create({ db })).create({
         tenantId,
@@ -101,6 +103,7 @@ describePostgres('commerce line amount migration on PostgreSQL (#3933)', () => {
 
   it('rolls back a refused checksum preflight to the active v2 marker', async () => {
     const tenantId = randomUUID();
+    await seedLegacyMoneyTenant(db, tenantId);
     const { invoice, line } = await withTenant({ tenantId }, async () => {
       const invoice = await (await InvoiceCollection.create({ db })).create({
         tenantId,
@@ -149,6 +152,7 @@ describePostgres('commerce line amount migration on PostgreSQL (#3933)', () => {
 
   it('refuses rollback when a document was created under v2', async () => {
     const tenantId = randomUUID();
+    await seedLegacyMoneyTenant(db, tenantId);
     const legacyLine = await withTenant({ tenantId }, async () => {
       const invoice = await (await InvoiceCollection.create({ db })).create({
         tenantId,
@@ -237,6 +241,7 @@ describePostgres('commerce line amount migration on PostgreSQL (#3933)', () => {
 
   it('keeps exempt and ordinary zero-rate documents distinct', async () => {
     const tenantId = randomUUID();
+    await seedLegacyMoneyTenant(db, tenantId);
     const { draftLine, issued, issuedLine } = await withTenant(
       { tenantId },
       async () => {

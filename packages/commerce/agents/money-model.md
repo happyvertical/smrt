@@ -39,8 +39,9 @@ catalogue, seeds, registrations, and cookbook boundary are documented in
 
 ## Stored Invoice facts
 
-`TaxSettings.moneyModel` selects the Invoice write behavior. `legacy` keeps the
-compatibility path; `migrating` rejects money writes; `v2` resolves a draft's
+`TaxSettings.moneyModel` selects the Invoice write behavior. New tenants with
+no documents start on `v2` ([initial model](document-money.md#initial-model-4009));
+`legacy` keeps the compatibility path; `migrating` rejects money writes; `v2` resolves a draft's
 current settings once and atomically writes the header, line snapshots, and
 `DocumentTax` rows. The detailed persistence, freeze, preview, credit-note, and
 refund contracts are in [document money](document-money.md).

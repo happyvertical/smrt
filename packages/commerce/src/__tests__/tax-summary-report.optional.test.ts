@@ -68,8 +68,9 @@ describePostgres('TaxSummaryReport on PostgreSQL (#3940)', () => {
     );
     await withTenant({ tenantId }, async () => {
       const settings = await TaxSettingsCollection.create({ db });
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+        throw new Error('Expected a clean tenant on money v2');
     });
     const reports = await TaxSummaryReportCollection.create({ db });
     const result = await reports.refreshTaxSummary({
@@ -144,8 +145,12 @@ describePostgres('TaxSummaryReport on PostgreSQL (#3940)', () => {
     const foreignTenantId = randomUUID();
     await withTenant({ tenantId: foreignTenantId }, async () => {
       const settings = await TaxSettingsCollection.create({ db });
-      const migrationId = await settings.beginMoneyMigration(foreignTenantId);
-      await settings.activateMoneyV2(foreignTenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if (
+        (await settings.getOrCreateForTenant(foreignTenantId)).moneyModel !==
+        'v2'
+      )
+        throw new Error('Expected a clean tenant on money v2');
     });
     await expect(
       drilldownTaxSummaryInvoiceFacts(db, {
@@ -241,8 +246,9 @@ describePostgres('TaxSummaryReport on PostgreSQL (#3940)', () => {
 
     await withTenant({ tenantId }, async () => {
       const settings = await TaxSettingsCollection.create({ db });
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+        throw new Error('Expected a clean tenant on money v2');
     });
     const reports = await TaxSummaryReportCollection.create({ db });
     await withTenant({ tenantId }, () => reports.create(component));
@@ -263,8 +269,9 @@ describePostgres('TaxSummaryReport on PostgreSQL (#3940)', () => {
     );
     await withTenant({ tenantId }, async () => {
       const settings = await TaxSettingsCollection.create({ db });
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+        throw new Error('Expected a clean tenant on money v2');
     });
     const options = {
       tenantId,

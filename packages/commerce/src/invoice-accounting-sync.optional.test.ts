@@ -66,8 +66,9 @@ describePostgres('frozen invoice accounting sync on PostgreSQL (#3937)', () => {
       current.defaultLineAmountType = 'exclusive';
       current.taxRoundingScope = 'document';
       await current.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+        throw new Error('Expected a clean tenant on money v2');
 
       const customer = await (await CustomerCollection.create({ db })).create({
         defaultTaxCodeId: code.id,

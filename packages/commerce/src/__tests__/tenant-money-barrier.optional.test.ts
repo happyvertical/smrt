@@ -10,6 +10,7 @@ import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { withTenantMoneyRuntime } from '../tenant-money-barrier.js';
+import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -38,6 +39,7 @@ describePostgres('tenant money runtime barrier on PostgreSQL (#3933)', () => {
 
   it('holds runtime and migration on the same tenant marker row', async () => {
     const tenantId = randomUUID();
+    await seedLegacyMoneyTenant(db, tenantId);
     await withTenant({ tenantId }, () =>
       withTenantMoneyRuntime(
         db,
@@ -97,6 +99,7 @@ describePostgres('tenant money runtime barrier on PostgreSQL (#3933)', () => {
   it('does not block a different tenant marker', async () => {
     const tenantA = randomUUID();
     const tenantB = randomUUID();
+    await seedLegacyMoneyTenant(db, tenantA, tenantB);
     for (const tenantId of [tenantA, tenantB]) {
       await withTenant({ tenantId }, () =>
         withTenantMoneyRuntime(
@@ -136,8 +139,8 @@ describePostgres('tenant money runtime barrier on PostgreSQL (#3933)', () => {
   it('refuses a natural-key settings upsert that would reset the marker', async () => {
     const tenantId = randomUUID();
     await withTenant({ tenantId }, async () => {
+      await seedLegacyMoneyTenant(db, tenantId);
       const settings = await TaxSettingsCollection.create({ db });
-      await settings.getOrCreateForTenant(tenantId);
       const migrationId = await settings.beginMoneyMigration(tenantId);
 
       await expect(
@@ -161,11 +164,7 @@ describePostgres('tenant money runtime barrier on PostgreSQL (#3933)', () => {
 
   it('serializes a natural-key settings upsert with a racing migration claim', async () => {
     const tenantId = randomUUID();
-    await withTenant({ tenantId }, async () => {
-      await (await TaxSettingsCollection.create({ db })).getOrCreateForTenant(
-        tenantId,
-      );
-    });
+    await seedLegacyMoneyTenant(db, tenantId);
 
     const originalTransaction = db.transaction?.bind(db);
     if (!originalTransaction) throw new Error('transaction support required');
@@ -237,7 +236,7 @@ describePostgres('tenant money runtime barrier on PostgreSQL (#3933)', () => {
     });
   });
 
-  it('refuses a stale first settings save after migration creates the marker', async () => {
+  it('serializes a clean tenant first settings save ahead of a racing migration claim', async () => {
     const tenantId = randomUUID();
     const originalTransaction = db.transaction?.bind(db);
     if (!originalTransaction) throw new Error('transaction support required');
@@ -282,32 +281,39 @@ describePostgres('tenant money runtime barrier on PostgreSQL (#3933)', () => {
       return settings.create({ tenantId, taxRoundingScope: 'document' });
     });
     await checked;
-    const migrationId = await withTenant({ tenantId }, async () => {
+    // The paused first save holds the tenant's first-marker advisory lock, so
+    // the migration claim waits instead of creating a competing marker.
+    let migrationSettled = false;
+    const migration = withTenant({ tenantId }, async () => {
       const settings = await TaxSettingsCollection.create({ db: peer });
       return settings.beginMoneyMigration(tenantId);
+    }).finally(() => {
+      migrationSettled = true;
     });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(migrationSettled).toBe(false);
     releaseCreate();
 
-    await expect(create).rejects.toMatchObject({
-      code: 'VALIDATION_UNIQUE_CONSTRAINT',
-    });
+    // With no documents the first save chooses v2 (#4009), so the claim that
+    // follows it finds a tenant with nothing to migrate.
+    await expect(create).resolves.toMatchObject({ tenantId, moneyModel: 'v2' });
+    await expect(migration).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
     await withTenant({ tenantId }, async () => {
       const settings = await TaxSettingsCollection.create({ db: peer });
       await expect(settings.getForTenant(tenantId)).resolves.toMatchObject({
-        moneyModel: 'migrating',
-        moneyMigrationId: migrationId,
+        moneyModel: 'v2',
+        moneyMigrationId: '',
       });
-      await settings.restoreLegacyMoneyModel(tenantId, migrationId);
     });
   });
 
-  it('lets migration claim a marker created first by an ordinary save', async () => {
+  it('lets migration claim a legacy marker created first by an ordinary save', async () => {
     const tenantId = randomUUID();
     await withTenant({ tenantId }, async () => {
       const settings = await TaxSettingsCollection.create({ db });
-      await expect(settings.create({ tenantId })).resolves.toMatchObject({
-        moneyModel: 'legacy',
-      });
+      await expect(
+        settings.create({ tenantId, moneyModel: 'legacy' }),
+      ).resolves.toMatchObject({ moneyModel: 'legacy' });
     });
 
     const migrationId = await withTenant({ tenantId }, async () => {

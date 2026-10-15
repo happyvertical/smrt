@@ -68,8 +68,9 @@ describePostgres('invoice money aggregate on PostgreSQL (#3933)', () => {
       const setting = await settings.getOrCreateForTenant(tenantId);
       setting.defaultSalesTaxCodeId = code.id;
       await setting.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+        throw new Error('Expected a clean tenant on money v2');
       const customers = await CustomerCollection.create({ db });
       const customer = await customers.create({ defaultTaxCodeId: code.id });
       const invoices = await InvoiceCollection.create({ db });
@@ -128,8 +129,9 @@ describePostgres('invoice money aggregate on PostgreSQL (#3933)', () => {
       setting.defaultSalesTaxCodeId = code.id;
       setting.taxRoundingScope = 'document';
       await setting.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+        throw new Error('Expected a clean tenant on money v2');
       const customer = await (await CustomerCollection.create({ db })).create({
         defaultTaxCodeId: code.id,
       });
@@ -228,8 +230,9 @@ describePostgres('invoice money aggregate on PostgreSQL (#3933)', () => {
       setting.defaultLineAmountType = 'exclusive';
       setting.taxRoundingScope = 'line';
       await setting.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+        throw new Error('Expected a clean tenant on money v2');
       const customer = await (await CustomerCollection.create({ db })).create({
         defaultTaxCodeId: code.id,
       });
@@ -386,8 +389,9 @@ describePostgres('invoice money aggregate on PostgreSQL (#3933)', () => {
         setting.defaultLineAmountType = scenario.mode;
         setting.taxRoundingScope = scenario.scope;
         await setting.save();
-        const migrationId = await settings.beginMoneyMigration(tenantId);
-        await settings.activateMoneyV2(tenantId, migrationId);
+        // A clean tenant starts on money v2 (#4009); no migration needed.
+        if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+          throw new Error('Expected a clean tenant on money v2');
         const customer = await (await CustomerCollection.create({ db })).create(
           { defaultTaxCodeId: gstCode.id },
         );
@@ -563,8 +567,9 @@ describePostgres('independent PostgreSQL invoice money writers (#3933)', () => {
       setting.defaultSalesTaxCodeId = code.id;
       setting.taxRoundingScope = 'document';
       await setting.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+        throw new Error('Expected a clean tenant on money v2');
       const customer = await (
         await CustomerCollection.create({ db: primaryDb })
       ).create({ defaultTaxCodeId: code.id });

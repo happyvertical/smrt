@@ -13,6 +13,12 @@ lines, missing tenancy, an ambiguous base Contract direction, and an
 `in_flight`/`unknown` accounting sync block the tenant before any marker or
 document mutation. Draft total changes also require `acceptDraftChanges`.
 
+The migration is the route for tenants that already hold legacy documents.
+Tenants created with no documents start on `v2` and need no migration; the
+claim refuses a `v2` tenant. For a tenant with no marker, the claim
+materializes a `legacy` row first, so migrating an empty tenant still works
+(#4009).
+
 `migrateCommerceLineAmounts(db, { tenantId, acceptDraftChanges?, migrationId? })`
 claims the tenant marker, maps legacy rates, and processes each document under
 the shared tenant barrier. A sensitive internal

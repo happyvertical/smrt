@@ -15,6 +15,7 @@ import {
   withTenantMoneyMigration,
   withTenantMoneyRuntime,
 } from '../tenant-money-barrier.js';
+import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant.js';
 
 describe('tenant money runtime barrier (#3933)', () => {
   let db: DatabaseInterface;
@@ -90,15 +91,16 @@ describe('tenant money runtime barrier (#3933)', () => {
     expect(transaction).toHaveBeenCalledOnce();
   });
 
-  it('materializes one legacy marker and serializes every transition', async () => {
+  it('materializes one marker, v2 for a clean tenant, and serializes every transition', async () => {
     await withTenant({ tenantId: 'tenant-a' }, async () => {
       const observed = await withTenantMoneyRuntime(
         db,
         'tenant-a',
         'legacy-or-v2',
         async (scope) => {
+          // No stored documents: the materialized marker starts on v2 (#4009).
           expect(scope.barrier).toMatchObject({
-            moneyModel: 'legacy',
+            moneyModel: 'v2',
             persistedBarrier: true,
           });
           const nested = await withTenantMoneyRuntime(
@@ -117,7 +119,8 @@ describe('tenant money runtime barrier (#3933)', () => {
         await settings.list({ where: { tenantId: 'tenant-a' } }),
       ).toHaveLength(1);
 
-      const migrationId = await settings.beginMoneyMigration('tenant-a');
+      const migrationId = '00000000-0000-4000-8000-000000004009';
+      await settings.beginMoneyRollback('tenant-a', migrationId);
       await expect(
         withTenantMoneyRuntime(
           db,
@@ -191,12 +194,13 @@ describe('tenant money runtime barrier (#3933)', () => {
       await withDocumentMoneyTransaction(db, async (tx) => {
         await expect(
           lockTenantMoneyRuntime(tx, 'tenant-a'),
-        ).resolves.toMatchObject({ moneyModel: 'legacy' });
+        ).resolves.toMatchObject({ moneyModel: 'v2' });
       });
     });
   });
 
   it('guards generated invoice and line get/list reads while migrating', async () => {
+    await seedLegacyMoneyTenant(db, 'tenant-a');
     await withTenant({ tenantId: 'tenant-a' }, async () => {
       const invoices = await InvoiceCollection.create({ db });
       const invoice = await invoices.create({ invoiceNumber: 'BARRIER-1' });
@@ -262,8 +266,8 @@ describe('tenant money runtime barrier (#3933)', () => {
 
   it('refuses a new settings row that would upsert over the tenant marker', async () => {
     await withTenant({ tenantId: 'tenant-a' }, async () => {
+      await seedLegacyMoneyTenant(db, 'tenant-a');
       const settings = await TaxSettingsCollection.create({ db });
-      await settings.getOrCreateForTenant('tenant-a');
       const migrationId = await settings.beginMoneyMigration('tenant-a');
 
       // A generated create carries only writable fields, so the marker

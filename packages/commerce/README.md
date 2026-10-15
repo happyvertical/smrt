@@ -130,8 +130,13 @@ the supported kinds, seed behavior, and cookbook rate units.
 ### Persisted Invoice v2
 
 The public `Invoice` and `InvoiceLineItem` save paths use the server-owned
-`TaxSettings.moneyModel` gate. Missing settings and `legacy` preserve the
-existing behavior; `migrating` rejects Invoice money writes; `v2` atomically
+`TaxSettings.moneyModel` gate. A tenant with no stored Invoice or Contract
+rows starts on `v2` when its settings row is first created, and
+`ensureCommerceTenant(db, tenantId, { cookbook })` is the one bootstrap call a
+host makes after creating a tenant. Tenants with existing documents stay on
+`legacy`, which preserves the existing behavior, until
+`smrt db:migrate-commerce-money` converts them; `migrating` rejects Invoice
+money writes; `v2` atomically
 recalculates the draft Invoice aggregate from its lines and current tax inputs.
 The marker is not writable through generated surfaces or ordinary saves of
 an existing settings row.

@@ -49,8 +49,9 @@ describe('TaxSummaryReport invoice source (#3940)', () => {
 
   async function activateV2(tenantId: string): Promise<void> {
     const settings = await TaxSettingsCollection.create({ db });
-    const migrationId = await settings.beginMoneyMigration(tenantId);
-    await settings.activateMoneyV2(tenantId, migrationId);
+    // A clean tenant starts on money v2 (#4009); no migration needed.
+    if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+      throw new Error('Expected a clean tenant on money v2');
   }
 
   defineTaxSummaryLedgerHostSuite(() => db);
