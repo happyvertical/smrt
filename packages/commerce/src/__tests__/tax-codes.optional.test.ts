@@ -5,6 +5,7 @@ import {
   enableTenancy,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
+import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
@@ -14,7 +15,9 @@ import { applyCookbookTaxSettings } from '../tax/cookbook.js';
 import { ensureTenantTaxCodes } from '../tax/legacy.js';
 
 /** PostgreSQL regression coverage, run through scripts/run-with-ci-postgres.mjs. */
-describe('tax codes on PostgreSQL', () => {
+const describePostgres = isPostgresAvailable() ? describe : describe.skip;
+
+describePostgres('tax codes on PostgreSQL', () => {
   let db: DatabaseInterface;
 
   beforeEach(async () => {
@@ -28,7 +31,7 @@ describe('tax codes on PostgreSQL', () => {
 
   afterEach(async () => {
     disableTenancy();
-    await db.close?.();
+    await db?.close?.();
   });
 
   it('round-trips DECIMAL rates and refuses a foreign tenant component', async () => {
