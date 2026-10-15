@@ -1444,6 +1444,8 @@ export async function saveInvoiceLineItem(
   return withDocumentMoneyObjectTransaction(input, async (line, tx) => {
     const candidateTenantId = getTenantId() ?? line.tenantId ?? null;
     const settings = await lockRuntimeSettings(tx, candidateTenantId);
+    if (settings?.moneyModel !== 'v2')
+      return line.saveDerived(DOCUMENT_MONEY_WRITE, true);
     const persisted = line.id
       ? await (await InvoiceLineItemCollection.create({ db: tx })).get(
           { id: line.id },
@@ -1457,8 +1459,6 @@ export async function saveInvoiceLineItem(
         'INVALID_MONEY_INPUT',
         'Invoice line tenant does not match its active money barrier',
       );
-    if (settings?.moneyModel !== 'v2')
-      return line.saveDerived(DOCUMENT_MONEY_WRITE, true);
     assertTenantId(first.invoice.tenantId);
     const { invoice, source } = await lockAndReloadMoneyInvoice(
       tx,

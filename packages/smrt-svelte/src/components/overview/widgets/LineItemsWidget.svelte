@@ -173,7 +173,7 @@ const LABELS = {
   .smrt-line-items__totals { display: grid; justify-self: end; gap: var(--smrt-spacing-1); min-inline-size: min(100%, 18rem); margin: 0; font-variant-numeric: tabular-nums; }
   .smrt-line-items__total { display: flex; justify-content: space-between; gap: var(--smrt-spacing-4); }
   .smrt-line-items__total dt { color: var(--smrt-color-on-surface-variant); }
-  .smrt-line-items__total--muted { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-font-size); }
+  .smrt-line-items__total--muted { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size); }
   .smrt-line-items__total dd { margin: 0; text-align: end; }
   .smrt-line-items__total--grand { padding-block-start: var(--smrt-spacing-2); border-block-start: var(--smrt-hairline); font-weight: var(--smrt-typography-weight-semibold); }
   .smrt-line-items__total--grand dt { color: var(--smrt-color-on-surface); }

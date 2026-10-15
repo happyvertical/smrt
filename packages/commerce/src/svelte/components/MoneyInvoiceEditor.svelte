@@ -177,7 +177,7 @@ function changeMode(event: Event) {
 }
 </script>
 
-<section class="invoice-editor money-editor" aria-label="Invoice money" data-smrt-component="InvoiceEditor" data-money-model="v2">
+<section class="invoice-editor money-editor" aria-label="Invoice money" data-smrt-component="MoneyInvoiceEditor" data-money-model="v2">
   {#if frozen}
     <p role="status">Frozen{money.status ? ` · ${money.status}` : ''}</p>
     {#if money.kind !== 'credit_note'}
@@ -262,7 +262,7 @@ function changeMode(event: Event) {
   .money-editor { max-width: 48rem; overflow-wrap: anywhere; }
   .summary { display: grid; gap: var(--smrt-spacing-2); }
   .summary > div { display: flex; justify-content: space-between; gap: var(--smrt-spacing-4); }
-  .summary .muted { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-font-size); }
+  .summary .muted { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size); }
   .summary .total { border-top: var(--smrt-hairline-strong); padding-top: var(--smrt-spacing-2); font-weight: var(--smrt-typography-weight-semibold); }
   dd { margin: 0; }
 }

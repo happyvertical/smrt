@@ -16,6 +16,45 @@ export interface MaterializedReportCellRequest {
   columnId: string;
 }
 
+/** A host-normalized monetary value; values stay in integer minor units. */
+export interface MaterializedReportDrilldownValues {
+  valueMinor?: number | null;
+  taxableMinor?: number | null;
+  taxMinor?: number | null;
+}
+
+/** One user-visible record contributing to a materialized report cell. */
+export interface MaterializedReportDrilldownContributor {
+  id: string;
+  source: string;
+  identity: string;
+  date?: string | null;
+  party?: string | null;
+  values: MaterializedReportDrilldownValues;
+}
+
+/** A host-declared warning that keeps incomplete or divergent evidence visible. */
+export interface MaterializedReportDrilldownWarning {
+  code: string;
+  kind: 'incomplete' | 'drift';
+  message: string;
+}
+
+/**
+ * Domain-neutral presentation returned by a materialized-report host.
+ *
+ * The route serializes this value unchanged. Hosts normalize their own source
+ * facts here so generic browser surfaces neither import nor infer report domains.
+ */
+export interface MaterializedReportDrilldownPresentation {
+  version: 1;
+  selectedMeasure: { id: string; label: string };
+  currency: string;
+  contributors: readonly MaterializedReportDrilldownContributor[];
+  complete: boolean;
+  warnings: readonly MaterializedReportDrilldownWarning[];
+}
+
 /**
  * Application-owned bridge for one declared materialized report.
  *
