@@ -92,8 +92,11 @@ commerce does not supply a duplicate host.
 The accounting snapshot mapper consumes frozen facts and never re-calculates a
 rate or allocation. It maps an inclusive line to the accounting SDK's
 `TaxInclusiveAmt`; tenant mappings provide provider tax-code and component-rate
-identities. Its supported boundary and the pending provider write integration
-are documented in [accounting snapshot mapper](accounting-snapshot-mapper.md).
+identities. The QuickBooks sync boundary persists SDK 0.103.7 invoice or credit
+memo request descriptors before provider I/O, refuses competing writes, and
+requires explicit reconciliation after an unknown outcome. Its supported
+inputs and recovery contract are documented in [accounting snapshot
+mapper](accounting-snapshot-mapper.md).
 
 ## Deliberate boundaries
 
