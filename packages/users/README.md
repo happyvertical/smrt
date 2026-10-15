@@ -1138,6 +1138,21 @@ immediately invalidates every child at the next guard check.
 
 ### Hierarchical tenants
 
+`TenantCollection` is the only hierarchy traversal API. Use
+`getAncestorIds()`, `getDescendantIds()`, and `requireChildOf()` rather than
+walking `parentTenantId` in an application.
+
+For a reviewed cross-tenant **list** read, use
+`withTenantCatalogReadScope()` for the active family, its ancestors, and
+global rows, or `withTenantHierarchyContext()` for one authorized root and its
+descendants. Both require an active tenant **and user**, a non-empty qualified
+collection allowlist, and an authorizer that returns exactly `true`; every
+other result fails closed. The callback can widen only `list()` for those
+collections. `get()`, raw queries, saves, and deletes retain normal tenancy
+guards (writes are rejected while the scope is active). Catalog scopes never
+include descendants or siblings; subtree scopes never include ancestors or
+global rows.
+
 Tenants support parent-child trees (max depth 10). Two flags control inheritance: `cascadePermissions` (parent pushes down) and `inheritPermissions` (child accepts). Both must be true for permissions to flow.
 
 The materialized `hierarchyPath` / `hierarchyLevel` are **derived by the
