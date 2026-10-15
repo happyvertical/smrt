@@ -14,7 +14,11 @@ request option or populate it from arbitrary request JSON. It permits only the
 exact private IDs and owner; ordinary public rows are not included within that
 scope. The current tenant/user must match at each operation. Nested scopes may
 only narrow IDs with the same owner, and scopes close when their callback ends.
-Await every operation inside the callback.
+Await every operation inside the callback. Async-local storage is resolved lazily
+on Node; without that server capability, private scope creation explicitly fails
+and ordinary policy reads remain public-only. This does not promise full package
+browser runtime support: existing tenancy dependencies retain their own platform
+limitations.
 
 Private writes require the same capability. Classification and ownership of an
 existing private record are immutable. Core applies a mandatory persisted-write

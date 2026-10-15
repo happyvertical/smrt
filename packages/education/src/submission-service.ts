@@ -1,4 +1,3 @@
-import { createHash, randomUUID } from 'node:crypto';
 import {
   type Asset,
   type AssetRuntime,
@@ -140,7 +139,7 @@ export class SubmissionService extends LearnerService {
     page: SubmissionPage,
   ): Promise<Asset> {
     const runtime = await this.assets();
-    const id = randomUUID();
+    const id = globalThis.crypto.randomUUID();
     return withPrivateAssetAccess(
       {
         tenantId: request.tenantId,
@@ -348,7 +347,11 @@ export class SubmissionService extends LearnerService {
         request,
         'education.learner.submit',
       );
-      const digest = createHash('sha256');
+      const crypto =
+        typeof process !== 'undefined' &&
+        process.getBuiltinModule?.('node:crypto');
+      if (!crypto) throw new Error('Submission capture requires a Node server');
+      const digest = crypto.createHash('sha256');
       for (const page of request.pages)
         digest
           .update(JSON.stringify([page.name, page.mimeType, page.data.length]))

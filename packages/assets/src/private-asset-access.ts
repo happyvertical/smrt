@@ -1,4 +1,4 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
+import type { AsyncLocalStorage } from 'node:async_hooks';
 import {
   GlobalInterceptors,
   type InterceptorContext,
@@ -22,11 +22,17 @@ const KEY = Symbol.for('smrt:private-asset-access');
 const root = globalThis as typeof globalThis & {
   [KEY]?: AsyncLocalStorage<Scope>;
 };
-root[KEY] ??= new AsyncLocalStorage<Scope>();
-const storage = root[KEY];
+function scopeStorage(): AsyncLocalStorage<Scope> | undefined {
+  if (root[KEY]) return root[KEY];
+  if (typeof process === 'undefined' || !process.getBuiltinModule)
+    return undefined;
+  const { AsyncLocalStorage } = process.getBuiltinModule('node:async_hooks');
+  root[KEY] = new AsyncLocalStorage<Scope>();
+  return root[KEY];
+}
 
 function currentScope(): Scope | undefined {
-  const scope = storage.getStore();
+  const scope = scopeStorage()?.getStore();
   if (!scope) return undefined;
   const actor = getCurrentTenant();
   if (
@@ -49,6 +55,9 @@ export async function withPrivateAssetAccess<T>(
   access: PrivateAssetAccess,
   callback: () => Promise<T>,
 ): Promise<T> {
+  const storage = scopeStorage();
+  if (!storage)
+    throw new Error('Private asset capabilities require a Node server');
   const actor = getCurrentTenant();
   if (
     !access.tenantId ||
