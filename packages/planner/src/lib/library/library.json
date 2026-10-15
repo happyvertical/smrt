@@ -1602,6 +1602,237 @@
           }
         }
       }
+    },
+    {
+      "id": "equipment-rental",
+      "name": "Equipment rental",
+      "icon": "forklift",
+      "summary": "Rentals, quotes, the fleet and its availability, pickups and returns, and billing for a hire yard.",
+      "keywords": [
+        "equipment rental",
+        "rental",
+        "rentals",
+        "hire",
+        "tool hire",
+        "plant hire",
+        "party rental",
+        "excavator",
+        "scaffolding",
+        "generators",
+        "bike rental",
+        "kayak rental",
+        "fleet"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Deposit on pickup, balance on return",
+        "taxRate": 0.08
+      },
+      "sectionDescriptions": {
+        "custom:rentals": "Rentals, quotes and the customers they belong to.",
+        "custom:fleet": "Equipment, availability and who you buy from.",
+        "custom:schedule": "Appointments and what is on the calendar.",
+        "custom:billing": "Invoices and the payments against them."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#a16207"
+          }
+        },
+        "recipes": [
+          "commerce.customers",
+          "commerce.estimates",
+          "commerce.invoicing",
+          "commerce.leases",
+          "commerce.purchases",
+          "commerce.vendors",
+          "events.calendar",
+          "inventory.stock",
+          "ledgers.bookkeeping",
+          "products.simple"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.08"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:InvoiceLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.08"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Deposit on pickup, balance on return\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:rentals",
+            "custom:fleet",
+            "custom:schedule",
+            "custom:billing",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:rentals": [
+              "item:commerce:Lease",
+              "item:commerce:Estimate",
+              "item:commerce:Customer"
+            ],
+            "custom:fleet": [
+              "item:products:Product",
+              "item:inventory:StockLevel",
+              "item:commerce:Vendor",
+              "item:commerce:PurchaseOrder"
+            ],
+            "custom:schedule": [
+              "item:events:Event",
+              "item:events:EventType"
+            ],
+            "custom:billing": [
+              "item:commerce:Invoice",
+              "item:commerce:Payment"
+            ]
+          },
+          "hidden": [
+            "item:events:EventSeries",
+            "item:inventory:InventoryLocation",
+            "item:inventory:StockMovement"
+          ],
+          "moved": {
+            "item:commerce:Lease": "custom:rentals",
+            "item:commerce:Estimate": "custom:rentals",
+            "item:commerce:Customer": "custom:rentals",
+            "item:products:Product": "custom:fleet",
+            "item:inventory:StockLevel": "custom:fleet",
+            "item:commerce:Vendor": "custom:fleet",
+            "item:commerce:PurchaseOrder": "custom:fleet",
+            "item:events:Event": "custom:schedule",
+            "item:events:EventType": "custom:schedule",
+            "item:commerce:Invoice": "custom:billing",
+            "item:commerce:Payment": "custom:billing"
+          },
+          "customSections": [
+            {
+              "id": "custom:rentals",
+              "label": "Rentals"
+            },
+            {
+              "id": "custom:fleet",
+              "label": "Fleet"
+            },
+            {
+              "id": "custom:schedule",
+              "label": "Schedule"
+            },
+            {
+              "id": "custom:billing",
+              "label": "Billing"
+            }
+          ],
+          "items": {
+            "item:commerce:Lease": {
+              "label": "Rentals",
+              "description": "Every rental out the gate, with the dates and what is due."
+            },
+            "item:commerce:Estimate": {
+              "label": "Quotes",
+              "description": "Quotes for a hire, ready to become a rental when accepted."
+            },
+            "item:products:Product": {
+              "label": "Equipment",
+              "description": "The machines and tools you hire out, with the daily rate."
+            },
+            "item:inventory:StockLevel": {
+              "label": "Availability",
+              "description": "What is in the yard, out on hire or in for service."
+            },
+            "item:commerce:Vendor": {
+              "label": "Suppliers",
+              "description": "The dealers and parts suppliers you buy from."
+            },
+            "item:commerce:PurchaseOrder": {
+              "label": "Equipment & parts orders",
+              "description": "Machines and parts you have ordered and when they arrive."
+            },
+            "item:events:Event": {
+              "label": "Pickups & returns",
+              "description": "Pickups, returns and deliveries on the calendar, by day."
+            },
+            "item:events:EventType": {
+              "label": "Booking types",
+              "description": "The kinds of booking you make, like a pickup, a return or a delivery."
+            }
+          },
+          "sections": {
+            "custom:rentals": {
+              "icon": "fileText"
+            },
+            "custom:fleet": {
+              "icon": "truck"
+            },
+            "custom:schedule": {
+              "icon": "calendar"
+            },
+            "custom:billing": {
+              "icon": "receipt"
+            }
+          }
+        }
+      }
     }
   ]
 }

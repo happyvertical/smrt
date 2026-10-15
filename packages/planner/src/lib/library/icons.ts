@@ -40,4 +40,14 @@ export const COOKBOOK_ICONS: Record<string, readonly string[]> = {
     'M3 10h14v5a6 6 0 0 1-6 6h-2a6 6 0 0 1-6-6v-5z',
     'M16.746 16.726a3 3 0 1 0 .252-5.555',
   ],
+  forklift: [
+    'M5 17m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
+    'M13 17m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
+    'M7 17h4',
+    'M3 17v-6h13v6',
+    'M5 11v-4h4',
+    'M9 11v-6h4l3 6',
+    'M22 15h-3v-10',
+    'M16 13h3',
+  ],
 };
