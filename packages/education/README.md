@@ -85,7 +85,7 @@ host's permission decision. Sibling membership does not grant access.
 Repeated starts preserve the existing progress, including attempts and scores.
 A new curriculum/year creates a distinct enrollment and fresh progress history.
 An unscored lesson has `bestScore: null`, distinct from zero. The service does
-not accept score or completion patches; grading is a separate future workflow.
+not accept score or completion patches; `SubmissionService` owns guardian grading.
 Use `withTransaction` and its callback service to compose atomic operations.
 Results are plain data views, so no transaction-bound model handle escapes.
 
@@ -93,6 +93,14 @@ The [learner integration contract](agents/learner-service.md) describes required
 identity provisioning, catalog permissions, supported workflows and limitations.
 The [executable learner workflows](src/__tests__/learner-workflows.ts) test this
 integration on both SQLite and PostgreSQL.
+
+## Submissions and worksheet packets
+
+`SubmissionService` captures tenant-owned uploads, reviews or attests work with
+optional guardian scores, signs authorized asset claims, and splits private
+PDF packets by page range. It reuses learner ownership and transaction checks.
+See the [submission integration contract](agents/submission-service.md) for
+inputs, retry rules, signing requirements and external-storage compensation.
 
 ## Recipes
 

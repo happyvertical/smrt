@@ -58,3 +58,32 @@ export class EnrollmentCollection extends SmrtCollection<Enrollment> {
 export class LessonProgressCollection extends SmrtCollection<LessonProgress> {
   static readonly _itemClass = LessonProgress;
 }
+
+import {
+  Attestation,
+  ExternalCompletion,
+  Grade,
+  ScannedSubmission,
+  Submission,
+  SubmissionAsset,
+} from './submissions.js';
+export class SubmissionCollection extends SmrtCollection<Submission> {
+  static readonly _itemClass = Submission;
+}
+export class ScannedSubmissionCollection extends SmrtCollection<ScannedSubmission> {
+  static readonly _itemClass = ScannedSubmission;
+}
+export class ExternalCompletionCollection extends SmrtCollection<ExternalCompletion> {
+  static readonly _itemClass = ExternalCompletion;
+}
+export class AttestationCollection extends SmrtCollection<Attestation> {
+  static readonly _itemClass = Attestation;
+}
+export class GradeCollection extends SmrtCollection<Grade> {
+  static readonly _itemClass = Grade;
+}
+export class SubmissionAssetCollection extends SmrtJunction<SubmissionAsset> {
+  static readonly _itemClass = SubmissionAsset;
+  protected leftField = 'submissionId';
+  protected rightField = 'assetId';
+}

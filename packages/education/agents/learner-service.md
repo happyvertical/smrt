@@ -49,9 +49,10 @@ Same-tenant membership alone never grants sibling access.
 Service results are data-only views, with no persistence or database methods.
 Extra request fields are never model patches: a learner cannot set score,
 attempt count, or completion status through this API. Curriculum activation,
-completion transitions, submissions, grading, and dashboard aggregation are
-not supported by this service. The host must implement those future workflows
-at their owning boundaries; direct model writes require trusted authority.
+completion transitions and dashboard aggregation are not supported by this
+base service. SubmissionService extends its owning transaction/auth boundary for
+capture and guardian grading; see [submission contract](submission-service.md).
+Direct model writes require trusted authority.
 
 Catalog visibility and child ownership reuse `CatalogService` on the same
 executor. Learner operations request private-inclusive catalog access, so the

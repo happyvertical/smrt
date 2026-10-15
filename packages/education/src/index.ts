@@ -28,18 +28,24 @@ export {
   CatalogService,
 } from './catalog-service.js';
 export {
+  AttestationCollection,
   AuthoredCourseCollection,
   CourseCollection,
   CourseSectionCollection,
   CurriculumCollection,
   EnrollmentCollection,
   ExerciseCollection,
+  ExternalCompletionCollection,
   ExternalCourseCollection,
+  GradeCollection,
   LearnerCollection,
   LessonAssetCollection,
   LessonCollection,
   LessonProgressCollection,
   ReadingCollection,
+  ScannedSubmissionCollection,
+  SubmissionAssetCollection,
+  SubmissionCollection,
   VideoCollection,
   WorksheetCollection,
 } from './collections.js';
@@ -60,3 +66,27 @@ export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
 export type { LessonAssetRelationship } from './lesson-assets.js';
 export { LessonAsset } from './lesson-assets.js';
 export { EducationCatalogRecipe, EducationLearnerRecipe } from './recipes.js';
+export type {
+  SubmissionAssetClaim,
+  SubmissionPage,
+  SubmissionServiceOptions,
+  SubmissionView,
+} from './submission-service.js';
+export {
+  SubmissionService,
+  SubmissionStorageCleanupError,
+} from './submission-service.js';
+export type {
+  ExternalCompletionReporter,
+  GraderKind,
+  SubmissionAssetRelationship,
+  SubmissionStatus,
+} from './submissions.js';
+export {
+  Attestation,
+  ExternalCompletion,
+  Grade,
+  ScannedSubmission,
+  Submission,
+  SubmissionAsset,
+} from './submissions.js';

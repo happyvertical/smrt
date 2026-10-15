@@ -19,5 +19,10 @@ relationships require a host decision about their type and effective terms.
 Never expose direct collection writes as learner handlers, reset progress on a
 retry, or treat an unscored nullable decimal as zero.
 
+Submission capture, guardian grading and private PDF packet splitting use
+`SubmissionService`; see [submission contract](agents/submission-service.md).
+Keep asset metadata on the same transaction and compensate only newly planned
+files after rollback; never expose source URIs or accept learner grade patches.
+
 Validation: `pnpm --filter @happyvertical/smrt-education test`,
 `test:postgres`, `typecheck`, and `build`.

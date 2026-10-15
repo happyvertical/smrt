@@ -38,7 +38,10 @@ export type LearnerAuthorizer = (
     action:
       | 'education.learner.read'
       | 'education.learner.plan'
-      | 'education.learner.start';
+      | 'education.learner.start'
+      | 'education.learner.submit'
+      | 'education.learner.grade'
+      | 'education.learner.packet';
     own: boolean;
     relationshipTypeId?: string;
   },
@@ -130,31 +133,29 @@ export class LearnerService {
   private writeTail: Promise<void> = Promise.resolve();
   private postgres: boolean;
   constructor(
-    private readonly db: DatabaseInterface,
-    private readonly authorize: LearnerAuthorizer,
-    private readonly authorizeCatalog: CatalogAuthorizer,
+    protected readonly db: DatabaseInterface,
+    protected readonly authorize: LearnerAuthorizer,
+    protected readonly authorizeCatalog: CatalogAuthorizer,
   ) {
     this.postgres = isPostgresDatabase(db);
   }
 
   /** Compose planning/start operations atomically using the callback's service. */
   async withTransaction<T>(
-    operation: (service: LearnerService) => Promise<T>,
+    operation: (service: this) => Promise<T>,
   ): Promise<T> {
     if (this.transactionState) {
       if (this.transactionState !== 'active')
         throw new Error('Learner transaction scope is closed');
       return operation(this);
     }
+    let bound: this | undefined;
     return withEmbeddedWriteTransaction(
       this.db,
       isEmbeddedDatabase(this.db),
       async (db) => {
-        const service = new LearnerService(
-          db,
-          this.authorize,
-          this.authorizeCatalog,
-        );
+        const service = this.createTransactionService(db);
+        bound = service;
         service.transactionState = 'active';
         service.postgres = this.postgres;
         try {
@@ -176,14 +177,30 @@ export class LearnerService {
           service.transactionState = 'closed';
         }
       },
-    );
+    ).catch(async (error: unknown) => {
+      await bound?.rollbackResources(error, this.db);
+      throw error;
+    });
   }
+
+  /** Internal subclass hook: preserve the concrete owning service in a transaction. */
+  protected createTransactionService(db: DatabaseInterface): this {
+    return new LearnerService(
+      db,
+      this.authorize,
+      this.authorizeCatalog,
+    ) as this;
+  }
+
+  /** Internal compensation hook, invoked after in-flight work drains on abort. */
+  protected async rollbackResources(
+    _cause: unknown,
+    _rootDb: DatabaseInterface,
+  ): Promise<void> {}
 
   // Concurrent calls on one connection must observe earlier writes in that same
   // transaction. Cross-transaction arbitration still uses database row locks.
-  private mutate<T>(
-    operation: (service: LearnerService) => Promise<T>,
-  ): Promise<T> {
+  protected mutate<T>(operation: (service: this) => Promise<T>): Promise<T> {
     if (!this.transactionState) return this.withTransaction(operation);
     if (this.transactionState !== 'active')
       return Promise.reject(new Error('Learner transaction scope is closed'));
@@ -211,7 +228,7 @@ export class LearnerService {
     return result;
   }
 
-  private async requireActor(
+  protected async requireActor(
     request: LearnerRequest,
     action: Parameters<LearnerAuthorizer>[0]['action'],
   ): Promise<Learner> {
@@ -275,7 +292,14 @@ export class LearnerService {
       relationshipTypeId = String(relationship.type_id);
     }
     // A learner cannot turn their own grant into a planning/guardian capability.
-    if (action === 'education.learner.plan' && own)
+    if (
+      own &&
+      [
+        'education.learner.plan',
+        'education.learner.grade',
+        'education.learner.packet',
+      ].includes(action)
+    )
       throw new LearnerAuthorizationError();
     if (
       (await this.authorize({
@@ -322,7 +346,7 @@ export class LearnerService {
     });
   }
 
-  private async catalog(request: LearnerRequest, courseId: string) {
+  protected async catalog(request: LearnerRequest, courseId: string) {
     const service = new CatalogService(
       await CourseCollection.create({ db: this.db }),
       await CourseSectionCollection.create({ db: this.db }),
@@ -342,7 +366,7 @@ export class LearnerService {
     return projection;
   }
 
-  private async lock(
+  protected async lock(
     table: 'curricula' | 'enrollments',
     id: string,
     tenant: string,
@@ -401,7 +425,7 @@ export class LearnerService {
     });
   }
 
-  private async requireEnrollment(
+  protected async requireEnrollment(
     request: LearnerRequest & { enrollmentId: string },
     action: Parameters<LearnerAuthorizer>[0]['action'],
   ): Promise<Enrollment> {
