@@ -1,6 +1,6 @@
 <script lang="ts">
 import { CurrencyDisplay } from '@happyvertical/smrt-ui';
-import { Input, Select } from '@happyvertical/smrt-ui/forms';
+import { Form, Input, Select } from '@happyvertical/smrt-ui/forms';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { HTMLFormAttributes } from 'svelte/elements';
 import {
@@ -10,15 +10,25 @@ import {
 } from '../invoices/money-editor.js';
 
 export interface Props {
+  /** Native form action owned by the caller's invoice route. */
   action: string;
+  /** Native HTTP method retained for progressive enhancement. */
   method?: 'post' | 'get';
+  /** Typed v2 money draft, tax-code choices, and stored issued snapshot. */
   money: MoneyEditorProps;
+  /** Presentation capability; the server remains the authority for writes. */
   canEdit?: boolean;
+  /** Caller transport state that disables edits and the save submitter. */
   pending?: boolean;
+  /** Caller-owned request identity and route fields submitted unchanged. */
   hiddenFields?: readonly { name: string; value: string }[];
+  /** Native submitter field name expected by the caller. */
   intentField?: string;
+  /** Submitter value that requests a draft save. */
   saveIntent?: string;
+  /** Caller-visible label for the save submitter. */
   saveLabel?: string;
+  /** Optional native form enhancement; omitted submissions stay native. */
   onsubmit?: HTMLFormAttributes['onsubmit'];
 }
 
@@ -195,7 +205,7 @@ function changeMode(event: Event) {
       {#if money.partyTaxId}{money.partyTaxId}{/if}
     </p>
   {/if}
-  <form {action} {method} {onsubmit} aria-busy={pending}>
+  <Form {action} {method} preventDefault={false} stagedReview={false} {onsubmit} aria-busy={pending}>
     {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} interaction={false} />{/each}
     <fieldset disabled={!editable || pending}>
       <label>
@@ -233,7 +243,7 @@ function changeMode(event: Event) {
       {/each}
     </fieldset>
     {#if editable}<Button type="submit" name={intentField} value={saveIntent} disabled={pending}>{saveLabel}</Button>{/if}
-  </form>
+  </Form>
   {#if !totals}
     <p role="alert">{calculation?.valid || frozen ? 'Stored totals are required for a frozen document.' : calculation?.message}</p>
   {:else}
@@ -258,7 +268,7 @@ function changeMode(event: Event) {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-  .money-editor, form, fieldset, .money-line { display: grid; gap: var(--smrt-spacing-3); min-width: 0; }
+  .money-editor, :global(.form), fieldset, .money-line { display: grid; gap: var(--smrt-spacing-3); min-width: 0; }
   .money-editor { max-width: 48rem; overflow-wrap: anywhere; }
   .summary { display: grid; gap: var(--smrt-spacing-2); }
   .summary > div { display: flex; justify-content: space-between; gap: var(--smrt-spacing-4); }

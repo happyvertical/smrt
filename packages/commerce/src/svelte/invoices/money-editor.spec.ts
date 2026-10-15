@@ -130,6 +130,9 @@ describe('v2 money editor adapter', () => {
     }).body;
     expect(body).toContain('Frozen · SENT');
     expect(body).toContain('data-smrt-component="MoneyInvoiceEditor"');
+    expect(body).toContain('data-smrt-component="Form"');
+    expect(body).toContain('action="/invoices"');
+    expect(body).toContain('method="post"');
     expect(body).toContain('GST/HST No. 123456789 RT0001');
     expect(body).toContain('Includes GST 5% of');
     expect(body.match(/Includes GST 5% of/g)).toHaveLength(1);
