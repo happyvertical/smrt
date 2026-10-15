@@ -269,7 +269,7 @@ and are unchanged.
 ## Attendance
 
 The `@happyvertical/smrt-timesheets/attendance` subpath adds `AttendancePunch`,
-`AttendanceBreak`, and `AttendanceService`. Apply migrations for the new tables
+`AttendanceBreak`, `AttendanceSegment`, and `AttendanceService`. Apply migrations for the new tables
 before enabling the module. Existing entry and snapshot tables are unchanged.
 Attendance supports SQLite and PostgreSQL. DuckDB cannot enforce the required
 `ON UPDATE CASCADE` foreign-key contract used by attendance and existing entry
@@ -288,7 +288,7 @@ reads without replacing the models or changing their schema:
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import '@happyvertical/smrt-timesheets/attendance';
 
-for (const model of ['AttendancePunch', 'AttendanceBreak']) {
+for (const model of ['AttendancePunch', 'AttendanceBreak', 'AttendanceSegment']) {
   ObjectRegistry.registerOverride(`@happyvertical/smrt-timesheets:${model}`, {
     api: false, cli: false, mcp: false,
   });
@@ -321,6 +321,49 @@ pattern per punch. Persisted ownership/start and closed intervals are immutable.
 Direct ORM saves serialize against the parent punch and reject a close while a
 break remains open or ends outside the punch.
 
+### Running work segments
+
+A shift is one punch; inside it a person works on a sequence of things. An
+`AttendanceSegment` (table `attendance_segments`) is one running interval of work
+inside a punch, with queryable columns `workRefType`/`workRefId`, an optional
+second reference `taskRefType`/`taskRefId` (for example an operation; both or
+neither), a short `kind` lane label, `description`, `startedAt`/`endedAt`,
+`durationSeconds` and `closedReason` (`stop`, `switch`, `break`, `punchOut`).
+Indexes on `(tenantId, workRefType, workRefId)` and `(tenantId, taskRefType,
+taskRefId)` serve job costing; a unique `(tenantId, punchId, openSlot)` index
+allows one open segment per punch. Segments never overlap each other or a break.
+
+```ts
+await attendance.punchIn(t(8));
+await attendance.startWork(t(8), { workRefType: '@acme:WorkOrder', workRefId: 'WO-1',
+  taskRefType: '@acme:Operation', taskRefId: 'SHEAR', description: 'Shear' });
+await attendance.switchWork(t(10), { workRefType: '@acme:WorkOrder', workRefId: 'WO-2',
+  taskRefType: '@acme:Operation', taskRefId: 'WELD', description: 'Weld' });
+await attendance.startBreak(t(12));                        // closes the segment
+await attendance.endBreak(t(13), { resumeWork: true });    // or attendance.resumeWork(t(13))
+await attendance.punchOut(t(16));                          // closes the segment
+```
+
+`startWork`, `switchWork` (closes the open segment and opens the next at the same
+instant), `stopWork`, `resumeWork` (reopens the work a break interrupted),
+`currentWork()` and `segments(punchId)` are the service surface. `startBreak`,
+`punchOut`, `autoClose` and replayed taps close the open segment. Closed segments
+are immutable; ownership, references and start are immutable always. Closing a
+punch with an open segment, or a segment outside the punch, is refused.
+
+Segments are attendance evidence, not service time entries: they do not create
+`ServiceTimeEntry` rows and `punchOut(at, work?)` is unchanged (one draft entry
+for the whole punch; `taskRef*` and `kind` ride in its `metadata`). A consumer that
+costs jobs from segments should not also cost the punch-level entry. Rollups
+still deduplicate `serviceTimeEntryId`.
+
+To compose segment work with other attendance mutations (corrections, custom
+replay actions) atomically, use `attendance.withTransaction(async (tx) => ...)`
+and the exported helpers `openSegment`, `listSegments`, `beginSegment`,
+`replaceSegment`, `endSegment`, `continueSegment` and `closeOpenSegment`, which
+take the `AttendanceContext` (`tx.punches`, `tx.breaks`, `tx.segments`, `tx.db`)
+and an open punch.
+
 A work reference is optional: attendance alone is not billable evidence. Passing
 one on close, or calling `linkServiceTimeEntry(punch.id, work)` later, creates
 one draft `ServiceTimeEntry` atomically and records `serviceTimeEntryId` on the
@@ -336,8 +379,9 @@ or when already closed. If later committed attendance would be truncated it
 refuses the operation for manual review. A scheduler calls this per authorized
 actor; the package does not choose overtime, payroll, or shop-time-zone rules.
 
-`replay(taps)` accepts `{ clientId, action, at, paid?, work? }`, where `action` is
-`punchIn`, `punchOut`, `startBreak`, or `endBreak`. It sorts each batch by device
+`replay(taps, options?)` accepts `{ clientId, action, at, paid?, work? }`, where `action` is
+`punchIn`, `punchOut`, `startBreak`, `endBreak`, or a work action (`startWork`,
+`switchWork` (both require `work`), `stopWork`, `resumeWork`). It sorts each batch by device
 time, then client id. Client ids are durable and scoped to tenant/profile.
 Successful taps set `recordedOffline` and `reviewRequired`. The conflict policy
 is **committed attendance wins**: an event predating committed activity, or
@@ -348,6 +392,93 @@ be retried. Earlier committed taps in the batch remain committed. Device clocks
 are treated as supplied evidence, not server authentication; consumers should
 apply device drift policy before replay. Replay receipts must be retained for as
 long as clients can retry their ids.
+
+Work actions replay under the same client id and in the same transaction as punch
+and break changes; the outcome carries `segmentId`. Replay options:
+
+```ts
+await attendance.replay(taps, {
+  // Choose each tap's effective time. Called once per tap without a receipt.
+  resolveAt: ({ tap, deviceAt, serverNow, waitedMs, actor }) =>
+    waitedMs <= 12 * 3600_000
+      ? { at: deviceAt, reviewRequired: false }
+      : { at: serverNow, reviewRequired: true },
+  // Optionally name the stored reason of a refused tap.
+  refusal: (tap, error) => ({ code: 'device_busy', message: 'Finish current task first' }),
+});
+```
+
+The receipt hashes the tap as sent, so a retry with the same `clientId` still
+matches even though the stored time differs; the outcome then has `resolvedAt`.
+Punches are always flagged `reviewRequired`; `reviewRequired: true` from the
+resolver also flags the resulting work segment (`AttendanceSegment.reviewRequired`,
+a new column). A refused outcome stores `{ error, code }`: `code` defaults to the
+`AttendanceConflict.code` (`predates_committed`, `punch_open`, `no_open_punch`,
+`break_open`, `no_open_break`, `during_break`, `work_open`, `no_open_work`,
+`no_resumable_work`, or `conflict`), so a device screen can say why. Resolved times
+that break chronology are refused like any other tap.
+
+### Correcting closed attendance
+
+Closed punches, breaks and segments are immutable to every direct write.
+`AttendanceCorrectionService` is the one sanctioned path around that, and it
+leaves a paper trail. Construct it with the **correcting** person as `actor`;
+each request names the `subjectProfileId` whose time it is. As with
+`AttendanceService`, your application authorizes the actor (and decides whether
+they may correct this subject) first.
+
+```ts
+import { AttendanceCorrectionService } from '@happyvertical/smrt-timesheets/attendance';
+import { confirmedTimecardGuard } from '@happyvertical/smrt-timesheets/rollup';
+
+const fix = new AttendanceCorrectionService(
+  db,
+  { tenantId, profileId: foremanId },
+  { guard: confirmedTimecardGuard }, // optional, see below
+);
+const base = { subjectProfileId: welderId, reason: 'forgot to clock out' };
+
+await fix.correctPunch({ ...base, punchId, endedAt: new Date('2026-10-01T15:30:00Z'),
+  acknowledgementRequired: true });
+await fix.addPunch({ ...base, reason: 'missed punch', startedAt, endedAt });
+await fix.saveBreak({ ...base, punchId, startedAt, endedAt, paid: false }); // add
+await fix.saveBreak({ ...base, punchId, breakId, endedAt });                // change
+await fix.removeBreak({ ...base, breakId });
+await fix.saveSegment({ ...base, punchId, startedAt, endedAt, work });      // add
+await fix.saveSegment({ ...base, punchId, segmentId, endedAt });            // change
+await fix.removeSegment({ ...base, segmentId });
+
+// the welder, constructing the service as themselves:
+await new AttendanceCorrectionService(db, { tenantId, profileId: welderId })
+  .acknowledge(correctionId);
+```
+
+Every method runs in one transaction serialized with the subject's own taps. It
+validates the resulting layout (everything inside its punch, no overlapping
+breaks, segments or other punches, no segment across a break), recomputes
+`durationSeconds` and `unpaidBreakSeconds`, and appends an `AttendanceCorrection`
+row (`attendance_corrections`: `kind`, `subjectProfileId`, `actorProfileId`,
+`punchId`, `targetId`, `beforeState`/`afterState` JSON, a required non-blank
+`reason`, `acknowledgementRequired`, `acknowledgedAt`/`acknowledgedByProfileId`).
+Rows are append-only: the only later change is the subject's single
+`acknowledge()`, and `listForPunch(punchId)` / `pendingAcknowledgements()` read
+the ledger. The ledger has no generated operations, and every ledger,
+closed-break and closed-segment write (insert, acknowledge, delete) is
+service-only: a generic `save()`, `delete()` or collection `create()` is refused. Notes:
+
+- Only **closed** punches are corrected; an open one is `AttendanceService`'s.
+  Moving a punch edge past a break or segment is refused: correct those first.
+- `correctPunch` clears `reviewRequired` (a person reviewed it). A linked
+  *draft* `ServiceTimeEntry` is kept in step; a submitted or approved one
+  refuses the correction until it is corrected with `ServiceEvidenceService`.
+- **Confirmed timecards.** A confirmed `PeriodTimecard` never changes, so
+  correcting its sources would leave card and attendance disagreeing for good.
+  Pass `confirmedTimecardGuard` (from `./rollup`) and a correction overlapping a
+  confirmed card is refused before any write; reopen the card first (that
+  lifecycle is happyvertical/smrt#3950, not part of this service), correct, then
+  `rollup()` again. Any other lock can be supplied as `guard`.
+- Closed `AttendanceBreak`/`AttendanceSegment` rows can no longer be deleted
+  directly; `removeBreak`/`removeSegment` are the path.
 
 ## Period timecards
 
