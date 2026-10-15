@@ -13,6 +13,8 @@ export interface Props {
   page: MaterializedReportPage;
   locale?: string;
   onDrilldown?: MaterializedReportDrilldown;
+  /** The application route owns URL navigation for a changed server page. */
+  onPageChange?: (page: number) => void | Promise<void>;
   caption?: string;
 }
 
@@ -20,6 +22,7 @@ let {
   page,
   locale = 'en',
   onDrilldown,
+  onPageChange,
   caption = 'Materialized report',
 }: Props = $props();
 
@@ -64,10 +67,7 @@ function formattedValue(
 
 async function drilldown(id: unknown, columnId: string): Promise<void> {
   if (typeof id !== 'string' || !id || !onDrilldown) return;
-  if (
-    !page.descriptor.dataTable.columns.some((column) => column.id === columnId)
-  )
-    return;
+  if (!page.drilldownColumnIds?.includes(columnId)) return;
   await onDrilldown({ id, columnId });
 }
 </script>
@@ -77,7 +77,7 @@ async function drilldown(id: unknown, columnId: string): Promise<void> {
   row: Record<string, unknown>;
   value: unknown;
 })}
-  {#if onDrilldown}
+  {#if onDrilldown && page.drilldownColumnIds?.includes(column.id)}
     <Button
       variant="ghost"
       aria-label={`Inspect ${column.label}`}
@@ -98,6 +98,7 @@ async function drilldown(id: unknown, columnId: string): Promise<void> {
     page={Math.floor(page.offset / page.limit) + 1}
     pageSize={page.limit}
     {caption}
+    {onPageChange}
     {cell}
   />
 </div>

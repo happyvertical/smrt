@@ -54,6 +54,7 @@ describe('saved report screens', () => {
           },
         },
         rows: [{ id: 'cad', currency: 'CAD', taxMinor: 12345 }],
+        drilldownColumnIds: ['tax_minor'],
         totalRows: 1,
         offset: 0,
         limit: 25,

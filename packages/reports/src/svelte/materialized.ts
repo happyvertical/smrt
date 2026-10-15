@@ -7,6 +7,8 @@ export interface MaterializedReportPage {
   totalRows: number;
   offset: number;
   limit: number;
+  /** Closed visible columns that the host permits for source drilldown. */
+  drilldownColumnIds?: readonly string[];
 }
 
 /** A cell identity only; the authenticated host resolves tenant and report scope. */
