@@ -1010,6 +1010,9 @@ importers:
       '@happyvertical/smrt-subscriptions':
         specifier: workspace:*
         version: link:../subscriptions
+      '@happyvertical/smrt-svelte':
+        specifier: workspace:*
+        version: link:../smrt-svelte
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy

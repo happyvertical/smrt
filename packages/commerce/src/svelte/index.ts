@@ -31,6 +31,7 @@ import InvoiceActions from './components/InvoiceActions.svelte';
 import InvoiceCard from './components/InvoiceCard.svelte';
 import InvoiceHeader from './components/InvoiceHeader.svelte';
 import InvoiceLineItems from './components/InvoiceLineItems.svelte';
+import type InvoiceRecordScreen from './components/InvoiceRecordScreen.svelte';
 import InvoiceTotals from './components/InvoiceTotals.svelte';
 import PartyContactFields from './components/PartyContactFields.svelte';
 import UnbilledItems from './components/UnbilledItems.svelte';
@@ -59,6 +60,10 @@ export type InvoiceHeaderProps = ComponentProps<typeof InvoiceHeader>;
 export { default as InvoiceHeader } from './components/InvoiceHeader.svelte';
 export type InvoiceLineItemsProps = ComponentProps<typeof InvoiceLineItems>;
 export { default as InvoiceLineItems } from './components/InvoiceLineItems.svelte';
+export type InvoiceRecordScreenProps = ComponentProps<
+  typeof InvoiceRecordScreen
+>;
+export { default as InvoiceRecordScreen } from './components/InvoiceRecordScreen.svelte';
 export type InvoiceTotalsProps = ComponentProps<typeof InvoiceTotals>;
 export { default as InvoiceTotals } from './components/InvoiceTotals.svelte';
 export type UnbilledItemsProps = ComponentProps<typeof UnbilledItems>;

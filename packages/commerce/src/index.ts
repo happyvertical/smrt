@@ -129,7 +129,6 @@ export {
   type FrozenCreditSourceLine,
   type IssuedCreditConsumption,
 } from './credit-allocation.js';
-// Collections
 export {
   type GetInvoiceMoneyFactsInput,
   getInvoiceMoneyFacts,
@@ -157,6 +156,16 @@ export {
   type InvoiceMcpGetResult,
   serializeInvoiceMcpGet,
 } from './invoice-mcp.js';
+// Collections
+export {
+  type InvoiceRecordCreditNote,
+  type InvoiceRecordScreenData,
+  type InvoiceRecordStoredTotals,
+  type InvoiceRecordTaxComponent,
+  invoiceRecordStoredTotals,
+  type LoadInvoiceRecordScreenDataInput,
+  loadInvoiceRecordScreenData,
+} from './invoice-record-screen.js';
 export {
   type CommerceLineAmountDocumentReport,
   type CommerceLineAmountReasonCode,

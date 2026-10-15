@@ -65,6 +65,24 @@ and `DocumentTax` rows without recalculation. Both facades require an active
 `v2` tenant and fail closed while migration is in progress, so legacy or
 partially migrated amounts are never presented as money-v2 facts.
 
+### Record-screen composition
+
+`loadInvoiceRecordScreenData({ db, tenantId, invoiceId })` is the commerce
+server adapter for a generic invoice record page. A caller must already have
+that exact active tenant; the adapter never switches principals based on its
+argument. It holds the shared v2 money read barrier while it reads the stored
+header, lines, `DocumentTax`, and related credit-note summaries, so a migration
+cannot mix a stale header with a different snapshot of those rows. Its totals
+are a direct projection of persisted minor-unit values and component snapshots;
+it does not resolve a code or recalculate tax.
+
+`InvoiceRecordScreen` from `@happyvertical/smrt-commerce/svelte` composes that
+projection with `RecordScreen.lineItemStoredTotals`, the released generic
+line-items widget contract. A host passes its own generic screen wiring and
+may expose `onCreateCreditNote` only with a server-derived
+`canCreateCreditNote` authorization result. The wrapper hides the action for
+credit-note records and never treats a client callback as authorization.
+
 `InvoiceLineItem.amount` is tax-exclusive net money in `v2`.
 `taxAmount` is separate, while `legacyAmount` is reserved for rollback during
 the compatibility migration. `taxCodeId` and component identity may be null for
