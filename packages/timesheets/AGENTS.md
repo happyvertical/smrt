@@ -31,6 +31,10 @@ while a card is submitted or confirmed. `PeriodRollupService.reopen()` returns
 such a card to `open` and appends a `TimecardReopening` (`timecard_reopenings`,
 append-only, service-only via `rollup/write.ts`); `submit()` is the optional
 open -> submitted step (`requireSubmission` makes it mandatory) (#3950).
+`PeriodRollupOptions.attribution` (`'clip'` default | `'start'`) decides crossing
+sources: `'start'` keeps a punch (breaks and segments included) or bounded entry
+whole in the period containing its start, unclipped, and excludes it from the
+next (`attributeSource` in `rollup/calculation.ts`) (#4028).
 Segment transitions live in `attendance/segments.ts`; compose them with other
 attendance writes via `AttendanceService.withTransaction`. Any new attendance
 table must be added to the `includeObjects` lists in the `*.optional.test.ts`

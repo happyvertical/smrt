@@ -496,6 +496,103 @@ export function rollupSuite(
           ),
       ).toBe(true);
     });
+    describe('start attribution', () => {
+      const monday = Date.UTC(2026, 9, 5);
+      const hourAt = (offset: number) => new Date(monday + offset * 3600_000);
+      const weekly = (): PeriodRulesResolver => ({
+        periodFor: async (when) => {
+          const startsAt = new Date(
+            when.getTime() >= monday ? monday : monday - 7 * 86_400_000,
+          );
+          return {
+            startsAt,
+            endsAt: new Date(startsAt.getTime() + 7 * 86_400_000),
+            timezone: 'UTC',
+            version: 'weekly-v1',
+            rules: {},
+          };
+        },
+        classify: async (_period, sources) => ({
+          regularSeconds: sources.reduce((sum, row) => sum + row.seconds, 0),
+          overtimeSeconds: 0,
+        }),
+      });
+      async function crossing(withBreak: boolean) {
+        const attendance = new AttendanceService(db, actor);
+        await attendance.punchIn(hourAt(-2));
+        if (withBreak) {
+          await attendance.startBreak(hourAt(1));
+          await attendance.endBreak(hourAt(2));
+        }
+        return attendance.punchOut(hourAt(6));
+      }
+      const build = (attribution?: 'clip' | 'start') =>
+        new PeriodRollupService(db, actor, weekly(), {
+          attendance: true,
+          attribution,
+        });
+      const hours = (card: { totalSeconds: number }) =>
+        card.totalSeconds / 3600;
+      it('clips by default and with attribution clip', async () => {
+        await crossing(false);
+        for (const attribution of [undefined, 'clip' as const]) {
+          const rollup = build(attribution);
+          expect(hours(await rollup.rollup(hourAt(-1)))).toBe(2);
+          expect(hours(await rollup.rollup(hourAt(1)))).toBe(6);
+        }
+      });
+      it('attributes a crossing punch wholly to the period it started in', async () => {
+        const punch = await crossing(false);
+        const rollup = build('start');
+        const first = await rollup.rollup(hourAt(-1));
+        const second = await rollup.rollup(hourAt(1));
+        expect(hours(first)).toBe(8);
+        expect(hours(second)).toBe(0);
+        expect(first.getSources().map((source) => source.id)).toEqual([
+          punch.id,
+        ]);
+        expect(second.getSources()).toHaveLength(0);
+      });
+      it('keeps breaks with their punch across the boundary', async () => {
+        await crossing(true);
+        expect(hours(await build('start').rollup(hourAt(-1)))).toBe(7);
+        expect(hours(await build('start').rollup(hourAt(1)))).toBe(0);
+        const clipped = build('clip');
+        expect(hours(await clipped.rollup(hourAt(-1)))).toBe(2);
+        expect(hours(await clipped.rollup(hourAt(1)))).toBe(5);
+      });
+      it('attributes bounded manual evidence by its start', async () => {
+        await entry(8 * 3600, {
+          startedAt: hourAt(-2),
+          endedAt: hourAt(6),
+          approvedAt: hourAt(6),
+        });
+        const rollup = build('start');
+        expect(hours(await rollup.rollup(hourAt(-1)))).toBe(8);
+        expect(hours(await rollup.rollup(hourAt(1)))).toBe(0);
+      });
+      it('leaves a confirmed first period undisturbed by the second rollup', async () => {
+        await crossing(false);
+        const rollup = build('start');
+        const first = await rollup.confirm(
+          (await rollup.rollup(hourAt(-1))).id!,
+        );
+        const second = await rollup.rollup(hourAt(1));
+        expect(hours(second)).toBe(0);
+        const again = await rollup.get(first.id!);
+        expect(again.status).toBe('confirmed');
+        expect(hours(again)).toBe(8);
+        await expect(rollup.rollup(hourAt(-1))).rejects.toThrow('immutable');
+      });
+      it('rejects an unknown attribution', () => {
+        expect(
+          () =>
+            new PeriodRollupService(db, actor, weekly(), {
+              attribution: 'end' as never,
+            }),
+        ).toThrow('Attribution');
+      });
+    });
     it('supports an explicitly resolved 25-hour DST period and supervisor attribution', async () => {
       const start = new Date('2026-11-01T06:00:00Z');
       const end = new Date('2026-11-02T07:00:00Z');
