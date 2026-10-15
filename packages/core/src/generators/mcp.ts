@@ -7,6 +7,10 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { SmrtCollection } from '../collection';
+import {
+  type McpGetSerializer,
+  resolveMcpGetSerializer,
+} from '../mcp-serializer.js';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import {
   buildDefaultListOrderBy,
@@ -63,6 +67,11 @@ import {
   type ToolJsonSchema,
 } from './tool-schema.js';
 
+export {
+  type McpGetSerializer,
+  type McpGetSerializerReference,
+  resolveMcpGetSerializer,
+} from '../mcp-serializer.js';
 export type { ToolEffect } from './custom-action.js';
 export {
   assertMcpJsonSchemaSafety,
@@ -475,10 +484,7 @@ export class MCPGenerator {
   private config: MCPConfig;
   private context: MCPContext;
   private collections = new Map<string, SmrtCollection<SmrtObject>>();
-  private getSerializerModules = new Map<
-    string,
-    Promise<Record<string, unknown>>
-  >();
+  private getSerializers = new Map<string, Promise<McpGetSerializer>>();
 
   constructor(config: MCPConfig = {}, context: MCPContext = {}) {
     this.config = {
@@ -1966,19 +1972,15 @@ export class MCPGenerator {
   ): Promise<unknown> {
     const reference = this.getSerializerReference(objectName);
     if (!reference) return this.toPublicData(item);
-    let modulePromise = this.getSerializerModules.get(reference.importPath);
-    if (!modulePromise) {
-      modulePromise = import(reference.importPath) as Promise<
-        Record<string, unknown>
-      >;
-      this.getSerializerModules.set(reference.importPath, modulePromise);
+    const cacheKey = `${reference.importPath}\u0000${reference.exportName}`;
+    let serializerPromise = this.getSerializers.get(cacheKey);
+    if (!serializerPromise) {
+      serializerPromise = resolveMcpGetSerializer(reference, {
+        parentUrl: import.meta.url,
+      });
+      this.getSerializers.set(cacheKey, serializerPromise);
     }
-    const serializer = (await modulePromise)[reference.exportName];
-    if (typeof serializer !== 'function') {
-      throw new Error(
-        `MCP get serializer '${reference.exportName}' was not exported by '${reference.importPath}'`,
-      );
-    }
+    const serializer = await serializerPromise;
     const options = this.getPublicJsonOptions();
     return this.toPublicData(
       await serializer(item, options),
