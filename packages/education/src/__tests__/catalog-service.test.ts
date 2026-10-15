@@ -79,3 +79,29 @@ describe('CatalogService', () => {
     expect(scoped).toBe(false);
   });
 });
+
+describe('family copy persistence guard', () => {
+  it('rejects tenant promotion and license relabeling before a write', async () => {
+    const { Course } = await import('../catalog.js');
+    const course = new Course({
+      id: 'course-1',
+      tenantId: 'group-a',
+      licenseKind: 'open-license',
+    });
+    Object.defineProperty(course, 'db', {
+      value: {
+        get: async () => ({
+          tenantId: 'family-a',
+          licenseKind: 'personal-use-copy',
+        }),
+      },
+    });
+    await expect(course.save()).rejects.toThrow(
+      'cannot change tenant or license kind',
+    );
+    course.tenantId = 'family-a';
+    await expect(course.save()).rejects.toThrow(
+      'cannot change tenant or license kind',
+    );
+  });
+});

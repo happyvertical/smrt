@@ -27,6 +27,19 @@ function applyModelOptions(
   }
 }
 
+async function requireParentTenant(
+  child: SmrtObject & { tenantId: string | null },
+  table: string,
+  parentId: string,
+): Promise<void> {
+  const parent = await child.db.get(table, { id: parentId });
+  if (!parent) throw new Error(`education parent ${parentId} does not exist`);
+  const row = parent as Record<string, unknown>;
+  const parentTenant = (row.tenantId ?? row.tenant_id ?? null) as string | null;
+  if (parentTenant !== child.tenantId)
+    throw new Error('education children must retain the course tenant');
+}
+
 @TenantScoped({ mode: 'optional' })
 @smrt({ tableStrategy: 'sti', ...closed })
 export class Course extends SmrtObject {
@@ -97,6 +110,10 @@ export class CourseSection extends SmrtObject {
     super(options);
     applyModelOptions(this as unknown as Record<string, unknown>, options);
   }
+  override async save(): Promise<this> {
+    await requireParentTenant(this, 'courses', this.courseId);
+    return await super.save();
+  }
 }
 
 @TenantScoped({ mode: 'optional' })
@@ -116,6 +133,10 @@ export class Lesson extends SmrtObject {
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     applyModelOptions(this as unknown as Record<string, unknown>, options);
+  }
+  override async save(): Promise<this> {
+    await requireParentTenant(this, 'course_sections', this.sectionId);
+    return await super.save();
   }
 }
 
