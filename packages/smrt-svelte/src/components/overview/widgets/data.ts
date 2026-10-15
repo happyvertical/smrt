@@ -143,6 +143,8 @@ export interface LineItemsWidgetData {
     discount?: number | null;
     tax?: number | null;
     total?: number | null;
+    /** Present on a document-money record: its discount is in the lines. */
+    lineAmountType?: 'exclusive' | 'inclusive' | 'none' | null;
   };
   /** Frozen document-money snapshot supplied by a domain host. */
   storedTotals?: {

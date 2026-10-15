@@ -2,13 +2,29 @@
  * The totals block of a document's line items (#3718 record page), pure and
  * Node-tested. The record's own subtotal / discount / tax / total are
  * authoritative and shown as they are; a missing one is computed from the
- * lines (subtotal = sum of line amounts, total = subtotal - discount + tax).
- * Lines that add up to the recorded total are tax-inclusive and agree.
- * When the record's figures disagree with the lines, the block flags it
- * ("Lines add up to $X") instead of silently overriding either side.
+ * lines. When the record's figures disagree with the lines, the block flags
+ * it ("Lines add up to $X") instead of silently overriding either side.
+ *
+ * How a missing figure is computed depends on what the record exposes
+ * (#4010):
+ *
+ * - **Document money** — the record carries a `lineAmountType` of
+ *   `exclusive`, `inclusive` or `none` (smrt-commerce v2 Invoice / Contract).
+ *   Line amounts are net of discount (gross, tax included, when
+ *   `inclusive`), so the discount is already inside the lines and the
+ *   subtotal: it is shown as included and never subtracted again.
+ *   subtotal = sum of net line amounts, total = subtotal + tax.
+ * - **Generic** — no `lineAmountType`. The discount is applied on top:
+ *   subtotal = sum of line amounts, total = subtotal - discount + tax.
+ *
+ * In both, lines that add up to the recorded total are tax-inclusive and
+ * agree (legacy commerce lines are qty x price - discount + tax).
  *
  * Money is integer minor units throughout.
  */
+
+/** How a document's line amounts treat tax (smrt-commerce `lineAmountType`). */
+export type LineAmountType = 'exclusive' | 'inclusive' | 'none';
 
 /** The record's own totals fields (`subtotal` / `discount` / `tax` / `total` roles). */
 export interface LineItemsTotals {
@@ -16,6 +32,16 @@ export interface LineItemsTotals {
   discount?: number | null;
   tax?: number | null;
   total?: number | null;
+  /**
+   * The record's `lineAmountType`, when it has one: its presence selects
+   * document-money semantics (the discount is already in the lines).
+   */
+  lineAmountType?: LineAmountType | null;
+}
+
+/** Whether `value` is a `lineAmountType` the totals block understands. */
+export function isLineAmountType(value: unknown): value is LineAmountType {
+  return value === 'exclusive' || value === 'inclusive' || value === 'none';
 }
 
 /** A frozen per-component tax row supplied by a domain host. */
@@ -37,7 +63,7 @@ export interface StoredLineItemsTotals extends LineItemsTotals {
   discount: number;
   tax: number;
   total: number;
-  lineAmountType: 'exclusive' | 'inclusive' | 'none';
+  lineAmountType: LineAmountType;
   roundingScope: 'line' | 'document';
   /** Whether an inclusive taxed document should expose its net subtotal. */
   showNetSubtotal?: boolean;
@@ -54,9 +80,7 @@ export function isStoredLineItemsTotals(
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   return (
-    (record.lineAmountType === 'exclusive' ||
-      record.lineAmountType === 'inclusive' ||
-      record.lineAmountType === 'none') &&
+    isLineAmountType(record.lineAmountType) &&
     (record.roundingScope === 'line' || record.roundingScope === 'document') &&
     Number.isSafeInteger(record.subtotal) &&
     Number.isSafeInteger(record.discount) &&
@@ -108,6 +132,11 @@ export interface LineTotalLine {
   value: number;
   /** Computed here (the record has no such field or value), not read from the record. */
   computed: boolean;
+  /**
+   * Already inside the subtotal (a document-money discount): shown for
+   * information, not subtracted.
+   */
+  included?: boolean;
 }
 
 export interface LineTotalsMismatch {
@@ -154,14 +183,28 @@ export function lineItemTotals(
   record: LineItemsTotals | undefined,
   lineSum: number | null,
 ): LineTotalsResult {
+  const lineAmountType = isLineAmountType(record?.lineAmountType)
+    ? record.lineAmountType
+    : null;
+  return lineAmountType
+    ? documentTotals(record, lineSum, lineAmountType)
+    : genericTotals(record, lineSum);
+}
+
+/** A record without `lineAmountType`: the discount is applied on top of the lines. */
+function genericTotals(
+  record: LineItemsTotals | undefined,
+  lineSum: number | null,
+): LineTotalsResult {
   const subtotalRecorded = money(record?.subtotal);
   const discount = money(record?.discount);
   const tax = money(record?.tax);
   const totalRecorded = money(record?.total);
   const lines: LineTotalLine[] = [];
-  // Line amounts may be tax-inclusive (smrt-commerce's are: qty x price -
-  // discount + tax), so lines adding up to the recorded total agree with the
-  // record, and a missing subtotal is backed out of that total, not the sum.
+  // Line amounts may be tax-inclusive (legacy smrt-commerce's are: qty x
+  // price - discount + tax), so lines adding up to the recorded total agree
+  // with the record, and a missing subtotal is backed out of that total, not
+  // the sum.
   const inclusive =
     lineSum !== null && totalRecorded !== null && lineSum === totalRecorded;
 
@@ -202,6 +245,80 @@ export function lineItemTotals(
       };
     } else if (subtotalRecorded === null && totalRecorded !== null) {
       const fromLines = lineSum - (discount ?? 0) + (tax ?? 0);
+      if (fromLines !== totalRecorded) {
+        mismatch = {
+          field: 'total',
+          recorded: totalRecorded,
+          lines: fromLines,
+        };
+      }
+    }
+  }
+  return { lines, lineSum, mismatch };
+}
+
+/**
+ * A document-money record (it carries `lineAmountType`): line amounts are
+ * net of discount, or gross when `inclusive`; the discount is informational.
+ */
+function documentTotals(
+  record: LineItemsTotals | undefined,
+  lineSum: number | null,
+  lineAmountType: LineAmountType,
+): LineTotalsResult {
+  const subtotalRecorded = money(record?.subtotal);
+  const discount = money(record?.discount);
+  const tax = money(record?.tax);
+  const totalRecorded = money(record?.total);
+  const lines: LineTotalLine[] = [];
+  // Gross lines: the document prices include tax, or the lines add up to the
+  // recorded total (a legacy commerce document read through its v2 columns,
+  // whose lines carry their tax). Either way net = gross - tax.
+  const gross =
+    lineAmountType === 'inclusive' ||
+    (lineSum !== null && totalRecorded !== null && lineSum === totalRecorded);
+  const netFromLines =
+    lineSum === null ? null : gross ? lineSum - (tax ?? 0) : lineSum;
+
+  const subtotal = subtotalRecorded ?? netFromLines;
+  if (subtotal !== null) {
+    lines.push({
+      key: 'subtotal',
+      value: subtotal,
+      computed: subtotalRecorded === null,
+    });
+  }
+  if (discount !== null && discount !== 0) {
+    lines.push({
+      key: 'discount',
+      value: discount,
+      computed: false,
+      included: true,
+    });
+  }
+  if (tax !== null && tax !== 0) {
+    lines.push({ key: 'tax', value: tax, computed: false });
+  }
+  const total =
+    totalRecorded ?? (subtotal === null ? null : subtotal + (tax ?? 0));
+  if (total !== null) {
+    lines.push({
+      key: 'total',
+      value: total,
+      computed: totalRecorded === null,
+    });
+  }
+
+  let mismatch: LineTotalsMismatch | null = null;
+  if (netFromLines !== null) {
+    if (subtotalRecorded !== null && subtotalRecorded !== netFromLines) {
+      mismatch = {
+        field: 'subtotal',
+        recorded: subtotalRecorded,
+        lines: netFromLines,
+      };
+    } else if (subtotalRecorded === null && totalRecorded !== null) {
+      const fromLines = netFromLines + (tax ?? 0);
       if (fromLines !== totalRecorded) {
         mismatch = {
           field: 'total',

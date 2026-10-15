@@ -86,6 +86,153 @@ describe('lineItemTotals', () => {
     });
   });
 
+  describe('document-money records (#4010)', () => {
+    // commerce document-money.test.ts: qty 1 x 100, discount 10, GST 5%,
+    // exclusive. Line amount 90 (net), subtotal 90, discountTotal 10, tax 5,
+    // total 95.
+    const v2 = {
+      subtotal: 90,
+      discount: 10,
+      tax: 5,
+      total: 95,
+      lineAmountType: 'exclusive' as const,
+    };
+
+    it('shows the discount as included and never subtracts it again', () => {
+      expect(lineItemTotals(v2, 90)).toEqual({
+        lines: [
+          { key: 'subtotal', value: 90, computed: false },
+          { key: 'discount', value: 10, computed: false, included: true },
+          { key: 'tax', value: 5, computed: false },
+          { key: 'total', value: 95, computed: false },
+        ],
+        lineSum: 90,
+        mismatch: null,
+      });
+    });
+
+    it('computes a missing subtotal from the net lines without a false flag', () => {
+      const result = lineItemTotals({ ...v2, subtotal: null }, 90);
+      expect(result.mismatch).toBeNull();
+      expect(result.lines[0]).toEqual({
+        key: 'subtotal',
+        value: 90,
+        computed: true,
+      });
+    });
+
+    it('computes a missing total as subtotal + tax', () => {
+      const result = lineItemTotals({ ...v2, total: undefined }, 90);
+      expect(result.mismatch).toBeNull();
+      expect(result.lines.at(-1)).toEqual({
+        key: 'total',
+        value: 95,
+        computed: true,
+      });
+      // Neither subtotal nor total recorded: both from the lines.
+      expect(
+        lineItemTotals({ discount: 10, tax: 5, lineAmountType: 'none' }, 90)
+          .lines,
+      ).toEqual([
+        { key: 'subtotal', value: 90, computed: true },
+        { key: 'discount', value: 10, computed: false, included: true },
+        { key: 'tax', value: 5, computed: false },
+        { key: 'total', value: 95, computed: true },
+      ]);
+    });
+
+    it('backs the net out of gross lines on an inclusive document', () => {
+      // Inclusive: unit price 105 incl. 5% GST, discount 10.5 -> line 95 gross.
+      const inclusive = { tax: 5, discount: 10, lineAmountType: 'inclusive' };
+      const full = lineItemTotals(
+        { ...inclusive, subtotal: 90, total: 95 } as const,
+        95,
+      );
+      expect(full.mismatch).toBeNull();
+      expect(full.lines.map((l) => [l.key, l.value])).toEqual([
+        ['subtotal', 90],
+        ['discount', 10],
+        ['tax', 5],
+        ['total', 95],
+      ]);
+      const noSubtotal = lineItemTotals(
+        { ...inclusive, total: 95 } as const,
+        95,
+      );
+      expect(noSubtotal.mismatch).toBeNull();
+      expect(noSubtotal.lines[0]).toEqual({
+        key: 'subtotal',
+        value: 90,
+        computed: true,
+      });
+      const noTotal = lineItemTotals(
+        { ...inclusive, subtotal: 90 } as const,
+        95,
+      );
+      expect(noTotal.mismatch).toBeNull();
+      expect(noTotal.lines.at(-1)).toEqual({
+        key: 'total',
+        value: 95,
+        computed: true,
+      });
+    });
+
+    it('still flags net lines that disagree with the record', () => {
+      expect(lineItemTotals(v2, 100).mismatch).toEqual({
+        field: 'subtotal',
+        recorded: 90,
+        lines: 100,
+      });
+      expect(lineItemTotals({ ...v2, subtotal: null }, 100).mismatch).toEqual({
+        field: 'total',
+        recorded: 95,
+        lines: 105,
+      });
+    });
+
+    it('accepts legacy tax-inclusive lines read through the v2 columns', () => {
+      // A legacy commerce invoice: lines are net + tax, the default
+      // lineAmountType reads exclusive, discountTotal is 0.
+      const legacy = lineItemTotals(
+        {
+          subtotal: 90,
+          discount: 0,
+          tax: 5,
+          total: 95,
+          lineAmountType: 'exclusive',
+        },
+        95,
+      );
+      expect(legacy.mismatch).toBeNull();
+      expect(legacy.lines.map((l) => [l.key, l.value])).toEqual([
+        ['subtotal', 90],
+        ['tax', 5],
+        ['total', 95],
+      ]);
+    });
+
+    it('keeps generic records on discount-on-top semantics', () => {
+      // No lineAmountType (or an unknown one): unchanged behaviour.
+      for (const lineAmountType of [undefined, null, 'gross']) {
+        expect(
+          lineItemTotals(
+            {
+              discount: 1000,
+              tax: 500,
+              lineAmountType,
+            } as unknown as Parameters<typeof lineItemTotals>[0],
+            10000,
+          ).lines,
+        ).toEqual([
+          { key: 'subtotal', value: 10000, computed: true },
+          { key: 'discount', value: 1000, computed: false },
+          { key: 'tax', value: 500, computed: false },
+          { key: 'total', value: 9500, computed: true },
+        ]);
+      }
+    });
+  });
+
   it('sums minor units exactly and refuses non-integers', () => {
     expect(sumLineAmounts([100, null, '', 250])).toBe(350);
     expect(sumLineAmounts([1.5])).toBeNull();
@@ -324,6 +471,30 @@ describe('LineItemsWidget', () => {
     expect(screen.getByText('Lines add up to $690.00.')).toBeInTheDocument();
     expect(container).toHaveTextContent('The recorded subtotal is $500.00.');
     await expectNoA11yViolations(container);
+  });
+
+  it('shows a document-money discount as included, not subtracted (#4010)', () => {
+    const { container } = render(LineItemsWidget, {
+      props: {
+        ...base,
+        data: {
+          rows,
+          columns,
+          totals: {
+            discount: 1000,
+            tax: 3450,
+            total: 72450,
+            lineAmountType: 'exclusive',
+          },
+        },
+      },
+    });
+    const totals = container.querySelector('dl') as HTMLElement;
+    expect(totals).toHaveTextContent('Subtotal (from the lines) $690.00');
+    expect(totals).toHaveTextContent('Includes discounts of $10.00');
+    expect(totals).not.toHaveTextContent('−$10.00');
+    expect(totals).toHaveTextContent('Total $724.50');
+    expect(container.querySelector('.smrt-line-items__flag')).toBeNull();
   });
 
   it('shows the empty state but keeps the record totals', () => {

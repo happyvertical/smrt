@@ -293,9 +293,16 @@ parent-filter vocabulary (`model`, `field`, `filter: 'parent'`, `sort`,
   in `sort` order, then the totals block
   (`lineItemTotals`, pure). The record's own subtotal / discount / tax /
   total are authoritative and shown as they are; one it lacks is computed
-  from the lines (subtotal = sum of the line amounts, total = subtotal -
-  discount + tax) and marked "(from the lines)"; discount and tax show when
-  present and non-zero. When the record's subtotal (or, without one, its
+  from the lines and marked "(from the lines)"; discount and tax show when
+  present and non-zero. How it computes depends on the record (#4010): one
+  carrying a valid `lineAmountType` (`exclusive` / `inclusive` / `none`,
+  which `recordTotals` reads when the view shows it) has document-money
+  lines — net of discount, gross when `inclusive` (net = gross - tax) — so
+  subtotal = sum of the net lines, total = subtotal + tax, and the discount
+  is shown as "Includes discounts of" and never subtracted again. Any other
+  record keeps discount on top: subtotal = sum of the line amounts, total =
+  subtotal - discount + tax. In both, lines adding up to the recorded total
+  are treated as tax-inclusive. When the record's subtotal (or, without one, its
   total) disagrees with the lines, a visible flag says "Lines add up to $X."
   beside the recorded figure — never a silent override. A partial page of
   lines is not compared.
