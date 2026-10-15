@@ -1,5 +1,6 @@
 import { SmrtRecipe } from '@happyvertical/smrt-core';
 import { Course, CourseSection, Lesson } from './catalog.js';
+import { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
 import { LessonAsset } from './lesson-assets.js';
 
 export class EducationCatalogRecipe extends SmrtRecipe {
@@ -24,6 +25,33 @@ export class EducationCatalogRecipe extends SmrtRecipe {
       icon: 'folder',
       description: 'Courses available to this family.',
       noun: 'course',
+    },
+  ];
+}
+
+/** Metadata for host composition; never grants generated CRUD authority. */
+export class EducationLearnerRecipe extends SmrtRecipe {
+  static id = 'education.learner';
+  static help = './education-learner.recipe.md';
+  static label = 'Learners';
+  static summary =
+    'Plan learner curricula and retain enrollment-scoped progress.';
+  static synonyms = ['learners', 'enrollments', 'learning progress'];
+  static section = {
+    id: 'education',
+    label: 'Education',
+    icon: 'folder',
+    description: 'Courses and lessons for learning.',
+  };
+  static models = [Learner, Curriculum, Enrollment, LessonProgress];
+  static runtime = 'both' as const;
+  static nav = [
+    {
+      label: 'Learners',
+      model: Learner,
+      icon: 'users',
+      description: 'Authorized learners in this family.',
+      noun: 'learner',
     },
   ];
 }

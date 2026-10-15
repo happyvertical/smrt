@@ -1314,6 +1314,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-profiles':
+        specifier: workspace:*
+        version: link:../profiles
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy

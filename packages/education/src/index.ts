@@ -31,14 +31,32 @@ export {
   AuthoredCourseCollection,
   CourseCollection,
   CourseSectionCollection,
+  CurriculumCollection,
+  EnrollmentCollection,
   ExerciseCollection,
   ExternalCourseCollection,
+  LearnerCollection,
   LessonAssetCollection,
   LessonCollection,
+  LessonProgressCollection,
   ReadingCollection,
   VideoCollection,
   WorksheetCollection,
 } from './collections.js';
+export type {
+  CurriculumView,
+  EnrollmentView,
+  LearnerAuthorizer,
+  LearnerRequest,
+  LearnerView,
+  LessonProgressView,
+} from './learner-service.js';
+export {
+  LearnerAuthorizationError,
+  LearnerService,
+} from './learner-service.js';
+export type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
+export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
 export type { LessonAssetRelationship } from './lesson-assets.js';
 export { LessonAsset } from './lesson-assets.js';
-export { EducationCatalogRecipe } from './recipes.js';
+export { EducationCatalogRecipe, EducationLearnerRecipe } from './recipes.js';

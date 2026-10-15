@@ -2,7 +2,8 @@
 
 Preview education catalog models and authorized catalog reads for s-m-r-t.
 The package represents courses, ordered sections, lessons, and lesson-owned files.
-It supplies catalog structure; applications own their learner and guardian flows.
+It supplies catalog structure and authorized learner planning/progress workflows.
+Applications authenticate actors and decide guardian permissions.
 
 ## Install
 
@@ -10,7 +11,7 @@ It supplies catalog structure; applications own their learner and guardian flows
 pnpm add @happyvertical/smrt-education
 ```
 
-Use the package with the core, users, tenancy, and assets packages.
+Use the package with the core, users, profiles, tenancy, and assets packages.
 Apply application migrations before using the catalog collections.
 Runtime catalog operations do not create application schema.
 
@@ -25,6 +26,10 @@ Runtime catalog operations do not create application schema.
 | `Lesson` | Ordered lesson belonging to a section |
 | `Reading`, `Video`, `Worksheet`, `Exercise` | Lesson subtypes |
 | `LessonAsset` | Lesson-owned file join with a relationship such as printable or answer-key |
+| `Learner` | A required User/Person identity and guarded settings in one family tenant |
+| `Curriculum` | A learner plan for a distinct period |
+| `Enrollment` | One course in a curriculum |
+| `LessonProgress` | One lesson in an enrollment, with nullable score and separate history |
 
 Each exported model has a corresponding exported collection.
 Course and lesson subtypes use single-table inheritance.
@@ -68,9 +73,31 @@ Every projected child must have the selected course's exact owning tenant.
 Stored inconsistent section, lesson, and asset links are excluded.
 Generated REST, CLI, MCP, and AI operations are closed for these models.
 
+## Learner workflows
+
+Create `LearnerService` with the application's root database executor and trusted
+learner/catalog authorizers. In the authenticated actor's exact `withTenant`
+context, an authorized guardian can `createCurriculum` and `enroll`; a learner
+can `getLearner`, `startLesson`, and `listProgress` for their own work.
+Guardian access requires a same-tenant directed `ProfileRelationship` plus the
+host's permission decision. Sibling membership does not grant access.
+
+Repeated starts preserve the existing progress, including attempts and scores.
+A new curriculum/year creates a distinct enrollment and fresh progress history.
+An unscored lesson has `bestScore: null`, distinct from zero. The service does
+not accept score or completion patches; grading is a separate future workflow.
+Use `withTransaction` and its callback service to compose atomic operations.
+Results are plain data views, so no transaction-bound model handle escapes.
+
+The [learner integration contract](agents/learner-service.md) describes required
+identity provisioning, catalog permissions, supported workflows and limitations.
+The [executable learner workflows](src/__tests__/learner-workflows.ts) test this
+integration on both SQLite and PostgreSQL.
+
 ## Recipes
 
-`EducationCatalogRecipe` declares the `education.catalog` recipe.
+`EducationCatalogRecipe` declares `education.catalog`; `EducationLearnerRecipe`
+declares `education.learner`.
 Its course navigation and model declarations support application composition.
 A recipe does not grant permission to expose model CRUD or private material.
 

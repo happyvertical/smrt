@@ -12,5 +12,12 @@ family material. Do not publish them, promote them, or expose them through a
 learner-facing result. `LessonAsset` is the sole owner join for lesson files;
 do not add asset-id fields to lesson subclasses.
 
+Learner objects require exact tenant ownership and close generated surfaces.
+`LearnerService` owns actor/resource authorization and transactional planning and
+start-progress; see [learner contract](agents/learner-service.md). Guardian
+relationships require a host decision about their type and effective terms.
+Never expose direct collection writes as learner handlers, reset progress on a
+retry, or treat an unscored nullable decimal as zero.
+
 Validation: `pnpm --filter @happyvertical/smrt-education test`,
 `test:postgres`, `typecheck`, and `build`.

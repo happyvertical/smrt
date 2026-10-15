@@ -10,6 +10,7 @@ import {
   Video,
   Worksheet,
 } from './catalog.js';
+import { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
 import { LessonAsset } from './lesson-assets.js';
 
 export class CourseCollection extends SmrtCollection<Course> {
@@ -43,4 +44,17 @@ export class LessonAssetCollection extends SmrtJunction<LessonAsset> {
   static readonly _itemClass = LessonAsset;
   protected leftField = 'lessonId';
   protected rightField = 'assetId';
+}
+
+export class LearnerCollection extends SmrtCollection<Learner> {
+  static readonly _itemClass = Learner;
+}
+export class CurriculumCollection extends SmrtCollection<Curriculum> {
+  static readonly _itemClass = Curriculum;
+}
+export class EnrollmentCollection extends SmrtCollection<Enrollment> {
+  static readonly _itemClass = Enrollment;
+}
+export class LessonProgressCollection extends SmrtCollection<LessonProgress> {
+  static readonly _itemClass = LessonProgress;
 }
