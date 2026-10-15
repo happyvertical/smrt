@@ -240,18 +240,21 @@ object.
 
 **Enrollment**. `curriculumId`, `learnerId`, `courseId`, `status`
 (`planned`, `active`, `paused`, `completed`, `dropped`), `startedAt`,
-`completedAt`, `targetMinutesPerWeek = 0`, `sortOrder`. `conflictColumns`
-on `(curriculum_id, course_id)`.
+`completedAt`, `targetMinutesPerWeek = 0`, `sortOrder`. Its logical
+uniqueness is `(curriculum_id, course_id)`; the tenant-owned physical
+`conflictColumns` key is `(tenant_id, curriculum_id, course_id)`.
 
 **LessonProgress**. One row per enrollment and lesson: `learnerId`, `lessonId`,
 `enrollmentId`, `status` (`not_started`, `in_progress`, `submitted`,
 `needs_review`, `complete`, `skipped`), `startedAt`, `completedAt`,
 `timeSpentSeconds = 0`, `attempts = 0`, `bestScore` (optional decimal).
-It is unique by `(enrollmentId, lessonId)`: the learner is derived from and
+Its logical uniqueness is `(enrollmentId, lessonId)`; the tenant-owned physical
+key is `(tenant_id, enrollment_id, lesson_id)`. The learner is derived from and
 validated against the enrollment, and the lesson must belong to the enrollment
-course. A new enrollment in a new curriculum/year begins a new history; it
-never overwrites the old enrollment's progress or attempts. An absent score
-means unscored and remains distinct from score `0`.
+course; owning-parent validation prevents a cross-tenant second valid logical
+row. A new enrollment in a new curriculum/year begins a new history; it never
+overwrites the old enrollment's progress or attempts. An absent score means
+unscored and remains distinct from score `0`.
 
 **Submission** (STI). The evidence. `learnerId`, `lessonId`, `progressId`,
 `submittedAt`, `status` (`captured`, `extracting`, `needs_review`, `graded`,
