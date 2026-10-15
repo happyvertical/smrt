@@ -47,8 +47,10 @@ The Contract branch gets a bounded, hydrated candidate set from
 owner's descendant classifier before joining only those purchase ids to
 `document_taxes` on document id and tenant id. This preserves custom
 `PurchaseContract` descendants without hard-coding contract enums or party
-display names. Contract rows include every non-draft, non-cancelled frozen
-snapshot, including `DECLINED`; their `issueDate`, reference (falling back to
+display names. Contract rows include non-draft, non-cancelled frozen snapshots,
+including `DECLINED`, except `SupplierQuote` and its descendants; exclusion uses
+the hydrated STI subtype rather than the mutable `contractType` scalar. Their
+`issueDate`, reference (falling back to
 the id), and vendor party id are read from the frozen Contract. The query only
 returns stored snapshots and never recalculates tax. A nullable tax-code kind
 becomes an unassigned-source warning; it never becomes out-of-scope by
