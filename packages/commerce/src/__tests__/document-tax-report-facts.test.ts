@@ -6,7 +6,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import '../collections/ContractCollection.js';
+import { ContractCollection } from '../collections/ContractCollection.js';
 import { DocumentTaxCollection } from '../collections/DocumentTaxCollection.js';
 import '../collections/InvoiceLineItemCollection.js';
 import '../collections/PaymentAllocationCollection.js';
@@ -232,6 +232,36 @@ describe('DocumentTax invoice report facts (#3940)', () => {
     expect(facts.map((fact) => fact.documentId)).not.toContain(
       cancelled.contractId,
     );
+  });
+
+  it('retains supplier quote snapshots without recognizing purchase tax until a separate order exists', async () => {
+    const tenantId = 'supplier-quote-report';
+    const quote = await withTenant({ tenantId }, () =>
+      seedReviewedPurchaseContract(db, tenantId, {
+        reference: 'SQ-RECEIVED',
+        metaType: '@happyvertical/smrt-commerce:SupplierQuote',
+      }),
+    );
+    const options = {
+      tenantId,
+      from: new Date('2026-09-01T00:00:00.000Z'),
+      to: new Date('2026-09-30T23:59:59.999Z'),
+    };
+    const taxes = await DocumentTaxCollection.create({ db });
+    await withTenant({ tenantId }, async () => {
+      expect(
+        await taxes.findByDocument(tenantId, 'contract', quote.contractId),
+      ).toHaveLength(2);
+      const contracts = await ContractCollection.create({ db });
+      expect(await contracts.listSnapshotReportContracts(options)).toEqual([]);
+    });
+    expect(await taxes.listReportFacts(options)).toEqual([]);
+    const order = await withTenant({ tenantId }, () =>
+      seedReviewedPurchaseContract(db, tenantId, { reference: 'PO-AWARDED' }),
+    );
+    expect(
+      (await taxes.listReportFacts(options)).map((fact) => fact.documentId),
+    ).toEqual([order.contractId, order.contractId]);
   });
 
   it('marks a stored purchase contract plus linked expense incomplete instead of double recovering ITC', async () => {

@@ -11,7 +11,7 @@ import { ContractStatus } from '../../types/index.js';
 export async function seedReviewedPurchaseContract(
   db: DatabaseInterface,
   tenantId: string,
-  input: { reference: string; status?: ContractStatus } = {
+  input: { reference: string; status?: ContractStatus; metaType?: string } = {
     reference: 'PO-REPORT-1',
   },
 ): Promise<{
@@ -59,7 +59,7 @@ export async function seedReviewedPurchaseContract(
   if (!vendor.id) throw new Error('Expected persisted purchase vendor.');
   const contracts = await ContractCollection.create({ db });
   const contract = await contracts.create({
-    _meta_type: 'PurchaseOrder',
+    _meta_type: input.metaType ?? 'PurchaseOrder',
     vendorId: vendor.id,
     reference: input.reference,
     currency: 'CAD',

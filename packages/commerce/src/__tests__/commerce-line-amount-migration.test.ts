@@ -11,12 +11,13 @@ import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
+import { VendorCollection } from '../collections/VendorCollection.js';
 import {
   migrateCommerceLineAmounts,
   preflightCommerceLineAmounts,
   rollbackCommerceLineAmounts,
 } from '../migrations/commerceLineAmounts.js';
-import { Order } from '../models/Contract.js';
+import { Order, SupplierQuote } from '../models/Contract.js';
 import { MoneyMigrationDocument } from '../models/MoneyMigrationDocument.js';
 import { ContractStatus, InvoiceStatus } from '../types/index.js';
 
@@ -376,6 +377,74 @@ describe('commerce line amount migration (#3933)', () => {
     });
     expect(afterHeader.updated_at).toEqual(beforeHeader.updated_at);
     expect(afterHeader.total_amount).toBe(beforeHeader.total_amount);
+  });
+
+  it('migrates an issued supplier quote as purchases and exactly rolls it back', async () => {
+    const tenantId = '00000000-0000-4000-8000-000000000417';
+    const { contract, line } = await withTenant({ tenantId }, async () => {
+      const vendor = await (await VendorCollection.create({ db })).create({
+        tenantId,
+        name: 'Migration vendor',
+      });
+      const contract = new SupplierQuote({
+        db,
+        tenantId,
+        vendorId: vendor.id,
+        status: ContractStatus.SENT,
+        subtotal: 3_000,
+        taxAmount: 150,
+        totalAmount: 3_150,
+        currency: 'CAD',
+      });
+      await contract.initialize();
+      await contract.save();
+      const line = await (
+        await ContractLineItemCollection.create({ db })
+      ).create({
+        tenantId,
+        contractId: contract.id,
+        description: 'Legacy order line',
+        quantity: 1,
+        unitPrice: 3_000,
+        taxRate: 0.05,
+      });
+      return { contract, line };
+    });
+    const beforeHeader = (
+      await db.query('SELECT * FROM contracts WHERE id = ?', contract.id)
+    ).rows[0];
+    await setNonLegacyDefaults(tenantId);
+    const migration = await migrateCommerceLineAmounts(db, { tenantId });
+    expect(migration.activated).toBe(true);
+    expect(
+      (
+        await db.query(
+          'SELECT amount, tax_amount, legacy_amount FROM contract_line_items WHERE id = ?',
+          line.id,
+        )
+      ).rows[0],
+    ).toMatchObject({ amount: 3_000, tax_amount: 150, legacy_amount: 3_150 });
+    const afterHeader = (
+      await db.query('SELECT * FROM contracts WHERE id = ?', contract.id)
+    ).rows[0];
+    expect(afterHeader).toMatchObject({
+      line_amount_type: 'exclusive',
+      tax_rounding_scope: 'line',
+    });
+    expect(afterHeader.updated_at).toEqual(beforeHeader.updated_at);
+    expect(afterHeader.total_amount).toBe(beforeHeader.total_amount);
+    expect(afterHeader._meta_type).toBe(
+      '@happyvertical/smrt-commerce:SupplierQuote',
+    );
+    expect(afterHeader.money_snapshot_id).toBeTruthy();
+    await rollbackCommerceLineAmounts(db, {
+      tenantId,
+      migrationId: migration.migrationId,
+    });
+    expect(
+      (await db.query('SELECT * FROM contracts WHERE id = ?', contract.id))
+        .rows[0],
+    ).toEqual(beforeHeader);
   });
 
   it('refuses rollback after any post-image change', async () => {

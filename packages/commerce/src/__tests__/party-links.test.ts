@@ -17,6 +17,7 @@ import {
   Order,
   ProductionOrder,
   PurchaseOrder,
+  SupplierQuote,
 } from '../models/Contract.js';
 import { Fulfillment } from '../models/Fulfillment.js';
 import { Invoice } from '../models/Invoice.js';
@@ -60,11 +61,11 @@ describe('Contract party branches', () => {
         !['Cart', 'LicenseSale'].includes(name),
       );
     }
-    for (const name of ['PurchaseOrder', 'ProductionOrder']) {
+    for (const name of ['SupplierQuote', 'PurchaseOrder', 'ProductionOrder']) {
       expect(model(name).fields.vendorId?.type).toBe('foreignKey');
       expect(model(name).fields.customerId).toBeUndefined();
       expect(model(name).fields.vendorId.required).toBe(
-        name === 'PurchaseOrder',
+        name !== 'ProductionOrder',
       );
     }
     for (const name of ['Invoice', 'Payment', 'Fulfillment']) {
@@ -200,6 +201,9 @@ describe('Contract party branches', () => {
     await expect(save(new Estimate({ db: contracts.db }))).rejects.toThrow();
     await expect(
       save(new PurchaseOrder({ db: contracts.db })),
+    ).rejects.toThrow();
+    await expect(
+      save(new SupplierQuote({ db: contracts.db })),
     ).rejects.toThrow();
     await expect(save(new Cart({ db: contracts.db }))).resolves.toBeDefined();
     await expect(

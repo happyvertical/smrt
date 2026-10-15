@@ -54,7 +54,11 @@ const salesTypes = [
   'license_sale',
 ] as const;
 
-const purchaseTypes = ['purchase_order', 'production_order'] as const;
+const purchaseTypes = [
+  'supplier_quote',
+  'purchase_order',
+  'production_order',
+] as const;
 
 const leafTypes: Record<string, string> = {
   Estimate: 'estimate',
@@ -64,6 +68,7 @@ const leafTypes: Record<string, string> = {
   Lease: 'lease',
   Agreement: 'agreement',
   LicenseSale: 'license_sale',
+  SupplierQuote: 'supplier_quote',
   PurchaseOrder: 'purchase_order',
   ProductionOrder: 'production_order',
 };
@@ -104,7 +109,7 @@ export async function preflightCommercePartyLinks(
     'LicenseSale',
   ])})`;
   const purchaseSide = `(contract_type IN (${inSql(purchaseTypes)}) OR ${leafMatches(
-    ['PurchaseOrder', 'ProductionOrder'],
+    ['SupplierQuote', 'PurchaseOrder', 'ProductionOrder'],
   )})`;
   const [
     purchaseRowsWithCustomer,
@@ -133,7 +138,7 @@ export async function preflightCommercePartyLinks(
       ])}))) AND ${missing('customer_id')}`,
     ),
     rows(
-      `(${leafMatches(['PurchaseOrder'])} OR (${fallbackType} AND contract_type = 'purchase_order')) AND ${missing('vendor_id')}`,
+      `(${leafMatches(['SupplierQuote', 'PurchaseOrder'])} OR (${fallbackType} AND contract_type IN ('supplier_quote', 'purchase_order'))) AND ${missing('vendor_id')}`,
     ),
     rows("_meta_type = 'Contract' OR _meta_type LIKE '%:Contract'"),
     rows("_meta_type IS NOT NULL AND _meta_type NOT LIKE '%:%'"),
@@ -213,7 +218,7 @@ export async function preflightCommercePartyLinks(
   const invalidPurchaseReferences = await invalidReferences(
     'expenses',
     'commitment_id',
-    ['PurchaseOrder', 'ProductionOrder'],
+    ['SupplierQuote', 'PurchaseOrder', 'ProductionOrder'],
     'PurchaseContract',
   );
   return {

@@ -16,3 +16,8 @@ are refused with `FROZEN_DOCUMENT`.
 `materializeContractMoneySnapshot` is migration-only. Its caller supplies the
 already transaction-bound migration owner executor; it verifies that owner,
 locks/reloads the Contract, and never starts a runtime transaction.
+
+`SupplierQuote` uses purchase defaults and recoverability, including during
+legacy-to-v2 migration. Non-draft quotes freeze just like other Contracts, but
+quote snapshots (including custom descendants) are excluded from report
+candidates and purchase tax facts. Awarding requires a separate PurchaseOrder.

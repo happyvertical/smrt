@@ -18,7 +18,7 @@ import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { VendorCollection } from '../collections/VendorCollection.js';
-import { PurchaseOrder } from '../models/Contract.js';
+import { PurchaseOrder, SupplierQuote } from '../models/Contract.js';
 import { MoneyValidationError } from '../money.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
@@ -118,14 +118,17 @@ describePostgres('contract money aggregate on PostgreSQL (#3933)', () => {
     });
   });
 
-  it('persists a purchase tax recovery snapshot through the STI branch', async () => {
+  it.each([
+    PurchaseOrder,
+    SupplierQuote,
+  ])('persists %s purchase tax recovery through the STI branch', async (Purchase) => {
     const tenantId = randomUUID();
     await withTenant({ tenantId }, async () => {
       const codeId = await activateV2(tenantId);
       const vendor = await (await VendorCollection.create({ db })).create({
         defaultTaxCodeId: codeId,
       });
-      const purchase = new PurchaseOrder({
+      const purchase = new Purchase({
         db,
         vendorId: vendor.id,
         currency: 'CAD',
