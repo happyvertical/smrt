@@ -68,16 +68,21 @@ export async function resolveMcpGetSerializer(
       if (!isUnresolvedPackage(error, reference.importPath)) throw error;
     }
   }
-  const resolvedImportPath = resolvesFromConsumer(reference.importPath)
-    ? resolveImport(
-        reference.importPath,
-        pathToFileURL(resolve(process.cwd(), 'package.json')).href,
-      )
-    : resolveImport(reference.importPath, options.parentUrl ?? import.meta.url);
-  module ??= (await import(/* @vite-ignore */ resolvedImportPath)) as Record<
-    string,
-    unknown
-  >;
+  if (!module) {
+    const resolvedImportPath = resolvesFromConsumer(reference.importPath)
+      ? resolveImport(
+          reference.importPath,
+          pathToFileURL(resolve(process.cwd(), 'package.json')).href,
+        )
+      : resolveImport(
+          reference.importPath,
+          options.parentUrl ?? import.meta.url,
+        );
+    module = (await import(/* @vite-ignore */ resolvedImportPath)) as Record<
+      string,
+      unknown
+    >;
+  }
   const serializer = module[reference.exportName];
   if (typeof serializer !== 'function') {
     throw new Error(
