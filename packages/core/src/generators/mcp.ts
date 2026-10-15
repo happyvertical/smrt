@@ -1972,11 +1972,12 @@ export class MCPGenerator {
   ): Promise<unknown> {
     const reference = this.getSerializerReference(objectName);
     if (!reference) return this.toPublicData(item);
-    const cacheKey = `${reference.importPath}\u0000${reference.exportName}`;
+    const cacheKey = `${objectName ?? ''}\u0000${reference.importPath}\u0000${reference.exportName}`;
     let serializerPromise = this.getSerializers.get(cacheKey);
     if (!serializerPromise) {
       serializerPromise = resolveMcpGetSerializer(reference, {
         parentUrl: import.meta.url,
+        ownerRegistryKey: objectName,
       });
       this.getSerializers.set(cacheKey, serializerPromise);
     }

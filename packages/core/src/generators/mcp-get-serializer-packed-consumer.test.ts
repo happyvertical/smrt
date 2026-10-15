@@ -41,6 +41,7 @@ interface PackedConsumerModule {
 interface ConsumerReport {
   result: { source: string; title: string; permissions: string[] };
   missingExport: string;
+  sourceFilePath: string;
   coreEntry: string;
   commerceEntry: string;
 }
@@ -104,7 +105,25 @@ describe('MCP get serializer packed consumer (#3937)', () => {
     );
     writeFileSync(
       join(commerceSource, 'dist/index.js'),
-      `export function serializeInvoiceMcpGet(item, options) {
+      `import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+
+export class Invoice extends SmrtObject {}
+Object.defineProperty(Invoice, '__smrtPackage__', {
+  value: '@happyvertical/smrt-commerce',
+});
+smrt({
+  mcp: {
+    include: ['get'],
+    serializers: {
+      get: {
+        importPath: '@happyvertical/smrt-commerce',
+        exportName: 'serializeInvoiceMcpGet',
+      },
+    },
+  },
+})(Invoice);
+
+export function serializeInvoiceMcpGet(item, options) {
   return {
     source: 'commerce',
     title: item.title,
@@ -135,39 +154,69 @@ describe('MCP get serializer packed consumer (#3937)', () => {
       consumer.directory,
     );
 
-    const nestedWorkingDirectory = join(
-      consumer.directory,
-      'apps/example/scripts',
+    const launcherDirectory = join(
+      resolve(consumer.directory, '..'),
+      'launcher',
     );
-    mkdirSync(nestedWorkingDirectory, { recursive: true });
+    mkdirSync(
+      join(launcherDirectory, 'node_modules/@happyvertical/smrt-commerce/dist'),
+      {
+        recursive: true,
+      },
+    );
+    writeFileSync(
+      join(
+        launcherDirectory,
+        'node_modules/@happyvertical/smrt-commerce/package.json',
+      ),
+      JSON.stringify({
+        name: '@happyvertical/smrt-commerce',
+        type: 'module',
+        exports: { '.': { import: './dist/index.js' } },
+      }),
+    );
+    writeFileSync(
+      join(
+        launcherDirectory,
+        'node_modules/@happyvertical/smrt-commerce/dist/index.js',
+      ),
+      `export function serializeInvoiceMcpGet() { return { source: 'wrong-cwd' }; }\n`,
+    );
     const script = join(consumer.directory, 'run.mjs');
     writeFileSync(
       script,
-      `import { resolveMcpGetSerializer } from '@happyvertical/smrt-core/mcp-serializer';
+      `import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { resolveMcpGetSerializer } from '@happyvertical/smrt-core/mcp-serializer';
+import '@happyvertical/smrt-commerce';
+
+const ownerRegistryKey = '@happyvertical/smrt-commerce:Invoice';
+const sourceFilePath = ObjectRegistry.getClass(ownerRegistryKey)?.sourceFilePath;
+if (!sourceFilePath) throw new Error('Installed Invoice did not retain its defining module path');
 
 const serializer = await resolveMcpGetSerializer({
   importPath: '@happyvertical/smrt-commerce',
   exportName: 'serializeInvoiceMcpGet',
-});
+}, { ownerRegistryKey });
 let missingExport = '';
 try {
   await resolveMcpGetSerializer({
     importPath: '@happyvertical/smrt-commerce',
     exportName: 'missingSerializer',
-  });
+  }, { ownerRegistryKey });
 } catch (error) {
   missingExport = error instanceof Error ? error.message : String(error);
 }
 console.log(JSON.stringify({
   result: await serializer({ title: 'legacy invoice' }, { permissions: ['invoices.read'] }),
   missingExport,
+  sourceFilePath,
   coreEntry: import.meta.resolve('@happyvertical/smrt-core/mcp-serializer'),
   commerceEntry: import.meta.resolve('@happyvertical/smrt-commerce'),
 }));
 `,
     );
     result = spawnSync(process.execPath, [script], {
-      cwd: nestedWorkingDirectory,
+      cwd: launcherDirectory,
       encoding: 'utf8',
       maxBuffer: 16 * 1024 * 1024,
       timeout: 90_000,
@@ -179,7 +228,7 @@ console.log(JSON.stringify({
     consumer = undefined;
   });
 
-  it('loads an import-only Commerce serializer from the isolated consumer', () => {
+  it('anchors an import-only Commerce serializer to its installed Invoice module, not cwd', () => {
     const stdout = String(result.stdout);
     const stderr = String(result.stderr);
     expect(result.error, stderr).toBeUndefined();
@@ -192,6 +241,8 @@ console.log(JSON.stringify({
       title: 'legacy invoice',
       permissions: ['invoices.read'],
     });
+    expect(report.sourceFilePath).toContain('/node_modules/.pnpm/');
+    expect(report.sourceFilePath).toContain('/dist/index.js');
     expect(report.missingExport).toBe(
       "MCP get serializer 'missingSerializer' was not exported by '@happyvertical/smrt-commerce'",
     );
