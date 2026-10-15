@@ -190,6 +190,33 @@ describe('lineItemTotals', () => {
       });
     });
 
+    it('treats an unavailable tax as unknown, not zero', () => {
+      // Inclusive, tax hidden by policy: gross lines give no net, so nothing
+      // is compared against the subtotal.
+      const hidden = lineItemTotals(
+        { subtotal: 100, total: 105, lineAmountType: 'inclusive' },
+        105,
+      );
+      expect(hidden.mismatch).toBeNull();
+      expect(hidden.lines.map((l) => [l.key, l.value])).toEqual([
+        ['subtotal', 100],
+        ['total', 105],
+      ]);
+      // No subtotal either: no subtotal is invented from gross lines.
+      expect(
+        lineItemTotals({ total: 105, lineAmountType: 'inclusive' }, 105).lines,
+      ).toEqual([{ key: 'total', value: 105, computed: false }]);
+      // Exclusive, tax hidden: the net subtotal still comes from the lines,
+      // but no total is computed or compared.
+      const exclusive = lineItemTotals({ lineAmountType: 'exclusive' }, 90);
+      expect(exclusive.lines).toEqual([
+        { key: 'subtotal', value: 90, computed: true },
+      ]);
+      expect(
+        lineItemTotals({ total: 95, lineAmountType: 'exclusive' }, 90).mismatch,
+      ).toBeNull();
+    });
+
     it('accepts legacy tax-inclusive lines read through the v2 columns', () => {
       // A legacy commerce invoice: lines are net + tax, the default
       // lineAmountType reads exclusive, discountTotal is 0.

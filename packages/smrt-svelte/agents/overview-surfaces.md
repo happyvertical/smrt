@@ -299,7 +299,10 @@ parent-filter vocabulary (`model`, `field`, `filter: 'parent'`, `sort`,
   which `recordTotals` reads when the view shows it) has document-money
   lines — net of discount, gross when `inclusive` (net = gross - tax) — so
   subtotal = sum of the net lines, total = subtotal + tax, and the discount
-  is shown as "Includes discounts of" and never subtracted again. Any other
+  is shown as "Includes discounts of" and never subtracted again; an
+  unavailable tax (no field, or policy-hidden) is unknown rather than zero,
+  so gross lines then yield no net and no total is computed or compared from
+  the lines. Any other
   record keeps discount on top: subtotal = sum of the line amounts, total =
   subtotal - discount + tax. In both, lines adding up to the recorded total
   are treated as tax-inclusive. When the record's subtotal (or, without one, its

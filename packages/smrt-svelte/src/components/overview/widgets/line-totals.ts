@@ -273,12 +273,19 @@ function documentTotals(
   const lines: LineTotalLine[] = [];
   // Gross lines: the document prices include tax, or the lines add up to the
   // recorded total (a legacy commerce document read through its v2 columns,
-  // whose lines carry their tax). Either way net = gross - tax.
+  // whose lines carry their tax). Either way net = gross - tax. Tax is part
+  // of every figure here, so an unavailable tax (no field, or one the policy
+  // hides) is unknown, never zero: gross lines then give no net, and no
+  // total is computed or compared from the lines.
   const gross =
     lineAmountType === 'inclusive' ||
     (lineSum !== null && totalRecorded !== null && lineSum === totalRecorded);
   const netFromLines =
-    lineSum === null ? null : gross ? lineSum - (tax ?? 0) : lineSum;
+    lineSum === null || (gross && tax === null)
+      ? null
+      : gross
+        ? lineSum - (tax ?? 0)
+        : lineSum;
 
   const subtotal = subtotalRecorded ?? netFromLines;
   if (subtotal !== null) {
@@ -300,7 +307,8 @@ function documentTotals(
     lines.push({ key: 'tax', value: tax, computed: false });
   }
   const total =
-    totalRecorded ?? (subtotal === null ? null : subtotal + (tax ?? 0));
+    totalRecorded ??
+    (subtotal === null || tax === null ? null : subtotal + tax);
   if (total !== null) {
     lines.push({
       key: 'total',
@@ -317,8 +325,12 @@ function documentTotals(
         recorded: subtotalRecorded,
         lines: netFromLines,
       };
-    } else if (subtotalRecorded === null && totalRecorded !== null) {
-      const fromLines = netFromLines + (tax ?? 0);
+    } else if (
+      subtotalRecorded === null &&
+      totalRecorded !== null &&
+      tax !== null
+    ) {
+      const fromLines = netFromLines + tax;
       if (fromLines !== totalRecorded) {
         mismatch = {
           field: 'total',
