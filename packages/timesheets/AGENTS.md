@@ -45,6 +45,16 @@ files.
 through a `ServiceCommercialResolver`), and corrects. `smrt-projects` supplies
 `SubscriptionServiceCommercialResolver` for #1925 pricing.
 
+## Recipe
+
+`src/recipes.ts` declares one `SmrtRecipe`, `timesheets.time-entries`
+(label "Time entries", section `work`), emitted into the built
+`manifest.json` and `smrt-knowledge.json` `recipes`. It shows
+`ServiceTimeEntry` alone, with the generic work reference, evidence, agent
+and approval-trail fields hidden; attendance and rollup models stay out of
+it. Help lives in `src/time-entries.recipe.md` (#3591); keep it and the recipe
+in plain language. See [core recipes](../core/agents/recipes.md).
+
 ## Invariants
 
 - **No domain foreign key on the base.** Work context is the generic
