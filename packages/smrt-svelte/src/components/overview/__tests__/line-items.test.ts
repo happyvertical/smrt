@@ -5,7 +5,11 @@ import { shopDefinitions } from '../../screens/__tests__/shop-fixtures.js';
 import { deriveScreenRelations } from '../../screens/relations.js';
 import type { OverviewOptions, WidgetLoadContext } from '../types.js';
 import LineItemsWidget from '../widgets/LineItemsWidget.svelte';
-import { lineItemTotals, sumLineAmounts } from '../widgets/line-totals.js';
+import {
+  groupStoredTaxComponents,
+  lineItemTotals,
+  sumLineAmounts,
+} from '../widgets/line-totals.js';
 import {
   createLineItemsLoader,
   lineItemsRelation,
@@ -87,6 +91,49 @@ describe('lineItemTotals', () => {
     expect(sumLineAmounts([1.5])).toBeNull();
     expect(sumLineAmounts([Number.MAX_SAFE_INTEGER, 1])).toBeNull();
   });
+
+  it('groups a stored component only when its id, name, and percent agree', () => {
+    expect(
+      groupStoredTaxComponents([
+        {
+          taxComponentId: 'gst',
+          name: 'GST',
+          percent: '5',
+          taxable: 81000,
+          tax: 4050,
+        },
+        {
+          taxComponentId: 'gst',
+          name: 'GST',
+          percent: '5',
+          taxable: 33498,
+          tax: 1675,
+        },
+        {
+          taxComponentId: 'gst-alt',
+          name: 'GST',
+          percent: '5',
+          taxable: 1,
+          tax: 0,
+        },
+      ]),
+    ).toEqual([
+      {
+        taxComponentId: 'gst',
+        name: 'GST',
+        percent: '5',
+        taxable: 114498,
+        tax: 5725,
+      },
+      {
+        taxComponentId: 'gst-alt',
+        name: 'GST',
+        percent: '5',
+        taxable: 1,
+        tax: 0,
+      },
+    ]);
+  });
 });
 
 const ctx: WidgetLoadContext = {
@@ -144,6 +191,29 @@ describe('line-items loader', () => {
     expect(data.columns.find((c) => c.key === 'unitPrice')?.summarize).toBe(
       false,
     );
+
+    const stored = createLineItemsLoader({
+      relations,
+      records,
+      storedTotals: () => ({
+        subtotal: 54000,
+        discount: 0,
+        tax: 2700,
+        total: 56700,
+        lineAmountType: 'exclusive',
+        roundingScope: 'line',
+        taxes: [
+          {
+            taxComponentId: 'gst',
+            name: 'GST',
+            percent: '5',
+            taxable: 54000,
+            tax: 2700,
+          },
+        ],
+      }),
+    });
+    expect((await stored({}, ctx)).storedTotals?.total).toBe(56700);
   });
 
   it('is empty without an items relation', async () => {
@@ -262,5 +332,157 @@ describe('LineItemsWidget', () => {
     });
     expect(screen.getByText('No line items.')).toBeInTheDocument();
     expect(screen.getByText('$1.00')).toBeInTheDocument();
+  });
+
+  it('renders A–E frozen snapshots from stored values without tax recalculation', () => {
+    const frozen = {
+      A: {
+        subtotal: 114498,
+        discount: 9000,
+        tax: 8070,
+        total: 122568,
+        lineAmountType: 'exclusive' as const,
+        roundingScope: 'document' as const,
+        taxes: [
+          {
+            taxComponentId: 'gst',
+            name: 'GST',
+            percent: '5',
+            taxable: 81000,
+            tax: 4050,
+          },
+          {
+            taxComponentId: 'gst',
+            name: 'GST',
+            percent: '5',
+            taxable: 33498,
+            tax: 1675,
+          },
+          {
+            taxComponentId: 'pst',
+            name: 'PST',
+            percent: '7',
+            taxable: 33498,
+            tax: 2345,
+          },
+        ],
+        expected: [
+          'Subtotal CA$1,144.98',
+          'Includes discounts of CA$90.00',
+          'GST 5% on CA$1,144.98 CA$57.25',
+          'PST 7% on CA$334.98 CA$23.45',
+          'Rounded per document',
+          'Total CA$1,225.68',
+        ],
+      },
+      B: {
+        subtotal: 107052,
+        discount: 9000,
+        tax: 7446,
+        total: 114498,
+        lineAmountType: 'inclusive' as const,
+        roundingScope: 'line' as const,
+        showNetSubtotal: true,
+        taxes: [
+          {
+            taxComponentId: 'gst',
+            name: 'GST',
+            percent: '5',
+            taxable: 107052,
+            tax: 5352,
+          },
+          {
+            taxComponentId: 'pst',
+            name: 'PST',
+            percent: '7',
+            taxable: 29909,
+            tax: 2094,
+          },
+        ],
+        expected: [
+          'Total CA$1,144.98',
+          'Includes GST 5% of CA$53.52',
+          'Includes PST 7% of CA$20.94',
+          'Subtotal (excl. tax) CA$1,070.52',
+        ],
+      },
+      C: {
+        subtotal: 114498,
+        discount: 9000,
+        tax: 0,
+        total: 114498,
+        lineAmountType: 'exclusive' as const,
+        roundingScope: 'line' as const,
+        taxes: [],
+        expected: [
+          'Subtotal CA$1,144.98',
+          'Includes discounts of CA$90.00',
+          'Total CA$1,144.98',
+        ],
+      },
+      D: {
+        subtotal: 114498,
+        discount: 9000,
+        tax: 0,
+        total: 114498,
+        lineAmountType: 'inclusive' as const,
+        roundingScope: 'document' as const,
+        showNetSubtotal: true,
+        taxes: [],
+        expected: ['Subtotal CA$1,144.98', 'Total CA$1,144.98'],
+      },
+      E: {
+        subtotal: 30,
+        discount: 0,
+        tax: 4,
+        total: 34,
+        lineAmountType: 'exclusive' as const,
+        roundingScope: 'document' as const,
+        taxes: [
+          {
+            taxComponentId: 'gst',
+            name: 'GST',
+            percent: '5',
+            taxable: 30,
+            tax: 2,
+          },
+          {
+            taxComponentId: 'pst',
+            name: 'PST',
+            percent: '7',
+            taxable: 30,
+            tax: 2,
+          },
+        ],
+        expected: [
+          'Subtotal CA$0.30',
+          'GST 5% on CA$0.30 CA$0.02',
+          'PST 7% on CA$0.30 CA$0.02',
+          'Rounded per document',
+          'Total CA$0.34',
+        ],
+      },
+    };
+    for (const [name, storedTotals] of Object.entries(frozen)) {
+      const view = render(LineItemsWidget, {
+        props: {
+          ...base,
+          data: { rows: [], columns, currency: 'CAD', storedTotals },
+        },
+      });
+      const text =
+        (
+          view.container.querySelector(
+            '[data-money-snapshot="stored"]',
+          ) as HTMLElement
+        ).textContent ?? '';
+      const compact = text.replace(/\s+/g, '');
+      for (const value of storedTotals.expected) {
+        expect(compact).toContain(value.replace(/\s+/g, ''));
+      }
+      expect(compact).not.toContain('TaxCA$');
+      if (name === 'D') expect(compact).not.toContain('Subtotal(excl.tax)');
+      view.unmount();
+    }
   });
 });

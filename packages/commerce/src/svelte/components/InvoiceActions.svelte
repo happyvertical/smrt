@@ -30,6 +30,11 @@ export interface Props {
   onprint?: () => void;
   /** Called when export/download is clicked */
   onexport?: () => void;
+  /**
+   * Host-authorized credit-note creation for an issued source invoice. The
+   * caller owns authorization, navigation, and persistence.
+   */
+  oncreatecreditnote?: () => void;
   /** Size variant */
   size?: 'sm' | 'md';
 }
@@ -43,6 +48,7 @@ const {
   ondelete,
   onprint,
   onexport,
+  oncreatecreditnote,
   size = 'md',
 }: Props = $props();
 
@@ -90,6 +96,12 @@ const canDelete = $derived(status === 'draft');
         <path d="M4 11v3h8v-3" />
       </svg>
       Print
+    </Button>
+  {/if}
+
+  {#if oncreatecreditnote && !canEdit}
+    <Button variant="secondary" {size} onclick={oncreatecreditnote} disabled={loading}>
+      Create credit note
     </Button>
   {/if}
 

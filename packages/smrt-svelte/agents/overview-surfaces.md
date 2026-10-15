@@ -277,7 +277,7 @@ parent-filter vocabulary (`model`, `field`, `filter: 'parent'`, `sort`,
 | Type | Options | Data |
 |---|---|---|
 | `related` | `title`, `relations` (relation keys `Order-customerId`, comma-separated; empty = every `children` relation, at most 20), `limit` (5) | `{ tabs: [{ key, label, rows, total?, columns, href?, currency?, timeZone?, summaries? }] }` |
-| `line-items` | `title`, `relation` (an `items` relation key; empty = the first), `limit` (50, the max) | `{ rows, columns, total?, totals?: { subtotal?, discount?, tax?, total? }, currency?, summaries?, href? }` |
+| `line-items` | `title`, `relation` (an `items` relation key; empty = the first), `limit` (50, the max) | `{ rows, columns, total?, totals?: { subtotal?, discount?, tax?, total? }, storedTotals?: { subtotal, discount, tax, total, lineAmountType, roundingScope, taxes }, currency?, summaries?, href? }` |
 
 - `related`: one tab per relation with the count in the tab ("Orders 6"),
   each a records table with a totals footer and that tab's one "View all"
@@ -285,7 +285,12 @@ parent-filter vocabulary (`model`, `field`, `filter: 'parent'`, `sort`,
   all empty is one empty state. A failing tab is dropped; all failing fails
   the widget. Never lists `items` relations.
 - `line-items` (the contract's `lineItems`; widget type ids are lowercase
-  kebab): the lines in `sort` order, then the totals block
+  kebab): a domain host with an issued/frozen money document supplies
+  `storedTotals` through `RecordScreen.lineItemStoredTotals`; its totals and
+  per-component tax rows are displayed as persisted (with matching component
+  rows grouped), never reconstructed from the visible lines. Without that
+  optional snapshot, the widget preserves its legacy totals behavior: the lines
+  in `sort` order, then the totals block
   (`lineItemTotals`, pure). The record's own subtotal / discount / tax /
   total are authoritative and shown as they are; one it lacks is computed
   from the lines (subtotal = sum of the line amounts, total = subtotal -
