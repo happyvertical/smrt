@@ -29,6 +29,7 @@ import { InvoiceLineItem } from '../models/InvoiceLineItem';
 import { MoneyValidationError } from '../money';
 import { ensureTenantTaxCodes } from '../tax/legacy';
 import { InvoiceStatus } from '../types';
+import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant';
 
 function gateFieldForTest(
   objectClass: typeof SmrtObject,
@@ -88,8 +89,9 @@ describe('invoice money persistence (#3933)', () => {
         { taxComponentId: gst.id, number: 'GST-123', label: 'GST' },
       ];
       await current.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+        throw new Error('Expected a clean tenant on money v2');
       expect(await settings.getForTenant(tenantId)).toMatchObject({
         moneyModel: 'v2',
         taxRoundingScope: 'document',
@@ -544,6 +546,7 @@ describe('invoice money persistence (#3933)', () => {
   });
 
   it('blocks runtime money writes for the persisted migration owner window', async () => {
+    await seedLegacyMoneyTenant(db, 'tenant-b');
     const seeded = await ensureTenantTaxCodes(db, 'tenant-b');
     const outOfScopeId = seeded.find(
       (code) => code.code === 'out-of-scope',

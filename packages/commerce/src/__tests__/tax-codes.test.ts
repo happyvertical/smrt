@@ -24,6 +24,7 @@ import {
   COMMON_TAX_CODE_EXAMPLE_PACK,
 } from '../tax/example-pack';
 import { ensureTenantTaxCodes, mapLegacyTaxRates } from '../tax/legacy';
+import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant';
 
 describe('tax codes (#3934)', () => {
   let db: DatabaseInterface;
@@ -342,6 +343,7 @@ describe('tax codes (#3934)', () => {
   });
 
   it('maps legacy zero to out-of-scope unless the party was exempt and retries idempotently', async () => {
+    await seedLegacyMoneyTenant(db, 'tenant-a');
     await withTenant({ tenantId: 'tenant-a' }, async () => {
       const customers = await CustomerCollection.create({ db });
       const invoices = await InvoiceCollection.create({ db });

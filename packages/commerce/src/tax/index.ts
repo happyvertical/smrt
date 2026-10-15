@@ -17,3 +17,8 @@ export {
   mapLegacyTaxRates,
   mapLegacyTaxRatesInTransaction,
 } from './legacy.js';
+export {
+  type CommerceTenantBootstrap,
+  type EnsureCommerceTenantOptions,
+  ensureCommerceTenant,
+} from './tenant-bootstrap.js';

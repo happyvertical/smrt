@@ -234,6 +234,23 @@ import { applyCommerceCookbookSettings } from '@happyvertical/smrt-commerce';
 await applyCommerceCookbookSettings(db, session.tenantId, cookbook);
 ```
 
+For a newly created tenant, prefer the one bootstrap call, which wraps the
+cookbook activation:
+
+```ts
+import { ensureCommerceTenant } from '@happyvertical/smrt-commerce';
+
+const { moneyModel } = await ensureCommerceTenant(db, session.tenantId, {
+  cookbook,
+});
+```
+
+It seeds the standard codes, applies the cookbook (omit it to seed codes only),
+and starts a tenant with no documents on money v2. It returns `legacy` for a
+tenant that already holds documents. Every step is idempotent; re-running it
+with a cookbook re-applies the cookbook defaults. The SvelteKit template calls
+it from its owner setup claim when the app installs commerce.
+
 `applyCommerceCookbookSettings()` reads core's portable cookbook policy and
 creates or reuses the component, code, and tenant settings in a transaction.
 Cookbook `taxRate` is a fraction (`0.05` means 5%); the commerce API
@@ -261,8 +278,18 @@ changes.
 ## Persisted Invoice money
 
 The public `Invoice` and `InvoiceLineItem` save paths select their behavior
-from the server-owned `TaxSettings.moneyModel` marker. Missing settings and
-`legacy` retain the existing line-save behavior. `migrating` is a maintenance
+from the server-owned `TaxSettings.moneyModel` marker. A tenant's first settings
+row chooses the model: `v2` when the tenant has no stored Invoice or Contract
+rows, `legacy` when documents already exist. The row is created by the
+bootstrap above, a settings save, or the first money document, and concurrent
+first writers agree on one model. `legacy` retains the existing line-save
+behavior until `smrt db:migrate-commerce-money --tenant-id` converts the tenant;
+that command is for existing legacy tenants only. In a v2 tenant, a draft
+imported through the model is recalculated as a v2 document (a legacy `taxRate`
+or tax-inclusive `amount` is not an input), while an issued legacy document is
+refused with `FROZEN_DOCUMENT`; import issued history before the tenant's first
+settings row and migrate it. Billing period close still writes legacy invoices,
+so a billing seller tenant without settings stays `legacy`. `migrating` is a maintenance
 guard: Invoice money writes fail until its owner restores `legacy` or activates
 `v2`. Generated surfaces and ordinary `TaxSettings.save()` calls cannot change
 the marker or its owner token on an existing settings row.

@@ -11,6 +11,12 @@ import {
 import { MoneyValidationError } from '../money.js';
 import type { TaxSettingsOptions } from '../types/index.js';
 
+/**
+ * Instances whose caller chose `moneyModel`. Kept outside the instance so it
+ * never becomes a column or round-trips through generated serialization.
+ */
+const explicitMoneyModel = new WeakSet<TaxSettings>();
+
 export interface TaxRegistration {
   taxComponentId: string;
   number: string;
@@ -60,7 +66,11 @@ export class TaxSettings extends SmrtObject {
   /** Stored JSON is guarded through the typed accessor below. */
   taxRegistrationsJson = '[]';
 
-  /** Server-owned runtime semantics gate. Never exposed as a generated write. */
+  /**
+   * Server-owned runtime semantics gate. Never exposed as a generated write.
+   * The field default is the schema default; a tenant's first saved row
+   * chooses `v2` or `legacy` from its stored documents (#4009).
+   */
   moneyModel: 'legacy' | 'migrating' | 'v2' = 'legacy';
 
   /** Opaque owner token while a tenant migration is in progress. */
@@ -107,7 +117,10 @@ export class TaxSettings extends SmrtObject {
       this.taxRoundingScope = options.taxRoundingScope;
     if (options.taxRegistrations !== undefined)
       this.taxRegistrations = structuredClone(options.taxRegistrations);
-    if (options.moneyModel !== undefined) this.moneyModel = options.moneyModel;
+    if (options.moneyModel !== undefined) {
+      this.moneyModel = options.moneyModel;
+      explicitMoneyModel.add(this);
+    }
     if (options.moneyMigrationId !== undefined)
       this.moneyMigrationId = options.moneyMigrationId;
   }
@@ -183,6 +196,12 @@ export class TaxSettings extends SmrtObject {
         // and re-read that row on this save transaction so a migration claim
         // cannot commit between this check and the natural-key upsert.
         const tenantKey = this.tenantId || getTenantId() || '';
+        const { lockTenantMoneyBootstrap, initialTenantMoneyModel } =
+          await import('../tenant-money-default.js');
+        // A first insert decides the tenant money model below; serialize it
+        // with every other first-marker decision for this tenant.
+        if (tenantKey && !this.isPersisted)
+          await lockTenantMoneyBootstrap(this.db, tenantKey);
         const { TaxSettingsCollection } = await import(
           '../collections/TaxSettingsCollection.js'
         );
@@ -211,7 +230,14 @@ export class TaxSettings extends SmrtObject {
         // the migration's first marker insert and overwrite its claimed state.
         // Keep the first ordinary save insert-only so that collision refuses
         // the stale save instead of updating the newly committed marker.
-        if (!persistedByTenant && !this.isPersisted) this.requireInsertOnSave();
+        if (!persistedByTenant && !this.isPersisted) {
+          this.requireInsertOnSave();
+          // The tenant's first marker row: with no caller-chosen model, a
+          // tenant with no stored Invoice or Contract rows starts on v2 and
+          // one with documents stays legacy until migrated (#4009).
+          if (tenantKey && !explicitMoneyModel.has(this))
+            this.moneyModel = await initialTenantMoneyModel(this.db, tenantKey);
+        }
       }
       for (const id of [
         this.defaultSalesTaxCodeId,

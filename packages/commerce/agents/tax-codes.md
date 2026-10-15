@@ -34,6 +34,10 @@ import cookbook from './smrt.cookbook.json' with { type: 'json' };
 await applyCommerceCookbookSettings(db, session.tenantId, cookbook);
 ```
 
+`ensureCommerceTenant(db, tenantId, { cookbook })` wraps this call with the
+standard code seed and the clean-tenant `v2` activation; prefer it for a newly
+created tenant (#4009).
+
 `smrt cookbook apply` writes project files and does not have a database or
 tenant, so it deliberately performs no storage writes. Activation creates or
 reuses a component and default tax code, then updates tenant `TaxSettings` in

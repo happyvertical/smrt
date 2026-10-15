@@ -31,6 +31,7 @@ import {
   TaxSettingsCollection,
 } from '../index.js';
 import { withTenantMoneyMigration } from '../tenant-money-barrier.js';
+import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant.js';
 
 const TENANT_A = '11111111-1111-4111-8111-111111111111';
 const TENANT_B = '22222222-2222-4222-8222-222222222222';
@@ -121,8 +122,9 @@ async function activateV2(tenantId: string): Promise<void> {
     current.defaultLineAmountType = 'exclusive';
     current.taxRoundingScope = 'document';
     await current.save();
-    const migrationId = await settings.beginMoneyMigration(tenantId);
-    await settings.activateMoneyV2(tenantId, migrationId);
+    // A clean tenant starts on money v2 (#4009); no migration needed.
+    if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+      throw new Error('Expected a clean tenant on money v2');
   });
 }
 
@@ -490,6 +492,7 @@ describe('commerce money principal tools (#3937)', () => {
   });
 
   it('refuses code-based money mutations before legacy or migrating state can change', async () => {
+    await seedLegacyMoneyTenant(db, TENANT_B);
     const map = tools();
     const invoice = await createInvoice(TENANT_B);
     const add = map.get(COMMERCE_INVOICE_LINE_ADD_TOOL_SLUG);

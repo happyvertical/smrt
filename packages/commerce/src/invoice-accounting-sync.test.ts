@@ -12,6 +12,7 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { seedLegacyMoneyTenant } from './__tests__/helpers/legacy-money-tenant.js';
 import { CustomerCollection } from './collections/CustomerCollection.js';
 import { InvoiceCollection } from './collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from './collections/InvoiceLineItemCollection.js';
@@ -70,8 +71,9 @@ describe('frozen invoice accounting sync (#3937)', () => {
       current.defaultLineAmountType = options.lineAmountType ?? 'exclusive';
       current.taxRoundingScope = 'document';
       await current.save();
-      const migrationId = await settings.beginMoneyMigration(tenantId);
-      await settings.activateMoneyV2(tenantId, migrationId);
+      // A clean tenant starts on money v2 (#4009); no migration needed.
+      if ((await settings.getOrCreateForTenant(tenantId)).moneyModel !== 'v2')
+        throw new Error('Expected a clean tenant on money v2');
 
       const customer = await (await CustomerCollection.create({ db })).create({
         defaultTaxCodeId: code.id,
@@ -728,6 +730,7 @@ describe('frozen invoice accounting sync (#3937)', () => {
   });
 
   it('preserves the legacy Invoice.toAccountingInput path without realm options', async () => {
+    await seedLegacyMoneyTenant(db, 'tenant-legacy');
     await withTenant({ tenantId: 'tenant-legacy' }, async () => {
       const customer = await (await CustomerCollection.create({ db })).create(
         {},

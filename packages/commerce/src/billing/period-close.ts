@@ -34,6 +34,7 @@ import type {
   BillingPeriodClose,
 } from '../models/billing.js';
 import type { Invoice } from '../models/Invoice.js';
+import { retainLegacyTenantMoneyModel } from '../tenant-money-barrier.js';
 import { InvoiceStatus } from '../types/index.js';
 import { defaultCardFor } from './cards.js';
 import {
@@ -1322,6 +1323,11 @@ async function collectAndInvoice(
 
   const invoiceId = await deterministicId(['billing-invoice', closeId]);
   await withTenant({ tenantId: runtime.sellerTenantId }, async () => {
+    // Billing writes its invoice through the legacy line model, and a v2
+    // seller tenant cannot close a period yet (#4013). A seller with no money
+    // marker keeps the legacy model rather than the clean-tenant v2 default
+    // (#4009); remove this once billing writes money-v2 documents.
+    await retainLegacyTenantMoneyModel(runtime.db, runtime.sellerTenantId);
     let invoice = await runtime.invoices.get(invoiceId);
     if (!invoice) {
       const issueDate = close.issuedAt;

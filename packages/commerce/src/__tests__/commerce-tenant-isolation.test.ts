@@ -41,6 +41,7 @@ import { PaymentCollection } from '../collections/PaymentCollection';
 import { PaymentIntentCollection } from '../collections/PaymentIntentCollection';
 import { PayoutCollection } from '../collections/PayoutCollection';
 import { VendorCollection } from '../collections/VendorCollection';
+import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant';
 
 const sorted = (rows: Array<Record<string, any>>, field: string): string[] =>
   rows.map((r) => String(r[field] ?? '')).sort();
@@ -51,6 +52,9 @@ describe('commerce tenant isolation (#1600)', () => {
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     enableTenancy(); // default rawQueryPolicy: 'throw'
+    // Isolation fixtures write parentless lines, which only the legacy money
+    // model accepts; clean tenants otherwise start on v2 (#4009).
+    await seedLegacyMoneyTenant(db, 'tenant-1', 'tenant-2');
   });
 
   afterEach(async () => {

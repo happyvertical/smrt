@@ -1,10 +1,17 @@
 /** Shared tenant serialization barrier for commerce money runtime and migration. */
 
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
-import { TaxSettingsCollection } from './collections/TaxSettingsCollection.js';
-import { withDocumentMoneyTransaction } from './document-money-internal.js';
+import {
+  materializeTenantTaxSettings,
+  TaxSettingsCollection,
+} from './collections/TaxSettingsCollection.js';
+import {
+  MONEY_MIGRATION_WRITE,
+  withDocumentMoneyTransaction,
+} from './document-money-internal.js';
 import type { TaxSettings } from './models/TaxSettings.js';
 import { MoneyValidationError } from './money.js';
+import { tenantHasMoneyDocuments } from './tenant-money-default.js';
 
 export type TenantMoneyRuntimeRequirement = 'legacy-or-v2' | 'v2';
 
@@ -87,8 +94,9 @@ function runtimeScope(
  * Lock and re-read the tenant money marker before any runtime money work.
  *
  * Older schemas without TaxSettings stay byte-compatible legacy and are never
- * modified. Once the table exists, a missing deterministic legacy row is
- * materialized solely to provide the serialization point shared by migration.
+ * modified. Once the table exists, a missing deterministic row is
+ * materialized to provide the serialization point shared by migration; it
+ * starts on `v2` when the tenant has no stored documents (#4009).
  */
 export async function lockTenantMoneyRuntime(
   tx: DatabaseInterface,
@@ -267,8 +275,11 @@ export async function lockTenantMoneyMigrationClaim(
       'INVALID_MONEY_INPUT',
       'Money migration requires installed tax settings storage',
     );
+  // The migration starts from `legacy`: a tenant first seen here gets a legacy
+  // marker, not the clean-tenant v2 default, so an empty tenant still migrates.
+  await materializeTenantTaxSettings(tx, tenantId, 'legacy');
   const collection = await TaxSettingsCollection.create({ db: tx });
-  const settings = await collection.lockForTenant(tenantId);
+  const settings = await collection.lockForTenant(tenantId, false);
   if (!settings)
     throw new MoneyValidationError(
       'INVALID_MONEY_INPUT',
@@ -311,4 +322,60 @@ export async function lockTenantMoneyMigrationOwner(
       'Tenant money migration owner does not match',
     );
   return settings;
+}
+
+/**
+ * Move a tenant with no stored Invoice or Contract rows to `v2` (#4009).
+ *
+ * Creates the marker when missing, then locks it. Every runtime document
+ * write takes that same row lock before it touches a document, so the
+ * document check under the lock is authoritative. A tenant with documents
+ * stays `legacy`: only the tenant migration converts it. A tenant already on
+ * `v2` is unchanged, and a migration in progress fails closed. Idempotent.
+ */
+export async function activateCleanTenantMoneyV2(
+  db: DatabaseInterface,
+  tenantId: string,
+): Promise<'legacy' | 'v2'> {
+  requiredText(tenantId, 'Money tenant');
+  return withDocumentMoneyTransaction(db, async (tx) => {
+    if (!(await hasSettingsStorage(tx)))
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Money v2 requires tenant tax settings storage',
+      );
+    const settings = await (
+      await TaxSettingsCollection.create({ db: tx })
+    ).lockForTenant(tenantId);
+    if (!settings)
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Tenant money settings could not be materialized',
+      );
+    if (settings.moneyModel === 'v2') return 'v2';
+    if (settings.moneyModel === 'migrating')
+      throw new MoneyValidationError(
+        'FROZEN_DOCUMENT',
+        'Tenant money migration is in progress',
+      );
+    if (await tenantHasMoneyDocuments(tx, tenantId)) return 'legacy';
+    settings.moneyModel = 'v2';
+    await settings.saveMoneyModelOnTransaction(MONEY_MIGRATION_WRITE);
+    return 'v2';
+  });
+}
+
+/**
+ * @internal Keep a tenant with no marker on `legacy` for a producer that does
+ * not write money-v2 documents yet. Billing period close is the one such
+ * producer (#4013). A tenant that already has a marker is never changed, and
+ * an older schema without settings storage is already legacy.
+ */
+export async function retainLegacyTenantMoneyModel(
+  db: DatabaseInterface,
+  tenantId: string,
+): Promise<void> {
+  requiredText(tenantId, 'Money tenant');
+  if (!(await hasSettingsStorage(db))) return;
+  await materializeTenantTaxSettings(db, tenantId, 'legacy');
 }

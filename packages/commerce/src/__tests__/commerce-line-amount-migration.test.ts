@@ -19,8 +19,10 @@ import {
 import { Order } from '../models/Contract.js';
 import { MoneyMigrationDocument } from '../models/MoneyMigrationDocument.js';
 import { ContractStatus, InvoiceStatus } from '../types/index.js';
+import { seedLegacyMoneyTenant } from './helpers/legacy-money-tenant.js';
 
 const TENANT = '00000000-0000-4000-8000-000000000393';
+const OTHER_TENANT = '00000000-0000-4000-8000-000000000394';
 
 describe('commerce line amount migration (#3933)', () => {
   let db: DatabaseInterface;
@@ -28,6 +30,8 @@ describe('commerce line amount migration (#3933)', () => {
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     enableTenancy();
+    // These tenants model pre-v2 data: they start on the legacy money model.
+    await seedLegacyMoneyTenant(db, TENANT, OTHER_TENANT);
   });
 
   afterEach(async () => {
@@ -324,7 +328,7 @@ describe('commerce line amount migration (#3933)', () => {
   });
 
   it('migrates a directed issued sales Contract without rewriting prior header fields', async () => {
-    const tenantId = '00000000-0000-4000-8000-000000000394';
+    const tenantId = OTHER_TENANT;
     const { contract, line } = await withTenant({ tenantId }, async () => {
       const customer = await (await CustomerCollection.create({ db })).create({
         tenantId,
