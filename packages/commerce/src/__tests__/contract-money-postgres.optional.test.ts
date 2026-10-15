@@ -20,7 +20,7 @@ import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { VendorCollection } from '../collections/VendorCollection.js';
 import { PurchaseOrder, SupplierQuote } from '../models/Contract.js';
 import { MoneyValidationError } from '../money.js';
-import { ContractStatus } from '../types/index.js';
+import { ContractStatus, ContractType } from '../types/index.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -169,6 +169,19 @@ describePostgres('contract money aggregate on PostgreSQL (#3933)', () => {
       issued.status = ContractStatus.ACCEPTED;
       await issued.save();
       expect(issued.moneySnapshotId).toBeTruthy();
+      // The mutable display scalar does not change the persisted STI identity.
+      issued.contractType =
+        purchase instanceof SupplierQuote
+          ? ContractType.PURCHASE_ORDER
+          : ContractType.SUPPLIER_QUOTE;
+      await issued.save();
+      const reloaded = await contracts.get(
+        { id: purchase.id },
+        { cache: false },
+      );
+      expect(reloaded).toBeInstanceOf(Purchase);
+      expect(reloaded?.contractType).toBe(issued.contractType);
+
       line.unitPrice = 101;
       await expect(line.save()).rejects.toMatchObject({
         code: 'FROZEN_DOCUMENT',

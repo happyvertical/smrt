@@ -80,7 +80,6 @@ export function classifyContractPurchase(contract: Contract): boolean {
 export function isContractSnapshotReportEligible(contract: Contract): boolean {
   return (
     !(contract instanceof SupplierQuote) &&
-    contract.contractType !== ContractType.SUPPLIER_QUOTE &&
     contract.status !== ContractStatus.DRAFT &&
     contract.status !== ContractStatus.CANCELLED
   );
