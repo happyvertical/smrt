@@ -47,6 +47,7 @@ describe('frozen invoice accounting sync (#3937)', () => {
     options: {
       lineAmountType?: 'exclusive' | 'inclusive';
       discount?: number;
+      quantity?: number;
     } = {},
   ): Promise<{
     invoice: Invoice;
@@ -87,7 +88,7 @@ describe('frozen invoice accounting sync (#3937)', () => {
       ).create({
         invoiceId: invoice.id,
         description: 'Consulting',
-        quantity: 2,
+        quantity: options.quantity ?? 2,
         unitPrice: 100,
         discountType: options.discount ? 'amount' : 'none',
         discount: options.discount ?? 0,
@@ -488,6 +489,7 @@ describe('frozen invoice accounting sync (#3937)', () => {
   it.each([
     ['inclusive', { lineAmountType: 'inclusive' as const }],
     ['discount', { discount: 10 }],
+    ['fractional-unit discount', { discount: 1, quantity: 3 }],
   ])('syncs public SDK %s snapshots with frozen request facts', async (_name, options) => {
     const seeded = await issuedInvoice(`tenant-${_name}`, options);
     await withTenant({ tenantId: `tenant-${_name}` }, async () => {
@@ -526,6 +528,14 @@ describe('frozen invoice accounting sync (#3937)', () => {
           amount: 1.9,
           taxAmount: 0.1,
           taxInclusiveAmount: 2,
+        });
+      } else if (_name === 'fractional-unit discount') {
+        expect(sent?.lineItems[0]).toMatchObject({
+          quantity: 3,
+          unitPrice: 1,
+          discount: 0.01,
+          amount: 2.99,
+          taxAmount: 0.15,
         });
       } else {
         expect(sent?.lineItems[0]).toMatchObject({
