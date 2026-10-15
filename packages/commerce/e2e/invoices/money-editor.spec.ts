@@ -82,6 +82,7 @@ test('v2 money interactions confirm mode, preserve input, keep one discount form
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/e2e/invoices/index.html?money=A&scope=line');
+  await expect(page.getByTestId('unrelated-form')).toHaveCSS('display', 'block');
   const unitPrice = page.getByLabel('Unit price', { exact: true }).first();
   await expect(unitPrice).toHaveValue('85.00');
   page.once('dialog', (dialog) => dialog.accept());

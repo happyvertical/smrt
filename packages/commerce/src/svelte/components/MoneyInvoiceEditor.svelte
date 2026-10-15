@@ -268,7 +268,7 @@ function changeMode(event: Event) {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-  .money-editor, :global(.form), fieldset, .money-line { display: grid; gap: var(--smrt-spacing-3); min-width: 0; }
+  .money-editor, .money-editor :global(.form), fieldset, .money-line { display: grid; gap: var(--smrt-spacing-3); min-width: 0; }
   .money-editor { max-width: 48rem; overflow-wrap: anywhere; }
   .summary { display: grid; gap: var(--smrt-spacing-2); }
   .summary > div { display: flex; justify-content: space-between; gap: var(--smrt-spacing-4); }
