@@ -11,6 +11,8 @@ import { BALANCE_EPSILON, type TrialBalanceRow } from '../types';
 
 /** One posted ledger movement in its raw stored unit (ledgers are unit-agnostic). */
 export interface PostedJournalMovement {
+  /** Requested owner identity; consumers must retain it at their reporting boundary. */
+  tenantId: string;
   entryId: string;
   journalId: string;
   accountId: string;
@@ -270,6 +272,7 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
           'Posted journal movement is outside the supported numeric range.',
         );
       return {
+        tenantId: options.tenantId,
         entryId: String(row.entry_id),
         journalId: String(row.journal_id),
         accountId: String(row.account_id),

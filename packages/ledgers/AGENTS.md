@@ -33,7 +33,9 @@ currency })` is the bounded reporting input. It joins only rows whose entry and
 journal share the requested tenant, includes every posted source (including
 manual journals), and excludes drafts and voids. Its debit, credit, and
 `creditMinusDebit` values are raw ledger units; commerce must verify its
-minor-unit convention before using them in an exact tax report.
+minor-unit convention before using them in an exact tax report. Each returned
+movement retains the requested `tenantId` so consumers can reject a fact that
+crosses the reporting boundary.
 
 ## Gotchas
 

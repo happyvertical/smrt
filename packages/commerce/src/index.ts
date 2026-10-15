@@ -359,6 +359,8 @@ export {
   drilldownTaxSummaryContributors,
   drilldownTaxSummaryInvoiceFacts,
   TAX_SUMMARY_REPORT_ADAPTER,
+  type TaxSummaryMaterializedReportDrilldownSources,
+  type TaxSummaryMaterializedReportHostOptions,
 } from './tax-summary-report-adapter.js';
 
 // Types

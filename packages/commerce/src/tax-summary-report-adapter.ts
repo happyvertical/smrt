@@ -17,11 +17,14 @@ import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   type TaxSummaryContributorDrilldown,
   type TaxSummaryContributorDrilldownOptions,
+  type TaxSummaryExpenseSource,
   type TaxSummaryInvoiceDrilldownOptions,
+  type TaxSummaryLedgerDrilldownSource,
   TaxSummaryReportCollection,
   type TaxSummaryReportMeasure,
 } from './collections/TaxSummaryReportCollection.js';
 import { TaxSummaryReport } from './models/TaxSummaryReport.js';
+import type { TaxSummaryComponentMapping } from './tax-summary.js';
 
 export const TAX_SUMMARY_REPORT_ADAPTER: ReportAdapterOptions = {
   dataTable: {
@@ -44,6 +47,26 @@ export const TAX_SUMMARY_REPORT_ADAPTER: ReportAdapterOptions = {
     },
   },
 };
+
+/** Tenant-bound owner dependencies used only while resolving a selected cell. */
+export interface TaxSummaryMaterializedReportDrilldownSources {
+  expenseSource?: TaxSummaryExpenseSource;
+  ledgerSource?: TaxSummaryLedgerDrilldownSource;
+  expenseComponentMappings?: readonly TaxSummaryComponentMapping[];
+}
+
+export interface TaxSummaryMaterializedReportHostOptions {
+  /**
+   * Resolve owner collections from the authenticated route context for each
+   * drilldown. A fixed source is intentionally unsupported so one tenant's
+   * collection cannot bleed into another request.
+   */
+  drilldownSources?: (
+    context: Readonly<MaterializedReportHostContext>,
+  ) =>
+    | TaxSummaryMaterializedReportDrilldownSources
+    | Promise<TaxSummaryMaterializedReportDrilldownSources>;
+}
 
 const CELL_MEASURES = {
   taxable_minor: 'taxable',
@@ -142,6 +165,7 @@ export function presentTaxSummaryDrilldown(
 /** Create a fixed, server-only tax-summary host for an authenticated template route. */
 export function createTaxSummaryMaterializedReportHost(
   database: DatabaseInterface | (() => Promise<DatabaseInterface>),
+  options: TaxSummaryMaterializedReportHostOptions = {},
 ): MaterializedReportHost<MaterializedReportDrilldownPresentation> {
   const db = async () =>
     typeof database === 'function' ? database() : database;
@@ -201,8 +225,10 @@ export function createTaxSummaryMaterializedReportHost(
         );
         if (result.rows.length !== 1)
           throw new Error('Tax summary row is unavailable.');
+        const sources = await options.drilldownSources?.(context);
         return presentTaxSummaryDrilldown(
           await drilldownTaxSummaryContributors(await db(), {
+            ...sources,
             tenantId: context.tenantId,
             reportId: request.id,
             measure,

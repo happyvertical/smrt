@@ -113,6 +113,7 @@ export function definePostedMovementsSuite(getDb: () => DatabaseInterface) {
       expect(movements).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
+            tenantId,
             entryId: manual.entryId,
             accountId: manual.accountId,
             sourceModule: 'manual',
@@ -121,6 +122,7 @@ export function definePostedMovementsSuite(getDb: () => DatabaseInterface) {
             creditMinusDebit: 125,
           }),
           expect.objectContaining({
+            tenantId,
             entryId: commerce.entryId,
             accountId: commerce.accountId,
             sourceModule: 'smrt-commerce',

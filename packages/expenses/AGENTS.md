@@ -118,6 +118,8 @@ checks; neither an unlocked lookup nor revision CAS alone protects this pair.
 is the reporting input for supplier facts: it returns only that tenant's reviewed,
 non-duplicate expenses in the inclusive calendar-date range. A null
 `financialBreakdown` remains an unknown legacy fact, never zero tax.
+Each fact carries `expenseId` as the commerce reporting identity; `id` remains
+the compatible owner alias.
 All three fields participate in the reviewed-money freeze. See the README and
 [financial facts test matrix](agents/financial-facts-test-matrix.md).
 
