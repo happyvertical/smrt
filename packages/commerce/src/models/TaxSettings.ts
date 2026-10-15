@@ -1,5 +1,9 @@
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import {
   MONEY_MIGRATION_WRITE,
   type MoneyMigrationWriteCapability,
@@ -173,17 +177,27 @@ export class TaxSettings extends SmrtObject {
       );
       const codes = await TaxCodeCollection.create({ db: this.db });
       const components = await TaxComponentCollection.create({ db: this.db });
-      if (!allowMoneyModelWrite && this.id) {
-        const persisted = await this.db.get(this.tableName, { id: this.id });
-        if (
-          persisted &&
-          (persisted.money_model !== this.moneyModel ||
-            (persisted.money_migration_id ?? '') !== this.moneyMigrationId)
-        ) {
-          throw new MoneyValidationError(
-            'FROZEN_DOCUMENT',
-            'Tenant money model is server-managed',
-          );
+      if (!allowMoneyModelWrite) {
+        // A new instance upserts on the tenant_id natural key, so the marker
+        // row may be found by tenant rather than by this instance's id.
+        const tenantKey = this.tenantId || getTenantId() || '';
+        const persistedRows = [
+          this.id ? await this.db.get(this.tableName, { id: this.id }) : null,
+          tenantKey
+            ? await this.db.get(this.tableName, { tenant_id: tenantKey })
+            : null,
+        ];
+        for (const persisted of persistedRows) {
+          if (
+            persisted &&
+            (persisted.money_model !== this.moneyModel ||
+              (persisted.money_migration_id ?? '') !== this.moneyMigrationId)
+          ) {
+            throw new MoneyValidationError(
+              'FROZEN_DOCUMENT',
+              'Tenant money model is server-managed',
+            );
+          }
         }
       }
       for (const id of [

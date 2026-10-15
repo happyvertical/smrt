@@ -259,4 +259,31 @@ describe('tenant money runtime barrier (#3933)', () => {
       });
     });
   });
+
+  it('refuses a new settings row that would upsert over the tenant marker', async () => {
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const settings = await TaxSettingsCollection.create({ db });
+      await settings.getOrCreateForTenant('tenant-a');
+      const migrationId = await settings.beginMoneyMigration('tenant-a');
+
+      // A generated create carries only writable fields, so the marker
+      // defaults to legacy; the tenant_id natural key would adopt the row.
+      await expect(
+        settings.create({ tenantId: 'tenant-a', taxRoundingScope: 'document' }),
+      ).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
+      await expect(settings.getForTenant('tenant-a')).resolves.toMatchObject({
+        moneyModel: 'migrating',
+        moneyMigrationId: migrationId,
+      });
+
+      await settings.activateMoneyV2('tenant-a', migrationId);
+      await expect(
+        settings.create({ tenantId: 'tenant-a', taxRoundingScope: 'document' }),
+      ).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
+      await expect(settings.getForTenant('tenant-a')).resolves.toMatchObject({
+        moneyModel: 'v2',
+        taxRoundingScope: 'line',
+      });
+    });
+  });
 });
