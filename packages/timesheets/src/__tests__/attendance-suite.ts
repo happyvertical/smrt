@@ -257,6 +257,38 @@ export function attendanceSuite(
         service.replay([{ ...taps[1], at: at(11).toISOString() }]),
       ).rejects.toThrow('different content');
     });
+    it('lets resolveAt decide the punch flags, defaulting both to true', async () => {
+      const flags = async (
+        clientId: string,
+        hour: number,
+        resolved?: { recordedOffline?: boolean; reviewRequired?: boolean },
+      ) => {
+        const [out] = await service.replay(
+          [{ clientId, action: 'punchIn', at: at(hour).toISOString() }],
+          resolved
+            ? { resolveAt: ({ deviceAt }) => ({ at: deviceAt, ...resolved }) }
+            : {},
+        );
+        const punch = await withTenant({ tenantId: actor.tenantId }, async () =>
+          (await AttendancePunchCollection.create({ db })).get(out.punchId!),
+        );
+        const result = [punch?.recordedOffline, punch?.reviewRequired];
+        await service.punchOut(at(hour + 1));
+        return result;
+      };
+      expect(await flags('f-none', 8)).toEqual([true, true]);
+      expect(await flags('f-empty', 10, {})).toEqual([true, true]);
+      expect(
+        await flags('f-online', 12, {
+          recordedOffline: false,
+          reviewRequired: false,
+        }),
+      ).toEqual([false, false]);
+      expect(await flags('f-late', 14, { reviewRequired: true })).toEqual([
+        true,
+        true,
+      ]);
+    });
     it('composes segment helpers inside one transaction and rolls back together', async () => {
       await service.punchIn(at(8));
       await expect(

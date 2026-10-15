@@ -431,7 +431,7 @@ migrate them as `TEXT NOT NULL DEFAULT ''` (a NULL left on an older row is read 
 `punchIn`, `punchOut`, `startBreak`, `endBreak`, or a work action (`startWork`,
 `switchWork` (both require `work`), `stopWork`, `resumeWork`). It sorts each batch by device
 time, then client id. Client ids are durable and scoped to tenant/profile.
-Successful taps set `recordedOffline` and `reviewRequired`. The conflict policy
+Successful taps set `recordedOffline` and `reviewRequired` unless `resolveAt` says otherwise. The conflict policy
 is **committed attendance wins**: an event predating committed activity, or
 invalid for the current state, gets a durable error outcome. Identical retries
 return that outcome even after later shifts; changed payloads using the same id
@@ -458,8 +458,10 @@ await attendance.replay(taps, {
 
 The receipt hashes the tap as sent, so a retry with the same `clientId` still
 matches even though the stored time differs; the outcome then has `resolvedAt`.
-Punches are always flagged `reviewRequired`; `reviewRequired: true` from the
-resolver also flags the resulting work segment (`AttendanceSegment.reviewRequired`,
+The resolver decides the punch's flags: `recordedOffline` (default `true`) and
+`reviewRequired` (default `true` for the punch when omitted; `false` clears it, for
+a device that sends every tap through replay and only wants late ones reviewed).
+`reviewRequired: true` also flags the resulting work segment (`AttendanceSegment.reviewRequired`,
 a new column). A refused outcome stores `{ error, code }`: `code` defaults to the
 `AttendanceConflict.code` (`predates_committed`, `punch_open`, `no_open_punch`,
 `break_open`, `no_open_break`, `during_break`, `work_open`, `no_open_work`,
