@@ -18,6 +18,7 @@ import {
 } from '../collections/TaxSummaryReportCollection.js';
 import { aggregateTaxSummary } from '../tax-summary.js';
 import {
+  createTaxSummaryMaterializedReportHost,
   drilldownTaxSummaryContributors,
   drilldownTaxSummaryInvoiceFacts,
 } from '../tax-summary-report-adapter.js';
@@ -113,6 +114,27 @@ describePostgres('TaxSummaryReport on PostgreSQL (#3940)', () => {
         expect.objectContaining({ source: 'invoice', valueMinor: 4_050 }),
       ]),
     });
+    const host = createTaxSummaryMaterializedReportHost(db);
+    await expect(
+      host.drilldown(
+        {
+          userId: 'postgres-user',
+          tenantId,
+          permissions: ['taxsummaryreports.read'],
+        },
+        { id: gst.id, columnId: 'tax_minor' },
+      ),
+    ).resolves.toMatchObject({
+      version: 1,
+      selectedMeasure: { id: 'tax', label: 'Tax' },
+      currency: 'CAD',
+      contributors: expect.arrayContaining([
+        expect.objectContaining({
+          source: 'invoice',
+          values: expect.objectContaining({ valueMinor: 4_050 }),
+        }),
+      ]),
+    });
     const foreignTenantId = randomUUID();
     await withTenant({ tenantId: foreignTenantId }, async () => {
       const settings = await TaxSettingsCollection.create({ db });
@@ -125,6 +147,16 @@ describePostgres('TaxSummaryReport on PostgreSQL (#3940)', () => {
         reportId: gst.id,
       }),
     ).rejects.toThrow('not visible to this tenant');
+    await expect(
+      host.drilldown(
+        {
+          userId: 'postgres-user',
+          tenantId: foreignTenantId,
+          permissions: ['taxsummaryreports.read'],
+        },
+        { id: gst.id, columnId: 'tax_minor' },
+      ),
+    ).rejects.toThrow('unavailable');
   });
 
   it('persists null recoverable and net tax for an ambiguous linked purchase and expense', async () => {
