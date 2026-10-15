@@ -107,6 +107,21 @@ describe('commerce manifest money hints', () => {
     expect(checked).toBeGreaterThan(40);
   });
 
+  it('describes line amount and unit price in v2 pricing-mode terms (#4012)', () => {
+    for (const cls of ['InvoiceLineItem', 'ContractLineItem']) {
+      const fields = fieldsOf(cls) as Record<
+        string,
+        ManifestField & { description?: string }
+      >;
+      expect(fields.amount.description, `${cls}.amount`).toMatch(
+        /net of discount.*including tax only when/,
+      );
+      expect(fields.unitPrice.description, `${cls}.unitPrice`).toMatch(
+        /before discount; includes tax when/,
+      );
+    }
+  });
+
   it('keeps the currency-code picker on the text currency field, not on amounts', () => {
     expect(fieldsOf('Contract').currency._meta?.ui).toEqual({
       widget: 'currency',
