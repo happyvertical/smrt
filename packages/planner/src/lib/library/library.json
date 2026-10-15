@@ -235,7 +235,8 @@
       "settings": {
         "currency": "USD",
         "paymentTerms": "Due on receipt",
-        "taxRate": 0.0825
+        "taxRate": 0.0825,
+        "taxRounding": "document"
       },
       "document": {
         "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
@@ -257,6 +258,12 @@
         ],
         "features": [],
         "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Contract",
+            "fieldName": "taxRoundingScope",
+            "scopeType": "app",
+            "defaultValue": "\"document\""
+          },
           {
             "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
             "fieldName": "taxRate",
@@ -292,6 +299,12 @@
             "fieldName": "currency",
             "scopeType": "app",
             "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "taxRoundingScope",
+            "scopeType": "app",
+            "defaultValue": "\"document\""
           },
           {
             "objectRef": "@happyvertical/smrt-commerce:Invoice",
@@ -1110,7 +1123,8 @@
       "settings": {
         "currency": "USD",
         "paymentTerms": "Due on receipt",
-        "taxRate": 0.07
+        "taxRate": 0.07,
+        "pricesIncludeTax": true
       },
       "sectionDescriptions": {
         "custom:appointments": "Bookings and the services behind them.",
@@ -1144,6 +1158,12 @@
             "fieldName": "terms",
             "scopeType": "app",
             "defaultValue": "\"Due on receipt\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Contract",
+            "fieldName": "lineAmountType",
+            "scopeType": "app",
+            "defaultValue": "\"inclusive\""
           },
           {
             "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
@@ -1192,6 +1212,12 @@
             "fieldName": "currency",
             "scopeType": "app",
             "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "lineAmountType",
+            "scopeType": "app",
+            "defaultValue": "\"inclusive\""
           },
           {
             "objectRef": "@happyvertical/smrt-commerce:Invoice",
@@ -1614,7 +1640,8 @@
       "settings": {
         "currency": "USD",
         "paymentTerms": "Deposit on pickup, balance on return",
-        "taxRate": 0.08
+        "taxRate": 0.08,
+        "taxRounding": "document"
       },
       "sectionDescriptions": {
         "custom:rentals": "Rentals, quotes and the customers they belong to.",
@@ -1651,6 +1678,12 @@
             "defaultValue": "\"Deposit on pickup, balance on return\""
           },
           {
+            "objectRef": "@happyvertical/smrt-commerce:Contract",
+            "fieldName": "taxRoundingScope",
+            "scopeType": "app",
+            "defaultValue": "\"document\""
+          },
+          {
             "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
             "fieldName": "taxRate",
             "scopeType": "app",
@@ -1673,6 +1706,12 @@
             "fieldName": "currency",
             "scopeType": "app",
             "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "taxRoundingScope",
+            "scopeType": "app",
+            "defaultValue": "\"document\""
           },
           {
             "objectRef": "@happyvertical/smrt-commerce:Invoice",
@@ -2030,6 +2069,247 @@
             },
             "custom:giving": {
               "icon": "creditCard"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "agency",
+      "name": "Agency",
+      "icon": "pencil",
+      "summary": "Clients, proposals, retainers, projects, time, expenses and invoices for a consulting or design studio.",
+      "keywords": [
+        "agency",
+        "design agency",
+        "consulting",
+        "consultant",
+        "consultancy",
+        "studio",
+        "design studio",
+        "freelance",
+        "retainer",
+        "proposals",
+        "billable hours",
+        "timesheets",
+        "creative"
+      ],
+      "settings": {
+        "currency": "USD",
+        "paymentTerms": "Net 30",
+        "taxRate": 0
+      },
+      "sectionDescriptions": {
+        "custom:accounts": "Clients, proposals and the contracts you hold with them.",
+        "custom:work": "Projects, tasks, time and costs.",
+        "custom:meetings": "Meetings with clients and the studio.",
+        "custom:billing": "Invoices and the payments against them."
+      },
+      "document": {
+        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "version": 1,
+        "theme": {
+          "custom": {
+            "primary": "#4338ca"
+          }
+        },
+        "recipes": [
+          "commerce.agreements",
+          "commerce.customers",
+          "commerce.estimates",
+          "commerce.invoicing",
+          "commerce.vendors",
+          "events.calendar",
+          "expenses.tracking",
+          "ledgers.bookkeeping",
+          "projects.tracker",
+          "timesheets.time-entries"
+        ],
+        "features": [],
+        "policies": [
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Agreement",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "creditLimit",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "customerType",
+            "scopeType": "app",
+            "visibility": "hidden"
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Customer",
+            "fieldName": "paymentTerms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Estimate",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "currency",
+            "scopeType": "app",
+            "defaultValue": "\"USD\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Invoice",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Lease",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:Order",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:WholesaleOrder",
+            "fieldName": "terms",
+            "scopeType": "app",
+            "defaultValue": "\"Net 30\""
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "sectionOrder": [
+            "custom:accounts",
+            "custom:work",
+            "custom:meetings",
+            "custom:billing",
+            "section:accounting"
+          ],
+          "itemOrder": {
+            "custom:accounts": [
+              "item:commerce:Customer",
+              "item:commerce:Estimate",
+              "item:commerce:Agreement"
+            ],
+            "custom:work": [
+              "item:projects:Project",
+              "item:projects:Issue",
+              "item:timesheets:ServiceTimeEntry",
+              "item:expenses:Expense"
+            ],
+            "custom:meetings": [
+              "item:events:Event",
+              "item:events:EventType"
+            ],
+            "custom:billing": [
+              "item:commerce:Invoice",
+              "item:commerce:Payment",
+              "item:commerce:Vendor"
+            ]
+          },
+          "hidden": [
+            "item:commerce:Contract",
+            "item:projects:Label",
+            "item:events:EventSeries"
+          ],
+          "moved": {
+            "item:commerce:Customer": "custom:accounts",
+            "item:commerce:Estimate": "custom:accounts",
+            "item:commerce:Agreement": "custom:accounts",
+            "item:projects:Project": "custom:work",
+            "item:projects:Issue": "custom:work",
+            "item:timesheets:ServiceTimeEntry": "custom:work",
+            "item:expenses:Expense": "custom:work",
+            "item:events:Event": "custom:meetings",
+            "item:events:EventType": "custom:meetings",
+            "item:commerce:Invoice": "custom:billing",
+            "item:commerce:Payment": "custom:billing",
+            "item:commerce:Vendor": "custom:billing"
+          },
+          "customSections": [
+            {
+              "id": "custom:accounts",
+              "label": "Clients"
+            },
+            {
+              "id": "custom:work",
+              "label": "Work"
+            },
+            {
+              "id": "custom:meetings",
+              "label": "Meetings"
+            },
+            {
+              "id": "custom:billing",
+              "label": "Billing"
+            }
+          ],
+          "items": {
+            "item:commerce:Customer": {
+              "label": "Clients",
+              "description": "The companies you work for, with how to reach them."
+            },
+            "item:commerce:Estimate": {
+              "label": "Proposals",
+              "description": "Proposals you have sent, ready to become a contract when accepted."
+            },
+            "item:commerce:Agreement": {
+              "label": "Contracts",
+              "description": "Retainers and statements of work, with the terms and the dates."
+            },
+            "item:projects:Project": {
+              "label": "Projects",
+              "description": "Each engagement, with what it covers and where it stands."
+            },
+            "item:projects:Issue": {
+              "label": "Tasks",
+              "description": "The work inside each project, from to-do to done."
+            },
+            "item:timesheets:ServiceTimeEntry": {
+              "label": "Time entries",
+              "description": "Hours logged by person and project, from draft to approved."
+            },
+            "item:expenses:Expense": {
+              "label": "Expenses",
+              "description": "Costs on a project, with the receipt and whether to bill them on."
+            },
+            "item:events:Event": {
+              "label": "Meetings",
+              "description": "Kickoffs, reviews and check-ins with clients, by day."
+            },
+            "item:events:EventType": {
+              "label": "Meeting types",
+              "description": "The kinds of meeting you hold, like a kickoff or a review."
+            },
+            "item:commerce:Vendor": {
+              "label": "Suppliers",
+              "description": "The printers, photographers and freelancers you buy from."
+            }
+          },
+          "sections": {
+            "custom:accounts": {
+              "icon": "users"
+            },
+            "custom:work": {
+              "icon": "briefcase"
+            },
+            "custom:meetings": {
+              "icon": "calendar"
+            },
+            "custom:billing": {
+              "icon": "receipt"
             }
           }
         }
