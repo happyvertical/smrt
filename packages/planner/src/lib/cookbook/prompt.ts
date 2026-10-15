@@ -112,6 +112,10 @@ export function buildAgentPrompt(
     `${cli} cookbook validate ${COOKBOOK_FILE}`,
     `${cli} cookbook apply ${COOKBOOK_FILE} ${appName}`,
     '',
+    // TODO(smrt#4009): once a release makes new tenants start on the money
+    // model (`ensureCommerceTenant`), add the step that activates the app's
+    // tenant and its cookbook tax settings (`applyCommerceCookbookSettings`);
+    // until then a fresh app's tenant starts on the legacy model.
     `4. Set it up (in a subshell, so the commands below still run from this directory):`,
     '',
     `(cd ${appName} && pnpm exec smrt app install)`,
