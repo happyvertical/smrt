@@ -50,6 +50,12 @@ export {
   WorksheetCollection,
 } from './collections.js';
 export type {
+  CourseSourceConfig,
+  CourseSourceKind,
+  SourceSharing,
+} from './course-source.js';
+export { CourseSource, CourseSourceCollection } from './course-source.js';
+export type {
   CurriculumView,
   EnrollmentView,
   LearnerAuthorizer,
@@ -66,6 +72,22 @@ export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
 export type { LessonAssetRelationship } from './lesson-assets.js';
 export { LessonAsset } from './lesson-assets.js';
 export { EducationCatalogRecipe, EducationLearnerRecipe } from './recipes.js';
+export type {
+  EasyPeasyRegistration,
+  SourceImportAuthorization,
+  SourceImportAuthorizer,
+  SourceImportRequest,
+  SourceImportResult,
+} from './source-import-service.js';
+export { SourceImportService } from './source-import-service.js';
+export type {
+  ParsedSourceCourse,
+  ParsedSourceLesson,
+} from './sources/easy-peasy-parser.js';
+export {
+  parseEasyPeasyPage,
+  validateEasyPeasyUrl,
+} from './sources/easy-peasy-parser.js';
 export type {
   SubmissionAssetClaim,
   SubmissionPage,

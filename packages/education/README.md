@@ -19,6 +19,7 @@ Runtime catalog operations do not create application schema.
 
 | Model | Purpose |
 | --- | --- |
+| `CourseSource` | Host-managed adapter policy and sharing ceiling |
 | `Course` | Course metadata, license, status, and optional owning tenant |
 | `ExternalCourse` | External course subtype sharing the Course table |
 | `AuthoredCourse` | Authored course subtype sharing the Course table |
@@ -101,6 +102,15 @@ optional guardian scores, signs authorized asset claims, and splits private
 PDF packets by page range. It reuses learner ownership and transaction checks.
 See the [submission integration contract](agents/submission-service.md) for
 inputs, retry rules, signing requirements and external-storage compensation.
+
+## Source imports
+
+`SourceImportService` imports Easy Peasy pages as private family pointers after
+explicit host terms acceptance. Hosts inject the page fetcher and authorize the
+active actor, family/group destination and licensing evidence. Re-import refreshes
+URLs in place without deleting lessons or learner history. No lesson text or PDFs
+are mirrored. See the [source integration contract](agents/source-import.md) and
+[source behavior matrix](../../docs/test-matrix/3967-education-sources.md).
 
 ## Recipes
 
