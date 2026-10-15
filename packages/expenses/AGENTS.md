@@ -18,6 +18,16 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   `filename`, `mimeType`, `byteCount`, `contentSha256`. Collection extends
   `SmrtJunction` (left expense, right asset, ordered by `created_at`).
 
+## Recipe
+
+`src/recipes.ts` declares one `SmrtRecipe`, `expenses.tracking` (label
+"Expenses", section `accounting`, shared with `ledgers.bookkeeping`), emitted
+into the built `manifest.json` and `smrt-knowledge.json` `recipes`. It brings
+`Expense` with `ExpenseReceipt` as a child model, hides the cost-object type,
+commitment and reviewer plumbing, and leaves the read-only review fields as
+they are (review is method-only; see below). Help lives in
+`src/tracking.recipe.md` (#3591). See [core recipes](../core/agents/recipes.md).
+
 ## Invariants
 
 - **Review is method-only.** `review()`, `reject()`, `markDuplicate()`,
