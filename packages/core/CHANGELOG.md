@@ -1,5 +1,22 @@
 # @happyvertical/smrt-core
 
+## 0.56.1
+
+### Patch Changes
+
+- ### Features
+  
+  - service-backed write actions on REST (time entries, expenses) (#4007) (timesheets,expenses)
+  - time entries and expenses recipes for planner cookbooks (#3992) (recipes)
+  - release unified document money and tax reporting (#3988) (commerce)
+  
+  ### Bug Fixes
+  
+  - finish the npmjs mirror inside its time limit and name every failure (#4002) (release)
+- @happyvertical/smrt-config@0.56.1
+  - @happyvertical/smrt-scanner@0.56.1
+  - @happyvertical/smrt-types@0.56.1
+
 ## 0.56.0
 
 ### Minor Changes
