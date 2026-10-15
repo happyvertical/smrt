@@ -55,6 +55,8 @@ export interface FrozenCreditAllocation {
   basis: InvoiceCreditCalculationBasis;
   netMinor: number | null;
   discountMinor: number;
+  /** Signed tax-exclusive source capacity remaining before this allocation. */
+  remainingNetMinor: number;
   exhaustsLine: boolean;
 }
 
@@ -152,7 +154,11 @@ export function allocateFrozenCredit(
       net: 0n,
       discount: 0n,
     };
-    current.quantity += quantityUnits(row.quantity, 'Issued credit quantity');
+    const issuedQuantity = quantityUnits(
+      row.quantity,
+      'Issued credit quantity',
+    );
+    current.quantity += issuedQuantity;
     current.net += BigInt(row.netMinor);
     current.discount += BigInt(row.discountMinor);
     consumed.set(row.creditedLineId, current);
@@ -217,20 +223,38 @@ export function allocateFrozenCredit(
             'Credit quantity exceeds the remaining frozen quantity',
           );
         const exhaustsLine = quantity === remainingQuantity;
+        const discountSign = sourceDiscount < 0n ? -1n : 1n;
+        const cumulativeDiscount =
+          source.discountType === 'none'
+            ? 0n
+            : roundSignedRational(
+                sourceDiscount * (used.quantity + quantity),
+                sourceQuantity,
+              );
+        const incrementalDiscount = cumulativeDiscount - used.discount;
+        const boundedIncrementalDiscount =
+          incrementalDiscount === 0n ||
+          (incrementalDiscount < 0n ? -1n : 1n) !== discountSign
+            ? 0n
+            : discountSign *
+              (magnitude(incrementalDiscount) < remainingDiscount
+                ? magnitude(incrementalDiscount)
+                : remainingDiscount);
         const discount =
-          source.discountType !== 'amount'
+          source.discountType === 'none'
             ? 0n
             : exhaustsLine
-              ? (sourceDiscount < 0n ? -1n : 1n) * remainingDiscount
-              : roundSignedRational(
-                  BigInt(source.discountMinor) * quantity,
-                  sourceQuantity,
-                );
+              ? discountSign * remainingDiscount
+              : boundedIncrementalDiscount;
         return {
           creditedLineId: source.id,
           basis: { kind: 'quantity', quantity: request.quantity, ...snapshot },
           netMinor: null,
           discountMinor: safeSigned(discount, 'Credit discount'),
+          remainingNetMinor: safeSigned(
+            sign * remainingNet,
+            'Remaining credit net amount',
+          ),
           exhaustsLine,
         };
       }
@@ -250,6 +274,10 @@ export function allocateFrozenCredit(
         basis: { kind: 'net_amount', netMinor: request.netMinor, ...snapshot },
         netMinor: safeSigned(sign * amount, 'Credit net amount'),
         discountMinor: 0,
+        remainingNetMinor: safeSigned(
+          sign * remainingNet,
+          'Remaining credit net amount',
+        ),
         exhaustsLine: amount === remainingNet,
       };
     });

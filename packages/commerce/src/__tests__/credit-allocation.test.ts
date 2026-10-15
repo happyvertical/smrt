@@ -81,7 +81,8 @@ describe('frozen credit allocation (#3939)', () => {
           netMinor: gross - discount,
           discountMinor: discount,
           unitPrice,
-          discountType: 'amount',
+          discountType: caseNumber % 2 === 0 ? 'amount' : 'percent',
+          discountRate: caseNumber % 2 === 0 ? '0' : '10',
         }),
         source({
           id: netId,
@@ -150,6 +151,106 @@ describe('frozen credit allocation (#3939)', () => {
     }
   });
 
+  it('allocates a frozen percentage discount by cumulative quantity entitlement', () => {
+    const line = source({
+      quantity: '10',
+      netMinor: 76_500,
+      unitPrice: 8_500,
+      discountMinor: 8_500,
+      discountType: 'percent',
+      discountRate: '10',
+    });
+    const first = allocateFrozenCredit(
+      [line],
+      [],
+      [{ creditedLineId: line.id, quantity: '1' }],
+    );
+    expect(first.allocations).toMatchObject([
+      { discountMinor: 850, exhaustsLine: false },
+    ]);
+
+    const middle = allocateFrozenCredit(
+      [line],
+      [
+        {
+          creditedLineId: line.id,
+          quantity: '1',
+          netMinor: 7_650,
+          discountMinor: 850,
+        },
+      ],
+      [{ creditedLineId: line.id, quantity: '8' }],
+    );
+    expect(middle.allocations).toMatchObject([
+      { discountMinor: 6_800, exhaustsLine: false },
+    ]);
+
+    const final = allocateFrozenCredit(
+      [line],
+      [
+        {
+          creditedLineId: line.id,
+          quantity: '9',
+          netMinor: 68_850,
+          discountMinor: 7_650,
+        },
+      ],
+      [{ creditedLineId: line.id, quantity: '1' }],
+    );
+    expect(final).toMatchObject({
+      allocations: [{ discountMinor: 850, exhaustsLine: true }],
+      exhaustsDocument: true,
+    });
+    expectCode(
+      () =>
+        allocateFrozenCredit(
+          [line],
+          [
+            {
+              creditedLineId: line.id,
+              quantity: '10',
+              netMinor: 76_500,
+              discountMinor: 8_500,
+            },
+          ],
+          [{ creditedLineId: line.id, quantity: '1' }],
+        ),
+      'CREDIT_EXCEEDS_LINE',
+    );
+  });
+
+  it('does not double an already front-loaded frozen discount', () => {
+    const line = source({
+      quantity: '7',
+      netMinor: 66,
+      unitPrice: 10,
+      discountMinor: 4,
+      discountType: 'percent',
+      discountRate: '5.714286',
+    });
+    const frontLoaded = [
+      {
+        creditedLineId: line.id,
+        quantity: '4',
+        netMinor: 36,
+        discountMinor: 4,
+      },
+    ];
+    expect(
+      allocateFrozenCredit([line], frontLoaded, [
+        { creditedLineId: line.id, quantity: '1' },
+      ]).allocations,
+    ).toMatchObject([{ discountMinor: 0, exhaustsLine: false }]);
+    expect(
+      allocateFrozenCredit([line], frontLoaded, [
+        { creditedLineId: line.id, quantity: '3' },
+      ]),
+    ).toMatchObject({
+      allocations: [{ discountMinor: 0, exhaustsLine: true }],
+      exhaustsDocument: true,
+    });
+  });
+
   it('conserves a positive sale and negative adjustment on a full credit', () => {
     const sale = source({ id: 'sale', netMinor: 100, unitPrice: 100 });
     const adjustment = source({
@@ -192,7 +293,8 @@ describe('frozen credit allocation (#3939)', () => {
       netMinor: -36,
       unitPrice: -10,
       discountMinor: -4,
-      discountType: 'amount',
+      discountType: 'percent',
+      discountRate: '10',
     });
     const prior: IssuedCreditConsumption[] = [
       {
@@ -336,6 +438,33 @@ describe('frozen credit allocation (#3939)', () => {
       [{ creditedLineId: 'remaining', netMinor: 20 }],
     );
     expect(targeted.exhaustsDocument).toBe(true);
+  });
+
+  it('carries the remaining net cap across mixed amount and quantity bases', () => {
+    const line = source({
+      quantity: '10',
+      netMinor: 1_000,
+      unitPrice: 100,
+    });
+    const allocation = allocateFrozenCredit(
+      [line],
+      [
+        {
+          creditedLineId: line.id,
+          quantity: '0',
+          netMinor: 900,
+          discountMinor: 0,
+        },
+      ],
+      [{ creditedLineId: line.id, quantity: '2' }],
+    );
+    expect(allocation.allocations).toMatchObject([
+      {
+        remainingNetMinor: 100,
+        netMinor: null,
+        exhaustsLine: false,
+      },
+    ]);
   });
 
   it('does not exhaust a multi-line document when only a subset is credited', () => {

@@ -41,11 +41,18 @@ Credit notes reuse `Invoice` with `kind: 'credit_note'` and a frozen
 `creditedInvoiceId`; their `DocumentTax.documentType` is `credit_note`. Stored
 header amounts remain positive and posting/report direction comes from `kind`.
 A targeted credit line carries `creditedLineId` plus a server-derived frozen
-calculation basis. Quantity credits reuse the source price and prorate its flat
-discount; amount credits use an explicit tax-exclusive magnitude and restore
-the source line sign. Tax components, labels, rates, and accounts come from the
-issued source snapshot. When a request exhausts every remaining original line,
-the final line receives the exact remaining document/component residual.
+calculation basis. The credit document inherits and re-enforces its source
+`lineAmountType` and `taxRoundingScope`; later tenant defaults cannot reinterpret
+the frozen unit price or tax allocation. Quantity credits reuse the source price
+and allocate its frozen flat or percentage discount from cumulative credited
+quantity; this prevents repeated rounding from exceeding the source discount,
+and the final quantity receives its exact remaining discount. Amount credits use
+an explicit tax-exclusive magnitude and restore the source line sign. A quantity
+request is also bounded by tax-exclusive value already consumed through amount
+credits, so mixing the two bases cannot exceed the source line. Tax components,
+labels, rates, and accounts come from the issued source snapshot. When a request
+exhausts every remaining original line, the final line also receives the exact
+remaining document/component residual.
 Free-form goodwill lines require an explicit tax code and do not consume source
 line capacity.
 
