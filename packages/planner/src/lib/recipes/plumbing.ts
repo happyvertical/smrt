@@ -19,6 +19,13 @@ import type { Catalog, CatalogModel } from '../catalog/types.ts';
  * 4. Tiny lookup list: a name ending `Status` or `Type` with at most three
  *    non-system fields (`AssetStatus`, `PlaceType`, `ProfileType`). Richer
  *    types such as `ContentContributionType` stay features.
+ * 5. Named in {@link PLUMBING_MODELS}: rows the catalog's shape cannot tell
+ *    apart from features. smrt-commerce's money model (smrt#3988) is the
+ *    case: `TaxCode` is a feature (the codes people choose on a line), but
+ *    its `TaxComponent` rates belong to codes, `TaxSettings` is the tenant's
+ *    one settings row (the Settings tab edits its portable part),
+ *    `DocumentTax` is a document's derived tax snapshot and
+ *    `TaxSummaryReport` a materialized report a server host refreshes.
  */
 export const JUNCTION_BASES: readonly string[] = [
   'SmrtJunction',
@@ -45,12 +52,24 @@ export const LOOKUP_MAX_FIELDS = 3;
 export const LINK_MIN_REFS = 2;
 export const LINK_MAX_OTHER_FIELDS = 1;
 
-type ModelShape = Pick<CatalogModel, 'name' | 'fields' | 'extends'>;
+/** Plumbing by name (rule 5), by qualified model id, with its reason. */
+export const PLUMBING_MODELS: Readonly<Record<string, string>> = {
+  '@happyvertical/smrt-commerce:TaxComponent': 'lookup',
+  '@happyvertical/smrt-commerce:TaxSettings': 'settings',
+  '@happyvertical/smrt-commerce:DocumentTax': 'snapshot',
+  '@happyvertical/smrt-commerce:TaxSummaryReport': 'report',
+};
+
+type ModelShape = Pick<CatalogModel, 'name' | 'fields' | 'extends'> & {
+  id?: string;
+};
 
 const REF_TYPES = new Set(['foreignKey', 'crossPackageRef']);
 
 /** The reason a model is plumbing, or null when it is a feature. */
 export function plumbingReason(model: ModelShape): string | null {
+  const named = model.id ? PLUMBING_MODELS[model.id] : undefined;
+  if (named) return named;
   const base = model.extends?.split(':').pop();
   if (base && JUNCTION_BASES.includes(base)) return 'junction';
 

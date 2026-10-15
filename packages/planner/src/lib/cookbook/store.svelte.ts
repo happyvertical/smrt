@@ -3,11 +3,12 @@ import {
   isShellLayoutEmpty,
   type ShellLayout,
 } from '@happyvertical/smrt-svelte/workspace/layout';
-import { setSampleTaxRate } from '../data/packs.ts';
+import { setSamplePricing, setSampleTaxRate } from '../data/packs.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
 import {
   type AppSettings,
   hasTaxRateRow,
+  isSettingRow,
   readSettings,
   writeSettings,
 } from '../settings/app-settings.ts';
@@ -33,6 +34,28 @@ export const SAVE_DELAY_MS = 300;
 
 /** `ok`: saved. `memory`: storage unavailable or refusing, working in memory. */
 export type PersistState = 'unknown' | 'ok' | 'memory';
+
+/**
+ * Sample documents follow the app's money settings (tax rate, prices with or
+ * without tax, rounding, currency) the next time sample rows are generated.
+ */
+export function followSettings(cookbook: Pick<Cookbook, 'policies'>): void {
+  const settings = readSettings(cookbook);
+  // Once the app states any setting (a cookbook or the Settings tab did), its
+  // tax rate is what it says, 0 included, as an exported cookbook means; a
+  // fresh app keeps the sample pack's rate.
+  const stated = cookbook.policies.some(
+    (row) => row.defaultValue !== undefined && isSettingRow(row),
+  );
+  setSampleTaxRate(
+    hasTaxRateRow(cookbook) || stated ? settings.taxRate : undefined,
+  );
+  setSamplePricing({
+    pricesIncludeTax: settings.pricesIncludeTax,
+    taxRounding: settings.taxRounding,
+    currency: settings.currency,
+  });
+}
 
 /**
  * The single source of truth for what a visitor has built. Recipes and
@@ -129,9 +152,7 @@ export class CookbookStore {
     this.name = cookbook.name;
     this.description = cookbook.description;
     this.overviews = { ...(cookbook.overviews ?? {}) };
-    setSampleTaxRate(
-      hasTaxRateRow(cookbook) ? readSettings(cookbook).taxRate : undefined,
-    );
+    followSettings(cookbook);
   }
 
   /**
@@ -168,9 +189,7 @@ export class CookbookStore {
   setSettings(settings: AppSettings): void {
     const next = writeSettings(this.snapshot(), settings);
     recipeState.rows = next.policies.map((row) => ({ ...row }));
-    setSampleTaxRate(
-      hasTaxRateRow(next) ? readSettings(next).taxRate : undefined,
-    );
+    followSettings(next);
   }
 
   /** Replace on the visitor's say-so (an import): saving is allowed again. */
@@ -184,6 +203,7 @@ export class CookbookStore {
   /** Back to an empty cookbook, and the shell's own settings to defaults. */
   reset(): void {
     recipeState.clear();
+    followSettings({ policies: [] });
     this.layout = undefined;
     this.theme = undefined;
     this.name = undefined;

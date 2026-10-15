@@ -1,5 +1,5 @@
 import type { CatalogModel } from '../catalog/types.ts';
-import { isLineModel, settleLine, withTotals } from './derived.ts';
+import { isLineModel, lineAmount, settleWithLines } from './derived.ts';
 import {
   createRandom,
   fakeId,
@@ -9,7 +9,12 @@ import {
   packLine,
   relatedIndex,
 } from './fakes.ts';
-import { getSamplePack } from './packs.ts';
+import {
+  examplePackCodeFor,
+  type MoneyContext,
+  SEEDED_TAX_CODES,
+} from './money.ts';
+import { getSamplePack, getSamplePricing } from './packs.ts';
 
 /** A child model and the field holding its parent's id (see `childLinks`). */
 export interface ChildOf {
@@ -26,9 +31,8 @@ const hasField = (model: CatalogModel, name: string) =>
  * Sample child rows for one parent record: one to four (journals, an even
  * number of balanced entries), each pointing at the parent through `fk`. Ids
  * and values are seeded from the parent's id, so the same parent always gets
- * the same children. A line item's `amount` is tax-inclusive, `quantity *
- * unitPrice - discount + tax` (`lineAmounts`), so the lines add up to the
- * parent's total.
+ * the same children. A line's money (`amount`, `taxAmount`, its tax code's
+ * snapshot) is settled with its document's other lines (`settleSample`).
  */
 export function fakeChildrenOf(
   child: CatalogModel,
@@ -86,13 +90,17 @@ export function fakeChildrenOf(
         pack.lineQuantity ?? [1, 5];
       const quantity = low + Math.floor(random() * (high - low + 1));
       if (hasField(child, 'quantity')) record.quantity = quantity;
-      if (hasField(child, 'discount')) {
-        record.discount =
-          i === 0 && discounted(parent)
-            ? lineDiscount(quantity, Number(record.unitPrice ?? 0))
-            : 0;
-      }
-      record.amount = settleLine(record).amount;
+      Object.assign(
+        record,
+        sampleLineMoney(
+          child,
+          parent,
+          i,
+          quantity,
+          Number(record.unitPrice ?? 0),
+        ),
+      );
+      record.amount = lineAmount(record);
     }
     if (ledger) {
       const debit = i % 2 === 0;
@@ -114,11 +122,115 @@ function lineDiscount(quantity: number, unitPrice: number): number {
 }
 
 /**
+ * Does a sample line carry its own tax code (`taxMode: 'override'`), about one
+ * line in seven by its document and position, never a document's first line?
+ */
+export function overridesTax(parent: { id: string }, index: number): boolean {
+  return (
+    index > 0 && hashString(`tax-override:${parent.id}:${index}`) % 7 === 0
+  );
+}
+
+/**
+ * The code an overriding sample line chooses, by line: in an app whose
+ * currency an example-pack code names, that code half the time (BC GST + PST
+ * for CAD, so its components show apart); otherwise exempt or zero-rated.
+ */
+export function overrideTaxCode(
+  parent: { id: string },
+  index: number,
+  currency = getSamplePricing().currency,
+) {
+  const draw = hashString(`tax-override-kind:${parent.id}:${index}`) % 4;
+  const pack = examplePackCodeFor(currency);
+  if (pack && draw < 2) return pack;
+  const kind = draw % 2 === 0 ? 'exempt' : 'zero-rated';
+  return SEEDED_TAX_CODES.find((c) => c.kind === kind);
+}
+
+/**
+ * The money inputs of a sample line, for the fields the line has: a
+ * discounted document's first line takes a tenth off, as a percentage
+ * (`discountType: 'percent'`, `discountRate: '10'`) or a whole-unit amount
+ * (`'amount'`, `discount` in minor units), alternating by document; a few
+ * lines carry a tax code of their own (`overrideTaxCode`); every other line
+ * inherits its code. What the line then comes to is the document's to settle.
+ */
+function sampleLineMoney(
+  child: CatalogModel,
+  parent: ModelRecord,
+  index: number,
+  quantity: number,
+  unitPrice: number,
+): Record<string, unknown> {
+  const money: Record<string, unknown> = {};
+  const discount = index === 0 && discounted(parent);
+  const percent = hashString(`discount-kind:${parent.id}`) % 2 === 0;
+  if (hasField(child, 'discountType')) {
+    money.discountType = discount ? (percent ? 'percent' : 'amount') : 'none';
+  }
+  if (hasField(child, 'discountRate')) {
+    money.discountRate = discount && percent ? '10' : null;
+  }
+  if (hasField(child, 'discount')) {
+    money.discount =
+      discount && !(percent && hasField(child, 'discountType'))
+        ? lineDiscount(quantity, unitPrice)
+        : 0;
+  }
+  // A line with a `discount` but no `discountType` field cannot say which
+  // kind it is: an amount is the only one the model can read from it.
+  if (!hasField(child, 'discountType') && money.discount) {
+    money.discountType = 'amount';
+  }
+  const override = overridesTax(parent, index)
+    ? overrideTaxCode(parent, index)
+    : undefined;
+  if (hasField(child, 'taxMode')) {
+    money.taxMode = override ? 'override' : 'inherit';
+  }
+  if (hasField(child, 'taxCodeId')) money.taxCodeId = override?.id ?? null;
+  return money;
+}
+
+/**
+ * A sample line once the app's hidden fields' values are applied (`carried`):
+ * where the app hides the line's `discount`, an amount discount could not be
+ * seen or entered, so the line takes its tenth off as a percentage instead,
+ * and where it hides `discountRate` too, the line has no discount.
+ */
+export function withCarried(
+  item: ModelRecord,
+  carried: Readonly<Record<string, unknown>>,
+): ModelRecord {
+  const next = { ...item, ...carried };
+  if (
+    'discount' in carried &&
+    !('discountType' in carried) &&
+    next.discountType === 'amount'
+  ) {
+    next.discountType = 'percent';
+    next.discountRate = '10';
+    next.discount = 0;
+  }
+  // Neither kind can be seen: no discount at all.
+  if ('discountRate' in carried && next.discountType === 'percent') {
+    next.discountType = 'none';
+    next.discountRate = null;
+    next.discount = 0;
+  }
+  return next;
+}
+
+/**
  * The sample documents whose stored totals deliberately disagree with their
  * lines, so the record page's mismatch flag has something to show: the third
- * Order and the third Invoice (row index 2), whose subtotal and total were
- * left stale by an edit made elsewhere. Their own fields stay authoritative; the page only
- * flags the difference. Editing a line recomputes the totals and clears it.
+ * Order and the third Invoice (row index 2), drafts whose subtotal and total
+ * were left stale by an edit made elsewhere. Only a draft's totals are read
+ * against its lines (an issued document shows its frozen figures as they
+ * are), so these two are drafts. Their own fields stay authoritative; the
+ * page only flags the difference. Editing a line recomputes the totals and
+ * clears it.
  */
 export const MISMATCH_MODELS: readonly string[] = [
   '@happyvertical/smrt-commerce:Order',
@@ -142,20 +254,33 @@ export function seedMismatch(
   ) {
     return;
   }
+  if (
+    parentModel.fields.some(
+      (f) => f.name === 'status' && f.enum?.includes('draft'),
+    )
+  ) {
+    parent.status = 'draft';
+  }
   // Stale but self-consistent: subtotal and total moved together.
   parent.subtotal += MISMATCH_AMOUNT;
   parent.totalAmount += MISMATCH_AMOUNT;
 }
 
 /**
- * Bring a parent's totals in line with the line items just generated for it
- * (see `withTotals`).
+ * Settle the line items just generated for a parent with it (see
+ * `settleWithLines`): the parent's totals are set in place and the settled
+ * lines returned.
  */
-export function syncTotals(
+export function settleSample(
   parent: ModelRecord,
   parentModel: CatalogModel,
   items: readonly ModelRecord[],
-): void {
-  if (!items.length || !items.every((r) => 'unitPrice' in r)) return;
-  Object.assign(parent, withTotals(parentModel, parent, items));
+  context: MoneyContext,
+): ModelRecord[] {
+  if (!items.length || !items.every((r) => 'unitPrice' in r)) {
+    return [...items];
+  }
+  const settled = settleWithLines(parentModel, parent, items, context);
+  Object.assign(parent, settled.row);
+  return settled.lines as ModelRecord[];
 }

@@ -3,27 +3,41 @@ import {
   type ChildOf,
   fakeChildrenOf,
   seedMismatch,
-  syncTotals,
+  settleSample,
+  withCarried,
 } from './children.ts';
 import {
   allocationInvoiceField,
   allocationPaymentField,
+  documentLineAmountType,
+  documentRoundingScope,
   isAllocationModel,
   isLineModel,
   PAID_PAYMENT_STATUS,
   settleInvoice,
-  settleLine,
+  settleWithLines,
   tracksPayments,
-  withTotals,
 } from './derived.ts';
 import {
   DEFAULT_SAMPLE_ROWS,
+  DEFAULT_SAMPLE_TAX_RATE,
   EPOCH,
   fakeId,
   fakeRecords,
   type ModelRecord,
   sampleRowCount,
 } from './fakes.ts';
+import {
+  defaultTaxCode,
+  type MoneyContext,
+  MoneyValidationError,
+  moneyCurrency,
+  type SampleTaxCode,
+  type SampleTaxComponent,
+  sampleTaxCodes,
+  settleDocument,
+} from './money.ts';
+import { getSamplePricing, getSampleTaxRate } from './packs.ts';
 
 import { fakeAllocations } from './payments.ts';
 
@@ -125,12 +139,28 @@ export interface DataSource {
 }
 
 /**
- * Prefix of the localStorage keys rows are kept under, one per model. v5:
- * a line's `amount` is tax-inclusive again, as smrt-commerce and the
- * released line-items widget read it (`derived.ts`); rows kept under v4 hold
- * pre-tax amounts, so they are left behind for fresh samples.
+ * Prefix of the localStorage keys rows are kept under, one per model. v6:
+ * documents are on smrt-commerce's money model (a line's `amount` is its net
+ * after discount, or its gross when prices include tax, with tax stored
+ * apart; `derived.ts`). Rows kept under an older prefix are left behind for
+ * fresh samples, never migrated.
  */
-export const DATA_STORAGE_PREFIX = 'smrt-planner:data:v5:';
+export const DATA_STORAGE_PREFIX = 'smrt-planner:data:v6:';
+
+const TAX_CODE_MODEL = '@happyvertical/smrt-commerce:TaxCode';
+const TAX_COMPONENT_MODEL = '@happyvertical/smrt-commerce:TaxComponent';
+const TAX_CODE_KINDS = ['taxable', 'zero-rated', 'exempt', 'out-of-scope'];
+
+/** Has a document left `draft`, freezing the codes its lines were taxed with? */
+function isIssuedRow(model: CatalogModel, row: ModelRecord): boolean {
+  const status = model.fields.find((f) => f.name === 'status');
+  return (
+    Boolean(status?.enum?.includes('draft')) &&
+    typeof row.status === 'string' &&
+    row.status !== '' &&
+    row.status !== 'draft'
+  );
+}
 const CREATED_KEY = `${DATA_STORAGE_PREFIX}_created`;
 
 /** Remove every stored row. Never throws. */
@@ -403,19 +433,154 @@ export function createMemoryDataSource(
         // through the form would, before its parent's totals are summed.
         const carried = options.defaults?.(model) ?? {};
         table(parent).forEach((row, index) => {
-          const items = fakeChildrenOf(model, fk, row, seed, rows).map(
-            (item) =>
-              isLineModel(model)
-                ? settleLine({ ...item, ...carried })
-                : { ...item, ...carried },
+          const items = fakeChildrenOf(model, fk, row, seed, rows).map((item) =>
+            withCarried(item, carried),
           );
-          made.push(...items);
-          syncTotals(row, parent, items);
-          if (isLineModel(model)) seedMismatch(row, parent, index);
+          if (!isLineModel(model)) {
+            made.push(...items);
+            return;
+          }
+          made.push(
+            ...settleSample(row, parent, items, moneyContext(parent, row)),
+          );
+          seedMismatch(row, parent, index);
         });
       }
     }
     return made;
+  };
+
+  const modelById = new Map(
+    (options.children?.models ?? []).map((m) => [m.id, m] as const),
+  );
+
+  /**
+   * The sample tenant's tax codes as its tables hold them: the seeded set for
+   * the app's rate, with any `TaxCode` row (and the `TaxComponent` rows it
+   * names) replacing or adding to it, so a code the visitor added or edited
+   * is the one a line resolves.
+   */
+  const tenantTaxCodes = (rate: number): SampleTaxCode[] => {
+    const base = sampleTaxCodes(rate);
+    // Through `table`, so rows saved in an earlier visit count even when
+    // nothing has opened the tax tables yet.
+    const codeModel = modelById.get(TAX_CODE_MODEL);
+    const componentModel = modelById.get(TAX_COMPONENT_MODEL);
+    const rows = codeModel ? table(codeModel) : [];
+    if (!rows.length) return base;
+    const parts = new Map<string, SampleTaxComponent>(
+      base.flatMap((c) => c.components.map((p) => [p.id, p] as const)),
+    );
+    for (const row of componentModel ? table(componentModel) : []) {
+      parts.set(row.id, {
+        id: row.id,
+        key: row.id,
+        name: String(row.name ?? ''),
+        percent: String(row.percent ?? '0'),
+        recoverable: row.recoverable === true,
+      });
+    }
+    const fromRows = rows.map((row): SampleTaxCode => {
+      let listed: unknown = [];
+      try {
+        listed = JSON.parse(String(row.componentsJson ?? '[]'));
+      } catch {
+        listed = [];
+      }
+      const components = (Array.isArray(listed) ? listed : []).flatMap(
+        (entry) => {
+          const found =
+            entry && typeof entry === 'object'
+              ? parts.get(
+                  String((entry as Record<string, unknown>).taxComponentId),
+                )
+              : undefined;
+          return found ? [found] : [];
+        },
+      );
+      const kind = TAX_CODE_KINDS.includes(String(row.kind))
+        ? (row.kind as SampleTaxCode['kind'])
+        : 'taxable';
+      const appliesTo = ['sales', 'purchases', 'both'].includes(
+        String(row.appliesTo),
+      )
+        ? (row.appliesTo as SampleTaxCode['appliesTo'])
+        : 'both';
+      return {
+        id: row.id,
+        code: String(row.code ?? ''),
+        name: String(row.name ?? ''),
+        kind,
+        appliesTo,
+        active: row.active !== false,
+        components,
+      };
+    });
+    const byId = new Map(fromRows.map((c) => [c.id, c]));
+    // A table seeded with the tenant's codes is the whole truth: a code the
+    // visitor deleted stays deleted, except the default for the app's current
+    // rate, which smrt's activation creates (or reuses) whenever the rate is
+    // set, so a rate changed after the table was seeded still has its code.
+    // A table that never held them (a source without tax samples) only adds
+    // to the seeded set.
+    if (base.some((c) => byId.has(c.id))) {
+      const fallback = defaultTaxCode(rate);
+      const seeded = base
+        .filter((c) => byId.has(c.id) || c.id === fallback.id)
+        .map((c) => byId.get(c.id) ?? c);
+      return [
+        ...seeded,
+        ...fromRows.filter((c) => !base.some((b) => b.id === c.id)),
+      ];
+    }
+    return [...base, ...fromRows];
+  };
+
+  /**
+   * How a document's money is settled: its own pricing mode and rounding,
+   * else the app's; the sample tenant's tax codes, the app default for its
+   * tax rate; and what its customer and products say about tax.
+   */
+  const moneyContext = (
+    parent: CatalogModel,
+    row: ModelRecord,
+  ): MoneyContext => {
+    const pricing = getSamplePricing();
+    const rate = getSampleTaxRate() ?? DEFAULT_SAMPLE_TAX_RATE;
+    const codes = tenantTaxCodes(rate);
+    const customerField = parent.fields.find(
+      (f) => f.name === 'customerId' && f.related,
+    );
+    const customerModel = customerField?.related
+      ? modelById.get(customerField.related)
+      : undefined;
+    const customer = customerModel
+      ? table(customerModel).find((c) => c.id === row.customerId)
+      : undefined;
+    const products = (productId: string) => {
+      for (const [id, rows] of tables) {
+        if (!id.endsWith(':Product')) continue;
+        const found = rows.find((p) => p.id === productId);
+        if (found) return found;
+      }
+      return undefined;
+    };
+    const codeOf = (value: unknown) =>
+      typeof value === 'string' && value ? value : null;
+    return {
+      lineAmountType: documentLineAmountType(
+        row,
+        pricing.pricesIncludeTax ? 'inclusive' : 'exclusive',
+      ),
+      roundingScope: documentRoundingScope(row, pricing.taxRounding),
+      currency: moneyCurrency(row.currency, moneyCurrency(pricing.currency)),
+      codes,
+      appDefaultCodeId: defaultTaxCode(rate).id,
+      customerTaxExempt: customer?.taxExempt === true,
+      partyCodeId: codeOf(customer?.defaultTaxCodeId),
+      productCodeOf: (productId) =>
+        codeOf(products(productId)?.defaultSalesTaxCodeId),
+    };
   };
 
   /** Save the model and the tables it is built together with. */
@@ -445,36 +610,94 @@ export function createMemoryDataSource(
     }
   };
 
-  /** A parent's line items, by its id. */
+  /**
+   * A document's line items: a line model that belongs to it through its own
+   * key (an Invoice's lines by `invoiceId`), never a model the lines merely
+   * point at (a Product or a TaxCode is not the document they are settled in).
+   */
   const lineLink = (parent: CatalogModel) =>
-    linksOf(parent.id).find((l) => isLineModel(l.model));
+    linksOf(parent.id).find(
+      (l) =>
+        isLineModel(l.model) &&
+        ownersOf(l.model.id).some(
+          (o) => o.parent.id === parent.id && o.fk === l.fk,
+        ),
+    );
 
-  /** Recompute a parent's totals from its lines (they are never typed in). */
-  const resync = (parent: CatalogModel, parentId: unknown) => {
+  /**
+   * Settle a parent with its lines (they are never typed in): the lines'
+   * money and the parent's totals, written back to both tables. Whether the
+   * parent was there to settle.
+   */
+  const resync = (
+    parent: CatalogModel,
+    parentId: unknown,
+    lineWrite = false,
+  ): boolean => {
     const link = lineLink(parent);
-    if (!link) return;
+    if (!link) return false;
     const list = table(parent);
     const index = list.findIndex((r) => r.id === parentId);
-    if (index < 0) return;
-    const lines = table(link.model).filter((r) => r[link.fk] === parentId);
-    list[index] = withTotals(parent, list[index] as ModelRecord, lines);
+    if (index < 0) return false;
+    const lineRows = table(link.model);
+    const lines = lineRows.filter((r) => r[link.fk] === parentId);
+    const row = list[index] as ModelRecord;
+    // An issued document's money is frozen, as smrt's money model freezes it
+    // when a document leaves draft: its own edits keep the stored figures,
+    // and a change to its lines is refused.
+    if (isIssuedRow(parent, row)) {
+      if (lineWrite) {
+        throw new MoneyValidationError(
+          'FROZEN_DOCUMENT',
+          `This ${parent.name.toLowerCase()} has been issued, so its lines can no longer change.`,
+        );
+      }
+      return true;
+    }
+    const settled = settleWithLines(
+      parent,
+      row,
+      lines,
+      moneyContext(parent, row),
+    );
+    list[index] = settled.row;
+    for (const line of settled.lines) {
+      const at = lineRows.findIndex((r) => r.id === line.id);
+      if (at >= 0) lineRows[at] = line as ModelRecord;
+    }
+    return true;
   };
 
-  /** Settle a written row, then the parents whose totals depend on it. */
+  /**
+   * Settle a written row, then the parents whose totals depend on it. Throws
+   * smrt's `MoneyValidationError` for money the model refuses.
+   */
   const settle = (model: CatalogModel, record: ModelRecord): ModelRecord => {
     let settled = record;
-    if (isLineModel(model)) {
-      settled = settleLine(record);
-      const list = table(model);
-      const index = list.findIndex((r) => r.id === record.id);
-      if (index >= 0) list[index] = settled;
-    }
     if (lineLink(model)) {
       resync(model, record.id);
       settled = table(model).find((r) => r.id === record.id) ?? settled;
     }
-    for (const { parent, fk } of ownersOf(model.id)) {
-      if (isLineModel(model)) resync(parent, record[fk]);
+    if (isLineModel(model)) {
+      const owned = ownersOf(model.id).some(({ parent, fk }) =>
+        resync(parent, record[fk], true),
+      );
+      const list = table(model);
+      const index = list.findIndex((r) => r.id === record.id);
+      if (!owned && index >= 0) {
+        // A line with no document settles on its own, on the app's terms.
+        const pricing = getSamplePricing();
+        const rate = getSampleTaxRate() ?? DEFAULT_SAMPLE_TAX_RATE;
+        const alone = settleDocument([record], {
+          lineAmountType: pricing.pricesIncludeTax ? 'inclusive' : 'exclusive',
+          roundingScope: pricing.taxRounding,
+          currency: moneyCurrency(pricing.currency),
+          codes: tenantTaxCodes(rate),
+          appDefaultCodeId: defaultTaxCode(rate).id,
+        }).lines[0] as ModelRecord;
+        list[index] = alone;
+      }
+      settled = table(model).find((r) => r.id === record.id) ?? settled;
     }
     // What an invoice has paid follows its allocations and their payments.
     if (tracksPayments(model)) {
@@ -493,6 +716,25 @@ export function createMemoryDataSource(
       }
     }
     return settled;
+  };
+
+  /** Copies of the tables a write to `model` may settle, to undo a refusal. */
+  const snapshotFamily = (model: CatalogModel) => {
+    const family = [
+      model,
+      ...linksOf(model.id).map((l) => l.model),
+      ...ownersOf(model.id).map((o) => o.parent),
+    ];
+    return new Map(
+      family.map((m) => [m.id, table(m).map((r) => ({ ...r }))] as const),
+    );
+  };
+
+  const restore = (snapshot: Map<string, ModelRecord[]>) => {
+    for (const [id, rows] of snapshot) {
+      const list = tables.get(id);
+      if (list) list.splice(0, list.length, ...rows);
+    }
   };
 
   const present = (model: CatalogModel, record: ModelRecord): ModelRecord => ({
@@ -525,8 +767,16 @@ export function createMemoryDataSource(
         ...values,
         id: nextId(model),
       };
+      const snapshot = snapshotFamily(model);
       table(model).push(record);
-      const settled = settle(model, record);
+      let settled: ModelRecord;
+      try {
+        settled = settle(model, record);
+      } catch (error) {
+        restore(snapshot);
+        created--;
+        throw error;
+      }
       persist(model);
       return { ...settled };
     },
@@ -534,9 +784,24 @@ export function createMemoryDataSource(
       const list = table(model);
       const index = list.findIndex((r) => r.id === id);
       if (index < 0) return undefined;
-      const next: ModelRecord = { ...list[index], ...values, id };
+      const snapshot = snapshotFamily(model);
+      const previous = list[index] as ModelRecord;
+      const next: ModelRecord = { ...previous, ...values, id };
       list[index] = next;
-      const settled = settle(model, next);
+      let settled: ModelRecord;
+      try {
+        settled = settle(model, next);
+        // A line moved to another document leaves its old one: that one
+        // settles without it (refused when it has been issued).
+        if (isLineModel(model)) {
+          for (const { parent, fk } of ownersOf(model.id)) {
+            if (previous[fk] !== next[fk]) resync(parent, previous[fk], true);
+          }
+        }
+      } catch (error) {
+        restore(snapshot);
+        throw error;
+      }
       persist(model);
       return { ...settled };
     },
@@ -544,11 +809,19 @@ export function createMemoryDataSource(
       const list = table(model);
       const index = list.findIndex((r) => r.id === id);
       if (index < 0) return false;
+      const snapshot = snapshotFamily(model);
       const [gone] = list.splice(index, 1);
-      const spec = allocationSpecOf(model);
-      if (spec && gone) resettleInvoice(spec.invoice, gone[spec.invoiceFk]);
-      for (const { parent, fk } of ownersOf(model.id)) {
-        if (isLineModel(model) && gone) resync(parent, gone[fk]);
+      try {
+        const spec = allocationSpecOf(model);
+        if (spec && gone) resettleInvoice(spec.invoice, gone[spec.invoiceFk]);
+        for (const { parent, fk } of ownersOf(model.id)) {
+          if (isLineModel(model) && gone) resync(parent, gone[fk], true);
+        }
+      } catch (error) {
+        // The document refused (issued, or a sibling's code was switched
+        // off): the line stays, as it was.
+        restore(snapshot);
+        throw error;
       }
       persist(model);
       return true;

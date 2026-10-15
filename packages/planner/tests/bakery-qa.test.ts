@@ -3,7 +3,11 @@ import { catalog, getModelByQualifiedName } from '../src/lib/catalog/index.ts';
 import { CookbookStore } from '../src/lib/cookbook/store.svelte.ts';
 import { listColumns } from '../src/lib/data/columns.ts';
 import { fakeRecords } from '../src/lib/data/fakes.ts';
-import { COOKBOOK_PACKS, setSamplePack } from '../src/lib/data/packs.ts';
+import {
+  COOKBOOK_PACKS,
+  setSamplePack,
+  setSampleTaxRate,
+} from '../src/lib/data/packs.ts';
 import { createMemoryDataSource } from '../src/lib/data/source.ts';
 import { catalogModels } from '../src/lib/forms/shared.ts';
 import { stockSamples } from '../src/lib/forms/stock.ts';
@@ -117,6 +121,8 @@ describe('sample packs per cookbook', () => {
   });
 
   it('generate untaxed lines for a zero-tax cookbook', () => {
+    // The packs' own rates: no app has stated one (an applied cookbook does).
+    setSampleTaxRate(undefined);
     setSamplePack('bakery');
     const lines = fakeRecords(model(`${C}ContractLineItem`), 20);
     expect(lines.every((l) => l.taxRate === 0)).toBe(true);

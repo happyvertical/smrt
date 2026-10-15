@@ -41,14 +41,16 @@ describe('dependencies', () => {
 describe('selection store', () => {
   beforeEach(() => selection.clear());
 
+  // smrt 0.56.1's commerce and products require each other (smrt#4023), so a pair from
+  // outside that cycle: events needs places.
   it('adds with dependencies and keeps required packages on remove', () => {
-    selection.add('manufacturing');
-    expect(selection.has('products')).toBe(true);
-    selection.remove('products');
-    expect(selection.has('products')).toBe(true);
-    selection.remove('manufacturing');
-    selection.remove('products');
-    expect(selection.has('products')).toBe(false);
+    selection.add('events');
+    expect(selection.has('places')).toBe(true);
+    selection.remove('places');
+    expect(selection.has('places')).toBe(true);
+    selection.remove('events');
+    selection.remove('places');
+    expect(selection.has('places')).toBe(false);
   });
 
   it('applies an { add, remove } change and ignores unknown ids', () => {

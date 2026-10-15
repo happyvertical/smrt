@@ -6,8 +6,22 @@ import {
   MISMATCH_ROW,
 } from '../src/lib/data/children.ts';
 import { blankChild, rowsOf } from '../src/lib/data/columns.ts';
-import { totalsOf } from '../src/lib/data/derived.ts';
-import { DEFAULT_SAMPLE_TAX_RATE } from '../src/lib/data/fakes.ts';
+import {
+  DEFAULT_SAMPLE_TAX_RATE,
+  EXEMPT_EVERY,
+} from '../src/lib/data/fakes.ts';
+
+type Row = Record<string, unknown>;
+const sum = (rows: readonly Row[], key: string) =>
+  rows.reduce((total, row) => total + Number(row[key] ?? 0), 0);
+/** What a document's lines add up to on smrt's money model (prices without tax). */
+const totalsOf = (lines: readonly Row[]) => ({
+  subtotal: sum(lines, 'amount'),
+  taxAmount: sum(lines, 'taxAmount'),
+  totalAmount: sum(lines, 'amount') + sum(lines, 'taxAmount'),
+  discountTotal: sum(lines, 'discount'),
+});
+
 import { createMemoryDataSource } from '../src/lib/data/source.ts';
 import { recipes } from '../src/lib/recipes/index.ts';
 import {
@@ -149,47 +163,88 @@ describe('sample records come with their line items', () => {
     const invoices = await a.list(invoice);
     invoices.forEach((record, index) => {
       const mine = rowsOf(first, 'invoiceId', record.id);
-      // Line amounts are tax-inclusive: they add up to the total. The
-      // subtotal is the lines' prices; the total takes off their discounts
-      // and adds their tax. One invoice is seeded with stale totals, so the
-      // record page's mismatch flag can be seen.
+      // Line amounts are net after discount, tax stored apart: the subtotal
+      // is the lines' amounts and the total adds their tax. The discounts
+      // are already inside the amounts (`discountTotal` only reports them).
+      // One invoice is seeded with stale totals, so the record page's
+      // mismatch flag can be seen.
       const stale = index === MISMATCH_ROW ? MISMATCH_AMOUNT : 0;
       const totals = totalsOf(mine);
       expect(record.subtotal).toBe(totals.subtotal + stale);
-      expect(record.totalAmount).toBe(
-        mine.reduce((total, r) => total + Number(r.amount), 0) + stale,
-      );
+      expect(record.taxAmount).toBe(totals.taxAmount);
       expect(record.totalAmount).toBe(totals.totalAmount + stale);
       expect(record.totalAmount).toBe(
-        Number(record.subtotal) - totals.discount + Number(record.taxAmount),
+        Number(record.subtotal) + Number(record.taxAmount),
       );
+      expect(record.discountTotal).toBe(totals.discountTotal);
+      expect(record).toMatchObject({
+        lineAmountType: 'exclusive',
+        taxRoundingScope: 'line',
+        kind: 'invoice',
+      });
     });
   });
 
-  it('taxes every line at one rate and discounts some documents', async () => {
+  it('taxes lines by their code, exempts one customer in eight, discounts some documents', async () => {
     const data = source();
     const orders = await data.list(model(`${C}Order`));
     const lines = await data.list(model(`${C}ContractLineItem`));
+    const customers = new Map(
+      (await data.list(model(`${C}Customer`))).map((c) => [c.id, c]),
+    );
     let discounts = 0;
+    let percent = 0;
+    let overrides = 0;
+    let exemptOrders = 0;
     for (const order of orders) {
       const mine = rowsOf(lines, 'contractId', order.id);
+      const exempt = customers.get(String(order.customerId))?.taxExempt;
+      if (exempt) exemptOrders += 1;
       for (const line of mine) {
-        expect(line.taxRate).toBe(DEFAULT_SAMPLE_TAX_RATE);
         expect(Number.isInteger(line.amount)).toBe(true);
+        if (line.taxMode === 'override') {
+          overrides += 1;
+          expect(['exempt', 'zero-rated']).toContain(line.taxCodeCode);
+          expect(line.taxAmount).toBe(0);
+        } else if (exempt) {
+          expect(line.taxCodeCode).toBe('exempt');
+          expect(line.taxAmount).toBe(0);
+        } else {
+          expect(line.taxRate).toBe(DEFAULT_SAMPLE_TAX_RATE);
+          expect(line.taxCodeCode).toBe('default-5');
+          expect(line.taxAmount).toBe(Math.round(Number(line.amount) * 0.05));
+        }
       }
       if (discounted(order)) {
         discounts += 1;
-        expect(Number(mine[0]?.discount)).toBeGreaterThan(0);
+        const first = mine[0];
+        expect(['percent', 'amount']).toContain(first?.discountType);
+        if (first?.discountType === 'percent') {
+          percent += 1;
+          expect(first.discountRate).toBe('10');
+        }
+        expect(Number(first?.discount)).toBeGreaterThan(0);
+        expect(Number(order.discountTotal)).toBeGreaterThan(0);
+      } else {
+        expect(order.discountTotal).toBe(0);
       }
-      expect(Number(order.taxAmount)).toBeGreaterThan(0);
     }
     expect(discounts).toBeGreaterThan(0);
     expect(discounts).toBeLessThan(orders.length);
+    expect(percent).toBeGreaterThan(0);
+    expect(percent).toBeLessThan(discounts);
+    expect(overrides).toBeGreaterThan(0);
+    expect(exemptOrders).toBeGreaterThan(0);
+    expect([...customers.values()].filter((c) => c.taxExempt).length).toBe(
+      Math.floor(customers.size / EXEMPT_EVERY),
+    );
   });
 
-  it('leaves out a discount the app hides, and its totals agree', async () => {
+  it('takes a hidden amount discount as a percentage, and its totals agree', async () => {
     const lineModel = model(`${C}ContractLineItem`);
     const data = createMemoryDataSource({
+      // What the commerce recipes carry: `discount` hidden at 0, the
+      // discount kind and rate shown.
       defaults: (m) => (m.id === lineModel.id ? { discount: 0 } : {}),
       children: {
         models: catalog.packages.flatMap((p) => p.models),
@@ -198,15 +253,23 @@ describe('sample records come with their line items', () => {
     });
     const orders = await data.list(model(`${C}Order`));
     const lines = await data.list(lineModel);
-    expect(lines.every((l) => l.discount === 0)).toBe(true);
+    // No amount discount the form could not show; the tenth off is a
+    // percentage instead, and the totals still agree.
+    expect(lines.some((l) => l.discountType === 'amount')).toBe(false);
     orders.forEach((order, index) => {
-      if (index === MISMATCH_ROW) return;
       const mine = rowsOf(lines, 'contractId', order.id);
+      expect(mine[0]?.discountType).toBe(
+        discounted(order) ? 'percent' : 'none',
+      );
+      if (index === MISMATCH_ROW) return;
       expect(order.totalAmount).toBe(totalsOf(mine).totalAmount);
+      // Reads show the hidden `discount` at the app's 0; the percentage's
+      // tenth is in the order's informational total.
+      expect(Number(order.discountTotal) > 0).toBe(discounted(order));
     });
   });
 
-  it('seeds one order whose stored subtotal disagrees with its lines', async () => {
+  it('seeds one draft order whose stored subtotal disagrees with its lines', async () => {
     const data = source();
     const orders = await data.list(model(`${C}Order`));
     const lines = await data.list(model(`${C}ContractLineItem`));
@@ -215,6 +278,7 @@ describe('sample records come with their line items', () => {
       return order.subtotal !== totalsOf(mine).subtotal;
     });
     expect(off.map((o) => o.id)).toEqual([orders[MISMATCH_ROW]?.id]);
+    expect(off[0]?.status).toBe('draft');
     // Editing the order recomputes its totals from the lines.
     const stale = off[0];
     if (!stale) throw new Error('no stale order');

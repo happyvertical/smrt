@@ -136,6 +136,32 @@ describe('library cookbooks', () => {
     }
   });
 
+  it('prices each cookbook the way its trade usually does', () => {
+    // US salons post the price the client pays; everyone else adds sales tax
+    // on top. Repair shops and rental desks tax the invoice total once.
+    const pricing = Object.fromEntries(
+      libraryCookbooks.map((c) => {
+        const s = readSettings(c.document);
+        return [
+          c.id,
+          `${s.pricesIncludeTax ? 'inclusive' : 'exclusive'} ${s.taxRounding}`,
+        ];
+      }),
+    );
+    expect(pricing).toEqual({
+      bakery: 'exclusive line',
+      mechanic: 'exclusive document',
+      welder: 'exclusive line',
+      'yoga-studio': 'exclusive line',
+      landscaping: 'exclusive line',
+      salon: 'inclusive line',
+      roaster: 'exclusive line',
+      'equipment-rental': 'exclusive document',
+      nonprofit: 'exclusive line',
+      agency: 'exclusive line',
+    });
+  });
+
   it('spells a shared custom section blurb one way', () => {
     expect(customDescriptions(libraryCookbooks)).toEqual([]);
   });
@@ -147,6 +173,21 @@ describe('library cookbooks', () => {
 });
 
 describe('pending cookbooks', () => {
+  it('names an awaited entry for every pending cookbook and no other', () => {
+    expect(Object.keys(pending.awaiting).sort()).toEqual(
+      pending.cookbooks.map((c) => c.id).sort(),
+    );
+  });
+
+  it('agency left the pending file once smrt released its recipes (0.56.1)', () => {
+    const agency = libraryCookbooks.find((c) => c.id === 'agency');
+    expect(agency, 'agency is in library.json').toBeTruthy();
+    expect(pending.cookbooks.some((c) => c.id === 'agency')).toBe(false);
+    for (const id of ['timesheets.time-entries', 'expenses.tracking']) {
+      expect(agency?.document.recipes).toContain(id);
+      expect(recipesById.has(id), id).toBe(true);
+    }
+  });
   it.each(
     pending.cookbooks.map((c) => [c.id, c] as const),
   )('%s is still waiting on exactly the recipes the file names', (id, cookbook) => {

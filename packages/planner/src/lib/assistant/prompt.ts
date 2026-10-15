@@ -149,7 +149,7 @@ export function buildSystemPrompt(
   }
   if (settings) {
     out.push(
-      '"settings": only what they state: currency (ISO), taxRate (percent), paymentTerms; else omit, and do not mention them otherwise.',
+      '"settings": only what they state: currency (ISO), taxRate (percent), paymentTerms, pricesIncludeTax (true when their prices include tax), taxRounding (line|document); else omit, and do not mention them otherwise.',
     );
   }
   if (themeInfo) {
@@ -215,8 +215,13 @@ export function buildSystemPrompt(
     const terms = settings.paymentTerms
       ? `, terms ${settings.paymentTerms}`
       : '';
+    const pricing = settings.pricesIncludeTax
+      ? ', prices include tax'
+      : ', prices exclude tax';
+    const rounding =
+      settings.taxRounding === 'document' ? ', tax rounded per document' : '';
     out.push(
-      `Settings: currency ${settings.currency}, tax ${formatTaxPercent(settings.taxRate)}${terms}.`,
+      `Settings: currency ${settings.currency}, tax ${formatTaxPercent(settings.taxRate)}${terms}${pricing}${rounding}.`,
     );
   }
   if (themeInfo) {

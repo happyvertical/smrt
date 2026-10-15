@@ -136,6 +136,8 @@ export function buildHostPrompt(input: HostPromptInput): HostPrompt {
         currency: snapshot.settings.currency,
         taxRate: Number((snapshot.settings.taxRate / 100).toFixed(6)),
         paymentTerms: snapshot.settings.paymentTerms,
+        pricesIncludeTax: snapshot.settings.pricesIncludeTax,
+        taxRounding: snapshot.settings.taxRounding,
       },
       matchText(indexOf(catalog), message),
       { current: themeOf(snapshot) },

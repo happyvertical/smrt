@@ -4,6 +4,7 @@ import { isLineModel } from './derived.ts';
 import {
   GENERIC_PACK,
   getSamplePack,
+  getSamplePricing,
   getSampleTaxRate,
   type PackLine,
   type SamplePack,
@@ -37,9 +38,12 @@ export function hashString(value: string): number {
   return hash >>> 0;
 }
 
+// `...Minor` is smrt's name for an amount in minor units (`DocumentTax`'s
+// `taxableMinor`, `TaxSummaryReport`'s `ledgerMovementMinor`).
 const MONEY_NAME =
-  /(price|amount|cost|total|balance|fee|tax|revenue|budget|salary|wage|subtotal|discount|spend|payout|commission|credit|debit|charge|refund|fare|rent)/i;
-const NOT_MONEY_NAME = /(count|quantity|qty|percent|ratio|level)/i;
+  /(price|amount|cost|total|balance|fee|tax|revenue|budget|salary|wage|subtotal|discount|spend|payout|commission|credit|debit|charge|refund|fare|rent|[a-z]Minor$)/i;
+// A count is not money; a dis-count is (`discountTotal`).
+const NOT_MONEY_NAME = /((?<!dis)count|quantity|qty|percent|ratio|level)/i;
 
 /**
  * Money is stored as integer minor units (cents). An integer field is money
@@ -203,7 +207,7 @@ function fakeText(
   if (/(status|state|stage)/.test(name)) {
     return pick(random, ['active', 'pending', 'archived', 'draft']);
   }
-  if (/(currency)/.test(name)) return 'USD';
+  if (/(currency)/.test(name)) return getSamplePricing().currency;
   if (/(person|owner|author|contact|assignee|worker)/.test(name)) {
     return `${pick(random, FIRST)} ${pick(random, LAST)}`;
   }
@@ -366,7 +370,8 @@ export function fakeValue(
         // The app's setting, else the pack's (0: untaxed), else 5%.
         return getSampleTaxRate() ?? DEFAULT_SAMPLE_TAX_RATE;
       }
-      if (/discountrate/i.test(field.name)) return pick(random, [0, 0.05, 0.1]);
+      // Exact percent text, as smrt's money model reads it ("10" is 10%).
+      if (/discountrate/i.test(field.name)) return pick(random, ['5', '10']);
       if (/(quantity|qty)/i.test(field.name))
         return 1 + Math.floor(random() * 5);
       return Math.round(random() * 10000) / 100;
@@ -620,7 +625,67 @@ export function fakeRecord(
     createRandom(hashString(`${seed}:${model.id}:${index}:dates`)),
   );
   nameThings(model, record, index, random);
+  sampleMoneyFields(model, record, index);
   return record;
+}
+
+const COMMERCE = '@happyvertical/smrt-commerce:';
+
+/** Every `EXEMPT_EVERY`th sample customer does not pay sales tax. */
+export const EXEMPT_EVERY = 8;
+
+/**
+ * The money-model fields of a sample record, set on purpose rather than
+ * drawn: a document is priced the app's way (`lineAmountType`,
+ * `taxRoundingScope`) and is an invoice or a payment, never a credit note or
+ * a refund (those answer an issued document), with no reversal journal or
+ * party tax snapshot; its totals and a line's money
+ * are its document's to settle; tax codes come from the app default, so no
+ * party or product names one of its own; and one customer in eight is tax
+ * exempt.
+ */
+function sampleMoneyFields(
+  model: CatalogModel,
+  record: ModelRecord,
+  index: number,
+): void {
+  const set = (name: string, value: unknown) => {
+    if (has(model, name)) record[name] = value;
+  };
+  for (const name of [
+    'defaultTaxCodeId',
+    'defaultSalesTaxCodeId',
+    'defaultPurchaseTaxCodeId',
+  ]) {
+    set(name, null);
+  }
+  if (!model.id.startsWith(COMMERCE)) return;
+  const pricing = getSamplePricing();
+  set('lineAmountType', pricing.pricesIncludeTax ? 'inclusive' : 'exclusive');
+  set('taxRoundingScope', pricing.taxRounding);
+  set('discountTotal', 0);
+  if (model.name === 'Invoice') set('kind', 'invoice');
+  if (model.name === 'Payment') set('kind', 'payment');
+  set('creditedInvoiceId', null);
+  set('creditedLineId', null);
+  set('creditedAmount', 0);
+  // Only a cancelled posted invoice has a reversal journal, and the party's
+  // tax id is snapshotted from the customer when a document is issued.
+  set('arReversalJournalId', null);
+  set('partyTaxId', null);
+  if (isLineModel(model)) set('taxAmount', 0);
+  set('taxMode', 'inherit');
+  set('taxCodeId', null);
+  set('taxCodeCode', null);
+  set('taxCodeName', null);
+  if (has(model, 'discountType')) {
+    set('discountType', 'none');
+    set('discountRate', null);
+    set('discount', 0);
+  }
+  if (model.name === 'Customer') {
+    set('taxExempt', index % EXEMPT_EVERY === EXEMPT_EVERY - 1);
+  }
 }
 
 /** `count` seeded records for a model; `rows` is the source's rows per model. */

@@ -1,13 +1,51 @@
 import { catalog } from '../catalog/index.ts';
-import { browserStorage } from '../cookbook/storage.ts';
+import { browserStorage, STORAGE_KEY } from '../cookbook/storage.ts';
+import { followSettings } from '../cookbook/store.svelte.ts';
+import { parseCookbookText } from '../cookbook/validate.ts';
 import { catalogModels } from '../forms/shared.ts';
 import { PROFILE_TYPE, stockSamples, VARIANT } from '../forms/stock.ts';
 import { ASSET, PRODUCT_ASSET } from '../products/media.ts';
 import { recipes } from '../recipes/index.ts';
 import { childLinks } from '../recipes/plumbing.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
-import { fakeId } from './fakes.ts';
+import { DEFAULT_SAMPLE_TAX_RATE, fakeId } from './fakes.ts';
+import {
+  defaultTaxCode,
+  sampleTaxCodes,
+  sampleTaxComponents,
+} from './money.ts';
+import { getSamplePricing, getSampleTaxRate } from './packs.ts';
 import { createMemoryDataSource, type DataSource } from './source.ts';
+
+const C = '@happyvertical/smrt-commerce:';
+const TAX_CODE = `${C}TaxCode`;
+const TAX_COMPONENT = `${C}TaxComponent`;
+const TAX_SETTINGS = `${C}TaxSettings`;
+const DOCUMENT_TAX = `${C}DocumentTax`;
+const MONEY_MIGRATION = `${C}MoneyMigrationDocument`;
+
+/** The sample tenant's tax codes for the app's current settings. */
+function currentTaxCodes() {
+  const rate = getSampleTaxRate() ?? DEFAULT_SAMPLE_TAX_RATE;
+  return { codes: sampleTaxCodes(rate), fallback: defaultTaxCode(rate) };
+}
+
+/**
+ * A page opened straight at a record reads sample rows before the layout
+ * hydrates the saved cookbook (its `afterNavigate`), so the rows would be
+ * priced by defaults rather than the app's money settings. Read the saved
+ * cookbook's settings first; only reads, the store's hydrate does the rest.
+ */
+function primeSampleSettings(storage: Storage | null): void {
+  try {
+    const raw = storage?.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const parsed = parseCookbookText(raw, { dropUnknownRecipes: true });
+    if (parsed.ok) followSettings(parsed.cookbook);
+  } catch {
+    // Unreadable or unavailable: the store's hydrate reports it.
+  }
+}
 
 /**
  * The planner's sample-data source: seeded in-memory fakes whose added, edited
@@ -15,6 +53,7 @@ import { createMemoryDataSource, type DataSource } from './source.ts';
  * objects: swap this for a collection-backed `DataSource`.
  */
 export function createPlannerDataSource(): DataSource {
+  primeSampleSettings(browserStorage());
   return createMemoryDataSource({
     storage: browserStorage(),
     // Fields the views hide still carry their policy default, e.g. the
@@ -23,8 +62,62 @@ export function createPlannerDataSource(): DataSource {
     // Variants only make sense under a product a form creates, so they start
     // empty, as do Profile types: a form adds the one it needs. Locations, SKUs
     // and stock are sampled together (one SKU per product).
-    empty: [VARIANT, PROFILE_TYPE],
+    // A document's tax snapshot is kept on its lines (`taxComponentsJson`),
+    // so `DocumentTax` holds no rows of its own; the planner's tenant is on
+    // the money model from the start and never migrates.
+    empty: [VARIANT, PROFILE_TYPE, DOCUMENT_TAX, MONEY_MIGRATION],
     samples: {
+      // The tax codes sample documents resolve against: the seeded ones,
+      // the app default and smrt-commerce's example pack (`data/money.ts`).
+      [TAX_CODE]: {
+        from: [],
+        make: () =>
+          currentTaxCodes().codes.map((code) => ({
+            id: code.id,
+            code: code.code,
+            name: code.name,
+            kind: code.kind,
+            appliesTo: code.appliesTo,
+            active: code.active,
+            componentsJson: JSON.stringify(
+              code.components.map((part) => ({
+                taxComponentId: part.id,
+                compound: false,
+              })),
+            ),
+          })),
+      },
+      [TAX_COMPONENT]: {
+        from: [],
+        make: () =>
+          sampleTaxComponents(currentTaxCodes().codes).map((part) => ({
+            id: part.id,
+            name: part.name,
+            percent: part.percent,
+            liabilityAccountId: null,
+            recoverable: part.recoverable,
+            active: true,
+          })),
+      },
+      [TAX_SETTINGS]: {
+        from: [],
+        make: () => {
+          const { fallback } = currentTaxCodes();
+          const pricing = getSamplePricing();
+          return [
+            {
+              id: fakeId(`${TAX_SETTINGS}:sample`),
+              defaultSalesTaxCodeId: fallback.id,
+              defaultPurchaseTaxCodeId: fallback.id,
+              defaultLineAmountType: pricing.pricesIncludeTax
+                ? 'inclusive'
+                : 'exclusive',
+              taxRoundingScope: pricing.taxRounding,
+              moneyModel: 'v2',
+            },
+          ];
+        },
+      },
       ...stockSamples(catalogModels),
       [ASSET]: {
         from: [catalogModels('@happyvertical/smrt-products:Product')],

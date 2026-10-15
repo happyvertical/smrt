@@ -72,12 +72,14 @@ function recipeStoreOf(controller: PlannerController): RecipeStore {
 function settingsStoreOf(controller: PlannerController): SettingsStore {
   return {
     read: () => {
-      const { currency, taxRate, paymentTerms } =
+      const { currency, taxRate, paymentTerms, pricesIncludeTax, taxRounding } =
         controller.snapshot().settings;
       return {
         currency,
         taxRate: Number((taxRate / 100).toFixed(6)),
         paymentTerms,
+        pricesIncludeTax,
+        taxRounding,
       };
     },
     write: (settings) => {
@@ -89,6 +91,8 @@ function settingsStoreOf(controller: PlannerController): SettingsStore {
           ...(settings.paymentTerms
             ? { paymentTerms: settings.paymentTerms }
             : {}),
+          pricesIncludeTax: settings.pricesIncludeTax,
+          taxRounding: settings.taxRounding,
         },
       });
     },

@@ -35,6 +35,7 @@ describe('cookbook data', () => {
       'roaster',
       'equipment-rental',
       'nonprofit',
+      'agency',
     ]);
     expect(new Set(libraryCookbooks.map((c) => c.id)).size).toBe(
       libraryCookbooks.length,

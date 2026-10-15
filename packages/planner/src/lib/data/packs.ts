@@ -2100,8 +2100,6 @@ export const COOKBOOK_PACKS: Readonly<Record<string, SamplePack>> = {
   [ROASTER.id]: ROASTER,
   [EQUIPMENT_RENTAL.id]: EQUIPMENT_RENTAL,
   [NONPROFIT.id]: NONPROFIT,
-  // The agency cookbook waits on smrt's time-entries and expenses recipes;
-  // see src/lib/library/pending.json.
   [AGENCY.id]: AGENCY,
 };
 
@@ -2137,4 +2135,32 @@ export function setSampleTaxRate(rate: number | undefined): void {
 /** The sample tax rate: the app's setting, else the pack's (omitted: random). */
 export function getSampleTaxRate(): number | undefined {
   return taxRateOverride ?? active.taxRate;
+}
+
+/**
+ * How sample documents are priced: the app's `pricesIncludeTax` (inclusive:
+ * a line's amount is the gross, tax backed out of it) and `taxRounding`
+ * settings, and its currency. Like the tax rate they take effect when sample
+ * rows are next generated.
+ */
+export interface SamplePricing {
+  pricesIncludeTax: boolean;
+  taxRounding: 'line' | 'document';
+  currency: string;
+}
+
+const DEFAULT_PRICING: SamplePricing = {
+  pricesIncludeTax: false,
+  taxRounding: 'line',
+  currency: 'USD',
+};
+
+let pricing: SamplePricing = DEFAULT_PRICING;
+
+export function setSamplePricing(next: Partial<SamplePricing>): void {
+  pricing = { ...DEFAULT_PRICING, ...next };
+}
+
+export function getSamplePricing(): SamplePricing {
+  return pricing;
 }

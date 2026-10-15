@@ -20,7 +20,13 @@ const snapshot: PlanSnapshot = {
   recipes: [{ id: 'commerce.invoicing', label: 'Invoicing' }],
   features: [],
   unavailable: [],
-  settings: { currency: 'CAD', taxRate: 13, paymentTerms: 'Net 30' },
+  settings: {
+    currency: 'CAD',
+    taxRate: 13,
+    paymentTerms: 'Net 30',
+    pricesIncludeTax: false,
+    taxRounding: 'line',
+  },
   theme: {
     text: 'glass, dark',
     preset: 'glass',
@@ -60,7 +66,9 @@ describe('core', () => {
     });
     expect(system).toContain('Examples:');
     expect(system).toContain('Currently on: commerce.invoicing.');
-    expect(system).toContain('Settings: currency CAD, tax 13%, terms Net 30.');
+    expect(system).toContain(
+      'Settings: currency CAD, tax 13%, terms Net 30, prices exclude tax.',
+    );
     expect(system).toContain('Theme: glass, dark.');
     expect(system).toContain('- hide(id)');
     expect(system).toContain('- section:sales (Sales): nav:a (Orders)');
@@ -70,7 +78,13 @@ describe('core', () => {
       defaultCatalog.recipes,
       ['commerce.invoicing'],
       defaultCatalog.cookbooks,
-      { currency: 'CAD', taxRate: 0.13, paymentTerms: 'Net 30' },
+      {
+        currency: 'CAD',
+        taxRate: 0.13,
+        paymentTerms: 'Net 30',
+        pricesIncludeTax: false,
+        taxRounding: 'line',
+      },
       undefined,
       { current: { preset: 'glass', colorScheme: 'dark' } },
     );
