@@ -11,6 +11,7 @@ import {
   mirrorRelease,
   reportMirror,
   resolveConcurrency,
+  runProcess,
 } from './mirror-release-to-npmjs.mjs';
 
 const PRIMARY = 'https://npm.happyvertical.com/';
@@ -416,4 +417,62 @@ test('one package failing does not stop the others in the pool', async () => {
   const result = await run(fakes, { packages: names.map((name) => ({ name })), concurrency: 2 });
   assert.deepEqual(result.mirrored, ['@happyvertical/b@1.0.1']);
   assert.deepEqual(result.failed, ['@happyvertical/a@1.0.1: E403 — more detail']);
+});
+
+test('every failure is logged the moment it is recorded, not only in the final report', async () => {
+  const lines = [];
+  const diverged = fakeRegistries({
+    primary: { [NAME]: ['0.51.10', '0.51.11'] },
+    npmjs: { [NAME]: ['0.51.10', '0.51.11'] },
+    shasumOnNpmjs: 'c'.repeat(40),
+  });
+  await run(diverged, { packages: [{ name: NAME, version: '0.51.11' }], log: (line) => lines.push(line) });
+  assert.ok(lines.some((line) => /^❌ npmjs mirror failed: .*0\.51\.11: DIVERGED/.test(line)));
+
+  const unreadable = fakeRegistries({ primary: { [NAME]: ['0.51.10'] }, npmjs: {}, unreadable: [NPMJS] });
+  lines.length = 0;
+  await run(unreadable, { log: (line) => lines.push(line) });
+  assert.ok(lines.some((line) => /^❌ npmjs mirror failed: .*could not read versions: EAI_AGAIN/.test(line)));
+
+  const publishFails = fakeRegistries({
+    primary: { [NAME]: ['0.51.10', '0.51.11'] },
+    npmjs: { [NAME]: ['0.51.10'] },
+    publishFails: () => true,
+  });
+  lines.length = 0;
+  await run(publishFails, { log: (line) => lines.push(line) });
+  assert.ok(lines.includes(`❌ npmjs mirror failed: ${NAME}@0.51.11: E403 — more detail`));
+});
+
+test('a child that ignores SIGTERM is killed and reported as TIMEOUT', async () => {
+  const started = Date.now();
+  await assert.rejects(
+    runProcess(
+      process.execPath,
+      ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); console.error('npm warn stuck')"],
+      { timeoutMs: 300, killGraceMs: 300 },
+    ),
+    (error) => {
+      assert.equal(error.code, 'TIMEOUT');
+      assert.equal(describeNpmError(error).code, 'TIMEOUT');
+      assert.match(error.message, /was stopped \(SIGKILL\)/);
+      return true;
+    },
+  );
+  assert.ok(Date.now() - started < 5000);
+});
+
+test('a finished child resolves with its output, and a 404 can be an answer', async () => {
+  assert.equal(await runProcess(process.execPath, ['-e', "console.log(' ok ')"], { timeoutMs: 5000 }), 'ok');
+  assert.equal(
+    await runProcess(process.execPath, ['-e', "console.error('npm error code E404'); process.exit(1)"], {
+      timeoutMs: 5000,
+      allowNotFound: true,
+    }),
+    null,
+  );
+  await assert.rejects(
+    runProcess(process.execPath, ['-e', "console.error('npm error code E403'); process.exit(1)"], { timeoutMs: 5000 }),
+    /E403/,
+  );
 });

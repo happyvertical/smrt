@@ -43,41 +43,67 @@ const MAX_CONCURRENCY = 16;
 // cancels the whole run and its report with it.
 const VIEW_TIMEOUT_MS = 2 * 60_000;
 const PUBLISH_TIMEOUT_MS = 10 * 60_000;
+const KILL_GRACE_MS = 10_000;
 
-// Asynchronous so the pool's workers really run side by side; callers await
-// it, which also accepts a synchronous fake in tests.
-function npm(args, { allowNotFound = false } = {}) {
-  const timeout = args[0] === 'publish' ? PUBLISH_TIMEOUT_MS : VIEW_TIMEOUT_MS;
+// Runs a command asynchronously, so the pool's workers really run side by
+// side. Past `timeoutMs` the child gets SIGTERM, and SIGKILL if it is still
+// there `killGraceMs` later, so even a process that ignores SIGTERM releases
+// its slot and is reported as TIMEOUT.
+export function runProcess(
+  command,
+  args,
+  { timeoutMs, killGraceMs = KILL_GRACE_MS, allowNotFound = false } = {},
+) {
   return new Promise((resolve, reject) => {
-    const child = spawn('npm', args, {
+    const child = spawn(command, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: process.env,
-      timeout,
     });
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
+    let killTimer;
+    const termTimer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGTERM');
+      killTimer = setTimeout(() => child.kill('SIGKILL'), killGraceMs);
+    }, timeoutMs);
     child.stdout.setEncoding('utf8').on('data', (chunk) => {
       stdout += chunk;
     });
     child.stderr.setEncoding('utf8').on('data', (chunk) => {
       stderr += chunk;
     });
-    child.on('error', reject);
+    child.on('error', (error) => {
+      clearTimeout(termTimer);
+      clearTimeout(killTimer);
+      reject(error);
+    });
     child.on('close', (status, signal) => {
-      if (status === 0) {
-        resolve(stdout.trim());
-      } else if (allowNotFound && /E404|404 Not Found/.test(stderr)) {
-        resolve(null);
-      } else if (signal) {
+      clearTimeout(termTimer);
+      clearTimeout(killTimer);
+      if (timedOut) {
         const error = new Error(
-          `npm ${args[0]} was stopped (${signal}) after ${timeout / 1000}s\n${stderr.trim()}`,
+          `${command} ${args[0]} was stopped (${signal ?? 'timeout'}) after ${timeoutMs / 1000}s\n${stderr.trim()}`,
         );
         error.code = 'TIMEOUT';
         reject(error);
+      } else if (status === 0) {
+        resolve(stdout.trim());
+      } else if (allowNotFound && /E404|404 Not Found/.test(stderr)) {
+        resolve(null);
       } else {
-        reject(new Error(stderr.trim() || `npm ${args.join(' ')} failed`));
+        reject(new Error(stderr.trim() || `${command} ${args.join(' ')} failed`));
       }
     });
+  });
+}
+
+// Callers await this, which also accepts a synchronous fake in tests.
+function npm(args, { allowNotFound = false } = {}) {
+  return runProcess('npm', args, {
+    timeoutMs: args[0] === 'publish' ? PUBLISH_TIMEOUT_MS : VIEW_TIMEOUT_MS,
+    allowNotFound,
   });
 }
 
@@ -249,12 +275,14 @@ async function mirrorPackage({ name, version: current }, ctx) {
         [source, target].map((registry) => shasumOn(name, version, registry, runNpm)),
       );
       if (primarySha !== mirrorSha) {
-        result.failed.push(
-          `${name}@${version}: DIVERGED — primary sha1 ${primarySha}, npmjs sha1 ${mirrorSha}. Same version, different bytes; bump a new version, this one cannot be reconciled`,
-        );
+        const entry = `${name}@${version}: DIVERGED — primary sha1 ${primarySha}, npmjs sha1 ${mirrorSha}. Same version, different bytes; bump a new version, this one cannot be reconciled`;
+        result.failed.push(entry);
+        log(`❌ npmjs mirror failed: ${entry}`);
       }
     } catch (error) {
-      result.failed.push(failure(`${name}@${version}: could not compare checksums`, error));
+      const entry = failure(`${name}@${version}: could not compare checksums`, error);
+      result.failed.push(entry);
+      log(`❌ npmjs mirror failed: ${entry}`);
     }
   }
   const mirrorReleases = onMirror.filter(parseVersion).sort(compareVersions);
