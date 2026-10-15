@@ -1,9 +1,10 @@
 # #3966 education catalog test matrix
 
-| Behavior / invariant | Trigger | Positive / negative evidence | Actor / transaction | Dialect / edge | Level / command |
-| --- | --- | --- | --- | --- | --- |
-| Catalog STI and ordered structure | Save each course and lesson subtype with section order | Hydrates correct subtype; invalid cross-package asset reference is rejected by schema metadata | Authorized package setup; collection executor | SQLite + PostgreSQL; generated model manifest | Integration; package test / test:postgres |
-| Asset ownership | Link printable, video, attachment, and answer-key through `LessonAsset` | One relationship row per lesson/asset; no Lesson asset-id field | Catalog author; collection executor | SQLite + PostgreSQL; asset cross-package ref | Integration; package test / test:postgres |
-| Authorized catalog generation boundary | Attempt generated model read/write or invoke service | Models expose no generated operations; true authorization enters allowlisted catalog list scope; false/throw denies | Family tenant actor | Node; REST/CLI/MCP/AI contract closed | Unit + integration; package test |
-| Family → group → global visibility | Scope family catalog list with ancestors | Self, ancestor, and global rows returned; sibling/descendant rows and get/write/raw access stay denied | Authorized family actor / scoped list only | SQLite + PostgreSQL; tenancy interface | Integration; package test / test:postgres |
-| Private materials and ownership pin | Persisted personal-use course, answer-key asset, or worksheet answer URL | Family tenant/license cannot be promoted or relabeled; descendants stay tenant-aligned; learner projection redacts answer URLs and answer-key joins unless separately authorized | Family vs learner/guardian actor | PostgreSQL + Node; serialized/generated boundary | Package test + test:postgres |
+| Behavior / invariant | Executable evidence | Dialect |
+| --- | --- | --- |
+| Service authorization, private-course filtering, answer URL/key redaction, deterministic order request | `src/__tests__/catalog-service.test.ts` | SQLite unit/service |
+| Real family/ancestor/global scope excludes sibling | `CatalogService tenant integration` in `catalog-service.test.ts` | SQLite |
+| Personal-copy tenant/license pin, child tenant mismatch, equal-sort ID order | `catalog.optional.test.ts` via `test:postgres` | PostgreSQL |
+| DuckDB catalog lane | Not executable: shared users dependency emits unsupported `ON UPDATE CASCADE` FK in DuckDB (`api_keys.profile_id`) before catalog schema; PostgreSQL/SQLite cover supported catalog persistence | Blocked upstream dialect limitation |
+| Generated surfaces closed / model metadata | `catalog-models.test.ts` | Node |
+| Browser registration and capability artifact | bundle gate suite | Node/browser fixture |

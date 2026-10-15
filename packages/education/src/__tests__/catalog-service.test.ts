@@ -224,7 +224,7 @@ describe('CatalogService tenant integration', () => {
   it('lists only family, ancestor, and global courses through the real tenancy scope', async () => {
     const path = join(tmpdir(), `smrt-education-${randomUUID()}.db`);
     try {
-      const db = { type: 'sqlite' as const, url: path };
+      const db = await getTestDatabase({ type: 'sqlite', url: path });
       const tenants = await TenantCollection.create({ db });
       const group = await tenants.create({ name: 'Group' });
       const family = await tenants.createChild(String(group.id), {
