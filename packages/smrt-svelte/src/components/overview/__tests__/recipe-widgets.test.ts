@@ -11,7 +11,11 @@ import {
   type RecipeExportResolver,
   registerRecipeWidgets,
 } from '../recipe-widgets.js';
-import { createWidgetRegistry, resolveWidgetComponents } from '../registry.js';
+import {
+  createWidgetRegistry,
+  resolveWidgetComponents,
+  resolveWidgetOptionsEditors,
+} from '../registry.js';
 import type { OverviewDefinition, WidgetOptionType } from '../types.js';
 import { w } from './fixtures.js';
 
@@ -24,6 +28,7 @@ type Equal<A, B> =
 const sameOptionTypes: Equal<RecipeWidgetOptionType, WidgetOptionType> = true;
 
 const FakeComponent = () => {};
+const FakeEditor = () => {};
 
 const surface: RecipeWidgetSurface = {
   kind: 'widget',
@@ -133,6 +138,30 @@ describe('registerRecipeWidgets (#3727)', () => {
     expect(
       calls.filter((call) => call === '@acme/shop/svelte#SalesTotal'),
     ).toHaveLength(1);
+  });
+
+  it('resolves a custom options editor lazily without coupling it to the server host', async () => {
+    const registry = createWidgetRegistry();
+    const custom = {
+      ...surface,
+      optionsEditor: '@acme/shop/svelte#SalesOptions' as const,
+    };
+    const { resolveExport, calls } = resolver({
+      '@acme/shop/svelte#SalesOptions': FakeEditor,
+    });
+    const registered = await registerRecipeWidgets(
+      registry,
+      [recipe('shop.sales', custom)],
+      resolveExport,
+    );
+    expect(registered.skipped).toEqual([]);
+    expect(calls).toEqual([]);
+    const editors = await resolveWidgetOptionsEditors(
+      ['sales-total'],
+      registry,
+    );
+    expect(editors.get('sales-total')).toBe(FakeEditor);
+    expect(calls).toEqual(['@acme/shop/svelte#SalesOptions']);
   });
 
   it('leaves a component that cannot resolve out, to render as unavailable', async () => {

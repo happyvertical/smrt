@@ -18,7 +18,9 @@ if (isPostgresAvailable()) {
           'ServiceTimeEntry',
           'AttendancePunch',
           'AttendanceBreak',
+          'AttendanceSegment',
           'AttendanceReplay',
+          'AttendanceCorrection',
         ],
       });
       if (isolated.config.type !== 'postgres')

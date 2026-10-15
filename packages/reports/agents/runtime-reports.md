@@ -12,6 +12,7 @@ grammar. Declared (`@report`) reports are unchanged and remain the way to get a
 | --- | --- |
 | `src/runtime-spec.ts` | `RuntimeReportSpec` grammar, strict parser, limits, stable hash |
 | `src/runtime-compiler.ts` | `compileRuntimeReportSpec()`, `describeRuntimeReportSource()`, `runRuntimeReport()` |
+| `src/runtime-server.ts` | Same-origin confirmation, principal-bound run/archive, chart loader |
 | `src/runtime-report.ts` | `RuntimeReport` model (`runtime_reports`), `saveRuntimeReport()`, list/get/archive, `runStoredRuntimeReport()` |
 
 Assistant tools live in `@happyvertical/smrt-chat` (`createRuntimeReportTools()`,
@@ -122,7 +123,9 @@ JSON text), `specHash`, denormalized `title`/`description`/`sourceId`,
 whatever was written and re-derives every denormalized column, so columns
 cannot disagree with the spec. `getSpec()` throws if the JSON no longer matches
 `specHash` (out-of-band edit). Adopting apps need a `db:migrate` for the new
-`runtime_reports` table; runtime never creates schema.
+`runtime_reports` table; runtime never creates schema. Existing deployments also
+run `db:migrate` for the confirmation lookup index `idx_runtime_reports_confirm`
+before enabling browser confirmation.
 
 **Invariant: no row is inserted, and no spec/title/source/description/author is
 changed, except through the confirmed save.** It is enforced in the model layer,
@@ -142,9 +145,9 @@ the stored columns untouched) is allowed for an authorised writer.
 
 | Surface | Operations |
 | --- | --- |
-| REST (`api`) | `list`, `get`, `create` |
-| CLI | `list`, `get` |
-| MCP | `list`, `get` |
+| REST (`api`) | `list`, `get`, `create`, `run`, `archive` |
+| CLI | `list`, `get`, `run`, `archive` |
+| MCP | `list`, `get`, `run`, `archive` |
 
 The permission catalog therefore holds exactly `<collection>.read` and
 `<collection>.create` for `RuntimeReport` (the collection slug is
@@ -176,23 +179,98 @@ the source field's `format` hint is carried onto the result column. Integer
 results beyond the JavaScript safe range throw `invalid_result` rather than
 losing precision. `avg` is decimal.
 
-## Assistant flow (`@happyvertical/smrt-chat`)
+## Assistant and browser flow (#3878)
 
-`reports.runtime.sources` (field catalogue for the principal) ->
-`reports.runtime.define` `phase: 'preview'` (validate, compile, bounded sample;
-nothing stored) -> a human confirms -> `phase: 'apply'` with the previewed
-`specHash` -> `reports.runtime.list` / `reports.runtime.run`. `apply` needs an
-application-owned `RuntimeReportConfirmationHost.confirmSave()` that resolves
-only after a person approved that exact spec; without a host the tools are
-propose-only, and a model-supplied `confirmed` flag is ignored. Offer the tools
-via the persona conversation `extraTools` seam; they use the same fail-closed
-`allowedTools` gates, and `RuntimeReportError.status` (422/403/500) lets
-`classifyToolError` return repairable spec problems to the model.
+`reports.runtime.sources` describes fields available to the assistant principal.
+`reports.runtime.define` with `phase: 'preview'` compiles and runs a bounded
+sample. `phase: 'apply'` requires the preview's exact normalized `specHash`.
+Without an in-process confirmation host it returns:
 
-## Not done (needs #3708 or a design call)
+```ts
+{ status: 'awaiting_confirmation', specHash, spec, sourceLabel, preview,
+  confirmPath: '/api/_reports/runtime/confirm' }
+```
 
-- A `reports.runtime` recipe for `RuntimeReport` itself. `reports.materialized`
-  (see `AGENTS.md`) covers declared reports only and its help points at the
-  `reports.runtime.*` tools; `RuntimeReport` has no recipe of its own yet.
-- A browser UI for the confirmation host and for rendering the chart hint.
-- Archive/rename tools, scheduling a runtime report, exporting its rows.
+Nothing is saved by that response, and model-supplied consent is ignored. The
+browser shows the proposal and only a person's approval posts `{ spec, specHash }`
+to `createRuntimeReportConfirmHandler()`. The handler checks same origin, the
+verified session user and tenant, `runtimereports.create`, the normalized hash,
+and compilation under the **confirming** principal's current permissions.
+Another principal may approve the same public spec only under their own
+permissions and tenant; a hash is data, not a transferable authorization token.
+
+The template mounts `POST /api/_reports/runtime/confirm`. Hosts pass the verified
+principal and the request's database (including the RLS transaction), never
+body-supplied identity. Success is `201 { id, specHash, title }`; a retry of an
+active definition with the same principal/hash returns the same response with
+200. Compilation happens again even on retries. Concurrent approvals use core's
+transactional `runOnce` claim, keyed by tenant, principal and normalized spec.
+A failed write rolls back the claim; an audit
+callback failure returns a generic 500 and a retry finds the already saved row.
+No result rows are stored in the idempotency record. After archiving, approving
+the same definition returns 409 `report_archived`; restore it through the archive
+action before retrying.
+
+Errors are JSON `{ code, message }`: 401 without a session; 403 for cross-origin,
+missing permission, mismatched ambient tenant, or an active retry invalidated by
+current source/field access; 409 for an archived retry; 422 for a malformed new
+spec or `spec_hash_mismatch`; generic 500 for unexpected provider failures. There is
+no cross-tenant or system bypass. Configure an optional `audit` callback on the
+factory to receive confirmed principal/hash/report identity and whether reused.
+
+For CLI and other in-process hosts, `RuntimeReportConfirmationHost.confirmSave()`
+remains available: it must resolve only after a person approves that exact hash.
+The single-use model proof is unchanged in both paths. The assistant tools use
+the persona's fail-closed `allowedTools` gates.
+
+## Server configuration and actions
+
+Configure `packages.reports.runtime.sources` in `smrt.config.ts`:
+
+```ts
+packages: {
+  reports: { runtime: { sources: [
+    { id: 'invoices', className: '@acme/app:Invoice', collection: 'invoices', label: 'Invoices' }
+  ] } }
+}
+```
+
+An absent source list exposes nothing. A source's `collection` is a catalog slug
+and requires `<collection>.read`; the server narrows the allow-list before
+compiling. Give the assistant the same server-owned source definitions. The
+confirm factory can instead take explicit `{ sources, audit? }` options.
+
+`POST /api/runtimereports/:id/run` takes no body and returns
+`{ action: 'run', result: RuntimeReportResult }`. Its CLI/MCP counterparts call
+the same model action. It requires `runtimereports.read`, reloads the definition
+in the principal's tenant, and recompiles on every call. Tenant peers can run
+shared reports; use `createdByUserId` for an Only mine list filter. Missing and
+foreign-tenant ids return 404; revoked source/field access returns 403; archived
+reports return 409 `report_archived`; invalid results return 422. Rows stay
+ephemeral and integer money stays in minor units.
+
+`POST /api/runtimereports/:id/archive` takes `{ archived: boolean }` and returns
+`{ action: 'archive', result: { id, status } }`. It requires
+`runtimereports.create`, changes status only, and
+repeating the same state does not write again. `operationPermissions` metadata
+aliases run to read and archive to create consistently across generated routes,
+CLI/MCP guards and the permission catalog. The archive alias adds SELECT and
+UPDATE SQL-policy bindings to create: the authorized action must look up the
+same-tenant row before changing its status. Adopted PostgreSQL RLS policies must
+be regenerated. Neither `.run`, `.archive`, `.update` nor `.delete` becomes a
+new grantable permission for this model.
+
+`loadRuntimeReportChart(options, context)` is the server loader for the dependent
+browser recipe widget. Options are `{ reportId, measure, dimension? }`; the host
+supplies `context.reportPrincipal` from its authenticated request and optionally
+`currency`. It runs afresh as the viewer and returns structural chart data:
+`{ points: [{label, value}], format, currency?, href }`. The loader has no
+smrt-svelte dependency and receives no authority from widget options.
+
+## Recipe UI
+
+`reports.runtime` declares the RuntimeReport model, Reports navigation, the
+`/reports` routes and `runtime-report-chart` widget. The widget options are only
+`{ reportId, measure, dimension? }`; the authenticated server host supplies the
+loader's `reportPrincipal`. Static hosts render the Reports route unavailable.
+Rename, scheduling and manual report construction remain deferred.

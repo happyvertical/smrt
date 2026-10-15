@@ -63,8 +63,8 @@ let {
     display: inline-grid;
     place-items: center;
     box-sizing: border-box;
-    inline-size: max(var(--smrt-control-height-small), var(--smrt-control-target-min, 0px));
-    block-size: max(var(--smrt-control-height-small), var(--smrt-control-target-min, 0px));
+    inline-size: max(var(--smrt-control-height-small), var(--smrt-control-target-min));
+    block-size: max(var(--smrt-control-height-small), var(--smrt-control-target-min));
     padding: 0;
     border: 0;
     border-radius: var(--smrt-control-radius);

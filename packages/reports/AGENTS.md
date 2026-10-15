@@ -1,6 +1,15 @@
 # @happyvertical/smrt-reports
 
-Materialized aggregate report models for SMRT.
+Materialized aggregate report models and runtime report browser surfaces for SMRT.
+
+## Browser surfaces (#3895)
+
+`./svelte` publishes `SavedReports`, `ReportDetail`, `ReportResult`,
+`ReportConfirmation`, and `ReportPicker`; visual chart renderers come from
+`@happyvertical/smrt-ui/charts`. Keep runtime imports out of this subpath:
+server report types are type-only imports. See [browser contract](agents/runtime-report-browser.md).
+`pnpm typecheck` includes Svelte diagnostics and `pnpm test` includes browser
+component tests. `./playground` supplies each screen's preview.
 
 ## Key Pieces
 
@@ -85,8 +94,9 @@ brings only the internal refresh bookkeeping tables (runs, watermarks, locks,
 schedules, refresh tasks); an app's own `@report` classes are not listed because
 they belong to the app. Those tables have no REST or MCP surface, so the recipe
 has no `nav`. It declares `runtime: 'server'` (SQL aggregation, jobs) and no
-`surfaces`: this package ships no Svelte components, and declaring one that does
-not exist is a scan-time lie. Do not add a surface until a real export exists.
+`surfaces`: materialized reports do not yet have a browser surface. Runtime
+report browser components stay on the `./svelte` subpath, while
+`RuntimeReportsRecipe` names their route, widget, and options-editor exports.
 
 User-facing help is `src/materialized.recipe.md` (#3591). It explains how the
 assistant reads declared reports (`data.discover`/`data.inspect` and
@@ -129,3 +139,16 @@ refresh with an empty tenant array, which would select the global slice.
 Schedule provisioning preserves existing state. Hosts bind terminal job events
 with `ReportScheduleRunner.bindTaskRunner()` and dispose the returned binding
 on shutdown; see [scheduled refresh lifecycle](README.md#scheduled-refresh-lifecycle).
+
+## Runtime server surfaces (#3878)
+
+`runtime-server.ts` owns the framework-neutral confirmation handler, current
+principal run/archive helpers and chart loader. Source allow-lists come from
+`packages.reports.runtime.sources`; no configuration means no sources. Never
+accept identity or source configuration from JSON. The RuntimeReport run/archive
+methods reuse read/create grants through `operationPermissions`, including the
+archive UPDATE RLS binding. `RuntimeReportsRecipe` declares nav, route and
+`runtime-report-chart` surfaces, and server runtime. The chart loader receives
+`reportPrincipal` only from authenticated host context. See
+[runtime contract](agents/runtime-reports.md) and
+[browser surfaces](agents/runtime-report-browser.md).

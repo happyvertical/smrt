@@ -14,6 +14,7 @@
  */
 
 import { SmrtRecipe } from '@happyvertical/smrt-core';
+import { RuntimeReport } from './runtime-report.js';
 import {
   SmrtPrincipalReportRefreshTask,
   SmrtReportRefreshTask,
@@ -54,5 +55,57 @@ export class MaterializedReportsRecipe extends SmrtRecipe {
   ];
   // Aggregation runs as SQL against the app database, and scheduled refreshes
   // are queued through smrt-jobs; neither can run in a browser.
+  static runtime = 'server' as const;
+}
+
+/** Tenant-shared reports proposed by the assistant and approved by a person. */
+export class RuntimeReportsRecipe extends SmrtRecipe {
+  static id = 'reports.runtime';
+  static label = 'Reports';
+  static summary =
+    'Ask for a report, approve it, and share its live totals with your team.';
+  static help = './runtime.recipe.md';
+  static models = [RuntimeReport];
+  static nav = [{ label: 'Reports', model: RuntimeReport, icon: 'fileText' }];
+  static surfaces = [
+    {
+      kind: 'route',
+      path: '/reports',
+      export: '@happyvertical/smrt-reports/svelte#RuntimeReportsRoute',
+      label: 'Reports',
+    },
+    {
+      kind: 'route',
+      path: '/reports/:id',
+      export: '@happyvertical/smrt-reports/svelte#RuntimeReportDetailRoute',
+      label: 'Report detail',
+    },
+    {
+      kind: 'widget',
+      type: 'runtime-report-chart',
+      export: '@happyvertical/smrt-reports/svelte#RuntimeReportChartWidget',
+      label: 'Report chart',
+      description: 'Chart a measure from a saved report.',
+      icon: 'chart',
+      optionsEditor:
+        '@happyvertical/smrt-reports/svelte#RuntimeReportWidgetOptions',
+      options: [
+        { key: 'reportId', type: 'text', label: 'Report', required: true },
+        {
+          key: 'measure',
+          type: 'identifier',
+          label: 'Measure',
+          required: true,
+        },
+        { key: 'dimension', type: 'identifier', label: 'Dimension' },
+      ],
+      data: {
+        load: '@happyvertical/smrt-reports#loadRuntimeReportChart',
+        models: ['@happyvertical/smrt-reports:RuntimeReport'],
+      },
+      defaultSpan: 2,
+      maxSpan: 4,
+    },
+  ] as const;
   static runtime = 'server' as const;
 }

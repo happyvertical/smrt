@@ -70,8 +70,12 @@ function writeWorkspaceTenancyShim(projectRoot: string): void {
     join(packageDir, 'index.js'),
     [
       'globalThis.__smrtGeneratedTenantContexts ??= [];',
-      'export function hasTenantContext() { return false; }',
+      'export function getCurrentTenant() { return globalThis.__smrtGeneratedActiveTenantContext; }',
+      'export function hasTenantContext() { return Boolean(globalThis.__smrtGeneratedActiveTenantContext); }',
+      'export function isSuperAdminBypass() { return false; }',
+      'export function isTenancyEnabled() { return true; }',
       'export function enterTenantContext(context) {',
+      '  globalThis.__smrtGeneratedActiveTenantContext = context;',
       '  globalThis.__smrtGeneratedTenantContexts.push(context);',
       '}',
     ].join('\n'),
@@ -261,6 +265,8 @@ describe('generated SvelteKit helper runtime', () => {
       .__smrtGeneratedRouteCollection;
     delete (globalThis as Record<string, unknown>)
       .__smrtGeneratedTenantContexts;
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedActiveTenantContext;
   });
 
   async function importGeneratedHelper() {
@@ -381,6 +387,52 @@ describe('generated SvelteKit helper runtime', () => {
     return await bundleGeneratedRoute(
       'src/routes/api/widgets/[id]/inspect/+server.ts',
       'generated-item-action-post-route.mjs',
+    );
+  }
+
+  async function importGeneratedRuntimeReportAction(
+    actionName: 'run' | 'archive',
+  ) {
+    const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+    const manifest = createManifest(projectRoot, objectFilePath, [actionName]);
+    manifest.objects.Widget.methods = {
+      [actionName]: {
+        async: true,
+        isStatic: false,
+        isPublic: true,
+        name: actionName,
+        parameters:
+          actionName === 'archive'
+            ? [{ name: 'options', type: 'any', optional: false }]
+            : [],
+        returnType: 'Promise<unknown>',
+      },
+    };
+    manifest.objects.Widget.decoratorConfig = {
+      api: {
+        include: [actionName],
+        principalContext: true,
+        routes: {
+          [actionName]: { method: 'POST', path: actionName, scope: 'item' },
+        },
+      },
+      operationPermissions: {
+        [actionName]: { action: actionName === 'run' ? 'read' : 'create' },
+      },
+      tenantScoped: { mode: 'required' },
+    };
+
+    await generateSvelteKitRoutes(projectRoot, manifest, {
+      configFileName: 'smrt.ts',
+      configPath: 'src/lib/server',
+      enabled: true,
+      objectsDir: 'src/lib/objects',
+      routesDir: 'src/routes/api',
+    });
+
+    return await bundleGeneratedRoute(
+      `src/routes/api/widgets/[id]/${actionName}/+server.ts`,
+      `generated-runtime-report-${actionName}-route.mjs`,
     );
   }
 
@@ -562,6 +614,242 @@ describe('generated SvelteKit helper runtime', () => {
 
     expect(response.status).toBe(200);
     expect(receivedOptions).toEqual(expectedOptions);
+  });
+
+  it.each([
+    'run',
+    'archive',
+  ] as const)('rejects conflicting ambient authority before generated %s action lookup', async (actionName) => {
+    const route = await importGeneratedRuntimeReportAction(actionName);
+    let lookups = 0;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => {
+        lookups += 1;
+        return { [actionName]: async () => ({ ok: true }) };
+      },
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        permissions: new Set(['widgets.read', 'widgets.create']),
+        tenantId: 'tenant-b',
+        userId: 'user-b',
+      };
+
+    await expect(
+      route.POST({
+        locals: {
+          permissions: ['widgets.read', 'widgets.create'],
+          tenantId: 'tenant-a',
+          user: { id: 'user-a' },
+        },
+        params: { id: 'report-b' },
+        request: new Request(
+          `http://localhost/api/widgets/report-b/${actionName}`,
+          {
+            ...(actionName === 'archive'
+              ? {
+                  body: JSON.stringify({ archived: true }),
+                  headers: { 'content-type': 'application/json' },
+                }
+              : {}),
+            method: 'POST',
+          },
+        ),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(lookups).toBe(0);
+  });
+
+  it.each(
+    (['run', 'archive'] as const).flatMap((actionName) =>
+      (
+        [
+          [
+            'permissionSet',
+            { permissionSet: ['widgets.read', 'widgets.create'] },
+          ],
+          [
+            'smrtPermissions',
+            { smrtPermissions: ['widgets.read', 'widgets.create'] },
+          ],
+          [
+            'tenantContext.permissions',
+            {
+              tenantContext: {
+                permissions: new Set(['widgets.read', 'widgets.create']),
+              },
+            },
+          ],
+        ] as const
+      ).map(([permissionSource, permissionLocals]) => ({
+        actionName,
+        permissionLocals,
+        permissionSource,
+      })),
+    ),
+  )('rejects conflicting ambient authority before generated $actionName lookup with $permissionSource', async ({
+    actionName,
+    permissionLocals,
+  }) => {
+    const route = await importGeneratedRuntimeReportAction(actionName);
+    let lookups = 0;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => {
+        lookups += 1;
+        return { [actionName]: async () => ({ ok: true }) };
+      },
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        permissions: new Set(['widgets.read', 'widgets.create']),
+        tenantId: 'tenant-b',
+        userId: 'user-b',
+      };
+
+    await expect(
+      route.POST({
+        locals: {
+          ...permissionLocals,
+          tenantId: 'tenant-a',
+          user: { id: 'user-a' },
+        },
+        params: { id: 'report-b' },
+        request: new Request(
+          `http://localhost/api/widgets/report-b/${actionName}`,
+          {
+            ...(actionName === 'archive'
+              ? {
+                  body: JSON.stringify({ archived: true }),
+                  headers: { 'content-type': 'application/json' },
+                }
+              : {}),
+            method: 'POST',
+          },
+        ),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(lookups).toBe(0);
+  });
+
+  it('rejects an incomplete generated-action principal before lookup', async () => {
+    const route = await importGeneratedRuntimeReportAction('run');
+    let lookups = 0;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => {
+        lookups += 1;
+        return { run: async () => ({ ok: true }) };
+      },
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        permissions: new Set(['widgets.read']),
+        tenantId: 'tenant-b',
+        userId: 'user-b',
+      };
+
+    await expect(
+      route.POST({
+        locals: {
+          permissionSet: ['widgets.read'],
+          user: { id: 'user-a' },
+        },
+        params: { id: 'report-b' },
+        request: new Request('http://localhost/api/widgets/report-b/run', {
+          method: 'POST',
+        }),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(lookups).toBe(0);
+  });
+
+  it('preserves verified active context capabilities while refreshing generated-action authority', async () => {
+    const route = await importGeneratedRuntimeReportAction('run');
+    const database = { marker: 'tenant-database' };
+    const user = { id: 'loaded-user' };
+    const metadata = { requestId: 'request-1' };
+    let actionContext: Record<string, unknown> | undefined;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => ({
+        run: async () => {
+          actionContext = (globalThis as Record<string, unknown>)
+            .__smrtGeneratedActiveTenantContext as Record<string, unknown>;
+          return { ok: true };
+        },
+      }),
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        database,
+        metadata,
+        permissions: new Set(['stale.permission']),
+        superAdminBypass: true,
+        tenantId: 'tenant-a',
+        user,
+        userId: 'user-a',
+      };
+
+    const response = await route.POST({
+      locals: {
+        tenantContext: {
+          permissions: new Set(['widgets.read']),
+          superAdminBypass: true,
+          tenantId: 'tenant-a',
+          userId: 'user-a',
+        },
+        user: { id: 'user-a' },
+      },
+      params: { id: 'report-a' },
+      request: new Request('http://localhost/api/widgets/report-a/run', {
+        method: 'POST',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(actionContext).toMatchObject({
+      database,
+      metadata,
+      superAdminBypass: true,
+      tenantId: 'tenant-a',
+      user,
+      userId: 'user-a',
+    });
+    expect(actionContext).toBeDefined();
+    expect([
+      ...((actionContext as Record<string, unknown>)
+        .permissions as Set<string>),
+    ]).toEqual(['widgets.read']);
+  });
+
+  it('rejects an unbound ambient super-admin context before generated-action lookup', async () => {
+    const route = await importGeneratedRuntimeReportAction('run');
+    let lookups = 0;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => {
+        lookups += 1;
+        return { run: async () => ({ ok: true }) };
+      },
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+        tenantId: 'tenant-a',
+      };
+
+    await expect(
+      route.POST({
+        locals: {
+          permissions: ['widgets.read'],
+          tenantId: 'tenant-a',
+          user: { id: 'user-a' },
+        },
+        params: { id: 'report-a' },
+        request: new Request('http://localhost/api/widgets/report-a/run', {
+          method: 'POST',
+        }),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(lookups).toBe(0);
   });
 
   it('executes emitted DELETE routes with safe typed 4xx errors and opaque 5xx errors', async () => {

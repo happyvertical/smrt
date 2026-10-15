@@ -44,7 +44,7 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
   input:checked + .radio__mark { border-color: var(--smrt-color-primary); }
   input:checked + .radio__mark::after { transform: scale(1); }
   input:focus-visible + .radio__mark { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .radio { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+  .radio { min-height: var(--smrt-control-target-min); min-width: var(--smrt-control-target-min); }
 
   /* Table cells: grow vertically only, never into a neighbouring cell. */
   :global(:is(td, th)) .radio::before { inline-size: var(--smrt-radio-box); margin-inline-start: calc(var(--smrt-radio-box) / -2); }

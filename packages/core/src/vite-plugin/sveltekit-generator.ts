@@ -1,3 +1,4 @@
+import { resolveOperationPermissionAlias } from '../operation-permission.js';
 /**
  * SvelteKit route auto-generation from SMRT objects
  * Generates real TypeScript files in src/routes/api/ based on discovered SMRT objects
@@ -879,9 +880,8 @@ function resolveDefaultListOrderBy(
  * the `@TenantScoped` interceptors that auto-filter by tenant.
  *
  * `establishTenantContext` reads the canonical `locals.tenantId` set by the
- * smrt-users auth hook (with `user`/`session` fallbacks). It is a no-op when a
- * context is already active (e.g. an upstream tenancy handle) or when the
- * request carries no tenant (anonymous / global principal).
+ * smrt-users auth hook (with `user`/`session` fallbacks). An upstream context
+ * must identify the same tenant/user; conflicting authority fails closed.
  *
  * When no context could be established, an `optional`-mode read would otherwise
  * fall through the interceptor UNFILTERED and return rows from ALL tenants (the
@@ -900,15 +900,20 @@ function generateTenantContextHelper(
     typeof tenantId !== 'string' || !tenantId ||
     typeof userId !== 'string' || !userId ||
     !permissions
-  ) return;
+  ) {
+    throw error(403, 'Authenticated principal context is incomplete');
+  }
 `
     : '';
   const contextArgument = requirePrincipal
     ? '{ tenantId, userId, permissions }'
     : '{ tenantId }';
+  const activeUserMismatch = requirePrincipal
+    ? 'active.userId !== userId'
+    : "typeof userId === 'string' && userId && active.userId && active.userId !== userId";
   const tenancyImport = includeReadScope
     ? 'enterTenantContext, getCurrentTenant, hasTenantContext, isSuperAdminBypass, isTenancyEnabled'
-    : 'enterTenantContext, hasTenantContext';
+    : 'enterTenantContext, getCurrentTenant';
   const readScopeHelpers = includeReadScope
     ? `
 // Fail-closed read scope (#1782): a public/anonymous read on a @TenantScoped
@@ -941,14 +946,15 @@ function tenantReadOptionsScope(): { tenantId: string | null } | undefined {
 import { ${tenancyImport} } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
-  if (hasTenantContext()) return;
   if (!locals || typeof locals !== 'object') return;
   const l = locals as Record<string, unknown>;
   const user = l.user as Record<string, unknown> | undefined;
   const session = l.session as Record<string, unknown> | undefined;
-  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId;
-  const userId = l.userId ?? user?.id ?? user?.userId ?? session?.userId;
-  const rawPermissions = l.permissions;
+  const tenantContext = l.tenantContext as Record<string, unknown> | undefined;
+  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId ?? tenantContext?.tenantId;
+  const userId = l.userId ?? user?.id ?? user?.userId ?? session?.userId ?? tenantContext?.userId;
+  const rawPermissions =
+    l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? tenantContext?.permissions;
   const permissions =
     rawPermissions instanceof Set && [...rawPermissions].every((value) => typeof value === 'string')
       ? rawPermissions
@@ -956,6 +962,16 @@ function establishTenantContext(locals: unknown): void {
         ? new Set(rawPermissions)
         : undefined;
 ${principalGuard}
+  const active = getCurrentTenant();
+  if (active) {
+    if (
+      (typeof tenantId === 'string' && tenantId && active.tenantId !== tenantId) ||
+      (${activeUserMismatch})
+    ) {
+      throw error(403, 'Tenant context does not match authenticated principal');
+    }
+${requirePrincipal ? '    enterTenantContext({ ...active, tenantId, userId, permissions });\n' : ''}    return;
+  }
   if (typeof tenantId === 'string' && tenantId) {
     enterTenantContext(
       ${contextArgument},
@@ -3747,6 +3763,10 @@ function generateActionRouteTemplate(
         needsTenantContext,
         lookupModelType.typeName,
         hostModelType.typeName,
+        resolveOperationPermissionAlias(
+          objectDef.decoratorConfig,
+          spec.actionName,
+        )?.action,
       ),
     )
     .join('\n');
@@ -3780,7 +3800,12 @@ function generateActionRouteHandler(
   needsTenantContext: boolean,
   lookupTypeName: string,
   hostTypeName: string,
+  permissionAction?: string,
 ): string {
+  const successResponse = `  return json({
+    action: '${actionName}',
+    result: toPublicResult(result, publicJsonOptions),
+  });`;
   const handlerName = routeConfig.method;
   // Mutating verbs require auth even when reads are public (#1540). Tenant-scoped
   // objects also establish tenant context so the action runs filtered.
@@ -3789,7 +3814,7 @@ function generateActionRouteHandler(
   if (mutating) {
     // Custom mutating actions require `<collection>.<method>` (#2977).
     guardLines.push(
-      `  requireRoutePermission(locals, ${JSON.stringify(actionName)});`,
+      `  requireRoutePermission(locals, ${JSON.stringify(permissionAction ?? actionName)});`,
     );
   }
   if (needsTenantContext) {
@@ -3854,10 +3879,7 @@ ${optionsLoad}${scopedOptions.source}  let result: unknown;
     return json({ error: failure }, { status: failure.status });
   }
 
-  return json({
-    action: '${actionName}',
-    result: toPublicResult(result, publicJsonOptions),
-  });
+${successResponse}
 };
 `;
   }
@@ -3904,10 +3926,7 @@ ${optionsLoad}${scopedOptions.source}  const ClassRef = registered.constructor a
     return json({ error: failure }, { status: failure.status });
   }
 
-  return json({
-    action: '${actionName}',
-    result: toPublicResult(result, publicJsonOptions),
-  });
+${successResponse}
 };
 `;
   }
@@ -3955,10 +3974,7 @@ ${optionsLoad}  let result: unknown;
     return json({ error: failure }, { status: failure.status });
   }
 
-  return json({
-    action: '${actionName}',
-    result: toPublicResult(result, publicJsonOptions),
-  });
+${successResponse}
 };
 `;
 }

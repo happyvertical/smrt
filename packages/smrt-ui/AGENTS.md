@@ -50,6 +50,7 @@ components are exempt — they *are* the primitives.
 | `./data` | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable` (footer rows and column `summaries`: [agents/data-table.md](agents/data-table.md)) and their types — a **component barrel**: it re-exports `.svelte` files, so a plain Node `import()` of it throws `ERR_UNKNOWN_FILE_EXTENSION` |
 | `./data-surface` | **Svelte-free**: registry contracts and shared protocol limits (`DATA_SURFACE_MAX_REQUEST_BYTES`, `DATA_SURFACE_IDENTIFIER_MAX_LENGTH`, …). Server adapters must import these from here, not from `./data` — a server entry that reaches the barrel breaks the `smrt` CLI's plain-Node `.smrt/register.js` load (issue #2924) |
 | `./layout` | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, … |
+| `./charts` | Pure `Chart` renderer (`bar`, `line`, `table`, `pie`, `stat`), structural `ChartData`, and minor-unit number formatting; `./charts/format` is Svelte-free |
 | `./calendar` | `CalendarView` (time-zone-aware month/week grids + phone agenda) and its Svelte-free date model (`toEntries`, `layoutMonth`, `layoutWeek`, `dateKeyInZone`, …); deprecated `Calendar`, `DayView` |
 | `./chat` | `MessageBubble`, `ReactionPicker`, `TypingIndicator` |
 | `./forms` | Provider-free fields, choice controls, sliders/ranges, combobox/listbox/multiselect/tags, date/time/file controls, `CameraCapture`/`SignaturePad` capture, plus the transport-neutral control interaction registry |

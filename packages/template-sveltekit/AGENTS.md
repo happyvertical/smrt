@@ -67,7 +67,7 @@ It is the ground-up alternative to `smrt-saas-starter`.
   CLI's or core's transitive dependencies to the app root — its strict layout
   does not (#2297).
 - `vite.config.ts` is `[sveltekit(), smrt()]`. The preset consumes exactly the
-  packages in `smrt.config.ts` `consumer.packages` (profiles, tenancy, users),
+  packages in `smrt.config.ts` `consumer.packages` (profiles, tenancy, users, reports),
   scans `src/lib/objects`, and generates Vite virtual definitions, SvelteKit
   routes, runtime registration, and knowledge artifacts. With a
   `smrt.cookbook.json` it also hosts the cookbook's package models over REST
@@ -218,3 +218,12 @@ presented as WebMCP execution.
 
 See [the M5 reference fixture gate](../../docs/content/m5-reference-fixture.md)
 for what the milestone proves, what it does not, and the recovery commands.
+
+Runtime report confirmation mounts the reports-owned Fetch handler at
+`/api/_reports/runtime/confirm`. It passes verified locals and the request's
+collection database; smrt-app-runtime has no reports dependency. The template
+consumes the reports manifest for migrations and explicitly hosts only
+`@happyvertical/smrt-reports:RuntimeReport` through the Vite preset’s `expose` option. Apps enabling
+`reports.runtime` configure `packages.reports.runtime.sources`; the default
+empty allow-list exposes no report sources. The authored route is preserved by
+the template's `.gitignore` exception.

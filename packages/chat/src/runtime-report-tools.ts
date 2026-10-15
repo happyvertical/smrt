@@ -16,7 +16,7 @@
  * 3. `reports.runtime.define` `phase: 'apply'` — only with the `specHash` of
  *    the previewed spec AND an application-owned {@link RuntimeReportConfirmationHost}
  *    that resolves once a human has confirmed that exact spec. Without a
- *    host, saving is refused (fail closed); a model-supplied `confirmed: true`
+ *    host, apply returns a browser confirmation proposal and stores nothing; a model-supplied `confirmed: true`
  *    is never trusted.
  * 4. `reports.runtime.list` / `reports.runtime.run` — stored reports are
  *    re-parsed and re-compiled against the live principal on every run.
@@ -44,6 +44,7 @@ import {
   RUNTIME_REPORT_LIMITS,
   RUNTIME_REPORT_MEASURE_FNS,
   RuntimeReport,
+  type RuntimeReportAwaitingConfirmation,
   type RuntimeReportCompileContext,
   RuntimeReportError,
   type RuntimeReportResult,
@@ -93,7 +94,7 @@ export function isRuntimeReportWriteOperation(tool: {
   const isRuntimeReport =
     tool.qualifiedName === RUNTIME_REPORT_QUALIFIED_NAME ||
     (tool.qualifiedName === undefined && tool.className === 'RuntimeReport');
-  return isRuntimeReport && tool.action !== 'read';
+  return isRuntimeReport && !['read', 'run', 'archive'].includes(tool.action);
 }
 
 /** Provider function name for {@link RUNTIME_REPORT_SOURCES_TOOL_SLUG}. */
@@ -164,7 +165,7 @@ export interface RuntimeReportToolsOptions {
       ) =>
         | readonly RuntimeReportToolSource[]
         | Promise<readonly RuntimeReportToolSource[]>);
-  /** Human confirmation for saving. Omit to make the tools propose-only. */
+  /** In-process human confirmation. Omit to return a browser confirmation proposal. */
   confirmation?: RuntimeReportConfirmationHost;
   /** Optional audit sink for tool-level activity. */
   audit?: (entry: RuntimeReportAuditEntry) => void | Promise<void>;
@@ -549,7 +550,7 @@ export function createRuntimeReportTools(
   const define = aiTool(
     RUNTIME_REPORT_DEFINE_TOOL_SLUG,
     RUNTIME_REPORT_DEFINE_FUNCTION_NAME,
-    'Propose a new report as a declarative spec. phase "preview" validates the spec and returns a sample; nothing is saved. After the user is shown the preview and a human confirms, call phase "apply" with the specHash from the preview to save it. The user, not you, confirms.',
+    'Propose a new report as a declarative spec. phase "preview" validates the spec and returns a sample; nothing is saved. Call phase "apply" with the preview specHash to request human confirmation. An awaiting_confirmation result is NOT saved: tell the user to approve the confirmation card. Only a person can approve; never claim it was saved before confirmation.',
     {
       type: 'object',
       required: ['phase', 'spec'],
@@ -609,17 +610,28 @@ export function createRuntimeReportTools(
       // Before asking a human to confirm anything that cannot be stored: no
       // principal tenant, or an ambient tenant that disagrees with it (#3768).
       principalTenantScope(run);
-      if (!options.confirmation) {
-        throw new RuntimeReportError(
-          'invalid_operation',
-          'phase',
-          'saving requires human confirmation, which is not available in this session; the proposal was not saved',
-        );
-      }
       try {
         await run.assertOperation(reportsCollection, 'create');
       } catch {
         throw new DataSurfaceDeniedError();
+      }
+      if (!options.confirmation) {
+        const preview = boundedPreview(
+          await runRuntimeReport(compiled, {
+            db: database,
+            maxRows: previewRows,
+          }),
+          previewRows,
+        );
+        await audit(run, { action: 'preview', specHash: compiled.specHash });
+        return {
+          status: 'awaiting_confirmation',
+          specHash: compiled.specHash,
+          spec: compiled.spec,
+          sourceLabel: compiled.source.label,
+          preview,
+          confirmPath: '/api/_reports/runtime/confirm',
+        } satisfies RuntimeReportAwaitingConfirmation;
       }
       const confirmedSpecHash = compiled.specHash;
       await options.confirmation.confirmSave({

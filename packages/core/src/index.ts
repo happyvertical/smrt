@@ -298,6 +298,10 @@ export {
 } from './migrations/differ';
 export * from './object';
 export {
+  type OperationPermissionAlias,
+  resolveOperationPermissionAlias,
+} from './operation-permission.js';
+export {
   SmrtPolymorphicAssociation,
   type SmrtPolymorphicAssociationOptions,
 } from './polymorphic-association';

@@ -53,6 +53,7 @@
     "@happyvertical/smrt-users": "^0.55.24",
     "@happyvertical/smrt-web": "^0.55.24",
     "@happyvertical/sql": "^0.89.12",
-    "@modelcontextprotocol/server": "^2.0.0"
+    "@modelcontextprotocol/server": "^2.0.0",
+    "@happyvertical/smrt-reports": "^0.55.24"
   }
 }

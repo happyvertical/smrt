@@ -89,7 +89,7 @@ export {
   previewReportRefresh,
   reportRefreshOutcome,
 } from './lifecycle.js';
-export { MaterializedReportsRecipe } from './recipes.js';
+export { MaterializedReportsRecipe, RuntimeReportsRecipe } from './recipes.js';
 export {
   refreshReport,
   reportRowIdentity,
@@ -124,6 +124,20 @@ export {
   runStoredRuntimeReport,
   saveRuntimeReport,
 } from './runtime-report.js';
+export type {
+  RuntimeReportAwaitingConfirmation,
+  RuntimeReportPrincipal,
+  RuntimeReportServerOptions,
+  RuntimeReportServerSource,
+} from './runtime-server.js';
+export {
+  archiveRuntimeReportForPrincipal,
+  createRuntimeReportConfirmHandler,
+  getRuntimeReportServerOptions,
+  loadRuntimeReportChart,
+  RuntimeReportHttpError,
+  runRuntimeReportForPrincipal,
+} from './runtime-server.js';
 export type {
   RuntimeReportBucket,
   RuntimeReportChart,

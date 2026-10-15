@@ -79,7 +79,9 @@ export {
   defaultWidgetRegistry,
   registerWidget,
   resolveWidgetComponents,
+  resolveWidgetOptionsEditors,
   type WidgetComponents,
+  type WidgetOptionsEditors,
   WidgetRegistry,
 } from './registry.js';
 export {

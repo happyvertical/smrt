@@ -206,3 +206,9 @@ the pair, and their FKs declare `onDelete: 'NO ACTION'` so the natural key does
 not turn them into CASCADE. Existing deployments run
 `deduplicateAuthorityPairs()` in the same stopped-writer window; it keeps the
 effective override (DENY > GRANT > INHERIT) so authority never widens.
+
+Custom methods can declare `operationPermissions` aliases to the same
+collection's CRUD grants (#3878); `deriveOperationPermissionSlug()` resolves
+them for class and catalog-slug callers. Catalog generation merges optional
+`databaseActions` into the target grant's PostgreSQL bindings. CRUD grants
+cannot themselves be aliased. See core's [generator contract](../../core/agents/generators.md#custom-action-permission-aliases-3878).

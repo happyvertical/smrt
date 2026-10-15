@@ -15,6 +15,23 @@ Attendance services accept trusted session actors, serialize mutations per
 actor, and bind every write to one executor. The new tables use non-null unique
 open slots, not nullable unique keys. A linked entry is draft evidence, and
 rollups must deduplicate `AttendancePunch.serviceTimeEntryId`.
+`AttendanceSegment` (`attendance_segments`) is a running work interval inside a
+punch: queryable `workRef*`/`taskRef*`/`kind` columns, one open per punch
+(`openSlot`), closed by `startBreak`/`punchOut`/`autoClose`, never overlapping
+breaks or each other, immutable once closed. It creates no `ServiceTimeEntry`.
+Closed punches, breaks and segments change only through
+`AttendanceCorrectionService` (`attendance/correction-service.ts`), which sets a
+per-instance capability (`attendance/write.ts`, not exported) that lifts the
+models' closed-interval checks for one save, validates the whole punch layout,
+recomputes durations and appends an `AttendanceCorrection` (append-only ledger,
+no generated operations; only a first acknowledgement by the subject may update
+a row). Never export `write.ts`. A confirmed `PeriodTimecard` is honoured by the
+opt-in `confirmedTimecardGuard` (`rollup/correction-guard.ts`), which refuses
+rather than reopens (#3950).
+Segment transitions live in `attendance/segments.ts`; compose them with other
+attendance writes via `AttendanceService.withTransaction`. Any new attendance
+table must be added to the `includeObjects` lists in the `*.optional.test.ts`
+files.
 
 ## Models
 
@@ -122,3 +139,9 @@ Layer 3 lives under `src/rollup/` and the `./rollup` subpath. See
 confirmation, attributed adjustments, isolation, and transaction contracts.
 Timecards and adjustments have closed generated surfaces and service-only
 model writes; never bypass the instance capability with generic persistence.
+
+Replay hashes the tap AS SENT (action, device `at`, paid, work) so retries match;
+`replay(taps, { resolveAt, now, refusal })` only changes the stored time and
+reason. Never hash the resolved time. Work actions (`startWork`, `switchWork`,
+`stopWork`, `resumeWork`) run in the tap's transaction via `apply()`. Refusals store
+`code` from `AttendanceConflict.code`; give new conflicts a code.

@@ -13,6 +13,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { snapshotObjectRegistryState } from '../../../core/src/test-utils.js';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
 import {
+  assertOperationPermission,
+  deriveOperationPermissionSlug,
   generatePostgresPermissionSql,
   PermissionCatalogService,
   registerPermissionDefinitions,
@@ -329,7 +331,11 @@ describe('PermissionCatalogService', () => {
       Gizmo2977: {
         className: 'Gizmo2977',
         collection: 'gizmo2977s',
-        decoratorConfig: { api: false, collection: 'gizmos_2977' },
+        decoratorConfig: {
+          api: false,
+          collection: 'gizmos_2977',
+          tableName: 'gizmos_2977',
+        },
         fields: {},
         methods: {},
         qualifiedName: `${packageName}:Gizmo2977`,
@@ -348,12 +354,18 @@ describe('PermissionCatalogService', () => {
       Gizmo2977Collection: {
         className: 'Gizmo2977Collection',
         collection: 'gizmo2977_collections',
-        decoratorConfig: { api: { include: ['importBatch'] } },
+        decoratorConfig: {
+          api: { include: ['importBatch', 'restoreAll'] },
+          operationPermissions: {
+            restoreAll: { action: 'create', databaseActions: ['UPDATE'] },
+          },
+        },
         extends: 'SmrtCollection',
         extendsTypeArg: 'Gizmo2977',
         fields: {},
         methods: {
           importBatch: { isPublic: true, name: 'importBatch' },
+          restoreAll: { isPublic: true, name: 'restoreAll' },
           internalSweep: { isPublic: true, name: 'internalSweep' },
           hidden: { isPublic: false, name: 'hidden' },
         },
@@ -377,6 +389,25 @@ describe('PermissionCatalogService', () => {
         .getCatalog()
         .permissions.map((permission) => permission.slug);
       expect(slugs).toContain('gizmos_2977.importBatch');
+      expect(slugs).toContain('gizmos_2977.create');
+      expect(slugs).not.toContain('gizmos_2977.restoreAll');
+      expect(
+        PermissionCatalogService.create()
+          .getCatalog()
+          .permissions.find(
+            (permission) => permission.slug === 'gizmos_2977.create',
+          )?.postgres?.bindings,
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            action: 'UPDATE',
+            tableName: 'gizmos_2977',
+          }),
+        ]),
+      );
+      expect(deriveOperationPermissionSlug('gizmos_2977', 'restoreAll')).toBe(
+        'gizmos_2977.create',
+      );
       // An inherited collection class (no own type argument) resolves the
       // same item through its ancestry, as the route generator does.
       expect(slugs).toContain('gizmos_2977.restoreSpecial');
@@ -633,5 +664,126 @@ describe('PermissionCatalogService', () => {
     expect(() => generatePostgresPermissionSql()).toThrow(
       /Invalid Postgres permission binding action/,
     );
+  });
+});
+
+@smrt({
+  tableName: 'alias_permission_records',
+  collection: 'alias_permission_records',
+  tenantScoped: { mode: 'required', field: 'ownerId' },
+  api: {
+    include: ['list', 'create', 'run', 'archive'],
+    routes: {
+      run: { method: 'POST' },
+      archive: { method: 'POST' },
+    },
+  },
+  mcp: { include: ['list', 'run', 'archive'] },
+  cli: { include: ['list', 'run', 'archive'] },
+  operationPermissions: {
+    run: { action: 'read' },
+    archive: { action: 'create', databaseActions: ['SELECT', 'UPDATE'] },
+  },
+})
+class AliasPermissionRecord extends SmrtObject {
+  ownerId = '';
+  async run(): Promise<boolean> {
+    return true;
+  }
+  async archive(): Promise<boolean> {
+    return true;
+  }
+}
+
+@smrt({
+  api: { include: ['archive'] },
+  collection: 'shared_alias_permission_records',
+  operationPermissions: { archive: { action: 'create' } },
+})
+class SharedAliasedPermissionRecord extends SmrtObject {
+  async archive(): Promise<boolean> {
+    return true;
+  }
+}
+
+@smrt({
+  api: { include: ['archive'] },
+  collection: 'shared_alias_permission_records',
+})
+class SharedUnaliasedPermissionRecord extends SmrtObject {
+  async archive(): Promise<boolean> {
+    return true;
+  }
+}
+
+describe('custom action permission aliases (#3878)', () => {
+  it('keeps one grant vocabulary across classes, strings, guards and SQL policies', async () => {
+    const catalog = PermissionCatalogService.create().getCatalog();
+    expect(
+      catalog.permissions
+        .filter((entry) => entry.collection === 'alias_permission_records')
+        .map((entry) => entry.slug)
+        .sort(),
+    ).toEqual([
+      'alias_permission_records.create',
+      'alias_permission_records.read',
+    ]);
+    expect(deriveOperationPermissionSlug(AliasPermissionRecord, 'run')).toBe(
+      'alias_permission_records.read',
+    );
+    expect(
+      deriveOperationPermissionSlug('alias_permission_records', 'archive'),
+    ).toBe('alias_permission_records.create');
+    await expect(
+      assertOperationPermission({
+        collection: AliasPermissionRecord,
+        action: 'run',
+        userId: 'actor',
+        tenantId: 'tenant',
+        permissionSet: ['alias_permission_records.read'],
+        catalog,
+      }),
+    ).resolves.toBeDefined();
+    await expect(
+      assertOperationPermission({
+        collection: AliasPermissionRecord,
+        action: 'archive',
+        userId: 'actor',
+        tenantId: 'tenant',
+        permissionSet: ['alias_permission_records.read'],
+        catalog,
+      }),
+    ).rejects.toThrow();
+    const policy = generatePostgresPermissionSql();
+    expect(
+      policy.targets.find(
+        (entry) => entry.tableName === 'alias_permission_records',
+      )?.tenantField,
+    ).toBe('owner_id');
+    expect(
+      policy.targets.find(
+        (entry) => entry.tableName === 'alias_permission_records',
+      )?.actions.UPDATE,
+    ).toContain('alias_permission_records.create');
+    expect(
+      policy.targets.find(
+        (entry) => entry.tableName === 'alias_permission_records',
+      )?.actions.SELECT,
+    ).toContain('alias_permission_records.create');
+  });
+
+  it('uses constructor-specific aliases and rejects ambiguous shared-collection strings', () => {
+    expect(
+      deriveOperationPermissionSlug(SharedAliasedPermissionRecord, 'archive'),
+    ).toBe('shared_alias_permission_records.create');
+    expect(
+      deriveOperationPermissionSlug(SharedUnaliasedPermissionRecord, 'archive'),
+    ).toBe('shared_alias_permission_records.archive');
+    expect(() =>
+      deriveOperationPermissionSlug(
+        'shared_alias_permission_records',
+        'archive',
+      ),
+    ).toThrow('Ambiguous operation permission alias');
   });
 });

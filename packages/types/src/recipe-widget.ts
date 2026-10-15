@@ -82,6 +82,8 @@ export interface RecipeWidgetSurface {
   version?: number;
   /** Export of the `migrate(options, fromVersion)` function; needs `version` above 1. */
   migrate?: RecipeExportRef;
+  /** Optional Svelte editor for dependent or remotely loaded option choices. */
+  optionsEditor?: RecipeExportRef;
   /** The widget's options; omitted means none. */
   options?: readonly RecipeWidgetOption[];
   /** Data needs; omitted for a widget that renders from its options alone. */

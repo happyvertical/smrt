@@ -98,6 +98,7 @@ ${statics}
         { key: 'body', type: 'markdown', label: 'Body' },
       ],
       migrate: '@acme/shop/server#migrateSalesTotal',
+      optionsEditor: '@acme/shop/svelte#SalesOptions',
       version: 2,
       icon: 'chart',
       description: 'Order totals.',
@@ -123,6 +124,7 @@ ${statics}
       'icon',
       'version',
       'migrate',
+      'optionsEditor',
       'options',
       'data',
       'allowedIn',
@@ -136,6 +138,7 @@ ${statics}
       export: '@acme/shop/svelte#SalesTotal',
       version: 2,
       migrate: '@acme/shop/server#migrateSalesTotal',
+      optionsEditor: '@acme/shop/svelte#SalesOptions',
       data: {
         load: '@acme/shop/server#loadSalesTotal',
         models: ['@acme/shop:Order'],
@@ -241,6 +244,11 @@ ${statics}
       'a relative loader',
       widget(`data: { load: '../x#load' }`),
       'data.load `../x#load` must be',
+    ],
+    [
+      'a relative options editor',
+      widget(`optionsEditor: './Options.svelte#Options'`),
+      'optionsEditor `./Options.svelte#Options` must be',
     ],
     ['empty data', widget('data: {}'), 'data needs `load` or `models`'],
     [

@@ -546,9 +546,13 @@ export interface SmartObjectConfig {
    */
   report?: ReportConfig;
 
-  /**
-   * API configuration
-   */
+  /** Custom actions may reuse an existing CRUD grant in this collection. */
+  operationPermissions?: Record<
+    string,
+    import('../operation-permission.js').OperationPermissionAlias
+  >;
+
+  /** API configuration. */
   api?: boolean | ApiConfig;
 
   /**
