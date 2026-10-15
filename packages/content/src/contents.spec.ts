@@ -22,6 +22,11 @@ afterAll(async () => {
   );
   ownedDatabases.clear();
   await fs.promises.rm(TMP_DIR, { recursive: true, force: true });
+  if (process.env.SMRT_TEST_RESOURCE_DIAGNOSTICS === '1') {
+    process.stdout.write(
+      `[contents.spec] closed=${results.filter((result) => result.status === 'fulfilled').length}/${results.length} removed-suite-root=${TMP_DIR}\n`,
+    );
+  }
   const failures = results
     .filter(
       (result): result is PromiseRejectedResult => result.status === 'rejected',
@@ -44,6 +49,22 @@ function getTestDbUrl(testName: string): string {
   const random = Math.random().toString(36).substring(7);
   const file = `${TMP_DIR}/${testName}-${timestamp}-${random}.db`;
   return `file:${file}`;
+}
+
+async function createTrackedContents(
+  options: Parameters<typeof Contents.create>[0],
+) {
+  const contents = await Contents.create(options);
+  ownedDatabases.add(contents.db);
+  return contents;
+}
+
+async function trackCollection<T extends { db: { close?: () => unknown } }>(
+  creation: Promise<T>,
+): Promise<T> {
+  const collection = await creation;
+  ownedDatabases.add(collection.db);
+  return collection;
 }
 
 const CONTENT_VERSIONS_SCHEMA = `
@@ -138,7 +159,7 @@ it('should persist bodyFormat and restore it from content versions', async () =>
     url: getTestDbUrl('body-format'),
   });
   ownedDatabases.add(db);
-  const contents = await Contents.create({
+  const contents = await createTrackedContents({
     db,
   });
   await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
@@ -172,7 +193,7 @@ it('should persist bodyFormat and restore it from content versions', async () =>
 it.skipIf(!process.env.OPENAI_API_KEY)(
   'should be able to getOrInsert a content item',
   async () => {
-    const contents = await Contents.create({
+    const contents = await createTrackedContents({
       ai: {
         type: 'openai',
         apiKey: process.env.OPENAI_API_KEY || 'test-key',
@@ -203,7 +224,7 @@ it.skipIf(!process.env.OPENAI_API_KEY)(
 it.skipIf(!process.env.OPENAI_API_KEY)(
   'should respect the context of the slug',
   async () => {
-    const contents = await Contents.create({
+    const contents = await createTrackedContents({
       ai: {
         type: 'openai',
         apiKey: process.env.OPENAI_API_KEY || 'test-key',
@@ -262,7 +283,7 @@ it.skipIf(!process.env.OPENAI_API_KEY)(
 
 // skipped because it takes a long time
 it.skip('should be able to mirror a bit of content give a url', async () => {
-  const contents = await Contents.create({
+  const contents = await createTrackedContents({
     ai: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || 'test-key',
@@ -280,7 +301,7 @@ it.skip('should be able to mirror a bit of content give a url', async () => {
 }, 60000);
 
 it.skip('should be able to sync a content dir', async () => {
-  const contents = await Contents.create({
+  const contents = await createTrackedContents({
     ai: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || 'test-key',
@@ -311,7 +332,7 @@ it.skip('should be able to sync a content dir', async () => {
 it.skipIf(!process.env.OPENAI_API_KEY)(
   'should be able to list content',
   async () => {
-    const contents = await Contents.create({
+    const contents = await createTrackedContents({
       ai: {
         type: 'openai',
         apiKey: process.env.OPENAI_API_KEY || 'test-key',
@@ -375,7 +396,7 @@ it.skipIf(!process.env.OPENAI_API_KEY)(
 it.skipIf(!process.env.OPENAI_API_KEY)(
   'should support variant field for namespaced classification',
   async () => {
-    const contents = await Contents.create({
+    const contents = await createTrackedContents({
       ai: {
         type: 'openai',
         apiKey: process.env.OPENAI_API_KEY || 'test-key',
@@ -436,7 +457,7 @@ it.skipIf(!process.env.OPENAI_API_KEY)(
 );
 
 it('should return an empty asset list on a fresh database before any asset writes', async () => {
-  const contents = await Contents.create({
+  const contents = await createTrackedContents({
     db: {
       url: getTestDbUrl('fresh-assets'),
     },
@@ -455,16 +476,18 @@ it('should return an empty asset list on a fresh database before any asset write
 
 it('should persist content assets via content_assets', async () => {
   const dbUrl = getTestDbUrl('persisted-assets');
-  const contents = await Contents.create({
+  const contents = await createTrackedContents({
     db: {
       url: dbUrl,
     },
   });
-  const images = await ImageCollection.create({
-    db: {
-      url: dbUrl,
-    },
-  });
+  const images = await trackCollection(
+    ImageCollection.create({
+      db: {
+        url: dbUrl,
+      },
+    }),
+  );
 
   const content = await contents.create({
     name: 'asset-source',
@@ -482,16 +505,18 @@ it('should persist content assets via content_assets', async () => {
 
   await content.addAsset(image, 'thumbnail', 3);
 
-  const reloadedContents = await Contents.create({
+  const reloadedContents = await createTrackedContents({
     db: {
       url: dbUrl,
     },
   });
-  const contentAssets = await ContentAssetCollection.create({
-    db: {
-      url: dbUrl,
-    },
-  });
+  const contentAssets = await trackCollection(
+    ContentAssetCollection.create({
+      db: {
+        url: dbUrl,
+      },
+    }),
+  );
   const reloaded = await reloadedContents.get({ id: content.id });
   const links = await contentAssets.byLeft(content.id as string);
 
@@ -508,11 +533,15 @@ it('should persist content assets via content_assets', async () => {
 
 it('removes content_assets links when the linked picture is deleted', async () => {
   const dbUrl = getTestDbUrl('asset-delete-cascade');
-  const contents = await Contents.create({ db: { url: dbUrl } });
-  const images = await ImageCollection.create({ db: { url: dbUrl } });
-  const contentAssets = await ContentAssetCollection.create({
-    db: { url: dbUrl },
-  });
+  const contents = await createTrackedContents({ db: { url: dbUrl } });
+  const images = await trackCollection(
+    ImageCollection.create({ db: { url: dbUrl } }),
+  );
+  const contentAssets = await trackCollection(
+    ContentAssetCollection.create({
+      db: { url: dbUrl },
+    }),
+  );
 
   const content = await contents.create({
     name: 'asset-delete-cascade',
@@ -545,11 +574,15 @@ it('removes content_assets links when the linked picture is deleted', async () =
 
 it('skips a content_assets link whose asset row is gone, with a warning', async () => {
   const dbUrl = getTestDbUrl('asset-dangling-link');
-  const contents = await Contents.create({ db: { url: dbUrl } });
-  const images = await ImageCollection.create({ db: { url: dbUrl } });
-  const contentAssets = await ContentAssetCollection.create({
-    db: { url: dbUrl },
-  });
+  const contents = await createTrackedContents({ db: { url: dbUrl } });
+  const images = await trackCollection(
+    ImageCollection.create({ db: { url: dbUrl } }),
+  );
+  const contentAssets = await trackCollection(
+    ContentAssetCollection.create({
+      db: { url: dbUrl },
+    }),
+  );
 
   const content = await contents.create({
     name: 'asset-dangling-link',
@@ -583,11 +616,15 @@ it('skips a content_assets link whose asset row is gone, with a warning', async 
 
 it('getAssets leaves out excluded relationships but keeps their links', async () => {
   const dbUrl = getTestDbUrl('asset-excluded-relationships');
-  const contents = await Contents.create({ db: { url: dbUrl } });
-  const images = await ImageCollection.create({ db: { url: dbUrl } });
-  const contentAssets = await ContentAssetCollection.create({
-    db: { url: dbUrl },
-  });
+  const contents = await createTrackedContents({ db: { url: dbUrl } });
+  const images = await trackCollection(
+    ImageCollection.create({ db: { url: dbUrl } }),
+  );
+  const contentAssets = await trackCollection(
+    ContentAssetCollection.create({
+      db: { url: dbUrl },
+    }),
+  );
 
   const content = await contents.create({
     name: 'asset-excluded-relationships',
@@ -629,16 +666,18 @@ it('getAssets leaves out excluded relationships but keeps their links', async ()
 
 it('should sync editor-style assetIds on save', async () => {
   const dbUrl = getTestDbUrl('editor-asset-sync');
-  const contents = await Contents.create({
+  const contents = await createTrackedContents({
     db: {
       url: dbUrl,
     },
   });
-  const images = await ImageCollection.create({
-    db: {
-      url: dbUrl,
-    },
-  });
+  const images = await trackCollection(
+    ImageCollection.create({
+      db: {
+        url: dbUrl,
+      },
+    }),
+  );
 
   const content = await contents.create({
     name: 'editor-asset-sync',
@@ -669,7 +708,7 @@ it('should sync editor-style assetIds on save', async () => {
 });
 
 it('should return an empty reference list before any reference writes', async () => {
-  const contents = await Contents.create({
+  const contents = await createTrackedContents({
     db: {
       url: getTestDbUrl('fresh-reference-read'),
     },
@@ -687,7 +726,7 @@ it('should return an empty reference list before any reference writes', async ()
 
 it('should persist content references via the ContentReference model', async () => {
   const dbUrl = getTestDbUrl('persisted-references');
-  const contents = await Contents.create({
+  const contents = await createTrackedContents({
     db: {
       url: dbUrl,
     },
@@ -709,7 +748,7 @@ it('should persist content references via the ContentReference model', async () 
 
   await source.addReference(target);
 
-  const reloadedContents = await Contents.create({
+  const reloadedContents = await createTrackedContents({
     db: {
       url: dbUrl,
     },
@@ -725,7 +764,7 @@ it('should persist content references via the ContentReference model', async () 
 
 it('addReference is idempotent: duplicate calls preserve the existing reference row id', async () => {
   const dbUrl = getTestDbUrl('reference-idempotency');
-  const contents = await Contents.create({ db: { url: dbUrl } });
+  const contents = await createTrackedContents({ db: { url: dbUrl } });
 
   const source = await contents.create({
     name: 'idempotent-source',
@@ -741,7 +780,9 @@ it('addReference is idempotent: duplicate calls preserve the existing reference 
   });
 
   const { ContentReferences } = await import('./content-references');
-  const references = await ContentReferences.create({ db: { url: dbUrl } });
+  const references = await trackCollection(
+    ContentReferences.create({ db: { url: dbUrl } }),
+  );
 
   await source.addReference(target);
   const firstLink = (await references.byLeft(source.id as string))[0];
@@ -761,7 +802,7 @@ it('should pin and update the cited version on a content reference', async () =>
   const dbUrl = getTestDbUrl('reference-version-pin');
   const db = await getTestDatabase({ type: 'sqlite', url: dbUrl });
   ownedDatabases.add(db);
-  const contents = await Contents.create({ db });
+  const contents = await createTrackedContents({ db });
   await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
   await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });
   await syncSchema({ db, schema: GOVERNANCE_PROFILES_SCHEMA });
@@ -823,7 +864,7 @@ it('should leave unpinned references untracked but reportable', async () => {
   const dbUrl = getTestDbUrl('reference-version-unpinned');
   const db = await getTestDatabase({ type: 'sqlite', url: dbUrl });
   ownedDatabases.add(db);
-  const contents = await Contents.create({ db });
+  const contents = await createTrackedContents({ db });
   await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
   await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });
   await syncSchema({ db, schema: GOVERNANCE_PROFILES_SCHEMA });
@@ -868,7 +909,7 @@ it('restoring an unpinned snapshot over a currently-pinned edge clears the pin (
   const dbUrl = getTestDbUrl('reference-restore-clears-pin');
   const db = await getTestDatabase({ type: 'sqlite', url: dbUrl });
   ownedDatabases.add(db);
-  const contents = await Contents.create({ db });
+  const contents = await createTrackedContents({ db });
   await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
   await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });
   await syncSchema({ db, schema: GOVERNANCE_PROFILES_SCHEMA });
@@ -915,7 +956,7 @@ it('restoring an unpinned snapshot over a currently-pinned edge clears the pin (
 });
 
 it('should create URL reference targets with the source tenantId', async () => {
-  const contents = await Contents.create({
+  const contents = await createTrackedContents({
     db: {
       url: getTestDbUrl('tenant-reference-target'),
     },

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 type Closable = { close?: () => void | Promise<void> };
+type CleanupSummary = { closed: number; removed: number };
 
 /** Keeps each test module's file-backed SQLite fixtures explicitly owned. */
 export function createOwnedSqliteFixtures() {
@@ -23,7 +24,7 @@ export function createOwnedSqliteFixtures() {
       databases.add(database);
       return database;
     },
-    async cleanup(): Promise<void> {
+    async cleanup(): Promise<CleanupSummary> {
       const closeResults = await Promise.allSettled(
         [...databases].map((database) => database.close?.()),
       );
@@ -42,12 +43,21 @@ export function createOwnedSqliteFixtures() {
             result.status === 'rejected',
         )
         .map((result) => result.reason);
+      if (process.env.SMRT_TEST_RESOURCE_DIAGNOSTICS === '1') {
+        console.info(
+          `[owned-sqlite-fixtures] closed=${closeResults.filter((result) => result.status === 'fulfilled').length}/${closeResults.length} removed=${removeResults.filter((result) => result.status === 'fulfilled').length}/${removeResults.length}`,
+        );
+      }
       if (failures.length > 0) {
         throw new AggregateError(
           failures,
           'Failed to clean owned SQLite fixtures',
         );
       }
+      return {
+        closed: closeResults.length,
+        removed: removeResults.length,
+      };
     },
   };
 }

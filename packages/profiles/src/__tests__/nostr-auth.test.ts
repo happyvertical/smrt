@@ -14,7 +14,7 @@
  * - Tests read like executable examples
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   computeEventId,
   createAuthEvent,
@@ -49,8 +49,37 @@ import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
 
 const TEST_MASTER_SECRET = 'test-master-secret-32-bytes-long';
 const fixtures = createOwnedSqliteFixtures();
+let trackedCreates = 0;
 
-afterEach(() => fixtures.cleanup());
+const trackedCollectionClasses = [
+  ProfileTypeCollection,
+  ProfileCollection,
+  NostrIdentityCollection,
+  MagicLinkTokenCollection,
+] as const;
+
+beforeEach(() => {
+  for (const collectionClass of trackedCollectionClasses) {
+    const create = collectionClass.create.bind(collectionClass);
+    vi.spyOn(collectionClass, 'create').mockImplementation(async (...args) => {
+      const collection = await create(...args);
+      trackedCreates++;
+      fixtures.track(collection.db);
+      return collection;
+    });
+  }
+});
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  const cleanup = await fixtures.cleanup();
+  if (process.env.SMRT_TEST_RESOURCE_DIAGNOSTICS === '1') {
+    process.stdout.write(
+      `[nostr-auth] created=${trackedCreates} closed=${cleanup.closed} removed=${cleanup.removed}\n`,
+    );
+  }
+  trackedCreates = 0;
+});
 
 describe('Nostr Crypto Utilities', () => {
   describe('Keypair Generation', () => {

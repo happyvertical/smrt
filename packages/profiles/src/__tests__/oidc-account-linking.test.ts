@@ -178,12 +178,15 @@ describe('OIDC Account Linking', () => {
     const typeCollection = await ProfileTypeCollection.create({
       persistence: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(typeCollection.db);
     const personType = await typeCollection.create({
       name: 'Person',
       description: 'Individual person',
     });
     await personType.save();
-    const db = await getDatabase({ type: 'sqlite', url: dbUrl });
+    const db = fixtures.track(
+      await getDatabase({ type: 'sqlite', url: dbUrl }),
+    );
     await backfillProfileEmailKeys(db);
   });
 
@@ -222,10 +225,13 @@ describe('OIDC Account Linking', () => {
 
     it('accepts the database string shortcut', async () => {
       const stringDbUrl = fixtures.url('test-oidc-string');
-      await ProfileTypeCollection.create({
+      const stringTypes = await ProfileTypeCollection.create({
         persistence: { type: 'sqlite', url: stringDbUrl },
       });
-      const stringDb = await getDatabase({ type: 'sqlite', url: stringDbUrl });
+      fixtures.track(stringTypes.db);
+      const stringDb = fixtures.track(
+        await getDatabase({ type: 'sqlite', url: stringDbUrl }),
+      );
       await backfillProfileEmailKeys(stringDb);
       const result = await createProfileFromOidc(
         {

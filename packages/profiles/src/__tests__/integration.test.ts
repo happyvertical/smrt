@@ -94,6 +94,7 @@ describe('Profiles Package Integration Tests', () => {
       const typeCollection = await ProfileTypeCollection.create({
         persistence: { type: 'sqlite', url: dbUrl },
       });
+      fixtures.track(typeCollection.db);
 
       profileType = await typeCollection.create({
         name: 'Person',
