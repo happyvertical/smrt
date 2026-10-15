@@ -151,9 +151,25 @@ test('stops a surviving worker after its parent exits normally', async () => {
   const pid = Number(execution.output().match(/descendant:(\d+)/)[1]);
   try {
     const result = await execution.completed;
-    assert.equal(result.code, 0, result.stderr);
-    assert.match(result.stderr, /Stopped surviving test worker process group/);
+    assert.equal(result.code, 1, result.stderr);
+    assert.match(result.stderr, /left a surviving worker process group/);
     await assert.rejects(readFile(root));
+    assert.equal(await isProcessLive(pid), false);
+  } finally {
+    if (await isProcessLive(pid)) process.kill(pid, 'SIGKILL');
+  }
+});
+
+test('preserves a failing parent exit code when it also leaves a worker', async () => {
+  const descendantProgram = "process.on('SIGTERM', () => {}); process.send?.('ready'); setInterval(() => {}, 1_000);";
+  const source = `import { spawn } from 'node:child_process'; const descendant = spawn(process.execPath, ['--eval', ${JSON.stringify(descendantProgram)}], { env: process.env, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }); descendant.once('message', () => { descendant.disconnect(); descendant.unref(); console.log(\`descendant:\${descendant.pid}\`); process.exitCode = 23; });`;
+  const execution = startGuard(source);
+  await waitFor(() => /descendant:\d+/.test(execution.output()));
+  const pid = Number(execution.output().match(/descendant:(\d+)/)[1]);
+  try {
+    const result = await execution.completed;
+    assert.equal(result.code, 23, result.stderr);
+    assert.match(result.stderr, /left a surviving worker process group/);
     assert.equal(await isProcessLive(pid), false);
   } finally {
     if (await isProcessLive(pid)) process.kill(pid, 'SIGKILL');
@@ -171,6 +187,7 @@ test('waits for group escalation when a parent exits on SIGTERM and its worker s
   try {
     const result = await execution.completed;
     assert.equal(result.code, 143, result.stderr);
+    assert.doesNotMatch(result.stderr, /::error::Test command left a surviving worker/);
     await assert.rejects(readFile(root));
     assert.equal(await isProcessLive(pid), false);
   } finally {

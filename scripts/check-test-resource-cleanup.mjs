@@ -146,6 +146,7 @@ async function main() {
 
   let outcome;
   let leftovers = [];
+  let stoppedSurvivingGroup = false;
   let cleanupError;
   try {
     const execution = run(process.argv.slice(separator + 1), {
@@ -164,8 +165,11 @@ async function main() {
     // `close` only confirms the direct child. Its worker group may still own
     // ports or files even after a normal exit, so end the detached command
     // group before inspecting or removing its root.
-    const stoppedSurvivingGroup = await stopOwnedGroup();
-    if (stoppedSurvivingGroup) console.error('::notice::Stopped surviving test worker process group');
+    stoppedSurvivingGroup = await stopOwnedGroup();
+    if (stoppedSurvivingGroup) {
+      const level = interruptedBy ? 'notice' : 'error';
+      console.error(`::${level}::Test command left a surviving worker process group; it was stopped`);
+    }
     if (outcome.startupError) console.error(`::error::Test command could not start: ${outcome.startupError.message}`);
     console.error(`::notice::Managed tool cache directories: ${compileCache}, ${jitiCache}, ${tsxCache}`);
     leftovers = await listLeftovers(root, managedFixtureDirectories);
@@ -198,7 +202,7 @@ async function main() {
   }
 
   if (interruptedBy) process.exitCode = 128 + (interruptedBy === 'SIGINT' ? 2 : 15);
-  else if (cleanupError || leftovers.length > 0) process.exitCode = outcome?.code && outcome.code !== 0 ? outcome.code : 1;
+  else if (cleanupError || leftovers.length > 0 || stoppedSurvivingGroup) process.exitCode = outcome?.code && outcome.code !== 0 ? outcome.code : 1;
   else process.exitCode = outcome?.code ?? 1;
 }
 

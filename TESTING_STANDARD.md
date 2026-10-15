@@ -78,9 +78,10 @@ every other remaining fixture file, including hidden paths and similarly named
 cache output is managed by ownership, not exempted by a prefix or name.
 Before inspection and cleanup it terminates any surviving members of its owned
 POSIX process group, including workers left after a normal runner exit, and
-escalates to SIGKILL after a short grace period. A SIGKILL of the guard itself
-cannot run cleanup; inspect the fresh prefixed directory after a machine or
-CI-worker crash.
+escalates to SIGKILL after a short grace period. A surviving group makes the
+resource-acceptance command fail after it is stopped. A SIGKILL of the guard
+itself cannot run cleanup; inspect the fresh prefixed directory after a machine
+or CI-worker crash.
 
 ```bash
 pnpm test:resource-cleanup -- pnpm --filter @happyvertical/smrt-commerce test
