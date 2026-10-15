@@ -147,9 +147,11 @@ compatibility; use persisted `Invoice.totalAmount` for the amount due. The
 and [document-money contract](agents/document-money.md) cover persisted Invoice-v2
 semantics, credits, refunds, and posting. The materialized Invoice tax-report
 descriptor and tenant-safe drilldown are documented in
-[tax-summary contract](agents/tax-summary.md). A tenant migration procedure,
-Contract money persistence, and the production reports UI remain pending their
-own releases.
+[tax-summary contract](agents/tax-summary.md). Tenant migration commands,
+Contract money persistence, and the generic production reports server/browser
+surfaces are shipped. The money-v2 release still needs its production
+tax-summary bridge, PurchaseContract contributor integration, and exact-head
+migration/report acceptance evidence.
 
 ## API
 
