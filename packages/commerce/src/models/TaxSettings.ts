@@ -111,6 +111,12 @@ export class TaxSettings extends SmrtObject {
       )
     )
       throw new Error('Tax registrations require component, number and label');
+    // A tenant's first settings row must not adopt documents an earlier
+    // version wrote: that tenant needs the upgrade, not fresh defaults.
+    if (!this.isPersisted && this.tenantId) {
+      const { assertTenantMoneyCurrent } = await import('../upgrade/detect.js');
+      await assertTenantMoneyCurrent(this.db, this.tenantId);
+    }
     return this.withTransaction(async () => {
       const { TaxCodeCollection } = await import(
         '../collections/TaxCodeCollection.js'

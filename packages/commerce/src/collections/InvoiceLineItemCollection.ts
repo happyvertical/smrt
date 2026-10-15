@@ -20,6 +20,7 @@ import {
 import { DOCUMENT_MONEY_READ_REBIND } from '../document-money-internal.js';
 import { InvoiceLineItem } from '../models/InvoiceLineItem.js';
 import { withTenantMoneyCollectionRead } from '../tenant-money-barrier.js';
+import { assertCommerceMoneySchemaCurrent } from '../upgrade/detect.js';
 
 export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
   static readonly _itemClass = InvoiceLineItem;
@@ -27,7 +28,11 @@ export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
   private async withMoneyRead<T>(operation: () => Promise<T>): Promise<T> {
     const rootDb = this.db;
     const tenantId = getTenantId();
-    if (!tenantId) return operation();
+    if (!tenantId) {
+      // Without a tenant, still refuse a database with old money storage.
+      await assertCommerceMoneySchemaCurrent(rootDb);
+      return operation();
+    }
     const result = await withTenantMoneyCollectionRead(
       rootDb,
       tenantId,

@@ -15,11 +15,16 @@
  *   drops them, so their presence means the database has not been upgraded.
  * - **Pre-settings tenant.** A tenant with Invoice or Contract rows but no
  *   `tax_settings` row. Its documents predate tenant tax settings.
+ * - **Old-format documents.** An issued Invoice or Contract without a money
+ *   snapshot, or a line with a tax rate but no tax code. The current model
+ *   never writes either, so they remain detectable after a
+ *   `db:migrate --drop-columns` has removed the old columns.
  *
  * Delete this module, the `upgrade/` directory and its call sites together
  * once no supported version can have written old-format data.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { isPostgresDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import {
@@ -185,6 +190,34 @@ export async function tenantHasMoneyDocuments(
   });
 }
 
+/**
+ * SQL selecting the tenant ids that hold old-format documents: an issued
+ * header without a money snapshot, or a line taxed at a rate but carrying no
+ * tax code. `tenantFilter` is appended to each branch's WHERE clause.
+ */
+async function oldFormatDocumentQueries(
+  db: DatabaseInterface,
+  tenantFilter: string,
+): Promise<string[]> {
+  const queries: string[] = [];
+  const issued = (table: string, extra: string) =>
+    `SELECT DISTINCT CAST(tenant_id AS TEXT) AS "tenantId" FROM ${table}
+      WHERE tenant_id IS NOT NULL
+        AND (status <> 'draft'${extra})
+        AND COALESCE(money_snapshot_id, '') = ''${tenantFilter}`;
+  const taxed = (table: string) =>
+    `SELECT DISTINCT CAST(tenant_id AS TEXT) AS "tenantId" FROM ${table}
+      WHERE tenant_id IS NOT NULL
+        AND tax_rate > 0
+        AND tax_code_id IS NULL${tenantFilter}`;
+  if (await tableExists(db, 'invoices'))
+    queries.push(issued('invoices', " OR COALESCE(ar_journal_id, '') <> ''"));
+  if (await tableExists(db, 'contracts')) queries.push(issued('contracts', ''));
+  for (const table of ['invoice_line_items', 'contract_line_items'])
+    if (await tableExists(db, table)) queries.push(taxed(table));
+  return queries;
+}
+
 /** Why one tenant needs the upgrade. */
 export interface TenantMoneyUpgradeNeed {
   tenantId: string;
@@ -193,8 +226,14 @@ export interface TenantMoneyUpgradeNeed {
    *   the old tax-inclusive line format.
    * - `interrupted-migration`: a pre-#4021 tenant migration never finished.
    * - `missing-settings`: documents but no tenant tax settings.
+   * - `old-format-documents`: an issued document without a money snapshot,
+   *   or a taxed line without a tax code.
    */
-  reason: 'legacy-marker' | 'interrupted-migration' | 'missing-settings';
+  reason:
+    | 'legacy-marker'
+    | 'interrupted-migration'
+    | 'missing-settings'
+    | 'old-format-documents';
 }
 
 /** The full database view: old schema storage and every tenant to convert. */
@@ -245,6 +284,12 @@ export async function findCommerceMoneyUpgradeNeeds(
         if (!needs.has(tenantId)) needs.set(tenantId, 'missing-settings');
       }
     }
+    for (const sql of await oldFormatDocumentQueries(scanDb, '')) {
+      for (const row of rowsOf(await scanDb.query(sql))) {
+        const tenantId = String(row.tenantId);
+        if (!needs.has(tenantId)) needs.set(tenantId, 'old-format-documents');
+      }
+    }
     return [...needs]
       .map(([tenantId, reason]) => ({ tenantId, reason }))
       .sort((left, right) =>
@@ -258,27 +303,63 @@ export async function findCommerceMoneyUpgradeNeeds(
   return { oldSchema, tenants };
 }
 
-/** Databases and tenants already proven current, keyed by root database. */
-const currentSchemas = new WeakSet<object>();
-const currentTenants = new WeakMap<object, Set<string>>();
-/** Executors of an upgrade transaction, which converts old-format data. */
-const upgradeExecutors = new WeakSet<object>();
+/**
+ * Databases and tenants already proven current. A database is keyed by its
+ * connection URL when it has a durable one (so every request executor of a
+ * PostgreSQL app shares one entry), else by its root executor object.
+ */
+const currentByUrl = new Map<
+  string,
+  { schema: boolean; tenants: Set<string> }
+>();
+const currentByObject = new WeakMap<
+  object,
+  { schema: boolean; tenants: Set<string> }
+>();
+
+function currentState(db: DatabaseInterface): {
+  schema: boolean;
+  tenants: Set<string>;
+} {
+  const root = rootMoneyDatabase(db);
+  const url = (root as { url?: unknown }).url;
+  if (typeof url === 'string' && url && !url.includes(':memory:')) {
+    let state = currentByUrl.get(url);
+    if (!state) {
+      state = { schema: false, tenants: new Set() };
+      currentByUrl.set(url, state);
+    }
+    return state;
+  }
+  let state = currentByObject.get(root as object);
+  if (!state) {
+    state = { schema: false, tenants: new Set() };
+    currentByObject.set(root as object, state);
+  }
+  return state;
+}
 
 /**
- * @internal Run the upgrade's own transaction past the old-format checks, so
- * it can recompute converted drafts through the runtime. Only the exact
- * executor `tx` is exempt, and only while `operation` runs.
+ * @internal Forget every passing result, as a process restart would. For
+ * tests that rewrite a database into an old format mid-process.
+ */
+export function forgetCommerceMoneyChecks(): void {
+  currentByUrl.clear();
+}
+
+/** Set while an upgrade converts old-format data in this async context. */
+const upgradeScope = new AsyncLocalStorage<true>();
+
+/**
+ * @internal Run the upgrade's own work past the old-format checks, so it can
+ * seed settings and recompute converted drafts through the runtime. Only the
+ * async context of `operation` is exempt; `tx` documents the executor.
  */
 export async function withCommerceMoneyUpgradeExecutor<T>(
-  tx: DatabaseInterface,
+  _tx: DatabaseInterface,
   operation: () => Promise<T>,
 ): Promise<T> {
-  upgradeExecutors.add(tx as object);
-  try {
-    return await operation();
-  } finally {
-    upgradeExecutors.delete(tx as object);
-  }
+  return upgradeScope.run(true, operation);
 }
 
 /**
@@ -289,53 +370,66 @@ export async function withCommerceMoneyUpgradeExecutor<T>(
 export async function assertCommerceMoneySchemaCurrent(
   db: DatabaseInterface,
 ): Promise<void> {
-  if (upgradeExecutors.has(db as object)) return;
-  const root = rootMoneyDatabase(db) as object;
-  if (currentSchemas.has(root)) return;
+  if (upgradeScope.getStore()) return;
+  const state = currentState(db);
+  if (state.schema) return;
   const old = await findOldMoneySchema(db);
   if (old.length > 0)
     throw new CommerceDataNeedsUpgradeError(
       `The database holds commerce money data from an earlier version (${old.join(', ')}).`,
     );
-  currentSchemas.add(root);
+  state.schema = true;
 }
 
 /**
  * Refuse a tenant whose money data predates the current model: first the
- * database-wide schema check, then documents without tenant tax settings.
- * Each database and tenant is checked once per process once it passes.
+ * database-wide schema check, then old-format documents and documents
+ * without tenant tax settings. Each database and tenant is checked once per
+ * process once it passes.
  */
 export async function assertTenantMoneyCurrent(
   db: DatabaseInterface,
   tenantId: string,
 ): Promise<void> {
-  if (upgradeExecutors.has(db as object)) return;
-  const root = rootMoneyDatabase(db) as object;
-  if (currentTenants.get(root)?.has(tenantId)) return;
+  if (upgradeScope.getStore()) return;
+  const state = currentState(db);
+  if (state.tenants.has(tenantId)) return;
   await assertCommerceMoneySchemaCurrent(db);
   const stale = await withPermissionIndependentScan(db, async (scanDb) => {
-    if (!(await tableExists(scanDb, 'tax_settings'))) return false;
-    const settings = await scanDb.query(
-      'SELECT 1 AS found FROM tax_settings WHERE CAST(tenant_id AS TEXT) = ? LIMIT 1',
+    const settings = (await tableExists(scanDb, 'tax_settings'))
+      ? await scanDb.query(
+          'SELECT 1 AS found FROM tax_settings WHERE CAST(tenant_id AS TEXT) = ? LIMIT 1',
+          tenantId,
+        )
+      : { rows: [] };
+    if (settings.rows.length === 0) {
+      for (const table of MONEY_DOCUMENT_TABLES) {
+        if (!(await tableExists(scanDb, table))) continue;
+        const found = await scanDb.query(
+          `SELECT 1 AS found FROM ${table} WHERE CAST(tenant_id AS TEXT) = ? LIMIT 1`,
+          tenantId,
+        );
+        if (found.rows.length > 0) return 'missing-settings' as const;
+      }
+      return null;
+    }
+    for (const sql of await oldFormatDocumentQueries(
+      scanDb,
+      ' AND CAST(tenant_id AS TEXT) = ?',
+    ))
+      if ((await scanDb.query(`${sql} LIMIT 1`, tenantId)).rows.length > 0)
+        return 'old-format-documents' as const;
+    return null;
+  });
+  if (stale === 'old-format-documents')
+    throw new CommerceDataNeedsUpgradeError(
+      `Tenant ${tenantId} has commerce documents in an earlier version's money format.`,
       tenantId,
     );
-    if (settings.rows.length > 0) return false;
-    for (const table of MONEY_DOCUMENT_TABLES) {
-      if (!(await tableExists(scanDb, table))) continue;
-      const found = await scanDb.query(
-        `SELECT 1 AS found FROM ${table} WHERE CAST(tenant_id AS TEXT) = ? LIMIT 1`,
-        tenantId,
-      );
-      if (found.rows.length > 0) return true;
-    }
-    return false;
-  });
-  if (stale)
+  if (stale === 'missing-settings')
     throw new CommerceDataNeedsUpgradeError(
       `Tenant ${tenantId} has commerce documents but no tenant tax settings.`,
       tenantId,
     );
-  const tenants = currentTenants.get(root) ?? new Set<string>();
-  tenants.add(tenantId);
-  currentTenants.set(root, tenants);
+  state.tenants.add(tenantId);
 }

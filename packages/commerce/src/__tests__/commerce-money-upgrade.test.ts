@@ -28,6 +28,7 @@ import {
   upgradeCommerceMoney,
 } from '../index.js';
 import { InvoiceStatus } from '../types/index.js';
+import { forgetCommerceMoneyChecks } from '../upgrade/detect.js';
 
 const OLD_COLUMNS = [
   "ALTER TABLE tax_settings ADD COLUMN money_model TEXT NOT NULL DEFAULT 'legacy'",
@@ -60,6 +61,7 @@ describe('commerce money upgrade (#4021)', () => {
    * nothing proven while writing the fixtures is cached.
    */
   async function restart(): Promise<void> {
+    forgetCommerceMoneyChecks();
     await db.close?.();
     db = await getTestDatabase({ type: 'sqlite', url });
   }
@@ -330,6 +332,106 @@ describe('commerce money upgrade (#4021)', () => {
       draftsRecomputed: 1,
     });
     expect(await readInvoices('orphan')).toHaveLength(1);
+  });
+
+  it('refuses a direct first settings row for a tenant with old documents', async () => {
+    await ensureCommerceTenant(db, 'orphan');
+    await oldInvoice('orphan', 'O-1', { issued: false });
+    await db.query("DELETE FROM tax_settings WHERE tenant_id = 'orphan'");
+    await restart();
+    await expect(
+      withTenant({ tenantId: 'orphan' }, async () =>
+        (await TaxSettingsCollection.create({ db })).create({
+          tenantId: 'orphan',
+        }),
+      ),
+    ).rejects.toMatchObject({ code: COMMERCE_DATA_NEEDS_UPGRADE });
+    expect(
+      (await db.query("SELECT 1 FROM tax_settings WHERE tenant_id = 'orphan'"))
+        .rows,
+    ).toEqual([]);
+  });
+
+  it('refuses a tenantless read of a database with old money storage', async () => {
+    await ensureCommerceTenant(db, 'legacy');
+    await oldInvoice('legacy', 'L-1', { issued: false });
+    await earlierSchema(['legacy']);
+    await restart();
+    await expect(
+      (await InvoiceCollection.create({ db })).list({}),
+    ).rejects.toMatchObject({ code: COMMERCE_DATA_NEEDS_UPGRADE });
+  });
+
+  it('still finds old documents after a migration dropped the old columns', async () => {
+    // An earlier-version legacy tenant: it has a settings row, and a
+    // `db:migrate --drop-columns` removed every old column and table.
+    await ensureCommerceTenant(db, 'dropped');
+    const issued = await oldInvoice('dropped', 'D-ISSUED', { issued: true });
+    const draft = await oldInvoice('dropped', 'D-DRAFT', { issued: false });
+    await restart();
+    expect(await findCommerceMoneyUpgradeNeeds(db)).toEqual({
+      oldSchema: [],
+      tenants: [{ tenantId: 'dropped', reason: 'old-format-documents' }],
+    });
+    await expect(readInvoices('dropped')).rejects.toMatchObject({
+      code: COMMERCE_DATA_NEEDS_UPGRADE,
+      message: expect.stringContaining(
+        "Tenant dropped has commerce documents in an earlier version's money format.",
+      ),
+    });
+    const result = await upgradeCommerceMoney(db);
+    expect(result.failures).toEqual([]);
+    expect(result.upgraded).toMatchObject([
+      { tenantId: 'dropped', issuedBackfilled: 1, draftsRecomputed: 1 },
+    ]);
+    expect(await findCommerceMoneyUpgradeNeeds(db)).toEqual({
+      oldSchema: [],
+      tenants: [],
+    });
+    await withTenant({ tenantId: 'dropped' }, async () => {
+      const invoices = await InvoiceCollection.create({ db });
+      expect(await invoices.get({ id: issued.invoiceId })).toMatchObject({
+        subtotal: 200,
+        taxAmount: 10,
+        totalAmount: 210,
+      });
+      expect(await invoices.get({ id: draft.invoiceId })).toMatchObject({
+        subtotal: 200,
+        taxAmount: 10,
+        totalAmount: 210,
+      });
+    });
+  });
+
+  it('reconstructs a fractional-quantity net exactly, ties toward +infinity', async () => {
+    await ensureCommerceTenant(db, 'fraction');
+    const ids = await oldInvoice('fraction', 'F-1', { issued: true });
+    // 1.005 x 100 = 100.5 exactly, which the earlier version stored as 101
+    // (binary floating point would give 100.49999999999999 and round to 100).
+    await db.query(
+      `UPDATE invoice_line_items SET quantity = 1.005, unit_price = 100,
+              tax_rate = 0, amount = 101 WHERE id = ?`,
+      ids.lineId,
+    );
+    await db.query(
+      'UPDATE invoices SET subtotal = 101, tax_amount = 0, total_amount = 101 WHERE id = ?',
+      ids.invoiceId,
+    );
+    await earlierSchema(['fraction']);
+    await restart();
+    const result = await upgradeCommerceMoney(db);
+    expect(result.failures).toEqual([]);
+    const line = (
+      await db.query(
+        'SELECT amount, tax_amount, tax_code_code FROM invoice_line_items WHERE id = ?',
+        ids.lineId,
+      )
+    ).rows[0] as Record<string, unknown>;
+    expect(line).toMatchObject({
+      amount: 101,
+      tax_amount: 0,
+      tax_code_code: 'out-of-scope',
+    });
   });
 
   it('refuses an invalid stored rate and an interrupted earlier migration', async () => {

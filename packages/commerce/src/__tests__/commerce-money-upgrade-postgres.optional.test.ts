@@ -24,6 +24,7 @@ import {
   upgradeCommerceMoney,
 } from '../index.js';
 import { InvoiceStatus } from '../types/index.js';
+import { forgetCommerceMoneyChecks } from '../upgrade/detect.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -67,6 +68,7 @@ describePostgres('commerce money upgrade on PostgreSQL (#4021)', () => {
 
   /** A fresh connection: nothing proven on the previous one is cached. */
   async function restart(): Promise<void> {
+    forgetCommerceMoneyChecks();
     await db.close?.();
     db = await open();
   }

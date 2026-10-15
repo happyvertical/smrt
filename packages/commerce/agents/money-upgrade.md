@@ -7,18 +7,24 @@ and names the upgrade command. The operator steps are in the CLI guide,
 
 ## Detection
 
-`src/upgrade/detect.ts` owns detection. Two shapes count as old data:
+`src/upgrade/detect.ts` owns detection. Three shapes count as old data:
 
 - **Old schema.** The database still has `tax_settings.money_model`,
   `tax_settings.money_migration_id`, `*_line_items.legacy_amount`, or the
   `money_migration_documents` table. This refuses the whole database.
 - **Tenant without settings.** A tenant has Invoice or Contract rows but no
   `tax_settings` row. This refuses that tenant only.
+- **Old-format documents.** An issued Invoice or Contract without a money
+  snapshot, or a line with a tax rate but no tax code. The current model never
+  writes either, so these stay detectable after `db:migrate --drop-columns`
+  removed the old columns. This refuses that tenant only.
 
 `assertCommerceMoneySchemaCurrent(db)` checks the schema.
 `assertTenantMoneyCurrent(db, tenantId)` checks the schema, then the tenant.
-Both cache a passing result per database and tenant, so the check runs once per
-process. Every runtime money read and write, the money MCP tools, the tax
+Both cache a passing result per database (keyed by its connection URL, so
+request executors share it) and tenant, so the check runs once per process. A
+tenantless collection read still checks the schema, and a tenant's first
+`TaxSettings` row is refused while that tenant holds old documents. Every runtime money read and write, the money MCP tools, the tax
 summary, and `ensureCommerceTenant()` call them first.
 
 A refusal is a `CommerceDataNeedsUpgradeError` with `code`

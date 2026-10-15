@@ -1,13 +1,15 @@
 # Commerce money upgrade command
 
 Commerce has one money model. It refuses money data written by an earlier
-version with `COMMERCE_DATA_NEEDS_UPGRADE` instead of reading it. Two shapes
+version with `COMMERCE_DATA_NEEDS_UPGRADE` instead of reading it. Three shapes
 count as old data:
 
 - The schema still has the earlier version's money columns
   (`tax_settings.money_model`, `*_line_items.legacy_amount`) or the
   `money_migration_documents` table.
 - A tenant has invoices or contracts but no tax settings row.
+- A tenant has an issued document without a money snapshot, or a line with a
+  tax rate but no tax code (found even after `db:migrate --drop-columns`).
 
 `smrt db:status` reports this as the `commerce-money-upgrade` error
 precondition, so `smrt app doctor` reports `migration-required`.

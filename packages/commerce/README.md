@@ -176,7 +176,8 @@ tax-summary contract for registration details.
 Commerce refuses money data written by an earlier version with
 `COMMERCE_DATA_NEEDS_UPGRADE` instead of reading it. That is a schema that
 still has the earlier money columns or the `money_migration_documents` table,
-or a tenant with invoices or contracts but no tax settings row. `smrt db:status`
+or a tenant with invoices or contracts but no tax settings row or with
+documents in the earlier format. `smrt db:status`
 reports it, so `smrt app doctor` reports `migration-required`. Run the normal
 schema migration, then upgrade once:
 

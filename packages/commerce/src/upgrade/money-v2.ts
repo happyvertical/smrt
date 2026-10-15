@@ -10,12 +10,14 @@
  * 2. maps each stored rate to a tax code: a zero rate to `exempt` (exempt
  *    customer) or `out-of-scope`, any other rate to a one-component
  *    `rate-<percent>` code it creates once;
- * 3. backfills each issued document from its stored values, without changing
- *    a single stored total: line net, line tax, tax code snapshot, document
- *    taxes and a money snapshot. A document whose stored lines do not add up
- *    exactly to its stored header fails the tenant;
- * 4. recomputes each draft through the runtime from its prices and mapped
- *    codes.
+ * 3. backfills each issued document without a money snapshot from its stored
+ *    values, without changing a single stored total: line net (quantity times
+ *    unit price in exact decimal, ties toward positive infinity, less the
+ *    discount, as the earlier version stored it), line tax, tax code
+ *    snapshot, document taxes and a money snapshot. A document whose stored
+ *    lines do not add up exactly to its stored header fails the tenant;
+ * 4. recomputes each draft through the runtime from its prices, mapping only
+ *    lines that carry no tax code yet.
  *
  * Each tenant converts in its own transaction, so one failing tenant leaves
  * the others converted. Once no tenant needs the upgrade, the pre-#4021
@@ -132,21 +134,46 @@ function storedMinor(value: unknown, label: string): number {
   return result;
 }
 
-function roundHalfAwayFromZero(value: number): number {
-  const rounded = Math.sign(value) * Math.floor(Math.abs(value) + 0.5);
-  if (!Number.isSafeInteger(rounded))
-    throw new Error('Line gross exceeds safe integer minor units');
-  return rounded;
+/** A stored decimal (number or numeric text) as an exact coefficient / scale. */
+function storedDecimal(
+  value: unknown,
+  label: string,
+): { coefficient: bigint; scale: bigint } {
+  const text =
+    typeof value === 'number' ? value.toString() : String(value ?? '').trim();
+  const match = /^(-?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(text);
+  if (!match) throw new Error(`${label} is not numeric`);
+  const [, sign, whole, fraction = '', exponent = '0'] = match;
+  const places = fraction.length - Number(exponent);
+  let coefficient = BigInt(`${sign}${whole}${fraction}`);
+  if (places < 0) coefficient *= 10n ** BigInt(-places);
+  return { coefficient, scale: 10n ** BigInt(Math.max(places, 0)) };
 }
 
-/** Stored net: rounded quantity times unit price, less the flat discount. */
+/** floor(n / d) for d > 0, exact in bigint. */
+function floorDiv(n: bigint, d: bigint): bigint {
+  const q = n / d;
+  return n % d !== 0n && n < 0n ? q - 1n : q;
+}
+
+/**
+ * Stored net, exactly as the earlier version computed it: quantity times
+ * unit price, rounded with ties toward positive infinity, less the flat
+ * discount.
+ */
 function lineNet(line: Row): number {
-  return (
-    roundHalfAwayFromZero(
-      storedNumber(line.quantity, 'Line quantity') *
-        storedMinor(line.unit_price, 'Line unit price'),
-    ) - storedMinor(line.discount, 'Line discount')
-  );
+  const quantity = storedDecimal(line.quantity, 'Line quantity');
+  const product =
+    quantity.coefficient *
+    BigInt(storedMinor(line.unit_price, 'Line unit price'));
+  const gross = floorDiv(2n * product + quantity.scale, 2n * quantity.scale);
+  const net = gross - BigInt(storedMinor(line.discount, 'Line discount'));
+  if (
+    net > BigInt(Number.MAX_SAFE_INTEGER) ||
+    net < -BigInt(Number.MAX_SAFE_INTEGER)
+  )
+    throw new Error('Line net exceeds safe integer minor units');
+  return Number(net);
 }
 
 /** A stored fraction (`0.05`) as a canonical percent string (`5`). */
@@ -480,6 +507,8 @@ async function recomputeDraft(
   const documentId = String(header.id);
   const party = await partyFor(db, header);
   for (const line of lines) {
+    // A line that already names a tax code was written by the current model.
+    if (line.tax_code_id) continue;
     const mapped = await codes.forRate(line.tax_rate, party.exempt);
     await updateRow(db, kind.lines, String(line.id), {
       tax_mode: 'override',
