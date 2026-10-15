@@ -270,8 +270,14 @@ export class InvoiceLineItem extends SmrtObject {
     this.taxComponentsJson = JSON.stringify(value);
   }
 
+  /** Exact sum of frozen component taxes, in integer minor units. */
+  @field({ ui: { format: 'money' } })
   taxAmount = 0;
 
+  /**
+   * @internal Pre-v2 line amount preserved only by the line-amount migration
+   * for rollback; not a user-facing amount, so it carries no money hint.
+   */
   @field({ nullable: true })
   legacyAmount: number | null = null;
 

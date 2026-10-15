@@ -234,6 +234,7 @@ export class Invoice extends SmrtObject {
   creditedInvoiceId: string | null = null;
 
   /** Issued credit-note total cached under the source invoice lock. */
+  @field({ ui: { format: 'money' } })
   creditedAmount = 0;
 
   /**
@@ -364,6 +365,7 @@ export class Invoice extends SmrtObject {
   taxRoundingScope: 'line' | 'document' = 'line';
 
   /** Informational sum of resolved line discounts, in minor units. */
+  @field({ ui: { format: 'money' } })
   discountTotal = 0;
 
   /** Immutable seller registration snapshot once the invoice leaves draft. */

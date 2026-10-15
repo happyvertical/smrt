@@ -161,9 +161,13 @@ export class ContractLineItem extends SmrtObject {
   }
 
   /** Exact sum of frozen component taxes, in integer minor units. */
+  @field({ ui: { format: 'money' } })
   taxAmount = 0;
 
-  /** Pre-v2 amount preserved only by the migration path. */
+  /**
+   * @internal Pre-v2 amount preserved only by the migration path for
+   * rollback; not a user-facing amount, so it carries no money hint.
+   */
   @field({ nullable: true })
   legacyAmount: number | null = null;
 
