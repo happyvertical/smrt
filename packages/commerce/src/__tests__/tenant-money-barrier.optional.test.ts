@@ -132,4 +132,30 @@ describePostgres('tenant money runtime barrier on PostgreSQL (#3933)', () => {
     releaseA();
     await holder;
   });
+
+  it('refuses a natural-key settings upsert that would reset the marker', async () => {
+    const tenantId = randomUUID();
+    await withTenant({ tenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db });
+      await settings.getOrCreateForTenant(tenantId);
+      const migrationId = await settings.beginMoneyMigration(tenantId);
+
+      await expect(
+        settings.create({ tenantId, taxRoundingScope: 'document' }),
+      ).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
+      await expect(settings.getForTenant(tenantId)).resolves.toMatchObject({
+        moneyModel: 'migrating',
+        moneyMigrationId: migrationId,
+      });
+
+      await settings.activateMoneyV2(tenantId, migrationId);
+      await expect(
+        settings.create({ tenantId, taxRoundingScope: 'document' }),
+      ).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
+      await expect(settings.getForTenant(tenantId)).resolves.toMatchObject({
+        moneyModel: 'v2',
+        taxRoundingScope: 'line',
+      });
+    });
+  });
 });

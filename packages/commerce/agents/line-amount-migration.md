@@ -37,11 +37,14 @@ documents remain `out-of-scope`.
 
 `rollbackCommerceLineAmounts(db, { tenantId, migrationId })` claims the tenant
 barrier and validates journal existence plus every current post-image in one
-transaction. A refusal before restoration begins rolls that claim back, so the
-tenant remains on v2 and ordinary runtime reads stay available. Once restoration
+transaction. Every current tenant invoice and contract must have a matching
+journal entry; an unjournaled header was created under v2 and makes rollback
+unsafe, so rollback refuses before changing the marker or document. Any other
+refusal before restoration begins also rolls the claim back, so the tenant
+remains on v2 and ordinary runtime reads stay available. Once restoration
 begins, each document commits separately under the same owner; an interruption
 leaves the marker in `migrating`, and retrying that owner skips durable
-`rolled_back` journal entries. Exact pre-images restore the header, lines, taxes,
-timestamps and revisions, then the marker returns to `legacy`.
+`rolled_back` journal entries. Exact pre-images restore the header, lines,
+taxes, timestamps and revisions, then the marker returns to `legacy`.
 The journal is installed by normal schema migration and retained through the
 rollback window. Runtime code never creates its table.

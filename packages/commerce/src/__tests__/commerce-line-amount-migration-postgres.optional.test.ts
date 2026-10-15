@@ -147,6 +147,94 @@ describePostgres('commerce line amount migration on PostgreSQL (#3933)', () => {
     });
   });
 
+  it('refuses rollback when a document was created under v2', async () => {
+    const tenantId = randomUUID();
+    const legacyLine = await withTenant({ tenantId }, async () => {
+      const invoice = await (await InvoiceCollection.create({ db })).create({
+        tenantId,
+        invoiceNumber: 'PG-V2-ROLLBACK-SOURCE',
+        status: InvoiceStatus.SENT,
+        subtotal: 10_000,
+        taxAmount: 500,
+        totalAmount: 10_500,
+        currency: 'CAD',
+      });
+      return (await InvoiceLineItemCollection.create({ db })).create({
+        tenantId,
+        invoiceId: invoice.id,
+        description: 'Legacy taxable service',
+        quantity: 1,
+        unitPrice: 10_000,
+        taxRate: 0.05,
+        amount: 10_500,
+      });
+    });
+    await withTenant({ tenantId }, async () => {
+      const settings = await (
+        await TaxSettingsCollection.create({ db })
+      ).getOrCreateForTenant(tenantId);
+      settings.defaultLineAmountType = 'inclusive';
+      settings.taxRoundingScope = 'document';
+      await settings.save();
+    });
+    const result = await migrateCommerceLineAmounts(db, { tenantId });
+    const taxCodeId = (
+      await db.query(
+        'SELECT tax_code_id FROM invoice_line_items WHERE id = ?',
+        legacyLine.id,
+      )
+    ).rows[0]?.tax_code_id;
+    const invoiceId = await withTenant({ tenantId }, async () => {
+      const invoices = await InvoiceCollection.create({ db });
+      const invoice = await invoices.create({
+        tenantId,
+        invoiceNumber: 'PG-V2-AFTER',
+        currency: 'CAD',
+      });
+      await (await InvoiceLineItemCollection.create({ db })).create({
+        tenantId,
+        invoiceId: invoice.id,
+        description: 'Inclusive v2 service',
+        quantity: 1,
+        unitPrice: 10_500,
+        taxMode: 'override',
+        taxCodeId,
+      });
+      const draft = await invoices.get({ id: invoice.id });
+      if (!draft) throw new Error('v2 PostgreSQL invoice missing');
+      draft.status = InvoiceStatus.SENT;
+      await draft.save();
+      return String(invoice.id);
+    });
+    const totals =
+      'SELECT subtotal, tax_amount, total_amount FROM invoices WHERE id = ?';
+    const before = (await db.query(totals, invoiceId)).rows[0];
+    expect(before).toMatchObject({ subtotal: '10000', total_amount: '10500' });
+
+    await expect(
+      rollbackCommerceLineAmounts(db, {
+        tenantId,
+        migrationId: result.migrationId,
+      }),
+    ).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
+    await withTenant({ tenantId }, async () => {
+      const settings = await (
+        await TaxSettingsCollection.create({ db })
+      ).getForTenant(tenantId);
+      expect(settings).toMatchObject({
+        moneyModel: 'v2',
+        moneyMigrationId: '',
+      });
+      const invoice = await (await InvoiceCollection.create({ db })).get({
+        id: invoiceId,
+      });
+      if (!invoice) throw new Error('v2 PostgreSQL invoice missing');
+      invoice.status = InvoiceStatus.VIEWED;
+      await invoice.save();
+    });
+    expect((await db.query(totals, invoiceId)).rows[0]).toEqual(before);
+  });
+
   it('keeps exempt and ordinary zero-rate documents distinct', async () => {
     const tenantId = randomUUID();
     const { draftLine, issued, issuedLine } = await withTenant(
