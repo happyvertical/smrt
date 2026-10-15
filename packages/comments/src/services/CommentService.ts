@@ -5,11 +5,19 @@ import {
 } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import { CommentCollection } from '../collections/CommentCollection.js';
+import { CommentReportCollection } from '../collections/CommentReportCollection.js';
+import { CommentRevisionCollection } from '../collections/CommentRevisionCollection.js';
 import { Comment } from '../models/Comment.js';
+import {
+  type ParticipationAuthorizer,
+  type ParticipationDecision,
+  ParticipationDeniedError,
+} from '../participation.js';
 import type {
   CommentActorContext,
   CommentMentionNotificationAdapter,
   CommentRecordAccess,
+  CommentStatus,
   CreateCommentInput,
 } from '../types.js';
 
@@ -39,6 +47,7 @@ export class CommentService {
       db: SmrtClassOptions['db'];
       actor: CommentActorContext;
       authorizeRecord: (access: CommentRecordAccess) => Promise<boolean>;
+      participation?: ParticipationAuthorizer;
       mentionNotifications?: CommentMentionNotificationAdapter;
     },
   ) {}
@@ -46,7 +55,7 @@ export class CommentService {
   private async authorize(
     recordType: string,
     recordId: string,
-    action: 'read' | 'comment',
+    action: 'read' | 'comment' | 'moderate',
   ) {
     const { actor } = this.options;
     if (
@@ -63,6 +72,73 @@ export class CommentService {
     ) {
       throw new Error('Comment record access denied.');
     }
+  }
+
+  private async getAuthorizedComment(
+    commentId: string,
+    action: 'read' | 'moderate',
+  ) {
+    const tenantId = this.options.actor.tenantId;
+    const comment = await withTenant({ tenantId }, async () =>
+      (await CommentCollection.create({ db: this.options.db })).get(commentId),
+    );
+    if (!comment || comment.tenantId !== tenantId)
+      throw new Error('Comment not found.');
+    await this.authorize(comment.metaType, comment.metaId, action);
+    return comment;
+  }
+
+  /** Edits retain the exact former body before changing the visible comment. */
+  async edit(commentId: string, body: string): Promise<Comment> {
+    if (!body.trim()) throw new TypeError('Comment body is required.');
+    const comment = await this.getAuthorizedComment(commentId, 'read');
+    if (comment.authorUserId !== this.options.actor.userId)
+      throw new Error('Comment edit denied.');
+    const tenantId = this.options.actor.tenantId;
+    return withTenant({ tenantId }, async () => {
+      const revisions = await CommentRevisionCollection.create({
+        db: this.options.db,
+      });
+      await revisions.create({
+        tenantId,
+        commentId: comment.id ?? commentId,
+        editorUserId: this.options.actor.userId,
+        body: comment.body,
+      });
+      comment.body = body;
+      comment.editedAt = new Date();
+      await comment.save();
+      return comment;
+    });
+  }
+
+  /** A moderator may make a row visible, hidden, pending, or deleted. */
+  async moderate(commentId: string, status: CommentStatus): Promise<Comment> {
+    const comment = await this.getAuthorizedComment(commentId, 'moderate');
+    if (!['visible', 'hidden', 'pending', 'deleted'].includes(status))
+      throw new TypeError('Invalid comment moderation status.');
+    return withTenant({ tenantId: this.options.actor.tenantId }, async () => {
+      comment.status = status;
+      await comment.save();
+      return comment;
+    });
+  }
+
+  /** Reporting is an append-only queue entry and does not alter the comment. */
+  async report(commentId: string, reason: string) {
+    if (!reason.trim())
+      throw new TypeError('Comment report reason is required.');
+    const comment = await this.getAuthorizedComment(commentId, 'read');
+    const tenantId = this.options.actor.tenantId;
+    return withTenant({ tenantId }, async () =>
+      (await CommentReportCollection.create({ db: this.options.db })).create({
+        tenantId,
+        commentId: comment.id ?? commentId,
+        reporterUserId: this.options.actor.userId,
+        reason: reason.trim(),
+        status: 'open',
+      }),
+    );
   }
 
   async listForRecord(
@@ -146,6 +222,7 @@ export class CommentService {
       body,
       mentions,
       idempotencyKey,
+      parentCommentId,
     } = commentOptions;
     if (!inputTenantId || !inputAuthorUserId) {
       throw new TypeError('Comments require a tenant and author.');
@@ -162,6 +239,17 @@ export class CommentService {
     const tenantId = this.options.actor.tenantId;
     const authorUserId = this.options.actor.userId;
     await this.authorize(metaType ?? '', metaId ?? '', 'comment');
+    const participation: ParticipationDecision = this.options.participation
+      ? await this.options.participation.authorize({
+          tenantId,
+          actorUserId: authorUserId,
+          action: 'comment',
+          recordType: metaType ?? '',
+          recordId: metaId ?? '',
+        })
+      : { allowed: true as const };
+    if (!participation.allowed)
+      throw new ParticipationDeniedError(participation.reason);
     if (!body?.trim()) throw new TypeError('Comment body is required.');
     // Validate through the model's public setter before collection.create()
     // persists. Supply its normalized JSON in that single insert.
@@ -186,12 +274,24 @@ export class CommentService {
       metaId,
       body,
       mentions: normalizedMentions,
+      parentCommentId: parentCommentId ?? null,
     });
     const comment = await withTenant({ tenantId }, async () => {
       const collection = await CommentCollection.create({
         db: this.options.db,
       });
       const insert = async (target: CommentCollection) => {
+        if (parentCommentId) {
+          const parent = await target.get(parentCommentId);
+          if (
+            !parent ||
+            parent.tenantId !== tenantId ||
+            parent.metaType !== metaType ||
+            parent.metaId !== metaId
+          ) {
+            throw new Error('Comment parent does not belong to this record.');
+          }
+        }
         const id = crypto.randomUUID();
         return target.create({
           tenantId,
@@ -208,6 +308,11 @@ export class CommentService {
           requestDigest: idempotencyKey === undefined ? null : requestDigest,
           retryTenantId:
             idempotencyKey === undefined ? null : canonicalUuid(tenantId),
+          parentCommentId: parentCommentId ?? null,
+          status: participation.initialCommentStatus ?? 'visible',
+          participationSnapshot: participation.snapshot
+            ? JSON.stringify(participation.snapshot)
+            : null,
         });
       };
       if (idempotencyKey === undefined) return insert(collection);
@@ -265,6 +370,7 @@ export class CommentService {
           metaId: row.metaId,
           body: row.body,
           mentions: [...row.mentionUserIds].sort(),
+          parentCommentId: row.parentCommentId,
         }) !== requestDigest
       ) {
         throw new CommentIdempotencyError('COMMENT_REQUEST_UNAVAILABLE');

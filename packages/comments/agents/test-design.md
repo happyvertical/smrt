@@ -9,6 +9,8 @@
 | UI submission | Trim/post; empty body and rejected callback keep actionable feedback | Host authorized projections | Browser Svelte; async callback | Component, `test` |
 | Actor/record switch during submission | Reset draft; stale success/error cannot mutate new draft | Changed composite contextKey | Browser Svelte; async completion | Component, `test` |
 | Recipe/schema | Recipe includes Comment; generated schema used by real persistence | Registry/test migrator | All three SQL dialects | Integration, `test` / `test:postgres`; `build` |
+| Participation gate | Authorized post persists its immutable snapshot and pre-moderation status | Trusted actor; host-injected authorizer | All three SQL dialects; deny/banned/rate-limited decision writes no row | Integration, `test` / `test:postgres` |
+| Reply, edit and moderation | Same-record reply, immutable prior-body revision, moderator status transition/report queue | Author or authorized moderator; supplied DB | All three SQL dialects; cross-record reply and another author's edit denied | Integration, `test` / `test:postgres` |
 
 New feature, so a base-regression comparison is N/A. Comment insertion is one
 save on the provided executor, with validation/authorization before mutation.

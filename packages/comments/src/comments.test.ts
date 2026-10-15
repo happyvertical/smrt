@@ -4,7 +4,10 @@ import { withTenant } from '@happyvertical/smrt-tenancy';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { clearCache, setConfig } from '../../config/src/index.js';
 import { CommentCollection } from './collections/CommentCollection.js';
+import { CommentRevisionCollection } from './collections/CommentRevisionCollection.js';
 import { Comment } from './models/Comment.js';
+import { CommentReport } from './models/CommentReport.js';
+import { CommentRevision } from './models/CommentRevision.js';
 import { RecordCommentsRecipe } from './recipes.js';
 import { CommentService } from './services/CommentService.js';
 import { createCommentMentionNotifications } from './services/mentionNotifications.js';
@@ -21,6 +24,7 @@ describe.each([
   const access = {
     actor: { tenantId, userId: authorUserId },
     authorizeRecord: async () => true,
+    participation: { authorize: async () => ({ allowed: true }) },
   };
   const dbs: Array<{ close?: () => Promise<void> }> = [];
   afterEach(async () => {
@@ -90,6 +94,98 @@ describe.each([
         clearCache();
       }
     }
+  });
+  it('uses the shared participation gate, preserves snapshots, and retains moderation history', async () => {
+    const db = await getTestDatabase({
+      classes: ['Comment', 'CommentRevision', 'CommentReport'],
+      type: dialect as 'sqlite' | 'duckdb' | 'postgres',
+      url:
+        dialect === 'postgres'
+          ? process.env.SMRT_TEST_POSTGRES_URL
+          : ':memory:',
+    });
+    dbs.push(db);
+    const recordId = crypto.randomUUID();
+    const participation = vi.fn(async () => ({
+      allowed: true,
+      initialCommentStatus: 'pending' as const,
+      snapshot: { tier: 'worker-member', recordDate: '2026-10-15' },
+    }));
+    const service = new CommentService({
+      db,
+      ...access,
+      participation: { authorize: participation },
+    });
+    const root = await service.create({
+      tenantId,
+      authorUserId,
+      metaType: 'ProjectTask',
+      metaId: recordId,
+      body: 'Please review the schedule.',
+    });
+    expect(participation).toHaveBeenCalledWith({
+      tenantId,
+      actorUserId: authorUserId,
+      action: 'comment',
+      recordType: 'ProjectTask',
+      recordId,
+    });
+    expect(root.status).toBe('pending');
+    expect(JSON.parse(root.participationSnapshot ?? '{}')).toEqual({
+      tier: 'worker-member',
+      recordDate: '2026-10-15',
+    });
+    const reply = await service.create({
+      tenantId,
+      authorUserId,
+      metaType: 'ProjectTask',
+      metaId: recordId,
+      body: 'I can take it.',
+      parentCommentId: root.id,
+    });
+    expect(reply.parentCommentId).toBe(root.id);
+    await service.edit(root.id ?? '', 'Please review the revised schedule.');
+    const revisions = await withTenant({ tenantId }, () =>
+      CommentRevisionCollection.create({ db }),
+    );
+    expect(
+      (await revisions.list({ where: { commentId: root.id } }))[0]?.body,
+    ).toBe('Please review the schedule.');
+    await service.moderate(root.id ?? '', 'hidden');
+    expect(
+      (await service.listForRecord('ProjectTask', recordId))[0]?.status,
+    ).toBe('hidden');
+    const report = await service.report(root.id ?? '', 'Off topic');
+    expect(report.status).toBe('open');
+  });
+  it('denies a participation decision before inserting a comment', async () => {
+    const db = await getTestDatabase({
+      classes: ['Comment'],
+      type: dialect as 'sqlite' | 'duckdb' | 'postgres',
+      url:
+        dialect === 'postgres'
+          ? process.env.SMRT_TEST_POSTGRES_URL
+          : ':memory:',
+    });
+    dbs.push(db);
+    const recordId = crypto.randomUUID();
+    const service = new CommentService({
+      db,
+      ...access,
+      participation: {
+        authorize: async () => ({ allowed: false, reason: 'rate limit' }),
+      },
+    });
+    await expect(
+      service.create({
+        tenantId,
+        authorUserId,
+        metaType: 'ProjectTask',
+        metaId: recordId,
+        body: 'Too fast',
+      }),
+    ).rejects.toThrow('rate limit');
+    expect(await service.listForRecord('ProjectTask', recordId)).toEqual([]);
   });
   it.each([
     'natural-key',

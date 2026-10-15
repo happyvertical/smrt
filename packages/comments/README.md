@@ -21,12 +21,25 @@ const comments = new CommentService({
   db,
   actor: { tenantId: session.tenantId, userId: session.userId },
   authorizeRecord: access => records.authorize(access),
+  participation: {
+    // Atomically checks entitlement, tenant ban and posting-rate budget.
+    authorize: request => participation.authorize(request),
+  },
   mentionNotifications: createCommentMentionNotifications({
     notifications: new UserNotificationService({ db }), // smrt-messages
     canNotify: mention => records.recipientMayRead(mention),
   }),
 });
 ```
+
+`participation` is an optional server-side boundary for hosts that gate
+discussion by membership or other participation policy. It receives the trusted
+tenant, actor, record and `comment` action before any row is written, returns a
+fail-closed allow/deny decision, and may retain an immutable entitlement snapshot
+on the comment. The host owns subscription integration, tenant bans and atomic
+rate-limit reservation. Reactions and polls use this same neutral public contract
+from `@happyvertical/smrt-comments/participation`; neither surface has a local
+membership or anti-abuse model.
 
 The messages service is composed through a structural interface; there is no
 runtime dependency on messages. `canNotify` must check recipient membership and
