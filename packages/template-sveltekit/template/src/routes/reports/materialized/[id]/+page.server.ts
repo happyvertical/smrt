@@ -30,7 +30,8 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
     projection: [descriptor.identityField, ...descriptor.dataTable.columns.map((column) => column.id)],
     page: { kind: 'offset', offset, limit },
   });
-  if (result.page?.kind !== 'offset') error(500, 'Invalid report page');
+  if (result.page?.kind !== 'offset' || result.total.kind === 'unavailable')
+    error(500, 'Report page unavailable');
   return {
     hostId: host.id,
     drilldownColumnIds: host.drilldownColumnIds,

@@ -52,6 +52,26 @@ describe('materialized report route', () => {
     await expect(
       load(args(undefined, 'tenant-a', 'tax-summary', '?offset=25&limit=10') as never),
     ).resolves.toMatchObject({ page: { totalRows: 1, offset: 25, limit: 10 } });
+    (materializedReportHosts as unknown as unknown[]).push({
+      ...host,
+      id: 'unavailable-total',
+      query: async () => ({
+        version: 1 as const,
+        requestId: 'unavailable',
+        queryFingerprint: 'unavailable',
+        identityField: 'id',
+        rows: [],
+        page: { kind: 'offset' as const, offset: 0, limit: 50, hasMore: false },
+        total: { kind: 'unavailable' as const, reason: 'expensive' },
+        freshness: { state: 'unknown' as const },
+        warnings: [],
+        truncated: false,
+        execution: 'visible' as const,
+      }),
+    });
+    await expect(
+      load(args(undefined, 'tenant-a', 'unavailable-total') as never),
+    ).rejects.toMatchObject({ status: 500 });
   });
   it('rejects malformed, cross-tenant, and hidden-cell drilldowns', async () => {
     const request = (body: unknown) => new Request('https://app.test', { method: 'POST', body: JSON.stringify(body) });
