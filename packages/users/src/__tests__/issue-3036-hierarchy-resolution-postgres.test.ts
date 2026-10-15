@@ -25,6 +25,7 @@ import {
   getTenantHierarchyReadScope,
   registerTenantScopedClass,
   unregisterTenantScopedClass,
+  withSuperAdminBypass,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import {
@@ -49,7 +50,11 @@ import { MembershipStatus, TenantPermissionEffect } from '../types/index.js';
   api: false,
   cli: false,
   mcp: false,
-  tenantScoped: { mode: 'optional', field: 'tenantId' },
+  tenantScoped: {
+    mode: 'optional',
+    field: 'tenantId',
+    allowSuperAdminBypass: true,
+  },
 })
 class HierarchyCatalogRecord extends SmrtObject {
   tenantId: string | null = null;
@@ -631,6 +636,17 @@ describePostgres(
           await expect(
             catalog.get({ id: fixtures[1].id as string }),
           ).resolves.toBeNull();
+          await withSuperAdminBypass(async () => {
+            expect(
+              (await catalog.get({ id: fixtures[3].id as string }))?.tenantId,
+            ).toBe(desk.id);
+            await expect(
+              catalog.get({ id: fixtures[1].id as string }),
+            ).resolves.toBeNull();
+            await expect(
+              catalog.get({ id: fixtures[4].id as string }),
+            ).resolves.toBeNull();
+          });
           await expect(catalog.create({ title: 'forbidden' })).rejects.toThrow(
             /does not permit save/,
           );
@@ -644,6 +660,11 @@ describePostgres(
         expect((await catalog.list({})).map((row) => row.tenantId)).toEqual([
           desk.id,
         ]);
+        await withSuperAdminBypass(async () => {
+          expect(
+            (await catalog.get({ id: fixtures[4].id as string }))?.tenantId,
+          ).toBe(sibling.id);
+        });
         await tenants.withTenantHierarchyContext(
           publication.id as string,
           scopeOptions,

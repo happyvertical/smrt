@@ -50,6 +50,17 @@ Hooks into SmrtCollection via `GlobalInterceptors.register()` (priority 100, run
 
 Mismatches throw `TenantIsolationError`. Missing required context throws `TenantContextError`.
 
+With a hierarchy read scope active, `beforeList` allows only its qualified model
+allowlist and bounds list-family reads to its tenant IDs (plus explicit NULL
+rows for catalogs). `beforeGet` retains the active-tenant predicate; neither hook
+honors super-admin bypass inside the scope. Actor changes fail closed. `beforeSave`,
+`beforeDelete` and `beforeQuery` reject tenant-scoped operations, including raw
+query opt-ins. The exported `runTenantHierarchyReadScope` is trusted owning-package
+plumbing, not an authorizer; hosts use the `smrt-users` `TenantCollection` wrappers.
+It requires `enableTenancy()` and refuses nesting. See README "Authorized hierarchy
+read scopes" for bootstrap, RLS composition and the direct-database boundary.
+
+
 **Optional-mode reads with no context pass through UNFILTERED at the interceptor.** That is intentional for trusted/admin call paths, but it means the interceptor alone does not protect a tenant-scoped model exposed as `@smrt({ api: { public } })`: an anonymous HTTP read has no context, so the interceptor would return every tenant's rows. The generated REST + SvelteKit read routes close this by injecting a `{ tenantId: null }` filter when tenancy is enabled but no context is active, so public/anonymous reads fail closed to **global (NULL-tenant) rows only** — mirroring the dispatch resolver's *enforced, no active tenant → global rows only* rule (#1782). Authenticated reads still scope to the caller's tenant via the interceptor.
 
 ## Read-Path Coverage (#2365)
@@ -116,7 +127,7 @@ Modes: `'required'` (default — throws without context) or `'optional'` (passes
 
 ## Super Admin Bypass
 
-`withSuperAdminBypass()` keeps tenant context and lifts tenant enforcement (list/get filtering, raw-SQL policy, save/delete validation) **only for classes that opt in with `allowSuperAdminBypass: true`** (`@TenantScoped({ allowSuperAdminBypass: true })` or `@smrt({ tenantScoped: { allowSuperAdminBypass: true } })`). Every other tenant-scoped class — the flag defaults to `false` — stays scoped to the caller's tenant under bypass; unresolved config fails closed (#2973). Different from `withSystemContext()`, which removes context entirely and skips all checks.
+`withSuperAdminBypass()` keeps tenant context and lifts tenant enforcement (list/get filtering, raw-SQL policy, save/delete validation) **only for classes that opt in with `allowSuperAdminBypass: true`** (`@TenantScoped({ allowSuperAdminBypass: true })` or `@smrt({ tenantScoped: { allowSuperAdminBypass: true } })`). Every other tenant-scoped class — the flag defaults to `false` — stays scoped to the caller's tenant under bypass; unresolved config fails closed (#2973). Different from `withSystemContext()`, which removes context entirely and skips all checks. An active hierarchy read scope takes precedence: list/get remain bounded and tenant-scoped writes/raw queries reject.
 
 ## Gotchas
 

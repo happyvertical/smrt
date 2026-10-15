@@ -473,9 +473,12 @@ export function createTenantInterceptor(
         return;
       }
 
-      assertHierarchyReadScope(tenancyIdentity, 'get');
+      const hierarchyReadScope = assertHierarchyReadScope(
+        tenancyIdentity,
+        'get',
+      );
 
-      if (isSuperAdminBypassAllowed(tenancyIdentity)) {
+      if (!hierarchyReadScope && isSuperAdminBypassAllowed(tenancyIdentity)) {
         return;
       }
 
