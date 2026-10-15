@@ -11,6 +11,7 @@ import {
   enableTenancy,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
+import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CustomerCollection } from './collections/CustomerCollection.js';
@@ -28,7 +29,9 @@ import {
 import { ensureTenantTaxCodes } from './tax/legacy.js';
 import { InvoiceStatus } from './types/index.js';
 
-describe('frozen invoice accounting sync on PostgreSQL (#3937)', () => {
+const describePostgres = isPostgresAvailable() ? describe : describe.skip;
+
+describePostgres('frozen invoice accounting sync on PostgreSQL (#3937)', () => {
   let db: DatabaseInterface;
 
   beforeEach(async () => {
@@ -42,7 +45,7 @@ describe('frozen invoice accounting sync on PostgreSQL (#3937)', () => {
 
   afterEach(async () => {
     disableTenancy();
-    await db.close?.();
+    await db?.close?.();
   });
 
   it('persists ownership, reconciles absence, retries identically, and no-ops success', async () => {

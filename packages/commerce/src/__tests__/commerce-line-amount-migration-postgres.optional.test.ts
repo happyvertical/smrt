@@ -6,6 +6,7 @@ import {
   enableTenancy,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
+import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
@@ -15,7 +16,9 @@ import {
 } from '../migrations/commerceLineAmounts.js';
 import { InvoiceStatus } from '../types/index.js';
 
-describe('commerce line amount migration on PostgreSQL (#3933)', () => {
+const describePostgres = isPostgresAvailable() ? describe : describe.skip;
+
+describePostgres('commerce line amount migration on PostgreSQL (#3933)', () => {
   let db: DatabaseInterface;
 
   beforeEach(async () => {
@@ -29,7 +32,7 @@ describe('commerce line amount migration on PostgreSQL (#3933)', () => {
 
   afterEach(async () => {
     disableTenancy();
-    await db.close?.();
+    await db?.close?.();
   });
 
   it('persists journal ownership and exact rollback on the managed adapter', async () => {

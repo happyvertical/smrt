@@ -6,11 +6,14 @@ import {
   enableTenancy,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
+import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { withTenantMoneyRuntime } from '../tenant-money-barrier.js';
 
-describe('tenant money runtime barrier on PostgreSQL (#3933)', () => {
+const describePostgres = isPostgresAvailable() ? describe : describe.skip;
+
+describePostgres('tenant money runtime barrier on PostgreSQL (#3933)', () => {
   let db: DatabaseInterface;
   let peer: DatabaseInterface;
 
@@ -29,8 +32,8 @@ describe('tenant money runtime barrier on PostgreSQL (#3933)', () => {
 
   afterEach(async () => {
     disableTenancy();
-    await peer.close?.();
-    await db.close?.();
+    await peer?.close?.();
+    await db?.close?.();
   });
 
   it('holds runtime and migration on the same tenant marker row', async () => {

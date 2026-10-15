@@ -30,6 +30,7 @@ import {
   TaxComponentCollection,
   TaxSettingsCollection,
 } from '../index.js';
+import { withTenantMoneyMigration } from '../tenant-money-barrier.js';
 
 const TENANT_A = '11111111-1111-4111-8111-111111111111';
 const TENANT_B = '22222222-2222-4222-8222-222222222222';
@@ -556,11 +557,11 @@ describe('commerce money principal tools (#3937)', () => {
     );
     expect(persistedLegacyLine?.description).toBe('Existing legacy line');
 
-    await withTenant({ tenantId: TENANT_B }, async () => {
-      await (await TaxSettingsCollection.create({ db })).beginMoneyMigration(
+    const migrationId = await withTenant({ tenantId: TENANT_B }, async () =>
+      (await TaxSettingsCollection.create({ db })).beginMoneyMigration(
         TENANT_B,
-      );
-    });
+      ),
+    );
     await expect(
       call(
         update,
@@ -568,10 +569,12 @@ describe('commerce money principal tools (#3937)', () => {
         run(TENANT_B),
       ),
     ).rejects.toMatchObject({ code: 'FROZEN_DOCUMENT' });
-    const migratingLine = await withTenant({ tenantId: TENANT_B }, async () =>
-      (await InvoiceLineItemCollection.create({ db })).get(
-        { id: legacyLine.id },
-        { cache: false },
+    const migratingLine = await withTenant({ tenantId: TENANT_B }, () =>
+      withTenantMoneyMigration(db, TENANT_B, migrationId, async (scope) =>
+        (await InvoiceLineItemCollection.create({ db: scope.db })).get(
+          { id: legacyLine.id },
+          { cache: false },
+        ),
       ),
     );
     expect(migratingLine?.description).toBe('Existing legacy line');
