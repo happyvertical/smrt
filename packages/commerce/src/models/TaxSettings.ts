@@ -179,26 +179,34 @@ export class TaxSettings extends SmrtObject {
       const components = await TaxComponentCollection.create({ db: this.db });
       if (!allowMoneyModelWrite) {
         // A new instance upserts on the tenant_id natural key, so the marker
-        // row may be found by tenant rather than by this instance's id.
+        // row may be found by tenant rather than by this instance's id. Lock
+        // and re-read that row on this save transaction so a migration claim
+        // cannot commit between this check and the natural-key upsert.
         const tenantKey = this.tenantId || getTenantId() || '';
-        const persistedRows = [
-          this.id ? await this.db.get(this.tableName, { id: this.id }) : null,
-          tenantKey
-            ? await this.db.get(this.tableName, { tenant_id: tenantKey })
-            : null,
-        ];
-        for (const persisted of persistedRows) {
-          if (
-            persisted &&
-            (persisted.money_model !== this.moneyModel ||
-              (persisted.money_migration_id ?? '') !== this.moneyMigrationId)
-          ) {
-            throw new MoneyValidationError(
-              'FROZEN_DOCUMENT',
-              'Tenant money model is server-managed',
-            );
-          }
-        }
+        const { TaxSettingsCollection } = await import(
+          '../collections/TaxSettingsCollection.js'
+        );
+        const persistedByTenant = tenantKey
+          ? await (
+              await TaxSettingsCollection.create({ db: this.db })
+            ).lockForTenant(tenantKey, false)
+          : null;
+        const persistedById = this.id
+          ? await this.db.get(this.tableName, { id: this.id })
+          : null;
+        if (
+          (persistedByTenant &&
+            (persistedByTenant.moneyModel !== this.moneyModel ||
+              persistedByTenant.moneyMigrationId !== this.moneyMigrationId)) ||
+          (persistedById &&
+            (persistedById.money_model !== this.moneyModel ||
+              (persistedById.money_migration_id ?? '') !==
+                this.moneyMigrationId))
+        )
+          throw new MoneyValidationError(
+            'FROZEN_DOCUMENT',
+            'Tenant money model is server-managed',
+          );
       }
       for (const id of [
         this.defaultSalesTaxCodeId,
