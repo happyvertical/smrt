@@ -82,6 +82,14 @@ It is the ground-up alternative to `smrt-saas-starter`.
 - `src/hooks.server.ts` re-exports the runtime's `handle`/`init`: URL tenant
   selection stays a separate candidate and only the verified session
   establishes tenant context. Never turn an untrusted header into authority.
+- Commerce is optional and never a template dependency.
+  `src/lib/server/commerce.ts` (`bootstrapCommerceTenant`) calls
+  `ensureCommerceTenant()` only when the app has installed
+  `@happyvertical/smrt-commerce` (resolved from its own `node_modules`, with a
+  variable import specifier), passing `smrt.cookbook.json` when present. The
+  `/setup` page runs it from `onOwnerClaimed`, after the owner claim created the
+  tenant, and logs a failure because the runtime ignores hook errors. Any other
+  tenant-creation path an app adds should call it too (#4009).
 - App code uses `runtime.getCollection()`/`runtime.classOptions()`, which are
   request-scoped (RLS transaction) and must never be retained.
 - `Note` is the single example object (the canonical Notes starter, matching
