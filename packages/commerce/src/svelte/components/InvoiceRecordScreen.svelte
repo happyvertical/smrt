@@ -83,7 +83,7 @@ const showCreditAction = $derived(
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-block-start: var(--smrt-spacing-md, 1rem);
   }
-  .invoice-record-screen__credits h2 { margin: 0; font: var(--smrt-typography-title-small); }
+  .invoice-record-screen__credits h2 { margin: 0; font: var(--smrt-typography-title-small-font); }
   .invoice-record-screen__credits ul { display: grid; gap: var(--smrt-spacing-xs, 0.25rem); margin: 0; padding-inline-start: 1.25rem; }
   .invoice-record-screen__credits li { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-sm, 0.5rem); color: var(--smrt-color-on-surface); }
   .invoice-record-screen__credits li span, .invoice-record-screen__credits time { color: var(--smrt-color-on-surface-variant); }
