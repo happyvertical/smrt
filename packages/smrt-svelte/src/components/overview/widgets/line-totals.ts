@@ -5,20 +5,14 @@
  * lines. When the record's figures disagree with the lines, the block flags
  * it ("Lines add up to $X") instead of silently overriding either side.
  *
- * How a missing figure is computed depends on what the record exposes
- * (#4010):
- *
- * - **Document money** — the record carries a `lineAmountType` of
- *   `exclusive`, `inclusive` or `none` (smrt-commerce v2 Invoice / Contract).
- *   Line amounts are net of discount (gross, tax included, when
- *   `inclusive`), so the discount is already inside the lines and the
- *   subtotal: it is shown as included and never subtracted again.
- *   subtotal = sum of net line amounts, total = subtotal + tax.
- * - **Generic** — no `lineAmountType`. The discount is applied on top:
- *   subtotal = sum of line amounts, total = subtotal - discount + tax.
- *
- * In both, lines that add up to the recorded total are tax-inclusive and
- * agree (legacy commerce lines are qty x price - discount + tax).
+ * One money semantic (#4010), smrt-commerce's document money: line amounts
+ * are net of discount, or gross (tax included) when the record's
+ * `lineAmountType` is `inclusive`, where net = gross - tax. A record without
+ * a `lineAmountType` is `exclusive`. subtotal = sum of the net lines,
+ * total = subtotal + tax, and the discount is already inside the lines: it
+ * is shown as included and never subtracted. An unavailable tax (no field,
+ * or one the policy hides) is unknown, never zero, so no figure that needs
+ * it is computed or compared from the lines.
  *
  * Money is integer minor units throughout.
  */
@@ -32,10 +26,7 @@ export interface LineItemsTotals {
   discount?: number | null;
   tax?: number | null;
   total?: number | null;
-  /**
-   * The record's `lineAmountType`, when it has one: its presence selects
-   * document-money semantics (the discount is already in the lines).
-   */
+  /** The record's `lineAmountType`; absent means `exclusive`. */
   lineAmountType?: LineAmountType | null;
 }
 
@@ -132,10 +123,7 @@ export interface LineTotalLine {
   value: number;
   /** Computed here (the record has no such field or value), not read from the record. */
   computed: boolean;
-  /**
-   * Already inside the subtotal (a document-money discount): shown for
-   * information, not subtracted.
-   */
+  /** Already inside the subtotal (the discount): shown, not subtracted. */
   included?: boolean;
 }
 
@@ -183,108 +171,21 @@ export function lineItemTotals(
   record: LineItemsTotals | undefined,
   lineSum: number | null,
 ): LineTotalsResult {
-  const lineAmountType = isLineAmountType(record?.lineAmountType)
-    ? record.lineAmountType
-    : null;
-  return lineAmountType
-    ? documentTotals(record, lineSum, lineAmountType)
-    : genericTotals(record, lineSum);
-}
-
-/** A record without `lineAmountType`: the discount is applied on top of the lines. */
-function genericTotals(
-  record: LineItemsTotals | undefined,
-  lineSum: number | null,
-): LineTotalsResult {
+  const inclusive = record?.lineAmountType === 'inclusive';
   const subtotalRecorded = money(record?.subtotal);
   const discount = money(record?.discount);
   const tax = money(record?.tax);
   const totalRecorded = money(record?.total);
   const lines: LineTotalLine[] = [];
-  // Line amounts may be tax-inclusive (legacy smrt-commerce's are: qty x
-  // price - discount + tax), so lines adding up to the recorded total agree
-  // with the record, and a missing subtotal is backed out of that total, not
-  // the sum.
-  const inclusive =
-    lineSum !== null && totalRecorded !== null && lineSum === totalRecorded;
-
-  const subtotal =
-    subtotalRecorded ??
-    (inclusive ? totalRecorded + (discount ?? 0) - (tax ?? 0) : lineSum);
-  if (subtotal !== null) {
-    lines.push({
-      key: 'subtotal',
-      value: subtotal,
-      computed: subtotalRecorded === null,
-    });
-  }
-  if (discount !== null && discount !== 0) {
-    lines.push({ key: 'discount', value: discount, computed: false });
-  }
-  if (tax !== null && tax !== 0) {
-    lines.push({ key: 'tax', value: tax, computed: false });
-  }
-  const computedTotal =
-    subtotal === null ? null : subtotal - (discount ?? 0) + (tax ?? 0);
-  const total = totalRecorded ?? computedTotal;
-  if (total !== null) {
-    lines.push({
-      key: 'total',
-      value: total,
-      computed: totalRecorded === null,
-    });
-  }
-
-  let mismatch: LineTotalsMismatch | null = null;
-  if (lineSum !== null && !inclusive) {
-    if (subtotalRecorded !== null && subtotalRecorded !== lineSum) {
-      mismatch = {
-        field: 'subtotal',
-        recorded: subtotalRecorded,
-        lines: lineSum,
-      };
-    } else if (subtotalRecorded === null && totalRecorded !== null) {
-      const fromLines = lineSum - (discount ?? 0) + (tax ?? 0);
-      if (fromLines !== totalRecorded) {
-        mismatch = {
-          field: 'total',
-          recorded: totalRecorded,
-          lines: fromLines,
-        };
-      }
-    }
-  }
-  return { lines, lineSum, mismatch };
-}
-
-/**
- * A document-money record (it carries `lineAmountType`): line amounts are
- * net of discount, or gross when `inclusive`; the discount is informational.
- */
-function documentTotals(
-  record: LineItemsTotals | undefined,
-  lineSum: number | null,
-  lineAmountType: LineAmountType,
-): LineTotalsResult {
-  const subtotalRecorded = money(record?.subtotal);
-  const discount = money(record?.discount);
-  const tax = money(record?.tax);
-  const totalRecorded = money(record?.total);
-  const lines: LineTotalLine[] = [];
-  // Gross lines: the document prices include tax, or the lines add up to the
-  // recorded total (a legacy commerce document read through its v2 columns,
-  // whose lines carry their tax). Either way net = gross - tax. Tax is part
-  // of every figure here, so an unavailable tax (no field, or one the policy
-  // hides) is unknown, never zero: gross lines then give no net, and no
-  // total is computed or compared from the lines.
-  const gross =
-    lineAmountType === 'inclusive' ||
-    (lineSum !== null && totalRecorded !== null && lineSum === totalRecorded);
+  // Inclusive lines are gross: net = gross - tax. Without the tax there is
+  // no net to derive from them.
   const netFromLines =
-    lineSum === null || (gross && tax === null)
+    lineSum === null
       ? null
-      : gross
-        ? lineSum - (tax ?? 0)
+      : inclusive
+        ? tax === null
+          ? null
+          : lineSum - tax
         : lineSum;
 
   const subtotal = subtotalRecorded ?? netFromLines;

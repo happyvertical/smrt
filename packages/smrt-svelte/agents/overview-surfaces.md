@@ -289,26 +289,22 @@ parent-filter vocabulary (`model`, `field`, `filter: 'parent'`, `sort`,
   `storedTotals` through `RecordScreen.lineItemStoredTotals`; its totals and
   per-component tax rows are displayed as persisted (with matching component
   rows grouped), never reconstructed from the visible lines. Without that
-  optional snapshot, the widget preserves its legacy totals behavior: the lines
-  in `sort` order, then the totals block
-  (`lineItemTotals`, pure). The record's own subtotal / discount / tax /
-  total are authoritative and shown as they are; one it lacks is computed
-  from the lines and marked "(from the lines)"; discount and tax show when
-  present and non-zero. How it computes depends on the record (#4010): one
-  carrying a valid `lineAmountType` (`exclusive` / `inclusive` / `none`,
-  which `recordTotals` reads when the view shows it) has document-money
-  lines — net of discount, gross when `inclusive` (net = gross - tax) — so
+  optional snapshot, the widget shows the lines in `sort` order, then the
+  totals block (`lineItemTotals`, pure). The record's own subtotal /
+  discount / tax / total are authoritative and shown as they are; one it
+  lacks is computed from the lines and marked "(from the lines)"; discount
+  and tax show when present and non-zero. There is one money semantic
+  (#4010): line amounts are net of discount, or gross when the record's
+  `lineAmountType` (read by `recordTotals` when the view shows it) is
+  `inclusive`, with net = gross - tax; a record without one is `exclusive`.
   subtotal = sum of the net lines, total = subtotal + tax, and the discount
-  is shown as "Includes discounts of" and never subtracted again; an
-  unavailable tax (no field, or policy-hidden) is unknown rather than zero,
-  so gross lines then yield no net and no total is computed or compared from
-  the lines. Any other
-  record keeps discount on top: subtotal = sum of the line amounts, total =
-  subtotal - discount + tax. In both, lines adding up to the recorded total
-  are treated as tax-inclusive. When the record's subtotal (or, without one, its
-  total) disagrees with the lines, a visible flag says "Lines add up to $X."
-  beside the recorded figure — never a silent override. A partial page of
-  lines is not compared.
+  is shown as "Includes discounts of" and never subtracted. An unavailable
+  tax (no field, or policy-hidden) is unknown rather than zero, so inclusive
+  lines then yield no net and no total is computed or compared from the
+  lines. When the record's subtotal (or, without one, its total) disagrees
+  with the lines, a visible flag says "Lines add up to $X." beside the
+  recorded figure — never a silent override. A partial page of lines is not
+  compared.
 - Tests: `__tests__/record-table.test.ts`, `__tests__/record-widgets.test.ts`,
   `__tests__/line-items.test.ts` (axe on both components), the records cases
   in `__tests__/widgets.test.ts`.

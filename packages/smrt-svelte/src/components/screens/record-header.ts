@@ -144,7 +144,7 @@ export function deriveRecordHeader(
  * The record's own totals, read by role (`subtotal`, `discount`, `tax`,
  * `total`): what the line-items totals block shows as authoritative, plus
  * the record's `lineAmountType` when it has a valid one, which tells the
- * block the discount is already in the lines (#4010). With `visible` (the
+ * block whether the lines are gross (#4010). With `visible` (the
  * policy-filtered view fields), a field the policy omits is never read.
  */
 export function recordTotals(

@@ -33,16 +33,6 @@ describe('lineItemTotals', () => {
     });
   });
 
-  it('computes what the record lacks: subtotal from the lines, total = subtotal - discount + tax', () => {
-    expect(lineItemTotals({ discount: 1000, tax: 500 }, 10000).lines).toEqual([
-      { key: 'subtotal', value: 10000, computed: true },
-      { key: 'discount', value: 1000, computed: false },
-      { key: 'tax', value: 500, computed: false },
-      { key: 'total', value: 9500, computed: true },
-    ]);
-    expect(lineItemTotals(undefined, null).lines).toEqual([]);
-  });
-
   it('flags a disagreement instead of overriding the record', () => {
     const result = lineItemTotals({ subtotal: 489000, total: 489000 }, 490000);
     expect(result.lines[0]).toEqual({
@@ -64,29 +54,7 @@ describe('lineItemTotals', () => {
     expect(lineItemTotals({ subtotal: 1 }, null).mismatch).toBeNull();
   });
 
-  it('accepts tax-inclusive line amounts that add up to the total', () => {
-    // smrt-commerce lines: amount = qty x price - discount + tax.
-    const taxed = lineItemTotals(
-      { subtotal: 10000, tax: 500, total: 10500 },
-      10500,
-    );
-    expect(taxed.mismatch).toBeNull();
-    expect(taxed.lines.map((l) => [l.key, l.value])).toEqual([
-      ['subtotal', 10000],
-      ['tax', 500],
-      ['total', 10500],
-    ]);
-    // A missing subtotal is backed out of the total, not the line sum.
-    const noSubtotal = lineItemTotals({ tax: 500, total: 10500 }, 10500);
-    expect(noSubtotal.mismatch).toBeNull();
-    expect(noSubtotal.lines[0]).toEqual({
-      key: 'subtotal',
-      value: 10000,
-      computed: true,
-    });
-  });
-
-  describe('document-money records (#4010)', () => {
+  describe('v2 document money (#4010)', () => {
     // commerce document-money.test.ts: qty 1 x 100, discount 10, GST 5%,
     // exclusive. Line amount 90 (net), subtotal 90, discountTotal 10, tax 5,
     // total 95.
@@ -190,6 +158,21 @@ describe('lineItemTotals', () => {
       });
     });
 
+    it('reads a record without lineAmountType as exclusive', () => {
+      expect(lineItemTotals({ discount: 1000, tax: 500 }, 10000).lines).toEqual(
+        [
+          { key: 'subtotal', value: 10000, computed: true },
+          { key: 'discount', value: 1000, computed: false, included: true },
+          { key: 'tax', value: 500, computed: false },
+          { key: 'total', value: 10500, computed: true },
+        ],
+      );
+      // Net lines equal to a taxed total are not read as tax-inclusive.
+      expect(
+        lineItemTotals({ tax: 500, total: 10500 }, 10500).mismatch,
+      ).toEqual({ field: 'total', recorded: 10500, lines: 11000 });
+    });
+
     it('treats an unavailable tax as unknown, not zero', () => {
       // Inclusive, tax hidden by policy: gross lines give no net, so nothing
       // is compared against the subtotal.
@@ -215,48 +198,6 @@ describe('lineItemTotals', () => {
       expect(
         lineItemTotals({ total: 95, lineAmountType: 'exclusive' }, 90).mismatch,
       ).toBeNull();
-    });
-
-    it('accepts legacy tax-inclusive lines read through the v2 columns', () => {
-      // A legacy commerce invoice: lines are net + tax, the default
-      // lineAmountType reads exclusive, discountTotal is 0.
-      const legacy = lineItemTotals(
-        {
-          subtotal: 90,
-          discount: 0,
-          tax: 5,
-          total: 95,
-          lineAmountType: 'exclusive',
-        },
-        95,
-      );
-      expect(legacy.mismatch).toBeNull();
-      expect(legacy.lines.map((l) => [l.key, l.value])).toEqual([
-        ['subtotal', 90],
-        ['tax', 5],
-        ['total', 95],
-      ]);
-    });
-
-    it('keeps generic records on discount-on-top semantics', () => {
-      // No lineAmountType (or an unknown one): unchanged behaviour.
-      for (const lineAmountType of [undefined, null, 'gross']) {
-        expect(
-          lineItemTotals(
-            {
-              discount: 1000,
-              tax: 500,
-              lineAmountType,
-            } as unknown as Parameters<typeof lineItemTotals>[0],
-            10000,
-          ).lines,
-        ).toEqual([
-          { key: 'subtotal', value: 10000, computed: true },
-          { key: 'discount', value: 1000, computed: false },
-          { key: 'tax', value: 500, computed: false },
-          { key: 'total', value: 9500, computed: true },
-        ]);
-      }
     });
   });
 
