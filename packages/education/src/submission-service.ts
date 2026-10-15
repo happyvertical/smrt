@@ -655,12 +655,21 @@ export class SubmissionService extends LearnerService {
           mimeType: 'application/pdf',
           data: Buffer.from(await extracted.save()),
         });
-        await links.create({
-          tenantId: request.tenantId,
-          lessonId: range.lessonId,
-          assetId: String(asset.id),
-          relationship: 'printable',
-        });
+        await withPrivateAssetAccess(
+          {
+            tenantId: request.tenantId,
+            actorUserId: request.actorUserId,
+            ownerProfileId: learner.profileId,
+            assetIds: [String(asset.id)],
+          },
+          () =>
+            links.create({
+              tenantId: request.tenantId,
+              lessonId: range.lessonId,
+              assetId: String(asset.id),
+              relationship: 'printable',
+            }),
+        );
         result.push({ lessonId: range.lessonId, assetId: String(asset.id) });
       }
       return result;

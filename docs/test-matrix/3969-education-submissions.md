@@ -47,3 +47,16 @@ Full DuckDB workflows remain unsupported due to the existing catalog DDL gates.
 `pdf-lib` 1.17.1 (MIT) is the concrete PDF dependency, already present in the
 workspace lock graph; no new transitive version resolution was introduced.
 CI and required approval checks remain post-publication gates.
+
+## Review round 3 accepted blockers
+
+- Private-material authoring: real generated Asset REST positive control exposes
+  ordinary public metadata, but public answer-key/personal-copy joins are denied;
+  scoped private joins succeed while generic REST/MCP excludes their URI.
+- Exact owner/tenant capability, missing capability, join relationship updates,
+  course license changes and section/lesson reparenting fail closed. Authorized
+  packet splitting remains a positive control on SQLite and PostgreSQL.
+- Guarded natural-key writes never adopt an unrelated explicit ID. SQLite,
+  DuckDB, and PostgreSQL NULL-key collision checks preserve original rows;
+  existing public natural-key upsert and interleaved private collision tests
+  remain required.

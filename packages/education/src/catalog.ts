@@ -1,4 +1,10 @@
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  GlobalInterceptors,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 export type CourseLicenseKind =
@@ -94,6 +100,16 @@ export class Course extends SmrtObject {
           'personal-use-copy courses cannot change tenant or license kind',
         );
       }
+      if (
+        !(await this.db.get(this.tableName, {
+          id: this.id,
+          tenant_id: this.tenantId,
+          license_kind: this.licenseKind,
+        }))
+      )
+        throw new Error(
+          'Persisted courses require explicit re-authoring to change tenant or license',
+        );
     }
     return await super.save();
   }
@@ -118,6 +134,21 @@ export class CourseSection extends SmrtObject {
   }
   override async save(): Promise<this> {
     await requireParentTenant(this, 'courses', this.courseId);
+    const prior = this.id
+      ? await this.db.get('course_sections', { id: this.id })
+      : null;
+    if (
+      prior &&
+      !(await this.db.get('course_sections', {
+        id: this.id,
+        course_id: this.courseId,
+        tenant_id: this.tenantId,
+      }))
+    )
+      throw new Error(
+        'Persisted sections require explicit re-authoring to change parent',
+      );
+
     return await super.save();
   }
 }
@@ -142,6 +173,21 @@ export class Lesson extends SmrtObject {
   }
   override async save(): Promise<this> {
     await requireParentTenant(this, 'course_sections', this.sectionId);
+    const prior = this.id
+      ? await this.db.get('lessons', { id: this.id })
+      : null;
+    if (
+      prior &&
+      !(await this.db.get('lessons', {
+        id: this.id,
+        section_id: this.sectionId,
+        tenant_id: this.tenantId,
+      }))
+    )
+      throw new Error(
+        'Persisted lessons require explicit re-authoring to change parent',
+      );
+
     return await super.save();
   }
 }
@@ -169,3 +215,20 @@ export class Worksheet extends Lesson {
 }
 @smrt({ tableName: 'lessons', ...closed })
 export class Exercise extends Lesson {}
+
+// Pin classification and ancestry at the final database write, including
+// natural-key adoption and races after pre-save validation. Content remains mutable.
+GlobalInterceptors.register({
+  name: 'education-catalog-identity',
+  writeGuard(instance) {
+    if (instance instanceof Course)
+      return {
+        tenant_id: instance.tenantId,
+        license_kind: instance.licenseKind,
+      };
+    if (instance instanceof CourseSection)
+      return { tenant_id: instance.tenantId, course_id: instance.courseId };
+    if (instance instanceof Lesson)
+      return { tenant_id: instance.tenantId, section_id: instance.sectionId };
+  },
+});

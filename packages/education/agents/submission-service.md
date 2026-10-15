@@ -103,3 +103,20 @@ Storage must be private (including provider ACLs). Public HTTP(S) source locator
 are rejected; a hidden URL alone cannot protect publicly accessible bytes. Apply
 the manifest migration adding `assets.access_mode` before deploying this runtime;
 legacy ordinary assets retain the public default. Runtime creates no schema.
+
+Private lesson files must already be private Assets in the same tenant. Saving
+an answer-key join, or any join under a personal-use-copy course, requires the
+host's exact actor/owner/asset capability; a public asset is never automatically
+promoted. Packet splitting retains this capability while creating each join.
+Persisted course tenant/license and section/lesson parent identity cannot change;
+create new structure and explicitly re-author its joins instead. Mandatory
+write predicates enforce this even for natural-key adoption and concurrent writes.
+Ordinary content and metadata refresh remains supported. This
+prevents existing public material being reclassified by moving its parent.
+
+For pre-existing invalid joins, an authorized host must inventory private-material
+joins and remove invalid associations, recreate the bytes in private storage as a
+new privately classified Asset, then re-author the join under its exact capability.
+Do not merely hide the URI, mutate access_mode with raw SQL, or delete shared
+public bytes. This repair requires explicit storage/ownership authorization;
+normal runtime does not migrate existing records.

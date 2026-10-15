@@ -1,3 +1,4 @@
+import { AssetCollection } from '@happyvertical/smrt-assets';
 import {
   crossPackageRef,
   field,
@@ -48,6 +49,36 @@ export class LessonAsset extends SmrtObject {
       }))
     )
       throw new Error('education assets must retain the course tenant');
+    const section = await this.db.get('course_sections', {
+      id: lesson.section_id,
+      tenant_id: this.tenantId,
+    });
+    const course = section
+      ? await this.db.get('courses', {
+          id: section.course_id,
+          tenant_id: this.tenantId,
+        })
+      : null;
+    if (!course) throw new Error('education asset course does not exist');
+    if (
+      this.relationship === 'answer-key' ||
+      course.license_kind === 'personal-use-copy'
+    ) {
+      // Guarded get proves the host supplied the exact actor/owner/asset
+      // capability. Never infer authorization from a raw Asset row.
+      const assets = await AssetCollection.create({ db: this.db });
+      const asset = await assets.get(this.assetId, { cache: false });
+      if (
+        !this.tenantId ||
+        !asset ||
+        asset.tenantId !== this.tenantId ||
+        asset.accessMode !== 'private' ||
+        !asset.ownerProfileId
+      )
+        throw new Error(
+          'Private lesson material requires an authorized private asset',
+        );
+    }
     return await super.save();
   }
 }
