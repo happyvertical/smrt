@@ -42,15 +42,17 @@ const MONEY_NAME =
 const NOT_MONEY_NAME = /(count|quantity|qty|percent|ratio|level)/i;
 
 /**
- * Money is stored as integer minor units (cents). A field is money when it is
- * an integer whose name says so; everything else numeric is a plain number.
+ * Money is stored as integer minor units (cents). An integer field is money
+ * when the manifest says so (`ui.format === 'money'`); a field that declares
+ * any other format is not, and neither is a framework-managed one. With no
+ * declared format the field's name decides.
  */
 export function isMoneyField(field: CatalogField): boolean {
-  return (
-    field.type === 'integer' &&
-    MONEY_NAME.test(field.name) &&
-    !NOT_MONEY_NAME.test(field.name)
-  );
+  if (field.type !== 'integer') return false;
+  const format = field.ui?.format;
+  if (format !== undefined) return format === 'money';
+  if (field.system) return false;
+  return MONEY_NAME.test(field.name) && !NOT_MONEY_NAME.test(field.name);
 }
 
 const WORDS = [

@@ -9495,6 +9495,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -9502,6 +9505,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
@@ -9509,6 +9515,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The full amount, tax included."
             },
             {
@@ -10426,6 +10435,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -10433,6 +10445,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
@@ -10440,6 +10455,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The full amount, tax included."
             },
             {
@@ -10773,6 +10791,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -10780,6 +10801,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
@@ -10787,6 +10811,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The full amount, tax included."
             },
             {
@@ -11280,13 +11307,19 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The price of one, before tax."
             },
             {
               "name": "discount",
               "type": "integer",
               "required": false,
-              "default": 0
+              "default": 0,
+              "ui": {
+                "format": "money"
+              }
             },
             {
               "name": "taxRate",
@@ -11300,6 +11333,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The line total."
             },
             {
@@ -11539,6 +11575,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The most this customer may owe you at one time. Leave it at zero if you do not set limits."
             },
             {
@@ -11923,6 +11962,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -11930,6 +11972,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
@@ -11937,6 +11982,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The full amount, tax included."
             },
             {
@@ -12938,6 +12986,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -12945,19 +12996,28 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
               "name": "providerTaxAmount",
               "type": "integer",
               "required": false,
-              "default": 0
+              "default": 0,
+              "ui": {
+                "format": "money"
+              }
             },
             {
               "name": "totalAmount",
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "What the customer owes in all, tax included."
             },
             {
@@ -12965,6 +13025,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "How much of the total has been paid so far."
             },
             {
@@ -13737,13 +13800,19 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The price of one, before tax."
             },
             {
               "name": "discount",
               "type": "integer",
               "required": false,
-              "default": 0
+              "default": 0,
+              "ui": {
+                "format": "money"
+              }
             },
             {
               "name": "taxRate",
@@ -13757,6 +13826,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The line total."
             },
             {
@@ -14258,6 +14330,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -14265,6 +14340,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
@@ -14272,6 +14350,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The full amount, tax included."
             },
             {
@@ -14593,6 +14674,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -14600,6 +14684,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
@@ -14607,6 +14694,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The full amount, tax included."
             },
             {
@@ -15057,6 +15147,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -15064,6 +15157,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
@@ -15071,6 +15167,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The full amount, tax included."
             },
             {
@@ -15374,6 +15473,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "How much was paid."
             },
             {
@@ -15966,6 +16068,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "How much of the payment goes to this invoice."
             },
             {
@@ -17718,6 +17823,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -17725,6 +17833,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
@@ -17732,6 +17843,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The full amount, tax included."
             },
             {
@@ -18078,6 +18192,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -18085,6 +18202,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
@@ -18092,6 +18212,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The full amount, tax included."
             },
             {
@@ -18315,6 +18438,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -18322,6 +18448,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
@@ -18329,6 +18458,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The full amount, tax included."
             },
             {
@@ -18676,6 +18808,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -18683,6 +18818,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
@@ -18690,6 +18828,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The full amount, tax included."
             },
             {
@@ -18895,6 +19036,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The smallest order the vendor will accept."
             },
             {
@@ -19307,6 +19451,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The amount before tax."
             },
             {
@@ -19314,6 +19461,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The tax charged."
             },
             {
@@ -19321,6 +19471,9 @@
               "type": "integer",
               "required": false,
               "default": 0,
+              "ui": {
+                "format": "money"
+              },
               "description": "The full amount, tax included."
             },
             {

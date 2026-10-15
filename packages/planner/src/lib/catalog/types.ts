@@ -36,7 +36,15 @@ export interface CatalogFieldUI {
    * in when the catalog loads; a value in the manifest always wins.
    */
   widget?: CatalogFieldWidget;
+  /**
+   * How the value is shown (`_meta.ui.format`), e.g. `money`. A declared
+   * format wins over the planner's name-based guess (`isMoneyField`).
+   */
+  format?: CatalogFieldFormat;
 }
+
+/** The presentation formats a manifest's `ui.format` may name. */
+export type CatalogFieldFormat = 'money' | 'date' | 'datetime' | 'percent';
 
 /** The widget hints of happyvertical/smrt#3599. */
 export type CatalogFieldWidget =

@@ -1,6 +1,7 @@
 import type { Recipe } from '../../recipes/types.ts';
 import type {
   CatalogField,
+  CatalogFieldFormat,
   CatalogFieldUI,
   CatalogFieldWidget,
   CatalogMethod,
@@ -139,6 +140,8 @@ function primitiveDefault(value: unknown): CatalogField['default'] | undefined {
     : undefined;
 }
 
+const FORMATS = new Set<string>(['money', 'date', 'datetime', 'percent']);
+
 const WIDGETS = new Set<string>([
   'textarea',
   'currency',
@@ -160,6 +163,9 @@ function extractUi(value: unknown): CatalogFieldUI | undefined {
       ? { order: raw.order }
       : {}),
     ...(typeof raw.locked === 'boolean' ? { locked: raw.locked } : {}),
+    ...(typeof raw.format === 'string' && FORMATS.has(raw.format)
+      ? { format: raw.format as CatalogFieldFormat }
+      : {}),
     ...(typeof raw.widget === 'string' && WIDGETS.has(raw.widget)
       ? { widget: raw.widget as CatalogFieldWidget }
       : {}),
