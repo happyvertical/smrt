@@ -50,5 +50,40 @@ import { CourseCollection, CourseSectionCollection } from '../collections.js';
         await isolated.cleanup();
       }
     });
+
+    it('orders equal sort positions by identifier', async () => {
+      const isolated = await createIsolatedTestDbFromManifest({
+        includeObjects: ['Course', 'CourseSection'],
+      });
+      try {
+        const courses = await CourseCollection.create({ db: isolated.baseDb });
+        const sections = await CourseSectionCollection.create({
+          db: isolated.baseDb,
+        });
+        const course = await courses.create({ title: 'Ordered course' });
+        await sections.create({
+          id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          courseId: String(course.id),
+          title: 'Later identifier',
+          sortOrder: 1,
+        });
+        await sections.create({
+          id: '11111111-1111-4111-8111-111111111111',
+          courseId: String(course.id),
+          title: 'Earlier identifier',
+          sortOrder: 1,
+        });
+        expect(
+          (
+            await sections.list({
+              where: { courseId: course.id },
+              orderBy: ['sortOrder ASC', 'id ASC'],
+            })
+          ).map((section) => section.title),
+        ).toEqual(['Earlier identifier', 'Later identifier']);
+      } finally {
+        await isolated.cleanup();
+      }
+    });
   },
 );

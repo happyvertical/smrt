@@ -160,13 +160,13 @@ export class CatalogService {
       async () => {
         const sections = await this.sections.list({
           where: { courseId: course.id },
-          orderBy: 'sortOrder ASC, id ASC',
+          orderBy: ['sortOrder ASC', 'id ASC'],
         });
         const result = [];
         for (const section of sections) {
           const lessons = await this.lessons.list({
             where: { sectionId: section.id },
-            orderBy: 'sortOrder ASC, id ASC',
+            orderBy: ['sortOrder ASC', 'id ASC'],
           });
           result.push({
             section,

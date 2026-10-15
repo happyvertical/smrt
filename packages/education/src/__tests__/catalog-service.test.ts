@@ -193,8 +193,11 @@ describe('CatalogService projections', () => {
       courseId: 'course-1',
     });
     expect(calls).toEqual([
-      { where: { courseId: 'course-1' }, orderBy: 'sortOrder ASC, id ASC' },
-      { where: { sectionId: 'section-1' }, orderBy: 'sortOrder ASC, id ASC' },
+      { where: { courseId: 'course-1' }, orderBy: ['sortOrder ASC', 'id ASC'] },
+      {
+        where: { sectionId: 'section-1' },
+        orderBy: ['sortOrder ASC', 'id ASC'],
+      },
     ]);
   });
 });
