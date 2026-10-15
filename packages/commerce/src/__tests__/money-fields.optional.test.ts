@@ -24,6 +24,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { BackfillTracker } from '@happyvertical/smrt-core/migrations';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   createIsolatedTestDbFromManifest,
   type IsolatedTestDbResult,
@@ -36,6 +37,9 @@ import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollect
 import { PaymentAllocationCollection } from '../collections/PaymentAllocationCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
 import { PayoutCollection } from '../collections/PayoutCollection.js';
+import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
+import { TaxComponentCollection } from '../collections/TaxComponentCollection.js';
+import { TaxSettingsCollection } from '../collections/TaxSettingsCollection.js';
 import { VendorCollection } from '../collections/VendorCollection.js';
 import {
   migrateCommerceMoneyToMinorUnits,
@@ -43,6 +47,33 @@ import {
 } from '../migrations/moneyMinorUnits.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
+
+/** Money documents belong to a tenant (#4021). */
+const TENANT = '00000000-0000-4000-8000-000000002361';
+
+/** Make `percent` the tenant's default sales tax code. */
+async function defaultTaxCode(
+  db: DatabaseInterface,
+  percent: string,
+): Promise<void> {
+  const component = await (await TaxComponentCollection.create({ db })).create({
+    tenantId: TENANT,
+    name: `Tax ${percent}%`,
+    percent,
+  });
+  const code = await (await TaxCodeCollection.create({ db })).create({
+    tenantId: TENANT,
+    code: `tax-${percent.replace('.', '_')}`,
+    name: `Tax ${percent}%`,
+    kind: 'taxable',
+    components: [{ taxComponentId: String(component.id), compound: false }],
+  });
+  const settings = await (
+    await TaxSettingsCollection.create({ db })
+  ).getOrCreateForTenant(TENANT);
+  settings.defaultSalesTaxCodeId = String(code.id);
+  await settings.save();
+}
 
 describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
   let isolated: IsolatedTestDbResult | undefined;
@@ -66,6 +97,10 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
         'PaymentIntent',
         'Payout',
         'Vendor',
+        'TaxSettings',
+        'TaxCode',
+        'TaxComponent',
+        'DocumentTax',
       ],
     });
     if (isolated.config.type !== 'postgres') {
@@ -148,20 +183,26 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
   });
 
   it('round-trips invoice amounts as exact integer minor units', async () => {
-    // $19.99 + $1.60 tax = $21.59, expressed as cents.
-    const invoice = await invoices.create({
-      invoiceNumber: 'INV-2361-MINOR-UNITS',
-      subtotal: 1999,
-      taxAmount: 160,
-      totalAmount: 2159,
-    });
+    await withTenant({ tenantId: TENANT }, async () => {
+      await defaultTaxCode(db, '8');
+      // $19.99 + $1.60 tax = $21.59, expressed as cents.
+      const invoice = await invoices.create({
+        invoiceNumber: 'INV-2361-MINOR-UNITS',
+      });
+      await lineItems.create({
+        invoiceId: invoice.id,
+        description: 'Minor units',
+        quantity: 1,
+        unitPrice: 1999,
+      });
 
-    const reloaded = await invoices.get(invoice.id);
-    expect(reloaded).toBeTruthy();
-    // Exact equality, not toBeCloseTo — that is the point of minor units.
-    expect(reloaded?.subtotal).toBe(1999);
-    expect(reloaded?.taxAmount).toBe(160);
-    expect(reloaded?.totalAmount).toBe(2159);
+      const reloaded = await invoices.get(invoice.id);
+      expect(reloaded).toBeTruthy();
+      // Exact equality, not toBeCloseTo — that is the point of minor units.
+      expect(reloaded?.subtotal).toBe(1999);
+      expect(reloaded?.taxAmount).toBe(160);
+      expect(reloaded?.totalAmount).toBe(2159);
+    });
   });
 
   it('rejects a fractional major-unit write in the model, before the database', async () => {
@@ -169,14 +210,19 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
     // PostgreSQL refuses it (22P02) and SQLite's affinity would store it and
     // hide the mistake — so as of #2401 the *model* rejects it first, on every
     // engine, which is what lets every guard downstream compare exactly.
-    await expect(
-      invoices.create({
+    await withTenant({ tenantId: TENANT }, async () => {
+      const invoice = await invoices.create({
         invoiceNumber: 'INV-2361-FRACTIONAL',
-        subtotal: 19.99,
-        taxAmount: 0,
-        totalAmount: 19.99,
-      }),
-    ).rejects.toThrow(/integer number of minor units/);
+      });
+      await expect(
+        lineItems.create({
+          invoiceId: invoice.id,
+          description: 'Fractional',
+          quantity: 1,
+          unitPrice: 19.99,
+        }),
+      ).rejects.toThrow(/minor units/);
+    });
 
     await expect(
       payments.create({ paymentNumber: 'PAY-FRACTIONAL', amount: 21.59 }),
@@ -184,33 +230,47 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
   });
 
   it('round-trips line-item minor units alongside a fractional tax rate', async () => {
-    const invoice = await invoices.create({ invoiceNumber: 'INV-2361-LINES' });
+    await withTenant({ tenantId: TENANT }, async () => {
+      await defaultTaxCode(db, '8.25');
+      const invoice = await invoices.create({
+        invoiceNumber: 'INV-2361-LINES',
+      });
 
-    const lineItem = await lineItems.create({
-      invoiceId: invoice.id,
-      description: 'Consulting',
-      quantity: 2,
-      unitPrice: 14999, // $149.99
-      discount: 1234, // $12.34
-      taxRate: 0.0825, // 8.25% — a rate, so genuinely fractional
-      amount: 28764, // 2 * 14999 - 1234
+      const lineItem = await lineItems.create({
+        invoiceId: invoice.id,
+        description: 'Consulting',
+        quantity: 2,
+        unitPrice: 14999, // $149.99
+        discount: 1234, // $12.34
+      });
+
+      const reloaded = await lineItems.get(lineItem.id);
+      expect(reloaded?.quantity).toBe(2);
+      expect(reloaded?.unitPrice).toBe(14999);
+      expect(reloaded?.discount).toBe(1234);
+      // Exclusive amounts: the line keeps its net, tax is stored separately.
+      expect(reloaded?.amount).toBe(28764); // 2 * 14999 - 1234
+      expect(reloaded?.taxAmount).toBe(2373); // 8.25% of 28764, rounded
+      // A rate, derived from the tax code, so genuinely fractional.
+      expect(reloaded?.taxRate).toBeCloseTo(0.0825, 6);
     });
-
-    const reloaded = await lineItems.get(lineItem.id);
-    expect(reloaded?.quantity).toBe(2);
-    expect(reloaded?.unitPrice).toBe(14999);
-    expect(reloaded?.discount).toBe(1234);
-    expect(reloaded?.amount).toBe(31137); // Save recomputes subtotal plus rounded tax.
-    expect(reloaded?.taxRate).toBeCloseTo(0.0825, 6);
   });
 
   it('round-trips an allocation and derives amountPaid from it', async () => {
+    await withTenant({ tenantId: TENANT }, () => allocationRoundTrip());
+  });
+
+  async function allocationRoundTrip(): Promise<void> {
     const invoice = await invoices.create({
       invoiceNumber: 'INV-2361-ALLOCATION',
-      subtotal: 2159,
-      taxAmount: 0,
-      totalAmount: 2159,
     });
+    await lineItems.create({
+      invoiceId: invoice.id,
+      description: 'Untaxed',
+      quantity: 1,
+      unitPrice: 2159,
+    });
+    await invoice.loadFromId();
 
     // `PaymentAllocation.save()` caps the allocation against the persisted
     // `Payment.amount`. Both are INTEGER minor units as of #2401, so the cap is
@@ -244,7 +304,7 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
         amount: 1,
       }),
     ).rejects.toThrow(/over-apply/);
-  });
+  }
 
   it('round-trips a payout triple and enforces the invariant exactly', async () => {
     const payment = await payments.create({

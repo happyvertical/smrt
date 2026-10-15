@@ -19,7 +19,7 @@ import { InvoiceStatus } from '../../types/index.js';
  * tenancy. Commerce money documents (Invoice, Contract and their lines)
  * cannot be saved without one (#4021).
  */
-export const V2_TENANT = 'tenant-v2-test';
+export const V2_TENANT = '00000000-0000-4000-8000-000000004021';
 
 // biome-ignore lint/suspicious/noExplicitAny: wraps arbitrary vitest bodies
 type AnyFn = (...args: any[]) => any;

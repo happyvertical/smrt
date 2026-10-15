@@ -116,28 +116,34 @@ for (const engine of engines) {
         const database = db;
         enableTenancy();
         try {
-          await ensureTenantTaxCodes(database, 'tenant-quantity');
-          await withTenant({ tenantId: 'tenant-quantity' }, async () => {
-            const invoices = await InvoiceCollection.create({ db: database });
-            const invoice = await invoices.create({
-              invoiceNumber: 'CANONICAL-QUANTITY',
-            });
-            const lines = await InvoiceLineItemCollection.create({
-              db: database,
-            });
-            const item = await lines.create({
-              invoiceId: invoice.id,
-              quantity: 10000000000.12345,
-              unitPrice: 90000,
-              discount: 0,
-              amount: 1,
-            });
-            // The server recomputes the net amount; a forged amount is ignored.
-            expect(item.amount).toBe(900000000011111);
-            const loaded = await lines.get(item.id);
-            expect(loaded?.quantity).toBe(10000000000.12345);
-            expect(loaded?.amount).toBe(900000000011111);
-          });
+          await ensureTenantTaxCodes(
+            database,
+            '00000000-0000-4000-8000-00000000a771',
+          );
+          await withTenant(
+            { tenantId: '00000000-0000-4000-8000-00000000a771' },
+            async () => {
+              const invoices = await InvoiceCollection.create({ db: database });
+              const invoice = await invoices.create({
+                invoiceNumber: 'CANONICAL-QUANTITY',
+              });
+              const lines = await InvoiceLineItemCollection.create({
+                db: database,
+              });
+              const item = await lines.create({
+                invoiceId: invoice.id,
+                quantity: 10000000000.12345,
+                unitPrice: 90000,
+                discount: 0,
+                amount: 1,
+              });
+              // The server recomputes the net amount; a forged amount is ignored.
+              expect(item.amount).toBe(900000000011111);
+              const loaded = await lines.get(item.id);
+              expect(loaded?.quantity).toBe(10000000000.12345);
+              expect(loaded?.amount).toBe(900000000011111);
+            },
+          );
         } finally {
           disableTenancy();
         }

@@ -1,4 +1,5 @@
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   createIsolatedTestDbFromManifest,
   isPostgresAvailable,
@@ -41,11 +42,24 @@ describe('purchase header STI metadata', () => {
   });
   it.skipIf(!isPostgresAvailable())('persists on PostgreSQL', async () => {
     const isolated = await createIsolatedTestDbFromManifest({
-      includeObjects: ['Contract', 'Customer', 'Vendor'],
+      includeObjects: [
+        'Contract',
+        'ContractLineItem',
+        'Customer',
+        'Vendor',
+        'TaxSettings',
+        'TaxCode',
+        'TaxComponent',
+        'DocumentTax',
+      ],
     });
     try {
       expect(isolated.config.type).toBe('postgres');
-      await proveHeader(isolated.baseDb);
+      // Money documents belong to a tenant (#4021).
+      await withTenant(
+        { tenantId: '00000000-0000-4000-8000-0000000040a2' },
+        () => proveHeader(isolated.baseDb),
+      );
     } finally {
       await isolated.cleanup();
     }

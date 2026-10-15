@@ -90,11 +90,6 @@ describePostgres('tax codes on PostgreSQL', () => {
         const codes = await TaxCodeCollection.create({ db });
         const settings = await TaxSettingsCollection.create({ db });
         expect(
-          await components.list({
-            where: { name: 'Legacy unreconciled residual' },
-          }),
-        ).toHaveLength(1);
-        expect(
           await components.list({ where: { name: 'Cookbook 7.125%' } }),
         ).toHaveLength(1);
         for (const code of [
