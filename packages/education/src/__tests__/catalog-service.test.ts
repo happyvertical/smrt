@@ -1,8 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  disableTenancy,
+  enableTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
+import { TenantCollection } from '@happyvertical/smrt-users';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   CatalogAuthorizationError,
   CatalogService,
 } from '../catalog-service.js';
+import {
+  CourseCollection,
+  CourseSectionCollection,
+  LessonCollection,
+} from '../collections.js';
 
 const courses = {
   list: async () => [
@@ -13,6 +28,9 @@ const courses = {
 const sections = { list: async () => [] };
 const lessons = { list: async () => [] };
 const assets = { byLeft: async () => [] };
+
+beforeAll(() => enableTenancy());
+afterAll(() => disableTenancy());
 
 describe('CatalogService', () => {
   it('uses an allowlisted scope and hides family copies from ordinary catalog reads', async () => {
@@ -199,5 +217,51 @@ describe('CatalogService projections', () => {
         orderBy: ['sortOrder ASC', 'id ASC'],
       },
     ]);
+  });
+});
+
+describe('CatalogService tenant integration', () => {
+  it('lists only family, ancestor, and global courses through the real tenancy scope', async () => {
+    const path = join(tmpdir(), `smrt-education-${randomUUID()}.db`);
+    try {
+      const db = { type: 'sqlite' as const, url: path };
+      const tenants = await TenantCollection.create({ db });
+      const group = await tenants.create({ name: 'Group' });
+      const family = await tenants.createChild(String(group.id), {
+        name: 'Family',
+      });
+      const sibling = await tenants.createChild(String(group.id), {
+        name: 'Sibling',
+      });
+      const courses = await CourseCollection.create({ db });
+      await courses.create({ title: 'Global', licenseKind: 'open-license' });
+      await courses.create({ title: 'Group', tenantId: String(group.id) });
+      await courses.create({ title: 'Family', tenantId: String(family.id) });
+      await courses.create({ title: 'Sibling', tenantId: String(sibling.id) });
+      const service = new CatalogService(
+        courses,
+        await CourseSectionCollection.create({ db }),
+        await LessonCollection.create({ db }),
+        { byLeft: async () => [] } as never,
+        tenants,
+        () => true,
+      );
+      await withTenant(
+        { tenantId: String(family.id), userId: 'guardian' },
+        async () => {
+          const visible = await service.findVisible({
+            tenantId: String(family.id),
+            actorUserId: 'guardian',
+          });
+          expect(visible.map((course) => course.title).sort()).toEqual([
+            'Family',
+            'Global',
+            'Group',
+          ]);
+        },
+      );
+    } finally {
+      rmSync(path, { force: true });
+    }
   });
 });
