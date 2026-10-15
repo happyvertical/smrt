@@ -49,6 +49,16 @@ describe('Planner component', () => {
     expect(body).toContain('Back to documentation');
   });
 
+  it('names the shell for the host when no cookbook is chosen', () => {
+    const plain = render(Planner, { props: { basePath: '/planner' } }).body;
+    expect(plain).toContain('>Planner<');
+    const { body } = render(Planner, {
+      props: { basePath: '/planner', defaultTitle: 'Build a boilerplate' },
+    });
+    expect(body).toContain('>Build a boilerplate<');
+    expect(body).not.toContain('>Planner<');
+  });
+
   it("puts the chef's hat, not a second pencil, at the end of its header", () => {
     const { body } = render(Planner, { props: { basePath: '/planner' } });
     // The shell's pencil edits the layout; the planner's own pages are behind

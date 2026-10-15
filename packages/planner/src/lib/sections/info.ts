@@ -50,6 +50,9 @@ export function sectionInfo(id: string): SectionInfo {
 }
 
 /** The title of a section page: its label once the layout has resolved, never the raw id. */
-export function sectionTitle(heading: string | null | undefined): string {
-  return heading?.trim() || 'Planner';
+export function sectionTitle(
+  heading: string | null | undefined,
+  fallback = 'Planner',
+): string {
+  return heading?.trim() || fallback;
 }

@@ -13,7 +13,7 @@ export type TitledCookbook = Pick<Cookbook, 'name' | 'recipes' | 'features'>;
  * The app's title, for the shell brand and the page `<title>`: an explicit
  * app name (`set_name`, carried in the cookbook document) wins; else the
  * library cookbook the visitor applied and still holds (its friendly `name`,
- * never its id); else "Planner". A reset, a replacing import or removing the
+ * never its id); else `fallback` (a host's `defaultTitle`, "Planner" by default). A reset, a replacing import or removing the
  * cookbook's recipes drops the library name the same way the Cookbooks tab
  * stops marking it "in use".
  */
@@ -21,10 +21,11 @@ export function plannerTitle(
   cookbook: TitledCookbook,
   applied: string | null | undefined,
   library: readonly LibraryCookbook[] = libraryCookbooks,
+  fallback: string = DEFAULT_PLANNER_TITLE,
 ): string {
   const name = cookbook.name?.trim();
   if (name) return name;
   const entry = applied ? library.find((c) => c.id === applied) : undefined;
   if (entry && holdsCookbook(entry, cookbook)) return entry.name;
-  return DEFAULT_PLANNER_TITLE;
+  return fallback;
 }

@@ -50,6 +50,7 @@ import { parseModelRoute, recordFilter, splitRoute } from './routes.ts';
 import { plannerAssistantToggle, plannerShellProps } from './shell.ts';
 import { plannerTab } from './tab.svelte.ts';
 import { currentPlannerTitle } from './title.svelte.ts';
+import { DEFAULT_PLANNER_TITLE } from './title.ts';
 import type { PlannerProps } from './types.ts';
 
 let {
@@ -58,6 +59,7 @@ let {
   inference,
   persistence,
   themeControls = true,
+  defaultTitle = DEFAULT_PLANNER_TITLE,
   tabs,
   backLink,
   onready,
@@ -98,7 +100,7 @@ const cookbook = $derived.by(() => {
     ? value
     : { ...value, theme: { ...value.theme, preset: DEFAULT_PRESET } };
 });
-const title = $derived(currentPlannerTitle());
+const title = $derived(currentPlannerTitle(defaultTitle));
 const shell = $derived(
   buildCookbookShell({
     cookbook: cookbook as ComponentProps<typeof CookbookApp>['cookbook'],
@@ -290,7 +292,7 @@ const dockToggles = $derived(
 {#snippet sectionHeading({ section }: { section: CookbookSectionHeadingInfo })}
   <SectionHeading
     icon={section.icon}
-    title={sectionTitle(section.title)}
+    title={sectionTitle(section.title, defaultTitle)}
     description={sectionInfo(section.id).description ?? section.description}
   />
 {/snippet}

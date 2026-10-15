@@ -51,3 +51,24 @@ describe('plannerTitle', () => {
     ).toBe(DEFAULT_PLANNER_TITLE);
   });
 });
+
+describe('plannerTitle fallback', () => {
+  it('uses a host default when nothing names the app', () => {
+    expect(
+      plannerTitle(
+        { recipes: [], features: [] },
+        null,
+        undefined,
+        'Build a boilerplate',
+      ),
+    ).toBe('Build a boilerplate');
+    expect(
+      plannerTitle(
+        { name: 'Rose & Rye', recipes: [], features: [] },
+        null,
+        undefined,
+        'Build a boilerplate',
+      ),
+    ).toBe('Rose & Rye');
+  });
+});
