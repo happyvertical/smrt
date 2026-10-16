@@ -92,8 +92,21 @@ export class MemberRegisterService {
   constructor(
     private readonly db: DatabaseInterface,
     private readonly actor: MemberRegisterActor,
+    private readonly transactionBound = false,
   ) {
     text(actor?.tenantId, 'tenantId');
+  }
+  private transaction<T>(
+    operation: (service: MemberRegisterService) => Promise<T>,
+  ): Promise<T> {
+    if (!this.db.transaction)
+      throw new MemberRegisterError(
+        'MEMBER_REGISTER_INVALID',
+        'Member register writes require transaction support.',
+      );
+    return this.db.transaction((db) =>
+      operation(new MemberRegisterService(db, this.actor, true)),
+    );
   }
   private scope<T>(run: () => Promise<T>): Promise<T> {
     const active = getTenantId();
@@ -151,6 +164,8 @@ export class MemberRegisterService {
     profileId?: string | null;
     externalPartyRef?: string | null;
   }): Promise<LegalMember> {
+    if (!this.transactionBound)
+      return this.transaction((service) => service.enroll(input));
     return this.scope(async () => {
       const joinedOn = date(input.joinedOn, 'joinedOn');
       if (input.kind !== 'individual' && input.kind !== 'organisation')
@@ -198,6 +213,8 @@ export class MemberRegisterService {
     memberId: string,
     input: { status: LegalMemberStatus; effectiveOn: IsoDate; reason?: string },
   ): Promise<LegalMember> {
+    if (!this.transactionBound)
+      return this.transaction((service) => service.setStatus(memberId, input));
     return this.scope(async () => {
       const member = await this.member(memberId);
       const effectiveOn = date(input.effectiveOn, 'effectiveOn');
@@ -312,6 +329,8 @@ export class MemberRegisterService {
     recordDate: IsoDate,
     policy: EligibilityPolicy = {},
   ): Promise<EligibilityRow[]> {
+    if (!this.transactionBound)
+      return this.transaction((service) => service.asOf(recordDate, policy));
     return this.scope(async () => {
       const on = date(recordDate, 'recordDate');
       const members = await LegalMemberCollection.create({ db: this.db });
