@@ -218,6 +218,11 @@ export class Agreement extends SmrtObject {
         `Agreement: cannot supersede from status '${this.status}'`,
       );
     }
+    if (!this.effectiveTo)
+      throw new Error(
+        'Agreement supersession requires an effective end boundary',
+      );
+    this.assertValidTerms();
     this.status = 'superseded';
   }
 
@@ -312,6 +317,10 @@ export class Agreement extends SmrtObject {
   }
 
   private assertValidTerms(): void {
+    if (this.status === 'superseded' && !this.effectiveTo)
+      throw new Error(
+        'Agreement supersession requires an effective end boundary',
+      );
     if (!this.kind.trim()) throw new Error('Agreement kind is required');
     if (
       !parseAgreementParty(this.partyA) ||

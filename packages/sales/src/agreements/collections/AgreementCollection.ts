@@ -2,8 +2,11 @@
 
 import {
   invalidateCollectionCache,
+  isEmbeddedDatabase,
+  isPostgresDatabase,
   resolveDbCacheKey,
   SmrtCollection,
+  withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
 import {
   assertTenantReadAllowed,
@@ -112,47 +115,62 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
     partyB: AgreementParty,
     changes: AgreementAmendmentChanges = {},
   ): Promise<Agreement> {
-    const versions = await this.findVersions(kind, partyA, partyB);
-    const latest = versions[0];
-    if (!latest) {
-      throw new Error(
-        `AgreementCollection.createAmendment: no versions exist for '${kind}' parties — create the initial agreement first`,
-      );
-    }
-    if (latest.tenantId !== (this.ambientTenantId() ?? null)) {
-      throw new Error(
-        'Create an initial tenant agreement before amending global terms',
-      );
-    }
-    if (changes.terms !== undefined && Array.isArray(changes.terms)) {
-      throw new Error('Agreement amendment terms must be a JSON object');
-    }
-    return await this.create({
-      tenantId: latest.tenantId,
-      kind,
-      partyA: serializeAgreementParty(partyA),
-      partyB: serializeAgreementParty(partyB),
-      version: latest.version + 1,
-      status: 'draft',
-      terms:
-        changes.terms !== undefined
-          ? JSON.stringify(changes.terms)
-          : latest.terms,
-      effectiveFrom:
-        changes.effectiveFrom !== undefined
-          ? changes.effectiveFrom
-          : latest.effectiveFrom,
-      effectiveTo:
-        changes.effectiveTo !== undefined
-          ? changes.effectiveTo
-          : latest.effectiveTo,
-      // Execution evidence belongs to exact terms and cannot be copied.
-      executedAgreementId: changes.executedAgreementId ?? null,
-      metadata:
-        changes.metadata !== undefined
-          ? JSON.stringify(changes.metadata)
-          : latest.metadata,
+    const createdId = await this.runTransaction(async (agreements) => {
+      let versions = await agreements.findVersions(kind, partyA, partyB);
+      if (!versions.length) {
+        throw new Error(
+          `AgreementCollection.createAmendment: no versions exist for '${kind}' parties — create the initial agreement first`,
+        );
+      }
+      if (versions[0].tenantId !== (this.ambientTenantId() ?? null))
+        throw new Error(
+          'Create an initial tenant agreement before amending global terms',
+        );
+      // The oldest version is a stable per-lane lock, unlike the latest row
+      // which changes as writers allocate amendments. Re-read under the lock.
+      if (isPostgresDatabase(this.db)) {
+        const anchor = versions[versions.length - 1];
+        await agreements.db.query(
+          `SELECT id FROM ${agreements.tableName} WHERE id = $1 FOR UPDATE`,
+          anchor.id,
+        );
+        versions = await agreements.findVersions(kind, partyA, partyB);
+      }
+      const latest = versions[0];
+      if (changes.terms !== undefined && Array.isArray(changes.terms))
+        throw new Error('Agreement amendment terms must be a JSON object');
+      const created = await agreements.create({
+        tenantId: latest.tenantId,
+        kind,
+        partyA: serializeAgreementParty(partyA),
+        partyB: serializeAgreementParty(partyB),
+        version: latest.version + 1,
+        status: 'draft',
+        terms:
+          changes.terms !== undefined
+            ? JSON.stringify(changes.terms)
+            : latest.terms,
+        effectiveFrom:
+          changes.effectiveFrom !== undefined
+            ? changes.effectiveFrom
+            : latest.effectiveFrom,
+        effectiveTo:
+          changes.effectiveTo !== undefined
+            ? changes.effectiveTo
+            : latest.effectiveTo,
+        // Execution evidence belongs to exact terms and cannot be copied.
+        executedAgreementId: changes.executedAgreementId ?? null,
+        metadata:
+          changes.metadata !== undefined
+            ? JSON.stringify(changes.metadata)
+            : latest.metadata,
+      });
+      return created.id as string;
     });
+    invalidateCollectionCache(resolveDbCacheKey(this.db), this.tableName);
+    const created = await this.get({ id: createdId });
+    if (!created) throw new Error(`Agreement '${createdId}' disappeared`);
+    return created;
   }
 
   /**
@@ -262,88 +280,95 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
     const db = this.db as TransactionCapableDatabase;
     if (typeof db.transaction !== 'function')
       throw new Error('Agreement withdrawal requires transaction support');
-    await db.transaction(async (tx) => {
-      const agreements = await AgreementCollection.create({ db: tx });
-      const successor = await agreements.get({ id });
-      const now = new Date();
-      if (
-        !successor ||
-        successor.status !== 'active' ||
-        !successor.effectiveFrom ||
-        successor.effectiveFrom <= now ||
-        !successor.amendmentPredecessorId
-      )
-        throw new Error(
-          'Only a scheduled active amendment with predecessor provenance can be withdrawn',
-        );
-      const predecessor = await agreements.get({
-        id: successor.amendmentPredecessorId,
-      });
-      if (
-        !predecessor ||
-        predecessor.tenantId !== successor.tenantId ||
-        predecessor.kind !== successor.kind ||
-        predecessor.partyA !== successor.partyA ||
-        predecessor.partyB !== successor.partyB ||
-        predecessor.version >= successor.version ||
-        predecessor.status !== 'superseded' ||
-        predecessor.effectiveTo?.getTime() !== successor.effectiveFrom.getTime()
-      )
-        throw new Error(
-          'Agreement withdrawal predecessor no longer matches activation provenance',
-        );
-      const restoredEnd = successor.amendmentPredecessorEnd;
-      if (restoredEnd && restoredEnd <= successor.effectiveFrom)
-        throw new Error(
-          'Agreement withdrawal has invalid predecessor boundary provenance',
-        );
-      const versions = await agreements.findGoverningCandidates(
-        successor.kind,
-        successor.partyA,
-        successor.partyB,
-        successor.tenantId,
-        false,
-      );
-      if (
-        versions.some(
-          (row) =>
-            row.id !== successor.id &&
-            row.id !== predecessor.id &&
-            row.status !== 'draft' &&
-            row.status !== 'cancelled' &&
-            (!restoredEnd ||
-              !row.effectiveFrom ||
-              row.effectiveFrom < restoredEnd) &&
-            (!row.effectiveTo || row.effectiveTo > successor.effectiveFrom!),
+    await withEmbeddedWriteTransaction(
+      db,
+      isEmbeddedDatabase(db),
+      async (tx) => {
+        const agreements = await AgreementCollection.create({ db: tx });
+        const successor = await agreements.get({ id });
+        const now = new Date();
+        if (
+          !successor ||
+          successor.status !== 'active' ||
+          !successor.effectiveFrom ||
+          successor.effectiveFrom <= now ||
+          !successor.amendmentPredecessorId
         )
-      )
-        throw new Error('Agreement withdrawal would overlap governing history');
-      // The first compare-and-set serializes duplicate withdrawals. The second
-      // protects the exact boundary being restored; any failure rolls both back.
-      await claimLifecycleRevision(successor);
-      const cancelled = await tx.query(
-        `UPDATE ${agreements.tableName} SET status = 'cancelled' WHERE id = $1 AND status = 'active' AND effective_from > $2 RETURNING id`,
-        id,
-        new Date().toISOString(),
-      );
-      if (returnedRows(cancelled).length !== 1)
-        throw new Error(
-          'Agreement withdrawal lost its scheduled active transition',
+          throw new Error(
+            'Only a scheduled active amendment with predecessor provenance can be withdrawn',
+          );
+        const predecessor = await agreements.get({
+          id: successor.amendmentPredecessorId,
+        });
+        if (
+          !predecessor ||
+          predecessor.tenantId !== successor.tenantId ||
+          predecessor.kind !== successor.kind ||
+          predecessor.partyA !== successor.partyA ||
+          predecessor.partyB !== successor.partyB ||
+          predecessor.version >= successor.version ||
+          predecessor.status !== 'superseded' ||
+          predecessor.effectiveTo?.getTime() !==
+            successor.effectiveFrom.getTime()
+        )
+          throw new Error(
+            'Agreement withdrawal predecessor no longer matches activation provenance',
+          );
+        const restoredEnd = successor.amendmentPredecessorEnd;
+        if (restoredEnd && restoredEnd <= successor.effectiveFrom)
+          throw new Error(
+            'Agreement withdrawal has invalid predecessor boundary provenance',
+          );
+        const versions = await agreements.findGoverningCandidates(
+          successor.kind,
+          successor.partyA,
+          successor.partyB,
+          successor.tenantId,
+          false,
         );
-      await claimLifecycleRevision(predecessor);
-      const restored = await tx.query(
-        `UPDATE ${agreements.tableName} SET status = 'active', effective_to = $1 WHERE id = $2 AND status = 'superseded' AND effective_to = $3 RETURNING id`,
-        restoredEnd?.toISOString() ?? null,
-        predecessor.id,
-        successor.effectiveFrom.toISOString(),
-      );
-      if (returnedRows(restored).length !== 1)
-        throw new Error(
-          'Agreement withdrawal predecessor changed concurrently',
+        if (
+          versions.some(
+            (row) =>
+              row.id !== successor.id &&
+              row.id !== predecessor.id &&
+              row.status !== 'draft' &&
+              row.status !== 'cancelled' &&
+              (!restoredEnd ||
+                !row.effectiveFrom ||
+                row.effectiveFrom < restoredEnd) &&
+              (!row.effectiveTo || row.effectiveTo > successor.effectiveFrom!),
+          )
+        )
+          throw new Error(
+            'Agreement withdrawal would overlap governing history',
+          );
+        // The first compare-and-set serializes duplicate withdrawals. The second
+        // protects the exact boundary being restored; any failure rolls both back.
+        await claimLifecycleRevision(successor);
+        const cancelled = await tx.query(
+          `UPDATE ${agreements.tableName} SET status = 'cancelled' WHERE id = $1 AND status = 'active' AND effective_from > $2 RETURNING id`,
+          id,
+          new Date().toISOString(),
         );
-      await successor.refreshAfterLifecycleTransition();
-      await predecessor.refreshAfterLifecycleTransition();
-    });
+        if (returnedRows(cancelled).length !== 1)
+          throw new Error(
+            'Agreement withdrawal lost its scheduled active transition',
+          );
+        await claimLifecycleRevision(predecessor);
+        const restored = await tx.query(
+          `UPDATE ${agreements.tableName} SET status = 'active', effective_to = $1 WHERE id = $2 AND status = 'superseded' AND effective_to = $3 RETURNING id`,
+          restoredEnd?.toISOString() ?? null,
+          predecessor.id,
+          successor.effectiveFrom.toISOString(),
+        );
+        if (returnedRows(restored).length !== 1)
+          throw new Error(
+            'Agreement withdrawal predecessor changed concurrently',
+          );
+        await successor.refreshAfterLifecycleTransition();
+        await predecessor.refreshAfterLifecycleTransition();
+      },
+    );
     invalidateCollectionCache(resolveDbCacheKey(this.db), this.tableName);
     const withdrawn = await this.get({ id });
     if (!withdrawn) throw new Error(`Agreement '${id}' disappeared`);
@@ -399,8 +424,10 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
       throw new Error(
         'Agreement amendment activation requires transaction support',
       );
-    return await db.transaction(async (tx) =>
-      fn(await AgreementCollection.create({ db: tx })),
+    return await withEmbeddedWriteTransaction(
+      db,
+      isEmbeddedDatabase(db),
+      async (tx) => fn(await AgreementCollection.create({ db: tx })),
     );
   }
 }

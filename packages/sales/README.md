@@ -195,3 +195,9 @@ lane return no agreement instead of silently resuming global fees.
 Restoration provenance is written exclusively by amendment activation; ordinary
 creates and saves cannot supply or edit it. Withdrawal advances both persisted
 revision tokens so pre-withdrawal model instances cannot overwrite the result.
+
+Concurrent `createAmendment` calls serialize version allocation within the owning
+lane: PostgreSQL locks the oldest persisted version and re-reads the latest;
+embedded engines use core's transaction/write queue. Each successful call keeps
+its own terms and version. Direct `supersede()` requires a finite `effectiveTo`
+set before the transition; saving an open-ended superseded row is rejected.

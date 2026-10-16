@@ -75,6 +75,7 @@ describe('Agreement', () => {
 
     const again = await agreements.get({ id: agreement.id });
     if (!again) throw new Error('agreement not found');
+    again.effectiveTo = new Date('2026-02-01T00:00:00Z');
     again.supersede();
     await again.save();
     expect(again.status).toBe('superseded');

@@ -346,4 +346,68 @@ export function agreementHistoryCases(
     );
     expect(after.find((row) => row.id === second.id)?.status).toBe('cancelled');
   });
+  it.each([
+    false,
+    true,
+  ])('allocates concurrent amendments without replacing intent (tenant=%s)', async (tenantOwned) => {
+    const run = async () => {
+      await create({ status: 'active' });
+      const drafts = await Promise.all(
+        [1, 2, 3, 4].map((intent) =>
+          collection().createAmendment(kind, partyA, partyB, {
+            terms: { intent },
+            effectiveFrom: scheduled,
+          }),
+        ),
+      );
+      expect(new Set(drafts.map((row) => row.id)).size).toBe(4);
+      expect(drafts.map((row) => row.version).sort()).toEqual([2, 3, 4, 5]);
+      for (const [index, draft] of drafts.entries()) {
+        expect((await collection().get({ id: draft.id }))?.getTerms()).toEqual({
+          intent: index + 1,
+        });
+      }
+      const first = drafts.find((row) => row.version === 2);
+      if (!first?.id) throw new Error('Missing first amendment');
+      await Promise.all([
+        collection().activateAmendment(first.id),
+        collection().createAmendment(kind, partyA, partyB, {
+          terms: { intent: 5 },
+          effectiveFrom: finiteEnd,
+        }),
+      ]);
+      expect((await collection().get({ id: first.id }))?.status).toBe('active');
+      expect((await collection().get({ id: first.id }))?.getTerms()).toEqual(
+        first.getTerms(),
+      );
+    };
+    if (!tenantOwned) return await run();
+    enableTenancy();
+    try {
+      await withTenant({ tenantId: randomUUID() }, run);
+    } finally {
+      disableTenancy();
+    }
+  });
+
+  it('requires a finite supersession boundary for direct methods and saves', async () => {
+    const row = await create({ status: 'active' });
+    expect(() => row.supersede()).toThrow(/end boundary/);
+    row.status = 'superseded';
+    await expect(row.save()).rejects.toThrow(/end boundary/);
+    const fresh = await collection().get({ id: row.id });
+    if (!fresh) throw new Error('Missing agreement');
+    fresh.effectiveTo = february;
+    fresh.supersede();
+    await fresh.save();
+    expect(
+      (await collection().activeFor(kind, partyA, partyB, january))?.id,
+    ).toBe(row.id);
+    expect(
+      await collection().activeFor(kind, partyA, partyB, february),
+    ).toBeNull();
+    expect(
+      await collection().activeFor(kind, partyA, partyB, march),
+    ).toBeNull();
+  });
 }
