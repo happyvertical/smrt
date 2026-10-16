@@ -26,6 +26,9 @@ const REQUIRED_INVOICE_MONEY_FIELDS = [
   'taxAmount',
   'providerTaxAmount',
   'totalAmount',
+  'retentionStateJson',
+  'amountPaid',
+  'creditedAmount',
 ] as const;
 
 const REQUIRED_LINE_MONEY_FIELDS = [

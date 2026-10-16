@@ -25,6 +25,7 @@ import {
 } from '../document-money-internal.js';
 import type { FrozenInvoiceAccountingOptions } from '../invoice-accounting-sync.js';
 import { assertIntegerMinorUnits, MoneyValidationError } from '../money.js';
+import { calculateInvoicePayable } from '../retention-money.js';
 import {
   type AccountingInvoiceInput,
   type CancelRevenueOptions,
@@ -234,6 +235,13 @@ export class Invoice extends SmrtObject {
   /** Issued credit-note total cached under the source invoice lock. */
   @field({ ui: { format: 'money' } })
   creditedAmount = 0;
+
+  /** Server-owned immutable retention policy and append-only release evidence. */
+  retentionStateJson = '';
+
+  getPayableFacts() {
+    return calculateInvoicePayable(this);
+  }
 
   /**
    * Tenant ID for multi-tenant isolation
@@ -648,6 +656,19 @@ export class Invoice extends SmrtObject {
     const prior = await this.resolvePriorStatus(persisted);
 
     this.assertAmountsAreMinorUnits();
+    const payable = calculateInvoicePayable(this);
+    if (
+      payable.retainedRemainingMinor > 0 &&
+      (this.externalId ||
+        this.externalProvider ||
+        this.accountingSyncStateJson ||
+        this.collectionMethod ||
+        this.providerTaxAmount)
+    )
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Unreleased retention requires an explicit provider retention contract',
+      );
     if (persisted && this.id) await this.recomputeAmountPaid();
     else {
       // A new invoice has no PaymentAllocations behind it, so it cannot
@@ -935,6 +956,7 @@ export class Invoice extends SmrtObject {
    * Check if invoice is overdue
    */
   isOverdue(): boolean {
+    if (this.getAmountDue() === 0) return false;
     if (this.status === InvoiceStatus.OVERDUE) return true;
     if (this.isPaid() || this.status === InvoiceStatus.CANCELLED) return false;
     return new Date() > this.dueDate;
@@ -944,7 +966,7 @@ export class Invoice extends SmrtObject {
    * Get remaining amount due
    */
   getAmountDue(): number {
-    return Math.max(0, this.getBalance());
+    return this.getPayableFacts().currentlyDueMinor;
   }
 
   /** Signed amount still owed after payments and issued credit notes. */

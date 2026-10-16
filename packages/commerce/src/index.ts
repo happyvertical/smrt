@@ -166,6 +166,11 @@ export {
   loadInvoiceRecordScreenData,
 } from './invoice-record-screen.js';
 export {
+  configureInvoiceRetention,
+  type InvoiceRetentionCommand,
+  releaseInvoiceRetention,
+} from './invoice-retention.js';
+export {
   type InvoiceEditorStorageEngine,
   type InvoiceEditorStorageMigrationResult,
   type InvoiceEditorStoragePreflight,
@@ -303,6 +308,11 @@ export {
   VendorsRecipe,
   WholesaleRecipe,
 } from './recipes.js';
+export {
+  calculateInvoicePayable,
+  type InvoicePayableFacts,
+  type InvoiceRetentionState,
+} from './retention-money.js';
 export {
   buildRevenueJournalEntries,
   type RevenueJournalDocumentInput,

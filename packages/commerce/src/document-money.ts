@@ -116,6 +116,7 @@ export interface GetInvoiceMoneyFactsInput {
 
 export interface InvoiceMoneyFacts {
   source: 'stored';
+  payable?: ReturnType<Invoice['getPayableFacts']>;
   invoiceId: string;
   moneySnapshotId: string;
   kind: Invoice['kind'];
@@ -1201,6 +1202,9 @@ async function getInvoiceMoneyFactsOnScope(
   ).findByDocument(input.tenantId, invoice.kind, input.invoiceId);
   return {
     source: 'stored',
+    ...(invoice.retentionStateJson
+      ? { payable: invoice.getPayableFacts() }
+      : {}),
     invoiceId: input.invoiceId,
     moneySnapshotId: invoice.moneySnapshotId,
     kind: invoice.kind,
@@ -1280,6 +1284,11 @@ export async function saveInvoice(input: Invoice): Promise<Invoice> {
         const settings = await lockRuntimeSettings(tx, candidateTenantId);
         const existing = invoice.id ? await findInvoice(tx, invoice.id) : null;
         const tenantId = existing?.tenantId ?? candidateTenantId;
+        if (invoice.retentionStateJson !== (existing?.retentionStateJson ?? ''))
+          throw new MoneyValidationError(
+            'FROZEN_DOCUMENT',
+            'Retention state is managed by retention commands',
+          );
         if (
           candidateTenantId &&
           existing?.tenantId &&

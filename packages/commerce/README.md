@@ -831,3 +831,36 @@ native POST of vendor, reference, notes, expected date and ship-to fields. Pass
 allocations and totals unchanged. `PurchaseOrder` stores `expectedDate` and
 `shipTo` in existing STI metadata. See [the purchasing contract](agents/purchasing-ui.md#purchase-order-header)
 for validation, retained values and transport details.
+
+### Invoice retention and release
+
+`configureInvoiceRetention` freezes an explicit retained minor-unit amount on an
+unpaid draft. Supply tenant, invoice, currency, expected invoice revision,
+request identity, actor, reason, evidence reference, and versioned host policy.
+The supported `creditPolicy: 'retained-first'` is an explicit caller choice:
+issued credits reduce unreleased retention first, then current payable. Hosts
+must choose and authorize their regional policy; Commerce supplies no legal
+percentage or release date default. Configuration cannot be overwritten; replace
+an unissued draft to change the original agreement.
+
+`releaseInvoiceRetention` appends evidence under the invoice's transaction lock.
+It cannot release more than the currently retained remainder. Exact request
+replays are safe; changed payloads or stale revisions fail. Both commands retain
+caller transaction affinity. Original gross, tax, line snapshots and approved
+configuration stay unchanged. Credits and credit cancellation derive remaining
+retention without rewriting release history.
+
+`invoice.getPayableFacts()` separates `grossBalanceMinor`,
+`retainedRemainingMinor`, `currentlyDueMinor`, and `allocationCapMinor`. The
+allocation API enforces the current cap. `getAmountDue()` returns current due;
+`getBalance()` remains the signed gross balance. An invoice with paid current
+due and unreleased retention is not fully paid or overdue. Display gross and
+current payable separately; pass explicit current due and remaining holdback to
+the exact retained invoice UI props rather than treating gross as payable.
+Stored money facts include `payable` for retained invoices; MCP projection honors
+field visibility for every source of the payable alias.
+
+Provider-controlled imports/automatic collection cannot acquire retention.
+Accounting export refuses unreleased retention until the provider has an
+explicit payable representation; it never silently requests collection of
+gross. Fully released invoices use the existing gross accounting contract.

@@ -294,6 +294,10 @@ async function loadSnapshot(
       'FROZEN_DOCUMENT',
       'Accounting sync requires an issued frozen invoice',
     );
+  if (invoice.getPayableFacts().retainedRemainingMinor > 0)
+    unsupported(
+      'Unreleased retention requires a provider payable representation',
+    );
   if (invoice.status === InvoiceStatus.CANCELLED)
     unsupported('Cancelled documents cannot be created by accounting sync');
 

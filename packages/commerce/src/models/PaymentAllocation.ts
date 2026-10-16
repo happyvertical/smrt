@@ -235,7 +235,7 @@ export class PaymentAllocation extends SmrtObject {
         throw new Error('PaymentAllocation would over-apply payment');
       const invoiceCap =
         invoice.kind === 'invoice'
-          ? invoice.totalAmount - invoice.creditedAmount
+          ? invoice.getPayableFacts().allocationCapMinor
           : invoice.totalAmount;
       if (invoiceTotal > BigInt(Math.max(0, invoiceCap)))
         throw new Error('PaymentAllocation would over-pay invoice');
