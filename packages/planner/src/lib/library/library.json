@@ -1401,7 +1401,7 @@
       "settings": {
         "currency": "USD",
         "paymentTerms": "Net 30",
-        "taxRate": 0
+        "taxRate": 0.0725
       },
       "sectionDescriptions": {
         "custom:shop": "Sell to customers and keep their details.",
@@ -1441,6 +1441,12 @@
             "defaultValue": "\"Net 30\""
           },
           {
+            "objectRef": "@happyvertical/smrt-commerce:ContractLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.0725"
+          },
+          {
             "objectRef": "@happyvertical/smrt-commerce:Customer",
             "fieldName": "paymentTerms",
             "scopeType": "app",
@@ -1463,6 +1469,12 @@
             "fieldName": "terms",
             "scopeType": "app",
             "defaultValue": "\"Net 30\""
+          },
+          {
+            "objectRef": "@happyvertical/smrt-commerce:InvoiceLineItem",
+            "fieldName": "taxRate",
+            "scopeType": "app",
+            "defaultValue": "0.0725"
           },
           {
             "objectRef": "@happyvertical/smrt-commerce:Lease",

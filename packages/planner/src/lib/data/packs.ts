@@ -1302,7 +1302,7 @@ const SALON: SamplePack = {
 
 const ROASTER: SamplePack = {
   id: 'roaster',
-  taxRate: 0,
+  taxRate: 0.0725,
   products: [
     {
       name: 'House espresso, 12 oz',

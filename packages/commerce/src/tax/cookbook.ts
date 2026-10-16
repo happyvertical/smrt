@@ -126,30 +126,31 @@ export async function applyCookbookTaxSettings(
         return;
       }
       const percent = String(input.taxRate);
-      const componentName = `Cookbook ${percent}%`;
-      let component = (
-        await components.list({ where: { name: componentName }, limit: 1 })
-      )[0];
+      // Named like the example pack's components ("Canada GST 5%"): what it
+      // is and its rate. Found by its deterministic id, whatever it is named.
+      const componentId = await deterministicTaxId(
+        tenantId,
+        'component',
+        `cookbook-${percent}`,
+      );
+      let component = await components.get(
+        { id: componentId },
+        { cache: false },
+      );
       if (!component) {
-        const id = await deterministicTaxId(
-          tenantId,
-          'component',
-          `cookbook-${percent}`,
-        );
         component = await createOrLoadTaxSeed(
           () =>
             components.create({
-              id,
+              id: componentId,
               tenantId,
-              name: componentName,
+              name: `Tax ${percent}%`,
               percent,
             }),
-          () => components.get({ id }, { cache: false }),
+          () => components.get({ id: componentId }, { cache: false }),
         );
       }
-      if (!component.id)
+      if (!component?.id)
         throw new Error('Cookbook tax component did not persist');
-      const componentId = component.id;
       const codeName = `default-${percent.replace('.', '_')}`;
       let code = await codes.findByCode(codeName, tenantId);
       if (!code) {
