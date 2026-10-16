@@ -20,8 +20,8 @@
  *   assigned to a tenant or deleted. Like the old schema, they refuse the
  *   whole database.
  * - **Old-format documents.** An issued Invoice or Contract without a money
- *   snapshot, or a line with a tax rate but no tax code. The current model
- *   never writes either, so they remain detectable after a
+ *   snapshot, or a line with neither a tax code nor a component snapshot.
+ *   The current model never writes either, so they remain detectable after a
  *   `db:migrate --drop-columns` has removed the old columns.
  *
  * Delete this module, the `upgrade/` directory and its call sites together
@@ -196,8 +196,9 @@ export async function tenantHasMoneyDocuments(
 
 /**
  * SQL selecting the tenant ids that hold old-format documents: an issued
- * header without a money snapshot, or a line taxed at a rate but carrying no
- * tax code. `tenantFilter` is appended to each branch's WHERE clause.
+ * header without a money snapshot, or a line with neither a tax code nor a
+ * component snapshot (the current model writes one on every line it
+ * computes). `tenantFilter` is appended to each branch's WHERE clause.
  */
 async function oldFormatDocumentQueries(
   db: DatabaseInterface,
@@ -212,8 +213,8 @@ async function oldFormatDocumentQueries(
   const taxed = (table: string) =>
     `SELECT DISTINCT CAST(tenant_id AS TEXT) AS "tenantId" FROM ${table}
       WHERE tenant_id IS NOT NULL
-        AND tax_rate > 0
-        AND tax_code_id IS NULL${tenantFilter}`;
+        AND tax_code_id IS NULL
+        AND tax_components_json IS NULL${tenantFilter}`;
   if (await tableExists(db, 'invoices'))
     queries.push(
       issued('invoices', " OR COALESCE(CAST(ar_journal_id AS TEXT), '') <> ''"),
@@ -261,7 +262,7 @@ export interface TenantMoneyUpgradeNeed {
    * - `interrupted-migration`: a pre-#4021 tenant migration never finished.
    * - `missing-settings`: documents but no tenant tax settings.
    * - `old-format-documents`: an issued document without a money snapshot,
-   *   or a taxed line without a tax code.
+   *   or a line with neither a tax code nor a component snapshot.
    */
   reason:
     | 'legacy-marker'
@@ -416,10 +417,11 @@ export async function assertCommerceMoneySchemaCurrent(
     throw new CommerceDataNeedsUpgradeError(
       `The database holds commerce money data from an earlier version (${old.join(', ')}).`,
     );
-  const tenantless = await findTenantlessMoneyDocuments(db, 1);
-  if (tenantless.length > 0)
+  // The refusal names no document: the scan ignores the caller's row
+  // permissions, so only the upgrade report lists identities.
+  if ((await findTenantlessMoneyDocuments(db, 1)).length > 0)
     throw new CommerceDataNeedsUpgradeError(
-      `The database holds commerce money documents without a tenant (first: ${tenantless[0]?.table} ${tenantless[0]?.id}); assign each to a tenant or delete it.`,
+      'The database holds commerce money documents without a tenant; the upgrade lists them to assign to a tenant or delete.',
     );
   state.schema = true;
 }

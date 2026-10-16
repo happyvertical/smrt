@@ -17,8 +17,8 @@
  *    snapshot, document taxes and a money snapshot. A document whose stored
  *    lines do not add up exactly to its stored header fails the tenant;
  * 4. recomputes each draft through the runtime from its prices, mapping only
- *    lines taxed at a rate without a tax code; a draft header keeps its
- *    stored amount type and rounding.
+ *    old-format lines (no tax code and no component snapshot); a draft
+ *    header keeps its stored amount type and rounding.
  *
  * Each tenant converts in its own transaction, so one failing tenant leaves
  * the others converted. Once no tenant needs the upgrade, the pre-#4021
@@ -398,12 +398,14 @@ async function backfillIssued(
   for (const line of lines) {
     const net = lineNet(line);
     const tax = storedMinor(line.amount, 'Line amount') - net;
-    if (tax < 0)
+    // Tax carries the sign of its net: a negative-price adjustment line holds
+    // negative tax, never the opposite sign.
+    if ((tax < 0 && net >= 0) || (tax > 0 && net <= 0))
       throw new Error(
-        `line ${String(line.id)} stores an amount below its net (${net}), so its tax would be negative`,
+        `line ${String(line.id)} stores amount ${net + tax} against net ${net}, so its tax has the wrong sign`,
       );
     const mapped = await codes.forRate(line.tax_rate, party.exempt);
-    if (tax > 0 && !mapped.component)
+    if (tax !== 0 && !mapped.component)
       throw new Error(
         `line ${String(line.id)} stores tax at a zero rate (${tax} minor units)`,
       );
@@ -511,12 +513,13 @@ async function recomputeDraft(
   const documentId = String(header.id);
   const party = await partyFor(db, header);
   for (const line of lines) {
-    // Only an old-format line is taxed at a rate without a tax code. A line
-    // with a code, or with no tax, already means the same under the current
-    // model; the draft header keeps its stored amount type and rounding
-    // (old-format drafts carry the schema defaults, exclusive and per line).
-    if (line.tax_code_id) continue;
-    if (fractionToPercent(line.tax_rate) === '0') continue;
+    // The draft header keeps its stored amount type and rounding (old-format
+    // drafts carry the schema defaults, exclusive and per line).
+    // The current model writes a component snapshot on every line it
+    // computes; a line with neither a code nor a snapshot is old-format, and
+    // gets its stored rate explicitly (a zero rate too, so it cannot start
+    // inheriting a tax code's tax).
+    if (line.tax_code_id || line.tax_components_json != null) continue;
     const mapped = await codes.forRate(line.tax_rate, party.exempt);
     await updateRow(db, kind.lines, String(line.id), {
       tax_mode: 'override',

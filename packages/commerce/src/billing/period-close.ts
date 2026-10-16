@@ -1554,6 +1554,13 @@ async function sendAndReconcile(
     await runtime.provider.sendInvoice(providerInvoiceId);
     state = await runtime.provider.getInvoice(providerInvoiceId);
   }
+  if (state.status === 'void' && invoice.status === InvoiceStatus.CANCELLED) {
+    // Voided at the provider and cancelled here while this close was parked:
+    // nothing was sent or earned, so the close completes without posting.
+    close.status = 'sent';
+    await close.save();
+    return;
+  }
   if (state.status === 'draft' || state.status === 'void') {
     throw new Error(
       `Provider invoice ${providerInvoiceId} is ${state.status}; expected it to be sent.`,
@@ -1601,7 +1608,14 @@ async function postRevenue(
   runtime: BillingRuntime,
   invoice: Invoice,
 ): Promise<void> {
-  if (invoice.totalAmount <= 0 || invoice.arJournalId) return;
+  // An invoice the provider voided while its close was parked never earned
+  // revenue: the close completes without posting.
+  if (
+    invoice.totalAmount <= 0 ||
+    invoice.arJournalId ||
+    invoice.status === InvoiceStatus.CANCELLED
+  )
+    return;
   await withTenant({ tenantId: runtime.sellerTenantId }, () =>
     invoice.recognizeRevenue({
       arAccountId: runtime.ledger.arAccountId,

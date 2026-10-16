@@ -489,6 +489,116 @@ describe('commerce money upgrade (#4021)', () => {
     });
   });
 
+  it('maps an old zero-rate draft line explicitly so it does not inherit a default code', async () => {
+    await ensureCommerceTenant(db, 'zero');
+    const draft = await oldInvoice('zero', 'Z-1', { issued: false });
+    await db.query(
+      'UPDATE invoice_line_items SET tax_rate = 0, amount = 200 WHERE id = ?',
+      draft.lineId,
+    );
+    await db.query(
+      'UPDATE invoices SET tax_amount = 0, total_amount = 200 WHERE id = ?',
+      draft.invoiceId,
+    );
+    // The tenant's default sales code taxes at 5%.
+    await withTenant({ tenantId: 'zero' }, async () => {
+      const component = await (
+        await TaxComponentCollection.create({ db })
+      ).create({ tenantId: 'zero', name: 'GST', percent: '5' });
+      const code = await (await TaxCodeCollection.create({ db })).create({
+        tenantId: 'zero',
+        code: 'gst',
+        name: 'GST',
+        kind: 'taxable',
+        components: [{ taxComponentId: String(component.id), compound: false }],
+      });
+      const settings = await (
+        await TaxSettingsCollection.create({ db })
+      ).getOrCreateForTenant('zero');
+      settings.defaultSalesTaxCodeId = String(code.id);
+      await settings.save();
+    });
+    await earlierSchema(['zero']);
+    await restart();
+    const result = await upgradeCommerceMoney(db);
+    expect(result.failures).toEqual([]);
+    expect(result.upgraded[0]?.changedDrafts).toEqual([]);
+    await withTenant({ tenantId: 'zero' }, async () => {
+      expect(
+        await (await InvoiceCollection.create({ db })).get({
+          id: draft.invoiceId,
+        }),
+      ).toMatchObject({ subtotal: 200, taxAmount: 0, totalAmount: 200 });
+      const [line] = await (
+        await InvoiceLineItemCollection.create({ db })
+      ).findByInvoice(draft.invoiceId);
+      expect(line).toMatchObject({ taxCodeCode: 'out-of-scope', taxAmount: 0 });
+    });
+  });
+
+  it('backfills a taxed negative-price adjustment line with signed tax', async () => {
+    await ensureCommerceTenant(db, 'signed');
+    const ids = await withTenant({ tenantId: 'signed' }, async () => {
+      const invoice = await (await InvoiceCollection.create({ db })).create({
+        invoiceNumber: 'N-1',
+        currency: 'CAD',
+      });
+      const lines = await InvoiceLineItemCollection.create({ db });
+      const charge = await lines.create({
+        invoiceId: invoice.id,
+        description: 'Charge',
+        quantity: 2,
+        unitPrice: 100,
+      });
+      const adjustment = await lines.create({
+        invoiceId: invoice.id,
+        description: 'Adjustment',
+        quantity: 1,
+        unitPrice: -100,
+      });
+      return {
+        invoiceId: String(invoice.id),
+        charge: String(charge.id),
+        adjustment: String(adjustment.id),
+      };
+    });
+    for (const [id, amount] of [
+      [ids.charge, 210],
+      [ids.adjustment, -105],
+    ] as const)
+      await db.query(
+        `UPDATE invoice_line_items SET tax_rate = 0.05, amount = ?, tax_amount = 0,
+                tax_code_id = NULL, tax_code_code = NULL, tax_code_name = NULL,
+                tax_components_json = NULL, tax_mode = 'inherit', money_snapshot_id = ''
+          WHERE id = ?`,
+        amount,
+        id,
+      );
+    await db.query(
+      `UPDATE invoices SET status = 'sent', subtotal = 100, tax_amount = 5,
+              total_amount = 105, money_snapshot_id = '' WHERE id = ?`,
+      ids.invoiceId,
+    );
+    await db.query(
+      'DELETE FROM document_taxes WHERE document_id = ?',
+      ids.invoiceId,
+    );
+    await earlierSchema(['signed']);
+    await restart();
+    const result = await upgradeCommerceMoney(db);
+    expect(result.failures).toEqual([]);
+    const rows = (
+      await db.query(
+        'SELECT id, amount, tax_amount FROM invoice_line_items WHERE invoice_id = ? ORDER BY amount',
+        ids.invoiceId,
+      )
+    ).rows as Array<Record<string, unknown>>;
+    expect(rows.map((row) => [row.amount, row.tax_amount])).toEqual([
+      [-100, -5],
+      [200, 10],
+    ]);
+  });
+
   it('refuses a tenantless read of a database with old money storage', async () => {
     await ensureCommerceTenant(db, 'legacy');
     await oldInvoice('legacy', 'L-1', { issued: false });

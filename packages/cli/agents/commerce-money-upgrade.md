@@ -10,8 +10,9 @@ count as old data:
 - An invoice or contract row has no tenant. The upgrade lists each one; assign
   it to a tenant or delete it, then rerun.
 - A tenant has invoices or contracts but no tax settings row.
-- A tenant has an issued document without a money snapshot, or a line with a
-  tax rate but no tax code (found even after `db:migrate --drop-columns`).
+- A tenant has an issued document without a money snapshot, or a line with
+  neither a tax code nor a component snapshot (found even after
+  `db:migrate --drop-columns`).
 
 `smrt db:status` reports this as the `commerce-money-upgrade` error
 precondition, so `smrt app doctor` reports `migration-required`.

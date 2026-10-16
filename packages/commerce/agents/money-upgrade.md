@@ -19,8 +19,8 @@ and names the upgrade command. The operator steps are in the CLI guide,
 - **Tenant without settings.** A tenant has Invoice or Contract rows but no
   `tax_settings` row. This refuses that tenant only.
 - **Old-format documents.** An issued Invoice or Contract without a money
-  snapshot, or a line with a tax rate but no tax code. The current model never
-  writes either, so these stay detectable after `db:migrate --drop-columns`
+  snapshot, or a line with neither a tax code nor a component snapshot. The
+  current model never writes either, so these stay detectable after `db:migrate --drop-columns`
   removed the old columns. This refuses that tenant only.
 
 `assertCommerceMoneySchemaCurrent(db)` checks the schema.
