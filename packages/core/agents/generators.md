@@ -246,6 +246,29 @@ CLI CRUD write its model closes. Gates: `registry/__tests__/collection-exposure.
 `packages/cli/src/__tests__/collection-exposure.test.ts`, and the cross-package
 `packages/bundle-gate/src/__tests__/collection-exposure.spec.ts`.
 
+## Subclass exposure
+
+A model that extends another registered model (`Person extends Profile`, an
+STI contract subtype, a CTI subclass) is generated as a resource of its own,
+but every operation it inherits is its parent's. `registry/subclass-exposure.ts`
+holds the rule; the manifest generator applies it (`mergeInheritedFields`,
+before the collection pass, so a subclass's collection sees it) and
+`ObjectRegistry.getConfig()` applies it again at runtime. For each of
+`api`/`mcp`/`cli` the subclass leaves unset it inherits the parent's effective
+value as is, and `sensitive: true` is inherited and cannot be dropped. An
+abstract parent's synthesized write exclusions are not inherited: its authored
+surface is, so its concrete subclasses can lift them.
+
+A subclass's own `@smrt()` may narrow its parent's surface. The build fails
+with `CONFIG_SUBCLASS_EXPOSURE` when it opens a CRUD verb or a parent method
+(on REST, MCP or CLI, read the way each generator reads `include`/`exclude`)
+that the parent closes, unless the subclass lists that operation in
+`widenParentExposure: { api: ['create'] }`; a listed operation that widens
+nothing also fails. Methods only the subclass declares are not checked. Gates:
+`registry/__tests__/subclass-exposure.test.ts`,
+`packages/cli/src/__tests__/subclass-exposure.test.ts`, and the cross-package
+`packages/bundle-gate/src/__tests__/subclass-exposure.spec.ts`.
+
 ## Custom-action contract
 
 `resolveCustomActionMetadata()` is the common discovery and invocation contract

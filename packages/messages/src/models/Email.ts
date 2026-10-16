@@ -21,6 +21,8 @@ import { Message } from './Message';
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
   cli: { skipApiCheck: true },
+  // Message is read-only over REST; this provider type is writable there.
+  widenParentExposure: { api: ['create', 'update', 'delete'] },
 })
 export class Email extends Message {
   // RFC 822 fields

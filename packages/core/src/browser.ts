@@ -455,6 +455,13 @@ export {
   inheritedCollectionSurface,
 } from './registry/collection-exposure';
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
+// Subclass models inherit their parent model's generated surface.
+export {
+  findSubclassExposureEscalations,
+  inheritSubclassExposure,
+  type SubclassExposureEscalation,
+  surfaceOpensOperation,
+} from './registry/subclass-exposure';
 // Revision compare-and-swap predicate helpers (#2620)
 export {
   POSTGRES_REVISION_GUARD_EXPRESSION,

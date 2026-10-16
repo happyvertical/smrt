@@ -25,6 +25,13 @@ import {
 import { isSmrtCollectionExtendsName } from '../registry/collection-resolution.js';
 import { VERBOSE_ENABLED } from '../registry/shared-state.js';
 import {
+  findStaleWidenings,
+  findSubclassExposureEscalations,
+  formatSubclassExposureEscalations,
+  inheritSubclassExposure,
+} from '../registry/subclass-exposure.js';
+import type { SmartObjectConfig } from '../registry/types.js';
+import {
   defaultConflictColumns,
   resolveOwnershipTenantColumn,
   resolveTenantColumn,
@@ -459,6 +466,12 @@ export class ManifestGenerator {
     // Third pass: Merge inherited fields for STI classes
     // This ensures STI subclasses have all parent fields inline in the manifest
     this.mergeInheritedFields(manifest);
+
+    // A model subclass may narrow its parent's generated surface but not
+    // widen it. Before the abstract pass below, which synthesizes write
+    // exclusions on an abstract parent that its concrete subclasses exist to
+    // lift.
+    this.assertSubclassExposure(manifest);
 
     // All producers, including OXC, must suppress custom actions on abstract
     // resources and their collection classes. Do this after inheritance so
@@ -2329,6 +2342,11 @@ export class ManifestGenerator {
       );
     }
 
+    // A model subclass inherits every generated surface (and `sensitive`) it
+    // leaves unset from its parent model. Before the collection pass below,
+    // so a subclass's collection inherits the subclass's effective surface.
+    this.applySubclassExposureInheritance(manifest, objectsByName);
+
     // SECOND PASS: Handle collection classes that should inherit from their item class
     // This must happen AFTER STI field merging so item classes have their tableName set
     for (const obj of Object.values(manifest.objects)) {
@@ -2392,6 +2410,180 @@ export class ManifestGenerator {
           `[manifest-generator] ${obj.className} inherits ${Object.keys(inherited).join(', ')} exposure from item class ${itemClass.className}`,
         );
       }
+    }
+  }
+
+  /**
+   * The model a model class directly extends, from this manifest or an
+   * external SMRT dependency's, or `undefined` when its parent is a framework
+   * base, a collection or unknown, or when the class is itself a collection.
+   */
+  private findParentModel(
+    obj: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): SmartObjectDefinition | undefined {
+    const parentName = obj.extendsQualified || obj.extends;
+    if (!parentName) return undefined;
+    const simpleParent = this.simpleClassName(parentName);
+    if (
+      FRAMEWORK_ABSTRACT_BASE_NAMES.has(simpleParent) ||
+      FRAMEWORK_METHOD_BASE_NAMES.has(simpleParent) ||
+      isSmrtCollectionExtendsName(parentName)
+    ) {
+      return undefined;
+    }
+    if (
+      this.extendsCollection(obj, objectsByName) ||
+      this.extendsAnyCollectionBase(obj, objectsByName)
+    ) {
+      return undefined;
+    }
+    let parent =
+      (obj.extendsQualified
+        ? (manifest.objects[obj.extendsQualified] as
+            | SmartObjectDefinition
+            | undefined)
+        : undefined) ?? objectsByName.get(obj.extends ?? simpleParent);
+    if (parent === obj) parent = undefined;
+    if (!parent && manifest.smrtDependencies?.length) {
+      parent = this.loadParentFromExternalPackage(
+        parentName,
+        manifest.smrtDependencies,
+        objectsByName,
+      );
+    }
+    if (!parent || parent === obj) return undefined;
+    if (
+      this.extendsCollection(parent, objectsByName) ||
+      this.extendsAnyCollectionBase(parent, objectsByName)
+    ) {
+      return undefined;
+    }
+    return parent;
+  }
+
+  /**
+   * A model's config with the surfaces it inherits from its ancestors
+   * (`registry/subclass-exposure.ts`), computed without mutating `obj` or any
+   * external manifest entry.
+   */
+  private subclassEffectiveConfig(
+    obj: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+    memo: Map<SmartObjectDefinition, SmartObjectConfig>,
+    visiting: Set<SmartObjectDefinition> = new Set(),
+  ): SmartObjectConfig {
+    const cached = memo.get(obj);
+    if (cached) return cached;
+    const own = obj.decoratorConfig || {};
+    if (visiting.has(obj)) return own;
+    visiting.add(obj);
+    let config = own;
+    const parent = this.findParentModel(obj, manifest, objectsByName);
+    if (parent) {
+      const inherited = inheritSubclassExposure(
+        own,
+        this.subclassEffectiveConfig(
+          parent,
+          manifest,
+          objectsByName,
+          memo,
+          visiting,
+        ),
+      );
+      if (Object.keys(inherited).length > 0) config = { ...own, ...inherited };
+    }
+    visiting.delete(obj);
+    memo.set(obj, config);
+    return config;
+  }
+
+  /**
+   * Give every model subclass in this manifest the generated surfaces and
+   * `sensitive` flag it leaves unset from its parent model. Without this an
+   * STI child such as `Person extends Profile` was generated with the open
+   * default surface, publishing every write and method `Profile` closes.
+   */
+  private applySubclassExposureInheritance(
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): void {
+    const memo = new Map<SmartObjectDefinition, SmartObjectConfig>();
+    const updates: Array<[SmartObjectDefinition, SmartObjectConfig]> = [];
+    for (const obj of Object.values(manifest.objects)) {
+      const effective = this.subclassEffectiveConfig(
+        obj,
+        manifest,
+        objectsByName,
+        memo,
+      );
+      if (effective !== (obj.decoratorConfig || {})) {
+        updates.push([obj, effective]);
+      }
+    }
+    for (const [obj, effective] of updates) {
+      obj.decoratorConfig = effective;
+      logger.debug(
+        `[manifest-generator] ${obj.className} inherits generated-surface exposure from ${obj.extends}`,
+      );
+    }
+  }
+
+  /**
+   * Fail the build when a model subclass's own `@smrt()` opens a generated
+   * operation (a CRUD verb or a parent method, on REST, MCP or CLI) that its
+   * parent model closes, or drops its parent's `sensitive: true`, without
+   * naming it in `widenParentExposure`. Runs after inheritance, so only a
+   * subclass's own config can trip it.
+   */
+  private assertSubclassExposure(manifest: SmartObjectManifest): void {
+    const objectsByName = new Map<string, SmartObjectDefinition>();
+    for (const objectDef of Object.values(manifest.objects)) {
+      objectsByName.set(objectDef.className, objectDef);
+    }
+    const memo = new Map<SmartObjectDefinition, SmartObjectConfig>();
+    const findings: Parameters<typeof formatSubclassExposureEscalations>[0] =
+      [];
+    for (const obj of Object.values(manifest.objects)) {
+      const parent = this.findParentModel(obj, manifest, objectsByName);
+      if (!parent) continue;
+      const childConfig = this.subclassEffectiveConfig(
+        obj,
+        manifest,
+        objectsByName,
+        memo,
+      );
+      const parentConfig = this.subclassEffectiveConfig(
+        parent,
+        manifest,
+        objectsByName,
+        memo,
+      );
+      const parentOperations = Object.entries(parent.methods || {})
+        .filter(([, method]) => method.isPublic !== false)
+        .map(([name]) => name);
+      const escalations = findSubclassExposureEscalations(
+        childConfig,
+        parentConfig,
+        parentOperations,
+      );
+      const stale = findStaleWidenings(childConfig, parentConfig);
+      if (escalations.length > 0 || stale.length > 0) {
+        findings.push({
+          subclass: obj.qualifiedName || obj.className,
+          parent: parent.qualifiedName || parent.className,
+          escalations,
+          stale,
+        });
+      }
+    }
+    if (findings.length > 0) {
+      throw new ConfigurationError(
+        formatSubclassExposureEscalations(findings),
+        'CONFIG_SUBCLASS_EXPOSURE',
+      );
     }
   }
 
