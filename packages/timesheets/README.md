@@ -366,6 +366,15 @@ Indexes on `(tenantId, workRefType, workRefId)` and `(tenantId, taskRefType,
 taskRefId)` serve job costing; a unique `(tenantId, punchId, openSlot)` index
 allows one open segment per punch. Segments never overlap each other or a break.
 
+`profileId` is the person whose time it is: the services copy it from the
+segment's punch on every write (`startWork`, `switchWork`, `resumeWork`, replayed
+work actions, and the correction service's `saveSegment` and `addPunch`
+segments), it is immutable, and a write whose `profileId` differs from its
+punch's is refused. Indexed `(tenantId, profileId, startedAt)`, so labour by
+person needs no join. Rows written before the column existed read `''`; backfill
+with `UPDATE attendance_segments SET profile_id = (SELECT p.profile_id FROM
+attendance_punches p WHERE p.id = attendance_segments.punch_id) WHERE profile_id = ''`.
+
 ```ts
 await attendance.punchIn(t(8));
 await attendance.startWork(t(8), { workRefType: '@acme:WorkOrder', workRefId: 'WO-1',

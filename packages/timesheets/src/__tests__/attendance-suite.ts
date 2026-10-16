@@ -101,6 +101,11 @@ export function attendanceSuite(
       const punch = await service.punchOut(at(16));
       expect(await service.currentWork()).toBeNull();
       const segments = await service.segments(punch.id!);
+      expect(segments.map((g) => g.profileId)).toEqual([
+        punch.profileId,
+        punch.profileId,
+        punch.profileId,
+      ]);
       expect(
         segments.map((g) => [
           g.workRefId,
@@ -130,6 +135,34 @@ export function attendanceSuite(
         closed.description = 'WELD';
         closed.endedAt = at(11);
         await expect(closed.save()).rejects.toThrow('immutable');
+      });
+    });
+    it('stamps the punch profile on a segment and refuses a mismatched write', async () => {
+      const punch = await service.punchIn(at(8));
+      const wo = {
+        workRefType: '@fixture/work:WorkOrder',
+        workRefId: 'WO-9',
+        description: 'x',
+      };
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const collection = await AttendanceSegmentCollection.create({ db });
+        await expect(
+          collection.create({
+            tenantId: actor.tenantId,
+            punchId: punch.id!,
+            profileId: crypto.randomUUID(),
+            ...wo,
+            startedAt: at(9),
+          }),
+        ).rejects.toThrow('profileId');
+      });
+      await service.startWork(at(9), wo);
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const collection = await AttendanceSegmentCollection.create({ db });
+        const rows = await collection.list({
+          where: { tenantId: actor.tenantId, profileId: actor.profileId },
+        });
+        expect(rows.map((g) => g.profileId)).toEqual([actor.profileId]);
       });
     });
     it('refuses resume without an interrupting break, half task refs and work outside a punch', async () => {
@@ -1171,9 +1204,13 @@ export function attendanceSuite(
         state = await run();
         expect(state.segments.map((g) => g.workRefId)).toEqual(['work-2']);
         expect(state.segments[0].durationSeconds).toBe(2 * 3600);
+        expect(state.segments[0].profileId).toBe(state.punch.profileId);
         await withTenant({ tenantId: actor.tenantId }, async () => {
           const rows = await AttendanceSegmentCollection.create({ db });
           const stored = await rows.get(state.segments[0].id!);
+          stored!.profileId = crypto.randomUUID();
+          await expect(stored!.save()).rejects.toThrow('immutable');
+          stored!.profileId = state.punch.profileId;
           await expect(stored!.delete()).rejects.toThrow('immutable');
           stored!.endedAt = null;
           await expect(stored!.delete()).rejects.toThrow('immutable');
