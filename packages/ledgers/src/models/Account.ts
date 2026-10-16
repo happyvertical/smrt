@@ -11,7 +11,13 @@ import {
   SmrtHierarchical,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  isSuperAdminBypass,
+  isTenancyEnabled,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import type { AccountOptions, AccountTreeNode, AccountType } from '../types';
 import { Ledger } from './Ledger';
 
@@ -92,6 +98,23 @@ export class Account extends SmrtHierarchical {
 
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
+    if (this.ledgerId) {
+      const { LedgerCollection } = await import('../collections/Ledgers');
+      const ledger = await (await LedgerCollection.create(this.options)).get(
+        { id: this.ledgerId },
+        { cache: false },
+      );
+      // Model validation precedes optional tenancy auto-population.
+      const owner =
+        this.tenantId ??
+        (isTenancyEnabled() && !isSuperAdminBypass()
+          ? (getTenantId() ?? null)
+          : null);
+      if (!ledger || ledger.tenantId !== owner)
+        throw new Error(
+          'Scoped account requires an accessible ledger with the same owner',
+        );
+    }
     if (this.id) {
       const stored = await this.db.get(this.tableName, { id: this.id });
       if (
@@ -193,10 +216,26 @@ export class Account extends SmrtHierarchical {
     }
     const { AccountCollection } = await import('../collections/Accounts');
     const collection = await AccountCollection.create(this.options);
+    const parent = await collection.get({ id: this.id }, { cache: false });
+    if (!parent)
+      throw new Error('Parent account must be persisted and accessible');
+    if (
+      parent.ledgerId &&
+      ((options.ledgerId !== undefined &&
+        options.ledgerId !== parent.ledgerId) ||
+        (options.tenantId !== undefined &&
+          options.tenantId !== parent.tenantId))
+    )
+      throw new Error(
+        'Scoped children must inherit the parent ledger and owner',
+      );
     const account = await collection.create({
       ...options,
-      parentId: this.id,
-      type: this.type, // Inherit type from parent
+      ...(parent.ledgerId
+        ? { ledgerId: parent.ledgerId, tenantId: parent.tenantId }
+        : {}),
+      parentId: parent.id,
+      type: parent.type, // Inherit persisted type from parent
     });
     await account.save();
     return account;

@@ -12,7 +12,9 @@ without a ledger retain the compatible tolerant decimal rule. Direct entry
 writes also require an accessible same-owner journal and matching account/journal
 ledger scope; legacy journals cannot write movements on scoped accounts. An
 existing account cannot change ledger scope, including adoption from an unassigned
-account; create a fresh scoped account instead.
+account; create a fresh scoped account instead. Scoped-account creation validates
+the referenced ledger owner. `createChild()` inherits the persisted scoped parent
+ledger and owner and rejects conflicting overrides.
 
 `JournalEntry` carries opaque `counterpartyKind` / `counterpartyId` values,
 plus an optional `dueDate`. `JournalEntryCollection.getCounterpartyBalances()`

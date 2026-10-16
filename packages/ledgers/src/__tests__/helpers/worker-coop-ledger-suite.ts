@@ -157,9 +157,18 @@ export function defineWorkerCoopLedgerSuite(
         ),
       ).rejects.toThrow(/context/);
       const accounts = await AccountCollection.create({ db });
+      const foreignTenant = crypto.randomUUID();
+      const foreignLedger = await (
+        await LedgerCollection.create({ db })
+      ).create({
+        tenantId: foreignTenant,
+        name: 'Foreign ledger',
+        currency: 'CAD',
+        balanceMode: 'exact-integer',
+      });
       const foreign = await accounts.create({
-        tenantId: crypto.randomUUID(),
-        ledgerId: base.ledgerId,
+        tenantId: foreignTenant,
+        ledgerId: foreignLedger.id!,
         name: 'Foreign',
         number: '9000',
         type: 'asset',
@@ -387,6 +396,95 @@ export function defineWorkerCoopLedgerSuite(
         stored!.memo = 'Legacy edit';
         await stored!.save();
       });
+    });
+    it('validates the ledger owner before creating scoped accounts', async () => {
+      const otherTenant = crypto.randomUUID();
+      const foreignLedger = await (
+        await LedgerCollection.create({ db })
+      ).create({
+        tenantId: otherTenant,
+        name: 'Foreign ledger',
+        currency: 'CAD',
+        balanceMode: 'exact-integer',
+      });
+      const accounts = await AccountCollection.create({ db });
+      const attempt = () =>
+        accounts.create({
+          tenantId: base.tenantId,
+          ledgerId: foreignLedger.id!,
+          number: 'bad-owner',
+          name: 'Invalid scoped account',
+        });
+      await expect(attempt()).rejects.toThrow();
+      enableTenancy();
+      await withTenant({ tenantId: base.tenantId }, async () => {
+        await expect(attempt()).rejects.toThrow();
+        await expect(withSuperAdminBypass(attempt)).rejects.toThrow();
+        const valid = await accounts.create({
+          ledgerId: base.ledgerId,
+          number: 'valid-owner',
+          name: 'Implicit scoped owner',
+        });
+        expect(valid.tenantId).toBe(base.tenantId);
+        await expect(
+          accounts.create({
+            tenantId: base.tenantId,
+            ledgerId: crypto.randomUUID(),
+            number: 'missing-ledger',
+            name: 'Missing',
+          }),
+        ).rejects.toThrow();
+      });
+      expect(
+        (await db.query('SELECT id FROM ledger_accounts')).rows,
+      ).toHaveLength(3);
+    });
+    it('inherits persisted scope and owner when creating scoped child accounts', async () => {
+      const accounts = await AccountCollection.create({ db });
+      const parent = (await accounts.get({ id: base.debitAccountId }))!;
+      const child = await parent.createChild({
+        number: '1101',
+        name: 'Project receivable',
+      });
+      expect(child).toMatchObject({
+        parentId: parent.id,
+        ledgerId: base.ledgerId,
+        tenantId: base.tenantId,
+        type: parent.type,
+      });
+      const journal = await postReceivable({
+        ...base,
+        debitAccountId: child.id!,
+      });
+      expect(await journal.isBalanced()).toBe(true);
+      for (const override of [
+        { ledgerId: null },
+        { ledgerId: crypto.randomUUID() },
+        { tenantId: null },
+        { tenantId: crypto.randomUUID() },
+      ]) {
+        await expect(
+          parent.createChild({
+            number: 'bad-child',
+            name: 'Wrong scope',
+            ...override,
+          }),
+        ).rejects.toThrow();
+      }
+      // Unsaved changes to the caller's parent object cannot change inherited authority.
+      parent.ledgerId = null;
+      parent.tenantId = crypto.randomUUID();
+      const sibling = await parent.createChild({
+        number: '1102',
+        name: 'Second receivable',
+      });
+      expect(sibling).toMatchObject({
+        ledgerId: base.ledgerId,
+        tenantId: base.tenantId,
+      });
+      expect(
+        (await db.query('SELECT id FROM ledger_accounts')).rows,
+      ).toHaveLength(4);
     });
     it('serializes manual draft edits against posting with a parent revision claim', async () => {
       const journals = await JournalCollection.create({ db });
