@@ -57,7 +57,17 @@ const EXEMPTIONS = {
   // setupFiles to smrtVitestPlugin(). Tracked under issue 1195 (CC-4
   // remainder); migration requires careful test verification because
   // both packages have substantive existing test suites.
-  noSmrtVitestPlugin: new Set(['core', 'cli', 'smrt-playground']),
+  //   - planner declares no @smrt() classes; its tests consume the built
+  //     workspace packages (and the catalog generated from their manifests)
+  //     exactly as a published consumer does, so the plugin's source aliasing
+  //     would test something other than what ships.
+  noSmrtVitestPlugin: new Set(['core', 'cli', 'smrt-playground', 'planner']),
+  // Build outputs other than dist that a package publishes at a fixed path,
+  // so its `files` entry exists only after `pnpm build`:
+  //   - planner's prerendered static app is `app/` because released smrt CLIs
+  //     (`smrt kitchen`) resolve `<package>/app/index.html` from whichever
+  //     planner version they fetch; moving it would break them.
+  buildOutputsInFiles: new Map([['planner', new Set(['app'])]]),
   // Templates ship plain JS scaffolding helpers (`./index.js`) rather than
   // typed module APIs, so the conditional `{ types, import }` shape does not
   // apply to their root export.
@@ -277,6 +287,9 @@ function checkPackage(name) {
       }
       for (const entry of json.files) {
         if (entry === 'dist' || entry.startsWith('dist/') || entry.includes('*')) {
+          continue;
+        }
+        if (EXEMPTIONS.buildOutputsInFiles.get(name)?.has(entry)) {
           continue;
         }
         if (!existsSync(join(PKGS, name, entry))) {

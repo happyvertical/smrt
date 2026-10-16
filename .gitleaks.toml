@@ -43,4 +43,10 @@ commits = [
   # All are example/test values in deleted files; baselined so a full-history
   # `gitleaks git` stays clean. PR-range and staged scans never see these.
   "4d8980588ff0952a60caa22ccf08465c4d3a7f0d",
+  # smrt-planner import (#4056): the planner's history, merged with
+  # --allow-unrelated-histories, so the PR range scans every imported commit.
+  # This one adds `APPROVED_KEY = 'smrt-planner-approved-css-v2'`, a
+  # localStorage key name that the generic-api-key entropy rule mistakes for a
+  # credential. The line now carries `gitleaks:allow` for later edits.
+  "917bf7d6d0b66ac58b80d7197c57c96e2421f306",
 ]

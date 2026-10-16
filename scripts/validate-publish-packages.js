@@ -347,6 +347,28 @@ for (const pkg of shardPackages) {
     }
   }
 
+  if (pkg.name === '@happyvertical/smrt-planner') {
+    const plannerResult = spawnSync(
+      process.execPath,
+      [join(repoRoot, 'scripts', 'verify-packed-planner.mjs'), tarballPath],
+      {
+        cwd: repoRoot,
+        stdio: 'inherit',
+        env: process.env,
+      },
+    );
+
+    if (plannerResult.error) {
+      fail(
+        `Failed to verify packed planner for ${pkg.name}: ${plannerResult.error.message}`,
+      );
+    }
+
+    if (plannerResult.status !== 0) {
+      fail(`Packed planner verification failed for ${pkg.name}`);
+    }
+  }
+
   const packageJson = JSON.parse(
     readFileSync(join(pkg.dir, 'package.json'), 'utf8'),
   );

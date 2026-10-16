@@ -146,6 +146,9 @@ jobs:
           {
             printf '%s\n' package.json
             find packages -type f \( -name 'package.json' -o -name 'CHANGELOG.md' -o -path '*/dist/*' \) -print
+            # The planner publishes its prerendered app at app/, a build
+            # output outside dist/ (publish.yml archives it the same way).
+            find packages/planner/app -type f -print
           } | sort -u > publish-dry-run-workspace-files
           tar -cf publish-dry-run-workspace.tar -T publish-dry-run-workspace-files
 

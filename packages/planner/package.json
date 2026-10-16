@@ -1,0 +1,145 @@
+{
+  "name": "@happyvertical/smrt-planner",
+  "version": "0.57.1",
+  "type": "module",
+  "description": "The smrt planner as a mountable Svelte component with a typed command set and plan snapshot.",
+  "license": "MIT",
+  "author": "HappyVertical",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/planner"
+  },
+  "svelte": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "agents",
+    "app",
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
+    },
+    "./app": {
+      "types": "./dist/core/app.d.ts",
+      "default": "./dist/core/app.js"
+    },
+    "./app/*": "./app/*",
+    "./commands": {
+      "types": "./dist/planner/commands/index.d.ts",
+      "default": "./dist/planner/commands/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "dev": "vite dev",
+    "build": "node scripts/write-smrt-version.ts && node scripts/generate-catalog.ts && node scripts/package-app.ts && node scripts/build-mcp.ts && svelte-package -i src/lib -o dist --tsconfig tsconfig.package.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
+    "catalog:generate": "node scripts/generate-catalog.ts",
+    "clean": "rm -rf dist app build .svelte-kit",
+    "preview": "vite preview",
+    "typecheck": "svelte-kit sync && tsc --noEmit -p tsconfig.json && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:package": "node scripts/test-packed-package.mjs",
+    "test:mcp-browser": "node scripts/build-mcp.ts && node scripts/test-mcp-browser.mjs",
+    "test:live-preview-browser": "node scripts/test-live-preview-browser.mjs",
+    "version:smrt": "node scripts/write-smrt-version.ts",
+    "verify:pack": "publint && node ../../scripts/verify-package-types-exports.js ."
+  },
+  "dependencies": {
+    "@happyvertical/ai": "catalog:",
+    "@happyvertical/smrt-assets": "workspace:*",
+    "@happyvertical/smrt-chat": "workspace:*",
+    "@happyvertical/smrt-commerce": "workspace:*",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*",
+    "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/speech": "catalog:",
+    "@huggingface/transformers": "^4.3.0",
+    "@mlc-ai/web-llm": "^0.2.85"
+  },
+  "peerDependencies": {
+    "@sveltejs/kit": "^2.0.0",
+    "svelte": "^5.57.1"
+  },
+  "peerDependenciesMeta": {
+    "@sveltejs/kit": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-ads": "workspace:*",
+    "@happyvertical/smrt-affiliates": "workspace:*",
+    "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-analytics": "workspace:*",
+    "@happyvertical/smrt-approvals": "workspace:*",
+    "@happyvertical/smrt-comments": "workspace:*",
+    "@happyvertical/smrt-content": "workspace:*",
+    "@happyvertical/smrt-education": "workspace:*",
+    "@happyvertical/smrt-events": "workspace:*",
+    "@happyvertical/smrt-expenses": "workspace:*",
+    "@happyvertical/smrt-facts": "workspace:*",
+    "@happyvertical/smrt-features": "workspace:*",
+    "@happyvertical/smrt-fields": "workspace:*",
+    "@happyvertical/smrt-gnode": "workspace:*",
+    "@happyvertical/smrt-human-resources": "workspace:*",
+    "@happyvertical/smrt-images": "workspace:*",
+    "@happyvertical/smrt-ingestion": "workspace:*",
+    "@happyvertical/smrt-inventory": "workspace:*",
+    "@happyvertical/smrt-jobs": "workspace:*",
+    "@happyvertical/smrt-languages": "workspace:*",
+    "@happyvertical/smrt-ledgers": "workspace:*",
+    "@happyvertical/smrt-manufacturing": "workspace:*",
+    "@happyvertical/smrt-marketing": "workspace:*",
+    "@happyvertical/smrt-messages": "workspace:*",
+    "@happyvertical/smrt-personas": "workspace:*",
+    "@happyvertical/smrt-places": "workspace:*",
+    "@happyvertical/smrt-playbooks": "workspace:*",
+    "@happyvertical/smrt-preferences": "workspace:*",
+    "@happyvertical/smrt-products": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
+    "@happyvertical/smrt-projects": "workspace:*",
+    "@happyvertical/smrt-prompts": "workspace:*",
+    "@happyvertical/smrt-properties": "workspace:*",
+    "@happyvertical/smrt-reports": "workspace:*",
+    "@happyvertical/smrt-sales": "workspace:*",
+    "@happyvertical/smrt-secrets": "workspace:*",
+    "@happyvertical/smrt-sites": "workspace:*",
+    "@happyvertical/smrt-social": "workspace:*",
+    "@happyvertical/smrt-subscriptions": "workspace:*",
+    "@happyvertical/smrt-support": "workspace:*",
+    "@happyvertical/smrt-tags": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-timesheets": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
+    "@happyvertical/smrt-video": "workspace:*",
+    "@happyvertical/smrt-voice": "workspace:*",
+    "@happyvertical/smrt-webhooks": "workspace:*",
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/package": "^3.0.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@types/node": "24.13.6",
+    "happy-dom": "20.10.6",
+    "playwright-core": "^1.64.0",
+    "publint": "^0.3.25",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "6.0.3",
+    "vite": "8.3.0",
+    "vitest": "4.1.10"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  }
+}
