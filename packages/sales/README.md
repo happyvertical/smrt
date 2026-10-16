@@ -20,7 +20,7 @@ Add `svelte` when consuming the optional UI export.
 
 | Entry point | Responsibility |
 | --- | --- |
-| `@happyvertical/smrt-sales/agreements` | Verified e-signature execution and immutable evidence |
+| `@happyvertical/smrt-sales/agreements` | Versioned commercial terms, verified e-signature execution, and immutable evidence |
 | `@happyvertical/smrt-sales/crm` | Leads, pipelines, opportunities, activities, conversions |
 | `@happyvertical/smrt-sales/referrals` | Referrers, links, attribution, qualification, agreements |
 | `@happyvertical/smrt-sales/commissions` | Earners, plans, earning events, commissions, payouts |
@@ -132,7 +132,26 @@ See [the CRM contract](agents/crm.md) for retry and duplicate semantics and
 
 ## Agreement boundary
 
-The agreements module accepts the provider-neutral
+`Agreement` is a counterparty-agnostic, effective-dated terms record. Parties
+are ordered `{ kind, id }` descriptors, so consumers can use tenant, earner,
+profile, organization, worker, or their own neutral kinds without importing a
+consumer domain. Versions are rows: `createAmendment()` creates a draft and
+`activateAmendment()` closes the predecessor at the successor's start. Effective
+intervals are half-open (`[effectiveFrom, effectiveTo)`), and `activeFor()` is
+an as-of query: it can return a superseded or terminated version that governed
+the supplied record date, never terms inferred from today's status. Ambiguous
+overlapping intervals fail closed. Activation rejects backdated or out-of-order
+amendments that would overlap existing history. Ending a draft cancels it without
+making it govern; closed intervals cannot be reopened. Party JSON is canonicalized
+before persistence, so property order does not change an agreement's identity.
+Tenant lookups fall back to global terms for each requested date when no tenant
+version governs that date. A tenant must explicitly create its initial version
+before using amendment helpers; global terms are never implicitly copied into a
+tenant amendment. Callers that calculate money must snapshot
+the returned version at their authoritative event; this model does not settle
+or allocate funds.
+
+The execution portion of the agreements module accepts the provider-neutral
 `@happyvertical/signatures` contract plus an `AssetRuntimeLike`. Provider
 credentials remain in the injected SDK adapter and secret store. Executed
 agreements freeze the exact source, signed document, audit trail, hashes, and
@@ -163,3 +182,22 @@ pnpm --filter @happyvertical/smrt-sales build
 
 See [`AGENTS.md`](./AGENTS.md) for lifecycle, evidence, concurrency, and payout
 invariants.
+
+A future amendment activated through `activateAmendment` can be withdrawn through
+`withdrawAmendment(id)` only before its start, while it is still active. This
+transaction cancels the never-effective successor and restores its exact persisted
+predecessor end (including a finite end); it never infers an open-ended interval.
+Repeated, late, or conflicting withdrawals fail without changing history. Direct
+model termination remains for already-effective terms. Global defaults apply only
+before a tenant lane first governs; termination, expiry, and later gaps in that
+lane return no agreement instead of silently resuming global fees.
+
+Restoration provenance is written exclusively by amendment activation; ordinary
+creates and saves cannot supply or edit it. Withdrawal advances both persisted
+revision tokens so pre-withdrawal model instances cannot overwrite the result.
+
+Concurrent `createAmendment` calls serialize version allocation within the owning
+lane: PostgreSQL locks the oldest persisted version and re-reads the latest;
+embedded engines use core's transaction/write queue. Each successful call keeps
+its own terms and version. Direct `supersede()` requires a finite `effectiveTo`
+set before the transition; saving an open-ended superseded row is rejected.

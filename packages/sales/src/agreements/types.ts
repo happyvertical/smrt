@@ -9,6 +9,48 @@ import type {
 } from '@happyvertical/signatures';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 
+/**
+ * A counterparty named by an application-owned kind and stable identifier.
+ *
+ * The agreements package deliberately does not import tenant, earner, profile,
+ * or application-domain models. Consumers may use `tenant`, `earner`, and
+ * `profile` kinds, or their own neutral kinds such as `organization` and
+ * `worker`. The value is stored canonically as JSON so it can be part of an
+ * agreement version's natural identity.
+ */
+export interface AgreementParty {
+  kind: string;
+  id: string;
+}
+
+/** Drafts activate or cancel; previously active versions supersede or terminate. */
+export const AGREEMENT_STATUSES = [
+  'draft',
+  'cancelled',
+  'active',
+  'superseded',
+  'terminated',
+] as const;
+
+export type AgreementStatus = (typeof AGREEMENT_STATUSES)[number];
+
+/** Constructor options for a generic, versioned commercial agreement. */
+export interface AgreementOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  kind?: string;
+  partyA?: string;
+  partyB?: string;
+  version?: number;
+  status?: AgreementStatus;
+  terms?: string;
+  effectiveFrom?: Date | string | number | null;
+  effectiveTo?: Date | string | number | null;
+  executedAgreementId?: string | null;
+  amendmentPredecessorId?: string | null;
+  amendmentPredecessorEnd?: Date | string | number | null;
+  metadata?: string;
+}
+
 export const AGREEMENT_EXECUTION_STATUSES = [
   'prepared',
   'sent',

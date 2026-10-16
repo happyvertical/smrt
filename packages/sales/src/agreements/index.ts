@@ -8,9 +8,18 @@
  * @packageDocumentation
  */
 
+export {
+  type AgreementAmendmentChanges,
+  AgreementCollection,
+} from './collections/AgreementCollection.js';
 export { AgreementExecutionCollection } from './collections/AgreementExecutionCollection.js';
 export { AgreementExecutionEventCollection } from './collections/AgreementExecutionEventCollection.js';
 export { ExecutedAgreementCollection } from './collections/ExecutedAgreementCollection.js';
+export {
+  Agreement,
+  parseAgreementParty,
+  serializeAgreementParty,
+} from './models/Agreement.js';
 export { AgreementExecution } from './models/AgreementExecution.js';
 export { AgreementExecutionEvent } from './models/AgreementExecutionEvent.js';
 export { ExecutedAgreement } from './models/ExecutedAgreement.js';
