@@ -39,3 +39,11 @@ passed; commerce build passed with no TypeScript diagnostics. Logs:
 `smrt-retained-credit-review-build.log`. An initial runner call lacked an explicit
 managed database URL; it failed before connecting. The corrected run used the
 managed wrapper and cleaned its owned disposable database.
+
+
+Native application integration additionally exposed omitted effective-date retention
+in ordinary configure/release commands. Explicit calendar dates now survive saved
+state and belong to exact retry identity. Shared SQLite/PostgreSQL retention proof
+checks configure/release reload, changed-date refusal and outer rollback. Omitted
+dates remain unknown; no recorded timestamp is substituted. The initial application
+failure and cancelled combined-gate run remain in the MVP evidence ledger.

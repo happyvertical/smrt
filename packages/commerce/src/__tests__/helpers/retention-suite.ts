@@ -55,6 +55,7 @@ export async function proveRetention(db: DatabaseInterface) {
       requestId: randomUUID(),
       policyVersion: 'tenant-retention-v1',
       evidenceRef: 'approval-1',
+      effectiveOn: '2026-10-01',
       actorId: 'reviewer',
       reason: 'Approved contract holdback',
       creditPolicy: 'retained-first' as const,
@@ -71,6 +72,12 @@ export async function proveRetention(db: DatabaseInterface) {
       configureInvoiceRetention({ ...command, amountMinor: 999 }),
     ).rejects.toThrow('changed facts');
     row = await load();
+    expect(JSON.parse(row.retentionStateJson).effectiveOn).toBe(
+      command.effectiveOn,
+    );
+    await expect(
+      configureInvoiceRetention({ ...command, effectiveOn: '2026-10-02' }),
+    ).rejects.toThrow('changed facts');
     const evidence = row.retentionStateJson;
     row.retentionStateJson = '';
     await expect(row.save()).rejects.toThrow('Retention state');
@@ -119,6 +126,7 @@ export async function proveRetention(db: DatabaseInterface) {
       ...command,
       requestId: randomUUID(),
       amountMinor: 400,
+      effectiveOn: '2026-10-20',
       expectedUpdatedAt: new Date(row.updated_at ?? '').toISOString(),
     };
     await expect(
@@ -136,6 +144,12 @@ export async function proveRetention(db: DatabaseInterface) {
     expect(await releaseInvoiceRetention(release)).toMatchObject({
       releasedMinor: 400,
     });
+    expect(
+      JSON.parse((await load()).retentionStateJson).releases[0].effectiveOn,
+    ).toBe(release.effectiveOn);
+    await expect(
+      releaseInvoiceRetention({ ...release, effectiveOn: '2026-10-21' }),
+    ).rejects.toThrow('changed facts');
     await expect(
       releaseInvoiceRetention({ ...release, amountMinor: 399 }),
     ).rejects.toThrow('changed facts');

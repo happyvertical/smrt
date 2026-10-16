@@ -62,7 +62,13 @@ async function mutate(
       if (
         priorAmount !== input.amountMinor ||
         (creditPolicy && state?.creditPolicy !== creditPolicy) ||
-        ['policyVersion', 'evidenceRef', 'actorId', 'reason'].some(
+        [
+          'policyVersion',
+          'evidenceRef',
+          'actorId',
+          'reason',
+          'effectiveOn',
+        ].some(
           (key) =>
             prior[key as keyof InvoiceRetentionEvidence] !==
             input[key as keyof InvoiceRetentionEvidence],
@@ -93,6 +99,9 @@ async function mutate(
       evidenceRef: input.evidenceRef,
       actorId: input.actorId,
       reason: input.reason,
+      ...(input.effectiveOn === undefined
+        ? {}
+        : { effectiveOn: input.effectiveOn }),
       recordedAt: new Date().toISOString(),
     };
     let next: InvoiceRetentionState;
