@@ -599,6 +599,51 @@ describe('commerce money upgrade (#4021)', () => {
     ]);
   });
 
+  it('refuses an invoice posted under the earlier version and a colliding rate code', async () => {
+    await ensureCommerceTenant(db, 'posted');
+    await ensureCommerceTenant(db, 'collide');
+    const posted = await oldInvoice('posted', 'P-1', { issued: true });
+    await db.query(
+      "UPDATE invoices SET ar_journal_id = '00000000-0000-4000-8000-00000000j001' WHERE id = ?",
+      posted.invoiceId,
+    );
+    const drafted = await oldInvoice('collide', 'C-1', { issued: false });
+    // A tenant already has a `rate-5` code that really means 10%.
+    await withTenant({ tenantId: 'collide' }, async () => {
+      const component = await (
+        await TaxComponentCollection.create({ db })
+      ).create({ tenantId: 'collide', name: 'Ten', percent: '10' });
+      await (await TaxCodeCollection.create({ db })).create({
+        tenantId: 'collide',
+        code: 'rate-5',
+        name: 'Not five',
+        kind: 'taxable',
+        components: [{ taxComponentId: String(component.id), compound: false }],
+      });
+    });
+    await earlierSchema(['posted', 'collide']);
+    await restart();
+    const result = await upgradeCommerceMoney(db);
+    expect(result.upgraded).toEqual([]);
+    expect(result.failures).toEqual([
+      {
+        tenantId: 'collide',
+        documentType: 'invoice',
+        documentId: drafted.invoiceId,
+        reason: expect.stringContaining(
+          'tax code rate-5 already exists with different components',
+        ),
+      },
+      {
+        tenantId: 'posted',
+        documentType: 'invoice',
+        documentId: posted.invoiceId,
+        reason: expect.stringContaining('posted under the earlier version'),
+      },
+    ]);
+    expect(result.droppedSchema).toEqual([]);
+  });
+
   it('refuses a tenantless read of a database with old money storage', async () => {
     await ensureCommerceTenant(db, 'legacy');
     await oldInvoice('legacy', 'L-1', { issued: false });

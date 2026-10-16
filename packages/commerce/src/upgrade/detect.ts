@@ -231,7 +231,11 @@ export interface TenantlessMoneyDocument {
   id: string;
 }
 
-/** Every Invoice or Contract row, header or line, that has no tenant. */
+/**
+ * @internal Operator-only: every Invoice or Contract row, header or line,
+ * that has no tenant. It ignores the caller's row permissions and returns
+ * document ids, so it is not exported from the package entry.
+ */
 export async function findTenantlessMoneyDocuments(
   db: DatabaseInterface,
   limit?: number,
@@ -280,9 +284,11 @@ export interface CommerceMoneyUpgradeStatus {
 }
 
 /**
- * Scan the whole database for old-format money data. For `smrt db:status`,
- * `smrt app doctor` and the upgrade command; the runtime uses the cached
- * per-tenant check {@link assertTenantMoneyCurrent} instead.
+ * Operator-only: scan the whole database for old-format money data. For
+ * `smrt db:status`, `smrt app doctor` and the upgrade command; never wire it
+ * into a principal-facing surface, because it ignores the caller's row
+ * permissions and returns tenant and document ids. The runtime uses the
+ * cached per-tenant check {@link assertTenantMoneyCurrent} instead.
  */
 export async function findCommerceMoneyUpgradeNeeds(
   db: DatabaseInterface,

@@ -10,7 +10,9 @@
  * 2. maps each stored rate to a tax code: a zero rate to `exempt` (exempt
  *    customer) or `out-of-scope`, any other rate to a one-component
  *    `rate-<percent>` code it creates once;
- * 3. backfills each issued document without a money snapshot from its stored
+ * 3. refuses an invoice posted under the earlier version (its revenue journal
+ *    carries that version's provenance), then backfills each other issued
+ *    document without a money snapshot from its stored
  *    values, without changing a single stored total: line net (quantity times
  *    unit price in exact decimal, ties toward positive infinity, less the
  *    discount, as the earlier version stored it), line tax, tax code
@@ -317,6 +319,21 @@ class RateCodes {
           components: [{ taxComponentId: componentId, compound: false }],
         });
       if (!code.id) throw new Error(`tax code ${codeName} did not persist`);
+      // Adopt an existing code or component only when it means exactly this
+      // rate; never silently re-price a document through someone's edit.
+      if (Number(component.percent) !== Number(percent))
+        throw new Error(
+          `tax component ${componentId} exists at ${component.percent}%, not the stored ${percent}%`,
+        );
+      if (
+        code.kind !== 'taxable' ||
+        code.components.length !== 1 ||
+        code.components[0]?.taxComponentId !== componentId ||
+        code.components[0]?.compound
+      )
+        throw new Error(
+          `tax code ${codeName} already exists with different components; rename it and rerun`,
+        );
       mapped = {
         taxCodeId: code.id,
         code: code.code,
@@ -600,6 +617,13 @@ async function convertTenant(
           );
         if (isIssued(kind, header)) {
           if (header.money_snapshot_id) continue;
+          // An earlier-version revenue journal carries that version's
+          // provenance, which current posting and cancellation reversal
+          // refuse to adopt; it cannot be converted in place.
+          if (kind.documentType === 'invoice' && header.ar_journal_id)
+            throw new Error(
+              `posted under the earlier version (revenue journal ${String(header.ar_journal_id)}); void that journal and clear the invoice's link, or reset the data, then rerun`,
+            );
           await backfillIssued(
             tx,
             tenantId,

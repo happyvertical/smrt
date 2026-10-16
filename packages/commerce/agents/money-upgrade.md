@@ -36,9 +36,12 @@ A refusal is a `CommerceDataNeedsUpgradeError` with `code`
 `Run smrt db:upgrade-commerce-money --tenant-id <id> to upgrade it.`
 `commerceMoneyUpgradeCommand(tenantId?)` builds that command text.
 
-`findCommerceMoneyUpgradeNeeds(db)` scans the whole database. It returns the
-old schema items and each tenant that needs the upgrade, with a reason
-(`legacy-marker`, `interrupted-migration`, or `missing-settings`).
+`findCommerceMoneyUpgradeNeeds(db)` scans the whole database. It is
+operator-only: it ignores the caller's row permissions, so never wire it into
+a principal-facing surface. It returns `oldSchema`, `tenantlessDocuments`
+(rows to assign or delete) and each tenant that needs the upgrade, with a
+reason (`legacy-marker`, `interrupted-migration`, `missing-settings`, or
+`old-format-documents`).
 `smrt db:status` uses it to report the `commerce-money-upgrade` error
 precondition, so `smrt app doctor` reports `migration-required`.
 
@@ -55,12 +58,18 @@ schema migration first. Each tenant converts in its own transaction:
 3. Issued documents are backfilled from their stored values: line net, line
    tax, tax-code snapshot, `DocumentTax` rows, and a money snapshot. No stored
    total changes.
-4. Drafts are recomputed through the runtime from their prices and mapped
-   codes. The result lists each draft whose total changed.
+4. Drafts are recomputed through the runtime from their prices. Only
+   old-format lines (no tax code and no component snapshot) are mapped; a
+   draft header keeps its amount type and rounding. The result lists each
+   draft whose total changed.
 
 An issued document whose stored lines do not add up exactly to its stored
-header fails its tenant, as does an invalid stored rate. Nothing in that tenant
-changes, and the result lists each failing document. A tenant whose earlier
+header fails its tenant. So do an invalid stored rate, an invoice posted under
+the earlier version (its revenue journal carries that version's provenance,
+which current posting and reversal refuse; void it and clear the link, or reset
+the data), and an existing `rate-<percent>` code or component that does not
+mean exactly that rate. Nothing in that tenant changes, and the result lists
+each failing document. A tenant whose earlier
 migration never finished also fails; roll it back with the version that started
 it, or reset its data. Converted tenants are skipped on a rerun.
 

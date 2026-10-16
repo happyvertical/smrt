@@ -38,8 +38,10 @@ What happens to each tenant:
 
 The command is strict. An issued document whose stored lines do not add up
 exactly to its stored header fails its whole tenant: nothing in that tenant
-changes, and the command lists each failing document. So does an invalid
-stored rate. Fix or reset that data and rerun; converted tenants are skipped.
+changes, and the command lists each failing document. So do an invalid
+stored rate, an invoice posted under the earlier version (void its journal and
+clear the link, or reset the data), and an existing `rate-<percent>` code that
+means a different rate. Fix or reset that data and rerun; converted tenants are skipped.
 Once no tenant needs the upgrade, the earlier version's columns and table are
 dropped. The command exits nonzero while any tenant still needs it.
 

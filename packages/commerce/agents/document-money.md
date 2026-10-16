@@ -22,9 +22,12 @@ settings when one is given. It returns `{ tenantId }` and is idempotent;
 re-running it with a cookbook re-applies the cookbook defaults.
 
 Money data written by an earlier version is refused, never read. A schema with
-the earlier version's money columns or table refuses the whole database, and a
-tenant with Invoice or Contract rows but no settings row is refused. Both fail
-with `COMMERCE_DATA_NEEDS_UPGRADE` and name `smrt db:upgrade-commerce-money`.
+the earlier version's money columns or table, or an Invoice or Contract row
+without a tenant, refuses the whole database. A tenant with Invoice or Contract
+rows but no settings row, or with old-format documents (an issued document
+without a money snapshot, or a line with neither a tax code nor a component
+snapshot), is refused on its own. All fail with `COMMERCE_DATA_NEEDS_UPGRADE`
+and name `smrt db:upgrade-commerce-money`.
 See [money data upgrade](money-upgrade.md). Rows written with raw SQL bypass
 the model and are not recalculated.
 
