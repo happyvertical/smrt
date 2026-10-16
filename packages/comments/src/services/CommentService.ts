@@ -166,20 +166,27 @@ export class CommentService {
     const comment = await this.getAuthorizedComment(commentId, 'moderate');
     if (!['visible', 'hidden', 'pending', 'deleted'].includes(status))
       throw new TypeError('Invalid comment moderation status.');
-    return withTenant({ tenantId: this.options.actor.tenantId }, async () => {
+    return withTenant({ tenantId: comment.tenantId }, async () => {
       const collection = await CommentCollection.create({
         db: this.options.db,
       });
-      const table = `"${collection.tableName.replace(/"/g, '""')}"`;
-      await collection.db.query(
-        `UPDATE ${table} SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?`,
-        status,
-        commentId,
-        this.options.actor.tenantId,
-      );
-      const updated = await collection.get(commentId);
-      if (!updated) throw new Error('Comment not found.');
-      return updated;
+      if (!collection.db.transaction)
+        throw new Error('Comment moderation requires transactions.');
+      return collection.db.transaction(async (tx) => {
+        const scoped = await CommentCollection.create({ db: tx });
+        const table = `"${scoped.tableName.replace(/"/g, '""')}"`;
+        // Reload after locking so the save lifecycle cannot clobber a concurrent edit.
+        await tx.query(
+          `UPDATE ${table} SET body = body WHERE id = ? AND tenant_id = ?`,
+          commentId,
+          comment.tenantId,
+        );
+        const current = await scoped.get(commentId);
+        if (!current) throw new Error('Comment not found.');
+        current.status = status;
+        await current.save();
+        return current;
+      });
     });
   }
 
@@ -339,8 +346,11 @@ export class CommentService {
       body,
       mentions,
       idempotencyKey,
-      parentCommentId,
+      parentCommentId: inputParentCommentId,
     } = commentOptions;
+    const parentCommentId = inputParentCommentId
+      ? canonicalUuid(inputParentCommentId)
+      : inputParentCommentId;
     if (!inputTenantId || !inputAuthorUserId) {
       throw new TypeError('Comments require a tenant and author.');
     }
@@ -520,7 +530,7 @@ export class CommentService {
               body: retainedBody,
               mentions: [...row.mentionUserIds].sort(),
               ...(row.parentCommentId
-                ? { parentCommentId: row.parentCommentId }
+                ? { parentCommentId: canonicalUuid(row.parentCommentId) }
                 : {}),
             }) === requestDigest,
         )
@@ -529,7 +539,12 @@ export class CommentService {
       }
       return row;
     });
-    if (!this.options.mentionNotifications || !comment.id) return comment;
+    if (
+      !this.options.mentionNotifications ||
+      !comment.id ||
+      comment.status !== 'visible'
+    )
+      return comment;
     for (const recipientUserId of comment.mentionUserIds) {
       if (
         canonicalUuid(recipientUserId) === canonicalUuid(comment.authorUserId)

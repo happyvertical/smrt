@@ -135,3 +135,11 @@ Parentless keyed-create digests preserve the original v1 shape across upgrades.
 After an authorized edit, replay verifies the original creation body against retained
 revision history and returns the current comment; edited content is not a new create
 payload. Revision history must be retained while the keyed comment is retained.
+
+Mention delivery is limited to visible comments, including keyed retries. Pending,
+hidden and deleted bodies never reach the mention adapter. Approval does not
+send notifications automatically; hosts may explicitly retry the original keyed
+create after approval to recover delivery. Moderation uses the save lifecycle on
+a locked and freshly reloaded row, preserving change-feed and cache invalidation.
+Parent comment UUIDs are canonicalized before lookup, persistence and retry hashing.
+Reply-only embeds show a composer only while a reply target is selected.

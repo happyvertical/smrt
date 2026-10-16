@@ -160,8 +160,13 @@ it('renders thread parents and sends replies through the parent-specific callbac
     },
   });
   expect(screen.getByText('Reply to Ada', { selector: 'small' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Post comment' })).toBeNull();
   await userEvent.click(screen.getByRole('button', { name: 'Reply to Ada' }));
   await userEvent.type(screen.getByLabelText('Add a comment'), 'Next shift');
   await userEvent.click(screen.getByRole('button', { name: 'Post comment' }));
   expect(onreply).toHaveBeenCalledWith('1', 'Next shift');
+  expect(screen.queryByRole('button', { name: 'Post comment' })).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: 'Reply to Ada' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Cancel reply' }));
+  expect(screen.queryByRole('button', { name: 'Post comment' })).toBeNull();
 });

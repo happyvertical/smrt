@@ -6,7 +6,10 @@ import { ParticipationService } from './services/ParticipationService.js';
 import './models/ParticipationPolicy.js';
 import './models/ParticipationBan.js';
 import './models/ParticipationRateBucket.js';
-import { digestRunOnceContent } from '@happyvertical/smrt-core';
+import {
+  digestRunOnceContent,
+  getChangesSince,
+} from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { UserNotificationService } from '@happyvertical/smrt-messages';
 import {
@@ -660,6 +663,30 @@ describe.each([
       };
       return { db, input, service: new CommentService({ ...access, db }) };
     }
+
+    it('replays keyed replies across equivalent parent UUID spellings', async () => {
+      const { db, input, service } = await fixture();
+      const parent = await service.create({
+        ...input,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      const replyInput = {
+        ...input,
+        parentCommentId: (parent.id ?? '').toUpperCase(),
+      };
+      const reply = await service.create(replyInput);
+      expect(reply.parentCommentId).toBe(parent.id);
+      expect(
+        (
+          await service.create({
+            ...replyInput,
+            parentCommentId: parent.id ?? '',
+          })
+        ).id,
+      ).toBe(reply.id);
+      await db.query('DELETE FROM _smrt_run_once_claims');
+      expect((await service.create(replyInput)).id).toBe(reply.id);
+    });
 
     it('replays legacy parentless bindings with and without retained receipts', async () => {
       const { db, input, service } = await fixture();
@@ -1446,6 +1473,73 @@ describe.each([
       );
     return { db, tenantId, request, policy, ban };
   }
+  it('preserves a concurrent author edit while hiding the comment', async () => {
+    const { db, tenantId, request } = await fixture();
+    const service = new CommentService({
+      db,
+      actor: { tenantId, userId: request.actorUserId },
+      authorizeRecord: async () => true,
+    });
+    const row = await service.create({
+      tenantId,
+      authorUserId: request.actorUserId,
+      metaType: request.recordType,
+      metaId: request.recordId,
+      body: 'original',
+    });
+    await Promise.all([
+      service.edit(row.id ?? '', 'edited'),
+      service.moderate(row.id ?? '', 'hidden'),
+    ]);
+    expect(
+      (await service.listForRecord(request.recordType, request.recordId))[0],
+    ).toMatchObject({ body: 'edited', status: 'hidden' });
+  });
+
+  it('withholds invisible mention bodies and emits lifecycle updates when moderating', async () => {
+    const { db, tenantId, request, policy } = await fixture();
+    await policy({ moderationMode: 'pre_moderated' });
+    const notifyMention = vi.fn().mockResolvedValue(undefined);
+    const service = new CommentService({
+      db,
+      actor: { tenantId, userId: request.actorUserId },
+      authorizeRecord: async () => true,
+      mentionNotifications: { notifyMention },
+    });
+    const input = {
+      tenantId,
+      authorUserId: request.actorUserId,
+      metaType: request.recordType,
+      metaId: request.recordId,
+      body: 'not approved',
+      mentions: [crypto.randomUUID()],
+      idempotencyKey: crypto.randomUUID(),
+    };
+    const row = await service.create(input);
+    expect(notifyMention).not.toHaveBeenCalled();
+    const changes = async () =>
+      (
+        await getChangesSince(db, {
+          since: 0,
+          tenantId,
+          tables: ['record_comments'],
+        })
+      ).changes.filter(
+        (change) => change.rowId === row.id && change.operation === 'update',
+      ).length;
+    const before = await changes();
+    await service.moderate(row.id ?? '', 'visible');
+    expect(await changes()).toBeGreaterThan(before);
+    expect(notifyMention).not.toHaveBeenCalled();
+    await service.create(input);
+    expect(notifyMention).toHaveBeenCalledTimes(1);
+    for (const status of ['hidden', 'deleted'] as const) {
+      await service.moderate(row.id ?? '', status);
+      await service.create(input);
+      expect(notifyMention).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it('deduplicates reports and enforces bans, report quota and visible targets', async () => {
     const { db, tenantId, request, policy, ban } = await fixture();
     const service = new CommentService({

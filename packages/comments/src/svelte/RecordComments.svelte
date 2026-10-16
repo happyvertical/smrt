@@ -72,7 +72,7 @@ async function submit() {
       <li data-parent={comment.parentCommentId ?? undefined}><strong>{comment.authorLabel}</strong><p>{comment.body}</p>{#if comment.createdAtLabel}<small>{comment.createdAtLabel}</small>{/if}{#if comment.parentCommentId}<small>Reply to {comments.find(parent => parent.id === comment.parentCommentId)?.authorLabel ?? 'comment'}</small>{/if}{#if onreply}<button type="button" disabled={pending} onclick={() => { replyTo = comment.id; }}>Reply to {comment.authorLabel}</button>{/if}</li>
     {/each}
   </ol>
-  {#if onsubmit || onreply}
+  {#if onsubmit || (onreply && replyTo)}
     <form onsubmit={(event) => { event.preventDefault(); void submit(); }}>
       {#if replyTo}<p>Replying to {comments.find(comment => comment.id === replyTo)?.authorLabel ?? 'comment'} <button type="button" disabled={pending} onclick={() => { replyTo = null; }}>Cancel reply</button></p>{/if}
       <label for={inputId}>Add a comment</label>

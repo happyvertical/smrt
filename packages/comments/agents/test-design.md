@@ -104,3 +104,14 @@ The baseline rejects both original-spelling writes under the canonical guard
 context and revision reads under the replay context. Mutation callbacks and
 history reads use the stored comment tenant spelling; quota/policy scope remains
 canonical. The full SQLite/DuckDB/PostgreSQL suite validates the correction.
+
+## PR4039 accepted external feedback / round4
+
+- Canonical parent UUID: keyed reply with uppercase parent succeeds and replays
+  lowercase/uppercase before and after receipt cleanup on all SQL dialects.
+- Notification visibility: pending create and hidden/deleted replay never call
+  the adapter; explicit visible replay can deliver. Approval alone does not notify.
+- Moderation lifecycle: real `_smrt_changes` update exists after moderation save;
+  transaction locks and reloads before save to preserve concurrent body edits.
+- Reply-only component has no root composer before selection, after success or
+  after cancel. Baseline regression run fails five SQLite/DuckDB/component cases.
