@@ -23,9 +23,10 @@ export interface AgreementParty {
   id: string;
 }
 
-/** `draft → active | terminated`; active versions can be superseded. */
+/** Drafts activate or cancel; previously active versions supersede or terminate. */
 export const AGREEMENT_STATUSES = [
   'draft',
+  'cancelled',
   'active',
   'superseded',
   'terminated',

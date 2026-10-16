@@ -11,6 +11,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgreementCollection } from '../collections/AgreementCollection.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
+
+import { agreementHistoryCases } from './agreement-history-cases.js';
+
 const KIND = 'revenue_share';
 const COOP = { kind: 'organization', id: 'worker-coop' };
 const WORKER = { kind: 'worker', id: 'worker-17' };
@@ -131,4 +134,5 @@ describePostgres('Agreement PostgreSQL effective-dated terms', () => {
     expect((await agreements.get({ id: global.id }))?.status).toBe('active');
     expect((await agreements.get({ id: global.id }))?.effectiveTo).toBeNull();
   });
+  agreementHistoryCases(() => agreements);
 });

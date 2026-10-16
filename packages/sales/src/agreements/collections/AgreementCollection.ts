@@ -61,16 +61,32 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
   ): Promise<Agreement | null> {
     const partyAValue = serializeAgreementParty(partyA);
     const partyBValue = serializeAgreementParty(partyB);
-    const candidates = await this.findGoverningCandidates(
-      kind,
-      partyAValue,
-      partyBValue,
-      tenantId === undefined ? this.ambientTenantId() : tenantId,
-    );
-    const matches = candidates.filter(
-      (agreement) =>
-        agreement.status !== 'draft' && agreement.isEffectiveAt(at),
-    );
+    const lane = tenantId === undefined ? this.ambientTenantId() : tenantId;
+    const governs = (agreement: Agreement) =>
+      agreement.status !== 'draft' &&
+      agreement.status !== 'cancelled' &&
+      agreement.isEffectiveAt(at);
+    let matches = (
+      await this.findGoverningCandidates(
+        kind,
+        partyAValue,
+        partyBValue,
+        lane,
+        false,
+      )
+    ).filter(governs);
+    // A draft or later tenant version must not erase earlier global history.
+    if (matches.length === 0 && lane != null) {
+      matches = (
+        await this.findGoverningCandidates(
+          kind,
+          partyAValue,
+          partyBValue,
+          null,
+          false,
+        )
+      ).filter(governs);
+    }
     if (matches.length > 1) {
       throw new Error(
         `Agreement overlap for '${kind}' parties at ${at.toISOString()}; resolve the conflicting effective intervals before using these terms`,
@@ -91,6 +107,11 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
     if (!latest) {
       throw new Error(
         `AgreementCollection.createAmendment: no versions exist for '${kind}' parties — create the initial agreement first`,
+      );
+    }
+    if (latest.tenantId !== (this.ambientTenantId() ?? null)) {
+      throw new Error(
+        'Create an initial tenant agreement before amending global terms',
       );
     }
     if (changes.terms !== undefined && Array.isArray(changes.terms)) {
@@ -165,6 +186,34 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
         );
       }
       const predecessor = predecessors[0];
+      // Validate the resulting intervals before mutating either persisted row.
+      // Later activation and backdating must fail here, not corrupt read history.
+      const overlaps = versions.some((version) => {
+        if (
+          version.id === draft.id ||
+          version.id === predecessor?.id ||
+          version.status === 'draft' ||
+          version.status === 'cancelled'
+        )
+          return false;
+        return (
+          (!draft.effectiveTo ||
+            !version.effectiveFrom ||
+            version.effectiveFrom < draft.effectiveTo) &&
+          (!version.effectiveTo ||
+            version.effectiveTo > (draft.effectiveFrom as Date))
+        );
+      });
+      if (overlaps)
+        throw new Error('Agreement amendment would overlap governing history');
+      if (
+        predecessor?.effectiveFrom &&
+        predecessor.effectiveFrom >= draft.effectiveFrom
+      ) {
+        throw new Error(
+          'Agreement amendment would overlap the predecessor start',
+        );
+      }
       if (predecessor) {
         predecessor.effectiveTo = draft.effectiveFrom;
         predecessor.supersede();

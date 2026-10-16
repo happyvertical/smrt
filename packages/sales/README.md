@@ -140,7 +140,14 @@ consumer domain. Versions are rows: `createAmendment()` creates a draft and
 intervals are half-open (`[effectiveFrom, effectiveTo)`), and `activeFor()` is
 an as-of query: it can return a superseded or terminated version that governed
 the supplied record date, never terms inferred from today's status. Ambiguous
-overlapping intervals fail closed. Callers that calculate money must snapshot
+overlapping intervals fail closed. Activation rejects backdated or out-of-order
+amendments that would overlap existing history. Ending a draft cancels it without
+making it govern; closed intervals cannot be reopened. Party JSON is canonicalized
+before persistence, so property order does not change an agreement's identity.
+Tenant lookups fall back to global terms for each requested date when no tenant
+version governs that date. A tenant must explicitly create its initial version
+before using amendment helpers; global terms are never implicitly copied into a
+tenant amendment. Callers that calculate money must snapshot
 the returned version at their authoritative event; this model does not settle
 or allocate funds.
 

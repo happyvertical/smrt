@@ -10,7 +10,8 @@ import {
 } from '../types.js';
 
 const STATUS_TRANSITIONS: Record<AgreementStatus, AgreementStatus[]> = {
-  draft: ['active', 'terminated'],
+  draft: ['active', 'cancelled'],
+  cancelled: [],
   active: ['superseded', 'terminated'],
   superseded: [],
   terminated: [],
@@ -18,6 +19,7 @@ const STATUS_TRANSITIONS: Record<AgreementStatus, AgreementStatus[]> = {
 
 const loadedStatus = new WeakMap<Agreement, AgreementStatus>();
 const frozenTerms = new WeakMap<Agreement, string>();
+const frozenEnd = new WeakMap<Agreement, number | null>();
 
 /** Validates and canonically serializes a public counterparty descriptor. */
 export function serializeAgreementParty(party: AgreementParty): string {
@@ -132,6 +134,7 @@ export class Agreement extends SmrtObject {
       loadedStatus.set(this, this.status);
       if (this.status !== 'draft') {
         frozenTerms.set(this, this.serializeFrozenTerms());
+        frozenEnd.set(this, this.effectiveTo?.getTime() ?? null);
       }
     }
     return this;
@@ -215,21 +218,51 @@ export class Agreement extends SmrtObject {
     ) {
       this.effectiveTo = at;
     }
-    this.status = 'terminated';
+    this.status = this.status === 'draft' ? 'cancelled' : 'terminated';
   }
 
   override async save(): Promise<this> {
+    // Natural identity is semantic JSON, never caller property order/spacing.
+    const partyA = this.getPartyA();
+    const partyB = this.getPartyB();
+    if (partyA) this.partyA = serializeAgreementParty(partyA);
+    if (partyB) this.partyB = serializeAgreementParty(partyB);
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
+    this.assertEffectiveIntervalUnchanged(prior);
     this.assertFrozenTermsUnchanged();
     await this.assertNaturalKeyNotTaken();
-    if (this.status !== 'draft') this.assertValidTerms();
+    if (this.status !== 'draft' && this.status !== 'cancelled')
+      this.assertValidTerms();
     const result = (await super.save()) as this;
     loadedStatus.set(this, this.status);
     if (this.status !== 'draft' && !frozenTerms.has(this)) {
       frozenTerms.set(this, this.serializeFrozenTerms());
     }
+    if (this.status !== 'draft') {
+      frozenEnd.set(this, this.effectiveTo?.getTime() ?? null);
+    }
     return result;
+  }
+
+  private assertEffectiveIntervalUnchanged(
+    prior: AgreementStatus | undefined,
+  ): void {
+    const captured = frozenEnd.get(this);
+    const current = this.effectiveTo?.getTime() ?? null;
+    if (captured === undefined || captured === current) return;
+    const closing =
+      prior === 'active' &&
+      (this.status === 'superseded' || this.status === 'terminated');
+    if (
+      !closing ||
+      current === null ||
+      (captured !== null && current > captured)
+    ) {
+      throw new Error(
+        'Agreement effective interval is immutable except for lifecycle closure',
+      );
+    }
   }
 
   private assertValidTerms(): void {
