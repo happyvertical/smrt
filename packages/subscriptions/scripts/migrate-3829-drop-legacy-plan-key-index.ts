@@ -3,7 +3,7 @@
 /** Remove the pre-#3829 global subscription-plan key index after manifest migration. */
 import { getDatabase } from '@happyvertical/sql';
 
-const legacyIndex = '_smrt_subscription_plans_plan_key_idx';
+import { dropLegacyPlanKeyIndex } from './plan-key.ts';
 
 function typeFor(input: string): 'postgres' | 'duckdb' | 'sqlite' {
   if (/^postgres(?:ql)?:/i.test(input)) return 'postgres';
@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   }
   const db = await getDatabase({ type, url });
   try {
-    await db.query(`DROP INDEX IF EXISTS "${legacyIndex}"`);
+    await dropLegacyPlanKeyIndex(db);
   } finally {
     await db.close?.();
   }

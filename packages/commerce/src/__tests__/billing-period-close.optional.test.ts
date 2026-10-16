@@ -120,6 +120,43 @@ describePostgres('smrt#3060 billing-period close on PostgreSQL', () => {
     await (admin as { close?: () => Promise<void> } | undefined)?.close?.();
   });
 
+  it.each([
+    'free',
+    'pay_what_you_can',
+  ] as const)('bills %s using explicit subscription pricing', async (mode) => {
+    const db = await getTestDatabase({
+      type: 'postgres',
+      url: String(process.env.DATABASE_URL),
+      classes: OBJECTS,
+    });
+    connections.push(db);
+    const world = await createBillingWorld(db);
+    const period = currentMonth();
+    await withSystemContext(async () => {
+      const [subscription] = await world.subscriptions.list({
+        where: { tenantId: SOLO },
+      });
+      if (!subscription) throw new Error('missing subscription');
+      const plan = await world.plans.create({
+        planKey: `explicit-${mode}`,
+        name: 'Explicit membership',
+        pricingMode: mode,
+        priceAmount: 0,
+        minimumAmount: mode === 'pay_what_you_can' ? 500 : 0,
+        suggestedAmount: mode === 'pay_what_you_can' ? 1500 : 0,
+      });
+      subscription.planId = String(plan.id);
+      subscription.agreedAmount = mode === 'pay_what_you_can' ? 750 : null;
+      await subscription.save();
+    });
+    await world.provider.closePeriod(period);
+    const invoices = await invoicesOf(world, SOLO);
+    if (mode === 'free') expect(invoices).toEqual([]);
+    else expect(invoices[0]?.subtotal).toBe(750);
+    await world.provider.closePeriod(period);
+    expect(await invoicesOf(world, SOLO)).toHaveLength(mode === 'free' ? 0 : 1);
+  });
+
   it('closes, settles, and credits replay-safely across two connections', async () => {
     // Committed writes on real connections: the lease and inbox claims must
     // hold across sessions, which a single rolled-back transaction cannot show.

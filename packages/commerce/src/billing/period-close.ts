@@ -862,7 +862,7 @@ async function collectFlatPlans(
       periodEnd: window.end,
       flat: {
         subscriptionId: String(subscription.id),
-        planAmount: Number(plan.priceAmount),
+        planAmount: subscriptionAmount(subscription, plan),
         label: `${plan.name || plan.planKey}${forTenant}`,
         windowStart: window.start,
         windowEnd: window.end,
@@ -875,6 +875,27 @@ async function collectFlatPlans(
   return candidates;
 }
 
+/** Resolve the subscriber's charge without treating a suggested amount as consent. */
+function subscriptionAmount(
+  subscription: TenantSubscription,
+  plan: SubscriptionPlan,
+): number {
+  if (plan.pricingMode === 'free') return 0;
+  if (plan.pricingMode === 'pay_what_you_can') {
+    if (
+      subscription.agreedAmount === null ||
+      !Number.isSafeInteger(subscription.agreedAmount) ||
+      subscription.agreedAmount < plan.minimumAmount
+    ) {
+      throw new Error('Invalid agreedAmount for pay_what_you_can subscription');
+    }
+    return subscription.agreedAmount;
+  }
+  if (plan.pricingMode !== 'fixed')
+    throw new Error('Invalid subscription pricingMode');
+  return Number(plan.priceAmount);
+}
+
 /** Period-independent eligibility of a flat plan subscription. */
 function isFlatPlan(
   subscription: TenantSubscription,
@@ -882,7 +903,8 @@ function isFlatPlan(
 ): boolean {
   if (subscription.stripeSubscriptionId) return false;
   if (plan.billingInterval !== 'month') return false;
-  if (!Number.isSafeInteger(plan.priceAmount) || plan.priceAmount <= 0) {
+  const amount = subscriptionAmount(subscription, plan);
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
     return false;
   }
   if (subscription.status === 'canceled' && !subscription.canceledAt) {

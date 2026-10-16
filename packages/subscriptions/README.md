@@ -48,7 +48,12 @@ subscription and plan.
   metadata (`externalProvider`, `providerProductId`, `providerPriceId`).
 - `TenantSubscription` binds a tenant or external subscriber to a plan over an
   effective period and records its chosen `agreedAmount` in integer minor
-  units when applicable.
+  units for pay-what-you-can plans. Such subscriptions require an amount at
+  least the plan minimum; free/fixed subscriptions must leave it null.
+  Free and pay-what-you-can plans require `priceAmount: 0`; fixed plans use
+  `priceAmount`. Monthly commerce period-close bills tenant subscribers using
+  their agreed amount for pay-what-you-can, never the suggested amount, and
+  skips free plans. External subscriber invoice routing remains host-owned.
 - `TenantUsageMetric` is immutable, idempotent usage evidence.
 - `SubscriptionResolver` combines current subscription, plan, and batched usage
   summaries into one entitlement decision.
@@ -68,8 +73,8 @@ coherent.
 
 ## Upgrade note
 
-Existing databases created before #3829 retain the global
-`_smrt_subscription_plans_plan_key_idx` unless it is explicitly removed. Run
+Existing databases created before #3829 may retain the global
+`_smrt_subscription_plans_plan_key_idx` on older migration runners. Run
 `scripts/migrate-3829-drop-legacy-plan-key-index.ts` after the ordinary manifest
 migration so different tenants can reuse a plan key. The script supports SQLite
 and PostgreSQL and refuses DuckDB, whose inline unique constraint needs a

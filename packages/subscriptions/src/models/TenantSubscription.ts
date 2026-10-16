@@ -151,6 +151,19 @@ export class TenantSubscription extends SmrtObject {
         'agreedAmount must be a non-negative integer minor-unit amount',
       );
     }
+    const plan = await this.db.get('_smrt_subscription_plans', {
+      id: this.planId,
+    });
+    if (plan?.pricing_mode === 'pay_what_you_can') {
+      if (
+        this.agreedAmount === null ||
+        this.agreedAmount < Number(plan.minimum_amount)
+      ) {
+        throw new Error('agreedAmount must meet the plan minimumAmount');
+      }
+    } else if (this.agreedAmount !== null) {
+      throw new Error('agreedAmount requires a pay_what_you_can plan');
+    }
   }
 
   isEntitled(now = new Date()): boolean {

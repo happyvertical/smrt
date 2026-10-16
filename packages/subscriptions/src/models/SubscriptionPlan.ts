@@ -137,6 +137,14 @@ export class SubscriptionPlan extends SmrtObject {
 
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
+    if (!['free', 'fixed', 'pay_what_you_can'].includes(this.pricingMode)) {
+      throw new Error('Invalid pricingMode');
+    }
+    if (this.pricingMode !== 'fixed' && this.priceAmount !== 0) {
+      throw new Error(
+        'priceAmount must be zero for free and pay_what_you_can plans',
+      );
+    }
     for (const [name, value] of [
       ['priceAmount', this.priceAmount],
       ['minimumAmount', this.minimumAmount],

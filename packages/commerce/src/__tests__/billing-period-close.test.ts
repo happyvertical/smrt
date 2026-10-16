@@ -126,6 +126,37 @@ describe('smrt#3060 billing-period close', () => {
     expect('BillingPaymentAttemptCollection' in commerceRoot).toBe(false);
   });
 
+  it.each([
+    'free',
+    'pay_what_you_can',
+  ] as const)('bills %s using explicit subscription pricing', async (mode) => {
+    await system(async () => {
+      const [subscription] = await world.subscriptions.list({
+        where: { tenantId: SOLO },
+      });
+      if (!subscription) throw new Error('missing subscription');
+      const plan = await world.plans.create({
+        planKey: `explicit-${mode}`,
+        name: 'Explicit membership',
+        pricingMode: mode,
+        priceAmount: 0,
+        minimumAmount: mode === 'pay_what_you_can' ? 500 : 0,
+        suggestedAmount: mode === 'pay_what_you_can' ? 1500 : 0,
+      });
+      subscription.planId = String(plan.id);
+      subscription.agreedAmount = mode === 'pay_what_you_can' ? 750 : null;
+      await subscription.save();
+    });
+    await world.provider.closePeriod(period);
+    const invoices = await invoiceFor(world, PROVIDER, SOLO);
+    if (mode === 'free') expect(invoices).toEqual([]);
+    else expect(invoices[0]?.subtotal).toBe(750);
+    await world.provider.closePeriod(period);
+    expect(await invoiceFor(world, PROVIDER, SOLO)).toHaveLength(
+      mode === 'free' ? 0 : 1,
+    );
+  });
+
   it('invoices flat and usage lines per billing owner, pushes them with provider tax, and posts revenue', async () => {
     await world.usage(SITE);
     await world.usage(SITE);
