@@ -336,7 +336,11 @@ export class CommissionPlan extends SmrtObject {
   getWaterfallPlan(): WaterfallPlan | null {
     const steps = this.getSteps();
     const remainderSink = this.getRemainderSink();
-    if (steps.length === 0 || !remainderSink) return null;
+    if (steps.length === 0) return null;
+    if (!remainderSink)
+      throw new Error(
+        'CommissionPlan waterfall steps require a remainder sink',
+      );
     const applicationFeeOffsetRecipient = this.getRecipientDescriptor(
       this.applicationFeeOffsetRecipient,
     );
@@ -383,6 +387,7 @@ export class CommissionPlan extends SmrtObject {
       );
     }
     validateCommissionPlanComponents(this.getComponents());
+    this.validateEffectiveWindow();
     this.validateWaterfallTerms();
     this.status = 'active';
   }
@@ -431,6 +436,7 @@ export class CommissionPlan extends SmrtObject {
     await this.assertNaturalKeyNotTaken();
     if (this.status === 'active') {
       validateCommissionPlanComponents(this.getComponents());
+      this.validateEffectiveWindow();
       this.validateWaterfallTerms();
     }
     const result = (await super.save()) as this;
@@ -553,6 +559,17 @@ export class CommissionPlan extends SmrtObject {
   private validateWaterfallTerms(): void {
     const waterfall = this.getWaterfallPlan();
     if (waterfall) validateWaterfallPlan(waterfall);
+  }
+
+  private validateEffectiveWindow(): void {
+    if (
+      this.effectiveFrom &&
+      this.effectiveTo &&
+      this.effectiveTo <= this.effectiveFrom
+    )
+      throw new Error(
+        'CommissionPlan effectiveTo must be later than effectiveFrom',
+      );
   }
 
   private getRecipientDescriptor(

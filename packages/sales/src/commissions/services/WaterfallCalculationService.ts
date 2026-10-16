@@ -1,6 +1,5 @@
 /** Deterministic calculation for version-two commission waterfalls. */
 
-import { roundCents } from '../money.js';
 import type {
   WaterfallCalculationResult,
   WaterfallEvent,
@@ -56,13 +55,40 @@ export function calculateWaterfall(
   options: CalculateWaterfallOptions = {},
 ): WaterfallCalculationResult {
   validateWaterfallPlan(plan);
-  validateEvent(plan, event);
+  const calculationEvent: WaterfallEvent = options.frozenInputs
+    ? {
+        grossAmountCents: options.frozenInputs.grossAmountCents,
+        currency: options.frozenInputs.currency,
+        facts: options.frozenInputs.facts,
+        customBases: options.frozenInputs.customBases,
+        applicationFeeSettledCents:
+          options.frozenInputs.applicationFeeSettledCents,
+      }
+    : event;
+  validateEvent(plan, calculationEvent);
+  if (
+    options.frozenInputs &&
+    (options.frozenInputs.planKey !== plan.planKey ||
+      options.frozenInputs.planVersion !== plan.version)
+  )
+    throw new Error(
+      'Waterfall frozen inputs belong to a different plan version',
+    );
   const facts = options.frozenInputs?.facts ?? event.facts ?? {};
   const frozenInputs: WaterfallFrozenInputs = {
+    planKey: options.frozenInputs?.planKey ?? plan.planKey,
+    planVersion: options.frozenInputs?.planVersion ?? plan.version,
+    currency: options.frozenInputs?.currency ?? event.currency,
+    grossAmountCents:
+      options.frozenInputs?.grossAmountCents ?? event.grossAmountCents,
     facts: { ...facts },
+    customBases: {
+      ...(options.frozenInputs?.customBases ?? event.customBases),
+    },
     recipientByStep: { ...(options.frozenInputs?.recipientByStep ?? {}) },
     remainderSink:
-      options.frozenInputs?.remainderSink ?? resolveSink(plan, event, options),
+      options.frozenInputs?.remainderSink ??
+      resolveSink(plan, calculationEvent, options),
     applicationFeeSettledCents:
       options.frozenInputs?.applicationFeeSettledCents ??
       event.applicationFeeSettledCents ??
@@ -73,10 +99,10 @@ export function calculateWaterfall(
     'applicationFeeSettledCents',
   );
 
-  let remainingCents = event.grossAmountCents;
+  let remainingCents = calculationEvent.grossAmountCents;
   let redirectedToSinkCents = 0;
   let totalRecipientAllocatedCents = 0;
-  let appliedFeeOffsetCents = 0;
+  let remainingFeeOffsetCents = frozenInputs.applicationFeeSettledCents;
   const steps: WaterfallStepTrace[] = [];
 
   for (const step of plan.steps) {
@@ -93,26 +119,29 @@ export function calculateWaterfall(
       });
       continue;
     }
-    const baseCents = resolveBase(step, event, remainingCents);
+    const baseCents = resolveBase(step, calculationEvent, remainingCents);
     const amountCents = resolveAmount(step, baseCents);
     if (amountCents > remainingCents) {
       throw new Error(
         `Waterfall step '${step.key}' allocates ${amountCents} cents but only ${remainingCents} cents remain`,
       );
     }
-    const recipient = resolveStepRecipient(step, event, options, frozenInputs);
+    const recipient = resolveStepRecipient(
+      step,
+      calculationEvent,
+      options,
+      frozenInputs,
+    );
     let applicationFeeOffsetCents = 0;
     if (
       recipient &&
       descriptorMatches(plan.applicationFeeOffsetRecipient, step.recipient)
     ) {
-      applicationFeeOffsetCents = frozenInputs.applicationFeeSettledCents;
-      if (applicationFeeOffsetCents > amountCents) {
-        throw new Error(
-          `Waterfall application fee offset ${applicationFeeOffsetCents} exceeds platform allocation ${amountCents}`,
-        );
-      }
-      appliedFeeOffsetCents += applicationFeeOffsetCents;
+      applicationFeeOffsetCents = Math.min(
+        remainingFeeOffsetCents,
+        amountCents,
+      );
+      remainingFeeOffsetCents -= applicationFeeOffsetCents;
     }
     remainingCents -= amountCents;
     if (recipient) totalRecipientAllocatedCents += amountCents;
@@ -127,14 +156,16 @@ export function calculateWaterfall(
       payableCents: recipient ? amountCents - applicationFeeOffsetCents : 0,
     });
   }
-  if (appliedFeeOffsetCents !== frozenInputs.applicationFeeSettledCents) {
+  if (remainingFeeOffsetCents !== 0) {
     throw new Error(
       'Waterfall application fee offset has no resolved configured recipient allocation',
     );
   }
   const totalSinkCents = remainingCents + redirectedToSinkCents;
   const closure =
-    totalRecipientAllocatedCents + totalSinkCents - event.grossAmountCents;
+    totalRecipientAllocatedCents +
+    totalSinkCents -
+    calculationEvent.grossAmountCents;
   if (closure !== 0)
     throw new Error(`Waterfall closure failed by ${closure} cents`);
   return {
@@ -142,7 +173,7 @@ export function calculateWaterfall(
       planKey: plan.planKey,
       planVersion: plan.version,
       currency: plan.currency,
-      grossAmountCents: event.grossAmountCents,
+      grossAmountCents: calculationEvent.grossAmountCents,
       steps,
       remainderSink: frozenInputs.remainderSink,
       remainderSinkCents: totalSinkCents,
@@ -198,12 +229,31 @@ function resolveBase(
 function resolveAmount(step: WaterfallStep, baseCents: number): number {
   const raw =
     step.amount.kind === 'percent'
-      ? roundCents(baseCents * step.amount.rate)
+      ? roundPercentCents(baseCents, step.amount.rate)
       : step.amount.amountCents;
   return Math.min(
     step.capCents ?? Number.MAX_SAFE_INTEGER,
     Math.max(step.floorCents ?? 0, raw),
   );
+}
+
+function roundPercentCents(baseCents: number, rate: number): number {
+  const [numerator, denominator] = decimalFraction(rate);
+  const rounded =
+    (BigInt(baseCents) * numerator + denominator / 2n) / denominator;
+  if (rounded > BigInt(Number.MAX_SAFE_INTEGER))
+    throw new Error('Waterfall percent allocation exceeds safe integer cents');
+  return Number(rounded);
+}
+
+function decimalFraction(value: number): [bigint, bigint] {
+  const [coefficient, exponentText] = value.toString().toLowerCase().split('e');
+  const exponent = exponentText ? Number(exponentText) : 0;
+  const [whole, fractional = ''] = coefficient.split('.');
+  const digits = `${whole}${fractional}`;
+  const scale = fractional.length - exponent;
+  if (scale <= 0) return [BigInt(digits) * 10n ** BigInt(-scale), 1n];
+  return [BigInt(digits), 10n ** BigInt(scale)];
 }
 
 function conditionsMatch(
@@ -276,6 +326,13 @@ export function validateWaterfallPlan(plan: WaterfallPlan): void {
   }
   if (!plan.remainderSink?.kind)
     throw new Error('Waterfall plan requires a remainderSink descriptor');
+  if (
+    plan.applicationFeeOffsetRecipient &&
+    !plan.applicationFeeOffsetRecipient.kind
+  )
+    throw new Error(
+      'Waterfall application fee offset requires a recipient descriptor',
+    );
 }
 
 function validateEvent(plan: WaterfallPlan, event: WaterfallEvent): void {

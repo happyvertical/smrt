@@ -255,7 +255,12 @@ export interface WaterfallEvent {
 
 /** Frozen authoritative inputs needed for a reproducible replay. */
 export interface WaterfallFrozenInputs {
+  planKey: string;
+  planVersion: number;
+  currency: string;
+  grossAmountCents: number;
   facts: Record<string, string | undefined>;
+  customBases: Record<string, number>;
   recipientByStep: Record<string, WaterfallResolvedRecipient | null>;
   remainderSink: WaterfallResolvedRecipient;
   applicationFeeSettledCents: number;

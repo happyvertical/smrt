@@ -165,9 +165,7 @@ export class CommissionPlanCollection extends SmrtCollection<CommissionPlan> {
           ? changes.effectiveFrom
           : latest.effectiveFrom,
       effectiveTo:
-        changes.effectiveTo !== undefined
-          ? changes.effectiveTo
-          : latest.effectiveTo,
+        changes.effectiveTo !== undefined ? changes.effectiveTo : null,
       components:
         changes.components !== undefined
           ? JSON.stringify(changes.components)
