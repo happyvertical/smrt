@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   assertHeadMatchesRemote,
@@ -20,6 +20,7 @@ function writeJson(path, value) {
 
 function createRepoFixture() {
   const repoRoot = mkdtempSync(join(tmpdir(), 'smrt-release-guard-'));
+  fixtureDirectories.push(repoRoot);
   mkdirSync(join(repoRoot, '.changeset'), { recursive: true });
   mkdirSync(join(repoRoot, 'packages/core'), { recursive: true });
   mkdirSync(join(repoRoot, 'packages/private-mobile'), { recursive: true });
@@ -50,6 +51,14 @@ function createRepoFixture() {
 
   return repoRoot;
 }
+
+const fixtureDirectories = [];
+
+afterEach(() => {
+  while (fixtureDirectories.length > 0) {
+    rmSync(fixtureDirectories.pop(), { recursive: true, force: true });
+  }
+});
 
 function spawnFromResponses(responses) {
   return (command, args) => {

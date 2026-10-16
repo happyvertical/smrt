@@ -7,10 +7,7 @@
  * Real temp-file SQLite (file:tmpdir), no mocks.
  */
 
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   EventCollection,
   EventSeries,
@@ -18,18 +15,23 @@ import {
   EventTypeCollection,
 } from '../index.js';
 import type { RecurrencePattern } from '../types';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
+
+const fixtures = createOwnedSqliteFixtures();
 
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 async function makeSeries(name: string, dbUrl = getTestDbUrl(name)) {
   const series = await EventSeriesCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(series.db);
   const types = await EventTypeCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(types.db);
   for (const [id, typeName] of [
     ['concert', 'Concert'],
     ['meeting', 'Meeting'],
@@ -40,6 +42,8 @@ async function makeSeries(name: string, dbUrl = getTestDbUrl(name)) {
   }
   return { dbUrl, series };
 }
+
+afterEach(() => fixtures.cleanup());
 
 describe('EventSeries model', () => {
   it('persists core fields and round-trips a weekly recurrence pattern', async () => {
@@ -153,6 +157,7 @@ describe('EventSeries model', () => {
     const events = await EventCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(events.db);
 
     const s = await series.create({ name: 'Linked series' });
     await s.save();

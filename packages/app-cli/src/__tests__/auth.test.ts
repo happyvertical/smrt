@@ -27,11 +27,12 @@ function buf() {
 
 let context: CliConfigContext;
 let cfgBackup: string | undefined;
+let configDir: string | undefined;
 
 beforeEach(async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'smrt-app-cli-authtest-'));
+  configDir = await mkdtemp(join(tmpdir(), 'smrt-app-cli-authtest-'));
   cfgBackup = process.env.AUTHTEST_CLI_CONFIG;
-  process.env.AUTHTEST_CLI_CONFIG = join(dir, 'config.json');
+  process.env.AUTHTEST_CLI_CONFIG = join(configDir, 'config.json');
   context = {
     envPrefix: 'AUTHTEST',
     appSlug: 'authtest',
@@ -40,9 +41,10 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  if (process.env.AUTHTEST_CLI_CONFIG) {
-    await rm(process.env.AUTHTEST_CLI_CONFIG, { force: true }).catch(() => {});
+  if (configDir) {
+    await rm(configDir, { recursive: true, force: true });
   }
+  configDir = undefined;
   process.env.AUTHTEST_CLI_CONFIG = cfgBackup;
 });
 

@@ -19,11 +19,12 @@ import {
 
 let context: CliConfigContext;
 let configFileEnvBackup: string | undefined;
+let configDir: string | undefined;
 
 beforeEach(async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'smrt-app-cli-config-'));
+  configDir = await mkdtemp(join(tmpdir(), 'smrt-app-cli-config-'));
   configFileEnvBackup = process.env.TESTCFG_CLI_CONFIG;
-  process.env.TESTCFG_CLI_CONFIG = join(dir, 'config.json');
+  process.env.TESTCFG_CLI_CONFIG = join(configDir, 'config.json');
   context = {
     envPrefix: 'TESTCFG',
     appSlug: 'testcfg',
@@ -35,9 +36,10 @@ afterEach(async () => {
   delete process.env.TESTCFG_TOKEN;
   delete process.env.TESTCFG_TOKEN_ISSUER;
   delete process.env.TESTCFG_SERVER_URL;
-  if (process.env.TESTCFG_CLI_CONFIG) {
-    await rm(process.env.TESTCFG_CLI_CONFIG, { force: true }).catch(() => {});
+  if (configDir) {
+    await rm(configDir, { recursive: true, force: true });
   }
+  configDir = undefined;
   process.env.TESTCFG_CLI_CONFIG = configFileEnvBackup;
 });
 

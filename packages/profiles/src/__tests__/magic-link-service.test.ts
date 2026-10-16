@@ -12,9 +12,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getDatabase } from '@happyvertical/sql';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createMagicLinkService,
   type MagicLinkConfig,
@@ -24,11 +23,13 @@ import {
   ProfileCollection,
   ProfileTypeCollection,
 } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
 
 const TEST_MASTER_SECRET = 'test-master-secret-32-bytes-long';
+const fixtures = createOwnedSqliteFixtures();
 
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 function tokenFromLink(link: string): string {
@@ -65,10 +66,12 @@ function makeService(
 async function seedIdentity(dbUrl: string, email: string) {
   const db = { type: 'sqlite' as const, url: dbUrl };
   const profileTypes = await ProfileTypeCollection.create({ db });
+  fixtures.track(profileTypes.db);
   const type = await profileTypes.create({ name: 'Person' });
   await type.save();
 
   const profiles = await ProfileCollection.create({ db });
+  fixtures.track(profiles.db);
   const profile = await profiles.create({
     typeId: type.id,
     name: 'Returning User',
@@ -77,6 +80,7 @@ async function seedIdentity(dbUrl: string, email: string) {
   await profile.save();
 
   const identities = await NostrIdentityCollection.create({ db });
+  fixtures.track(identities.db);
   const identity = await identities.createForProfile(
     profile,
     email,
@@ -89,8 +93,9 @@ async function seedIdentity(dbUrl: string, email: string) {
 describe('createMagicLinkService.initiate', () => {
   let dbUrl: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dbUrl = getTestDbUrl('magic-link-initiate');
+    fixtures.track(await getDatabase({ type: 'sqlite', url: dbUrl }));
   });
 
   it('creates a profile + identity for a brand-new user', async () => {
@@ -180,11 +185,14 @@ describe('createMagicLinkService.initiate', () => {
   });
 });
 
+afterEach(() => fixtures.cleanup());
+
 describe('createMagicLinkService.verify', () => {
   let dbUrl: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dbUrl = getTestDbUrl('magic-link-verify');
+    fixtures.track(await getDatabase({ type: 'sqlite', url: dbUrl }));
   });
 
   it('verifies a valid token and returns the decrypted keypair', async () => {
@@ -246,8 +254,9 @@ describe('createMagicLinkService.verify', () => {
 describe('MagicLinkTokenCollection lifecycle helpers', () => {
   let dbUrl: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dbUrl = getTestDbUrl('magic-link-collection');
+    fixtures.track(await getDatabase({ type: 'sqlite', url: dbUrl }));
   });
 
   it('finds tokens by hash, email, and identity; verifies validity', async () => {

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ObjectRegistry, smrt } from '@happyvertical/smrt-core';
@@ -90,6 +90,14 @@ describe('Contract party branches', () => {
 
   afterEach(async () => {
     await contracts?.db?.close?.();
+    for (const file of [
+      dbUrl,
+      `${dbUrl}-wal`,
+      `${dbUrl}-shm`,
+      `${dbUrl}-journal`,
+    ]) {
+      rmSync(file, { force: true });
+    }
   });
 
   it('isolates sales and purchase reads, including deprecated wrappers', async () => {

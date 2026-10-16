@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { crossPackageRef, SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 // Target class — pretend it lives in another package
 @smrt({ packageName: '@happyvertical/smrt-test-target' })
@@ -60,9 +61,7 @@ describe('@crossPackageRef (R1)', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   describe('Field registration', () => {

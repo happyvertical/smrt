@@ -27,6 +27,7 @@ import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import type { SchemaDefinition } from '../schema/types';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 /**
  * Parse index definitions from schema indexes array (SQL strings)
@@ -105,9 +106,7 @@ describe('Issue #741: STI Index Detection', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   describe('Index merging in getAllSchemas()', () => {

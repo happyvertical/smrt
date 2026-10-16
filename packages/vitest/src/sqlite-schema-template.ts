@@ -5,7 +5,6 @@ import {
   mkdirSync,
   renameSync,
   rmSync,
-  statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -14,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 interface SqliteSchemaTemplateState {
   directory: string;
   templates: Map<string, Promise<string>>;
+  dispose: () => void;
 }
 
 interface SqliteSchemaTemplateDatabase {
@@ -42,6 +42,22 @@ function removeSqliteFiles(path: string): void {
   rmSync(`${path}-shm`, { force: true });
 }
 
+async function closeDatabase(
+  database: SqliteSchemaTemplateDatabase | undefined,
+): Promise<void> {
+  try {
+    await database?.close?.();
+  } catch {
+    // Best effort: older SQLite adapters do not expose close().
+  }
+}
+
+/** Dispose this worker's schema-template cache. Internal setup lifecycle API. */
+export function disposeSqliteSchemaTemplateState(): void {
+  const globalState = globalThis as GlobalWithSqliteSchemaTemplates;
+  globalState.__smrtVitestSqliteSchemaTemplates?.dispose();
+}
+
 function getSqliteSchemaTemplateState(): SqliteSchemaTemplateState {
   const globalState = globalThis as GlobalWithSqliteSchemaTemplates;
   const existing = globalState.__smrtVitestSqliteSchemaTemplates;
@@ -55,15 +71,26 @@ function getSqliteSchemaTemplateState(): SqliteSchemaTemplateState {
   );
   mkdirSync(directory, { recursive: true });
 
+  let disposed = false;
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    process.removeListener('exit', dispose);
+    rmSync(directory, { recursive: true, force: true });
+    if (
+      globalState.__smrtVitestSqliteSchemaTemplates?.directory === directory
+    ) {
+      delete globalState.__smrtVitestSqliteSchemaTemplates;
+    }
+  };
   const state: SqliteSchemaTemplateState = {
     directory,
     templates: new Map(),
+    dispose,
   };
   globalState.__smrtVitestSqliteSchemaTemplates = state;
 
-  process.once('exit', () => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  process.once('exit', dispose);
 
   return state;
 }
@@ -169,15 +196,26 @@ export async function getDatabaseFromSqliteSchemaTemplate<
   const targetPath = getLocalSqliteFilePath(databaseOptions);
   if (!targetPath) {
     const database = await getDatabase(databaseOptions);
-    await prepare(database);
-    return database;
+    try {
+      await prepare(database);
+      return database;
+    } catch (error) {
+      await closeDatabase(database);
+      throw error;
+    }
   }
 
-  // Never replace a fixture or a database already populated by this test.
-  if (existsSync(targetPath) && statSync(targetPath).size > 0) {
+  const targetExisted = existsSync(targetPath);
+  // Never replace a caller-owned fixture, including an empty SQLite file.
+  if (targetExisted) {
     const database = await getDatabase(databaseOptions);
-    await prepare(database);
-    return database;
+    try {
+      await prepare(database);
+      return database;
+    } catch (error) {
+      await closeDatabase(database);
+      throw error;
+    }
   }
 
   const state = getSqliteSchemaTemplateState();
@@ -199,7 +237,7 @@ export async function getDatabaseFromSqliteSchemaTemplate<
       copyFileSync(templatePath, targetPath);
       return await getDatabase(databaseOptions);
     } catch (error) {
-      removeSqliteFiles(targetPath);
+      if (!targetExisted) removeSqliteFiles(targetPath);
       throw error;
     }
   }
@@ -233,12 +271,8 @@ export async function getDatabaseFromSqliteSchemaTemplate<
     if (state.templates.get(templateHash) === templatePromise) {
       state.templates.delete(templateHash);
     }
-    try {
-      await database?.close?.();
-    } catch {
-      // Best effort: older SQLite adapters do not expose close().
-    }
-    removeSqliteFiles(targetPath);
+    await closeDatabase(database);
+    if (!targetExisted) removeSqliteFiles(targetPath);
     throw error;
   } finally {
     removeSqliteFiles(snapshotPath);

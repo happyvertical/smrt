@@ -21,6 +21,9 @@ export default defineConfig({
       'src/__tests__/fixtures/**',
     ],
     environment: 'node',
+    // The package tests call the SQLite-template utility directly, so they
+    // need the same per-worker resource teardown injected for consumers.
+    setupFiles: ['./src/setup.ts'],
     testTimeout: 30000,
     hookTimeout: 30000,
     // This package cannot consume smrtVitestPlugin's injected retry policy

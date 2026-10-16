@@ -511,6 +511,9 @@ async function createIsolatedTestDbWithPostSchemaStatements(
           cacheKey: `isolated-test-db\0${schema}`,
           databaseOptions: {
             ...config,
+            // Factory cleanup owns this handle. Do not close a caller's
+            // cached PostgreSQL/SQLite adapter on a setup failure.
+            cache: false,
             __smrtSkipVitestSchemaPreparation: true,
           },
           getDatabase: async (databaseOptions) =>
@@ -521,13 +524,38 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         })
       : ((await getDatabase({
           ...config,
+          // Factory cleanup owns this handle; callers may hold the cached
+          // adapter for the same database URL (for example, test admins).
+          cache: false,
           __smrtSkipVitestSchemaPreparation: true,
         } as VitestDatabaseConnectionOptions)) as DatabaseInterfaceWithTransaction);
+
+  const abortSetup = async (error: unknown): Promise<never> => {
+    // Setup failed before ownership was handed to the returned cleanup. Close
+    // the opened handle and remove only this factory's generated SQLite path.
+    try {
+      await baseDb.close?.();
+    } catch {
+      // Best effort: preserve the original setup failure.
+    }
+    if (config.type === 'sqlite' && config.url !== ':memory:') {
+      try {
+        removeSqliteFiles(config.url);
+      } catch {
+        // Best effort: the factory owns getTestDbConfig()'s generated path.
+      }
+    }
+    throw error;
+  };
 
   // Isolated test databases are throwaway, so strip fsync durability from
   // local file-backed SQLite (#2221). The schema-preparation skip above also
   // bypasses the setup file's pragma application, so it happens here.
-  await applySqliteSpeedPragmas(baseDb, config);
+  try {
+    await applySqliteSpeedPragmas(baseDb, config);
+  } catch (error) {
+    return abortSetup(error);
+  }
 
   const applyPostSchemaStatements = async (
     schemaDb: DatabaseInterfaceWithTransaction,
@@ -702,13 +730,16 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   // lock through a pooled connection.
   if (schema && config.type === 'postgres' && postgresManifestPlan) {
     if (!baseDb.beginTransaction) {
-      throw new Error(
-        `Database adapter '${config.type}' does not support beginTransaction(). ` +
-          'This requires @happyvertical/sql with SDK PR #722 merged.',
+      return abortSetup(
+        new Error(
+          `Database adapter '${config.type}' does not support beginTransaction(). ` +
+            'This requires @happyvertical/sql with SDK PR #722 merged.',
+        ),
       );
     }
-    const schemaTransaction = await baseDb.beginTransaction();
+    let schemaTransaction: TransactionHandle | undefined;
     try {
+      schemaTransaction = await baseDb.beginTransaction();
       await schemaTransaction.query(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
         ['smrt-vitest-manifest-schema'],
@@ -744,13 +775,26 @@ async function createIsolatedTestDbWithPostSchemaStatements(
       await schemaTransaction.commit();
       systemTablesPrepared = true;
     } catch (error) {
-      if (schemaTransaction.isActive()) {
-        await schemaTransaction.rollback();
+      if (schemaTransaction?.isActive()) {
+        try {
+          await schemaTransaction.rollback();
+        } catch (rollbackError) {
+          return abortSetup(
+            new AggregateError(
+              [error, rollbackError],
+              'PostgreSQL manifest schema preparation and rollback failed.',
+            ),
+          );
+        }
       }
-      throw error;
+      return abortSetup(error);
     }
   } else if (schema && config.type !== 'sqlite') {
-    await syncSchema({ db: baseDb, schema });
+    try {
+      await syncSchema({ db: baseDb, schema });
+    } catch (error) {
+      return abortSetup(error);
+    }
   }
 
   // Transaction handles are passed to SMRT objects as already-initialized
@@ -759,20 +803,31 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   // catches the error. Provision every framework-owned system table on the base
   // connection before opening the isolated transaction.
   if (config.type === 'postgres' && !systemTablesPrepared) {
-    await ensureSystemTables(baseDb, config.type);
+    try {
+      await ensureSystemTables(baseDb, config.type);
+    } catch (error) {
+      return abortSetup(error);
+    }
   }
 
   // Begin transaction for isolation
   // Note: beginTransaction requires @happyvertical/sql with SDK PR #722 merged
   if (!baseDb.beginTransaction) {
-    throw new Error(
-      `Database adapter '${config.type}' does not support beginTransaction(). ` +
-        `This requires @happyvertical/sql with SDK PR #722 merged. ` +
-        `See: https://github.com/happyvertical/sdk/pull/722`,
+    return abortSetup(
+      new Error(
+        `Database adapter '${config.type}' does not support beginTransaction(). ` +
+          `This requires @happyvertical/sql with SDK PR #722 merged. ` +
+          `See: https://github.com/happyvertical/sdk/pull/722`,
+      ),
     );
   }
 
-  const db = await baseDb.beginTransaction();
+  let db: TransactionHandle;
+  try {
+    db = await baseDb.beginTransaction();
+  } catch (error) {
+    return abortSetup(error);
+  }
 
   // Cleanup function rolls back transaction and closes connection
   const cleanup = async (): Promise<void> => {

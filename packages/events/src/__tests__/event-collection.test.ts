@@ -9,19 +9,19 @@
  * Real temp-file SQLite (file:tmpdir), no mocks.
  */
 
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   Event,
   EventCollection,
   EventSeriesCollection,
   EventTypeCollection,
 } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
+
+const fixtures = createOwnedSqliteFixtures();
 
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 async function makeEvents(name: string) {
@@ -29,8 +29,11 @@ async function makeEvents(name: string) {
   const events = await EventCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(events.db);
   return { dbUrl, events };
 }
+
+afterEach(() => fixtures.cleanup());
 
 describe('Event model', () => {
   it('persists allDay and timeZone', async () => {
@@ -151,10 +154,12 @@ describe('Event model', () => {
     const events = await EventCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(events.db);
     const { EventParticipantCollection } = await import('../index.js');
     const participants = await EventParticipantCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(participants.db);
 
     const e = await events.create({ name: 'Game with players' });
     await e.save();
@@ -246,9 +251,11 @@ describe('EventCollection queries', () => {
     const series = await EventSeriesCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(series.db);
     const types = await EventTypeCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(types.db);
     await series.create({ id: 's1', name: 'Series 1' });
     await series.create({ id: 's2', name: 'Series 2' });
     await types.create({ id: 't1', name: 'Type 1' });

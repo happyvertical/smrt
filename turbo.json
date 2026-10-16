@@ -22,7 +22,11 @@
   ],
   "globalPassThroughEnv": [
     "PUBLISH_PACK_OUTPUT_DIR",
-    "TMPDIR"
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "CI_TEST_TMPDIR",
+    "NODE_COMPILE_CACHE"
   ],
   "tasks": {
     "generate": {

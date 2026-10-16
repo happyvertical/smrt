@@ -1,21 +1,23 @@
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { AssetCollection } from '@happyvertical/smrt-assets';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { EventAssetCollection, EventCollection } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
+
+const fixtures = createOwnedSqliteFixtures();
 
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 async function createEventFixture(dbUrl: string) {
   const events = await EventCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(events.db);
   const assets = await AssetCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(assets.db);
 
   const event = await events.create({
     name: 'Launch Event',
@@ -26,6 +28,8 @@ async function createEventFixture(dbUrl: string) {
 
   return { events, assets, event };
 }
+
+afterEach(() => fixtures.cleanup());
 
 describe('Event owned assets', () => {
   it('manages owned assets from the model API', async () => {
@@ -68,6 +72,7 @@ describe('Event owned assets', () => {
     const eventAssets = await EventAssetCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(eventAssets.db);
 
     const asset = await assets.create({
       name: 'thumbnail.png',
