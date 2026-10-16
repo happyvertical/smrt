@@ -1,6 +1,10 @@
 /** Collection helpers for generic versioned agreements. */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import {
+  invalidateCollectionCache,
+  resolveDbCacheKey,
+  SmrtCollection,
+} from '@happyvertical/smrt-core';
 import {
   assertTenantReadAllowed,
   getCurrentTenant,
@@ -220,8 +224,7 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
           'Agreement amendment would overlap the predecessor start',
         );
       }
-      draft.amendmentPredecessorId = predecessor?.id ?? null;
-      draft.amendmentPredecessorEnd = predecessor?.effectiveTo ?? null;
+      const originalEnd = predecessor?.effectiveTo ?? null;
       if (predecessor) {
         predecessor.effectiveTo = draft.effectiveFrom;
         predecessor.supersede();
@@ -229,8 +232,23 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
       }
       draft.activate();
       await draft.save();
+      // Only this operation writes restoration provenance, from the persisted
+      // predecessor it actually closed. Ordinary model writes reject it.
+      if (predecessor) {
+        await claimLifecycleRevision(draft);
+        const recorded = await agreements.db.query(
+          `UPDATE ${agreements.tableName} SET amendment_predecessor_id = $1, amendment_predecessor_end = $2 WHERE id = $3 AND status = 'active' RETURNING id`,
+          predecessor.id,
+          originalEnd?.toISOString() ?? null,
+          draft.id,
+        );
+        if (returnedRows(recorded).length !== 1)
+          throw new Error('Agreement activation changed concurrently');
+        await draft.refreshAfterLifecycleTransition();
+      }
       return draft.id as string;
     });
+    invalidateCollectionCache(resolveDbCacheKey(this.db), this.tableName);
     const activated = await this.get({ id: activatedId });
     if (!activated) throw new Error(`Agreement '${activatedId}' disappeared`);
     return activated;
@@ -302,6 +320,7 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
         throw new Error('Agreement withdrawal would overlap governing history');
       // The first compare-and-set serializes duplicate withdrawals. The second
       // protects the exact boundary being restored; any failure rolls both back.
+      await claimLifecycleRevision(successor);
       const cancelled = await tx.query(
         `UPDATE ${agreements.tableName} SET status = 'cancelled' WHERE id = $1 AND status = 'active' AND effective_from > $2 RETURNING id`,
         id,
@@ -311,6 +330,7 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
         throw new Error(
           'Agreement withdrawal lost its scheduled active transition',
         );
+      await claimLifecycleRevision(predecessor);
       const restored = await tx.query(
         `UPDATE ${agreements.tableName} SET status = 'active', effective_to = $1 WHERE id = $2 AND status = 'superseded' AND effective_to = $3 RETURNING id`,
         restoredEnd?.toISOString() ?? null,
@@ -321,7 +341,10 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
         throw new Error(
           'Agreement withdrawal predecessor changed concurrently',
         );
+      await successor.refreshAfterLifecycleTransition();
+      await predecessor.refreshAfterLifecycleTransition();
     });
+    invalidateCollectionCache(resolveDbCacheKey(this.db), this.tableName);
     const withdrawn = await this.get({ id });
     if (!withdrawn) throw new Error(`Agreement '${id}' disappeared`);
     return withdrawn;
@@ -372,7 +395,10 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
     fn: (agreements: AgreementCollection) => Promise<T>,
   ): Promise<T> {
     const db = this.db as TransactionCapableDatabase;
-    if (typeof db.transaction !== 'function') return await fn(this);
+    if (typeof db.transaction !== 'function')
+      throw new Error(
+        'Agreement amendment activation requires transaction support',
+      );
     return await db.transaction(async (tx) =>
       fn(await AgreementCollection.create({ db: tx })),
     );
@@ -384,4 +410,11 @@ export default AgreementCollection;
 function returnedRows(result: unknown): unknown[] {
   if (Array.isArray(result)) return result;
   return (result as { rows?: unknown[] })?.rows ?? [];
+}
+
+/** Use core's dialect-aware CAS, tenant write guards, revision and change feed. */
+async function claimLifecycleRevision(agreement: Agreement): Promise<void> {
+  if (!agreement.updated_at)
+    throw new Error('Agreement has no persisted revision');
+  await agreement.claimRevision(agreement.updated_at);
 }

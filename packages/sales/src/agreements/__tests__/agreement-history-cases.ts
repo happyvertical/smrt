@@ -1,5 +1,6 @@
 /** Shared SQLite/PostgreSQL history and tenant-lane regression contracts. */
 import { randomUUID } from 'node:crypto';
+import { GlobalInterceptors } from '@happyvertical/smrt-core';
 import {
   disableTenancy,
   enableTenancy,
@@ -258,7 +259,7 @@ export function agreementHistoryCases(
     try {
       await expect(
         collection().withdrawAmendment(second.id as string),
-      ).rejects.toThrow(/changed concurrently/);
+      ).rejects.toThrow(/Revision conflict/);
     } finally {
       spy.mockRestore();
     }
@@ -266,5 +267,83 @@ export function agreementHistoryCases(
     expect((await collection().get({ id: first.id }))?.effectiveTo).toEqual(
       scheduled,
     );
+  });
+  it('rejects stale predecessor saves after withdrawal without truncating restored history', async () => {
+    const { first, second } = await schedule(finiteEnd);
+    const stale = await collection().get({ id: first.id });
+    if (!stale) throw new Error('Missing predecessor');
+    await collection().withdrawAmendment(second.id as string);
+    stale.metadata = JSON.stringify({ viewed: true });
+    await expect(stale.save()).rejects.toMatchObject({
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+    expect((await collection().get({ id: first.id }))?.effectiveTo).toEqual(
+      finiteEnd,
+    );
+    expect(
+      (await collection().activeFor(kind, partyA, partyB, scheduled))?.id,
+    ).toBe(first.id);
+  });
+
+  it('rejects caller-forged activation provenance on creates and draft edits', async () => {
+    const { first } = await schedule(finiteEnd);
+    await expect(
+      create({
+        version: 3,
+        status: 'active',
+        effectiveFrom: scheduled,
+        amendmentPredecessorId: first.id,
+        amendmentPredecessorEnd: null,
+      }),
+    ).rejects.toThrow(/activation provenance/);
+    const draft = await create({ version: 3, effectiveFrom: scheduled });
+    draft.amendmentPredecessorId = first.id ?? null;
+    await expect(draft.save()).rejects.toThrow(/activation provenance/);
+    expect((await collection().get({ id: first.id }))?.effectiveTo).toEqual(
+      scheduled,
+    );
+  });
+  it('publishes authoritative lifecycle observations and invalidates cached lists', async () => {
+    const { first, second } = await schedule(finiteEnd);
+    const options = { cache: { ttl: 60_000 } };
+    const before = await collection().list(options);
+    expect(before.find((row) => row.id === first.id)?.status).toBe(
+      'superseded',
+    );
+    const observed: { id: string | null; status: string; end: Date | null }[] =
+      [];
+    const name = 'agreement-withdrawal-observation';
+    GlobalInterceptors.register({
+      name,
+      afterSave(instance) {
+        if (instance instanceof Agreement)
+          observed.push({
+            id: instance.id ?? null,
+            status: instance.status,
+            end: instance.effectiveTo,
+          });
+      },
+    });
+    try {
+      await collection().withdrawAmendment(second.id as string);
+    } finally {
+      GlobalInterceptors.unregister(name);
+    }
+    expect(observed).toContainEqual({
+      id: first.id,
+      status: 'active',
+      end: finiteEnd,
+    });
+    expect(observed).toContainEqual({
+      id: second.id,
+      status: 'cancelled',
+      end: null,
+    });
+    const after = await collection().list(options);
+    expect(after.find((row) => row.id === first.id)?.status).toBe('active');
+    expect(after.find((row) => row.id === first.id)?.effectiveTo).toEqual(
+      finiteEnd,
+    );
+    expect(after.find((row) => row.id === second.id)?.status).toBe('cancelled');
   });
 }

@@ -191,3 +191,7 @@ Repeated, late, or conflicting withdrawals fail without changing history. Direct
 model termination remains for already-effective terms. Global defaults apply only
 before a tenant lane first governs; termination, expiry, and later gaps in that
 lane return no agreement instead of silently resuming global fees.
+
+Restoration provenance is written exclusively by amendment activation; ordinary
+creates and saves cannot supply or edit it. Withdrawal advances both persisted
+revision tokens so pre-withdrawal model instances cannot overwrite the result.

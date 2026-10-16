@@ -242,6 +242,7 @@ export class Agreement extends SmrtObject {
     const partyB = this.getPartyB();
     if (partyA) this.partyA = serializeAgreementParty(partyA);
     if (partyB) this.partyB = serializeAgreementParty(partyB);
+    await this.assertActivationProvenanceUnchanged();
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
     this.assertEffectiveIntervalUnchanged(prior);
@@ -258,6 +259,36 @@ export class Agreement extends SmrtObject {
       frozenEnd.set(this, this.effectiveTo?.getTime() ?? null);
     }
     return result;
+  }
+
+  /** @internal Complete observation of a collection-owned guarded transition. */
+  async refreshAfterLifecycleTransition(): Promise<void> {
+    if (!this.isPersisted || !this.id)
+      throw new Error('Agreement is not persisted');
+    const durableRow = await this.db.get(this.tableName, { id: this.id });
+    if (!durableRow) throw new Error('Agreement disappeared during transition');
+    await this.completePersistedUpdate(durableRow);
+    loadedStatus.set(this, this.status);
+    frozenTerms.set(this, this.serializeFrozenTerms());
+    frozenEnd.set(this, this.effectiveTo?.getTime() ?? null);
+  }
+
+  private async assertActivationProvenanceUnchanged(): Promise<void> {
+    const persisted =
+      this.isPersisted && this.id
+        ? await this.db.get(this.tableName, { id: this.id })
+        : null;
+    const priorId = persisted?.amendment_predecessor_id ?? null;
+    const priorEnd =
+      coerceAgreementDate(persisted?.amendment_predecessor_end)?.getTime() ??
+      null;
+    if (
+      this.amendmentPredecessorId !== priorId ||
+      (this.amendmentPredecessorEnd?.getTime() ?? null) !== priorEnd
+    )
+      throw new Error(
+        'Agreement activation provenance is owned by activateAmendment',
+      );
   }
 
   private assertEffectiveIntervalUnchanged(
