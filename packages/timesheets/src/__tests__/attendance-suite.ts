@@ -1461,12 +1461,21 @@ export function attendanceSuite(
           expect(await ledger(id)).toHaveLength(5);
         });
         it('adds an open punch with closed breaks and segments and a ledger row', async () => {
+          const detailedWork = {
+            ...work,
+            taskRefType: 'test:Task',
+            taskRefId: crypto.randomUUID(),
+            kind: 'installation',
+            description: 'Install the replacement pump',
+          };
           const row = await fix.addPunch({
             ...base(),
             open: true,
             startedAt: at(8),
             breaks: [{ startedAt: at(12), endedAt: at(13), paid: false }],
-            segments: [{ startedAt: at(8), endedAt: at(12), work }],
+            segments: [
+              { startedAt: at(8), endedAt: at(12), work: detailedWork },
+            ],
           });
           expect(row).toMatchObject({
             kind: 'punch.added',
@@ -1476,6 +1485,22 @@ export function attendanceSuite(
           expect(punch.endedAt).toBeNull();
           expect(breaks).toHaveLength(1);
           expect(segments).toHaveLength(1);
+          const expectedSegment = {
+            ...detailedWork,
+            startedAt: at(8).toISOString(),
+            endedAt: at(12).toISOString(),
+            durationSeconds: 4 * 3600,
+            closedReason: 'stop',
+          };
+          expect(segments[0]).toMatchObject({
+            ...expectedSegment,
+            startedAt: at(8),
+            endedAt: at(12),
+          });
+          const [storedCorrection] = await ledger(punch.id!);
+          expect(storedCorrection.getAfter()).toMatchObject({
+            segments: [expectedSegment],
+          });
           await expect(
             fix.addPunch({ ...base(), open: true, startedAt: at(14) }),
           ).rejects.toThrow('already open');

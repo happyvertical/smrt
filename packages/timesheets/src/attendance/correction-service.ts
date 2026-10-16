@@ -768,6 +768,7 @@ export class AttendanceCorrectionService {
         });
         await persistCorrection(row);
       }
+      const segmentStates: ReturnType<typeof segmentState>[] = [];
       for (const g of segments) {
         const row = await new AttendanceSegment({
           db: tx.db,
@@ -788,6 +789,7 @@ export class AttendanceCorrectionService {
           closedReason: 'stop',
         });
         await persistCorrection(row);
+        segmentStates.push(segmentState(row));
       }
       return record('punch.added', punch, punch.id!, null, {
         ...punchState(punch),
@@ -801,16 +803,7 @@ export class AttendanceCorrectionService {
               })),
             }
           : {}),
-        ...(segments.length
-          ? {
-              segments: segments.map((g) => ({
-                startedAt: iso(g.startedAt),
-                endedAt: iso(g.endedAt),
-                workRefType: g.work.workRefType,
-                workRefId: g.work.workRefId,
-              })),
-            }
-          : {}),
+        ...(segmentStates.length ? { segments: segmentStates } : {}),
       });
     });
   }
