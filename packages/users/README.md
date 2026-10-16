@@ -1360,6 +1360,11 @@ exports. A policy that requires shares or dues evidence fails closed unless the
 register has an explicitly authoritative reference for every required kind; the
 snapshot names that missing evidence rather than inferring payment status.
 
+An omitted `memberClassKeys` policy allows every class; an explicit empty list
+allows none. `statuses` defaults to `['active']`, and an empty status list also
+allows none. Snapshots preserve normalized class keys (`null` means unrestricted),
+statuses, and required evidence kinds so the decision retains its policy inputs.
+
 Hosts must authorize the trusted `MemberRegisterActor` before constructing the
 service. Generated REST, CLI and MCP operations are closed for these sensitive
 records. Every service lookup and write stays in the actor's tenant; an active
@@ -1372,6 +1377,17 @@ snapshots reject updates and deletes. Same-day history corrections use persisted
 sequence order. Eligibility uses effective history; `LegalMember.status` and
 `leftOn` are display caches refreshed by `setStatus`, so scheduled changes may
 make those caches stale until another write. Use `asOf` for record-date decisions.
+
+Use `revokeReference(referenceId, { effectiveOn })` when previously authoritative
+evidence is withdrawn. It appends a dated record targeting the original reference;
+that original stops supporting eligibility on the revocation date. Earlier dates
+and already saved snapshots remain unchanged. A replacement authoritative reference
+must be explicitly added when evidence becomes valid again.
+
+Enrollment accepts global profiles or profiles owned by the actor's tenant, and
+rejects foreign-tenant profiles. Members returned from enrollment and status changes
+are rebound to the caller's database so subsequent saves do not reuse a completed
+transaction's connection. Saves still require the appropriate tenant context.
 
 Apply the generated s-m-r-t manifest migration before using the register; its six
 new tables require no auth-membership or subscription backfill. `userId` links

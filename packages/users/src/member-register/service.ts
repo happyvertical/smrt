@@ -1,4 +1,9 @@
-import { getTenantId, withTenant } from '@happyvertical/smrt-tenancy';
+import { ProfileCollection } from '@happyvertical/smrt-profiles';
+import {
+  getTenantId,
+  withTenant,
+  withTenantGlobalRead,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   type LegalMember,
@@ -179,8 +184,10 @@ export class MemberRegisterService {
     profileId?: string | null;
     externalPartyRef?: string | null;
   }): Promise<LegalMember> {
-    if (this.transactionBound !== MemberRegisterService.transactionToken)
-      return this.transaction((service) => service.enroll(input));
+    if (this.transactionBound !== MemberRegisterService.transactionToken) {
+      const member = await this.transaction((service) => service.enroll(input));
+      return this.scope(() => this.member(member.id as string));
+    }
     return this.scope(async () => {
       const joinedOn = date(input.joinedOn, 'joinedOn');
       if (input.kind !== 'individual' && input.kind !== 'organisation')
@@ -198,6 +205,25 @@ export class MemberRegisterService {
           'MEMBER_REGISTER_NOT_FOUND',
           'Member class not found in this tenant.',
         );
+      if (input.profileId != null) {
+        const profiles = await ProfileCollection.create({ db: this.db });
+        const matches = await withTenantGlobalRead(this.actor.tenantId, () =>
+          profiles.list({
+            where: { id: text(input.profileId, 'profileId') },
+            limit: 1,
+          }),
+        );
+        const profile = matches[0];
+        if (
+          !profile ||
+          (profile.tenantId !== null &&
+            profile.tenantId !== this.actor.tenantId)
+        )
+          throw new MemberRegisterError(
+            'MEMBER_REGISTER_NOT_FOUND',
+            'Profile not found in this tenant or global scope.',
+          );
+      }
       const members = await LegalMemberCollection.create({ db: this.db });
       const member = await members.create({
         tenantId: this.actor.tenantId,
@@ -229,8 +255,12 @@ export class MemberRegisterService {
     memberId: string,
     input: { status: LegalMemberStatus; effectiveOn: IsoDate; reason?: string },
   ): Promise<LegalMember> {
-    if (this.transactionBound !== MemberRegisterService.transactionToken)
-      return this.transaction((service) => service.setStatus(memberId, input));
+    if (this.transactionBound !== MemberRegisterService.transactionToken) {
+      const member = await this.transaction((service) =>
+        service.setStatus(memberId, input),
+      );
+      return this.scope(() => this.member(member.id as string));
+    }
     return this.scope(async () => {
       const member = await this.member(memberId);
       const effectiveOn = date(input.effectiveOn, 'effectiveOn');
@@ -310,6 +340,40 @@ export class MemberRegisterService {
       return row;
     });
   }
+  /** Append a dated withdrawal without changing past evidence or snapshots. */
+  async revokeReference(
+    referenceId: string,
+    input: { effectiveOn: IsoDate },
+  ): Promise<LegalMemberReference> {
+    return this.scope(async () => {
+      const refs = await LegalMemberReferenceCollection.create({ db: this.db });
+      const reference = await refs.get({
+        id: text(referenceId, 'referenceId'),
+        tenantId: this.actor.tenantId,
+      });
+      if (!reference)
+        throw new MemberRegisterError(
+          'MEMBER_REGISTER_NOT_FOUND',
+          'Reference not found in this tenant.',
+        );
+      const effectiveFrom = date(input.effectiveOn, 'effectiveOn');
+      if (reference.revokesId || effectiveFrom < reference.effectiveFrom)
+        throw new MemberRegisterError(
+          'MEMBER_REGISTER_INVALID',
+          'Revoke original evidence on or after its effectiveFrom date.',
+        );
+      return refs.create({
+        tenantId: this.actor.tenantId,
+        memberId: reference.memberId,
+        kind: reference.kind,
+        sourceType: reference.sourceType,
+        sourceId: reference.sourceId,
+        authoritative: false,
+        effectiveFrom,
+        revokesId: reference.id as string,
+      });
+    });
+  }
   async appoint(
     memberId: string,
     input: {
@@ -353,6 +417,15 @@ export class MemberRegisterService {
       return this.transaction((service) => service.asOf(recordDate, policy));
     return this.scope(async () => {
       const on = date(recordDate, 'recordDate');
+      // Capture one policy for the whole batch; null records unrestricted classes.
+      const memberClassKeys =
+        policy.memberClassKeys === undefined
+          ? null
+          : [...policy.memberClassKeys];
+      const statuses = [...(policy.statuses ?? ['active'])];
+      const requiredAuthoritativeKinds = [
+        ...(policy.requireAuthoritativeKinds ?? []),
+      ];
       const members = await LegalMemberCollection.create({ db: this.db });
       const classes = await MemberClassCollection.create({ db: this.db });
       const histories = await LegalMemberStatusHistoryCollection.create({
@@ -378,26 +451,34 @@ export class MemberRegisterService {
           .filter((entry) => entry.effectiveOn <= on)
           .sort(compareHistory);
         const status = history.at(-1)?.status;
-        const memberRefs = (
-          await refs.list({
-            where: { tenantId: this.actor.tenantId, memberId: member.id },
-          })
-        ).filter(
+        const allRefs = await refs.list({
+          where: { tenantId: this.actor.tenantId, memberId: member.id },
+        });
+        const revoked = new Set(
+          allRefs
+            .filter(
+              (reference) =>
+                reference.revokesId && reference.effectiveFrom <= on,
+            )
+            .map((reference) => reference.revokesId),
+        );
+        const memberRefs = allRefs.filter(
           (reference) =>
+            !reference.revokesId &&
+            !revoked.has(reference.id as string) &&
             reference.effectiveFrom <= on &&
             (reference.effectiveTo === null || reference.effectiveTo >= on),
         );
-        const missing = (policy.requireAuthoritativeKinds ?? []).filter(
+        const missing = requiredAuthoritativeKinds.filter(
           (kind) =>
             !memberRefs.some(
               (reference) => reference.kind === kind && reference.authoritative,
             ),
         );
         const classOK =
-          !policy.memberClassKeys?.length ||
-          (!!klass && policy.memberClassKeys.includes(klass.key));
-        const statusOK =
-          !!status && (policy.statuses ?? ['active']).includes(status);
+          memberClassKeys === null ||
+          (!!klass && memberClassKeys.includes(klass.key));
+        const statusOK = !!status && statuses.includes(status);
         const eligible =
           member.joinedOn <= on && classOK && statusOK && missing.length === 0;
         const reason = missing.length
@@ -411,7 +492,9 @@ export class MemberRegisterService {
                 : 'eligible';
         const evidence = {
           status,
-          requiredAuthoritativeKinds: policy.requireAuthoritativeKinds ?? [],
+          memberClassKeys,
+          statuses,
+          requiredAuthoritativeKinds,
           missingAuthoritativeKinds: missing,
           referenceCount: memberRefs.length,
         };

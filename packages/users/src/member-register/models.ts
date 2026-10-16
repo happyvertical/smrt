@@ -148,6 +148,9 @@ export class LegalMemberReference extends SmrtObject {
   /** The date on which this evidence may first support a record-date decision. */
   @field({ type: 'text' }) effectiveFrom = '';
   @field({ type: 'text', nullable: true }) effectiveTo: string | null = null;
+  /** Original evidence withdrawn by this append-only dated record. */
+  @foreignKey('LegalMemberReference', { nullable: true, onDelete: 'RESTRICT' })
+  revokesId: string | null = null;
   override async save(): Promise<this> {
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Legal member references are append-only.');

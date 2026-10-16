@@ -30,6 +30,178 @@ export function memberRegisterAtomicityTests(
     return { db, tenantId, register, input };
   }
 
+  it('returns members that remain writable after transaction completion', async () => {
+    const { db, tenantId, register, input } = await fixture();
+    const member = await register.enroll(input);
+    await withTenant({ tenantId }, async () => {
+      member.displayName = 'Pat Updated';
+      await member.save();
+    });
+    const changed = await register.setStatus(member.id as string, {
+      status: 'suspended',
+      effectiveOn: '2026-02-01',
+    });
+    await withTenant({ tenantId }, async () => {
+      changed.displayName = 'Pat Final';
+      await changed.save();
+    });
+    const members = await LegalMemberCollection.create({ db });
+    expect((await members.get({ id: member.id, tenantId }))?.displayName).toBe(
+      'Pat Final',
+    );
+  });
+
+  it('withdraws authoritative evidence from its revocation date while preserving history', async () => {
+    const { db, tenantId, register, input } = await fixture();
+    const member = await register.enroll(input);
+    const ref = await register.addReference(member.id as string, {
+      kind: 'dues',
+      sourceType: 'billing',
+      sourceId: 'dues-1',
+      authoritative: true,
+      effectiveFrom: '2026-01-01',
+    });
+    const policy = { requireAuthoritativeKinds: ['dues'] as const };
+    expect((await register.asOf('2026-03-01', policy))[0].eligible).toBe(true);
+    const other = new MemberRegisterService(db, {
+      tenantId: crypto.randomUUID(),
+    });
+    await expect(
+      other.revokeReference(ref.id as string, { effectiveOn: '2026-02-01' }),
+    ).rejects.toMatchObject({ code: 'MEMBER_REGISTER_NOT_FOUND' });
+    await expect(
+      register.revokeReference(ref.id as string, { effectiveOn: '2025-12-31' }),
+    ).rejects.toMatchObject({ code: 'MEMBER_REGISTER_INVALID' });
+    const revoked = await register.revokeReference(ref.id as string, {
+      effectiveOn: '2026-02-01',
+    });
+    expect((await register.asOf('2026-01-31', policy))[0].eligible).toBe(true);
+    expect((await register.asOf('2026-02-01', policy))[0].eligible).toBe(false);
+    expect((await register.asOf('2026-03-01', policy))[0].eligible).toBe(false);
+    await expect(
+      register.revokeReference(revoked.id as string, {
+        effectiveOn: '2026-03-01',
+      }),
+    ).rejects.toMatchObject({ code: 'MEMBER_REGISTER_INVALID' });
+    await withTenant({ tenantId }, async () => {
+      revoked.effectiveFrom = '2026-01-01';
+      await expect(revoked.save()).rejects.toThrow('append-only');
+      await expect(ref.delete()).rejects.toThrow('cannot be deleted');
+    });
+    const snapshots = await MemberEligibilitySnapshotCollection.create({ db });
+    expect(
+      (
+        await snapshots.list({ where: { tenantId, recordDate: '2026-03-01' } })
+      ).map((row) => row.eligible),
+    ).toEqual(expect.arrayContaining([true, false]));
+  });
+
+  it('allows global and same-tenant profiles but rejects foreign profiles before enrollment', async () => {
+    const { ProfileCollection, ProfileTypeCollection } = await import(
+      '@happyvertical/smrt-profiles'
+    );
+    const { db, tenantId, register, input } = await fixture();
+    const profiles = await ProfileCollection.create({ db });
+    const types = await ProfileTypeCollection.create({ db });
+    const type = await types.create({ name: 'Legal party', tenantId: null });
+    const typeId = type.id;
+    if (!typeId) throw new Error('Profile type was not saved');
+    const global = await profiles.create({
+      name: 'Global party',
+      typeId,
+      tenantId: null,
+    });
+    const own = await withTenant({ tenantId }, () =>
+      profiles.create({ name: 'Own party', typeId, tenantId }),
+    );
+    const otherTenant = crypto.randomUUID();
+    const foreign = await withTenant({ tenantId: otherTenant }, () =>
+      profiles.create({
+        name: 'Foreign party',
+        typeId,
+        tenantId: otherTenant,
+      }),
+    );
+    await expect(
+      register.enroll({ ...input, profileId: foreign.id }),
+    ).rejects.toMatchObject({ code: 'MEMBER_REGISTER_NOT_FOUND' });
+    const members = await LegalMemberCollection.create({ db });
+    expect(await members.list({ where: { tenantId } })).toHaveLength(0);
+    expect(
+      (await register.enroll({ ...input, profileId: global.id })).profileId,
+    ).toBe(global.id);
+    expect(
+      (await register.enroll({ ...input, profileId: own.id })).profileId,
+    ).toBe(own.id);
+  });
+
+  it('distinguishes an omitted class policy from an explicitly empty allowlist', async () => {
+    const { register, input } = await fixture();
+    await register.enroll(input);
+    expect((await register.asOf('2026-02-01'))[0].eligible).toBe(true);
+    expect(
+      (await register.asOf('2026-02-01', { memberClassKeys: [] }))[0],
+    ).toMatchObject({
+      eligible: false,
+      reason: 'member class excluded by policy',
+    });
+    expect(
+      (await register.asOf('2026-02-01', { memberClassKeys: ['worker'] }))[0]
+        .eligible,
+    ).toBe(true);
+    expect(
+      (await register.asOf('2026-02-01', { statuses: [] }))[0].eligible,
+    ).toBe(false);
+  });
+
+  it('persists normalized policy inputs for reproducible immutable decisions', async () => {
+    const { db, tenantId, register, input } = await fixture();
+    await register.enroll(input);
+    const unrestricted = await register.asOf('2026-02-01');
+    expect(unrestricted[0].evidence).toMatchObject({
+      memberClassKeys: null,
+      statuses: ['active'],
+      requiredAuthoritativeKinds: [],
+    });
+    const memberClassKeys = ['worker'];
+    const statuses: ('active' | 'suspended')[] = ['active', 'suspended'];
+    const restricted = await register.asOf('2026-02-01', {
+      memberClassKeys,
+      statuses,
+    });
+    expect(restricted[0].eligible).toBe(unrestricted[0].eligible);
+    memberClassKeys.push('supporting');
+    statuses.splice(0, statuses.length);
+    expect(restricted[0].evidence).toMatchObject({
+      memberClassKeys: ['worker'],
+      statuses: ['active', 'suspended'],
+    });
+    const snapshots = await MemberEligibilitySnapshotCollection.create({ db });
+    const stored = await snapshots.list({ where: { tenantId } });
+    expect(stored.map((row) => row.evidence)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberClassKeys: null,
+          statuses: ['active'],
+          requiredAuthoritativeKinds: [],
+        }),
+        expect.objectContaining({
+          memberClassKeys: ['worker'],
+          statuses: ['active', 'suspended'],
+          requiredAuthoritativeKinds: [],
+        }),
+      ]),
+    );
+    const empty = await register.asOf('2026-02-01', {
+      memberClassKeys: [],
+      statuses: [],
+    });
+    expect(empty[0].evidence).toMatchObject({
+      memberClassKeys: [],
+      statuses: [],
+    });
+  });
+
   it('denies foreign tenant writes and malformed register input', async () => {
     const { db, tenantId, register, input } = await fixture();
     const other = new MemberRegisterService(db, {
