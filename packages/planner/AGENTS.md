@@ -355,7 +355,7 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   Sample foreign keys spread over every row of their target (`fakes.ts` `relatedIndex`), so each
   record has related rows; a customer-linked model (a FK to Customer) gets 3-6 rows per customer
   (`customerSlots`, seeded by the customer's index), so related lists hold several records. Sample
-  lines are on smrt-commerce's money model (released in 0.56.1), v2 only: `data/money.ts` maps rows to
+  lines are on smrt-commerce's money model (the only one since smrt 0.57.0): `data/money.ts` maps rows to
   `@happyvertical/smrt-commerce/money`'s own `calculateMoneyDocument` / `resolveLineTaxCode` (pure and
   browser-safe; never copy its arithmetic). A line's `amount` is quantity x unit price less its discount
   (`discountType` none / percent with `discountRate` as percent text / amount in `discount`): the net
