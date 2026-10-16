@@ -199,7 +199,7 @@ export class Contract extends SmrtObject {
   /** Calculated pricing or immutable source-declared purchase evidence. */
   moneyAuthority: 'calculated' | 'received' = 'calculated';
 
-  /** Guarded received evidence; write through recordReceivedPurchaseMoney only. */
+  /** Guarded received evidence; write through the public received purchase/sales contract commands only. */
   receivedPurchaseMoneyJson = '';
 
   /** Append-only approved milestone schedule and issued claim evidence. */

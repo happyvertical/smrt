@@ -230,3 +230,5 @@ Use the public commands; `Payment.customerFundsJson` is command-owned.
 
 See [observed purchase prices](agents/observed-purchase-prices.md) for incomplete
 original supplier prices, explicit unknown totals and reviewed completion.
+See [received sales agreement money](agents/received-sales-contract-money.md) for
+exact complete source Order/Agreement evidence without synthetic lines or tax recognition.

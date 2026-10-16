@@ -428,7 +428,7 @@ export async function saveContract(input: Contract): Promise<Contract> {
         )
           throw new MoneyValidationError(
             'INVALID_MONEY_INPUT',
-            'Use recordReceivedPurchaseMoney to record received evidence',
+            'Use recordReceivedPurchaseMoney or recordReceivedSalesContractMoney to record received evidence',
           );
         contract.tenantId = tenantId;
         contract.lineAmountType = settings.defaultLineAmountType;

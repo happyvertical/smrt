@@ -357,14 +357,19 @@ export {
 } from './party-contacts.js';
 export {
   getReceivedPurchaseMoney,
+  getReceivedSalesContractMoney,
   type ReceivedPurchaseMoneyFacts,
   type ReceivedPurchaseMoneyLine,
   type ReceivedPurchaseMoneySnapshot,
   type ReceivedPurchaseQuoteSource,
   ReceivedPurchaseTaxClassificationRequired,
   type ReceivedPurchaseTaxComponent,
+  type ReceivedSalesContractMoneyFacts,
+  type ReceivedSalesContractMoneySnapshot,
   type RecordReceivedPurchaseMoneyInput,
+  type RecordReceivedSalesContractMoneyInput,
   recordReceivedPurchaseMoney,
+  recordReceivedSalesContractMoney,
   validateReceivedPurchaseMoneyFacts,
 } from './received-purchase-money.js';
 export {

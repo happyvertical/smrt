@@ -4,6 +4,7 @@ import { getTenantId } from '@happyvertical/smrt-tenancy';
 import { ISO_4217_MINOR_UNITS } from '@happyvertical/smrt-ui/currency';
 import { ContractCollection } from './collections/ContractCollection.js';
 import { ContractLineItemCollection } from './collections/ContractLineItemCollection.js';
+import { CustomerCollection } from './collections/CustomerCollection.js';
 import { TaxCodeCollection } from './collections/TaxCodeCollection.js';
 import { TaxComponentCollection } from './collections/TaxComponentCollection.js';
 import { VendorCollection } from './collections/VendorCollection.js';
@@ -12,7 +13,9 @@ import {
   lockDocumentMoneyParents,
 } from './document-money-internal.js';
 import {
+  Agreement,
   type Contract,
+  Order,
   PurchaseOrder,
   SupplierQuote,
 } from './models/Contract.js';
@@ -76,6 +79,40 @@ export interface RecordReceivedPurchaseMoneyInput {
   evidenceRef: string;
   facts: ReceivedPurchaseMoneyFacts;
   sourceQuote?: ReceivedPurchaseQuoteSource;
+}
+
+/** Complete received sales agreement evidence; recording is not revenue/tax recognition. */
+export type ReceivedSalesContractMoneyFacts = ReceivedPurchaseMoneyFacts;
+export type ReceivedSalesContractMoneySnapshot = ReceivedPurchaseMoneySnapshot;
+export type RecordReceivedSalesContractMoneyInput = Omit<
+  RecordReceivedPurchaseMoneyInput,
+  'sourceQuote'
+>;
+
+/** Record supplied complete facts on one empty draft Order/Agreement. */
+export async function recordReceivedSalesContractMoney(
+  input: RecordReceivedSalesContractMoneyInput,
+): Promise<ReceivedSalesContractMoneySnapshot> {
+  if (Object.hasOwn(input, 'sourceQuote'))
+    invalid('Sales agreement evidence cannot reference a supplier quote');
+  if (
+    input.facts.taxComponents?.some(
+      (component) => component.recoverableMinor !== null,
+    )
+  )
+    invalid(
+      'Purchase tax recovery is not applicable to sales agreement evidence; retain null',
+    );
+  return recordReceivedContractMoney(input, 'sales');
+}
+
+/** Read exact sales agreement evidence without calculating or recognizing an invoice. */
+export function getReceivedSalesContractMoney(
+  contract: Contract,
+): ReceivedSalesContractMoneySnapshot | null {
+  if (!(contract instanceof Order || contract instanceof Agreement))
+    return null;
+  return getReceivedPurchaseMoney(contract);
 }
 
 function invalid(message: string): never {
@@ -273,9 +310,16 @@ export function getReceivedPurchaseMoney(
 export async function recordReceivedPurchaseMoney(
   input: RecordReceivedPurchaseMoneyInput,
 ): Promise<ReceivedPurchaseMoneySnapshot> {
+  return recordReceivedContractMoney(input, 'purchase');
+}
+
+async function recordReceivedContractMoney(
+  input: RecordReceivedPurchaseMoneyInput,
+  direction: 'purchase' | 'sales',
+): Promise<ReceivedPurchaseMoneySnapshot> {
   const tenantId = text(input.tenantId, 'Tenant');
   if (getTenantId() !== tenantId)
-    invalid('Received purchase money requires its active tenant context');
+    invalid('Received contract money requires its active tenant context');
   const contractId = text(input.contractId, 'Contract');
   const snapshot: ReceivedPurchaseMoneySnapshot = {
     version: 1,
@@ -300,30 +344,45 @@ export async function recordReceivedPurchaseMoney(
         : []),
     ]);
     const contract = await contracts.get({ id: contractId }, { cache: false });
-    if (
-      !(
-        contract instanceof SupplierQuote || contract instanceof PurchaseOrder
-      ) ||
-      contract.tenantId !== tenantId ||
-      !contract.vendorId
-    )
+    const validParty =
+      direction === 'purchase'
+        ? (contract instanceof SupplierQuote ||
+            contract instanceof PurchaseOrder) &&
+          contract.vendorId
+        : (contract instanceof Order || contract instanceof Agreement) &&
+          contract.customerId;
+    if (!contract || contract.tenantId !== tenantId || !validParty)
       invalid(
-        'Received money requires a supplier quote or purchase order in the active tenant',
+        direction === 'purchase'
+          ? 'Received money requires a supplier quote or purchase order in the active tenant'
+          : 'Received money requires an Order or Agreement with a customer in the active tenant',
       );
     const stored = getReceivedPurchaseMoney(contract);
     if (stored) {
       if (JSON.stringify(stored) !== serialized)
         invalid(
-          'Received money request changed; create a new supplier quote revision',
+          'Received money request changed; create a separate contract revision',
         );
       return stored;
     }
-    const vendor = await (await VendorCollection.create({ db })).get(
-      { id: contract.vendorId },
-      { cache: false },
-    );
-    if (!vendor || vendor.tenantId !== tenantId)
-      invalid('Supplier must belong to the active tenant');
+    if (
+      direction === 'purchase' &&
+      (contract instanceof SupplierQuote || contract instanceof PurchaseOrder)
+    ) {
+      const vendor = await (await VendorCollection.create({ db })).get(
+        { id: contract.vendorId },
+        { cache: false },
+      );
+      if (!vendor || vendor.tenantId !== tenantId)
+        invalid('Supplier must belong to the active tenant');
+    } else if (contract instanceof Order || contract instanceof Agreement) {
+      const customer = await (await CustomerCollection.create({ db })).get(
+        { id: contract.customerId },
+        { cache: false },
+      );
+      if (!customer || customer.tenantId !== tenantId)
+        invalid('Customer must belong to the active tenant');
+    }
     if (snapshot.sourceQuote) {
       if (!(contract instanceof PurchaseOrder))
         invalid('Only a purchase order can reference a source quote');
@@ -391,7 +450,7 @@ export async function recordReceivedPurchaseMoney(
     if (contract.status !== ContractStatus.DRAFT || contract.moneySnapshotId)
       invalid('Received money requires an unfrozen draft');
     if (contract.currency !== snapshot.facts.currency)
-      invalid('Received money currency must match the supplier quote');
+      invalid('Received money currency must match the contract');
     const lines = await (
       await ContractLineItemCollection.create({ db })
     ).findByContract(contractId);
