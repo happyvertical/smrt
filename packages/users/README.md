@@ -1373,7 +1373,7 @@ sequence order. Eligibility uses effective history; `LegalMember.status` and
 `leftOn` are display caches refreshed by `setStatus`, so scheduled changes may
 make those caches stale until another write. Use `asOf` for record-date decisions.
 
-Apply the generated SMRT manifest migration before using the register; its six
+Apply the generated s-m-r-t manifest migration before using the register; its six
 new tables require no auth-membership or subscription backfill. `userId` links
 to the local `User`; `profileId` uses the cross-package reference
 `@happyvertical/smrt-profiles:Profile`. Financial evidence is an opaque
