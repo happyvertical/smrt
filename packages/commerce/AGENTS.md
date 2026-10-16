@@ -218,3 +218,10 @@ independent `cost-billing` subpath; see [contract](agents/cost-billing.md).
 
 See [contract billing schedules](agents/contract-billing-schedules.md) for exact
 approved milestone capacity, immutable amendments and atomic canonical invoice issue.
+
+## Customer funds (#4079)
+
+See [customer advances](agents/customer-funds.md) for explicitly configured
+unapplied-AR/deposit-liability receipts, conserved application/refund capacity,
+real liability reclassification, final-invoice attestation and mutation guards.
+Use the public commands; `Payment.customerFundsJson` is command-owned.

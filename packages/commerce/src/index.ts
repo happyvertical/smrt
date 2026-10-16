@@ -144,6 +144,21 @@ export {
   type IssuedCreditConsumption,
 } from './credit-allocation.js';
 export {
+  type AllocateCustomerFundsInput,
+  allocateCustomerFunds,
+  type CustomerFundsFacts,
+  type CustomerFundsOperation,
+  type CustomerFundsPolicy,
+  type CustomerFundsReleaseEvidence,
+  getCustomerFundsFacts,
+  type RecordCustomerFundsInput,
+  type RefundCustomerFundsInput,
+  type ReverseCustomerFundsAllocationInput,
+  recordCustomerFunds,
+  refundCustomerFunds,
+  reverseCustomerFundsAllocation,
+} from './customer-funds.js';
+export {
   type GetInvoiceMoneyFactsInput,
   getInvoiceMoneyFacts,
   type InvoiceMoneyFacts,

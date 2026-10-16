@@ -534,6 +534,10 @@ export class PaymentIntent extends SmrtObject {
         `PaymentIntent ${this.id}: referenced Payment '${this.paymentId}' does not exist`,
       );
     }
+    if (payment.customerFundsJson)
+      throw new Error(
+        'Managed customer funds cannot settle a payment intent; apply them to an issued invoice',
+      );
     if (payment.status !== PaymentStatus.COMPLETED) {
       throw new Error(
         `PaymentIntent ${this.id}: Payment '${this.paymentId}' is not COMPLETED ` +
@@ -749,6 +753,10 @@ export class PaymentIntent extends SmrtObject {
         `PaymentIntent ${this.id}: referenced Payment '${args.paymentId}' does not exist`,
       );
     }
+    if (payment.customerFundsJson)
+      throw new Error(
+        'Managed customer funds cannot settle a payment intent; apply them to an issued invoice',
+      );
     if (payment.status !== PaymentStatus.COMPLETED) {
       throw new Error(
         `PaymentIntent ${this.id}: Payment '${args.paymentId}' is not COMPLETED ` +

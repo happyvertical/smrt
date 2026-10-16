@@ -5,6 +5,7 @@
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import { customerFundsState } from '../customer-funds-internal.js';
 import { PaymentAllocation } from '../models/PaymentAllocation.js';
 
 export class PaymentAllocationCollection extends SmrtCollection<PaymentAllocation> {
@@ -195,7 +196,26 @@ export class PaymentAllocationCollection extends SmrtCollection<PaymentAllocatio
     paymentAmount: number,
   ): Promise<number> {
     const allocated = await this.getTotalAllocatedFromPayment(paymentId);
-    const remaining = paymentAmount - allocated;
+    const { PaymentCollection } = await import('./PaymentCollection.js');
+    const payment = await (await PaymentCollection.create({ db: this.db })).get(
+      { id: paymentId },
+      { cache: false },
+    );
+    const managed = customerFundsState(payment?.customerFundsJson);
+    if (
+      managed &&
+      (managed.kind !== 'receipt' || payment?.amount !== paymentAmount)
+    )
+      throw new Error(
+        'Customer funds require their authoritative receipt amount',
+      );
+    const refunded =
+      managed?.operations
+        .filter((op) => op.kind === 'refund')
+        .reduce((sum, op) => sum + BigInt(op.amountMinor), 0n) ?? 0n;
+    const remaining = Number(
+      BigInt(paymentAmount) - BigInt(allocated) - refunded,
+    );
 
     if (remaining < 0) {
       throw new Error(

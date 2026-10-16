@@ -513,6 +513,11 @@ export class Payout extends SmrtObject {
       );
     }
 
+    if (payment.customerFundsJson)
+      throw new Error(
+        'Managed customer funds cannot fund supplier payouts; use customer-funds commands',
+      );
+
     // Cap against the payment's funds. Prefer the native-rail figure when
     // present (volatile-currency rails), otherwise the settlement amount —
     // mirrors the PaymentIntent reconciliation convention.

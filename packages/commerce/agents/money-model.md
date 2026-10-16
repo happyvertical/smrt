@@ -105,6 +105,8 @@ mapper](accounting-snapshot-mapper.md).
 Upgrading data written by an earlier version is documented in
 [money data upgrade](money-upgrade.md). Contract money persistence remains a separate aggregate contract; production report
 hosting is an application opt-in over the public host described above. The
-model also does not provide currency conversion, cash-basis/deposit accounting,
+model also does not provide currency conversion or general cash-basis accounting,
 partial recoverability or period locking. Ordered compound taxes are supported as
-documented in [money calculator](money-calculator.md).
+documented in [money calculator](money-calculator.md). Explicit invoice-tax-point
+customer deposits and unallocated cash are provided by the separate
+[customer-funds authority](customer-funds.md), not by invoice pricing.

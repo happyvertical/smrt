@@ -3,10 +3,20 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  type SmrtDeleteOptions,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { allocationOwner, allocationTotal } from '../allocation-integrity.js';
 import { calculateAvailableRefund } from '../credit-allocation.js';
+import {
+  assertCustomerFundsWrite,
+  customerFundsState,
+} from '../customer-funds-internal.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import type { PaymentAllocationOptions } from '../types/index.js';
 
@@ -191,6 +201,8 @@ export class PaymentAllocation extends SmrtObject {
       );
       if (!payment)
         throw new Error('PaymentAllocation referenced Payment does not exist');
+      if (customerFundsState(payment.customerFundsJson))
+        assertCustomerFundsWrite(this);
       if (!payment.updated_at)
         throw new Error('Allocation parent has no persisted revision');
       await payment.claimRevision(payment.updated_at);
@@ -295,6 +307,25 @@ export class PaymentAllocation extends SmrtObject {
           );
       }
       return (await super.save()) as this;
+    });
+  }
+  /** Managed application reversal must also post its inverse journal and retain evidence. */
+  override async delete(options: SmrtDeleteOptions = {}): Promise<void> {
+    return this.withTransaction(async () => {
+      const persisted = this.id
+        ? await this.db.get(this.tableName, { id: this.id })
+        : null;
+      const { PaymentCollection } = await import(
+        '../collections/PaymentCollection.js'
+      );
+      const payment = await (
+        await PaymentCollection.create({ db: this.db })
+      ).get(
+        { id: String(persisted?.payment_id ?? this.paymentId) },
+        { cache: false },
+      );
+      if (payment?.customerFundsJson) assertCustomerFundsWrite(this);
+      return super.delete(options);
     });
   }
 }

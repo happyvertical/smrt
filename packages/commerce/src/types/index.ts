@@ -732,6 +732,8 @@ export interface FulfillmentLineItemOptions extends SmrtObjectOptions {
  * Constructor options for {@link Payment}.
  */
 export interface PaymentOptions extends SmrtObjectOptions {
+  /** Internal command-owned customer funds evidence; use public commands. */
+  customerFundsJson?: string;
   kind?: PaymentKind;
   tenantId?: string | null;
   contractId?: string | null;

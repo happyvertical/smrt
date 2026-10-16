@@ -7,6 +7,7 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  type SmrtDeleteOptions,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
@@ -16,6 +17,10 @@ import {
   assertAllocationParent,
   claimAllocationParent,
 } from '../allocation-integrity.js';
+import {
+  assertCustomerFundsWrite,
+  customerFundsState,
+} from '../customer-funds-internal.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import {
   type PaymentKind,
@@ -146,6 +151,10 @@ const recordingInProgress = new WeakSet<Payment>();
 export class Payment extends SmrtObject {
   /** Incoming settlement or outgoing customer refund. Amount stays positive. */
   kind: PaymentKind = 'payment';
+
+  /** Command-owned customer advance policy, source lineage and append-only application evidence. */
+  @field({ type: 'text' })
+  customerFundsJson = '';
 
   /**
    * Tenant ID for multi-tenant isolation
@@ -351,6 +360,8 @@ export class Payment extends SmrtObject {
     if (options.transactionId !== undefined)
       this.transactionId = options.transactionId;
     if (options.reference !== undefined) this.reference = options.reference;
+    if (options.customerFundsJson !== undefined)
+      this.customerFundsJson = options.customerFundsJson;
     if (options.journalId !== undefined) this.journalId = options.journalId;
     if (options.paidAt !== undefined) this.paidAt = options.paidAt;
     if (options.notes !== undefined) this.notes = options.notes;
@@ -426,6 +437,8 @@ export class Payment extends SmrtObject {
       ]);
 
       const priorRow = await this.loadPersistedRow();
+      if (this.customerFundsJson || priorRow?.customer_funds_json)
+        assertCustomerFundsWrite(this);
       const prior =
         priorRow && priorRow.status != null
           ? (priorRow.status as PaymentStatus)
@@ -474,6 +487,14 @@ export class Payment extends SmrtObject {
         settlementInProgress.delete(this);
       }
     });
+  }
+
+  /** Managed receipts and refunds retain immutable cash provenance. */
+  override async delete(options: SmrtDeleteOptions = {}): Promise<void> {
+    const persisted = await this.loadPersistedRow();
+    if (this.customerFundsJson || persisted?.customer_funds_json)
+      throw new Error('Customer funds cash history cannot be deleted');
+    return super.delete(options);
   }
 
   /**
@@ -716,6 +737,24 @@ export class Payment extends SmrtObject {
       throw new Error('Payment amount must be positive');
     }
 
+    const funds = customerFundsState(this.customerFundsJson);
+    if (funds) {
+      assertCustomerFundsWrite(this);
+      if (
+        options.cashAccountId !== funds.policy.cashAccountId ||
+        options.receivablesAccountId !== funds.policy.receivablesAccountId
+      )
+        throw new Error(
+          'Customer funds settlement accounts differ from reviewed policy',
+        );
+    }
+    const creditAccountId =
+      funds?.policy.mode === 'deposit-liability'
+        ? funds.policy.liabilityAccountId!
+        : options.receivablesAccountId;
+    const effectiveDate = funds
+      ? new Date(`${funds.effectiveOn}T12:00:00Z`)
+      : new Date();
     // Dynamic import to avoid hard dependency on smrt-ledgers
     const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
 
@@ -724,7 +763,7 @@ export class Payment extends SmrtObject {
 
     // Create a new journal for this payment
     const journal = await journalCollection.create({
-      date: new Date(),
+      date: effectiveDate,
       description:
         this.kind === 'refund'
           ? `Customer refund for contract ${this.contractId}`
@@ -745,7 +784,7 @@ export class Payment extends SmrtObject {
 
     // Credit Accounts Receivable (receivables decrease)
     await journal.addEntry({
-      accountId: options.receivablesAccountId,
+      accountId: creditAccountId,
       currency: this.currency,
       debit: this.kind === 'refund' ? this.amount : 0,
       credit: this.kind === 'payment' ? this.amount : 0,
@@ -766,7 +805,7 @@ export class Payment extends SmrtObject {
     }
     this.journalId = journal.id;
     this.status = PaymentStatus.COMPLETED;
-    this.paidAt = new Date();
+    this.paidAt = effectiveDate;
     settlementInProgress.add(this);
     await this.save();
 
