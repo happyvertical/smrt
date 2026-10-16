@@ -266,6 +266,41 @@ describe('CommissionPlan', () => {
     expect(after?.version).toBe(2);
   });
 
+  it('does not inherit an amendment expiry and rejects an empty effective window', async () => {
+    const boundary = new Date('2026-08-01T00:00:00Z');
+    const expired = await createDraft({
+      planKey: 'windowed-plan',
+      effectiveFrom: new Date('2026-07-01T00:00:00Z'),
+      effectiveTo: boundary,
+    });
+    expired.activate();
+    await expired.save();
+
+    const amendment = await plans.createAmendment('windowed-plan', {
+      effectiveFrom: boundary,
+    });
+    expect(amendment.effectiveTo).toBeNull();
+    amendment.activate();
+    await amendment.save();
+
+    expect(
+      await plans.latestActiveByKey(
+        'windowed-plan',
+        new Date('2026-07-31T23:59:59Z'),
+      ),
+    ).toMatchObject({ version: 1 });
+    expect(
+      await plans.latestActiveByKey('windowed-plan', boundary),
+    ).toMatchObject({ version: 2 });
+
+    const invalid = await createDraft({
+      planKey: 'invalid-window',
+      effectiveFrom: boundary,
+      effectiveTo: boundary,
+    });
+    expect(() => invalid.activate()).toThrow(/effectiveTo must be later/);
+  });
+
   it('tenants do not collide on the same plan key/version (codex P1)', async () => {
     const a = await createDraft({
       planKey: 'default',
