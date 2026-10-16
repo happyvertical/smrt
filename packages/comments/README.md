@@ -124,3 +124,14 @@ to enable the reply composer. Host callbacks persist replies with that parent ID
 
 Edits to visible comments return to pending when current policy or entitlement
 requires pre-moderation; edits never restore hidden or deleted comments.
+
+Reports use the separate `report` participation action, so hosts can configure
+report-specific limits without coupling them to comment quotas. Bans and entitlement
+checks apply to every report attempt. Only visible comments are reportable. Each
+actor/comment pair retains one report, including after generic receipt cleanup;
+retries return that report without consuming quota or replacing its original reason.
+
+Parentless keyed-create digests preserve the original v1 shape across upgrades.
+After an authorized edit, replay verifies the original creation body against retained
+revision history and returns the current comment; edited content is not a new create
+payload. Revision history must be retained while the keyed comment is retained.

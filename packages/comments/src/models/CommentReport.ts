@@ -16,6 +16,11 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
   cli: false,
   indexes: [
     {
+      name: 'comment_reports_actor_target_unique',
+      columns: ['tenantId', 'reporterUserId', 'commentId'],
+      unique: true,
+    },
+    {
       name: 'comment_reports_queue_idx',
       columns: ['tenantId', 'status', 'createdAt'],
     },

@@ -83,3 +83,15 @@ banned and rate-limited edits fail before changing the retained body/history.
 
 Visible edits under pre-moderation return to pending; editing hidden comments
 preserves hidden status. The three-dialect edit test proves both transitions.
+
+## Review6204625041 round 1 accepted regressions
+
+- F1: seed a pre-upgrade parentless request digest, replay with retained receipt,
+  remove receipt, replay again; same comment identity in all three dialects.
+- F2: create with key, edit twice, replay original before/after receipt retention;
+  return current body and reject edited body as a changed create payload.
+- F3: concurrent duplicate reports retain one actor/comment row and one quota unit;
+  receipt cleanup preserves deduplication, excess quota and banned retries deny,
+  hidden/pending/deleted targets deny. SQLite/DuckDB/restricted PostgreSQL.
+- Full comments test/test:postgres plus types, Svelte, build and Biome. Public
+  contract adds report action so quota policy can be configured independently.

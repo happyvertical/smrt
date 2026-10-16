@@ -6,6 +6,7 @@ import { ParticipationService } from './services/ParticipationService.js';
 import './models/ParticipationPolicy.js';
 import './models/ParticipationBan.js';
 import './models/ParticipationRateBucket.js';
+import { digestRunOnceContent } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { UserNotificationService } from '@happyvertical/smrt-messages';
 import { withTenant } from '@happyvertical/smrt-tenancy';
@@ -175,6 +176,10 @@ describe.each([
     expect(
       (await service.listForRecord('ProjectTask', recordId))[0]?.status,
     ).toBe('hidden');
+    await expect(service.report(root.id ?? '', 'Off topic')).rejects.toThrow(
+      'not reportable',
+    );
+    await service.moderate(root.id ?? '', 'visible');
     const report = await service.report(root.id ?? '', 'Off topic');
     expect(report.status).toBe('open');
   });
@@ -629,6 +634,8 @@ describe.each([
           'ParticipationBan',
           'ParticipationRateBucket',
           'Comment',
+          'CommentRevision',
+          'CommentReport',
           'UserNotification',
         ],
         type: dialect as 'sqlite' | 'duckdb' | 'postgres',
@@ -649,6 +656,49 @@ describe.each([
       };
       return { db, input, service: new CommentService({ ...access, db }) };
     }
+
+    it('replays legacy parentless bindings with and without retained receipts', async () => {
+      const { db, input, service } = await fixture();
+      const legacyDigest = digestRunOnceContent({
+        tenantId: input.tenantId,
+        authorUserId: input.authorUserId,
+        metaType: input.metaType,
+        metaId: input.metaId,
+        body: input.body,
+        mentions: [...input.mentions].sort(),
+      });
+      const row = await withTenant({ tenantId: input.tenantId }, async () =>
+        (await CommentCollection.create({ db })).create({
+          ...input,
+          mentions: JSON.stringify(input.mentions),
+          requestDigest: legacyDigest,
+          retryTenantId: input.tenantId,
+        }),
+      );
+      expect((await service.create(input)).id).toBe(row.id);
+      expect((await service.create(input)).id).toBe(row.id);
+      await db.query('DELETE FROM _smrt_run_once_claims');
+      expect((await service.create(input)).id).toBe(row.id);
+    });
+
+    it('replays original keyed creates after edits and receipt retention', async () => {
+      const { db, input, service } = await fixture();
+      const row = await service.create(input);
+      await service.edit(row.id ?? '', 'first edit');
+      await service.edit(row.id ?? '', 'second edit');
+      expect(await service.create(input)).toMatchObject({
+        id: row.id,
+        body: 'second edit',
+      });
+      await db.query('DELETE FROM _smrt_run_once_claims');
+      expect(await service.create(input)).toMatchObject({
+        id: row.id,
+        body: 'second edit',
+      });
+      await expect(
+        service.create({ ...input, body: 'second edit' }),
+      ).rejects.toMatchObject({ code: 'COMMENT_REQUEST_CONFLICT' });
+    });
 
     it('shares durable retries across every trusted actor and request UUID spelling', async () => {
       const { db, input } = await fixture();
@@ -1311,6 +1361,7 @@ describe.each([
         'ParticipationBan',
         'ParticipationRateBucket',
         'CommentRevision',
+        'CommentReport',
       ],
       type: dialect as 'sqlite' | 'duckdb' | 'postgres',
       url:
@@ -1348,6 +1399,52 @@ describe.each([
       );
     return { db, tenantId, request, policy, ban };
   }
+  it('deduplicates reports and enforces bans, report quota and visible targets', async () => {
+    const { db, tenantId, request, policy, ban } = await fixture();
+    const service = new CommentService({
+      db,
+      actor: { tenantId, userId: request.actorUserId },
+      authorizeRecord: async () => true,
+    });
+    const input = {
+      tenantId,
+      authorUserId: request.actorUserId,
+      metaType: request.recordType,
+      metaId: request.recordId,
+      body: 'visible',
+    };
+    const first = await service.create(input);
+    const second = await service.create(input);
+    await policy({ action: 'report', maxActions: 1, windowSeconds: 3600 });
+    const results = await Promise.all([
+      service.report(first.id ?? '', 'first reason'),
+      service.report(first.id ?? '', 'duplicate reason'),
+    ]);
+    expect(results[0].id).toBe(results[1].id);
+    await db.query('DELETE FROM _smrt_run_once_claims');
+    expect((await service.report(first.id ?? '', 'retry')).id).toBe(
+      results[0].id,
+    );
+    await expect(service.report(second.id ?? '', 'over quota')).rejects.toThrow(
+      'Rate limit',
+    );
+    await ban({});
+    await expect(
+      service.report(first.id ?? '', 'banned retry'),
+    ).rejects.toThrow('banned');
+    for (const status of ['hidden', 'pending', 'deleted'] as const) {
+      await service.moderate(second.id ?? '', status);
+      await expect(
+        service.report(second.id ?? '', 'invisible'),
+      ).rejects.toThrow('not reportable');
+    }
+    const reports = await db.query(
+      'SELECT id FROM comment_reports WHERE tenant_id = ?',
+      tenantId,
+    );
+    expect(reports.rows).toHaveLength(1);
+  });
+
   it('rejects unauthorized moderation, edits and cross-record replies and rolls back failed revisions', async () => {
     const { db, tenantId, request, ban, policy } = await fixture();
     const service = new CommentService({

@@ -36,7 +36,7 @@ export class ParticipationService {
   private normalize(request: ParticipationRequest): ParticipationRequest {
     if (
       !request ||
-      !['comment', 'react', 'vote'].includes(request.action) ||
+      !['comment', 'react', 'vote', 'report'].includes(request.action) ||
       [
         request.tenantId,
         request.actorUserId,

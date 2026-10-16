@@ -35,7 +35,7 @@ export class CommentIdempotencyError extends Error {
     super(
       code === 'COMMENT_REQUEST_CONFLICT'
         ? 'Comment request key already used with different content.'
-        : 'Comment request no longer has an unchanged comment.',
+        : 'Comment request no longer has a valid retained creation binding.',
     );
     this.name = 'CommentIdempotencyError';
   }
@@ -182,21 +182,79 @@ export class CommentService {
     });
   }
 
-  /** Reporting is an append-only queue entry and does not alter the comment. */
+  /** One retained report per actor/comment; new reports consume shared report quota. */
   async report(commentId: string, reason: string) {
     if (!reason.trim())
       throw new TypeError('Comment report reason is required.');
     const comment = await this.getAuthorizedComment(commentId, 'read');
-    const tenantId = this.options.actor.tenantId;
-    return withTenant({ tenantId }, async () =>
-      (await CommentReportCollection.create({ db: this.options.db })).create({
-        tenantId,
-        commentId: comment.id ?? commentId,
-        reporterUserId: this.options.actor.userId,
-        reason: reason.trim(),
-        status: 'open',
-      }),
-    );
+    if (comment.status !== 'visible')
+      throw new Error('Comment is not reportable.');
+    commentId = canonicalUuid(comment.id ?? commentId);
+    const tenantId = canonicalUuid(this.options.actor.tenantId);
+    const reporterUserId = canonicalUuid(this.options.actor.userId);
+    const request = {
+      tenantId,
+      actorUserId: reporterUserId,
+      action: 'report' as const,
+      recordType: comment.metaType,
+      recordId: comment.metaId,
+    };
+    const guard = new ParticipationService({
+      db: this.options.db,
+      entitlement: this.options.participation,
+    });
+    await guard.authorize(request);
+    return withTenant({ tenantId }, async () => {
+      const reports = await CommentReportCollection.create({
+        db: this.options.db,
+      });
+      const id = await runOnce(
+        {
+          db: reports.db,
+          tenantId,
+          actor: 'smrt-comments.report:v1',
+          token: `${reporterUserId}:${canonicalUuid(commentId)}`,
+          content: 'retained-report:v1',
+        },
+        async (tx) => {
+          const scoped = await CommentReportCollection.create({ db: tx });
+          const existing = await scoped.list({
+            where: { tenantId, reporterUserId, commentId },
+          });
+          if (existing[0]) return existing[0].id;
+          return guard.executeInTransaction(tx, request, async (guardedTx) => {
+            const current = await withTenant(
+              { tenantId: comment.tenantId },
+              async () =>
+                (await CommentCollection.create({ db: guardedTx })).get(
+                  commentId,
+                ),
+            );
+            if (!current || current.status !== 'visible')
+              throw new Error('Comment is not reportable.');
+            return (
+              await (
+                await CommentReportCollection.create({ db: guardedTx })
+              ).create({
+                tenantId,
+                commentId,
+                reporterUserId,
+                reason: reason.trim(),
+                status: 'open',
+              })
+            ).id;
+          });
+        },
+      );
+      const report = id ? await reports.get(id) : null;
+      if (
+        !report ||
+        report.commentId !== canonicalUuid(commentId) ||
+        report.reporterUserId !== reporterUserId
+      )
+        throw new Error('Retained report unavailable.');
+      return report;
+    });
   }
 
   async listForRecord(
@@ -332,7 +390,7 @@ export class CommentService {
       metaId,
       body,
       mentions: normalizedMentions,
-      parentCommentId: parentCommentId ?? null,
+      ...(parentCommentId ? { parentCommentId } : {}),
     });
     const comment = await withTenant({ tenantId }, async () => {
       const collection = await CommentCollection.create({
@@ -432,20 +490,33 @@ export class CommentService {
         receipt,
         canonicalUuid(tenantId),
       );
+      const retainedBodies = row.editedAt
+        ? (
+            await (
+              await CommentRevisionCollection.create({ db: collection.db })
+            ).list({
+              where: { commentId: row.id, tenantId: row.tenantId },
+            })
+          ).map((revision) => revision.body)
+        : [row.body];
       if (
-        !row ||
         canonicalUuid(row.tenantId) !== canonicalUuid(tenantId) ||
         row.idempotencyKey !== idempotencyKey ||
         row.requestDigest !== requestDigest ||
-        digestRunOnceContent({
-          tenantId: canonicalUuid(row.tenantId),
-          authorUserId: canonicalUuid(row.authorUserId),
-          metaType: row.metaType,
-          metaId: row.metaId,
-          body: row.body,
-          mentions: [...row.mentionUserIds].sort(),
-          parentCommentId: row.parentCommentId,
-        }) !== requestDigest
+        !retainedBodies.some(
+          (retainedBody) =>
+            digestRunOnceContent({
+              tenantId: canonicalUuid(row.tenantId),
+              authorUserId: canonicalUuid(row.authorUserId),
+              metaType: row.metaType,
+              metaId: row.metaId,
+              body: retainedBody,
+              mentions: [...row.mentionUserIds].sort(),
+              ...(row.parentCommentId
+                ? { parentCommentId: row.parentCommentId }
+                : {}),
+            }) === requestDigest,
+        )
       ) {
         throw new CommentIdempotencyError('COMMENT_REQUEST_UNAVAILABLE');
       }

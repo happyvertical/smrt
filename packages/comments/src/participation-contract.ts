@@ -3,7 +3,7 @@
  * reactions/votes. This package owns the generic policy/ban schema; hosts bind
  * only identity and entitlement facts through the authorizer.
  */
-export type ParticipationAction = 'comment' | 'react' | 'vote';
+export type ParticipationAction = 'comment' | 'react' | 'vote' | 'report';
 
 export interface ParticipationTarget {
   tenantId: string;

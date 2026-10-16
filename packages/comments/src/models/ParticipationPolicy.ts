@@ -38,7 +38,7 @@ export class ParticipationPolicy extends SmrtObject {
         'Participation target requires both recordType and recordId.',
       );
     if (
-      !['comment', 'react', 'vote'].includes(this.action) ||
+      !['comment', 'react', 'vote', 'report'].includes(this.action) ||
       !['open', 'pre_moderated', 'members_only', 'closed'].includes(
         this.moderationMode,
       ) ||
