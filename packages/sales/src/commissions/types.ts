@@ -194,6 +194,104 @@ export interface CommissionPlanComponent {
 }
 
 // ---------------------------------------------------------------------------
+// Waterfall plan v2
+// ---------------------------------------------------------------------------
+
+/** A generic host-resolved recipient reference. */
+export interface WaterfallRecipientDescriptor {
+  kind: string;
+  id?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/** The concrete recipient evidence returned by a host resolver. */
+export interface WaterfallResolvedRecipient {
+  kind: string;
+  id: string;
+  metadata?: Record<string, unknown>;
+}
+
+/** Declarative event facts that decide whether a step participates. */
+export interface WaterfallStepConditions {
+  product?: string[];
+  zone?: string[];
+  source?: string[];
+  member?: string[];
+}
+
+/** A single ordered allocation in a version-two commission plan. */
+export interface WaterfallStep {
+  key: string;
+  base: 'gross' | 'previous_remainder' | 'custom';
+  customBaseKey?: string;
+  amount:
+    | { kind: 'percent'; rate: number }
+    | { kind: 'fixed'; amountCents: number };
+  floorCents?: number;
+  capCents?: number;
+  conditions?: WaterfallStepConditions;
+  recipient: WaterfallRecipientDescriptor;
+}
+
+/** Version-two terms consumed by `calculateWaterfall`. */
+export interface WaterfallPlan {
+  planKey: string;
+  version: number;
+  currency: string;
+  steps: WaterfallStep[];
+  remainderSink: WaterfallRecipientDescriptor;
+  /** Already-settled checkout fees reduce this recipient's payable amount. */
+  applicationFeeOffsetRecipient?: WaterfallRecipientDescriptor;
+}
+
+/** Generic immutable commercial evidence used to calculate a waterfall. */
+export interface WaterfallEvent {
+  grossAmountCents: number;
+  currency: string;
+  facts?: Record<string, string | undefined>;
+  customBases?: Record<string, number>;
+  applicationFeeSettledCents?: number;
+}
+
+/** Frozen authoritative inputs needed for a reproducible replay. */
+export interface WaterfallFrozenInputs {
+  facts: Record<string, string | undefined>;
+  recipientByStep: Record<string, WaterfallResolvedRecipient | null>;
+  remainderSink: WaterfallResolvedRecipient;
+  applicationFeeSettledCents: number;
+}
+
+export interface WaterfallStepTrace {
+  key: string;
+  baseCents: number;
+  amountCents: number;
+  recipient: WaterfallResolvedRecipient | null;
+  redirectedToSinkCents: number;
+  applicationFeeOffsetCents: number;
+  payableCents: number;
+  skipped?: 'condition_not_met';
+}
+
+export interface WaterfallCalculationTrace {
+  planKey: string;
+  planVersion: number;
+  currency: string;
+  grossAmountCents: number;
+  steps: WaterfallStepTrace[];
+  remainderSink: WaterfallResolvedRecipient;
+  remainderSinkCents: number;
+  totalRecipientAllocatedCents: number;
+  totalSinkCents: number;
+  closureCents: 0;
+  roundingMode: 'half_away_from_zero';
+  frozenInputs: WaterfallFrozenInputs;
+}
+
+export interface WaterfallCalculationResult {
+  trace: WaterfallCalculationTrace;
+}
+
+// ---------------------------------------------------------------------------
 // Calculation trace
 // ---------------------------------------------------------------------------
 
@@ -285,8 +383,12 @@ export interface CommissionPlanOptions extends SmrtObjectOptions {
   description?: string;
   status?: CommissionPlanStatus;
   effectiveFrom?: Date | string | number | null;
+  effectiveTo?: Date | string | number | null;
   currency?: string;
   components?: string;
+  steps?: string;
+  remainderSink?: string;
+  applicationFeeOffsetRecipient?: string;
   metadata?: string;
 }
 

@@ -72,6 +72,19 @@ console.log(earner.id, plan.getComponents());
 All money fields use integer cents. Rates and probability-like values use
 decimals from `0` to `1`; rounding occurs through the exported money helpers.
 
+## Waterfall plans
+
+Version-two plans can carry ordered `steps`, an `effectiveTo` boundary, and a
+`remainderSink`. `calculateWaterfall()` is a pure, generic allocation service:
+hosts register recipient resolvers, then persist the returned trace as the
+replay evidence. The trace freezes the resolved recipients, input facts, and
+application-fee offset. All amounts are integer minor units; each percentage
+rounds half away from zero and recipients plus the sink always equal gross.
+
+An application fee already settled at checkout is modeled only as an offset to
+the configured recipient's payable allocation. It is never emitted as a second
+allocation or payable. The service does not initiate a payout or transfer.
+
 ## Core model
 
 - **Roles are separate from money.** `SalesRepresentative` and `Referrer` are
