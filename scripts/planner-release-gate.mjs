@@ -13,10 +13,10 @@
  *   framework checks
  *     - `smrt cookbook validate` of every library cookbook against the
  *       workspace manifests
- *     - `smrt cookbook apply` of one library cookbook into a new project
- *       (smrt-start, as a user runs it), every @happyvertical package
- *       overridden to the release tarballs, then the project's install,
- *       build and typecheck
+ *     - `smrt cookbook apply` of one library cookbook into a new project from
+ *       the release's own template (@happyvertical/smrt-template-sveltekit),
+ *       every @happyvertical package overridden to the release tarballs, then
+ *       the project's install, build and typecheck
  *
  * Each check gets one retry; a check that passes only on retry is reported as
  * flaky but does not fail the gate. A failure names who broke: the planner
@@ -25,7 +25,7 @@
  * app fails, a control repeats the apply as the published release generates
  * it (the published CLI and manifests, every release package pinned to the
  * latest published version): if that fails too, the cause is upstream drift (the
- * smrt-start template or a third-party release), not this release, and the
+ * published template or a third-party release), not this release, and the
  * failure says so. When the control cannot be built from the published
  * release (a package the app uses or the CLI is not published at that
  * version, or the published CLI cannot apply this release's cookbook), it is
@@ -33,7 +33,7 @@
  * never published past an app that does not build.
  *
  * Usage: node scripts/planner-release-gate.mjs --packs <dir>
- *          [--cookbook bakery] [--template github:happyvertical/smrt-start]
+ *          [--cookbook bakery] [--template <path|github:owner/repo[#ref]>]
  *          [--only planner|framework]
  */
 import { spawnSync } from 'node:child_process';
@@ -56,6 +56,7 @@ const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PLANNER = join(ROOT, 'packages/planner');
 const CLI = join(ROOT, 'packages/cli/bin/smrt.js');
 const PLANNER_NAME = '@happyvertical/smrt-planner';
+const TEMPLATE_PACKAGE = '@happyvertical/smrt-template-sveltekit';
 
 const OWNERS = {
   planner: {
@@ -71,7 +72,7 @@ const OWNERS = {
   upstream: {
     label: 'UPSTREAM',
     meaning:
-      'not this release: the generated app also fails against the published packages, so the smrt-start template or a third-party release drifted. Fix the template (happyvertical/smrt-start) or pin the offending dependency, then re-run the release.',
+      'not this release: the generated app also fails against the published packages, so the published template or a third-party release drifted. Fix the template (packages/template-sveltekit) or pin the offending dependency, then re-run the release.',
   },
 };
 
@@ -201,6 +202,18 @@ function publishedCli(version) {
   ];
 }
 
+/** Extract a template package tarball into `dest`; returns its `template/` directory. */
+function extractTemplate(tarball, dest) {
+  rmSync(dest, { recursive: true, force: true });
+  mkdirSync(dest, { recursive: true });
+  const result = spawnSync('tar', ['-xzf', tarball, '-C', dest], { encoding: 'utf8' });
+  const template = join(dest, 'package', 'template');
+  if (result.status !== 0 || !existsSync(join(template, 'package.json'))) {
+    throw new Error(`${tarball} has no template/package.json: ${result.stderr}`);
+  }
+  return template;
+}
+
 const errorText = (error) => (error instanceof Error ? error.message : String(error));
 
 /** The `@happyvertical/smrt-*` packages a generated app's package.json names. */
@@ -277,13 +290,47 @@ function frameworkChecks(tarballs, options, scratch) {
     files.set(cookbook.id, file);
   }
   const app = join(scratch, `app-${options.cookbook}`);
+  // The project template ships in the release itself
+  // (@happyvertical/smrt-template-sveltekit's template/), so the release app
+  // uses the release tarball's copy and the control the published copy. The
+  // CLI's default, github:happyvertical/smrt-start, is a private repository a
+  // release runner cannot fetch. --template overrides both.
+  const releaseTemplate = () => {
+    if (options.template) return options.template;
+    const tarball = tarballs.get(TEMPLATE_PACKAGE);
+    if (!tarball) throw new Error(`no ${TEMPLATE_PACKAGE} tarball among the release packs`);
+    return extractTemplate(tarball, join(scratch, 'release-template'));
+  };
+  const publishedTemplate = (version) => {
+    if (options.template) return options.template;
+    const dest = join(scratch, 'published-template');
+    rmSync(dest, { recursive: true, force: true });
+    mkdirSync(dest, { recursive: true });
+    const result = spawnSync(
+      'npm',
+      [
+        'pack',
+        `${TEMPLATE_PACKAGE}@${version}`,
+        '--pack-destination',
+        dest,
+        // Scope mapping only, as in publishedCli().
+        `--${RELEASE_SCOPE}:registry=${OWN_REGISTRY}`,
+      ],
+      { cwd: scratch, encoding: 'utf8' },
+    );
+    const tarball = readdirSync(dest).find((file) => file.endsWith('.tgz'));
+    if (result.status !== 0 || !tarball) {
+      throw new Error(`npm pack ${TEMPLATE_PACKAGE}@${version}: ${result.stderr}`);
+    }
+    return extractTemplate(join(dest, tarball), join(dest, 'extracted'));
+  };
   /**
    * Apply the chosen cookbook into `dir` (template as a user gets it), then
    * install, build and typecheck. With `overrides`, every release package
    * resolves from its tarball; the template's lockfile is kept so everything
    * else stays at the versions the template was tested with.
    */
-  const generateApp = (dir, overrides, { published } = {}) => {
+  const generateApp = (dir, overrides, { published, template } = {}) => {
     rmSync(dir, { recursive: true, force: true });
     // The release app uses this release's CLI; the control the published
     // release's CLI, so nothing of this release takes part in it.
@@ -301,7 +348,8 @@ function frameworkChecks(tarballs, options, scratch) {
           // control from the published ones, as a user of that release gets it.
           ...(published ? [] : ['--manifests', manifests, '--no-registry']),
           '--no-install',
-          ...(options.template ? ['--template', options.template] : []),
+          '--template',
+          template,
         ],
         { cwd: scratch },
       );
@@ -346,6 +394,7 @@ function frameworkChecks(tarballs, options, scratch) {
         generateApp(
           app,
           new Map([...tarballs].map(([name, path]) => [name, `file:${path}`])),
+          { template: releaseTemplate() },
         );
       },
       // Control: the same apply with every release package pinned to the
@@ -384,12 +433,21 @@ function frameworkChecks(tarballs, options, scratch) {
           );
           return 'framework';
         }
+        let template;
+        try {
+          template = publishedTemplate(published);
+        } catch (error) {
+          console.log(
+            `control inconclusive: the published template ${published} could not be fetched (${errorText(error)}); reporting the framework`,
+          );
+          return 'framework';
+        }
         try {
           console.log(`control pins every release package to ${published}`);
           generateApp(
             `${app}-control`,
             new Map([...tarballs.keys()].map((name) => [name, published])),
-            { published },
+            { published, template },
           );
           console.log('✓ control passed: the release tarballs broke the app');
           return 'framework';

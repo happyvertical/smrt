@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
@@ -31,6 +32,18 @@ const localAliases = (
     }),
   )
 ).flat();
+
+// Vite reads tsconfig.json, which extends the generated
+// .svelte-kit/tsconfig.json. A plain Vite build never runs SvelteKit's sync,
+// so generate it here: a fresh checkout (the release gate restores only build
+// outputs) has none.
+const sync = spawnSync('pnpm', ['exec', 'svelte-kit', 'sync'], {
+  stdio: 'inherit',
+});
+if (sync.status !== 0) {
+  console.error('svelte-kit sync failed; the MCP widget was not built.');
+  process.exit(sync.status ?? 1);
+}
 
 const result = await build({
   configFile: false,

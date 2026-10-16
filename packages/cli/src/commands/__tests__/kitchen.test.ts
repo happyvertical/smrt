@@ -461,7 +461,7 @@ describe('/api/kitchen/cookbook', () => {
     const pkg = JSON.parse(
       readFileSync(join(project, 'package.json'), 'utf-8'),
     );
-    expect(pkg.name).toBe('corner-bakery');
+    expect(pkg.name).toBe('@smrt-app/corner-bakery');
     // A new project runs this CLI's smrt release, not the template's (#4055).
     expect(pkg.dependencies).toMatchObject({
       '@happyvertical/smrt-commerce': cliVersion(),
