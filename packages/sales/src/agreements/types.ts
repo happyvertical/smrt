@@ -46,6 +46,8 @@ export interface AgreementOptions extends SmrtObjectOptions {
   effectiveFrom?: Date | string | number | null;
   effectiveTo?: Date | string | number | null;
   executedAgreementId?: string | null;
+  amendmentPredecessorId?: string | null;
+  amendmentPredecessorEnd?: Date | string | number | null;
   metadata?: string;
 }
 

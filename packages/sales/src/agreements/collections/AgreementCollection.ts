@@ -66,17 +66,23 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
       agreement.status !== 'draft' &&
       agreement.status !== 'cancelled' &&
       agreement.isEffectiveAt(at);
-    let matches = (
-      await this.findGoverningCandidates(
-        kind,
-        partyAValue,
-        partyBValue,
-        lane,
-        false,
-      )
-    ).filter(governs);
-    // A draft or later tenant version must not erase earlier global history.
-    if (matches.length === 0 && lane != null) {
+    const candidates = await this.findGoverningCandidates(
+      kind,
+      partyAValue,
+      partyBValue,
+      lane,
+      false,
+    );
+    let matches = candidates.filter(governs);
+    // Global defaults apply only before this tenant lane first governed.
+    // An ended tenant relationship must never silently resume global fees.
+    const laneHasBegun = candidates.some(
+      (agreement) =>
+        agreement.status !== 'draft' &&
+        agreement.status !== 'cancelled' &&
+        (!agreement.effectiveFrom || agreement.effectiveFrom <= at),
+    );
+    if (matches.length === 0 && lane != null && !laneHasBegun) {
       matches = (
         await this.findGoverningCandidates(
           kind,
@@ -214,6 +220,8 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
           'Agreement amendment would overlap the predecessor start',
         );
       }
+      draft.amendmentPredecessorId = predecessor?.id ?? null;
+      draft.amendmentPredecessorEnd = predecessor?.effectiveTo ?? null;
       if (predecessor) {
         predecessor.effectiveTo = draft.effectiveFrom;
         predecessor.supersede();
@@ -226,6 +234,97 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
     const activated = await this.get({ id: activatedId });
     if (!activated) throw new Error(`Agreement '${activatedId}' disappeared`);
     return activated;
+  }
+
+  /** Withdraw a scheduled successor before it has ever governed.
+   * Restores only its persisted predecessor boundary, in the same transaction.
+   * Repeated/concurrent withdrawal refuses rather than applying recovery twice.
+   */
+  async withdrawAmendment(id: string): Promise<Agreement> {
+    const db = this.db as TransactionCapableDatabase;
+    if (typeof db.transaction !== 'function')
+      throw new Error('Agreement withdrawal requires transaction support');
+    await db.transaction(async (tx) => {
+      const agreements = await AgreementCollection.create({ db: tx });
+      const successor = await agreements.get({ id });
+      const now = new Date();
+      if (
+        !successor ||
+        successor.status !== 'active' ||
+        !successor.effectiveFrom ||
+        successor.effectiveFrom <= now ||
+        !successor.amendmentPredecessorId
+      )
+        throw new Error(
+          'Only a scheduled active amendment with predecessor provenance can be withdrawn',
+        );
+      const predecessor = await agreements.get({
+        id: successor.amendmentPredecessorId,
+      });
+      if (
+        !predecessor ||
+        predecessor.tenantId !== successor.tenantId ||
+        predecessor.kind !== successor.kind ||
+        predecessor.partyA !== successor.partyA ||
+        predecessor.partyB !== successor.partyB ||
+        predecessor.version >= successor.version ||
+        predecessor.status !== 'superseded' ||
+        predecessor.effectiveTo?.getTime() !== successor.effectiveFrom.getTime()
+      )
+        throw new Error(
+          'Agreement withdrawal predecessor no longer matches activation provenance',
+        );
+      const restoredEnd = successor.amendmentPredecessorEnd;
+      if (restoredEnd && restoredEnd <= successor.effectiveFrom)
+        throw new Error(
+          'Agreement withdrawal has invalid predecessor boundary provenance',
+        );
+      const versions = await agreements.findGoverningCandidates(
+        successor.kind,
+        successor.partyA,
+        successor.partyB,
+        successor.tenantId,
+        false,
+      );
+      if (
+        versions.some(
+          (row) =>
+            row.id !== successor.id &&
+            row.id !== predecessor.id &&
+            row.status !== 'draft' &&
+            row.status !== 'cancelled' &&
+            (!restoredEnd ||
+              !row.effectiveFrom ||
+              row.effectiveFrom < restoredEnd) &&
+            (!row.effectiveTo || row.effectiveTo > successor.effectiveFrom!),
+        )
+      )
+        throw new Error('Agreement withdrawal would overlap governing history');
+      // The first compare-and-set serializes duplicate withdrawals. The second
+      // protects the exact boundary being restored; any failure rolls both back.
+      const cancelled = await tx.query(
+        `UPDATE ${agreements.tableName} SET status = 'cancelled' WHERE id = $1 AND status = 'active' AND effective_from > $2 RETURNING id`,
+        id,
+        new Date().toISOString(),
+      );
+      if (returnedRows(cancelled).length !== 1)
+        throw new Error(
+          'Agreement withdrawal lost its scheduled active transition',
+        );
+      const restored = await tx.query(
+        `UPDATE ${agreements.tableName} SET status = 'active', effective_to = $1 WHERE id = $2 AND status = 'superseded' AND effective_to = $3 RETURNING id`,
+        restoredEnd?.toISOString() ?? null,
+        predecessor.id,
+        successor.effectiveFrom.toISOString(),
+      );
+      if (returnedRows(restored).length !== 1)
+        throw new Error(
+          'Agreement withdrawal predecessor changed concurrently',
+        );
+    });
+    const withdrawn = await this.get({ id });
+    if (!withdrawn) throw new Error(`Agreement '${id}' disappeared`);
+    return withdrawn;
   }
 
   private async findGoverningCandidates(
@@ -281,3 +380,8 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
 }
 
 export default AgreementCollection;
+
+function returnedRows(result: unknown): unknown[] {
+  if (Array.isArray(result)) return result;
+  return (result as { rows?: unknown[] })?.rows ?? [];
+}

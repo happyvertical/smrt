@@ -182,3 +182,12 @@ pnpm --filter @happyvertical/smrt-sales build
 
 See [`AGENTS.md`](./AGENTS.md) for lifecycle, evidence, concurrency, and payout
 invariants.
+
+A future amendment activated through `activateAmendment` can be withdrawn through
+`withdrawAmendment(id)` only before its start, while it is still active. This
+transaction cancels the never-effective successor and restores its exact persisted
+predecessor end (including a finite end); it never infers an open-ended interval.
+Repeated, late, or conflicting withdrawals fail without changing history. Direct
+model termination remains for already-effective terms. Global defaults apply only
+before a tenant lane first governs; termination, expiry, and later gaps in that
+lane return no agreement instead of silently resuming global fees.

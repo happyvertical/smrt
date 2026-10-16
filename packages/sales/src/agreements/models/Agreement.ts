@@ -106,6 +106,12 @@ export class Agreement extends SmrtObject {
   @foreignKey('ExecutedAgreement')
   executedAgreementId: string | null = null;
 
+  /** Activation provenance used only for withdrawing a not-yet-effective amendment. */
+  @foreignKey('Agreement')
+  amendmentPredecessorId: string | null = null;
+
+  amendmentPredecessorEnd: Date | null = null;
+
   metadata: string = '{}';
 
   constructor(options: AgreementOptions = {}) {
@@ -123,6 +129,12 @@ export class Agreement extends SmrtObject {
       this.effectiveTo = coerceAgreementDate(options.effectiveTo);
     if (options.executedAgreementId !== undefined)
       this.executedAgreementId = options.executedAgreementId;
+    if (options.amendmentPredecessorId !== undefined)
+      this.amendmentPredecessorId = options.amendmentPredecessorId;
+    if (options.amendmentPredecessorEnd !== undefined)
+      this.amendmentPredecessorEnd = coerceAgreementDate(
+        options.amendmentPredecessorEnd,
+      );
     if (options.metadata !== undefined) this.metadata = options.metadata;
   }
 
@@ -130,6 +142,9 @@ export class Agreement extends SmrtObject {
     await super.initialize();
     this.effectiveFrom = coerceAgreementDate(this.effectiveFrom);
     this.effectiveTo = coerceAgreementDate(this.effectiveTo);
+    this.amendmentPredecessorEnd = coerceAgreementDate(
+      this.amendmentPredecessorEnd,
+    );
     if (this.isPersisted) {
       loadedStatus.set(this, this.status);
       if (this.status !== 'draft') {
@@ -360,6 +375,9 @@ export class Agreement extends SmrtObject {
       terms: this.terms,
       effectiveFrom: this.effectiveFrom?.toISOString() ?? null,
       executedAgreementId: this.executedAgreementId,
+      amendmentPredecessorId: this.amendmentPredecessorId,
+      amendmentPredecessorEnd:
+        this.amendmentPredecessorEnd?.toISOString() ?? null,
     });
   }
 }
