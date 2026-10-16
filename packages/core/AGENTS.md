@@ -134,6 +134,10 @@ and repository rules.
 - A collection class never publishes more than its model: unset surfaces
   inherit the model's, and the build rejects a collection that opens a CRUD
   write its model closes. See `agents/generators.md` (Collection exposure).
+- A model subclass (STI child or CTI subclass) never publishes more than its
+  parent model: unset surfaces and `sensitive` inherit the parent's, and the
+  build rejects a subclass that widens them unless it names each operation in
+  `widenParentExposure`. See `agents/generators.md` (Subclass exposure).
 - API custom-action eligibility has ONE resolver, `resolveApiMethodExposure()`
   in `generators/custom-action.ts`: both SvelteKit route emitters,
   `resolveApiActionSet`, and `knowledge.ts` read it, and a new consumer must too
