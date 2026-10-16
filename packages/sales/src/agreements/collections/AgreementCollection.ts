@@ -66,8 +66,9 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
       partyBValue,
       tenantId,
     );
-    const matches = candidates.filter((agreement) =>
-      agreement.isEffectiveAt(at),
+    const matches = candidates.filter(
+      (agreement) =>
+        agreement.status !== 'draft' && agreement.isEffectiveAt(at),
     );
     if (matches.length > 1) {
       throw new Error(
@@ -194,9 +195,15 @@ export class AgreementCollection extends SmrtCollection<Agreement> {
       );
     }
     assertTenantReadAllowed(tenantId, 'AgreementCollection.activeFor');
-    return await this.query(
+    const tenantRows = await this.query(
       `SELECT * FROM ${this.tableName} WHERE tenant_id = ? AND kind = ? AND party_a = ? AND party_b = ? ORDER BY version DESC`,
       [tenantId, kind, partyA, partyB],
+      { allowRawOnTenantScoped: true },
+    );
+    if (tenantRows.length > 0) return tenantRows;
+    return await this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id IS NULL AND kind = ? AND party_a = ? AND party_b = ? ORDER BY version DESC`,
+      [kind, partyA, partyB],
       { allowRawOnTenantScoped: true },
     );
   }

@@ -203,11 +203,17 @@ export class Agreement extends SmrtObject {
     this.status = 'superseded';
   }
 
-  terminate(): void {
+  terminate(at: Date = new Date()): void {
     if (this.status !== 'draft' && this.status !== 'active') {
       throw new Error(
         `Agreement: cannot terminate from status '${this.status}'`,
       );
+    }
+    if (
+      this.status === 'active' &&
+      (!this.effectiveTo || this.effectiveTo > at)
+    ) {
+      this.effectiveTo = at;
     }
     this.status = 'terminated';
   }

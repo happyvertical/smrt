@@ -134,6 +134,33 @@ describe('Agreement', () => {
     ).rejects.toThrow(/Agreement overlap/);
   });
 
+  it('does not resolve drafts and end-dates terminated terms', async () => {
+    const active = await createDraft({ status: 'active' });
+    const draft = await createDraft({
+      version: 2,
+      effectiveFrom: new Date('2026-02-01T00:00:00Z'),
+    });
+    expect(
+      await agreements.activeFor(
+        KIND,
+        COOP,
+        WORKER,
+        new Date('2026-02-02T00:00:00Z'),
+      ),
+    ).toMatchObject({ id: active.id });
+    expect(draft.status).toBe('draft');
+    active.terminate(new Date('2026-03-01T00:00:00Z'));
+    await active.save();
+    expect(
+      await agreements.activeFor(
+        KIND,
+        COOP,
+        WORKER,
+        new Date('2026-03-01T00:00:00Z'),
+      ),
+    ).toBeNull();
+  });
+
   it('isolates same agreement identity by tenant and denies explicit cross-tenant reads', async () => {
     const a = await createDraft({ tenantId: 'tenant-a', status: 'active' });
     const b = await createDraft({ tenantId: 'tenant-b', status: 'active' });
