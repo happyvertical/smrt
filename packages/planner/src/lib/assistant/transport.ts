@@ -80,6 +80,12 @@ export interface BrowserTransportOptions {
   now?: () => number;
   /** Called with each reply the model produced (not errors), e.g. to read it aloud. */
   onReply?: (text: string) => void;
+  /**
+   * The menu sections the assistant may open (`focus` with a `section`):
+   * only where the running app navigates to them. Omitted or empty, the
+   * assistant cannot navigate and the schema has no `open`.
+   */
+  menu?: () => readonly { id: string; label: string }[];
 }
 
 export interface BrowserAssistantTransport extends AssistantTransport {
@@ -137,6 +143,39 @@ function runCommands(
   return lines.join(' ');
 }
 
+/** Said when a turn changed nothing and the model's sentence was not a question. */
+export const NOTHING_CHANGED = 'Nothing in the app changed.';
+
+/**
+ * What the chat says for a turn. When something ran, the commands' own
+ * summaries ("Added Invoicing.", "Opened Billing."), never the model's
+ * sentence, which may claim more than ran ("Added a sales report"). When
+ * nothing ran, the model's sentence (an answer or a question), plus a plain
+ * note that nothing changed unless it asks something or offers a cookbook.
+ */
+export function honestReply(
+  line: string,
+  summary: string,
+  offered: boolean,
+): string {
+  if (summary) return summary;
+  if (offered || line.trim().endsWith('?')) return line;
+  return [line, NOTHING_CHANGED].filter(Boolean).join(' ');
+}
+
+/** Open a menu section through `focus`; what happened, failure included. */
+function openSection(
+  controller: PlannerController,
+  id: string,
+  menu: readonly { id: string; label: string }[],
+): string {
+  const label = menu.find((section) => section.id === id)?.label ?? id;
+  const result = controller.run({ name: 'focus', input: { section: id } });
+  return result.ok
+    ? `Opened ${label}.`
+    : `Could not open ${label}: ${result.error.message}`;
+}
+
 /**
  * The model's `add` and `remove` as commands, reported as one change: what
  * really ended up on or off, after `requires`, and what was kept because
@@ -166,7 +205,9 @@ function applyRecipes(
  * An `AssistantTransport` that runs entirely in the browser: one thread, kept
  * in memory, whose turns go to the on-device model with the recipes as a
  * constrained schema. The model's `add`/`remove` are applied through the same
- * recipe store the Planner cards drive. It never navigates.
+ * recipe store the Planner cards drive. It navigates only to a menu section
+ * `menu` offers. What it says it did is what the commands' results say: the
+ * model's own sentence stands only when nothing changed, and then says so.
  */
 export function createBrowserAssistantTransport(
   options: BrowserTransportOptions,
@@ -242,6 +283,7 @@ export function createBrowserAssistantTransport(
           content: m.content,
         }));
       const matches = matchText(index, text);
+      const menu = options.menu?.() ?? [];
       const raw = await model.message(text, {
         history: [
           {
@@ -253,6 +295,7 @@ export function createBrowserAssistantTransport(
               options.settings?.read(),
               matches,
               options.theme ? { current: options.theme.read() } : undefined,
+              menu,
             ),
           },
           ...prior,
@@ -262,6 +305,7 @@ export function createBrowserAssistantTransport(
           cookbooks,
           !!options.settings,
           !!options.theme,
+          menu.map((section) => section.id),
         ),
         temperature: 0,
         maxTokens: MAX_REPLY_TOKENS,
@@ -272,6 +316,7 @@ export function createBrowserAssistantTransport(
           typeof options.acceptCommands === 'function'
             ? options.acceptCommands()
             : options.acceptCommands,
+        sections: menu.map((section) => section.id),
       });
       const applied = applyRecipes(planner, change);
       const settingsText =
@@ -290,11 +335,15 @@ export function createBrowserAssistantTransport(
       const commandText = (change.commands ?? []).length
         ? runCommands(planner, change.commands ?? [])
         : '';
+      const openText = change.open
+        ? openSection(planner, change.open, menu)
+        : '';
       const summary = [
         describeChange(applied, options.recipes),
         settingsText,
         themed?.summary ?? '',
         commandText,
+        openText,
       ]
         .filter(Boolean)
         .join(' ');
@@ -317,11 +366,11 @@ export function createBrowserAssistantTransport(
         ? cookbooks.find((c) => c.id === cookbookId)
         : undefined;
       const line = change.reply || (offered ? `Set up ${offered.name}?` : '');
-      const reply = [line, summary].filter(Boolean).join(' ');
-      if (line) options.onReply?.(line);
+      const reply = honestReply(line, summary, !!offer);
+      if (reply) options.onReply?.(reply);
       // One ref renders as is; a cookbook offer and a theme Undo in one turn ride together.
       const refs = offer && undo ? [offer, undo] : (offer ?? undo);
-      return { content: reply || 'Done.', refs };
+      return { content: reply, refs };
     } catch (error) {
       if (controller?.signal.aborted) return { content: 'Stopped.' };
       const detail = error instanceof Error ? error.message : String(error);

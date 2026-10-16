@@ -264,8 +264,6 @@ describe('transport', () => {
     });
     const result = await send(transport, 'we use CAD and 13% tax');
     expect(memory.get()).toMatchObject({ currency: 'CAD', taxRate: 0.13 });
-    expect(result.assistantMessage?.content).toBe(
-      'Done. Currency CAD, tax 13%.',
-    );
+    expect(result.assistantMessage?.content).toBe('Currency CAD, tax 13%.');
   });
 });

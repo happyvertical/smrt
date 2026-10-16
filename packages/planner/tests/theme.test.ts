@@ -446,7 +446,7 @@ describe('assistant theme', () => {
       clientRequestId: 'r1',
     });
     expect(mem.get()?.custom?.primary).toBe('#d97706');
-    expect(result.assistantMessage?.content).toContain('Warmed it up.');
+    expect(result.assistantMessage?.content).not.toContain('Warmed it up.');
     expect(result.assistantMessage?.content).toContain(
       'Theme: brand colour #d97706.',
     );

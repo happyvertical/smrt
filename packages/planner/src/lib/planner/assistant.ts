@@ -16,6 +16,7 @@ import { createHostChat } from '../inference/host.ts';
 import { recipes } from '../recipes/index.ts';
 import type { ThemeSetting } from '../theme/theme.ts';
 import type { PlannerController } from './commands/index.ts';
+import { plannerController, plannerRuntime } from './instance.ts';
 
 /**
  * Give the planner a model yourself: anything that implements `message()`
@@ -198,6 +199,15 @@ export function createPlannerAssistant(
     themeUndos,
     controller,
     onReply: inference.onReply,
+    // Navigation goes through the app's own controller only (its `focus`
+    // reaches `plannerRuntime.openSection`); a host's controller may not.
+    menu: () =>
+      controller === plannerController && plannerRuntime.openSection
+        ? controller
+            .snapshot()
+            .sections.filter((section) => !section.hidden)
+            .map(({ id, label }) => ({ id, label }))
+        : [],
   });
   return { transport, themeUndos, mode, ...(notice ? { notice } : {}) };
 }

@@ -47,6 +47,7 @@ import { DEFAULT_PRESET } from '../theme/theme.ts';
 import { appHref, setBasePath } from './app.svelte.ts';
 import { PLANNER_TAB_IDS } from './commands/index.ts';
 import { CHEF_HAT_ICON, EXPORT_ICON } from './header-icons.ts';
+import { plannerRuntime } from './instance.ts';
 import PlannerControls from './PlannerControls.svelte';
 import PlannerLifecycle from './PlannerLifecycle.svelte';
 import { parseModelRoute, recordFilter, splitRoute } from './routes.ts';
@@ -278,6 +279,12 @@ $effect(() => {
 });
 let openedHere = false;
 onMount(() => {
+  // The controller's `focus` (the assistant's "take me to it") opens a
+  // section through this, as the static layout's does with its router.
+  const previousOpen = plannerRuntime.openSection;
+  plannerRuntime.openSection = (id) => {
+    location.hash = `#${shell.sectionPath(id)}`;
+  };
   const previous = cookbookView.navigator;
   cookbookView.navigator = {
     open(id) {
@@ -293,6 +300,7 @@ onMount(() => {
   };
   return () => {
     cookbookView.navigator = previous;
+    plannerRuntime.openSection = previousOpen;
   };
 });
 const exporting = $derived(configuring && plannerTab.active === 'export');

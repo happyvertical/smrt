@@ -152,7 +152,9 @@ describe('host mode wire contract', () => {
         mode: 'host',
         host: { endpoint: `${plain.origin}/chat` },
       });
-      expect(await send(assistant, 'hi')).toBe('Hello there.');
+      expect(await send(assistant, 'hi')).toBe(
+        'Hello there. Nothing in the app changed.',
+      );
     } finally {
       await plain.close();
     }

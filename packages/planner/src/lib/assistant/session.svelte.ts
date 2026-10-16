@@ -55,6 +55,8 @@ export interface SessionOptions {
   host?: EngineHost;
   /** Called with each reply the model produced, e.g. to read it aloud. */
   onReply?: (text: string) => void;
+  /** The menu sections the assistant may open; see the transport's `menu`. */
+  menu?: () => readonly { id: string; label: string }[];
 }
 
 /**
@@ -112,6 +114,7 @@ export class AssistantSession {
               ? 'Inference is off. The cards on the Planner page work without it.'
               : 'Download a model first, then I can help. The cards on the Planner page work without one.',
       onReply: (text) => options.onReply?.(text),
+      menu: options.menu,
     });
   }
 
