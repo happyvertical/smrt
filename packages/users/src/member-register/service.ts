@@ -341,8 +341,13 @@ export class MemberRegisterService {
     return JSON.stringify(rows);
   }
   static exportCsv(rows: readonly EligibilityRow[]): string {
-    const q = (value: unknown) =>
-      `"${String(value ?? '').replaceAll('"', '""')}"`;
+    // CSV is commonly opened in spreadsheets. Preserve the neutral export
+    // value while preventing a member-supplied cell from becoming a formula.
+    const q = (value: unknown) => {
+      const text = String(value ?? '');
+      const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+      return `"${safe.replaceAll('"', '""')}"`;
+    };
     return `${[
       'memberId,displayName,memberClassKey,recordDate,eligible,reason',
       ...rows.map((row) =>

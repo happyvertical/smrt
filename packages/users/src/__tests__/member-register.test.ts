@@ -80,6 +80,11 @@ describe('generic legal member register', () => {
     );
     expect(MemberRegisterService.exportJson(rows)).toContain('2026-02-01');
     expect(MemberRegisterService.exportCsv(rows)).toContain('memberClassKey');
+    expect(
+      MemberRegisterService.exportCsv([
+        { ...rows[0], displayName: '=SUM(A1:A2)', memberClassKey: '@worker' },
+      ]),
+    ).toContain('"\'=SUM(A1:A2)"');
   });
 
   it('records status history and resolves record-date state without cross-tenant leakage', async () => {
