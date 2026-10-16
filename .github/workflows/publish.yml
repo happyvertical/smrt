@@ -236,6 +236,14 @@ jobs:
           {
             printf '%s\n' package.json
             find packages -type f \( -name 'package.json' -o -name 'package.dependencies.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -path '*/dist/*' \) -print
+            # The planner publishes its prerendered app at app/ (released
+            # smrt kitchen CLIs resolve it there), and its release gate runs
+            # the app from source, which reads the generated catalog and CLI
+            # version. All three are build outputs outside dist/.
+            find packages/planner/app -type f -print
+            printf '%s\n' \
+              packages/planner/src/lib/catalog/catalog.json \
+              packages/planner/src/lib/smrt-version.ts
           } | sort -u > publish-release-workspace-files
           tar -cf publish-release-workspace.tar -T publish-release-workspace-files
 
@@ -320,8 +328,14 @@ jobs:
           if-no-files-found: error
           path: publish-pack-output/
 
-  publish-release:
-    name: Publish Release
+  # Final planner gate (#4056), after the release tarballs exist and before
+  # anything is published: the planner's browser suites, its packed tarball
+  # installed against the release tarballs, and a real `smrt cookbook apply`
+  # of a library cookbook whose generated app must install, build and
+  # typecheck against them. One retry per check; the step summary and the
+  # error annotation say whether the planner or the framework broke.
+  planner-release-gate:
+    name: Planner Release Gate
     needs:
       - prepare-release
       - validate-release-shards
@@ -329,6 +343,62 @@ jobs:
       github.ref == 'refs/heads/main' &&
       needs.prepare-release.outputs.should-publish == 'true' &&
       needs.validate-release-shards.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Restore versioned workspace and build outputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: publish-release-workspace
+          path: release-artifacts
+
+      - name: Extract versioned workspace and build outputs
+        run: tar -xf release-artifacts/publish-release-workspace.tar
+
+      - name: Download verified package artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: publish-release-pack-*
+          path: ${{ runner.temp }}/release-packs
+          merge-multiple: true
+
+      - name: Setup Environment
+        id: setup-environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.9.0'
+          install-deps: 'true'
+          setup-playwright: 'true'
+          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Playwright system dependencies after a browser cache hit
+        if: steps.setup-environment.outputs.playwright-cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Run planner release gate
+        env:
+          CI: true
+        run: node scripts/planner-release-gate.mjs --packs "$RUNNER_TEMP/release-packs"
+
+  publish-release:
+    name: Publish Release
+    needs:
+      - prepare-release
+      - validate-release-shards
+      - planner-release-gate
+    if: |
+      github.ref == 'refs/heads/main' &&
+      needs.prepare-release.outputs.should-publish == 'true' &&
+      needs.validate-release-shards.result == 'success' &&
+      needs.planner-release-gate.result == 'success'
     environment: release
     runs-on: ubuntu-latest
     timeout-minutes: 45

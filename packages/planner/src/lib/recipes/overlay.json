@@ -1,0 +1,409 @@
+{
+  "order": [
+    "commerce.customers",
+    "commerce.purchases",
+    "commerce.sales",
+    "commerce.vendors",
+    "inventory.stock",
+    "products.simple",
+    "products.clothing",
+    "products.ingredients",
+    "commerce.estimates",
+    "commerce.wholesale",
+    "commerce.invoicing",
+    "commerce.fulfillment",
+    "commerce.agreements",
+    "commerce.leases",
+    "commerce.licenses",
+    "ledgers.bookkeeping",
+    "projects.tracker",
+    "events.calendar",
+    "sales.pipeline"
+  ],
+  "recipes": {
+    "commerce.customers": {
+      "forms": [
+        {
+          "id": "customer.default",
+          "kind": "field-map",
+          "label": "Customer",
+          "kindLabel": "Customer",
+          "model": "@happyvertical/smrt-commerce:Customer",
+          "records": [
+            {
+              "as": "profileType",
+              "model": "@happyvertical/smrt-profiles:ProfileType",
+              "match": {
+                "name": "Customer"
+              }
+            },
+            {
+              "as": "profile",
+              "model": "@happyvertical/smrt-profiles:Profile",
+              "match": {
+                "id": {
+                  "ref": "customer",
+                  "field": "profileId"
+                }
+              },
+              "values": {
+                "typeId": {
+                  "ref": "profileType"
+                }
+              }
+            },
+            {
+              "as": "customer",
+              "model": "@happyvertical/smrt-commerce:Customer",
+              "values": {
+                "profileId": {
+                  "ref": "profile"
+                }
+              }
+            }
+          ],
+          "fields": [
+            {
+              "id": "name",
+              "label": "Name",
+              "to": "profile.name",
+              "required": true
+            },
+            {
+              "id": "email",
+              "label": "Email",
+              "to": "profile.email"
+            },
+            {
+              "id": "status",
+              "label": "Status",
+              "to": "customer.status",
+              "default": "active"
+            },
+            {
+              "id": "customerType",
+              "label": "Customer type",
+              "to": "customer.customerType",
+              "default": "dtc"
+            },
+            {
+              "id": "paymentTerms",
+              "label": "Payment terms",
+              "to": "customer.paymentTerms"
+            },
+            {
+              "id": "creditLimit",
+              "label": "Credit limit",
+              "to": "customer.creditLimit"
+            },
+            {
+              "id": "taxExempt",
+              "label": "Tax exempt",
+              "to": "customer.taxExempt"
+            },
+            {
+              "id": "taxId",
+              "label": "Tax ID",
+              "to": "customer.taxId"
+            },
+            {
+              "id": "shippingAddress",
+              "label": "Shipping address",
+              "to": "customer.defaultShippingAddress"
+            },
+            {
+              "id": "billingAddress",
+              "label": "Billing address",
+              "to": "customer.defaultBillingAddress"
+            },
+            {
+              "id": "notes",
+              "label": "Notes",
+              "to": "customer.notes"
+            }
+          ]
+        }
+      ]
+    },
+    "commerce.vendors": {
+      "forms": [
+        {
+          "id": "vendor.default",
+          "kind": "field-map",
+          "label": "Vendor",
+          "kindLabel": "Vendor",
+          "model": "@happyvertical/smrt-commerce:Vendor",
+          "records": [
+            {
+              "as": "profileType",
+              "model": "@happyvertical/smrt-profiles:ProfileType",
+              "match": {
+                "name": "Vendor"
+              }
+            },
+            {
+              "as": "profile",
+              "model": "@happyvertical/smrt-profiles:Profile",
+              "match": {
+                "id": {
+                  "ref": "vendor",
+                  "field": "profileId"
+                }
+              },
+              "values": {
+                "typeId": {
+                  "ref": "profileType"
+                }
+              }
+            },
+            {
+              "as": "vendor",
+              "model": "@happyvertical/smrt-commerce:Vendor",
+              "values": {
+                "profileId": {
+                  "ref": "profile"
+                }
+              }
+            }
+          ],
+          "fields": [
+            {
+              "id": "name",
+              "label": "Name",
+              "to": "profile.name",
+              "required": true
+            },
+            {
+              "id": "email",
+              "label": "Email",
+              "to": "profile.email"
+            },
+            {
+              "id": "status",
+              "label": "Status",
+              "to": "vendor.status",
+              "default": "active"
+            },
+            {
+              "id": "currency",
+              "label": "Currency",
+              "to": "vendor.currency",
+              "default": "USD"
+            },
+            {
+              "id": "paymentTerms",
+              "label": "Payment terms",
+              "to": "vendor.paymentTerms"
+            },
+            {
+              "id": "leadTimeDays",
+              "label": "Lead time (days)",
+              "to": "vendor.leadTimeDays"
+            },
+            {
+              "id": "minimumOrderAmount",
+              "label": "Minimum order",
+              "to": "vendor.minimumOrderAmount"
+            },
+            {
+              "id": "contactEmail",
+              "label": "Contact email",
+              "to": "vendor.defaultContactEmail"
+            },
+            {
+              "id": "contactPhone",
+              "label": "Contact phone",
+              "to": "vendor.defaultContactPhone"
+            },
+            {
+              "id": "notes",
+              "label": "Notes",
+              "to": "vendor.notes"
+            },
+            {
+              "id": "payoutAddresses",
+              "label": "Payout addresses",
+              "to": "vendor.payoutAddresses"
+            }
+          ]
+        }
+      ]
+    },
+    "inventory.stock": {
+      "extends": [
+        {
+          "form": "product.simple",
+          "records": [
+            {
+              "as": "sku",
+              "model": "@happyvertical/smrt-products:Sku",
+              "match": {
+                "productId": {
+                  "ref": "product"
+                }
+              },
+              "values": {
+                "code": "{product.name|slug}",
+                "name": "{product.name}",
+                "attributes": "{}",
+                "active": true
+              }
+            },
+            {
+              "as": "location",
+              "model": "@happyvertical/smrt-inventory:InventoryLocation",
+              "match": {
+                "code": "MAIN"
+              },
+              "values": {
+                "name": "Main warehouse",
+                "kind": "warehouse"
+              }
+            },
+            {
+              "as": "stock",
+              "model": "@happyvertical/smrt-inventory:StockLevel",
+              "match": {
+                "skuId": {
+                  "ref": "sku"
+                },
+                "locationId": {
+                  "ref": "location"
+                },
+                "state": "available"
+              }
+            }
+          ],
+          "fields": [
+            {
+              "id": "quantity",
+              "label": "Quantity",
+              "to": "stock.qty",
+              "default": 0
+            }
+          ]
+        },
+        {
+          "form": "product.clothing",
+          "records": [
+            {
+              "as": "location",
+              "model": "@happyvertical/smrt-inventory:InventoryLocation",
+              "match": {
+                "code": "MAIN"
+              },
+              "values": {
+                "name": "Main warehouse",
+                "kind": "warehouse"
+              }
+            },
+            {
+              "as": "stock",
+              "model": "@happyvertical/smrt-inventory:StockLevel",
+              "match": {
+                "skuId": {
+                  "ref": "sku"
+                },
+                "locationId": {
+                  "ref": "location"
+                },
+                "state": "available"
+              }
+            }
+          ],
+          "fields": [
+            {
+              "id": "quantity",
+              "label": "Quantity",
+              "to": "stock.qty",
+              "default": 0
+            }
+          ]
+        }
+      ]
+    },
+    "products.simple": {
+      "forms": [
+        {
+          "id": "product.simple",
+          "kind": "field-map",
+          "label": "Simple product",
+          "kindLabel": "Simple",
+          "model": "@happyvertical/smrt-products:Product",
+          "records": [
+            {
+              "as": "product",
+              "model": "@happyvertical/smrt-products:Product"
+            }
+          ],
+          "fields": [
+            {
+              "id": "name",
+              "label": "Name",
+              "to": "product.name",
+              "required": true
+            },
+            {
+              "id": "price",
+              "label": "Price",
+              "to": "product.price"
+            },
+            {
+              "id": "description",
+              "label": "Description",
+              "to": "product.description"
+            }
+          ]
+        }
+      ]
+    },
+    "products.clothing": {
+      "forms": [
+        {
+          "id": "product.clothing",
+          "kind": "variant-grid",
+          "label": "Clothing item",
+          "kindLabel": "Clothing",
+          "model": "@happyvertical/smrt-products:Product",
+          "product": {
+            "as": "product",
+            "model": "@happyvertical/smrt-products:Product"
+          },
+          "fields": [
+            {
+              "id": "name",
+              "label": "Name",
+              "to": "product.name",
+              "required": true
+            },
+            {
+              "id": "price",
+              "label": "Price",
+              "to": "product.price"
+            }
+          ],
+          "axes": [
+            {
+              "name": "size",
+              "label": "Sizes",
+              "values": [
+                "XS",
+                "S",
+                "M",
+                "L",
+                "XL"
+              ]
+            },
+            {
+              "name": "color",
+              "label": "Colors",
+              "values": []
+            }
+          ],
+          "variants": "@happyvertical/smrt-products:ProductVariant",
+          "skus": "@happyvertical/smrt-products:Sku"
+        }
+      ]
+    }
+  }
+}

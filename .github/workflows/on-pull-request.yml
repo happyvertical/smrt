@@ -544,6 +544,74 @@ jobs:
           path: packages/smrt-playground/e2e/__screenshots__
           if-no-files-found: error
 
+  planner-scope:
+    name: Detect Planner Browser Scope
+    if: >-
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      planner: ${{ steps.filter.outputs.planner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          persist-credentials: false
+      # The planner's browser suites drive its built app and MCP widget, so
+      # they follow the planner and the shell packages it mounts (#4056). Its
+      # unit tests and library cookbook validation run in Validate Changes on
+      # every PR whose change reaches it (every catalog source package is a
+      # planner devDependency, so Turbo's affected filter selects it).
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        with:
+          base: ${{ github.event.merge_group.base_sha || github.event.repository.default_branch }}
+          filters: |
+            planner:
+              - 'packages/planner/**'
+              - 'packages/smrt-svelte/src/**'
+              - 'packages/smrt-ui/src/**'
+              - 'packages/core/src/cookbook.ts'
+              - 'packages/core/src/cookbook/**'
+              - 'packages/cli/src/commands/kitchen/**'
+              - 'scripts/planner-release-gate.mjs'
+              - '.github/workflows/on-pull-request.yml'
+              - '.github/actions/setup-environment/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+
+  planner-browser:
+    name: Planner Browser Suites
+    needs: planner-scope
+    if: needs.planner-scope.outputs.planner == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          persist-credentials: false
+      - name: Setup environment
+        id: setup-environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.9.0'
+          setup-playwright: 'true'
+          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Playwright system dependencies after a browser cache hit
+        if: steps.setup-environment.outputs.playwright-cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+      # The planner's build generates its catalog from every catalog source
+      # package's manifest, so this builds those first.
+      - name: Build the planner and its catalog sources
+        run: pnpm turbo run build --filter='@happyvertical/smrt-planner...'
+      - name: Run the MCP widget browser suite
+        run: pnpm --filter @happyvertical/smrt-planner test:mcp-browser
+      - name: Run the live preview browser suite
+        run: pnpm --filter @happyvertical/smrt-planner test:live-preview-browser
+
   required-ci:
     name: Required CI
     if: always() && github.event_name != 'workflow_dispatch'
@@ -558,6 +626,8 @@ jobs:
       - publish-dry-run
       - visual-scope
       - visual-regression
+      - planner-scope
+      - planner-browser
     runs-on: ubuntu-latest
     # Deliberately below the 45-minute standard. This aggregator does no
     # checkout and no work beyond reading `needs.*.result`, and it is
@@ -579,6 +649,9 @@ jobs:
           VISUAL_SCOPE: ${{ needs.visual-scope.result }}
           VISUAL_SELECTED: ${{ needs.visual-scope.outputs.visual }}
           VISUAL_RESULT: ${{ needs.visual-regression.result }}
+          PLANNER_SCOPE: ${{ needs.planner-scope.result }}
+          PLANNER_SELECTED: ${{ needs.planner-scope.outputs.planner }}
+          PLANNER_RESULT: ${{ needs.planner-browser.result }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
@@ -603,6 +676,20 @@ jobs:
             fi
           elif [ "$VISUAL_RESULT" != skipped ]; then
             echo "::error::unexpected visual regression result: $VISUAL_RESULT"
+            exit 1
+          fi
+
+          if [ "$PLANNER_SCOPE" != success ] && [ "$PLANNER_SCOPE" != skipped ]; then
+            echo "::error::planner browser scope detection failed"
+            exit 1
+          fi
+          if [ "$PLANNER_SELECTED" = true ]; then
+            if [ "$PLANNER_RESULT" != success ]; then
+              echo "::error::planner browser suites did not succeed"
+              exit 1
+            fi
+          elif [ "$PLANNER_RESULT" != skipped ]; then
+            echo "::error::unexpected planner browser result: $PLANNER_RESULT"
             exit 1
           fi
 
