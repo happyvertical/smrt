@@ -42,17 +42,16 @@ const hasField = (model: CatalogModel, name: string) =>
   model.fields.some((f) => f.name === name);
 
 /**
- * The live totals of a draft by role; `undefined` when it has none of them.
- * Its `discountTotal` is left out: on the money model the lines' discounts
- * are already inside the subtotal, and the widget's computed block would
- * take them off again (smrt#4010, fixed by the unreleased smrt#4014).
+ * The live totals of a draft by role (plus its `lineAmountType`); `undefined`
+ * when it has none of them. The informational `discountTotal` is passed like
+ * the rest: the widget shows it as included and never subtracts it (smrt#4014).
  */
 export function documentTotals(
   model: CatalogModel,
   record: Row,
 ): LineItemsTotals | undefined {
   const roles = deriveFieldRoles(screenDefinition(model));
-  const { discount: _informational, ...totals } = recordTotals(record, roles);
+  const totals = recordTotals(record, roles);
   return Object.values(totals).some((v) => minor(v) !== null)
     ? totals
     : undefined;

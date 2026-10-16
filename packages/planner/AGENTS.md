@@ -375,8 +375,9 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   document its lines settle in (a Product or TaxCode is not). Once the app states any setting, samples
   use its tax rate, 0 included; a fresh app keeps the pack's. The record page's `line-items` widget gets an issued
   document's frozen money as `storedTotals` (`screens/totals.ts`: header figures plus the lines'
-  snapshots summed per component, e.g. GST and PST apart); a draft passes its live subtotal / tax /
-  total (no discount: smrt#4010) and the widget checks them against the lines. The third Order and
+  snapshots summed per component, e.g. GST and PST apart); a draft passes its live subtotal / discount / tax /
+  total / `lineAmountType` and the widget checks them against the lines (net lines, `discountTotal`
+  shown as included and never subtracted, an inclusive draft's gross lines less tax: smrt#4014, 0.56.2). The third Order and
   Invoice are drafts with a stale subtotal and total (`children.ts` `MISMATCH_*`) so the mismatch flag
   shows. A write the model refuses (a discount above the price, a code switched off, any line change on an
   issued document, whose money is frozen as smrt freezes it) throws `MoneyValidationError` and is undone,
