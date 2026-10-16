@@ -34,6 +34,7 @@ export {
   PayoutCollection,
 } from './PayoutCollection.js';
 export { PurchaseContractCollection } from './PurchaseContractCollection.js';
+export { PurchasePriceObservationCollection } from './PurchasePriceObservationCollection.js';
 export { SalesContractCollection } from './SalesContractCollection.js';
 export { TaxCodeCollection } from './TaxCodeCollection.js';
 export { TaxComponentCollection } from './TaxComponentCollection.js';

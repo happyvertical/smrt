@@ -933,3 +933,11 @@ Validation uses native SQLite/PostgreSQL persistence with mocked public provider
 operations, plus the SDK's exact request/readback fixtures. No live provider call
 or sandbox certification has been performed. Primary contract evidence and
 provider-field limits are documented in the SDK Accounting README.
+
+### Incomplete supplier price evidence
+
+Use `recordPurchasePriceObservation`, `readPurchasePriceObservation`, and
+`completePurchasePriceObservation` for source quotes/orders that lack complete
+net/tax/gross facts. Unknown totals remain null and no calculated or reportable
+Contract exists until explicit reviewed completion. See
+[observed purchase prices](agents/observed-purchase-prices.md).

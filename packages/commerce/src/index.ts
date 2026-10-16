@@ -116,6 +116,7 @@ export {
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
+export { PurchasePriceObservationCollection } from './collections/PurchasePriceObservationCollection.js';
 export {
   COMMERCE_INVOICE_LINE_ADD_TOOL_SLUG,
   COMMERCE_INVOICE_LINE_UPDATE_TOOL_SLUG,
@@ -308,6 +309,7 @@ export {
   Vendor,
   WholesaleOrder,
 } from './models/index.js';
+export { PurchasePriceObservation } from './models/PurchasePriceObservation.js';
 export {
   assertIntegerMinorUnits,
   calculateMoneyDocument,
@@ -331,6 +333,7 @@ export {
   type TaxComponentInput,
   type TaxRoundingScope,
 } from './money.js';
+export * from './observed-purchase-price.js';
 // Customer and vendor contact rows posted by the party forms (#3501)
 export {
   applyPartyContactIntent,

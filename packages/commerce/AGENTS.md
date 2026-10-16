@@ -227,3 +227,6 @@ See [customer advances](agents/customer-funds.md) for explicitly configured
 unapplied-AR/deposit-liability receipts, conserved application/refund capacity,
 real liability reclassification, final-invoice attestation and mutation guards.
 Use the public commands; `Payment.customerFundsJson` is command-owned.
+
+See [observed purchase prices](agents/observed-purchase-prices.md) for incomplete
+original supplier prices, explicit unknown totals and reviewed completion.
