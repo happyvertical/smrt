@@ -90,6 +90,63 @@ export function paymentRetryContract(postgres = false, enabled = true): void {
     }
 
     it.each([
+      'payment',
+      'refund',
+    ] as const)('retains the explicit original %s date in settlement and journal', async (kind) => {
+      const payment = await payments.create({
+        amount: 1234,
+        currency: 'CAD',
+        kind,
+      });
+      const options = { ...posting, effectiveOn: '2024-02-29' };
+      const journal =
+        kind === 'refund'
+          ? await payment.recordRefund(options)
+          : await payment.recordPayment(options);
+      const stored = (await payments.get({ id: payment.id }))!;
+      const storedJournal = (await journals.get({ id: journal.id }))!;
+      expect(new Date(stored.paidAt!).toISOString()).toBe(
+        '2024-02-29T12:00:00.000Z',
+      );
+      expect(new Date(storedJournal.date).toISOString().slice(0, 10)).toBe(
+        '2024-02-29',
+      );
+      await expect(
+        stored.recordPayment({ ...posting, effectiveOn: '2025-01-01' }),
+      ).rejects.toThrow();
+      expect(await journals.count({ where: { sourceRef: payment.id } })).toBe(
+        1,
+      );
+      stored.paidAt = new Date('2025-01-01T12:00:00Z');
+      await expect(stored.save()).rejects.toThrow();
+      expect(
+        new Date(
+          (await payments.get({ id: payment.id }))!.paidAt!,
+        ).toISOString(),
+      ).toBe('2024-02-29T12:00:00.000Z');
+    });
+
+    it.each([
+      '2023-02-29',
+      '2024-04-31',
+      '',
+      ' 2024-01-01',
+      '2024-1-01',
+      '2024-01-01T12:00:00Z',
+    ])('refuses invalid settlement date %s without posting', async (effectiveOn) => {
+      const payment = await pending();
+      await expect(
+        payment.recordPayment({ ...posting, effectiveOn }),
+      ).rejects.toThrow('calendar date');
+      expect(await journals.count({ where: { sourceRef: payment.id } })).toBe(
+        0,
+      );
+      expect((await payments.get({ id: payment.id }))!.status).toBe(
+        PaymentStatus.PENDING,
+      );
+    });
+
+    it.each([
       ['CAD', 'payment'],
       ['CAD', 'refund'],
       ['JPY', 'payment'],
@@ -208,7 +265,10 @@ export function paymentRetryContract(postgres = false, enabled = true): void {
       const payment = await pending();
       await expect(
         payment.withTransaction(async () => {
-          await payment.recordPayment(posting);
+          await payment.recordPayment({
+            ...posting,
+            effectiveOn: '2024-02-29',
+          });
           throw new Error('outer interrupted');
         }),
       ).rejects.toThrow('outer interrupted');

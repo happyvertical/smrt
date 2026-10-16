@@ -62,3 +62,23 @@ For PARTIAL/PAID invoices it records the first `sentAt` while preserving payment
 status, paid amount, paid date and any existing view timestamp. Repeating this
 call preserves the first send timestamp. It records the caller's delivery
 event; it does not send a customer message or manufacture earlier delivery.
+
+
+## Original settlement dates (#4099)
+
+`Payment.recordPayment` and `recordRefund` accept optional `effectiveOn`, a strict
+real `YYYY-MM-DD` calendar date. Explicit dates set the posted journal and `paidAt`
+to noon UTC on that date; omission preserves current-clock ordinary posting.
+Customer-funds commands retain their reviewed date and reject a conflicting
+explicit override. Recording cash evidence does not initiate a provider transfer.
+Completed or refunded payment settlement dates and journal identities are immutable,
+including direct save; correcting evidence requires an explicit reversal workflow.
+Posting retains the caller transaction and rejects duplicate completion.
+
+Validation: shared payment-posting contracts and customer-funds proofs pass on
+SQLite and PostgreSQL (55 passed, one PostgreSQL-only case skipped in the SQLite
+lane). They cover leap-day settlement, malformed/impossible dates, immutable
+reloads, duplicate posting, rollback, concurrency and conflicting managed dates.
+Package typecheck/Svelte check (zero errors/warnings) and build pass. Initial
+failures retained in the MVP evidence identified the missing direct-save date
+freeze and an order-dependent journal assertion; both were corrected.

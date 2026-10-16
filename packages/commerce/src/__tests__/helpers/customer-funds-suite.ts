@@ -5,7 +5,7 @@ import {
   JournalCollection,
 } from '@happyvertical/smrt-ledgers';
 import { withTenant } from '@happyvertical/smrt-tenancy';
-import { expect } from 'vitest';
+import { expect, vi } from 'vitest';
 import { CustomerCollection } from '../../collections/CustomerCollection.js';
 import { InvoiceCollection } from '../../collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from '../../collections/InvoiceLineItemCollection.js';
@@ -21,6 +21,7 @@ import {
   refundCustomerFunds,
   reverseCustomerFundsAllocation,
 } from '../../customer-funds.js';
+import { Payment } from '../../models/Payment.js';
 import { PaymentMethod } from '../../types/index.js';
 
 /** Native public commands and ordinary model paths share the same money authority. */
@@ -70,6 +71,23 @@ export async function proveCustomerFunds(
       effectiveOn: '2026-10-01',
       policy,
     };
+    // Even an internal caller cannot override the reviewed funds calendar date.
+    const originalRecord = Payment.prototype.recordPayment;
+    const conflictingDate = vi
+      .spyOn(Payment.prototype, 'recordPayment')
+      .mockImplementationOnce(function (this: Payment, options) {
+        return originalRecord.call(this, {
+          ...options,
+          effectiveOn: '2026-10-02',
+        });
+      });
+    try {
+      await expect(recordCustomerFunds(base)).rejects.toThrow(
+        'differs from reviewed',
+      );
+    } finally {
+      conflictingDate.mockRestore();
+    }
     const receipt = await recordCustomerFunds(base);
     expect(receipt).toMatchObject({
       receivedMinor: 1000,
@@ -245,10 +263,13 @@ export async function proveCustomerFunds(
         entry.debit,
         entry.credit,
       ]),
-    ).toEqual([
-      [liability.id, 600, 0],
-      [ar.id, 0, 600],
-    ]);
+    ).toEqual(
+      expect.arrayContaining([
+        [liability.id, 600, 0],
+        [ar.id, 0, 600],
+      ]),
+    );
+    expect(await applicationJournal.getEntries()).toHaveLength(2);
     const refund = {
       db,
       tenantId,

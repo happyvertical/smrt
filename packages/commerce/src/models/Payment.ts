@@ -492,7 +492,11 @@ export class Payment extends SmrtObject {
       // EVERY surface (REST/MCP/CLI/direct), independent of the per-surface
       // writable allowlist (`amount`/`currency`/`nativeAmount`/... are writable
       // on a *new* PENDING payment, but must be immutable once settled).
-      if (priorRow && priorRow.status === PaymentStatus.COMPLETED) {
+      if (
+        priorRow &&
+        (priorRow.status === PaymentStatus.COMPLETED ||
+          priorRow.status === PaymentStatus.REFUNDED)
+      ) {
         this.assertSettledAmountsUnchanged(priorRow);
       }
 
@@ -584,6 +588,14 @@ export class Payment extends SmrtObject {
     priorRow: Record<string, unknown>,
   ): void {
     const frozen: Array<[string, number | string, number | string]> = [
+      ['journalId', String(priorRow.journal_id ?? ''), this.journalId ?? ''],
+      [
+        'paidAt',
+        priorRow.paid_at == null
+          ? ''
+          : new Date(priorRow.paid_at as string | number).getTime(),
+        this.paidAt == null ? '' : new Date(this.paidAt).getTime(),
+      ],
       ['kind', String(priorRow.kind ?? 'payment'), this.kind],
       ['amount', Number(priorRow.amount ?? 0), Number(this.amount ?? 0)],
       [
@@ -761,7 +773,18 @@ export class Payment extends SmrtObject {
     }
 
     const funds = customerFundsState(this.customerFundsJson);
+    const explicitDate = options.effectiveOn;
+    if (
+      explicitDate !== undefined &&
+      (typeof explicitDate !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(explicitDate) ||
+        !Number.isFinite(Date.parse(explicitDate)) ||
+        new Date(explicitDate).toISOString().slice(0, 10) !== explicitDate)
+    )
+      throw new Error('Settlement effectiveOn must be a calendar date');
     if (funds) {
+      if (explicitDate !== undefined && explicitDate !== funds.effectiveOn)
+        throw new Error('Settlement date differs from reviewed customer funds');
       assertCustomerFundsWrite(this);
       if (
         options.cashAccountId !== funds.policy.cashAccountId ||
@@ -775,8 +798,9 @@ export class Payment extends SmrtObject {
       funds?.policy.mode === 'deposit-liability'
         ? funds.policy.liabilityAccountId!
         : options.receivablesAccountId;
-    const effectiveDate = funds
-      ? new Date(`${funds.effectiveOn}T12:00:00Z`)
+    const effectiveOn = funds?.effectiveOn ?? explicitDate;
+    const effectiveDate = effectiveOn
+      ? new Date(`${effectiveOn}T12:00:00Z`)
       : new Date();
     // Dynamic import to avoid hard dependency on smrt-ledgers
     const { JournalCollection } = await import('@happyvertical/smrt-ledgers');

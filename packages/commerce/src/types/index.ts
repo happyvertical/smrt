@@ -292,6 +292,8 @@ export interface PartyContact {
  * Options for recording a payment with ledger integration
  */
 export interface RecordPaymentOptions {
+  /** Original settlement calendar date (YYYY-MM-DD); journal and paidAt use noon UTC. Omission uses the current clock for ordinary payments. Managed customer funds retain their reviewed date. */
+  effectiveOn?: string;
   /** The ledger to record the journal entry in */
   ledgerId: string;
   /** Account ID for receivables (credit side) */
