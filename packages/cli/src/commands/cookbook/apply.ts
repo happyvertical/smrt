@@ -225,8 +225,16 @@ export function scopedProjectName(
   const scope = /^@[a-z0-9][a-z0-9._~-]*\//.exec(templateName ?? '')?.[0];
   const prefix = scope ? scope.slice(0, -1) : DEFAULT_PROJECT_SCOPE;
   const fit = (suffix: string) => {
-    const room = 214 - prefix.length - 1 - suffix.length;
-    return `${prefix}/${slugName.slice(0, room).replace(/-+$/, '')}${suffix}`;
+    // A template scope can leave too little room for a suffixed basename;
+    // the default scope always has room (and then cannot be the template's).
+    const scopeOf = (candidate: string) =>
+      214 - candidate.length - 1 - suffix.length >= 1
+        ? candidate
+        : DEFAULT_PROJECT_SCOPE;
+    const chosen = scopeOf(prefix);
+    const room = 214 - chosen.length - 1 - suffix.length;
+    const base = slugName.slice(0, room).replace(/-+$/, '') || 'app';
+    return `${chosen}/${base}${suffix}`;
   };
   // Never the template's own name (its app identity), compared after
   // truncation; suffixes are tried until the name differs.

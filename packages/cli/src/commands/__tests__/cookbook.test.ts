@@ -1020,6 +1020,15 @@ describe('scopedProjectName (#4061)', () => {
     );
   });
 
+  it('stays a valid name when a long template scope leaves no room for a suffix', () => {
+    const template = `@${'a'.repeat(205)}/starter`;
+    expect(template.length).toBe(214);
+    const name = scopedProjectName('starter', template);
+    expect(name).not.toBe(template);
+    expect(name.length).toBeLessThanOrEqual(214);
+    expect(name).toMatch(/^@[a-z0-9._~-]+\/[a-z0-9][a-z0-9._~-]*$/);
+  });
+
   it('stays within the 214-character npm name limit', () => {
     const name = scopedProjectName('a'.repeat(300), '@smrt-app/start');
     expect(name.length).toBeLessThanOrEqual(214);
