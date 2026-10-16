@@ -323,6 +323,10 @@ and retry only if it is still pending. An already completed payment retains the
 owner: if it rolls back after settlement returns, reload the payment before retry.
 These guarantees cover new postings, not orphaned journals written by older
 versions. The returned journal uses the caller's database executor.
+Both payment and refund journal lines retain the payment's explicit currency and
+exact amount; posting does not convert currencies or fall back to USD. When
+reporting accounts that contain different currencies, use the public
+`listPostedMovements` currency filter rather than combining their amounts.
 
 ### Cross-Package References
 

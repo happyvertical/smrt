@@ -90,6 +90,47 @@ export function paymentRetryContract(postgres = false, enabled = true): void {
     }
 
     it.each([
+      ['CAD', 'payment'],
+      ['CAD', 'refund'],
+      ['JPY', 'payment'],
+      ['JPY', 'refund'],
+      ['USD', 'payment'],
+      ['USD', 'refund'],
+    ] as const)('retains %s currency and exact amounts in posted %s journal entries', async (currency, kind) => {
+      const payment = await payments.create({ amount: 1234, currency, kind });
+      const journal =
+        kind === 'refund'
+          ? await payment.recordRefund(posting)
+          : await payment.recordPayment(posting);
+      const stored = await journals.get({ id: journal.id });
+      expect(stored?.sourceRef).toBe(payment.id);
+      const entries = await stored!.getEntries();
+      expect(entries).toHaveLength(2);
+      for (const entry of entries) {
+        expect(entry.currency).toBe(currency);
+        expect(entry.exchangeRate).toBe(1);
+      }
+      expect(
+        entries.find((entry) => entry.accountId === posting.cashAccountId),
+      ).toMatchObject({
+        debit: kind === 'payment' ? 1234 : 0,
+        credit: kind === 'refund' ? 1234 : 0,
+      });
+      expect(
+        entries.find(
+          (entry) => entry.accountId === posting.receivablesAccountId,
+        ),
+      ).toMatchObject({
+        debit: kind === 'refund' ? 1234 : 0,
+        credit: kind === 'payment' ? 1234 : 0,
+      });
+      await expect(payment.recordPayment(posting)).rejects.toThrow();
+      expect(await journals.count({ where: { sourceRef: payment.id } })).toBe(
+        1,
+      );
+    });
+
+    it.each([
       PaymentStatus.PENDING,
       PaymentStatus.FAILED,
     ])('rolls back a posted journal and retries the same instance (%s)', async (localStatus) => {

@@ -737,6 +737,7 @@ export class Payment extends SmrtObject {
     // Incoming payments debit cash/credit AR; refunds reverse that movement.
     await journal.addEntry({
       accountId: options.cashAccountId,
+      currency: this.currency,
       debit: this.kind === 'payment' ? this.amount : 0,
       credit: this.kind === 'refund' ? this.amount : 0,
       memo: `${this.kind === 'refund' ? 'Refund' : 'Payment'} ${this.reference || this.id}`,
@@ -745,6 +746,7 @@ export class Payment extends SmrtObject {
     // Credit Accounts Receivable (receivables decrease)
     await journal.addEntry({
       accountId: options.receivablesAccountId,
+      currency: this.currency,
       debit: this.kind === 'refund' ? this.amount : 0,
       credit: this.kind === 'payment' ? this.amount : 0,
       memo: `${this.kind === 'refund' ? 'Refund' : 'Payment'} ${this.reference || this.id}`,
