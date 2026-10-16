@@ -28,6 +28,7 @@ import {
   MoneyValidationError,
   resolveLineTaxCode,
 } from './money.js';
+import { getReceivedPurchaseMoney } from './received-purchase-money.js';
 import { withTenantMoneyRuntime } from './tenant-money-barrier.js';
 import {
   ContractStatus,
@@ -43,6 +44,8 @@ type ProductTaxDefaults = {
 
 const FROZEN_CONTRACT_FIELDS = [
   'tenantId',
+  'moneyAuthority',
+  'receivedPurchaseMoneyJson',
   'subtotal',
   'discountTotal',
   'taxAmount',
@@ -404,6 +407,14 @@ export async function saveContract(input: Contract): Promise<Contract> {
           'Contract tenant identity cannot change',
         );
       if (!existing) {
+        if (
+          contract.moneyAuthority !== 'calculated' ||
+          contract.receivedPurchaseMoneyJson
+        )
+          throw new MoneyValidationError(
+            'INVALID_MONEY_INPUT',
+            'Use recordReceivedPurchaseMoney to record received evidence',
+          );
         contract.tenantId = tenantId;
         contract.lineAmountType = settings.defaultLineAmountType;
         contract.taxRoundingScope = settings.taxRoundingScope;
@@ -426,6 +437,40 @@ export async function saveContract(input: Contract): Promise<Contract> {
         tenantId,
         required(existing.id, 'Contract'),
         async (stored, lines) => {
+          assertUnchanged(
+            contract,
+            stored,
+            ['moneyAuthority', 'receivedPurchaseMoneyJson'],
+            'Contract money authority',
+          );
+          const received = getReceivedPurchaseMoney(stored);
+          if (received) {
+            if (
+              contract.constructor !== stored.constructor ||
+              contract.contractType !== stored.contractType
+            )
+              throw new MoneyValidationError(
+                'FROZEN_DOCUMENT',
+                'Received purchase document type is frozen',
+              );
+            assertUnchanged(
+              contract,
+              stored,
+              [...FROZEN_CONTRACT_FIELDS, 'vendorId' as keyof Contract],
+              'Received purchase money',
+            );
+            if (lines.length)
+              throw new MoneyValidationError(
+                'INVALID_MONEY_INPUT',
+                'Received money cannot mix with calculated lines',
+              );
+            if (
+              contract.status !== ContractStatus.DRAFT &&
+              !stored.moneySnapshotId
+            )
+              contract.moneySnapshotId = crypto.randomUUID();
+            return contract.saveDerived(DOCUMENT_MONEY_WRITE);
+          }
           if (isFrozen(stored)) {
             assertUnchanged(
               contract,
@@ -495,6 +540,11 @@ export async function saveContractLineItem(
         scope.tenantId,
         contractId,
         async (contract, lines) => {
+          if (getReceivedPurchaseMoney(contract))
+            throw new MoneyValidationError(
+              'FROZEN_DOCUMENT',
+              'Received purchase evidence cannot contain calculated lines',
+            );
           if (persisted && line.contractId !== persisted.contractId)
             throw new MoneyValidationError(
               'FROZEN_DOCUMENT',
@@ -577,4 +627,30 @@ export async function recalculateContractTotals(
   contract: Contract,
 ): Promise<void> {
   await saveContract(contract);
+}
+
+/** Delete only a calculated Contract under the same lock as received-fact recording. */
+export async function deleteContract(
+  input: Contract,
+  options: DeleteOptions,
+): Promise<void> {
+  const contractId = input.id;
+  if (!contractId) return;
+  const tenantId = requireContractTenant(
+    input.tenantId ?? getTenantId() ?? null,
+  );
+  await withTenantMoneyRuntime(input.db, tenantId, async ({ db }) => {
+    const existing = await loadContract(db, contractId);
+    if (!existing) return;
+    await withLockedContract(db, tenantId, contractId, async (stored) => {
+      if (getReceivedPurchaseMoney(stored))
+        throw new MoneyValidationError(
+          'FROZEN_DOCUMENT',
+          'Received purchase monetary history cannot be deleted',
+        );
+      await input.withDatabase(db, (bound) =>
+        bound.deleteDerived(DOCUMENT_MONEY_WRITE, options),
+      );
+    });
+  });
 }

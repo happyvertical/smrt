@@ -279,6 +279,18 @@ export {
   validatePartyContactRows,
 } from './party-contacts.js';
 export {
+  getReceivedPurchaseMoney,
+  type ReceivedPurchaseMoneyFacts,
+  type ReceivedPurchaseMoneyLine,
+  type ReceivedPurchaseMoneySnapshot,
+  type ReceivedPurchaseQuoteSource,
+  ReceivedPurchaseTaxClassificationRequired,
+  type ReceivedPurchaseTaxComponent,
+  type RecordReceivedPurchaseMoneyInput,
+  recordReceivedPurchaseMoney,
+  validateReceivedPurchaseMoneyFacts,
+} from './received-purchase-money.js';
+export {
   AgreementsRecipe,
   CustomersRecipe,
   EstimatesRecipe,

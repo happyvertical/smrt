@@ -490,6 +490,8 @@ export interface ContractOptions extends SmrtObjectOptions {
   sellerTaxRegistrationsJson?: string;
   partyTaxId?: string;
   moneySnapshotId?: string;
+  moneyAuthority?: 'calculated' | 'received';
+  receivedPurchaseMoneyJson?: string;
 }
 
 export interface SalesContractOptions extends ContractOptions {
