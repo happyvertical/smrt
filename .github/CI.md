@@ -460,8 +460,9 @@ annotation say whether the planner or the framework broke, and
 repeats the apply as the published release generates it (the published CLI,
 manifests and packages) as a control; if that fails too, it reports upstream drift (the
 smrt-start template or a third-party release) instead of blaming the
-framework. A control that cannot be built (a package new in this release) is
-inconclusive and the failure stays the framework's. The gate fails either way.
+framework. A control that cannot be built from the published release (a package new in
+this release, or a cookbook the published CLI cannot apply) is inconclusive
+and the failure stays the framework's. The gate fails either way.
 The release job publishes those tarballs sequentially and safely skips versions
 already present on npm during a retry. The final publisher consumes only those
 prebuilt artifacts, so it skips a redundant workspace dependency install and

@@ -26,9 +26,10 @@
  * it (the published CLI and manifests, every release package pinned to the
  * latest published version): if that fails too, the cause is upstream drift (the
  * smrt-start template or a third-party release), not this release, and the
- * failure says so. When the control cannot be built from published packages
- * (one the app uses is new in this release), it is inconclusive and the
- * failure stays the framework's. The gate fails in every case; a release is
+ * failure says so. When the control cannot be built from the published
+ * release (a package the app uses or the CLI is not published at that
+ * version, or the published CLI cannot apply this release's cookbook), it is
+ * inconclusive and the failure stays the framework's. The gate fails in every case; a release is
  * never published past an app that does not build.
  *
  * Usage: node scripts/planner-release-gate.mjs --packs <dir>
@@ -287,22 +288,30 @@ function frameworkChecks(tarballs, options, scratch) {
     // The release app uses this release's CLI; the control the published
     // release's CLI, so nothing of this release takes part in it.
     const [command, ...prefix] = published ? publishedCli(published) : [process.execPath, CLI];
-    run(
-      command,
-      [
-        ...prefix,
-        'cookbook',
-        'apply',
-        files.get(options.cookbook),
-        dir,
-        // The release app is generated from this release's manifests; the
-        // control from the published ones, as a user of that release gets it.
-        ...(published ? [] : ['--manifests', manifests, '--no-registry']),
-        '--no-install',
-        ...(options.template ? ['--template', options.template] : []),
-      ],
-      { cwd: scratch },
-    );
+    try {
+      run(
+        command,
+        [
+          ...prefix,
+          'cookbook',
+          'apply',
+          files.get(options.cookbook),
+          dir,
+          // The release app is generated from this release's manifests; the
+          // control from the published ones, as a user of that release gets it.
+          ...(published ? [] : ['--manifests', manifests, '--no-registry']),
+          '--no-install',
+          ...(options.template ? ['--template', options.template] : []),
+        ],
+        { cwd: scratch },
+      );
+    } catch (error) {
+      // Tag apply failures: in the control they mean the published CLI or
+      // manifests rejected this release's cookbook, not that the app broke.
+      throw Object.assign(new Error(`cookbook apply: ${errorText(error)}`), {
+        stage: 'apply',
+      });
+    }
     if (overrides) {
       const workspaceFile = join(dir, 'pnpm-workspace.yaml');
       const current = existsSync(workspaceFile) ? readFileSync(workspaceFile, 'utf8') : '';
@@ -385,6 +394,12 @@ function frameworkChecks(tarballs, options, scratch) {
           console.log('✓ control passed: the release tarballs broke the app');
           return 'framework';
         } catch (error) {
+          if (error?.stage === 'apply') {
+            console.log(
+              `control inconclusive: the published release cannot apply this cookbook (${errorText(error)}); reporting the framework`,
+            );
+            return 'framework';
+          }
           console.log(`✗ control failed too (${errorText(error)}): upstream drift`);
           return 'upstream';
         }
