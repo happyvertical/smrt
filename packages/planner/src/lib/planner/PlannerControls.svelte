@@ -6,7 +6,7 @@ import {
   useShellLayout,
 } from '@happyvertical/smrt-svelte/workspace';
 import { Tabs } from '@happyvertical/smrt-ui';
-import { onMount, untrack } from 'svelte';
+import { onMount, tick, untrack } from 'svelte';
 import CookbooksPanel from '../components/CookbooksPanel.svelte';
 import ExportPanel from '../components/ExportPanel.svelte';
 import FeaturesPanel from '../components/FeaturesPanel.svelte';
@@ -125,6 +125,25 @@ onMount(() => {
   });
   return stop;
 });
+// A tab opened while the page is scrolled down (from the header's links, the
+// palette, a focus command, or a long Recipes list) would show the new panel
+// at the old offset, with the tab strip out of sight. Bring the strip back
+// into view on a change; nothing moves when it is already visible.
+let root = $state<HTMLElement | null>(null);
+let shownTab: string | undefined;
+$effect(() => {
+  const tab = active;
+  if (shownTab === undefined || shownTab === tab) {
+    shownTab = tab;
+    return;
+  }
+  shownTab = tab;
+  void tick().then(() => {
+    root
+      ?.querySelector<HTMLElement>('[role="tablist"]')
+      ?.scrollIntoView({ block: 'nearest' });
+  });
+});
 $effect(() => {
   const tab = plannerTab.active;
   untrack(() => {
@@ -140,7 +159,7 @@ $effect(() => {
 {/if}
 
 {#snippet view()}
-<div class="planner">
+<div class="planner" bind:this={root}>
   <Tabs tabs={items} {active} onchange={select} aria-label="Planner">
     {#if reachable.includes('cookbooks')}
       <div hidden={active !== 'cookbooks'}><CookbooksPanel /></div>
