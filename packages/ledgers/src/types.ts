@@ -25,6 +25,15 @@ export type AccountType =
  */
 export type JournalStatus = 'draft' | 'posted' | 'voided';
 
+export type LedgerBalanceMode = 'tolerant' | 'exact-integer';
+
+export interface LedgerOptions extends SmrtClassOptions {
+  tenantId?: string | null;
+  name?: string;
+  currency?: string;
+  balanceMode?: LedgerBalanceMode;
+}
+
 /**
  * Options for creating an Account
  */
@@ -35,6 +44,7 @@ export interface AccountOptions extends SmrtClassOptions {
   description?: string;
   type?: AccountType;
   parentId?: string | null;
+  ledgerId?: string | null;
   active?: boolean;
   metadata?: Record<string, unknown>;
 }
@@ -49,6 +59,9 @@ export interface JournalOptions extends SmrtClassOptions {
   description?: string;
   sourceModule?: string;
   sourceRef?: string | null;
+  ledgerId?: string | null;
+  idempotencyKey?: string | null;
+  requestDigest?: string | null;
   status?: JournalStatus;
   postedAt?: Date | null;
   voidedAt?: Date | null;
@@ -63,6 +76,10 @@ export interface JournalEntryOptions extends SmrtClassOptions {
   tenantId?: string | null;
   journalId?: string;
   accountId?: string;
+  counterpartyKind?: string | null;
+  counterpartyId?: string | null;
+  dueDate?: Date | null;
+  settlesSourceRef?: string | null;
   debit?: number;
   credit?: number;
   currency?: string;
@@ -103,6 +120,10 @@ export interface AccountTree {
  */
 export interface JournalEntryData {
   accountId: string;
+  counterpartyKind?: string | null;
+  counterpartyId?: string | null;
+  dueDate?: Date | null;
+  settlesSourceRef?: string | null;
   debit?: number;
   credit?: number;
   currency?: string;
@@ -114,10 +135,14 @@ export interface JournalEntryData {
  * Data for creating a complete journal with entries
  */
 export interface CreateJournalData {
+  tenantId?: string | null;
   date?: Date;
   description: string;
   sourceModule?: string;
   sourceRef?: string | null;
+  ledgerId?: string | null;
+  idempotencyKey?: string | null;
+  requestDigest?: string | null;
   entries: JournalEntryData[];
   metadata?: Record<string, unknown>;
 }

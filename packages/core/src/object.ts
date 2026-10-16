@@ -580,6 +580,7 @@ export class SmrtObject extends SmrtClass {
    * is true.
    */
   private _insertOnly = false;
+  private _insertOnlyPreserveDerivedSlug = false;
 
   /**
    * The slug {@link getSlug} derived from a human value (`name`, `title` or
@@ -826,11 +827,18 @@ export class SmrtObject extends SmrtClass {
    * instead of upsert-adopting an existing row. Set via
    * `collection.create({ _insertOnly: true })` for write paths where row
    * identity is an explicit client-supplied id (sync-apply, #1759).
-   * No effect once the object is persisted.
+   * With `preserveDerivedSlug`, automatically derived names retain safe slug
+   * disambiguation. Explicit keys and getOrUpsert's adoption path still INSERT
+   * strictly; neither can replace an existing identity. No effect once persisted.
    * @internal
    */
-  public requireInsertOnSave(): void {
+  public requireInsertOnSave(
+    options: { preserveDerivedSlug?: boolean } = {},
+  ): void {
+    // A model may not relax an earlier strict insert requested by its caller.
+    if (this._insertOnly && !this._insertOnlyPreserveDerivedSlug) return;
     this._insertOnly = true;
+    this._insertOnlyPreserveDerivedSlug = options.preserveDerivedSlug ?? false;
   }
 
   /**
@@ -3007,7 +3015,12 @@ export class SmrtObject extends SmrtClass {
       const naturalKeyUpsert =
         writePlan.type === 'upsert' &&
         revisionGuard === undefined &&
-        !(this._insertOnly && !this._persisted) &&
+        (!(this._insertOnly && !this._persisted) ||
+          (this._insertOnlyPreserveDerivedSlug &&
+            !this._adoptNaturalKey &&
+            upsertConflictColumns.includes('slug') &&
+            this._derivedSlug !== null &&
+            data.slug === this._derivedSlug)) &&
         !(
           upsertConflictColumns.length === 1 &&
           upsertConflictColumns[0] === 'id'

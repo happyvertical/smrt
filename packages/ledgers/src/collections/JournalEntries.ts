@@ -5,7 +5,11 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  queryGlobal,
+  queryWithGlobals,
+} from '@happyvertical/smrt-tenancy';
 import { JournalEntry } from '../models/JournalEntry';
 import { BALANCE_EPSILON, type TrialBalanceRow } from '../types';
 
@@ -33,6 +37,26 @@ export interface PostedJournalMovementOptions {
   from: Date;
   to: Date;
   currency: string;
+  /** Select credit-normal AP balances; default is debit-normal AR. */
+  normalBalance?: 'debit' | 'credit';
+}
+
+export interface CounterpartyBalance {
+  counterpartyKind: string;
+  counterpartyId: string;
+  currency: string;
+  /** Debit minus credit for asset AR accounts; callers choose the account set. */
+  balance: number;
+}
+
+export interface CounterpartyAgingRow extends CounterpartyBalance {
+  sourceRef: string;
+  dueDate: Date;
+  current: number;
+  days1To30: number;
+  days31To60: number;
+  days61To90: number;
+  daysOver90: number;
 }
 
 const MAX_MOVEMENT_ACCOUNTS = 1_000;
@@ -71,6 +95,103 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
     return await this.list({
       where: { accountId },
     });
+  }
+
+  /** Posted AR/AP net balances by opaque counterparty for selected accounts. */
+  async getCounterpartyBalances(
+    options: PostedJournalMovementOptions,
+  ): Promise<CounterpartyBalance[]> {
+    const movements = await this.listPostedMovements(options);
+    const result = new Map<string, CounterpartyBalance>();
+    for (const movement of movements) {
+      const entry = await this.get({ id: movement.entryId });
+      if (!entry?.counterpartyKind || !entry.counterpartyId) continue;
+      const key = JSON.stringify([
+        entry.counterpartyKind,
+        entry.counterpartyId,
+        movement.currency,
+      ]);
+      const row = result.get(key) ?? {
+        counterpartyKind: entry.counterpartyKind,
+        counterpartyId: entry.counterpartyId,
+        currency: movement.currency,
+        balance: 0,
+      };
+      row.balance = storedUnit(
+        row.balance +
+          (movement.debit - movement.credit) *
+            (options.normalBalance === 'credit' ? -1 : 1),
+        'counterparty balance',
+      );
+      result.set(key, row);
+    }
+    return [...result.values()].filter((row) => row.balance !== 0);
+  }
+
+  /**
+   * Open-item aging. An invoice/allocation line needs a dueDate and sourceRef;
+   * a settlement line names that source in settlesSourceRef. This avoids
+   * pretending that net counterparty movements are aging.
+   */
+  async getCounterpartyAging(
+    options: PostedJournalMovementOptions,
+    asOf: Date,
+  ): Promise<CounterpartyAgingRow[]> {
+    const movements = await this.listPostedMovements({ ...options, to: asOf });
+    const rows = new Map<string, CounterpartyAgingRow>();
+    const balances = new Map<string, number>();
+    for (const movement of movements) {
+      const entry = await this.get({ id: movement.entryId });
+      const source = entry?.settlesSourceRef ?? movement.sourceRef;
+      if (!entry?.counterpartyKind || !entry.counterpartyId || !source)
+        continue;
+      const key = JSON.stringify([
+        entry.counterpartyKind,
+        entry.counterpartyId,
+        movement.currency,
+        source,
+      ]);
+      balances.set(
+        key,
+        storedUnit(
+          (balances.get(key) ?? 0) +
+            (movement.debit - movement.credit) *
+              (options.normalBalance === 'credit' ? -1 : 1),
+          'open item balance',
+        ),
+      );
+      if (!entry.settlesSourceRef && entry.dueDate) {
+        const prior = rows.get(key);
+        if (prior && prior.dueDate.getTime() !== entry.dueDate.getTime())
+          throw new Error('Open item source has conflicting due dates');
+        rows.set(key, {
+          counterpartyKind: entry.counterpartyKind,
+          counterpartyId: entry.counterpartyId,
+          currency: movement.currency,
+          sourceRef: source,
+          dueDate: entry.dueDate,
+          balance: 0,
+          current: 0,
+          days1To30: 0,
+          days31To60: 0,
+          days61To90: 0,
+          daysOver90: 0,
+        });
+      }
+    }
+    for (const [key, row] of rows) row.balance = balances.get(key) ?? 0;
+    for (const row of rows.values()) {
+      if (row.balance <= 0) continue;
+      const days = Math.floor(
+        (asOf.getTime() - row.dueDate.getTime()) / 86_400_000,
+      );
+      if (days <= 0) row.current = row.balance;
+      else if (days <= 30) row.days1To30 = row.balance;
+      else if (days <= 60) row.days31To60 = row.balance;
+      else if (days <= 90) row.days61To90 = row.balance;
+      else row.daysOver90 = row.balance;
+    }
+    return [...rows.values()].filter((row) => row.balance > 0);
   }
 
   /**
@@ -221,6 +342,8 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
   async listPostedMovements(
     options: PostedJournalMovementOptions,
   ): Promise<PostedJournalMovement[]> {
+    if (getTenantId() && getTenantId() !== options.tenantId)
+      throw new Error('Posted movements tenant differs from active context');
     const accountIds = [...new Set(options.accountIds)];
     if (
       !options.tenantId?.trim() ||

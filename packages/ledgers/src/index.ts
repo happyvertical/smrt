@@ -71,11 +71,14 @@ import './prompts.js';
 // Export collections
 export { AccountCollection } from './collections/Accounts';
 export {
+  type CounterpartyAgingRow,
+  type CounterpartyBalance,
   JournalEntryCollection,
   type PostedJournalMovement,
   type PostedJournalMovementOptions,
 } from './collections/JournalEntries';
 export { JournalCollection } from './collections/Journals';
+export { LedgerCollection } from './collections/Ledgers';
 // One-time move of ledger accounts out of the shared `accounts` table (#3098)
 export {
   LEDGER_ACCOUNTS_TABLE,
@@ -92,7 +95,15 @@ export {
 export { Account } from './models/Account';
 export { Journal } from './models/Journal';
 export { JournalEntry } from './models/JournalEntry';
-
+export { Ledger } from './models/Ledger';
+export {
+  type Counterparty,
+  type LedgerPostingInput,
+  postLedgerEntry,
+  postPayable,
+  postReceivable,
+  postSettlement,
+} from './postings';
 // Export prompt registrations so consumers can reference the key for
 // tenant-aware overrides via `@happyvertical/smrt-prompts`.
 export {
@@ -111,5 +122,7 @@ export type {
   JournalEntryOptions,
   JournalOptions,
   JournalStatus,
+  LedgerBalanceMode,
+  LedgerOptions,
   TrialBalanceRow,
 } from './types';
