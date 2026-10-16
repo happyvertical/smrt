@@ -134,27 +134,28 @@ export class CommentService {
             recordType: current.metaType,
             recordId: current.metaId,
           },
-          async (guardedTx, decision) => {
-            const revisions = await CommentRevisionCollection.create({
-              db: guardedTx,
-            });
-            await revisions.create({
-              tenantId,
-              commentId,
-              editorUserId: this.options.actor.userId,
-              body: current.body,
-            });
-            if (
-              current.status === 'visible' &&
-              decision.initialCommentStatus === 'pending'
-            ) {
-              current.status = 'pending';
-            }
-            current.body = body;
-            current.editedAt = new Date();
-            await current.save();
-            return current;
-          },
+          async (guardedTx, decision) =>
+            withTenant({ tenantId: current.tenantId }, async () => {
+              const revisions = await CommentRevisionCollection.create({
+                db: guardedTx,
+              });
+              await revisions.create({
+                tenantId: current.tenantId,
+                commentId,
+                editorUserId: this.options.actor.userId,
+                body: current.body,
+              });
+              if (
+                current.status === 'visible' &&
+                decision.initialCommentStatus === 'pending'
+              ) {
+                current.status = 'pending';
+              }
+              current.body = body;
+              current.editedAt = new Date();
+              await current.save();
+              return current;
+            }),
         );
       });
     });
@@ -407,42 +408,46 @@ export class CommentService {
         const work = async (
           tx: CommentCollection['db'],
           participation: ParticipationDecision,
-        ) => {
-          target = await CommentCollection.create({ db: tx });
-          if (parentCommentId) {
-            const parent = await target.get(parentCommentId);
-            if (
-              !parent ||
-              canonicalUuid(parent.tenantId) !== canonicalUuid(tenantId) ||
-              parent.metaType !== metaType ||
-              parent.metaId !== metaId
-            ) {
-              throw new Error('Comment parent does not belong to this record.');
+        ) =>
+          withTenant({ tenantId }, async () => {
+            target = await CommentCollection.create({ db: tx });
+            if (parentCommentId) {
+              const parent = await target.get(parentCommentId);
+              if (
+                !parent ||
+                canonicalUuid(parent.tenantId) !== canonicalUuid(tenantId) ||
+                parent.metaType !== metaType ||
+                parent.metaId !== metaId
+              ) {
+                throw new Error(
+                  'Comment parent does not belong to this record.',
+                );
+              }
             }
-          }
-          const id = crypto.randomUUID();
-          return target.create({
-            tenantId,
-            authorUserId,
-            metaType,
-            metaId,
-            body,
-            id,
-            slug: id,
-            context: '',
-            _insertOnly: true,
-            mentions: prepared.mentions,
-            idempotencyKey: idempotencyKey ?? null,
-            requestDigest: idempotencyKey === undefined ? null : requestDigest,
-            retryTenantId:
-              idempotencyKey === undefined ? null : canonicalUuid(tenantId),
-            parentCommentId: parentCommentId ?? null,
-            status: participation.initialCommentStatus ?? 'visible',
-            participationSnapshot: participation.snapshot
-              ? JSON.stringify(participation.snapshot)
-              : null,
+            const id = crypto.randomUUID();
+            return target.create({
+              tenantId,
+              authorUserId,
+              metaType,
+              metaId,
+              body,
+              id,
+              slug: id,
+              context: '',
+              _insertOnly: true,
+              mentions: prepared.mentions,
+              idempotencyKey: idempotencyKey ?? null,
+              requestDigest:
+                idempotencyKey === undefined ? null : requestDigest,
+              retryTenantId:
+                idempotencyKey === undefined ? null : canonicalUuid(tenantId),
+              parentCommentId: parentCommentId ?? null,
+              status: participation.initialCommentStatus ?? 'visible',
+              participationSnapshot: participation.snapshot
+                ? JSON.stringify(participation.snapshot)
+                : null,
+            });
           });
-        };
         return inTransaction
           ? guard.executeInTransaction(target.db, participationRequest, work)
           : guard.execute(participationRequest, work);
@@ -491,13 +496,15 @@ export class CommentService {
         canonicalUuid(tenantId),
       );
       const retainedBodies = row.editedAt
-        ? (
-            await (
-              await CommentRevisionCollection.create({ db: collection.db })
-            ).list({
-              where: { commentId: row.id, tenantId: row.tenantId },
-            })
-          ).map((revision) => revision.body)
+        ? await withTenant({ tenantId: row.tenantId }, async () =>
+            (
+              await (
+                await CommentRevisionCollection.create({ db: collection.db })
+              ).list({
+                where: { commentId: row.id, tenantId: row.tenantId },
+              })
+            ).map((revision) => revision.body),
+          )
         : [row.body];
       if (
         canonicalUuid(row.tenantId) !== canonicalUuid(tenantId) ||

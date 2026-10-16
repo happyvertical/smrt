@@ -95,3 +95,12 @@ preserves hidden status. The three-dialect edit test proves both transitions.
   hidden/pending/deleted targets deny. SQLite/DuckDB/restricted PostgreSQL.
 - Full comments test/test:postgres plus types, Svelte, build and Biome. Public
   contract adds report action so quota policy can be configured independently.
+
+## Review6204625041 round 2 R1 regression
+
+With tenancy interception enabled, create and edit a keyed comment under each
+UUID casing, replay from the opposite casing before/after receipt cleanup.
+The baseline rejects both original-spelling writes under the canonical guard
+context and revision reads under the replay context. Mutation callbacks and
+history reads use the stored comment tenant spelling; quota/policy scope remains
+canonical. The full SQLite/DuckDB/PostgreSQL suite validates the correction.

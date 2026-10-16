@@ -9,7 +9,11 @@ import './models/ParticipationRateBucket.js';
 import { digestRunOnceContent } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { UserNotificationService } from '@happyvertical/smrt-messages';
-import { withTenant } from '@happyvertical/smrt-tenancy';
+import {
+  disableTenancy,
+  enableTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { clearCache, setConfig } from '../../config/src/index.js';
 import { CommentCollection } from './collections/CommentCollection.js';
@@ -679,6 +683,49 @@ describe.each([
       expect((await service.create(input)).id).toBe(row.id);
       await db.query('DELETE FROM _smrt_run_once_claims');
       expect((await service.create(input)).id).toBe(row.id);
+    });
+
+    it.each([
+      false,
+      true,
+    ])('replays edited keyed comments across tenant casing (upper creator: %s)', async (upper) => {
+      const { db, input } = await fixture();
+      enableTenancy();
+      try {
+        const storedTenant = upper
+          ? input.tenantId.toUpperCase()
+          : input.tenantId;
+        const replayTenant = upper
+          ? input.tenantId
+          : input.tenantId.toUpperCase();
+        const make = (tenantId: string) =>
+          new CommentService({
+            db,
+            actor: { tenantId, userId: input.authorUserId },
+            authorizeRecord: async () => true,
+          });
+        const original = await make(storedTenant).create({
+          ...input,
+          tenantId: storedTenant,
+        });
+        await make(storedTenant).edit(
+          original.id ?? '',
+          'edited across casing',
+        );
+        const replay = () =>
+          make(replayTenant).create({ ...input, tenantId: replayTenant });
+        expect(await replay()).toMatchObject({
+          id: original.id,
+          body: 'edited across casing',
+        });
+        await db.query('DELETE FROM _smrt_run_once_claims');
+        expect(await replay()).toMatchObject({
+          id: original.id,
+          body: 'edited across casing',
+        });
+      } finally {
+        disableTenancy();
+      }
     });
 
     it('replays original keyed creates after edits and receipt retention', async () => {
