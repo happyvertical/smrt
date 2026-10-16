@@ -231,7 +231,16 @@ describe('cookbook preview', () => {
     ]);
   });
 
-  it('gives the welder work orders as Jobs, not a project tracker', () => {
+  it('never lists a Jobs entry inside a Jobs section', () => {
+    for (const cookbook of libraryCookbooks) {
+      for (const [section, entries] of menu(cookbook.id)) {
+        if (section === 'Jobs')
+          expect(entries, cookbook.id).not.toContain('Jobs');
+      }
+    }
+  });
+
+  it('gives the welder work orders in Jobs, not a project tracker', () => {
     const welder = libraryCookbooks.find((c) => c.id === 'welder');
     if (!welder) throw new Error('welder');
     expect(welder.document.recipes).toContain('commerce.sales');
@@ -239,12 +248,12 @@ describe('cookbook preview', () => {
     const jobs = menu('welder')[0];
     expect(jobs?.[0]).toBe('Jobs');
     expect(jobs?.[1]).toEqual([
-      'Jobs',
+      'Work orders',
       'Customers',
       'Quotes',
       'General agreements',
     ]);
-    expect(navNoun('Jobs')).toBe('job');
+    expect(navNoun('Work orders')).toBe('work order');
     expect(JSON.stringify(welder.document.layout)).not.toContain('projects:');
   });
 

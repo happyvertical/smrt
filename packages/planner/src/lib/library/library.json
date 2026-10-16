@@ -627,7 +627,7 @@
               "description": "The kinds of visit you make, like a quote visit or install."
             },
             "item:commerce:Order": {
-              "label": "Jobs",
+              "label": "Work orders",
               "description": "Every job you have won, from start to final invoice."
             }
           },
@@ -1046,7 +1046,7 @@
               "description": "Quotes for new work, ready to become jobs once approved."
             },
             "item:commerce:Order": {
-              "label": "Jobs",
+              "label": "Work orders",
               "description": "Every job you have won, from the first visit to the final invoice."
             },
             "item:commerce:Agreement": {
