@@ -1,5 +1,23 @@
 # @happyvertical/smrt-chat
 
+## 0.57.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.2
+  - @happyvertical/smrt-agents@0.57.2
+  - @happyvertical/smrt-assets@0.57.2
+  - @happyvertical/smrt-images@0.57.2
+  - @happyvertical/smrt-personas@0.57.2
+  - @happyvertical/smrt-profiles@0.57.2
+  - @happyvertical/smrt-reports@0.57.2
+  - @happyvertical/smrt-tenancy@0.57.2
+  - @happyvertical/smrt-users@0.57.2
+  - @happyvertical/smrt-config@0.57.2
+  - @happyvertical/smrt-ui@0.57.2
+  - @happyvertical/smrt-types@0.57.2
+
 ## 0.57.1
 
 ### Patch Changes
