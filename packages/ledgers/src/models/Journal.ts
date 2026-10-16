@@ -346,6 +346,8 @@ export class Journal extends SmrtObject {
     this.requireInsertOnSave({ preserveDerivedSlug: true });
     if (this.id) {
       const stored = await this.db.get(this.tableName, { id: this.id });
+      if (stored && stored.ledger_id !== this.ledgerId)
+        throw new Error('Journal ledger scope is immutable after creation');
       if (stored?.ledger_id && stored.status !== 'draft')
         throw new Error(
           'Ledger journals are immutable after posting; use a compensating journal',

@@ -240,3 +240,9 @@ existing object to update it through its lifecycle guards. This also applies to
 legacy unassigned objects; natural-key replacement is not a supported update path.
 Legacy tenant journals may still use shared global accounts that have no ledger;
 scoped journals require accounts owned by their ledger.
+
+A journal chooses its ledger scope at creation. Persisted draft journals cannot
+move between ledgers or change between unassigned and scoped, even when empty.
+Create a new journal for another scope; this prevents an in-flight legacy line
+from entering an exact ledger after its validation. Ordinary same-scope draft
+edits and legacy decimal journals retain their existing behavior.

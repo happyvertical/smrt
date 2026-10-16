@@ -72,6 +72,44 @@ export function defineWorkerCoopLedgerSuite(
       vi.restoreAllMocks();
       await (db as { close?: () => Promise<void> }).close?.();
     });
+    it('fixes journal ledger scope at creation, including legacy drafts', async () => {
+      const journals = await JournalCollection.create({ db });
+      const legacy = await journals.create({
+        tenantId: base.tenantId,
+        description: 'Legacy draft',
+      });
+      legacy.ledgerId = base.ledgerId;
+      await expect(legacy.save()).rejects.toThrow();
+      expect(
+        (await journals.get(legacy.id!, { cache: false }))!.ledgerId,
+      ).toBeNull();
+      const scoped = await journals.create({
+        tenantId: base.tenantId,
+        ledgerId: base.ledgerId,
+        description: 'Scoped draft',
+      });
+      scoped.description = 'Allowed draft edit';
+      await scoped.save();
+      for (const ledgerId of [
+        null,
+        (
+          await (
+            await LedgerCollection.create({ db })
+          ).create({
+            tenantId: base.tenantId,
+            name: 'Other scope',
+            currency: 'CAD',
+            balanceMode: 'exact-integer',
+          })
+        ).id!,
+      ]) {
+        scoped.ledgerId = ledgerId;
+        await expect(scoped.save()).rejects.toThrow();
+        expect(
+          (await journals.get(scoped.id!, { cache: false }))!.ledgerId,
+        ).toBe(base.ledgerId);
+      }
+    });
     it('preserves generated slug disambiguation and refuses getOrUpsert adoption', async () => {
       const ledgers = await LedgerCollection.create({ db });
       await expect(
